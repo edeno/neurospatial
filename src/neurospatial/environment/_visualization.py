@@ -43,50 +43,30 @@ _MIN_EXTENT_FOR_SCALE_BAR = 1e-6
 
 
 @dataclass(frozen=True)
-class PlotComponents:
-    """Owned environment components that the plotting functions read.
+class PlotLabels:
+    """The names a plot shows, which the bins themselves do not carry.
 
     Parameters
     ----------
-    binning : Binning
-        Published bins, cell shapes and grid structure.
-    connectivity : networkx.Graph
-        Navigation graph over the bins.
-    dimension_ranges : sequence of (float, float) or None
-        Plot extent per axis.
-    grid_edges : tuple of ndarray or None
-        Grid edges of the published grid index.
-    active_mask : ndarray of bool or None
-        Active cells of the published grid index.
-    coordinates : CartesianSystem or EgocentricPolarSystem
-        Axis labels and aspect of the bin coordinates.
-    units : str or None
-        Coordinate units for axis labels and scale bars.
     name : str
         Environment name for the layout title.
     layout_type : str
         Layout label for titles.
-    regions : Regions
-        Named regions drawn on request.
-    is_linearized_track : bool
-        Whether bins are positions along a linearized track.
+    units : str or None
+        Coordinate units for axis labels and scale bars.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        Axis names and aspect of the bin coordinates.
     """
 
-    binning: Binning
-    connectivity: nx.Graph
-    dimension_ranges: Sequence[tuple[float, float]] | None
-    grid_edges: tuple[NDArray[np.float64], ...] | None
-    active_mask: NDArray[np.bool_] | None
-    coordinates: CartesianSystem | EgocentricPolarSystem
-    units: str | None
     name: str
     layout_type: str
-    regions: Regions
-    is_linearized_track: bool
+    units: str | None
+    coordinates: CartesianSystem | EgocentricPolarSystem
 
 
 def _add_scale_bar_if_requested(
-    parts: PlotComponents,
+    dimension_ranges: Sequence[tuple[float, float]] | None,
+    units: str | None,
     ax: matplotlib.axes.Axes,
     scale_bar: bool | ScaleBarConfig,
 ) -> None:
@@ -97,8 +77,10 @@ def _add_scale_bar_if_requested(
 
     Parameters
     ----------
-    parts : PlotComponents
-        Plotted components; supplies dimension_ranges and units.
+    dimension_ranges : sequence of (float, float) or None
+        Plot extent per axis; the first axis sets the scale bar length.
+    units : str or None
+        Coordinate units shown on the scale bar.
     ax : matplotlib.axes.Axes
         The axes to add the scale bar to.
     scale_bar : bool or ScaleBarConfig
@@ -113,7 +95,6 @@ def _add_scale_bar_if_requested(
     config = scale_bar if isinstance(scale_bar, _ScaleBarConfig) else _ScaleBarConfig()
 
     # Validate extent is available and reasonable
-    dimension_ranges = parts.dimension_ranges
     if not dimension_ranges:
         warnings.warn(
             "Cannot add scale bar: dimension_ranges not available",
@@ -135,14 +116,14 @@ def _add_scale_bar_if_requested(
                 stacklevel=_external_stacklevel(),
             )
         else:
-            add_scale_bar_to_axes(ax, extent_x, parts.units, config)
+            add_scale_bar_to_axes(ax, extent_x, units, config)
 
 
 # Helper functions for layout-specific rendering
 
 
 def _plot_grid_field(
-    parts: PlotComponents,
+    binning: Binning,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -154,7 +135,7 @@ def _plot_grid_field(
 ) -> Any:
     """Plot field on grid layout using pcolormesh."""
     grid, frame = require_grid_context(
-        parts.binning, "plot_field()", fix="supply rectangular cells"
+        binning, "plot_field()", fix="supply rectangular cells"
     )
 
     # Validate 2D grid
@@ -195,7 +176,7 @@ def _plot_grid_field(
 
 
 def _plot_polygon_field(
-    parts: PlotComponents,
+    binning: Binning,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -206,7 +187,7 @@ def _plot_polygon_field(
     **kwargs: Any,
 ) -> Any:
     """Render exact polygon rings with the standard missing-value colors."""
-    shapes = parts.binning.shapes
+    shapes = binning.shapes
     assert isinstance(shapes, PolygonCells)
     cmap_obj = plt.get_cmap(cmap).copy()
     cmap_obj.set_bad(nan_color or "none")
@@ -221,7 +202,7 @@ def _plot_polygon_field(
 
 
 def _plot_hex_field(
-    parts: PlotComponents,
+    binning: Binning,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -232,7 +213,7 @@ def _plot_hex_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on hexagonal layout using PatchCollection."""
-    shapes = parts.binning.shapes
+    shapes = binning.shapes
     if not isinstance(shapes, HexagonShapes):
         raise RuntimeError("Hexagonal field plotting requires hexagon cell shapes.")
 
@@ -262,7 +243,7 @@ def _plot_hex_field(
 
 
 def _plot_trimesh_field(
-    parts: PlotComponents,
+    binning: Binning,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -273,7 +254,7 @@ def _plot_trimesh_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on triangular mesh layout using tripcolor."""
-    shapes = parts.binning.shapes
+    shapes = binning.shapes
     if not isinstance(shapes, TriangleShapes):
         raise RuntimeError("Mesh field plotting requires triangular cell shapes.")
     triangles = shapes.triangles
@@ -301,22 +282,15 @@ def _plot_trimesh_field(
 
 
 def _plot_1d_field(
-    parts: PlotComponents,
+    linearization: TrackLinearization,
+    units: str | None,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     ylabel: str,
     **kwargs: Any,
 ) -> Any:
     """Plot a track field in physical display coordinates without bridging gaps."""
-    edges: tuple[NDArray[np.float64], ...] | None
-    active_mask: NDArray[np.bool_] | None
-    linearization = parts.binning.linearization
-    if isinstance(linearization, TrackLinearization):
-        edges, active_mask = linearization.grid_edges, linearization.active_mask
-    else:
-        edges, active_mask = parts.grid_edges, parts.active_mask
-    if edges is None or active_mask is None:
-        raise RuntimeError("Track field plotting requires grid_edges and active_mask.")
+    edges, active_mask = linearization.grid_edges, linearization.active_mask
     x_positions = (edges[0][:-1] + edges[0][1:]) / 2
     values = np.full(x_positions.shape, np.nan, dtype=np.float64)
     values[active_mask.ravel()] = field
@@ -327,7 +301,7 @@ def _plot_1d_field(
     (line,) = ax.plot(x_positions, values, **kwargs)
     ax.fill_between(x_positions, 0, values, alpha=0.3, color=line.get_color())
 
-    unit_label = f" ({parts.units})" if parts.units else ""
+    unit_label = f" ({units})" if units else ""
     ax.set_xlabel(f"Linearized track coordinate{unit_label}", fontsize=12)
     ax.set_ylabel(ylabel if ylabel else "Field Value", fontsize=12)
     ax.set_title("1D Field Plot", fontsize=14)
@@ -336,7 +310,8 @@ def _plot_1d_field(
 
 
 def _plot_scatter_field(
-    parts: PlotComponents,
+    binning: Binning,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -347,7 +322,7 @@ def _plot_scatter_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field using scatter plot (fallback for unknown layouts)."""
-    bin_centers = parts.binning.bins.centers
+    bin_centers = binning.bins.centers
     n_bins = len(bin_centers)
     # Filter NaN values if nan_color is None
     if nan_color is None:
@@ -366,14 +341,14 @@ def _plot_scatter_field(
     # limits and aspect ratio. A cap keeps sparse layouts readable as points.
     if "s" not in kwargs and n_bins > 1:
         ranges = (
-            np.asarray(parts.dimension_ranges, dtype=float)
-            if parts.dimension_ranges is not None
+            np.asarray(binning.dimension_ranges, dtype=float)
+            if binning.dimension_ranges is not None
             else np.column_stack((bin_centers.min(axis=0), bin_centers.max(axis=0)))
         )
         spans = ranges[:2, 1] - ranges[:2, 0]
         axes_points = np.asarray(ax.get_window_extent().size) * 72.0 / ax.figure.dpi
         points_per_unit = np.divide(axes_points, spans, out=np.ones(2), where=spans > 0)
-        if parts.coordinates.equal_aspect and np.any(spans > 0):
+        if coordinates.equal_aspect and np.any(spans > 0):
             points_per_unit[:] = np.min(points_per_unit[spans > 0])
         display_centers = (bin_centers[:, :2] - ranges[:2, 0]) * points_per_unit
         tree = cKDTree(display_centers)
@@ -416,7 +391,10 @@ def _plot_scatter_field(
 
 
 def _plot(
-    parts: PlotComponents,
+    binning: Binning,
+    connectivity: nx.Graph,
+    regions: Regions,
+    labels: PlotLabels,
     ax: matplotlib.axes.Axes | None = None,
     show_regions: bool = False,
     layout_plot_kwargs: dict[str, Any] | None = None,
@@ -429,10 +407,10 @@ def _plot(
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
 
     ax = plot_binning(
-        parts.binning,
-        parts.connectivity,
-        parts.dimension_ranges,
-        parts.layout_type,
+        binning,
+        connectivity,
+        binning.dimension_ranges,
+        labels.layout_type,
         ax=ax,
         **l_kwargs,
     )
@@ -441,24 +419,25 @@ def _plot(
 
     if show_regions:
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
-        plot_regions(parts.regions, ax=ax, **r_kwargs)
+        plot_regions(regions, ax=ax, **r_kwargs)
 
-    plot_title = parts.name
-    if parts.layout_type:
-        plot_title += f" ({parts.layout_type})"
+    plot_title = labels.name
+    if labels.layout_type:
+        plot_title += f" ({labels.layout_type})"
 
     # Only set title if layout.plot didn't set one or user didn't pass one via kwargs to layout.plot
     if ax.get_title() == "":
         ax.set_title(plot_title)
 
     # Add scale bar if requested
-    _add_scale_bar_if_requested(parts, ax, scale_bar)
+    _add_scale_bar_if_requested(binning.dimension_ranges, labels.units, ax, scale_bar)
 
     return ax
 
 
 def _plot_1d(
-    parts: PlotComponents,
+    binning: Binning,
+    layout_type: str,
     ax: matplotlib.axes.Axes | None = None,
     layout_plot_kwargs: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -466,23 +445,15 @@ def _plot_1d(
     """Draw a linearized track in its 1D coordinate, or warn for other layouts."""
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
-    if parts.is_linearized_track:
-        linearization = parts.binning.linearization
-        if isinstance(linearization, TrackLinearization):
-            ax = plot_track_linear(
-                ax=ax,
-                title=parts.layout_type,
-                linearization=linearization,
-                grid_edges=linearization.grid_edges,
-                **l_kwargs,
-            )
-        else:
-            warnings.warn(
-                f"Layout '{parts.layout_type}' is 1D but does not "
-                "have a 'plot_linear_layout' method. Skipping 1D plot.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
+    linearization = binning.linearization
+    if linearization is not None:
+        ax = plot_track_linear(
+            ax=ax,
+            title=layout_type,
+            linearization=linearization,
+            grid_edges=linearization.grid_edges,
+            **l_kwargs,
+        )
     else:
         warnings.warn(
             "Environment is not 1D. Skipping 1D plot. Use regular plot() method.",
@@ -494,7 +465,8 @@ def _plot_1d(
 
 
 def _plot_field(
-    parts: PlotComponents,
+    binning: Binning,
+    labels: PlotLabels,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes | None = None,
     cmap: str | Colormap = "viridis",
@@ -508,9 +480,9 @@ def _plot_field(
     **kwargs: Any,
 ) -> matplotlib.axes.Axes:
     """Draw a bin-valued field with the renderer that matches the cell shapes."""
-    binning = parts.binning
     n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
-    is_linearized_track = parts.is_linearized_track
+    linearization = binning.linearization
+    is_linearized_track = linearization is not None
     if field.ndim != 1 or field.shape[0] != n_bins:
         raise ValueError(
             f"field must be 1D array with length n_bins={n_bins}, "
@@ -554,32 +526,41 @@ def _plot_field(
     mappable = None
     if n_dims == 1 and not is_linearized_track:
         ax.plot(binning.bins.centers[:, 0], field, **kwargs)
-        unit_label = f" ({parts.units})" if parts.units else ""
+        unit_label = f" ({labels.units})" if labels.units else ""
         ax.set_xlabel(f"Position{unit_label}")
         ax.set_ylabel(colorbar_label or "Field Value")
     elif binning.rectilinear is not None or binning.grid_frame is not None:
         mappable = _plot_grid_field(
-            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
     elif isinstance(binning.shapes, HexagonShapes):
         mappable = _plot_hex_field(
-            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
     elif isinstance(binning.shapes, TriangleShapes):
         mappable = _plot_trimesh_field(
-            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
     elif isinstance(binning.shapes, PolygonCells):
         mappable = _plot_polygon_field(
-            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
-    elif binning.linearization is not None or is_linearized_track:
-        # Legacy saved tracks retain their previous missing-grid refusal
-        # until loading restores their full linearization data.
-        mappable = _plot_1d_field(parts, field, ax, colorbar_label, **kwargs)
+    elif linearization is not None:
+        mappable = _plot_1d_field(
+            linearization, labels.units, field, ax, colorbar_label, **kwargs
+        )
     else:
         mappable = _plot_scatter_field(
-            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            binning,
+            labels.coordinates,
+            field,
+            ax,
+            cmap,
+            vmin,
+            vmax,
+            nan_color,
+            rasterized,
+            **kwargs,
         )
 
     # Add colorbar (not for 1D)
@@ -597,19 +578,19 @@ def _plot_field(
     # angular extent is fixed by bin_centers[:, 1] but its distance
     # extent is independent and physical).
     if not is_linearized_track and n_dims != 1:
-        system = parts.coordinates
-        xlabel, ylabel = system.axis_labels(parts.units)
+        system = labels.coordinates
+        xlabel, ylabel = system.axis_labels(labels.units)
         if system.equal_aspect:
             ax.set_aspect("equal")
         ax.set_xlabel(xlabel, fontsize=12)
         ax.set_ylabel(ylabel, fontsize=12)
 
-        dimension_ranges = parts.dimension_ranges
+        dimension_ranges = binning.dimension_ranges
         if dimension_ranges and len(dimension_ranges) >= 2:
             ax.set_xlim(dimension_ranges[0])
             ax.set_ylim(dimension_ranges[1])
 
     # Add scale bar if requested
-    _add_scale_bar_if_requested(parts, ax, scale_bar)
+    _add_scale_bar_if_requested(binning.dimension_ranges, labels.units, ax, scale_bar)
 
     return ax

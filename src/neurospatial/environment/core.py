@@ -113,7 +113,7 @@ from neurospatial.environment._trajectory import (
     _transitions,
 )
 from neurospatial.environment._visualization import (
-    PlotComponents,
+    PlotLabels,
     _plot,
     _plot_1d,
     _plot_field,
@@ -4849,20 +4849,13 @@ class Environment(Generic[_C]):
             include_boundary=include_boundary,
         )
 
-    def _plot_components(self) -> PlotComponents:
-        """Owned components the plotting functions read."""
-        return PlotComponents(
-            binning=self._binning,
-            connectivity=self.connectivity,
-            dimension_ranges=self.dimension_ranges,
-            grid_edges=self.grid_edges,
-            active_mask=self.active_mask,
-            coordinates=self._coordinate_system,
-            units=self.units,
+    def _plot_labels(self) -> PlotLabels:
+        """Names the plots show, which the binning does not carry."""
+        return PlotLabels(
             name=self.name,
             layout_type=self.layout_type,
-            regions=self.regions,
-            is_linearized_track=self.is_linearized_track,
+            units=self.units,
+            coordinates=self._coordinate_system,
         )
 
     def plot(
@@ -4925,7 +4918,10 @@ class Environment(Generic[_C]):
 
         """
         return _plot(
-            self._plot_components(),
+            self._binning,
+            self.connectivity,
+            self.regions,
+            self._plot_labels(),
             ax,
             show_regions,
             layout_plot_kwargs,
@@ -4982,7 +4978,9 @@ class Environment(Generic[_C]):
         ...     ax = env.plot_1d()  # doctest: +SKIP
 
         """
-        return _plot_1d(self._plot_components(), ax, layout_plot_kwargs, **kwargs)
+        return _plot_1d(
+            self._binning, self.layout_type, ax, layout_plot_kwargs, **kwargs
+        )
 
     def plot_field(
         self,
@@ -5102,7 +5100,8 @@ class Environment(Generic[_C]):
 
         """
         return _plot_field(
-            self._plot_components(),
+            self._binning,
+            self._plot_labels(),
             field,
             ax=ax,
             cmap=cmap,
