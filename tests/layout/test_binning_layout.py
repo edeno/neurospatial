@@ -7,7 +7,7 @@ from dataclasses import replace
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.geometry._binning import (
@@ -27,12 +27,12 @@ def _facade(env, *, binning=None, connectivity=None):
     source = env._binning if binning is None else binning
     if not isinstance(source.faces, (KnownFaces, MissingFaces)):
         source = replace(source, faces=KnownFaces(source.faces.build()))
-    return Environment._from_binning(
+    return publish_binning(
         source,
         connectivity=env.connectivity if connectivity is None else connectivity,
         dimension_ranges=env.dimension_ranges,
-        layout_type_tag=source.kind,
-        layout_type=env._layout_category,
+        layout_type=source.kind,
+        category=env._provenance.category,
         build_params=env.layout_parameters,
         is_linearized_track=env.is_linearized_track,
         coordinate_kind="polar" if env._is_polar else "cartesian",
@@ -45,7 +45,7 @@ def test_facade_exposes_the_decoded_snapshot(built_environment):
     binning = facade._binning
     assert binning is facade._binning
     assert facade._binning is binning
-    assert facade._layout_category == env._layout_category
+    assert facade._provenance.category == env._provenance.category
     np.testing.assert_array_equal(facade.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(facade.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(
@@ -359,12 +359,12 @@ def test_facade_rejects_symmetric_cell_widening_without_measure_change():
         faces=KnownFaces(env._face_geometry),
     )
     with pytest.raises(ValueError, match=r"sizes|volumes|measures|area"):
-        Environment._from_binning(
+        publish_binning(
             binning,
             connectivity=env.connectivity,
             dimension_ranges=env.dimension_ranges,
-            layout_type_tag=original.kind,
-            layout_type=env._layout_category,
+            layout_type=original.kind,
+            category=env._provenance.category,
             build_params=env.layout_parameters,
             is_linearized_track=False,
         )
@@ -413,12 +413,12 @@ def test_facade_validates_genuinely_nonuniform_cartesian_cells(corrupt):
     graph.add_edge(0, 1, distance=1.5, edge_id=0, vector=(1.5, 0.0), angle_2d=0.0)
 
     def construct():
-        return Environment._from_binning(
+        return publish_binning(
             binning,
             connectivity=graph,
             dimension_ranges=[(0.0, 3.0), (0.0, 1.0)],
-            layout_type_tag="MaskedGrid",
-            layout_type="mask",
+            layout_type="MaskedGrid",
+            category="mask",
             build_params={},
             is_linearized_track=False,
         )

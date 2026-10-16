@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.geometry._diffusion import (
@@ -307,12 +307,12 @@ def test_publication_rejects_graph_nodes_without_bins():
     graph = env.connectivity.copy()
     graph.add_node(4, pos=(10.0, 10.0))
     with pytest.raises(ValueError, match=r"nodes|bins"):
-        Environment._from_binning(
+        publish_binning(
             env._binning,
             connectivity=graph,
             dimension_ranges=env.dimension_ranges,
-            layout_type_tag=env.layout_type,
-            layout_type=env._layout_category,
+            layout_type=env.layout_type,
+            category=env._provenance.category,
             build_params={},
             is_linearized_track=False,
         )

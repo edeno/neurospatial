@@ -9,7 +9,7 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 from matplotlib.patches import RegularPolygon
 
 from neurospatial import Environment
@@ -18,12 +18,12 @@ from neurospatial.ops.transforms import Affine2D
 
 
 def _owned_layout(parent, tag):
-    return Environment._from_binning(
+    return publish_binning(
         parent._binning,
         connectivity=parent.connectivity,
         dimension_ranges=parent.dimension_ranges,
-        layout_type_tag=tag,
-        layout_type=parent._layout_category,
+        layout_type=tag,
+        category=parent._provenance.category,
         build_params={},
         is_linearized_track=parent.is_linearized_track,
     )

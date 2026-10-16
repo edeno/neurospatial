@@ -1194,7 +1194,7 @@ class TestEnvironmentRoundTrip:
         )
 
         # Layout type should be stored (though layout can't be fully restored)
-        assert loaded_env._layout_type_used == "Hexagonal"
+        assert loaded_env.layout_type == "Hexagonal"
 
     def test_roundtrip_polygon_boundary_environment(self, tmp_path):
         """Test polygon-bounded environment round-trip."""
@@ -1296,7 +1296,7 @@ class TestEnvironmentRoundTrip:
         assert loaded_env.n_dims == env.n_dims
 
         # Layout type should be stored
-        assert loaded_env._layout_type_used == "Graph"
+        assert loaded_env.layout_type == "Graph"
 
     def test_roundtrip_masked_grid_layout(self, tmp_path):
         """Test MaskedGrid layout environment round-trip."""
@@ -1338,7 +1338,7 @@ class TestEnvironmentRoundTrip:
         )
 
         # Layout type should be stored
-        assert loaded_env._layout_type_used == "MaskedGrid"
+        assert loaded_env.layout_type == "MaskedGrid"
 
     def test_roundtrip_image_mask_layout(self, tmp_path):
         """Test ImageMask layout environment round-trip."""
@@ -1378,7 +1378,7 @@ class TestEnvironmentRoundTrip:
         )
 
         # Layout type should be stored
-        assert loaded_env._layout_type_used == "ImageMask"
+        assert loaded_env.layout_type == "ImageMask"
 
     def test_roundtrip_triangular_mesh_layout(self, tmp_path):
         """Test TriangularMesh layout environment round-trip."""
@@ -1419,7 +1419,7 @@ class TestEnvironmentRoundTrip:
         )
 
         # Layout type should be stored
-        assert loaded_env._layout_type_used == "TriangularMesh"
+        assert loaded_env.layout_type == "TriangularMesh"
 
 
 # =============================================================================
@@ -1871,11 +1871,8 @@ class TestAllLayoutsRoundTrip:
             loaded_env = read_environment(nwbfile)
 
         # Layout type should be stored (though exact type depends on factory)
-        assert hasattr(loaded_env, "_layout_type_used"), (
-            f"Missing _layout_type_used for {layout_name}"
-        )
-        assert loaded_env._layout_type_used is not None, (
-            f"_layout_type_used is None for {layout_name}"
+        assert loaded_env.layout_type == env.layout_type, (
+            f"layout_type differs for {layout_name}"
         )
 
     @pytest.mark.parametrize("layout_name,env_factory", ALL_LAYOUT_FACTORIES)

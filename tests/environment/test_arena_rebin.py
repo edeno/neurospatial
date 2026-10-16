@@ -249,15 +249,9 @@ def test_sparse_rebin_result_remains_in_the_regular_grid_family():
 @pytest.mark.parametrize("holes", [False, True])
 def test_rebin_publishes_only_the_final_environment(monkeypatch, holes):
     parent = _regular(holes=holes)
-    setup = Environment._from_binning.__func__
-    published = []
+    from environment_helpers import record_publications
 
-    def counted(cls, binning, **kwargs):
-        instance = setup(cls, binning, **kwargs)
-        published.append(instance)
-        return instance
-
-    monkeypatch.setattr(Environment, "_from_binning", classmethod(counted))
+    published = record_publications(monkeypatch)
     child = parent.rebin(2)
     assert published == [child]
     assert child._geometry is not parent._geometry

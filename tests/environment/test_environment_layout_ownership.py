@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import publish_binning, publish_environment
 from shapely.geometry import box
 
-from neurospatial import Environment
 from neurospatial.arena import MaskArena, OpenArena
 from neurospatial.geometry._arena import _TransformedArena
 from neurospatial.geometry._coordinates import EgocentricPolarSystem
@@ -49,7 +49,7 @@ def test_publication_detaches_source_geometry_and_metadata(restore):
     source.connectivity.graph["nested"] = {"values": np.array([1.0, 2.0])}
     source._build_params_used["nested"] = {"values": np.array([4.0])}
     expected = source.bin_centers.copy()
-    env = restore(Environment._from_built_layout(source))
+    env = restore(publish_environment(layout=source))
     source.bin_centers[:] = -99
     source.grid_edges[0][:] = -99
     source.active_mask[:] = False
@@ -84,7 +84,7 @@ def test_publication_detaches_source_geometry_and_metadata(restore):
     ],
 )
 def test_geometry_views_refuse_rebinding(attribute):
-    env = Environment._from_built_layout(_grid())
+    env = publish_environment(layout=_grid())
     with pytest.raises(AttributeError, match="read-only"):
         setattr(env, attribute, None)
     with pytest.raises(AttributeError, match="read-only"):
@@ -114,7 +114,7 @@ def test_face_building_stays_lazy_without_native_builder(monkeypatch):
         return original(recipe)
 
     monkeypatch.setattr(NativeFaces, "build", record)
-    env = Environment._from_built_layout(source)
+    env = publish_environment(layout=source)
     assert not calls
     monkeypatch.setattr(
         RegularGridLayout,
@@ -135,12 +135,10 @@ def test_polar_provenance_cannot_change_published_faces():
         circular_angle=True,
         connect_diagonal_neighbors=False,
     )
-    env = Environment._from_built_layout(
-        source, _coordinates=EgocentricPolarSystem(True)
-    )
+    env = publish_environment(layout=source, _coordinates=EgocentricPolarSystem(True))
     expected = env._binning.faces.build().A.copy()
     source._build_params_used["circular_angle"] = False
-    env._layout_params_used["circular_angle"] = False
+    env._provenance.build_params["circular_angle"] = False
     np.testing.assert_array_equal(env._binning.faces.build().A, expected)
 
 
@@ -158,9 +156,7 @@ def test_polar_faces_come_from_the_layout_not_its_parameters():
         connect_diagonal_neighbors=False,
     )
     source._build_params_used["circular_angle"] = False
-    env = Environment._from_built_layout(
-        source, _coordinates=EgocentricPolarSystem(True)
-    )
+    env = publish_environment(layout=source, _coordinates=EgocentricPolarSystem(True))
     faces = env._binning.faces.build()
     radius = env.bin_centers[env._binning.bins.pairs, 0]
     same_ring = radius[:, 0] == radius[:, 1]
@@ -185,7 +181,7 @@ def test_track_faces_come_from_the_layout_not_its_parameters():
         )
         return layout
 
-    reference = Environment._from_built_layout(build())
+    reference = publish_environment(layout=build())
     expected = reference._binning.faces.build()
     source = build()
     moved = nx.Graph()
@@ -194,7 +190,7 @@ def test_track_faces_come_from_the_layout_not_its_parameters():
     moved.add_node(2, pos=(6.0, 6.0))
     moved.add_edges_from([(0, 1), (1, 2)], distance=6.0)
     source._build_params_used["graph_definition"] = moved
-    actual = Environment._from_built_layout(source)._binning.faces.build()
+    actual = publish_environment(layout=source)._binning.faces.build()
     for first, second in zip(actual, expected, strict=True):
         np.testing.assert_array_equal(first, second)
     # The bend joins the last bin of one segment to the first of the next:
@@ -214,7 +210,7 @@ def test_custom_engine_publishes_through_its_binning_without_being_copied():
     source.build(
         bin_size=1.0, dimension_ranges=[(0.0, 3.0), (0.0, 2.0)], infer_active_bins=False
     )
-    env = Environment._from_built_layout(source)
+    env = publish_environment(layout=source)
     np.testing.assert_array_equal(env.bin_centers, source.bin_centers)
     np.testing.assert_array_equal(env.bin_sizes, np.ones(6))
     np.testing.assert_array_equal(
@@ -232,7 +228,7 @@ def test_layout_without_binning_is_refused_before_copying():
             pytest.fail("opaque provider copied")
 
     with pytest.raises(TypeError, match=r"snapshot adapter.*binning\(\) method"):
-        Environment._from_built_layout(Opaque())
+        publish_environment(layout=Opaque())
 
 
 @pytest.mark.parametrize(
@@ -265,12 +261,12 @@ def test_wrapped_opaque_locator_requires_snapshot_migration(wrapper):
         locator = TransformedLocator(locator, np.eye(3))
     binning = replace(source.binning(), locator=locator)
     with pytest.raises(TypeError, match="snapshot"):
-        Environment._from_binning(
+        publish_binning(
             binning,
             connectivity=source.connectivity,
             dimension_ranges=source.dimension_ranges,
-            layout_type_tag="RegularGrid",
-            layout_type="grid",
+            layout_type="RegularGrid",
+            category="grid",
             build_params={},
             is_linearized_track=False,
         )

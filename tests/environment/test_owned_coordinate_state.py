@@ -33,11 +33,11 @@ def test_polar_coordinate_state_is_owned(n_angle, circular, restore):
     assert isinstance(expected, EgocentricPolarSystem)
     # One angular bin preserves the option; three+ use the actual graph seams.
     assert expected.circular == circular
-    env._layout_params_used["circular_angle"] = not circular
+    env._provenance.build_params["circular_angle"] = not circular
     assert env._coordinate_system is expected
     assert env._angular_is_circular == circular
     # Serialization writes normalized circularity rather than edited provenance.
-    env._layout_params_used["circular_angle"] = circular
+    env._provenance.build_params["circular_angle"] = circular
     restored = restore(env)
     assert restored._coordinate_system == expected
     np.testing.assert_array_equal(restored.compute_kernel(0.8), env.compute_kernel(0.8))

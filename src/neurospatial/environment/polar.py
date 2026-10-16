@@ -43,6 +43,7 @@ def _create_polar_environment(
     frame: str | None = None,
 ) -> Environment[EgocentricPolarSystem]:
     """Build owned annular sectors with physical polar distances and measures."""
+    from neurospatial.environment._publication import declared_metadata, publish_layout
     from neurospatial.environment.core import Environment
 
     if distance_bin_size <= 0:
@@ -83,11 +84,10 @@ def _create_polar_environment(
     }
     layout = _PolarGridLayout()
     layout.build(**params)
-    return Environment._from_built_layout(
+    return publish_layout(
+        Environment,
         cast("LayoutEngine", layout),
-        name=name,
-        layout_params_used=params,
-        units=units,
-        frame=frame,
-        _coordinates=EgocentricPolarSystem(circular_angle),
+        metadata=declared_metadata(Environment, name=name, units=units, frame=frame),
+        build_params=params,
+        coordinates=EgocentricPolarSystem(circular_angle),
     )

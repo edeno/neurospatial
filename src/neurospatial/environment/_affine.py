@@ -101,15 +101,20 @@ def _apply_transform_to_environment(
     tag = f"{env.layout_type}_transformed"
     params = {**env.layout_parameters, "transformed": True}
     new_name = name if name is not None else f"{env.name}_transformed"
-    new_env = Environment._from_binning(
+    from neurospatial.environment._publication import (
+        _Provenance,
+        declared_metadata,
+        publish,
+    )
+
+    new_env = publish(
+        Environment,
         binning,
         connectivity=new_graph,
         dimension_ranges=transformed_dim_ranges,
-        layout_type_tag=tag,
-        layout_type=env._layout_category,
-        build_params=params,
+        provenance=_Provenance(tag, env._provenance.category, params),
+        metadata=declared_metadata(Environment, name=new_name),
         is_linearized_track=env.is_linearized_track,
-        name=new_name,
         arena=env.arena.transformed(transform.A),
         clip_mapping=env.clip_mapping,
     )

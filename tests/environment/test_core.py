@@ -379,7 +379,7 @@ class TestEnvironmentSerialization:
         loaded_env = Environment.from_file(str(base))
         assert isinstance(loaded_env, Environment)
         assert loaded_env.name == env.name
-        assert loaded_env._layout_type_used == env._layout_type_used
+        assert loaded_env.layout_type == env.layout_type
         assert loaded_env.is_linearized_track == env.is_linearized_track
         assert loaded_env.n_dims == env.n_dims
         assert np.array_equal(loaded_env.bin_centers, env.bin_centers)

@@ -8,7 +8,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.ops.calculus import divergence, gradient
@@ -97,12 +97,12 @@ def attributed_env(env):
         "nested": {"name": "original"},
         "samples": np.array([1.0, 2.0]),
     }
-    layout = Environment._from_binning(
+    layout = publish_binning(
         env._binning,
         connectivity=graph,
         dimension_ranges=env.dimension_ranges,
-        layout_type_tag="RegularGrid",
-        layout_type="grid",
+        layout_type="RegularGrid",
+        category="grid",
         build_params={},
         is_linearized_track=False,
     )

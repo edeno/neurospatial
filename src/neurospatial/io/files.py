@@ -463,7 +463,7 @@ def _environment_payload(
         "n_bins": env.n_bins,
         "is_linearized_track": env.is_linearized_track,
         "layout_type": env.layout_type,
-        "layout_category": env._layout_category,
+        "layout_category": env._provenance.category,
         "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
         "binning": binning_meta,
         "arena": arena_meta,
@@ -557,6 +557,11 @@ def _restore_environment(
 ) -> Environment:
     """Decode authoritative binning and Arena data without a layout builder."""
     from neurospatial.environment import Environment
+    from neurospatial.environment._publication import (
+        _Provenance,
+        declared_metadata,
+        publish,
+    )
     from neurospatial.geometry._arena import Arena, UnknownArena, decode_arena
     from neurospatial.geometry._binning import Binning, TrackLinearization
     from neurospatial.geometry._codecs import decode, graph_from_node_link
@@ -644,21 +649,25 @@ def _restore_environment(
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
-        env = Environment._from_binning(
+        env = publish(
+            Environment,
             binning,
             connectivity=graph,
             dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
-            layout_type_tag=metadata["layout_type"],
-            layout_type=metadata["layout_category"],
-            build_params=params,
+            provenance=_Provenance(
+                metadata["layout_type"], metadata["layout_category"], params
+            ),
+            metadata=declared_metadata(
+                Environment,
+                name=metadata["name"],
+                units=metadata.get("units"),
+                frame=metadata.get("frame"),
+            ),
             is_linearized_track=metadata["is_linearized_track"],
-            name=metadata["name"],
             coordinate_kind=coordinate_kind,
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
             restored_from=source,
             arena=arena,
-            units=metadata.get("units"),
-            frame=metadata.get("frame"),
         )
         return env
     except (

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 from scipy import linalg
 from shapely.geometry import Polygon
 
@@ -40,12 +40,12 @@ def _face_environment(scale=1.0):
         layout.bin_centers, volumes, 1, faces.edges, np.ones(2)
     )
     binning = Binning("Faces", bins, NearestBinLocator(bins.centers), KnownFaces(faces))
-    owned = Environment._from_binning(
+    owned = publish_binning(
         binning,
         connectivity=graph,
         dimension_ranges=layout.dimension_ranges,
-        layout_type_tag="Faces",
-        layout_type="Graph",
+        layout_type="Faces",
+        category="Graph",
         build_params={},
         is_linearized_track=False,
     )
@@ -295,17 +295,17 @@ def test_missing_optional_descriptions_keep_authoritative_binning_geometry():
 @pytest.mark.parametrize("how", ["dict", "file", "nwb"])
 def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
     """Readers decode geometry and set the environment up exactly once."""
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import _publication
 
     original = _four_connected_grid()
-    setup = Environment._from_binning.__func__
+    setup = _publication.publish
     calls = []
 
     def counting_setup(cls, binning, **kwargs):
         calls.append(kwargs.get("restored_from"))
         return setup(cls, binning, **kwargs)
 
-    monkeypatch.setattr(Environment, "_from_binning", classmethod(counting_setup))
+    monkeypatch.setattr(_publication, "publish", counting_setup)
     from neurospatial.geometry import _validation
 
     with (

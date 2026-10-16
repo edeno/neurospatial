@@ -210,17 +210,22 @@ def _subset(
             low, high = float(axis.min()), float(axis.max())
             margin = 0.05 * (high - low) if shapes is not None else 0.0
             ranges.append((low - margin, high + margin))
+    from neurospatial.environment._publication import (
+        _Provenance,
+        declared_metadata,
+        publish,
+    )
+
     env_cls = cast("type[Environment]", type(env))
-    result = env_cls._from_binning(
+    return publish(
+        env_cls,
         binning,
         connectivity=graph,
         dimension_ranges=ranges,
-        layout_type_tag=tag,
-        layout_type="mask" if binning.rectilinear is not None else "subset",
-        build_params=params,
+        provenance=_Provenance(
+            tag, "mask" if binning.rectilinear is not None else "subset", params
+        ),
+        metadata=declared_metadata(env_cls, units=env.units, frame=env.frame),
         is_linearized_track=env.is_linearized_track,
         arena=env.arena,
-        units=env.units,
-        frame=env.frame,
     )
-    return result

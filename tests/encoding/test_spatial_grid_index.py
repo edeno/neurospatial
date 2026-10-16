@@ -1,7 +1,7 @@
 """Place-field components follow retained graph edges across grid contexts."""
 
 import numpy as np
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.encoding.spatial import _extract_connected_component_graph
@@ -28,12 +28,12 @@ def test_legacy_grid_segmentation_follows_graph_despite_provenance():
         connect_diagonal_neighbors=True,
     )
     bins = replace(original._binning, grid_spec=None)
-    legacy = Environment._from_binning(
+    legacy = publish_binning(
         bins,
         connectivity=original.connectivity,
         dimension_ranges=original.dimension_ranges,
-        layout_type_tag="MaskedGrid",
-        layout_type="grid",
+        layout_type="MaskedGrid",
+        category="grid",
         build_params={"connect_diagonal_neighbors": True},
         is_linearized_track=False,
     )

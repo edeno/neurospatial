@@ -180,8 +180,9 @@ owns the binning, coordinate descriptor, arena and grid context; its public
 array views reject writes and its graph rejects topology and attribute edits.
 `env.connectivity.copy()` supplies an independent editable graph.
 
-`Environment._from_binning` validates and publishes owned data atomically and
-starts fresh caches. Readers decode binning and graph records directly through
+`environment/_publication.py:publish` validates and publishes owned data
+atomically and starts fresh caches. Every factory, derivation and reader calls
+it exactly once per returned environment; `Environment` itself only allocates. Readers decode binning and graph records directly through
 this path, without replaying build parameters. Readers validate the storage
 format; publication runs the shared geometry checks once.
 `geometry/_validation.py` checks positions, ordered faces and distances, measures,
@@ -354,7 +355,7 @@ Both rebin modes live in `environment/_rebin.py`; selection of existing bins
 lives in `environment/_subset.py`. Rebin construction policies remain distinct:
 factor mode retains native lazy faces and its recorded grid parameters, while
 resolution mode prepares faces for the retained affine frame. Both use the
-same atomic `Environment._from_binning` publisher for owned data, walls and
+same atomic `publish` function for owned data, walls and
 fresh analysis caches.
 `rebin(bin_size=...)` uses an owned `GridBinningSpec`, independently of descriptive
 provenance. It re-bins the retained known arena, preserving the grid anchor and

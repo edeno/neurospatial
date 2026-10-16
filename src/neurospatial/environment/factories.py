@@ -209,6 +209,11 @@ def _from_bins(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_bins using explicit construction inputs."""
+    from neurospatial.environment._publication import (
+        _Provenance,
+        declared_metadata,
+        publish,
+    )
     from neurospatial.geometry._explicit import prepare_bins
 
     snapshot, graph, ranges, category = prepare_bins(binning)
@@ -216,17 +221,14 @@ def _from_bins(
         from neurospatial.geometry._arena import OpenArena
 
         arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
-    result = cls._from_binning(
+    result = publish(
+        cls,
         snapshot,
         connectivity=graph,
         dimension_ranges=ranges,
-        layout_type_tag=snapshot.kind,
-        layout_type=category,
-        build_params={},
+        provenance=_Provenance(snapshot.kind, category, {}),
+        metadata=declared_metadata(cls, name=name, units=units, frame=frame),
         is_linearized_track=snapshot.linearization is not None,
-        name=name,
-        units=units,
-        frame=frame,
         regions=regions,
         arena=arena,
     )
@@ -713,20 +715,26 @@ def _from_layout(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_layout using explicit construction inputs."""
+    from neurospatial.environment._publication import (
+        declared_metadata,
+        publish,
+        publish_layout,
+    )
+
     layout_params = _owned_copy(layout_params)
     if arena is not None:
         from neurospatial.geometry._ownership import own_arena
 
         arena = own_arena(arena)
     layout_instance = cls._create_layout(kind, layout_params)
-    env = cls._from_built_layout(
+    metadata = declared_metadata(cls, name=name, units=units, frame=frame)
+    env = publish_layout(
+        cls,
         layout_instance,
-        name=name,
-        layout_type_used=kind,
-        layout_params_used=layout_params,
+        metadata=metadata,
+        layout_type=kind,
+        build_params=layout_params,
         regions=regions,
-        units=units,
-        frame=frame,
     )
     if arena is not None and arena.domain_known and not env._is_polar:
         keep = arena.contains(env.bin_centers)
@@ -743,23 +751,20 @@ def _from_layout(
         from neurospatial.geometry._context import GridIndex
 
         assert env.active_mask is not None
-        env = cls._from_binning(
+        env = publish(
+            cls,
             env._binning,
             connectivity=env.connectivity,
             dimension_ranges=env.dimension_ranges,
-            layout_type_tag=env.layout_type,
-            layout_type=env._layout_category,
-            build_params=env.layout_parameters,
+            provenance=env._provenance,
+            metadata=metadata,
             is_linearized_track=env.is_linearized_track,
-            name=name,
             regions=regions,
             arena=arena,
-            _grid_index=GridIndex(
+            grid_index=GridIndex(
                 env.grid_edges or (), env.grid_shape or (env.n_bins,), env.active_mask
             ),
-            _check_center_lookup=False,
-            units=units,
-            frame=frame,
+            check_center_lookup=False,
         )
     return env
 

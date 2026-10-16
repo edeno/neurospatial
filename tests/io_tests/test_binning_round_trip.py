@@ -11,7 +11,7 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment, Regions
 from neurospatial.geometry._binning import KnownFaces, MissingFaces
@@ -209,7 +209,7 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
             assert "binning/bins/centers" in arrays
             assert "binning/faces/volumes" in arrays
     assert payload["schema_version"] == "Environment-v3"
-    assert payload["layout_category"] == simple_saved_grid._layout_category
+    assert payload["layout_category"] == simple_saved_grid._provenance.category
     assert payload["binning"]["codec_version"] == 3
 
 
@@ -310,12 +310,12 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
         "edge_spacing": 0.0,
         "bin_size": 1.0,
     }
-    facade = Environment._from_binning(
+    facade = publish_binning(
         binning,
         connectivity=native.connectivity,
         dimension_ranges=native.dimension_ranges,
-        layout_type_tag="Graph",
-        layout_type=native._layout_category,
+        layout_type="Graph",
+        category=native._provenance.category,
         build_params=parameters,
         is_linearized_track=True,
     )

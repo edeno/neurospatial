@@ -284,7 +284,7 @@ def validate_connectivity_graph(
 
     See Also
     --------
-    neurospatial.environment.Environment._from_binning : Calls this validator
+    neurospatial.environment._publication.publish : Calls this validator
     """
     # Validate graph type
     if not isinstance(graph, nx.Graph):
@@ -499,7 +499,7 @@ def validate_environment(env: Environment, *, strict: bool = True) -> None:
     See Also
     --------
     validate_connectivity_graph : Lower-level graph validation
-    Environment._from_binning : Calls validation during creation
+    neurospatial.environment._publication.publish : Calls validation during creation
 
     Notes
     -----

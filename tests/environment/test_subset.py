@@ -548,7 +548,7 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[[0, 5, 10]] = True
         env_sub = env.subset(bins=mask)
-        assert env_sub._layout_type_used == "MaskedGrid"
+        assert env_sub.layout_type == "MaskedGrid"
 
 
 class TestSubsetKeepsParentConnectivity:

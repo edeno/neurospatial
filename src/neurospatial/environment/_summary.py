@@ -80,7 +80,7 @@ def _repr(env: SummaryConsumer) -> str:
 
     n_bins = env.bin_centers.shape[0] if hasattr(env, "bin_centers") else 0
 
-    layout_type = env._layout_type_used or "Unknown"
+    layout_type = env.layout_type
     if layout_type.endswith("Layout"):
         layout_type = layout_type[:-6]  # Remove 'Layout' suffix
 
@@ -103,7 +103,7 @@ def _repr_html(env: SummaryConsumer) -> str:
     rows = []
     rows.append(_html_table_header(f"Environment: {name}"))
 
-    rows.append(_html_table_row("Layout Type", env._layout_type_used or "Unknown"))
+    rows.append(_html_table_row("Layout Type", env.layout_type))
 
     # Dimensions and bins
     try:

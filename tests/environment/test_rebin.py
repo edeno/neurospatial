@@ -271,7 +271,7 @@ class TestRebinBasic:
 
         coarse = env.rebin(factor=2)
 
-        assert coarse._layout_type_used == "RegularGrid"
+        assert coarse.layout_type == "RegularGrid"
         assert coarse._geometry is not env._geometry
         assert coarse._kernel_cache == {}
         assert coarse._kdtree_cache is None

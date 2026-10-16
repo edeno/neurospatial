@@ -6,7 +6,16 @@ import copy as copy_module
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    NoReturn,
+    TypeVar,
+    cast,
+    overload,
+)
 
 import networkx as nx
 import numpy as np
@@ -14,13 +23,20 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._coordinates import (
+    CartesianSystem,
+    EgocentricPolarSystem,
+    polar_circularity,
+)
+from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.arena import Arena
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry._context import GridIndex
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.geometry._polygon import ClipMapping
+    from neurospatial.layout.base import LayoutEngine
 
 _T = TypeVar("_T")
 
@@ -254,7 +270,7 @@ def _freeze_graph_attributes(graph: nx.Graph) -> None:
 class _PublishedGeometry:
     """The geometry an environment publishes, replaced whole and never edited.
 
-    ``_from_binning`` publishes owned arrays and a frozen graph atomically.
+    ``publish`` builds owned arrays and a frozen graph atomically.
     Each new value owns fresh versioned analysis caches.
     """
 
@@ -330,4 +346,270 @@ def _freeze_geometry_arrays(geometry: _PublishedGeometry) -> _PublishedGeometry:
             if geometry.grid_edges is not None
             else None
         ),
+    )
+
+
+@dataclass(frozen=True)
+class _Provenance:
+    """How the bins were built: a layout label, a category and build choices.
+
+    Provenance is descriptive. Geometry and behavior come from the owned
+    ``Binning``, graph and arena, never from these labels.
+    """
+
+    layout_type: str
+    category: str
+    build_params: dict[str, Any]
+
+
+def declared_metadata(
+    cls: type[Environment[Any]],
+    *,
+    name: str = "",
+    units: str | None = None,
+    frame: str | None = None,
+) -> _Metadata:
+    """Return a metadata record for labels a caller declares at construction.
+
+    Unrecognized units warn here, once per declaration; derived environments
+    reuse their parent's record and do not warn again.
+    """
+    cls._validate_units(units)
+    return _Metadata(name, units, frame)
+
+
+_EnvironmentT = TypeVar("_EnvironmentT", bound="Environment[Any]")
+
+
+def publish(
+    cls: type[_EnvironmentT],
+    binning: Binning,
+    *,
+    connectivity: nx.Graph,
+    dimension_ranges: Sequence[tuple[float, float]] | None,
+    provenance: _Provenance,
+    metadata: _Metadata,
+    is_linearized_track: bool,
+    coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+    clip_mapping: ClipMapping | None = None,
+    restored_from: str | None = None,
+    grid_index: GridIndex | None = None,
+    check_center_lookup: bool = True,
+) -> _EnvironmentT:
+    """Validate owned geometry and publish it as one new environment.
+
+    Every factory, derivation and reader creates its environment here, once.
+    The connectivity graph and the binning are owned and validated, the
+    arena's physical walls are applied, and the graph is frozen. The caller's
+    ``connectivity`` graph is never modified.
+
+    Parameters
+    ----------
+    cls : type
+        Environment class to allocate.
+    binning : Binning
+        Bins, lookup and geometry components, in connectivity node order.
+    connectivity : networkx.Graph
+        Navigation graph over bin IDs ``0..n_bins-1``.
+    dimension_ranges : sequence of (float, float) or None
+        Bounding range per coordinate axis.
+    provenance : _Provenance
+        Layout label, category and build choices.
+    metadata : _Metadata
+        Name, units and frame.
+    is_linearized_track : bool
+        Whether ``binning`` must carry a track linearization.
+    coordinate_kind : {"cartesian", "polar"}, default="cartesian"
+        Meaning of the bin coordinates.
+    regions : Regions or None, optional
+        Named regions to snapshot.
+    arena : Arena or None, optional
+        Continuous domain. Omission infers one from the binning.
+    clip_mapping : ClipMapping or None, optional
+        Source-bin mapping of a clip.
+    restored_from : str or None, optional
+        Source of a read-back record, named in graph errors.
+    grid_index : GridIndex or None, optional
+        Precomputed grid lookup context; computed from ``binning`` if omitted.
+    check_center_lookup : bool, default=True
+        Whether to verify that every bin center locates its own bin.
+
+    Returns
+    -------
+    Environment
+        A new instance of ``cls``.
+    """
+    from neurospatial._logging import log_environment_created
+    from neurospatial.arena import EgocentricSurround
+    from neurospatial.environment._arena import (
+        apply_walls,
+        infer_arena,
+        validate_arena,
+    )
+    from neurospatial.geometry._context import grid_index as compute_grid_index
+    from neurospatial.geometry._ownership import own_arena, own_binning
+    from neurospatial.geometry._validation import (
+        _validate_clip_mapping,
+        _validate_components,
+        _validate_graph,
+    )
+    from neurospatial.layout.validation import (
+        GraphValidationError,
+        validate_connectivity_graph,
+    )
+
+    if coordinate_kind not in ("cartesian", "polar"):
+        raise ValueError("coordinate_kind must be 'cartesian' or 'polar'.")
+    binning = own_binning(binning)
+    graph = copy_module.deepcopy(connectivity)
+    _validate_graph(binning, graph)
+    _validate_components(
+        binning,
+        is_linearized_track,
+        coordinate_kind,
+        check_center_lookup=check_center_lookup,
+    )
+    if clip_mapping is not None:
+        binning = replace(binning, clip_mapping=copy_module.deepcopy(clip_mapping))
+        _validate_clip_mapping(binning)
+    polar = coordinate_kind == "polar"
+    index = grid_index if grid_index is not None else compute_grid_index(binning)
+    coordinates = (
+        EgocentricPolarSystem(
+            arena.circular
+            if isinstance(arena, EgocentricSurround)
+            else polar_circularity(index.shape, graph, provenance.build_params)
+        )
+        if polar
+        else CartesianSystem()
+    )
+    if arena is None:
+        arena = infer_arena(
+            binning,
+            polar=polar,
+            circular=isinstance(coordinates, EgocentricPolarSystem)
+            and coordinates.circular,
+        )
+    arena = own_arena(arena)
+    validate_arena(arena, binning, polar=polar)
+    binning, graph = apply_walls(binning, graph, arena)
+    try:
+        validate_connectivity_graph(
+            graph,
+            n_dims=binning.bins.n_dims,
+            check_node_attrs=True,
+            check_edge_attrs=True,
+        )
+    except GraphValidationError as error:
+        if restored_from is not None:
+            defect = str(error).split("This is a layout engine bug")[0].strip()
+            raise ValueError(
+                _format_error(
+                    f"The connectivity graph in {restored_from} is invalid: {defect}",
+                    why="Why: a read-back environment uses its stored graph, whose nodes and edges must carry the attributes neurospatial writes.",
+                    fix="re-save the environment from a factory-built Environment with to_file, to_dict or write_environment",
+                )
+            ) from error
+        raise ValueError(
+            f"Invalid connectivity graph from layout engine '{provenance.layout_type}': {error}"
+        ) from error
+    _freeze_graph_attributes(graph)
+    env = cls.__new__(cls)
+    env._metadata = metadata
+    env._provenance = replace(
+        provenance, build_params=copy_module.deepcopy(provenance.build_params)
+    )
+    env._is_linearized_track_env = is_linearized_track
+    env._geometry = _freeze_geometry_arrays(
+        _PublishedGeometry(
+            binning=binning,
+            bin_centers=binning.bins.centers,
+            connectivity=graph,
+            dimension_ranges=None
+            if dimension_ranges is None
+            else tuple((float(low), float(high)) for low, high in dimension_ranges),
+            grid_edges=index.edges,
+            grid_shape=index.shape,
+            active_mask=index.active_mask,
+            arena=arena,
+            clip_mapping=binning.clip_mapping,
+            coordinates=coordinates,
+        )
+    )
+    env._regions = env._validate_regions(Regions() if regions is None else regions)
+    env._reset_analysis_caches()
+    log_environment_created(
+        env_type=provenance.layout_type,
+        n_bins=env.n_bins,
+        n_dims=env.n_dims,
+        env_name=metadata.name,
+    )
+    return env
+
+
+def publish_layout(
+    cls: type[_EnvironmentT],
+    layout: LayoutEngine,
+    *,
+    metadata: _Metadata,
+    layout_type: str | None = None,
+    build_params: Mapping[str, Any] | None = None,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+    coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
+) -> _EnvironmentT:
+    """Consume a built layout once and publish only its owned data.
+
+    Parameters
+    ----------
+    cls : type
+        Environment class to allocate.
+    layout : LayoutEngine
+        Built layout engine; it is read, never modified.
+    metadata : _Metadata
+        Name, units and frame.
+    layout_type : str or None, optional
+        Layout label; defaults to the binning kind.
+    build_params : mapping or None, optional
+        Build choices to record; defaults to the layout's own record.
+    regions : Regions or None, optional
+        Named regions to snapshot.
+    arena : Arena or None, optional
+        Continuous domain. Omission infers one from the binning.
+    coordinates : CartesianSystem or EgocentricPolarSystem or None, optional
+        Coordinate meaning; ``None`` means Cartesian.
+
+    Returns
+    -------
+    Environment
+        A new instance of ``cls``.
+    """
+    from neurospatial.layout._construction import built_layout_data
+
+    binning, graph, ranges, tag, category, resolved, index = built_layout_data(layout)
+    polar = isinstance(coordinates, EgocentricPolarSystem)
+    if polar and arena is None:
+        from neurospatial.environment._arena import infer_arena
+
+        assert isinstance(coordinates, EgocentricPolarSystem)
+        arena = infer_arena(binning, polar=True, circular=coordinates.circular)
+    return publish(
+        cls,
+        binning,
+        connectivity=graph,
+        dimension_ranges=ranges,
+        provenance=_Provenance(
+            layout_type or tag,
+            category,
+            dict(resolved) if build_params is None else dict(build_params),
+        ),
+        metadata=metadata,
+        is_linearized_track=binning.linearization is not None,
+        coordinate_kind="polar" if polar else "cartesian",
+        regions=regions,
+        arena=arena,
+        grid_index=index,
+        check_center_lookup=index is None,
     )

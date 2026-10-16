@@ -42,7 +42,9 @@ def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch)
     def fail(*args, **kwargs):
         raise AssertionError("metadata replacement must not publish geometry again")
 
-    monkeypatch.setattr(Environment, "_from_binning", fail)
+    from neurospatial.environment import _publication
+
+    monkeypatch.setattr(_publication, "publish", fail)
     updated = env.with_metadata(name="comparison", units="m", frame=None)
     assert type(updated) is type(env)
     assert updated is not env

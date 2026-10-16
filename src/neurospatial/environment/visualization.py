@@ -448,7 +448,7 @@ def _plot_1d(
             )
         else:
             warnings.warn(
-                f"Layout '{env._layout_type_used}' is 1D but does not "
+                f"Layout '{env.layout_type}' is 1D but does not "
                 "have a 'plot_linear_layout' method. Skipping 1D plot.",
                 UserWarning,
                 stacklevel=_external_stacklevel(),

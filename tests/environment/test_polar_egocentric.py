@@ -418,22 +418,11 @@ class TestPolarCacheFreshness:
 
     def test_geometry_is_complete_at_layout_setup(self, monkeypatch):
         """Initial setup already sees physical distances and circular faces."""
+        from environment_helpers import record_publications
+
         from neurospatial import Environment
 
-        setup = Environment._from_binning.__func__
-        captured = []
-
-        def capture_setup(cls, binning, **kwargs):
-            env = setup(cls, binning, **kwargs)
-            assert env.connectivity.has_edge(0, 3)
-            assert env.connectivity.edges[0, 1]["distance"] == pytest.approx(
-                5.0 * np.pi / 2
-            )
-            captured.append(env._face_geometry)
-            return env
-
-        monkeypatch.setattr(Environment, "_from_binning", classmethod(capture_setup))
-
+        published = record_publications(monkeypatch)
         polar_env = Environment.from_polar_egocentric(
             distance_range=(0.0, 10.0),
             angle_range=(-np.pi, np.pi),
@@ -442,8 +431,11 @@ class TestPolarCacheFreshness:
             circular_angle=True,
         )
 
-        assert len(captured) == 1
-        assert polar_env._face_geometry is captured[0]
+        assert published == [polar_env]
+        assert polar_env.connectivity.has_edge(0, 3)
+        assert polar_env.connectivity.edges[0, 1]["distance"] == pytest.approx(
+            5.0 * np.pi / 2
+        )
 
     def test_differential_operator_reflects_circular_edges(self):
         """The cached operator includes circular wrap edges from the owned graph.
@@ -1028,7 +1020,7 @@ class TestPolarSerializationRoundTrip:
             from_file(tmp_path / "polar_env"),
         ):
             assert restored.layout_type == "Polar"
-            assert restored._layout_category == "polar"
+            assert restored._provenance.category == "polar"
             assert restored._binning.kind == "Polar"
             assert repr(restored).endswith("20 bins, Polar)")
 
@@ -1177,7 +1169,7 @@ class TestSubsetPreservesGraphLayout:
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[:5] = True
         sub = env.subset(bins=mask)
-        assert sub._layout_type_used != "MaskedGrid"
+        assert sub.layout_type != "MaskedGrid"
 
 
 class TestPolarEgocentricAngularSeam:

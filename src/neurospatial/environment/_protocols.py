@@ -173,9 +173,6 @@ class SubsetConsumer(Protocol):
     @property
     def units(self) -> str | None: ...
 
-    @property
-    def _layout_params_used(self) -> dict[str, Any]: ...
-
 
 class InterpolationConsumer(Protocol):
     """Bin geometry and cached point lookup for interpolating a scalar field."""
@@ -272,8 +269,6 @@ class VisualizationConsumer(Protocol):
     @property
     def _coordinate_system(self) -> CoordinateSystem: ...
 
-    _layout_type_used: str | None
-
     @property
     def active_mask(self) -> NDArray[np.bool_] | None: ...
 
@@ -335,8 +330,6 @@ class MetricsConsumer(Protocol):
     def _edge_attributes_cached(self) -> pd.DataFrame: ...
 
     _is_linearized_track_env: bool
-
-    _layout_type_used: str | None
 
     @property
     def _linearization_properties_cached(self) -> dict[str, Any]: ...
@@ -565,10 +558,7 @@ class SummaryConsumer(Protocol):
     def name(self) -> str: ...
 
     @property
-    def _layout_type_used(self) -> str | None: ...
-
-    @property
-    def layout_type(self) -> str | None: ...
+    def layout_type(self) -> str: ...
 
     @property
     def n_dims(self) -> int: ...

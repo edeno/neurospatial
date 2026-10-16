@@ -41,7 +41,7 @@ from typing import Any
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
@@ -1076,7 +1076,6 @@ def built_environment(request) -> Environment | Environment:
 @pytest.fixture(params=["file", "dict", pytest.param("nwb", marks=pytest.mark.nwb)])
 def environment_round_trip(built_environment, request, tmp_path):
     """Save labelled geometry once and expose an independently repeatable loader."""
-    from neurospatial import Environment
     from neurospatial.io.files import from_dict, from_file, to_dict, to_file
 
     original = copy.deepcopy(built_environment)
@@ -1092,12 +1091,12 @@ def environment_round_trip(built_environment, request, tmp_path):
     graph.nodes[0]["label"] = "start"
     first_edge = next(iter(graph.edges))
     graph.edges[first_edge]["annotation"] = ["measured", 7]
-    layout = Environment._from_binning(
+    layout = publish_binning(
         original._binning,
         connectivity=graph,
         dimension_ranges=original.dimension_ranges,
-        layout_type_tag=original.layout_type,
-        layout_type=original._layout_category,
+        layout_type=original.layout_type,
+        category=original._provenance.category,
         build_params=original.layout_parameters,
         is_linearized_track=original.is_linearized_track,
         coordinate_kind=original.arena.coordinate_kind,

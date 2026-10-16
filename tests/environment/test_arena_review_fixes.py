@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
@@ -166,12 +166,12 @@ def test_decoder_rejects_different_inherited_bin_boundary_ownership():
         source._binning,
         locator=ClippedLocator(alternate, source._binning.shapes, source.clip_mapping),
     )
-    layout = Environment._from_binning(
+    layout = publish_binning(
         binning,
         connectivity=source.connectivity,
         dimension_ranges=source.dimension_ranges,
-        layout_type_tag="PolygonCells",
-        layout_type="polygon",
+        layout_type="PolygonCells",
+        category="polygon",
         build_params={},
         is_linearized_track=False,
     )
@@ -363,12 +363,12 @@ def test_custom_layout_shapes_do_not_force_unsupported_arena_inference(
         publish_environment(
             "custom", _CustomHexLayout(built_environment), "CustomHex", {}
         )
-    layout = Environment._from_binning(
+    layout = publish_binning(
         built_environment._binning,
         connectivity=built_environment.connectivity,
         dimension_ranges=built_environment.dimension_ranges,
-        layout_type_tag="CustomHex",
-        layout_type="custom",
+        layout_type="CustomHex",
+        category="custom",
         build_params={},
         is_linearized_track=False,
     )

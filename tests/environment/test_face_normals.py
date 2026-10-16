@@ -8,6 +8,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from environment_helpers import publish_binning
 from shapely.geometry import box
 
 from neurospatial import Environment
@@ -332,12 +333,12 @@ def test_native_capture_does_not_materialize_faces(monkeypatch):
         np.array([[0.0, 0.0], [3.0, 4.0]]), bin_size=1.0, infer_active_bins=False
     )
     assert env._binning.face_normals is not None
-    bridge = Environment._from_binning(
+    bridge = publish_binning(
         env._binning,
         connectivity=env.to_networkx(),
         dimension_ranges=env.dimension_ranges,
-        layout_type_tag=env.layout_type,
-        layout_type=env._layout_category,
+        layout_type=env.layout_type,
+        category=env._provenance.category,
         build_params=env.layout_parameters,
         is_linearized_track=False,
     )
@@ -401,20 +402,18 @@ def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
 
 @pytest.mark.parametrize("built_environment", ["polar_open"], indirect=True)
 def test_polar_records_refuse_cartesian_normal_components(built_environment):
-    from neurospatial import Environment
-
     env = built_environment
     delta = (
         env.bin_centers[env.edge_pairs[:, 1]] - env.bin_centers[env.edge_pairs[:, 0]]
     )
     normals = delta / np.linalg.norm(delta, axis=1)[:, None]
     with pytest.raises(ValueError, match="Cartesian"):
-        Environment._from_binning(
+        publish_binning(
             replace(env._binning, face_normals=FaceNormals(normals)),
             connectivity=env.to_networkx(),
             dimension_ranges=env.dimension_ranges,
-            layout_type_tag=env.layout_type,
-            layout_type=env._layout_category,
+            layout_type=env.layout_type,
+            category=env._provenance.category,
             build_params=env.layout_parameters,
             is_linearized_track=False,
             coordinate_kind="polar",
