@@ -73,13 +73,16 @@ flowchart TD
 `geometry/` holds immutable bins, locators, arena evidence, coordinate semantics,
 validation and codecs. It does not import builders, numerical solvers, storage
 backends or plotting libraries. `layout/` and `ops/` are independent peers.
-Import-linter checks these package boundaries without exceptions.
+Import-linter checks these package boundaries. The only exceptions are the
+`Environment` methods that hand off to storage (`to_file`, `to_nwb`, ...) or
+rendering (`animate_fields`), which import those packages when called.
 
-An environment captures construction output once, owns its geometry, and starts
-fresh caches when derived or restored. Public methods delegate to domain
-functions with the components they read (bins, graph, arena, coordinate
-descriptor and the analysis cache), and those functions do not call back into
-the environment. Numerical builders take explicit data and arrays; callers use
+An environment captures construction output once and owns its geometry, which
+never changes afterwards. Relabelled copies (`with_metadata`, `with_regions`)
+share its analysis cache; derived and restored environments start with an
+empty one. Public methods delegate to domain functions with the components
+they read (bins, graph, arena, coordinate descriptor and the analysis cache),
+and those functions do not call back into the environment. Numerical builders take explicit data and arrays; callers use
 public operations for cached analyses. Packages that consume an environment,
 such as `ops`, declare small consumer protocols of the operations they need.
 
@@ -88,12 +91,13 @@ such as `ops`, declare small consumer protocols of the operations they need.
 Use `Environment.from_bins(...)` for explicit Cartesian `Binning` records, or
 `Environment.from_layout(engine)` for a built layout engine: a built-in engine
 from `neurospatial.layout.create_layout(...)` or your own engine after its
-`build(...)`. A custom engine needs no registration. Every layout
-engine, built-in or custom, hands its geometry to the environment through
-`binning()`, which returns a `Binning` built from the engine's own state: bins in
-connectivity edge order, point lookup, lazily computed faces and any grid,
-track, shape or outline records. The environment keeps that record, not the
-engine, so live lookup or track-conversion callbacks do not remain attached.
+`build(...)`. A custom engine needs no registration. Every layout engine,
+built-in or custom, hands its geometry to the environment through `binning()`,
+which returns a `Binning` built from the engine's own state: bins in the order
+of the connectivity graph's nodes, neighbor pairs in the order of its edges,
+point lookup, lazily computed faces and any grid, track, shape or outline
+records. The environment keeps that record, not the engine, so live lookup or
+track-conversion callbacks do not remain attached.
 External objects without `binning()` use registered adapters to supported
 built-in snapshots.
 

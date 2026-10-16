@@ -10,17 +10,17 @@ This guide provides a comprehensive reference for spatial analysis operations in
 | Operation | Category | Purpose | Returns |
 |-----------|----------|---------|---------|
 | [`occupancy()`](#occupancy) | Trajectory | Time spent in each bin | `NDArray[np.float64]` |
-| [`bin_sequence()`](#bin-sequence) | Trajectory | Sequence of visited bins | `NDArray[np.int64]` |
+| [`bin_sequence()`](#bin-sequence) | Trajectory | Sequence of visited bins | `NDArray[np.int32]` |
 | [`transitions()`](#transitions) | Movement | Bin-to-bin transition counts | `scipy.sparse.csr_matrix` |
-| [`components()`](#components) | Movement | Connected subgraphs | `List[Set[int]]` |
-| [`reachable_from()`](#reachable-from) | Movement | Accessible bins from source | `Set[int]` |
+| [`components()`](#components) | Movement | Connected subgraphs | `list[NDArray[np.int32]]` |
+| [`reachable_from()`](#reachable-from) | Movement | Accessible bins from source | `NDArray[np.bool_]` |
 | [`smooth()`](#smooth) | Fields | Gaussian smoothing of values | `NDArray[np.float64]` |
 | [`interpolate()`](#interpolate) | Fields | Fill missing values | `NDArray[np.float64]` |
-| [`rebin()`](#rebin) | Fields | Change spatial resolution | `Tuple[Environment, NDArray]` |
+| [`rebin()`](#rebin) | Fields | Change spatial resolution | `Environment` |
 | [`subset()`](#subset) | Fields | Extract sub-environment | `Environment` |
 | [`distance_to()`](#distance-to) | Utilities | Geodesic distances to point | `NDArray[np.float64]` |
 | [`rings()`](#rings) | Utilities | Bins by graph hop distance (BFS layers) | `list[NDArray[np.int32]]` |
-| [`region_membership()`](#region-membership) | Utilities | Which region contains each bin | `NDArray[np.int64]` |
+| [`region_membership()`](#region-membership) | Utilities | Which region contains each bin | `NDArray[np.bool_]` |
 
 ## Trajectory Analysis
 
@@ -37,8 +37,10 @@ def occupancy(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
     bandwidth: float | None = None,
     time_allocation: Literal["start", "linear"] = "start",
+    return_seconds: bool = True,
 ) -> NDArray[np.float64]:
     """
     Compute occupancy (time spent in each bin).
@@ -59,6 +61,11 @@ def occupancy(
         Maximum time gap in seconds. Intervals with Δt > max_gap are not
         counted toward occupancy. Default: 0.5 seconds. Set to None to
         count all intervals.
+    epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows
+        (seconds, same clock as ``times``). An interval counts only if it
+        lies entirely inside one window. ``None`` (default) means
+        unrestricted.
     bandwidth : float, optional
         If provided, apply diffusion kernel smoothing with this bandwidth
         (in physical units). Preserves total occupancy time.
@@ -66,6 +73,9 @@ def occupancy(
         Method for allocating time intervals:
         - 'start': Assign entire Δt to starting bin (fast, all layouts)
         - 'linear': Split Δt across bins traversed (accurate, grid layouts with rectangular cells: from_samples, from_grid_mask, from_pixel_mask, from_polygon)
+    return_seconds : bool, default=True
+        If True, return time in seconds. If False, return the number of
+        intervals starting in each bin.
 
     Returns
     -------
@@ -154,6 +164,8 @@ def bin_sequence(
     *,
     dedup: bool = True,
     outside_value: int | None = -1,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.int32]:
     """Map a trajectory to a sequence of bin indices.
 
@@ -168,6 +180,13 @@ def bin_sequence(
     outside_value : int or None, default -1
         Bin index for samples outside active bins. ``None`` drops
         them from the returned sequence.
+    max_gap : float or None, default 0.5
+        Longest sampling interval (seconds) treated as continuous
+        recording. Longer intervals (dropped frames, pauses between
+        sessions) are excluded. ``None`` disables the gap check.
+    epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
+        Restrict the sequence to these half-open [start, stop) windows
+        (seconds, same clock as ``times``).
 
     Returns
     -------
@@ -183,10 +202,15 @@ def bin_sequence_with_runs(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    dedup: bool = True,
     outside_value: int | None = -1,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> BinSequenceWithRuns:
     """Same mapping as ``bin_sequence`` plus per-run boundaries.
+
+    Runs are always collapsed, so there is no ``dedup`` option.
+    ``outside_value``, ``max_gap`` and ``epochs`` mean the same as in
+    ``bin_sequence``.
 
     Returns a ``BinSequenceWithRuns`` dataclass with three fields:
 
@@ -265,7 +289,7 @@ bins = result.bins
 starts = result.run_starts
 spatial_jumps = []
 for i in range(len(bins) - 1):
-    dist = env.distance_between_bins(bins[i], bins[i + 1])
+    dist = env.distance_between(env.bin_centers[bins[i]], env.bin_centers[bins[i + 1]])
     if dist > 20.0:  # cm
         jump_time = times[starts[i + 1]]
         spatial_jumps.append((jump_time, dist))
@@ -314,6 +338,8 @@ def transitions(
     bandwidth: float | None = None,
     # Common
     normalize: bool = True,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> scipy.sparse.csr_matrix:
     """
     Compute bin-to-bin transition matrix.
@@ -350,6 +376,13 @@ def transitions(
     normalize : bool, optional
         If True, normalize rows to sum to 1 (probabilities).
         If False, return raw counts. Default is True.
+    max_gap : float or None, default 0.5
+        Longest sampling interval (seconds) treated as continuous
+        recording (empirical mode with times). Transitions across longer
+        intervals are not counted. ``None`` disables the gap check.
+    epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
+        Count only transitions inside these half-open [start, stop)
+        windows (seconds, same clock as ``times``).
 
     Returns
     -------
@@ -459,14 +492,23 @@ print(f"Strongest directional bias: bin {max_bias_idx[0]} ↔ bin {max_bias_idx[
 Find connected components (subgraphs) within the environment's connectivity graph.
 
 ```python
-def components(self) -> List[Set[int]]:
+def components(
+    self,
+    *,
+    largest_only: bool = False,
+) -> list[NDArray[np.int32]]:
     """
     Find connected components in environment.
 
+    Parameters
+    ----------
+    largest_only : bool, default=False
+        If True, return only the largest component.
+
     Returns
     -------
-    components : list of sets
-        Each set contains bin indices in one connected component.
+    components : list of arrays
+        Each array holds the bin indices of one connected component.
         Sorted by size (largest first).
     """
 ```
@@ -494,10 +536,9 @@ fig, ax = plt.subplots(figsize=(10, 10))
 colors = plt.cm.tab10(np.arange(len(comps)))
 
 for i, comp in enumerate(comps):
-    comp_bins = list(comp)
     ax.scatter(
-        env.bin_centers[comp_bins, 0],
-        env.bin_centers[comp_bins, 1],
+        env.bin_centers[comp, 0],
+        env.bin_centers[comp, 1],
         c=[colors[i]],
         s=100,
         label=f'Component {i} ({len(comp)} bins)'
@@ -527,25 +568,29 @@ Find all bins reachable from a source bin via the connectivity graph.
 ```python
 def reachable_from(
     self,
-    source: int,
+    source_bin: int | ArrayLike,
     *,
-    max_distance: Optional[float] = None,
-) -> Set[int]:
+    radius: int | float | None = None,
+    metric: Literal["hops", "geodesic"] = "hops",
+) -> NDArray[np.bool_]:
     """
     Find bins reachable from source.
 
     Parameters
     ----------
-    source : int
-        Starting bin index.
-    max_distance : float, optional
-        Maximum geodesic distance to traverse.
-        If None, returns all reachable bins. Default is None.
+    source_bin : int or array-like
+        Starting bin index, or a coordinate point mapped to its bin.
+    radius : int, float, or None, optional
+        Maximum number of edges (``metric="hops"``) or graph distance in
+        physical units (``metric="geodesic"``). If None, returns every bin
+        in the source's connected component. Default is None.
+    metric : {"hops", "geodesic"}, default="hops"
+        Count graph edges, or sum edge distances.
 
     Returns
     -------
-    reachable : set of int
-        Bin indices reachable from source.
+    reachable : array of bool, shape (n_bins,)
+        True for each bin reachable from the source.
     """
 ```
 
@@ -556,16 +601,16 @@ def reachable_from(
 center_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]
 reachable = env.reachable_from(center_bin)
 
-print(f"Bins reachable from center: {len(reachable)} / {env.n_bins}")
+print(f"Bins reachable from center: {reachable.sum()} / {env.n_bins}")
 
 # Find bins within 20 cm geodesic distance
-nearby = env.reachable_from(center_bin, max_distance=20.0)
-print(f"Bins within 20 cm: {len(nearby)}")
+nearby = env.reachable_from(center_bin, radius=20.0, metric="geodesic")
+print(f"Bins within 20 cm: {nearby.sum()}")
 
 # Detect unreachable regions
-unreachable = set(range(env.n_bins)) - reachable
-if unreachable:
-    print(f"Warning: {len(unreachable)} bins unreachable from center!")
+unreachable = np.flatnonzero(~reachable)
+if unreachable.size:
+    print(f"Warning: {unreachable.size} bins unreachable from center!")
 ```
 
 **Use Cases:**
@@ -1414,11 +1459,11 @@ env_region = env.subset(region_names=[region_name])
 
 ```python
 # GOOD: Vectorized operations
-distances = env.distance_to(target_bin)
+distances = env.distance_to([target_bin])
 
 # AVOID: Loops when vectorization possible
-# distances = np.array([env.distance_between_bins(i, target_bin)
-#                       for i in range(env.n_bins)])
+# distances = np.array([env.distance_between(center, env.bin_centers[target_bin])
+#                       for center in env.bin_centers])
 ```
 
 ### Common Pitfalls

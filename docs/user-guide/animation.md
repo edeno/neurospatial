@@ -704,8 +704,8 @@ env.animate_fields(fields, frame_times=frame_times)
 
 ### "Pickle error during parallel rendering"
 
-**Error**: `ValueError: WHAT: Environment is not pickle-able, preventing parallel video rendering.`
-(or `OverlayData is not pickle-able`)
+**Error**: a `ValueError` saying that the environment, or the overlay data, is
+not pickle-able, so frames cannot be rendered in parallel.
 
 **Why?** Parallel rendering uses `multiprocessing`, which pickles the
 environment and overlays to send them to worker processes. Something you
