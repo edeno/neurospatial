@@ -542,7 +542,6 @@ def _rebin_factor(
                 "bin_size": tuple(
                     (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
                 ),
-                "dimension_ranges": layout.dimension_ranges,
                 "connect_diagonal_neighbors": connect_diagonal,
             },
         ),

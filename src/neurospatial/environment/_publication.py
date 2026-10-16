@@ -427,12 +427,14 @@ def _scalar_choice(value: Any) -> Any:
 def build_choices(params: Mapping[str, Any]) -> dict[str, Any]:
     """Keep the scalar build choices of layout parameters and drop their data.
 
-    A choice is a scalar (bool, number, string or None) or a flat list or
-    tuple of scalars, such as a per-axis ``bin_size``; lists become tuples
-    and NumPy scalars become Python scalars. Everything else is input data,
-    not a choice, and is dropped: arrays (positions, masks, images), graphs,
-    polygons and nested sequences (grid edges, edge orders, ranges). The
-    geometry built from that data is owned by the environment's binning.
+    A choice is a scalar (bool, number, string or None) or a flat sequence
+    of scalars, such as a per-axis ``bin_size``: a list, a tuple or a 1-D
+    integer or floating-point array. Sequences become tuples and NumPy
+    scalars become Python scalars. Everything else is input data, not a
+    choice, and is dropped: boolean and multi-dimensional arrays (masks,
+    images, positions), graphs, polygons and nested sequences (grid edges,
+    edge orders, ranges). The geometry built from that data is owned by the
+    environment's binning.
 
     Parameters
     ----------
@@ -446,6 +448,12 @@ def build_choices(params: Mapping[str, Any]) -> dict[str, Any]:
     """
     choices: dict[str, Any] = {}
     for key, value in params.items():
+        if (
+            isinstance(value, np.ndarray)
+            and value.ndim == 1
+            and value.dtype.kind in "iuf"
+        ):
+            value = tuple(value.tolist())
         if isinstance(value, (list, tuple)):
             items = tuple(_scalar_choice(item) for item in value)
             if not any(isinstance(item, _Unset) for item in items):

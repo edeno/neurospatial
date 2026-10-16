@@ -101,6 +101,24 @@ def test_recorded_choices_keep_their_values():
     assert polar.layout_parameters["circular_angle"] is True
 
 
+@pytest.mark.parametrize("container", [list, tuple, np.array])
+def test_per_axis_choices_are_recorded_whatever_the_container(container):
+    positions = np.random.default_rng(0).uniform(0, 20, (500, 2))
+    samples = Environment.from_samples(positions, bin_size=container([2.0, 4.0]))
+    assert samples.layout_parameters["bin_size"] == (2.0, 4.0)
+    pixels = Environment.from_pixel_mask(
+        np.ones((4, 4), dtype=bool), pixel_size=container([2.0, 1.0])
+    )
+    assert pixels.layout_parameters["pixel_size"] == (2.0, 1.0)
+
+
+def test_one_dimensional_masks_are_data_not_choices():
+    env = Environment.from_grid_mask(
+        np.array([True, True, False, True]), grid_edges=(np.arange(5.0),)
+    )
+    assert "active_mask" not in env.layout_parameters
+
+
 def test_track_geometry_is_owned_by_the_binning_not_provenance():
     env = _track()
     assert env.layout_parameters == {"edge_spacing": 0.0, "bin_size": 1.0}
