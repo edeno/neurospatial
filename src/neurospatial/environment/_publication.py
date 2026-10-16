@@ -19,19 +19,32 @@ from typing import (
 
 import networkx as nx
 import numpy as np
+import shapely
 from numpy.typing import NDArray
+from scipy import sparse
 
 from neurospatial._exceptions import _format_error
+from neurospatial._logging import log_environment_created
+from neurospatial.arena import EgocentricSurround
+from neurospatial.environment._arena import apply_walls, infer_arena, validate_arena
 from neurospatial.environment._cache import AnalysisCache
+from neurospatial.geometry import _validation
 from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._context import grid_index as compute_grid_index
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._diffusion import DiffusionGeometry
+from neurospatial.geometry._ownership import own_arena, own_binning
+from neurospatial.layout._construction import built_layout_data
+from neurospatial.layout.validation import (
+    GraphValidationError,
+    validate_connectivity_graph,
+)
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.arena import Arena
     from neurospatial.environment.core import Environment
     from neurospatial.geometry._context import GridIndex
-    from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.geometry._polygon import ClipMapping
     from neurospatial.layout.base import LayoutEngine
 
@@ -106,10 +119,6 @@ def _immutable_array(array: NDArray[Any]) -> NDArray[Any]:
 
 def _diffusion_geometry_header(geometry: DiffusionGeometry) -> DiffusionGeometry:
     """Export independent sparse/array headers over immutable cached buffers."""
-    from scipy import sparse
-
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-
     weights = sparse.csr_matrix(geometry.W, copy=False)
     weights.data = _array_header(geometry.W.data)
     weights.indices = _array_header(geometry.W.indices)
@@ -124,10 +133,6 @@ def _diffusion_geometry_header(geometry: DiffusionGeometry) -> DiffusionGeometry
 
 def _freeze_diffusion_geometry(geometry: DiffusionGeometry) -> DiffusionGeometry:
     """Own diffusion buffers once before publishing their read-only headers."""
-    from scipy import sparse
-
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-
     weights = sparse.csr_matrix(geometry.W, copy=False)
     weights.data = _immutable_array(geometry.W.data)
     weights.indices = _immutable_array(geometry.W.indices)
@@ -592,31 +597,12 @@ def publish(
     Environment
         A new instance of ``cls``.
     """
-    from neurospatial._logging import log_environment_created
-    from neurospatial.arena import EgocentricSurround
-    from neurospatial.environment._arena import (
-        apply_walls,
-        infer_arena,
-        validate_arena,
-    )
-    from neurospatial.geometry._context import grid_index as compute_grid_index
-    from neurospatial.geometry._ownership import own_arena, own_binning
-    from neurospatial.geometry._validation import (
-        _validate_clip_mapping,
-        _validate_components,
-        _validate_graph,
-    )
-    from neurospatial.layout.validation import (
-        GraphValidationError,
-        validate_connectivity_graph,
-    )
-
     if coordinate_kind not in ("cartesian", "polar"):
         raise ValueError("coordinate_kind must be 'cartesian' or 'polar'.")
     binning = own_binning(binning)
     graph = connectivity
-    _validate_graph(binning, graph)
-    _validate_components(
+    _validation._validate_graph(binning, graph)
+    _validation._validate_components(
         binning,
         is_linearized_track,
         coordinate_kind,
@@ -624,7 +610,7 @@ def publish(
     )
     if clip_mapping is not None:
         binning = replace(binning, clip_mapping=copy_module.deepcopy(clip_mapping))
-        _validate_clip_mapping(binning)
+        _validation._validate_clip_mapping(binning)
     polar = coordinate_kind == "polar"
     index = grid_index if grid_index is not None else compute_grid_index(binning)
     coordinates: CartesianSystem | EgocentricPolarSystem
@@ -741,14 +727,10 @@ def publish_layout(
     Environment
         A new instance of ``cls``.
     """
-    from neurospatial.layout._construction import built_layout_data
-
     binning, graph, ranges, tag, category, resolved, index = built_layout_data(layout)
     polar = isinstance(coordinates, EgocentricPolarSystem)
     if within_arena and arena is not None and arena.domain_known and not polar:
-        import shapely
-
-        from neurospatial.environment._subset import select_bins
+        from neurospatial.environment._subset import select_bins  # imports this module
 
         centers = binning.bins.centers
         domain = arena.polygonal_domain()
@@ -761,8 +743,6 @@ def publish_layout(
             binning, graph, ranges = select_bins(binning, graph, keep)
             index = None
     if polar and arena is None:
-        from neurospatial.environment._arena import infer_arena
-
         assert isinstance(coordinates, EgocentricPolarSystem)
         arena = infer_arena(binning, polar=True, circular=coordinates.circular)
     return publish(

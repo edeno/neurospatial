@@ -15,6 +15,11 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.environment import _publication
+from neurospatial.environment._publication import _Provenance, declared_metadata
+from neurospatial.geometry._arena import OpenArena, TrackArena
+from neurospatial.geometry._explicit import prepare_bins
+from neurospatial.geometry._ownership import own_arena
 from neurospatial.layout.factories import (
     LayoutType,
     create_layout,
@@ -186,19 +191,10 @@ def _from_bins(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_bins using explicit construction inputs."""
-    from neurospatial.environment._publication import (
-        _Provenance,
-        declared_metadata,
-        publish,
-    )
-    from neurospatial.geometry._explicit import prepare_bins
-
     snapshot, graph, ranges, category = prepare_bins(binning)
     if arena is None and snapshot.outline is not None:
-        from neurospatial.geometry._arena import OpenArena
-
         arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
-    result = publish(
+    result = _publication.publish(
         cls,
         snapshot,
         connectivity=graph,
@@ -585,7 +581,6 @@ def _from_graph(
         "edge_spacing": edge_spacing,
         "bin_size": bin_size,
     }
-    from neurospatial.geometry._arena import TrackArena
 
     segments = np.array(
         [[graph.nodes[u]["pos"], graph.nodes[v]["pos"]] for u, v in graph.edges],
@@ -700,19 +695,12 @@ def _from_layout(
     arena: Arena | None = None,
 ) -> Environment:
     """Implement Environment.from_layout using explicit construction inputs."""
-    from neurospatial.environment._publication import (
-        declared_metadata,
-        publish_layout,
-    )
-
     layout_params = _owned_copy(layout_params)
     if arena is not None:
-        from neurospatial.geometry._ownership import own_arena
-
         arena = own_arena(arena)
     metadata = declared_metadata(cls, name=name, units=units, frame=frame)
     layout_instance = create_layout(kind=kind, **layout_params)
-    return publish_layout(
+    return _publication.publish_layout(
         cls,
         layout_instance,
         metadata=metadata,

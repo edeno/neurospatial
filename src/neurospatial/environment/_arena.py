@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
+from shapely.geometry import LineString
+from shapely.ops import unary_union
 
 from neurospatial.geometry._arena import (
     Arena,
@@ -16,8 +18,20 @@ from neurospatial.geometry._arena import (
     TrackArena,
     UnknownArena,
     _CombinedArena,
+    _TransformedArena,
     encode_arena,
 )
+from neurospatial.geometry._binning import KnownFaces, SpatialBins
+from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._face_normals import FaceNormals
+from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+from neurospatial.geometry._polygon import (
+    ClippedLocator,
+    PolygonCells,
+    materialize_cells,
+)
+from neurospatial.geometry._validation import _polygon_area_allowance
 from neurospatial.geometry._wall_frame import _wall_source_frame as _wall_source_frame
 
 if TYPE_CHECKING:
@@ -66,10 +80,6 @@ def infer_arena(binning: Binning, *, polar: bool, circular: bool = False) -> Are
     # Exact area cells are sufficient to infer an analysis domain, but not
     # measured physical walls. Keep unsupported custom layouts usable.
     if binning.shapes is not None and n_dims == 2:
-        from shapely.ops import unary_union
-
-        from neurospatial.geometry._polygon import materialize_cells
-
         return OpenArena(
             unary_union(materialize_cells(binning)), physical_footprint_known=False
         )
@@ -77,10 +87,6 @@ def infer_arena(binning: Binning, *, polar: bool, circular: bool = False) -> Are
 
 
 def _composition_arena(locator: object) -> Arena | None:
-    from neurospatial.geometry._composition import CombinedLocator
-    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-    from neurospatial.geometry._polygon import ClippedLocator
-
     if isinstance(locator, CombinedLocator):
         return _CombinedArena(locator.arenas)
     if isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
@@ -97,10 +103,6 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
     """Reject a domain whose coordinate semantics disagree with its bins."""
     combined_arena = _composition_arena(binning.locator)
     if combined_arena is not None:
-        from neurospatial.geometry._arena import _TransformedArena
-        from neurospatial.geometry._composition import CombinedLocator
-        from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-        from neurospatial.geometry._polygon import ClippedLocator
 
         def matches(locator: object, candidate: Arena) -> bool:
             if isinstance(locator, (SubsetLocator, ClippedLocator)):
@@ -127,8 +129,6 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
                             "Component connectivity crosses its declared physical walls."
                         )
             if locator.children[0].bins.n_dims == 2:
-                from shapely.geometry import LineString
-
                 centers = locator.spatial_bins().centers
                 for pair in locator.bridge_pairs:
                     link = LineString(centers[pair])
@@ -166,13 +166,10 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
         raise ValueError(
             "Arena excludes a bin center; select bins by center before constructing the environment."
         )
-    from neurospatial.geometry._polygon import PolygonCells
 
     if isinstance(binning.shapes, PolygonCells) and combined_arena is None:
         domain = arena.polygonal_domain()
         if domain is not None:
-            from neurospatial.geometry._validation import _polygon_area_allowance
-
             domain_clearance = domain.minimum_clearance
             for index, cell in enumerate(binning.shapes.polygons):
                 outside = cell.difference(domain).area
@@ -198,12 +195,6 @@ def apply_walls(
         return binning, graph
     if not arena.walls:
         return binning, graph
-    from shapely.geometry import LineString
-    from shapely.ops import unary_union
-
-    from neurospatial.geometry._binning import KnownFaces, SpatialBins
-    from neurospatial.geometry._diffusion import FaceGeometry
-    from neurospatial.geometry._polygon import materialize_cells
 
     wall_frame = _wall_source_frame(binning.locator, arena, binning.bins.centers)
     if wall_frame is None:
@@ -271,7 +262,6 @@ def apply_walls(
         )
     result_graph = graph.copy()
     result_graph.remove_edges_from(bins.pairs[~keep])
-    from neurospatial.geometry._face_normals import FaceNormals
 
     normals = (
         FaceNormals(binning.face_normals.values[keep])

@@ -12,6 +12,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._composition import bridge_values, composition_view
 from neurospatial.geometry._locators import (
     HexLocator,
     RectilinearLocator,
@@ -145,9 +146,6 @@ def _edge_attributes(graph: nx.Graph, binning: Binning) -> pd.DataFrame:
 
 def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
     """Export retained navigation bridge data as an independent table."""
-
-    from neurospatial.geometry._composition import composition_view
-
     columns = [
         "source_component",
         "source_local_bin",
@@ -162,7 +160,6 @@ def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
     if result is None:
         return pd.DataFrame(columns=columns)
     root, indices, _scale = result
-    from neurospatial.geometry._composition import bridge_values
 
     by_pair = bridge_values(binning)
     offsets = root.offsets

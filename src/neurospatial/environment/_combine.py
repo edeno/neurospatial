@@ -9,9 +9,16 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.spatial import cKDTree
 from shapely.geometry import LineString
 
 from neurospatial._exceptions import IncompatibleEnvironmentError
+from neurospatial._logging import log_environment_combine
+from neurospatial.environment._publication import (
+    _Derivation,
+    _Provenance,
+    publish_derived,
+)
 from neurospatial.geometry._arena import _CombinedArena
 from neurospatial.geometry._binning import Binning, KnownFaces, MissingFaces
 from neurospatial.geometry._codecs import decode, encode
@@ -19,8 +26,9 @@ from neurospatial.geometry._combine_geometry import (
     certify_components,
     segment_enters_component,
 )
-from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._composition import CombinedLocator, combined_normals
 from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._polygon import (
     PolygonCells,
     cells_from_locator,
@@ -38,8 +46,6 @@ def _nearest_indices(
     source: NDArray[np.float64], target: NDArray[np.float64]
 ) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
     """Query nearest centers, resolving exact ties by the lowest local bin ID."""
-    from scipy.spatial import cKDTree
-
     tree = cKDTree(target)
     count = min(2, len(target))
     distances, indices = tree.query(source, k=count)
@@ -69,7 +75,7 @@ def _combine(
     name: str,
 ) -> Environment:
     """Validate geometry, infer path connections and publish owned combined data."""
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment.core import Environment  # core imports this module
 
     if not isinstance(components, Mapping) or not components:
         raise ValueError(
@@ -233,18 +239,10 @@ def _combine(
             for region in env.regions.values()
         ]
     )
-    from neurospatial._logging import log_environment_combine
 
     log_environment_combine(len(children), bins.n_bins, len(pairs))
-    from neurospatial.geometry._composition import combined_normals
 
     normals = combined_normals(locator) if not len(pairs) else None
-    from neurospatial.environment._publication import (
-        _Derivation,
-        _Provenance,
-        publish_derived,
-    )
-    from neurospatial.geometry._explicit import prepare_bins
 
     snapshot, graph, ranges, category = prepare_bins(
         Binning("combined", bins, locator, faces, shapes=shapes, face_normals=normals)

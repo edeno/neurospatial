@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
+from neurospatial.environment import _publication
+from neurospatial.environment._publication import declared_metadata
 from neurospatial.geometry._coordinates import EgocentricPolarSystem
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
@@ -21,6 +23,7 @@ def _bin_count(span: float, bin_size: float) -> int:
 
 
 def _create_polar_environment(
+    cls: type[Environment[Any]],
     distance_range: tuple[float, float],
     angle_range: tuple[float, float],
     distance_bin_size: float,
@@ -33,9 +36,6 @@ def _create_polar_environment(
     frame: str | None = None,
 ) -> Environment[EgocentricPolarSystem]:
     """Build owned annular sectors with physical polar distances and measures."""
-    from neurospatial.environment._publication import declared_metadata, publish_layout
-    from neurospatial.environment.core import Environment
-
     if distance_bin_size <= 0:
         raise ValueError(f"distance_bin_size must be positive, got {distance_bin_size}")
     if angle_bin_size <= 0:
@@ -74,10 +74,10 @@ def _create_polar_environment(
     }
     layout = _PolarGridLayout()
     layout.build(**params)
-    return publish_layout(
-        Environment,
+    return _publication.publish_layout(
+        cls,
         cast("LayoutEngine", layout),
-        metadata=declared_metadata(Environment, name=name, units=units, frame=frame),
+        metadata=declared_metadata(cls, name=name, units=units, frame=frame),
         build_params=params,
         coordinates=EgocentricPolarSystem(circular_angle),
     )
