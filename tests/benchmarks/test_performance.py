@@ -21,7 +21,7 @@ Generate histogram:
 
 import numpy as np
 import pytest
-from environment_helpers import built_from, native_layout
+from environment_helpers import built_from, face_graph
 
 from neurospatial import Environment
 from neurospatial.encoding import PlaceFieldsResult
@@ -316,7 +316,7 @@ class TestGraphOperationPerformance:
     def test_compute_diffusion_kernels(self, benchmark, medium_env):
         """Benchmark diffusion kernel computation."""
         # Resolve the finite-volume geometry once; benchmark just the primitive.
-        graph_fv, volumes = native_layout(medium_env).finite_volume_geometry()
+        graph_fv, volumes = face_graph(medium_env._binning)
         result = benchmark(
             compute_diffusion_kernels,
             graph_fv,

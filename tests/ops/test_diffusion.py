@@ -21,7 +21,7 @@ import networkx as nx
 import numpy as np
 import pytest
 import scipy.sparse
-from environment_helpers import built_from, native_layout, publish_environment
+from environment_helpers import built_from, face_graph, publish_environment
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
@@ -274,14 +274,14 @@ def test_sigma_recovery_graph():
     bandwidth = 5.0
     for bin_size in (1.0, 2.0):
         env = built_from(lambda size=bin_size: build_track(size, straight=False))
-        graph_fv, _ = native_layout(env).finite_volume_geometry()
+        graph_fv, _ = face_graph(env._binning)
         # Junction (inter-segment) edges: the FV along-track distance must exceed
         # the raw Euclidean chord (which cuts the corner and would oversmooth).
         junction_edges = [
             (u, v)
             for u, v in graph_fv.edges()
-            if graph_fv.nodes[u].get("source_edge_id")
-            != graph_fv.nodes[v].get("source_edge_id")
+            if env.connectivity.nodes[u]["source_edge_id"]
+            != env.connectivity.nodes[v]["source_edge_id"]
         ]
         assert junction_edges, "L-track must have at least one junction edge"
         for u, v in junction_edges:
@@ -358,7 +358,7 @@ def test_density_integrates_to_one(polar_env):
 
 def test_low_level_average_row_stochastic(polar_env):
     """compute_diffusion_kernels(..., mode='average') returns row-stochastic H."""
-    graph_fv, volumes = native_layout(polar_env).finite_volume_geometry()
+    graph_fv, volumes = face_graph(polar_env._binning)
     kernel = compute_diffusion_kernels(
         graph_fv, volumes=volumes, sigma=5.0, mode="average"
     )
@@ -369,7 +369,7 @@ def test_low_level_average_row_stochastic(polar_env):
 def test_raw_heat_operator_m_self_adjoint(polar_env):
     """Raw operator (pre clip/normalize): H @ 1 = 1 and M_i H_ij = M_j H_ji on a
     non-uniform-M (polar) env -- the C1 invariants the mode outputs no longer expose."""
-    graph_fv, volumes = native_layout(polar_env).finite_volume_geometry()
+    graph_fv, volumes = face_graph(polar_env._binning)
     W = build_W_from_graph(graph_fv)
     H = _raw_heat_operator(W, volumes, sigma=5.0)
 
@@ -396,7 +396,7 @@ def test_corner_split_gives_two_diffusion_components():
     assert env.n_bins == 2
     assert env.connectivity.has_edge(0, 1), "corner bins must be 8-connected"
 
-    graph_fv, _ = native_layout(env).finite_volume_geometry()
+    graph_fv, _ = face_graph(env._binning)
     assert graph_fv.edges[0, 1]["A"] == 0.0, "corner-touching edge must have A == 0"
     assert env._diffusion_geometry.n_components == 2, (
         "corner-only pair must be two W-components"

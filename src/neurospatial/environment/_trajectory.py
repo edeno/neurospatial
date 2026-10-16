@@ -4,7 +4,7 @@ Includes time allocation, occupancy, run extraction and transition matrices.
 Environment exposes thin entry points; Cartesian coordinate operations are guarded.
 
 Index-dtype convention: point/region *index* arrays (``bin_at``,
-``bins_in_region``, ``boundary_bins``, ``point_to_bin_index``) are ``np.intp``
+``bins_in_region``, ``boundary_bins``, ``nearest_bin``) are ``np.intp``
 -- pointer-sized (64-bit on every platform, including Windows where ``np.int_``
 is 32-bit) and the dtype NumPy fancy-indexing returns. Trajectory *sequence*
 arrays (``bin_sequence``, ``BinSequenceWithRuns.bins``) stay compact

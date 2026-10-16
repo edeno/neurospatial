@@ -146,27 +146,6 @@ class _PolarGridLayout(MaskedGridLayout):
             dimension_ranges=self.dimension_ranges,
         )
 
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Grid faces with each radial face lengthened to its arc ``r_face · Δθ``.
-
-        On the ``(distance, angle)`` grid the masked grid already gives angular
-        (and seam) neighbors the radial face ``Δr``, radial neighbors ``Δθ``, and
-        diagonal neighbors no face (``A = 0``). Only a radial face's arc length
-        depends on radius. Polar sectors are K-orthogonal, so this is exact.
-        """
-        from neurospatial.geometry._face_builders import polar_geometry
-
-        assert self.connectivity is not None
-        assert self.grid_shape is not None
-        return polar_geometry(
-            self.connectivity,
-            self.bin_centers,
-            self.bin_sizes(),
-            self._axis_widths(),
-            self.grid_shape[1],
-            self.circular_angle,
-        )
-
 
 def _add_circular_connectivity(
     connectivity: nx.Graph,

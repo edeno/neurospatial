@@ -6,7 +6,7 @@ relationship to the finite-volume diffusion generator.
 
 import numpy as np
 import pytest
-from environment_helpers import native_layout
+from environment_helpers import face_graph
 from scipy import sparse
 
 from neurospatial import Environment
@@ -81,7 +81,7 @@ def test_get_divergence_operator_is_cached_and_applied_by_divergence(fv_env):
 def test_divergence_is_negative_adjoint_of_gradient(fv_env):
     from neurospatial.ops.calculus import divergence, gradient
 
-    graph, volumes = native_layout(fv_env).finite_volume_geometry()
+    graph, volumes = face_graph(fv_env._binning)
     rng = np.random.default_rng(3)
     field = rng.normal(size=fv_env.n_bins)
     flux = rng.normal(size=graph.number_of_edges())
@@ -108,7 +108,7 @@ def test_goal_is_a_sink(uniform_grid, spacing):
 def test_operator_edge_order_matches_connectivity(fv_env):
     from neurospatial.ops.calculus import gradient
 
-    graph, _ = native_layout(fv_env).finite_volume_geometry()
+    graph, _ = face_graph(fv_env._binning)
     assert list(graph.edges()) == list(fv_env.connectivity.edges())
     field = np.random.default_rng(5).normal(size=fv_env.n_bins)
     expected = [

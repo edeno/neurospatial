@@ -5,6 +5,9 @@ import inspect
 import weakref
 from unittest import mock
 
+import networkx as nx
+import numpy as np
+
 from neurospatial import Environment
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Metadata, _Provenance
@@ -125,6 +128,25 @@ def layout_of(build):
         build()
     (layout,) = captured
     return layout
+
+
+def face_graph(binning):
+    """Return a binning's finite-volume faces as a graph, and its cell measures.
+
+    Each edge carries the face measure ``A`` and the normal ``distance``, in
+    neighbor-pair order; this is the input ``DiffusionGeometry.from_graph``
+    and ``compute_diffusion_kernels`` take.
+    """
+    faces = binning.faces.build()
+    graph = nx.Graph()
+    graph.add_nodes_from(range(binning.bins.n_bins))
+    graph.add_edges_from(
+        (int(u), int(v), {"A": float(area), "distance": float(distance)})
+        for (u, v), area, distance in zip(
+            faces.edges, faces.A, faces.distance, strict=True
+        )
+    )
+    return graph, np.array(faces.volumes)
 
 
 def native_layout(env):

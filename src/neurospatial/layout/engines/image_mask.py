@@ -53,11 +53,6 @@ class ImageMaskLayout(_GridMixin):
         """Return standardized category for this layout type."""
         return "mask"
 
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return True - image mask layouts can be rendered as 2D images."""
-        return True
-
     @capture_build_params
     def build(
         self,
@@ -73,7 +68,7 @@ class ImageMaskLayout(_GridMixin):
         The layout follows the (x, y) coordinate convention: dimension 0 is x
         (image columns), dimension 1 is y (image rows). `grid_shape`,
         `grid_edges`, `bin_centers`, and `active_mask` are all expressed in
-        (x, y) order so that `point_to_bin_index` digitizes ``points[:, 0]``
+        (x, y) order so that the grid locator digitizes ``points[:, 0]``
         against the x edges and ``points[:, 1]`` against the y edges.
 
         Parameters
@@ -142,7 +137,7 @@ class ImageMaskLayout(_GridMixin):
 
         # Coordinate convention: dimension 0 is x (cols), dimension 1 is y (rows).
         # grid_shape, grid_edges, bin_centers, and active_mask are all in (x, y)
-        # order so that point_to_bin_index digitizes points[:, 0] against x_edges
+        # order so that the grid locator digitizes points[:, 0] against x_edges
         # and points[:, 1] against y_edges (matching dimension_ranges and every
         # other grid engine).
         self.grid_shape = (n_cols, n_rows)

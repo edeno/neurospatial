@@ -1,4 +1,3 @@
-import warnings
 from collections.abc import Sequence
 from typing import Any, ClassVar
 
@@ -79,11 +78,6 @@ class HexagonalLayout:
     def layout_type(self) -> str:
         """Return standardized category for this layout type."""
         return "hexagonal"
-
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return False - hexagonal layouts cannot be rendered as 2D images."""
-        return False
 
     @capture_build_params
     def build(
@@ -300,41 +294,6 @@ class HexagonalLayout:
             float(self.hex_orientation_) if self.hex_orientation_ is not None else 0.0,
         )
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map 2D points to active hexagonal bin indices.
-
-        Uses specialized logic to determine which hexagon each point falls into,
-        then maps this to an active bin index.
-
-        Parameters
-        ----------
-        points : NDArray[np.float64], shape (n_points, 2)
-            2D points to map.
-
-        Returns
-        -------
-        NDArray[np.intp], shape (n_points,)
-            Active bin indices (0 to N-1). -1 for points not in an active hexagon.
-
-        """
-        if (
-            self.grid_offset_x_ is None
-            or self.grid_offset_y_ is None
-            or self.hex_radius_ is None
-            or self.grid_shape is None
-            or self._source_flat_to_active_id_map is None
-        ):
-            # This can happen if build() failed or was incomplete (e.g. no active bins)
-            warnings.warn(
-                "HexagonalLayout is not fully initialized or has no active bins. "
-                "Cannot map points to bin indices.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return np.full(points.shape[0], -1, dtype=np.intp)
-
-        return self.locator().locate(points)
-
     def bin_sizes(self) -> NDArray[np.float64]:
         """Calculate the area of each hexagonal bin.
 
@@ -365,18 +324,3 @@ class HexagonalLayout:
         # For pointy-top hexagons, side_length (s) is equal to hex_radius_ (R, center to vertex).
         single_hex_area = 3.0 * np.sqrt(3.0) / 2.0 * self.hex_radius_**2.0
         return np.full(self.bin_centers.shape[0], single_hex_area)
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Hex face measure: the shared hexagon side length ``s`` on every edge.
-
-        For a pointy-top regular hexagonal lattice adjacent centers are ``sqrt(3)*s``
-        apart, so ``s`` is derived per edge as ``distance / sqrt(3)`` from the
-        edge's center-to-center ``"distance"`` (equivalently the layout's stored
-        side length). Hex lattices are K-orthogonal, so no hand-tuned constant is
-        needed.
-        """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.geometry._face_builders import hex_geometry
-
-        return hex_geometry(self.connectivity, self.bin_sizes())

@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from environment_helpers import (
     built_from,
+    face_graph,
     native_layout,
     publish_binning,
     publish_environment,
@@ -84,9 +85,6 @@ def test_binning_capabilities_match_layout_protocols(
     binning = env._binning
     assert (binning.rectilinear is not None) == hasattr(layout, "rectilinear_grid")
     assert (binning.linearization is not None) == layout.is_linearized_track
-    assert binning.faces.available == callable(
-        getattr(layout, "finite_volume_geometry", None)
-    )
     if not hasattr(layout, "bin_shapes"):
         assert binning.shapes is None
     if not hasattr(layout, "outline"):
@@ -198,7 +196,7 @@ def test_faces_match_layout_and_cache_lifetime(
 ) -> None:
     """Faces share pair order and measures while caching stays on the environment."""
     env = built_environment
-    graph, sizes = _source_layout(env).finite_volume_geometry()
+    graph, sizes = face_graph(_source_layout(env).binning())
     expected = FaceGeometry.from_graph(graph, sizes)
     faces = env._face_geometry
     assert faces is env._face_geometry

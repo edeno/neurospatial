@@ -228,8 +228,9 @@ If you wrote your own layout engine:
   `dimension_ranges` from the `Binning`, so an engine needs no other
   attribute and attributes added to an engine's own graph are not kept. Set
   `Binning(..., dimension_ranges=...)` when the cells do not show the range
-  the bins cover. It never calls `point_to_bin_index`, so to change lookup or
-  faces, change what `binning()` returns. A layout whose methods were
+  the bins cover. Lookup and faces come only from `binning()`: the built-in
+  engines no longer have `point_to_bin_index`, `finite_volume_geometry` or
+  `is_grid_compatible` (see below), and a custom engine does not need them. A layout whose methods were
   replaced on the instance is no longer refused.
 - An engine may also have a `layout_type` category string, and build
   arguments recorded with `neurospatial.layout.base.capture_build_params`
@@ -913,3 +914,31 @@ were missing; declare them when you build the environment instead.
 labelled = env.with_metadata(frame="room")
 assert (labelled.units, labelled.frame) == ("cm", "room")
 ```
+
+## Layout engines no longer look up points or build faces themselves
+
+The built-in layout engines had `point_to_bin_index`, `finite_volume_geometry`
+and `is_grid_compatible`. An environment never called them; it uses the
+engine's `binning()`. They are removed. Ask the environment, or the engine's
+binning:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.layout import create_layout
+
+engine = create_layout(
+    "RegularGrid", bin_size=4.0, dimension_ranges=[(0.0, 100.0), (0.0, 100.0)]
+)
+binning = engine.binning()
+# Before: engine.point_to_bin_index(positions[:5])
+bins = binning.locator.locate(positions[:5])
+# Before: engine.finite_volume_geometry()
+faces = binning.faces.build()  # face areas faces.A, cell measures faces.volumes
+# Before: engine.is_grid_compatible
+is_grid = binning.rectilinear is not None
+assert is_grid and bins.min() >= 0
+```
+
+For an environment, `env.bin_at(positions)` locates points and
+`env.binning.rectilinear is not None` tells you whether the bins form a
+rectangular grid.

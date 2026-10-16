@@ -77,8 +77,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `grid_shape`, `active_mask` and `dimension_ranges` from the `Binning` and
   no longer reads an engine's `connectivity`, `dimension_ranges` or grid
   attributes, so attributes an engine adds to its own graph do not reach
-  `env.connectivity`. It never calls `point_to_bin_index` on an engine either,
-  so to change lookup or faces, change what `binning()` returns. Two labels
+  `env.connectivity`. Lookup and faces come only from `binning()`, so to
+  change them, change what `binning()` returns. Two labels
   are read when an engine has them: its `layout_type` category, and the
   build arguments recorded with `neurospatial.layout.base.capture_build_params`
   (`env.layout_parameters`). All built-in engines implement `binning()`, a
@@ -321,6 +321,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   passes it. Set units and frame when you build the environment, for example
   `Environment.from_samples(positions, bin_size=2.0, units="cm", frame="room")`,
   or later with `env.with_metadata(units=..., frame=...)`.
+
+- The built-in layout engines no longer have `point_to_bin_index`,
+  `finite_volume_geometry` or `is_grid_compatible`, and the `LayoutEngine`
+  protocol no longer lists the first and last. An environment never used
+  them: it locates points and builds cell faces from the engine's
+  `binning()`. Use `env.bin_at(points)`, or
+  `engine.binning().locator.locate(points)` on a built engine;
+  `engine.binning().faces.build()` for the cell faces; and
+  `binning.rectilinear is not None` to ask whether the bins form a
+  rectangular grid.
 
 ### Changed
 

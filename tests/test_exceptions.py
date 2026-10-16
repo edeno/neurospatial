@@ -201,7 +201,7 @@ def test_layout_not_built_sites(engine):
 
     layout = RegularGridLayout() if engine == "grid" else TriangularMeshLayout()
     with pytest.raises(LayoutNotBuiltError) as caught:
-        layout.point_to_bin_index(np.array([[0.0, 0.0]]))
+        layout.binning()
     assert isinstance(caught.value, RuntimeError)
     assert str(caught.value).splitlines()[-1].startswith("Fix: ")
 

@@ -113,11 +113,6 @@ def test_face_building_stays_lazy_without_native_builder(monkeypatch):
     monkeypatch.setattr(NativeFaces, "build", record)
     env = publish_environment(layout=source)
     assert not calls
-    monkeypatch.setattr(
-        RegularGridLayout,
-        "finite_volume_geometry",
-        lambda _: pytest.fail("retained builder"),
-    )
     source.grid_edges[0][:] = -99
     np.testing.assert_array_equal(env._binning.faces.build().volumes, np.ones(9))
     assert len(calls) == 1
@@ -250,7 +245,7 @@ def test_unbuilt_layout_refuses_binning(layout_type):
 @pytest.mark.parametrize("wrapper", ["plain", "subset", "transform", "nested"])
 def test_wrapped_opaque_locator_requires_snapshot_migration(wrapper):
     source = _grid()
-    locator = SimpleNamespace(locate=source.point_to_bin_index)
+    locator = SimpleNamespace(locate=source.locator().locate)
     if wrapper in {"subset", "nested"}:
         locator = SubsetLocator(locator, np.arange(9, dtype=np.intp))
     if wrapper in {"transform", "nested"}:

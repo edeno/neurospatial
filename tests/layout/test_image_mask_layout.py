@@ -23,7 +23,7 @@ def test_point_outside_image_bounds_returns_negative_one(synthetic_16x16_mask):
     layout = ImageMaskLayout()
     layout.build(image_mask=synthetic_16x16_mask, pixel_size=1.0)
 
-    result = layout.point_to_bin_index(np.array([[1000.0, 1000.0]]))
+    result = layout.binning().locator.locate(np.array([[1000.0, 1000.0]]))
     assert result[0] == -1
 
 
@@ -33,7 +33,7 @@ def test_point_in_active_pixel_returns_valid_bin(synthetic_16x16_mask):
     layout.build(image_mask=synthetic_16x16_mask, pixel_size=1.0)
 
     # The disk is centered, so the image center (7.5, 7.5) is active.
-    result = layout.point_to_bin_index(np.array([[7.5, 7.5]]))
+    result = layout.binning().locator.locate(np.array([[7.5, 7.5]]))
     assert result[0] >= 0
 
 
@@ -69,7 +69,7 @@ def test_image_mask_nonsquare_pixel_bin_lookup():
     assert layout.grid_edges[0].shape == (6,)  # x edges
     assert layout.grid_edges[1].shape == (3,)  # y edges
 
-    result = layout.point_to_bin_index(np.array([[13.5, 0.5]]))
+    result = layout.binning().locator.locate(np.array([[13.5, 0.5]]))
     assert result[0] >= 0
     np.testing.assert_allclose(layout.bin_centers[result[0]], [13.5, 0.5])
 

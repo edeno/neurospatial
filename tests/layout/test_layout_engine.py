@@ -57,7 +57,7 @@ def test_create_layout_regular_grid():
     assert not layout.is_linearized_track
 
 
-def test_regular_grid_point_to_bin_index():
+def test_regular_grid_locates_points():
     rng = np.random.default_rng(42)
     data = rng.random((100, 2)) * 10
     layout = create_layout(
@@ -68,7 +68,7 @@ def test_regular_grid_point_to_bin_index():
         add_boundary_bins=False,
     )
     points = np.array([[1.0, 1.0], [5.0, 5.0], [100.0, 100.0]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (3,)
     assert np.any(inds >= 0)
 
@@ -103,7 +103,7 @@ def test_create_layout_hexagonal():
     assert not layout.is_linearized_track
 
 
-def test_hexagonal_point_to_bin_index():
+def test_hexagonal_locates_points():
     rng = np.random.default_rng(42)
     data = rng.random((100, 2)) * 10
     layout = create_layout(
@@ -113,7 +113,7 @@ def test_hexagonal_point_to_bin_index():
         infer_active_bins=True,
     )
     points = np.array([[1.0, 1.0], [5.0, 5.0], [100.0, 100.0]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (3,)
     assert np.any(inds >= 0)
 
@@ -165,7 +165,7 @@ def test_create_layout_image_mask():
     assert not layout.is_linearized_track
 
 
-def test_image_mask_point_to_bin_index():
+def test_image_mask_locates_points():
     mask = np.zeros((5, 5), dtype=bool)
     mask[2, 2] = True
     layout = create_layout(
@@ -174,7 +174,7 @@ def test_image_mask_point_to_bin_index():
         pixel_size=1.0,
     )
     points = np.array([[2.5, 2.5], [0.5, 0.5]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (2,)
     assert inds[0] >= 0
 
@@ -202,7 +202,7 @@ def test_create_layout_graph():
     assert layout.is_linearized_track
 
 
-def test_graph_point_to_bin_index():
+def test_graph_locates_points():
     G = nx.Graph()
     G.add_node(0, pos=(0, 0))
     G.add_node(1, pos=(1, 0))
@@ -218,7 +218,7 @@ def test_graph_point_to_bin_index():
         bin_size=0.5,
     )
     points = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (3,)
     assert np.any(inds >= 0)
 
@@ -495,7 +495,7 @@ def test_normalize_layout_name_consistency():
         )
 
 
-def test_point_to_bin_index_dtype_is_intp():
+def test_located_bin_dtype_is_intp():
     """Layout index arrays are ``np.intp`` (portable), never int32/int_.
 
     Tripwire for the index-dtype convention documented in
@@ -517,7 +517,7 @@ def test_point_to_bin_index_dtype_is_intp():
         ("Hexagonal", {"hexagon_width": 2.0}),
     ]:
         layout = create_layout(name, positions=data, infer_active_bins=True, **kwargs)
-        assert layout.point_to_bin_index(points).dtype == np.intp, name
+        assert layout.binning().locator.locate(points).dtype == np.intp, name
 
     # RegularGrid uses geometric containment: the outside point maps to the -1
     # sentinel -- confirm it survives under the intp dtype.
@@ -528,7 +528,7 @@ def test_point_to_bin_index_dtype_is_intp():
         bin_size=2.0,
         add_boundary_bins=False,
     )
-    assert grid.point_to_bin_index(points)[-1] == -1
+    assert grid.binning().locator.locate(points)[-1] == -1
 
     # GraphLayout is the _KDTreeMixin path (the historical int32 source).
     track = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)

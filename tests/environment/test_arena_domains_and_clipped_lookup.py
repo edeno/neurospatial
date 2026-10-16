@@ -334,7 +334,6 @@ class _CustomHexLayout:
         self._build_params_used = {}
         self.is_linearized_track = False
         self.layout_type = "custom"
-        self.is_grid_compatible = False
 
     def build(self, **kwargs):
         pass
@@ -344,9 +343,6 @@ class _CustomHexLayout:
 
     def bin_shapes(self):
         return self.native._binning.shapes
-
-    def point_to_bin_index(self, points):
-        return self.native.bin_at(points)
 
     def plot(self, ax=None, **kwargs):
         return self.native.plot(ax=ax, **kwargs)

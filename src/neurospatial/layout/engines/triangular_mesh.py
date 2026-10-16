@@ -86,11 +86,6 @@ class TriangularMeshLayout:
         """Return standardized category for this layout type."""
         return "mesh"
 
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return False - triangular mesh layouts cannot be rendered as 2D images."""
-        return False
-
     @capture_build_params
     def build(self, boundary_polygon: Polygon, *, point_spacing: float) -> None:
         """Build the triangular mesh layout.
@@ -264,40 +259,6 @@ class TriangularMeshLayout:
             outline=self.outline(),
             dimension_ranges=self.dimension_ranges,
         )
-
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map each 2D point to an active triangle index, or -1 if outside.
-
-        Query points must lie inside the boundary polygon.
-
-        Parameters
-        ----------
-        points : NDArray[np.float64], shape (n_points, 2)
-            2D points to map to triangle indices.
-
-        Returns
-        -------
-        NDArray[np.intp]
-            Each entry is in [0..n_active-1] or -1 if outside.
-
-        """
-        if (
-            self._full_delaunay_tri is None
-            or self._original_simplex_to_active_idx_map is None
-        ):
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in (
-                        "_full_delaunay_tri",
-                        "_original_simplex_to_active_idx_map",
-                    )
-                    if getattr(self, name) is None
-                ),
-            )
-
-        return self.locator().locate(points)
 
     @property
     def is_linearized_track(self) -> bool:
@@ -496,29 +457,3 @@ class TriangularMeshLayout:
         volumes = np.abs(determinants) / n_factorial
 
         return np.asarray(volumes, dtype=np.float64)
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Triangle-mesh face measure: the shared triangle-edge length on every edge.
-
-        Bins are triangle centroids; the shared face between two adjacent triangles
-        is their common edge (two shared vertices), whose length is ``A``. Centroid
-        two-point flux is exact only as the dual approaches K-orthogonality, so a
-        skew guard warns when too many interior edges are strongly non-orthogonal.
-        The skew is a property of the mesh, so an environment warns once, when it
-        first builds (and caches) its diffusion geometry, at the scientist's call.
-        """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        if self._full_delaunay_tri is None:
-            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
-        from neurospatial.geometry._face_builders import mesh_geometry
-
-        tri = self._full_delaunay_tri
-        return mesh_geometry(
-            self.connectivity,
-            self.bin_centers,
-            self.bin_sizes(),
-            tri.points,
-            tri.simplices,
-            np.asarray(self._active_original_simplex_indices),
-        )

@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning, TrackLinearization
-from neurospatial.geometry._face_builders import track_geometry, track_junctions
+from neurospatial.geometry._face_builders import track_junctions
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_track, plot_track_linear
 from neurospatial.layout.base import capture_build_params
@@ -69,11 +69,6 @@ class GraphLayout(_KDTreeMixin):
     def layout_type(self) -> str:
         """Return standardized category for this layout type."""
         return "graph"
-
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return False - graph layouts cannot be rendered as 2D images."""
-        return False
 
     @capture_build_params
     def build(
@@ -421,29 +416,6 @@ class GraphLayout(_KDTreeMixin):
 
         all_1d_bin_lengths = np.diff(self.grid_edges[0])
         return all_1d_bin_lengths[self.active_mask]
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Linear-track face measure: unit cross-section ``A = 1`` on every edge,
-        with junction (inter-segment) edge distances corrected to the true
-        along-track length.
-
-        An intra-segment edge already carries the correct along-track spacing (its
-        ``"distance"`` is the straight-line length along that segment). An
-        inter-segment edge currently carries the Euclidean CHORD between the two
-        junction bins, which understates the along-track distance around a bend and
-        oversmooths. Its ``"distance"`` is replaced by the along-track length
-        ``||bin_u - J|| + ||bin_v - J||`` through the shared junction node ``J`` (the
-        geodesic over the straight-segment substrate). A straight track has no
-        inter-segment edges, so this is a no-op there.
-        """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        junctions = track_junctions(
-            self.connectivity, self.linearization().graph, self.bin_centers.shape[1]
-        )
-        return track_geometry(
-            self.connectivity, self.bin_centers, self.bin_sizes(), junctions
-        )
 
 
 def _shared_track_node(

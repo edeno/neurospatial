@@ -558,7 +558,7 @@ def field_to_rgb_for_napari(
     rgb = cmap_lookup[indices]
 
     # For grid-compatible 2D layouts, reshape to 2D image
-    # Use is_grid_compatible property for type checking, then verify 2D grid_shape
+    # Only rectilinear grids rasterize; also require a 2-D grid_shape.
     is_grid = binning.rectilinear is not None
     has_2d_grid = (
         hasattr(env, "grid_shape")

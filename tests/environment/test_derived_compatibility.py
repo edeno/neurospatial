@@ -44,19 +44,12 @@ class _ExternalGridLayout:
         self._build_params_used = {}
         self.is_linearized_track = False
         self.layout_type = "custom"
-        self.is_grid_compatible = False
 
     def build(self, **kwargs):
         pass
 
     def bin_sizes(self):
         return self.parent.bin_sizes
-
-    def finite_volume_geometry(self):
-        return self.parent.finite_volume_geometry()
-
-    def point_to_bin_index(self, points):
-        return self.parent.bin_at(points)
 
     def plot(self, ax=None, **kwargs):
         return self.parent.plot(ax=ax, **kwargs)
@@ -77,16 +70,12 @@ class _ExternalTrackLayout:
         self._build_params_used = {}
         self.is_linearized_track = True
         self.layout_type = "graph"
-        self.is_grid_compatible = False
 
     def build(self, **kwargs):
         pass
 
     def bin_sizes(self):
         return self.parent.bin_sizes
-
-    def point_to_bin_index(self, points):
-        return self.parent.bin_at(points)
 
     def to_linear(self, points):
         return self.parent.to_linear(points)

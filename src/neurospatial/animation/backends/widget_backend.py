@@ -506,7 +506,7 @@ class PersistentFigureRenderer:
                     layout_type = self._env._provenance.category
                     fallback_reason = (
                         f"set_array optimization not supported for layout type "
-                        f"'{layout_type}' (is_grid_compatible=False)"
+                        f"'{layout_type}' (no rectilinear grid)"
                     )
                     self._handle_fallback(fallback_reason)
                     self._do_full_rerender(
@@ -677,7 +677,7 @@ class PersistentFigureRenderer:
         grid = self._binning_snapshot.rectilinear
 
         # Only grid-compatible layouts can use set_array optimization
-        # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
+        # Grid layouts (grid, mask, polygon) have a rectilinear record.
         if grid is None:
             return None
 
@@ -714,7 +714,7 @@ class PersistentFigureRenderer:
         grid = self._binning_snapshot.rectilinear
 
         # Only grid-compatible layouts can use set_data optimization
-        # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
+        # Grid layouts (grid, mask, polygon) have a rectilinear record.
         if grid is None:
             return None
 

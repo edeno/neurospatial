@@ -8,8 +8,7 @@ Conforms to the LayoutEngine protocol:
                    grid_edges, grid_shape, active_mask,
                    _layout_type_tag, _build_params_used
   - Properties:    is_linearized_track
-  - Methods:       build(boundary_polygon, point_spacing),
-                   point_to_bin_index(points),
+  - Methods:       build(boundary_polygon, point_spacing), binning(),
                    plot(ax, ...), bin_sizes()
 """
 

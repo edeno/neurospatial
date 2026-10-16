@@ -57,11 +57,6 @@ class RegularGridLayout(_GridMixin):
         """Return standardized category for this layout type."""
         return "grid"
 
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return True - regular grids can be rendered as 2D images."""
-        return True
-
     @capture_build_params
     def build(
         self,

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from environment_helpers import (
     built_from,
-    native_layout,
+    face_graph,
     publish_binning,
     publish_environment,
 )
@@ -447,7 +447,7 @@ def test_polar_layout_supplies_annular_sector_geometry():
     sectors = (0.5 * np.diff(distance_edges**2)[:, None] * np.diff(angle_edges)).ravel()
     np.testing.assert_allclose(env.bin_sizes, sectors)
     np.testing.assert_allclose(env.bin_sizes, sectors)
-    graph, volumes = native_layout(env).finite_volume_geometry()
+    graph, volumes = face_graph(env._binning)
     np.testing.assert_allclose(volumes, sectors)
     geometry = DiffusionGeometry.from_graph(graph, volumes)
     assert (geometry.W != env._diffusion_geometry.W).nnz == 0
@@ -480,7 +480,7 @@ def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal
             connect_diagonal_neighbors=diagonal,
         )
     )
-    graph, _ = native_layout(env).finite_volume_geometry()
+    graph, _ = face_graph(env._binning)
     for ring in range(3):
         assert graph[2 * ring][2 * ring + 1]["A"] == pytest.approx(2 if circular else 1)
     for u, v, data in graph.edges(data=True):
@@ -535,7 +535,7 @@ def test_polar_layout_builds_physical_geometry(circular, diagonal):
     radial, angular = (n_r - 1) * n_t, n_r * (n_t - 1)
     diagonals = 2 * (n_r - 1) * (n_t - 1) if diagonal else 0
     seams = (n_r + (2 * (n_r - 1) if diagonal else 0)) if circular else 0
-    graph, volumes = layout.finite_volume_geometry()
+    graph, volumes = face_graph(layout.binning())
     assert graph.number_of_edges() == radial + angular + diagonals + seams
 
     r, theta = layout.bin_centers.T
@@ -573,7 +573,7 @@ def test_masked_polar_layout_preserves_active_bin_indices():
     assert layout.connectivity.has_edge(by_flat[0], by_flat[3])
     assert layout.connectivity.has_edge(by_flat[0], by_flat[7])
     assert len(layout.connectivity.nodes()) == mask.sum()
-    graph, volumes = layout.finite_volume_geometry()
+    graph, volumes = face_graph(layout.binning())
     assert DiffusionGeometry.from_graph(graph, volumes).W.shape == (6, 6)
 
 
@@ -591,9 +591,9 @@ def test_polar_rebuild_refreshes_active_bin_mapping():
     expected.build(active_mask=mask, grid_edges=edges)
     assert list(layout.connectivity.edges()) == list(expected.connectivity.edges())
     np.testing.assert_array_equal(
-        layout.point_to_bin_index(layout.bin_centers), np.arange(mask.sum())
+        layout.binning().locator.locate(layout.bin_centers), np.arange(mask.sum())
     )
-    graph, volumes = layout.finite_volume_geometry()
+    graph, volumes = face_graph(layout.binning())
     assert DiffusionGeometry.from_graph(graph, volumes).W.shape == (6, 6)
 
 

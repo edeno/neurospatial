@@ -15,7 +15,7 @@ def test_point_inside_polygon():
     layout = ShapelyPolygonLayout()
     layout.build(polygon=poly, bin_size=1.0)
 
-    result = layout.point_to_bin_index(np.array([[5.0, 5.0]]))
+    result = layout.binning().locator.locate(np.array([[5.0, 5.0]]))
     assert result[0] >= 0
 
 
@@ -25,7 +25,7 @@ def test_point_outside_polygon_returns_negative_one():
     layout = ShapelyPolygonLayout()
     layout.build(polygon=poly, bin_size=1.0)
 
-    result = layout.point_to_bin_index(np.array([[20.0, 20.0]]))
+    result = layout.binning().locator.locate(np.array([[20.0, 20.0]]))
     assert result[0] == -1
 
 
@@ -35,7 +35,7 @@ def test_point_in_polygon_hole_returns_negative_one(polygon_with_hole):
     layout.build(polygon=polygon_with_hole, bin_size=1.0)
 
     # Hole spans (4, 4)-(6, 6); its center (5, 5) is not in any active bin.
-    result = layout.point_to_bin_index(np.array([[5.0, 5.0]]))
+    result = layout.binning().locator.locate(np.array([[5.0, 5.0]]))
     assert result[0] == -1
 
 
@@ -43,7 +43,7 @@ def test_point_on_polygon_edge():
     """A point exactly on the exterior edge.
 
     Pinned to current behavior: the active mask uses ``shapely.contains``,
-    which excludes boundary points, but ``point_to_bin_index`` uses grid-index
+    which excludes boundary points, but the grid locator uses grid-index
     containment. A point at (0, 5) on the left edge lands in the leftmost
     column of active cells, so it maps to a valid bin rather than -1.
     """
@@ -51,7 +51,7 @@ def test_point_on_polygon_edge():
     layout = ShapelyPolygonLayout()
     layout.build(polygon=poly, bin_size=1.0)
 
-    result = layout.point_to_bin_index(np.array([[0.0, 5.0]]))
+    result = layout.binning().locator.locate(np.array([[0.0, 5.0]]))
     assert result[0] >= 0
 
 

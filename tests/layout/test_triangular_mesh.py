@@ -344,8 +344,8 @@ class TestTriangularMeshLayoutBuild:
         assert np.sum(layout.active_mask) == layout.bin_centers.shape[0]
 
 
-class TestTriangularMeshLayoutPointToBinIndex:
-    """Tests for TriangularMeshLayout.point_to_bin_index() method."""
+class TestTriangularMeshLayoutPointLookup:
+    """Tests for the point lookup of a TriangularMeshLayout's binning."""
 
     def test_points_inside_triangles(self):
         """Test mapping points that fall inside triangles."""
@@ -355,7 +355,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
 
         # Points inside the polygon
         test_points = np.array([[5.0, 5.0], [2.0, 2.0], [8.0, 8.0]])
-        bin_indices = layout.point_to_bin_index(test_points)
+        bin_indices = layout.binning().locator.locate(test_points)
 
         assert bin_indices.shape[0] == 3
         # All points should map to valid bins (not -1)
@@ -370,7 +370,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
 
         # Points outside the polygon
         test_points = np.array([[20.0, 20.0], [-5.0, -5.0]])
-        bin_indices = layout.point_to_bin_index(test_points)
+        bin_indices = layout.binning().locator.locate(test_points)
 
         assert bin_indices.shape[0] == 2
         assert np.all(bin_indices == -1)
@@ -382,7 +382,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
         layout.build(poly, point_spacing=3.0)
 
         test_points = np.array([[5.0, 5.0], [20.0, 20.0], [2.0, 2.0]])
-        bin_indices = layout.point_to_bin_index(test_points)
+        bin_indices = layout.binning().locator.locate(test_points)
 
         assert bin_indices.shape[0] == 3
         # First and third should be valid, second should be -1
@@ -391,24 +391,23 @@ class TestTriangularMeshLayoutPointToBinIndex:
         assert bin_indices[2] >= 0
 
     def test_single_point_input(self):
-        """Test point_to_bin_index with single point."""
+        """Test point lookup with a single point."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         layout.build(poly, point_spacing=3.0)
 
         test_point = np.array([5.0, 5.0])
-        bin_index = layout.point_to_bin_index(test_point)
+        bin_index = layout.binning().locator.locate(test_point)
 
         assert bin_index.shape == (1,)
         assert bin_index[0] >= 0
 
     def test_unbuild_layout_raises_error(self):
-        """Test that calling point_to_bin_index before build raises RuntimeError."""
+        """Test that asking an unbuilt layout for its binning raises RuntimeError."""
         layout = TriangularMeshLayout()
-        test_points = np.array([[5.0, 5.0]])
 
         with pytest.raises(RuntimeError, match="not built"):
-            layout.point_to_bin_index(test_points)
+            layout.binning()
 
     def test_invalid_point_shape_raises_error(self):
         """Test that invalid point shape raises ValueError."""
@@ -420,7 +419,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
         test_points = np.array([[5.0, 5.0, 5.0]])
 
         with pytest.raises(ValueError, match="shape \\(M, 2\\)"):
-            layout.point_to_bin_index(test_points)
+            layout.binning().locator.locate(test_points)
 
 
 class TestTriangularMeshLayoutProperties:

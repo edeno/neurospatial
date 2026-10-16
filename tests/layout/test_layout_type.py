@@ -1,10 +1,8 @@
-"""Tests for the ``layout_type`` / ``is_grid_compatible`` metadata on layout engines.
+"""Tests for the ``layout_type`` metadata on layout engines.
 
-Each layout engine exposes a stable ``layout_type`` tag used by rendering
-code to decide whether the field can be rasterized as a 2-D image. We pin
-the tag and the ``is_grid_compatible`` flag for every registered layout
-plus a smoke test that the napari rendering path actually consumes the
-flag on a grid env.
+Each layout engine exposes a stable ``layout_type`` tag. We pin the tag for
+every registered layout, plus a smoke test that the napari rendering path
+rasterizes a rectilinear grid environment as a 2-D image.
 
 The previous version of this file had a per-layout TestLayoutTypeProperty
 class that duplicated the parametrized TestLayoutTypeConsistency coverage,
@@ -66,30 +64,8 @@ def test_layout_type_values(layout_kind, expected_type):
     assert layout.layout_type == expected_type
 
 
-@pytest.mark.parametrize(
-    "layout_kind,expected_compatible",
-    [
-        ("RegularGrid", True),
-        ("MaskedGrid", True),
-        ("ImageMask", True),
-        ("ShapelyPolygon", True),
-        ("Hexagonal", False),
-        ("TriangularMesh", False),
-        ("Graph", False),
-    ],
-)
-def test_is_grid_compatible(layout_kind, expected_compatible):
-    """``is_grid_compatible`` reflects whether the layout can rasterize."""
-    if layout_kind == "Graph":
-        pytest.importorskip("track_linearization")
-
-    layout_class = _get_layout_class(layout_kind)
-    layout = layout_class()
-    assert layout.is_grid_compatible == expected_compatible
-
-
 def test_field_to_rgb_for_napari_grid_layout():
-    """End-to-end: napari rendering path consumes ``is_grid_compatible``."""
+    """End-to-end: napari rendering rasterizes a rectilinear grid."""
     import matplotlib.pyplot as plt
 
     from neurospatial import Environment

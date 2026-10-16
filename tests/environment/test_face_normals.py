@@ -325,12 +325,12 @@ def test_explicit_pair_reordering_reverses_only_its_normal():
 
 def test_native_capture_does_not_materialize_faces(monkeypatch):
     from neurospatial import Environment
-    from neurospatial.layout.engines.regular_grid import RegularGridLayout
+    from neurospatial.geometry._native_faces import NativeFaces
 
     def refuse(self):
         pytest.fail("native construction must retain lazy face building")
 
-    monkeypatch.setattr(RegularGridLayout, "finite_volume_geometry", refuse)
+    monkeypatch.setattr(NativeFaces, "build", refuse)
     env = Environment.from_samples(
         np.array([[0.0, 0.0], [3.0, 4.0]]), bin_size=1.0, infer_active_bins=False
     )

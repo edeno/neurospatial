@@ -673,7 +673,7 @@ class TestHexagonalLayout:
         assert env_hexagonal._binning.shapes.radius * np.sqrt(3.0) == pytest.approx(1.0)
         assert env_hexagonal.bin_centers.shape[0] > 0  # Some bins should be active
 
-    def test_point_to_bin_index_hex(self, env_hexagonal: Environment):
+    def test_bin_at_hex(self, env_hexagonal: Environment):
         # Test a point known to be near the center of some active hexagon
         # (e.g., one of the input samples if it's isolated enough)
         if env_hexagonal.bin_centers.shape[0] > 0:
@@ -686,9 +686,7 @@ class TestHexagonalLayout:
             # Test a point far away
             far_point = np.array([[100.0, 100.0]])
             idx_far = env_hexagonal.bin_at(far_point)
-            assert (
-                idx_far[0] == -1
-            )  # Hexagonal point_to_bin_index should return -1 if outside
+            assert idx_far[0] == -1  # a point outside every hexagon gets -1
 
     def test_bin_size_hex(self, env_hexagonal: Environment):
         areas = env_hexagonal.bin_sizes

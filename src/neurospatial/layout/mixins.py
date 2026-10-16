@@ -19,7 +19,7 @@ from neurospatial.layout.validation import validate_connectivity_graph
 
 
 # ---------------------------------------------------------------------------
-# KD-tree mixin (for point_to_bin_index)
+# KD-tree mixin (nearest-bin lookup)
 # ---------------------------------------------------------------------------
 class _KDTreeMixin:
     """Mixin providing nearest-bin lookup through an owned data locator.
@@ -79,24 +79,12 @@ class _KDTreeMixin:
         assert self._locator is not None
         return self._locator
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map points to their nearest bin, with -1 for non-finite rows.
-
-        An unbuilt or empty layout returns -1 for every query point. Built
-        layouts reject a coordinate width that differs from their bin centers.
-        """
-        if self._locator is None:
-            centers = getattr(self, "bin_centers", None)
-            if centers is None or len(centers) == 0:
-                return np.full(np.atleast_2d(points).shape[0], -1, dtype=np.intp)
-        return self.locator().locate(points)
-
 
 class _GridMixin:
     """Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
 
     Provides common functionality for layouts that are based on an underlying
-    N-dimensional grid, such as `point_to_bin_index` using grid definitions,
+    N-dimensional grid, such as point lookup from grid definitions,
     default plotting, and `bin_size` for uniform grids.
 
     Assumes the inheriting class defines grid-specific attributes like
@@ -229,37 +217,6 @@ class _GridMixin:
             grid_spec=self._grid_spec,
             dimension_ranges=self.dimension_ranges,
         )
-
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map N-D points to active bin indices based on grid structure.
-
-        Parameters
-        ----------
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            N-D points to map.
-
-        Returns
-        -------
-        NDArray[np.intp], shape (n_points,)
-            Active bin indices (0 to N-1). -1 for points outside active areas.
-
-        Raises
-        ------
-        RuntimeError
-            If grid attributes (`grid_edges`, `grid_shape`) are not set.
-
-        """
-        if self.grid_edges is None or self.grid_shape is None:
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "grid_shape")
-                    if getattr(self, name) is None
-                ),
-            )
-
-        return self.locator().locate(points)
 
     def plot(
         self,
@@ -417,20 +374,3 @@ class _GridMixin:
         ):
             raise LayoutNotBuiltError(type(self).__name__, "rectilinear_grid")
         return RectilinearGrid(self.grid_edges, self.grid_shape, self.active_mask)
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Cartesian face measure: product of the OTHER axes' widths for an
-        axis-aligned neighbor; corner-only (diagonal) neighbors get ``A = 0``.
-
-        On a uniform grid this is ``A = h**(n_dims - 1)`` for face-adjacent edges
-        (and ``A = 1`` in 1D). Masks/holes only drop nodes; the geometry of the
-        remaining edges is unchanged.
-        """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.geometry._face_builders import grid_geometry
-
-        assert self.bin_centers is not None
-        return grid_geometry(
-            self.connectivity, self.bin_centers, self.bin_sizes(), self._axis_widths()
-        )

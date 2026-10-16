@@ -157,10 +157,6 @@ class LayoutEngine(Protocol):
         - "graph": 1D linearized path (GraphLayout)
         - "polar": Egocentric distance-by-angle sectors
         - "other": Unknown or custom layouts
-    is_grid_compatible : bool
-        True if the layout can be rendered as a 2D image (has 2D grid_shape
-        and active_mask). Grid-compatible layouts include: grid, mask, polygon.
-        Non-grid layouts (hexagonal, mesh, graph) return False.
 
     """
 
@@ -203,22 +199,6 @@ class LayoutEngine(Protocol):
         """
         ...
 
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return True if layout can be rendered as a 2D image.
-
-        Grid-compatible layouts have a 2D grid_shape and active_mask,
-        allowing field values to be reshaped into 2D images for efficient
-        rendering in napari and widget backends.
-
-        Returns
-        -------
-        bool
-            True for grid, mask, and polygon layouts; False otherwise.
-
-        """
-        ...
-
     # --- Required Methods ---
     def build(self, **kwargs) -> None:
         """Construct the layout's geometry, bins, and connectivity graph.
@@ -250,27 +230,6 @@ class LayoutEngine(Protocol):
         ------
         LayoutNotBuiltError
             If the layout has not been built.
-        """
-        ...
-
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map continuous N-D points to discrete active bin indices.
-
-        The returned indices range from `0` to `n_active_bins - 1`.
-        A value of -1 indicates that the corresponding point did not map
-        to any active bin (e.g., it's outside the defined environment).
-
-        Parameters
-        ----------
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            An array of N-dimensional points to map to bin indices.
-
-        Returns
-        -------
-        NDArray[np.intp], shape (n_points,)
-            An array of active bin indices corresponding to the input points.
-            -1 for points outside the layout's active bins.
-
         """
         ...
 
