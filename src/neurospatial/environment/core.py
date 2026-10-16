@@ -5500,7 +5500,10 @@ class Environment(Generic[_C]):
         -----
         - Detection is cached; each access returns an independent array.
         - For large environments (>100,000 bins), initial computation may take a few seconds
-        - Uses graph-based boundary detection (checks node degrees and connectivity)
+        - Grid and hexagonal bins use their cell lattice: a bin is on the
+          boundary when an orthogonal grid neighbor, or any of a hexagon's six
+          neighbors, is inactive or outside the lattice. Exact polygon cells
+          use the outline of their union; other layouts use node degrees.
 
         See Also
         --------
