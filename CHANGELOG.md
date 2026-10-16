@@ -302,8 +302,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   stays constant. A bin stays NaN when the share of its smoothing weight on
   observed bins is at most 0.1% of the largest share in its connected part of
   the environment, which includes every bin of a part with no observed bin.
-  This is the same masked average that binned rate maps and
-  `resample_field(method="diffuse")` use. `mode="transition"` and
+  Binned rate maps and `resample_field(method="diffuse")` use the same
+  masked-average code, each with its own far-field floor (a
+  bandwidth-dependent one for binned maps, none for resampling), so their
+  NaN bins far from observations can differ from `smooth`'s. `mode="transition"` and
   `mode="density"` refuse a field with NaN, because missing bins have no
   defensible mass under a conserving operator: fill them explicitly, or use
   `mode="average"` for an intensive field. `diffuse(backend="jax")` refuses
