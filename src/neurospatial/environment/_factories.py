@@ -829,7 +829,6 @@ def _build_layout(
         layout_instance,
         metadata=metadata,
         layout_type=kind,
-        build_params=layout_params,
         regions=regions,
         arena=arena,
         within_arena=True,

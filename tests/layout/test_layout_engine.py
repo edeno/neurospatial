@@ -370,13 +370,20 @@ def test_layout_engine_protocol_adherence(
     assert layout._layout_type_tag == layout_kind, (
         f"{layout_kind}._layout_type_tag mismatch"
     )
-    # Ensure build_params_used stores the input params or a superset
-    # Note: TriangularMesh serializes boundary_polygon as boundary_exterior_coords
-    # and boundary_interior_coords_list, so we skip this check for that layout
-    if layout_kind != "TriangularMesh":
-        for k in params:
-            assert k in layout._build_params_used, (
-                f"{layout_kind}._build_params_used missing '{k}'"
+    # The record keeps every build choice and no input data (positions,
+    # masks, polygons, graphs, nested ranges).
+    from neurospatial.layout.base import _choice
+
+    for k, value in params.items():
+        try:
+            expected = _choice(value)
+        except TypeError:
+            assert k not in layout._build_params_used, (
+                f"{layout_kind}._build_params_used records data argument '{k}'"
+            )
+        else:
+            assert layout._build_params_used[k] == expected, (
+                f"{layout_kind}._build_params_used missing choice '{k}'"
             )
 
     if layout.active_mask is not None:
@@ -548,3 +555,75 @@ def test_environment_index_surface_dtype_is_intp():
     assert env.bin_at(pts).dtype == np.intp
     assert env.bin_at(pts)[-1] == -1  # geometric grid: outside -> -1 sentinel
     assert env.boundary_bins.dtype == np.intp
+
+
+class TestBuildChoices:
+    """capture_build_params records scalar choices and refuses undeclared data."""
+
+    def test_declared_data_is_left_out_and_choices_are_plain_values(self):
+        from neurospatial.layout.base import capture_build_params
+
+        class Engine:
+            @capture_build_params(data=("positions",))
+            def build(self, *, positions, bin_size, per_axis=(1, 2), label=None):
+                pass
+
+        engine = Engine()
+        engine.build(positions=np.zeros((4, 2)), bin_size=np.float64(2.0))
+        assert engine._build_params_used == {
+            "bin_size": 2.0,
+            "per_axis": (1, 2),
+            "label": None,
+        }
+        assert type(engine._build_params_used["bin_size"]) is float
+
+    def test_undeclared_data_is_refused_before_building(self):
+        from neurospatial.layout.base import capture_build_params
+
+        built = []
+
+        class Engine:
+            @capture_build_params
+            def build(self, *, positions):
+                built.append(positions)
+
+        with pytest.raises(TypeError, match=r"'positions' is not a build choice") as e:
+            Engine().build(positions=np.zeros((4, 2)))
+        assert "data=('positions',)" in str(e.value)
+        assert not built
+
+    def test_unknown_data_name_is_refused_at_decoration(self):
+        from neurospatial.layout.base import capture_build_params
+
+        with pytest.raises(TypeError, match="does not take"):
+
+            class Engine:
+                @capture_build_params(data=("points",))
+                def build(self, *, positions):
+                    pass
+
+    def test_subclass_build_record_wins_over_its_parent_build(self):
+        """A subclass that calls super().build() records its own choices."""
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(
+            active_mask=np.ones((2, 4), dtype=bool),
+            grid_edges=(np.arange(3.0), np.linspace(-np.pi, np.pi, 5)),
+            circular_angle=False,
+        )
+        assert layout._build_params_used == {
+            "connect_diagonal_neighbors": True,
+            "circular_angle": False,
+        }
+
+    def test_saved_record_with_data_is_refused_on_read(self):
+        from neurospatial import Environment
+
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
+        data = env.to_dict()
+        data["layout_parameters"]["grid_edges"] = [[0.0, 1.0, 2.0]] * 2
+        with pytest.raises(ValueError, match="'grid_edges' is not a build choice"):
+            Environment.from_dict(data)

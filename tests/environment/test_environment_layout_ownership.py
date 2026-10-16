@@ -155,39 +155,26 @@ def test_polar_faces_come_from_the_layout_not_its_parameters():
     np.testing.assert_array_equal(faces.A[same_ring], [2.0, 2.0])
 
 
-def test_track_faces_come_from_the_layout_not_its_parameters():
-    """Junction flux distances use the built track, not the recorded graph."""
+def test_track_build_record_keeps_choices_and_refuses_data():
+    """A track's build record holds no graph; injected data is refused, not dropped."""
     graph = nx.Graph()
     for node, pos in enumerate([(0.0, 0.0), (6.0, 0.0), (6.0, 6.0)]):
         graph.add_node(node, pos=pos)
     graph.add_edges_from([(0, 1), (1, 2)], distance=6.0)
+    source = GraphLayout()
+    source.build(
+        graph_definition=graph,
+        edge_order=[(0, 1), (1, 2)],
+        edge_spacing=0.0,
+        bin_size=2.0,
+    )
+    assert source._build_params_used == {"edge_spacing": 0.0, "bin_size": 2.0}
+    env = publish_environment(layout=source)
+    assert env.layout_parameters == {"edge_spacing": 0.0, "bin_size": 2.0}
 
-    def build():
-        layout = GraphLayout()
-        layout.build(
-            graph_definition=graph,
-            edge_order=[(0, 1), (1, 2)],
-            edge_spacing=0.0,
-            bin_size=2.0,
-        )
-        return layout
-
-    reference = publish_environment(layout=build())
-    expected = reference._binning.faces.build()
-    source = build()
-    moved = nx.Graph()
-    moved.add_node(0, pos=(0.0, 0.0))
-    moved.add_node(1, pos=(100.0, 100.0))
-    moved.add_node(2, pos=(6.0, 6.0))
-    moved.add_edges_from([(0, 1), (1, 2)], distance=6.0)
-    source._build_params_used["graph_definition"] = moved
-    actual = publish_environment(layout=source)._binning.faces.build()
-    for first, second in zip(actual, expected, strict=True):
-        np.testing.assert_array_equal(first, second)
-    # The bend joins the last bin of one segment to the first of the next:
-    # its flux distance runs through the junction at (6, 0).
-    bend = int(np.argmax(actual.distance - reference._binning.bins.pair_distances))
-    np.testing.assert_allclose(actual.distance[bend], 2.0)
+    source._build_params_used["graph_definition"] = graph
+    with pytest.raises(TypeError, match="'graph_definition' is not a build choice"):
+        publish_environment(layout=source)
 
 
 def test_custom_engine_publishes_through_its_binning_without_being_copied():

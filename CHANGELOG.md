@@ -332,6 +332,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `binning.rectilinear is not None` to ask whether the bins form a
   rectangular grid.
 
+- A custom layout engine that records its build arguments with
+  `neurospatial.layout.base.capture_build_params` declares its input-data
+  arguments in the decorator: `@capture_build_params(data=("positions",))`.
+  They are left out of `env.layout_parameters`. Any other argument that is not
+  a scalar or a flat sequence of scalars now raises a `TypeError` naming it
+  when the engine is built; it used to be dropped without notice. The
+  built-in engines declare their data the same way, replacing their
+  `_data_parameters` attribute, and their recorded choices are unchanged. A
+  saved environment whose `layout_parameters` hold anything other than such
+  choices is refused when it is read.
+
 ### Changed
 
 - `env.plot()` names the axes of a 2-D environment by what the coordinates

@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, ClassVar
+from typing import Any
 
 import matplotlib
 import matplotlib.axes
@@ -41,11 +41,6 @@ class GraphLayout(_KDTreeMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    # Build arguments that are input data, not choices; they are left out
-    # of the environment's recorded layout parameters.
-    _data_parameters: ClassVar[frozenset[str]] = frozenset(
-        {"graph_definition", "edge_order"}
-    )
     _layout_type_tag: str
     _build_params_used: dict[str, Any]
 
@@ -70,7 +65,7 @@ class GraphLayout(_KDTreeMixin):
         """Return standardized category for this layout type."""
         return "graph"
 
-    @capture_build_params
+    @capture_build_params(data=("graph_definition", "edge_order"))
     def build(
         self,
         *,
@@ -122,7 +117,6 @@ class GraphLayout(_KDTreeMixin):
         track_graph = graph_definition.copy()
         for enumeration_index, (u, v) in enumerate(track_graph.edges()):
             track_graph.edges[u, v]["edge_id"] = enumeration_index
-        self._build_params_used["graph_definition"] = track_graph
 
         (linear_bin_centers, self.grid_edges, self.active_mask, edge_ids) = (
             _get_graph_bins(

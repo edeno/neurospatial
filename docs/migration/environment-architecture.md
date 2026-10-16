@@ -234,7 +234,13 @@ If you wrote your own layout engine:
   replaced on the instance is no longer refused.
 - An engine may also have a `layout_type` category string, and build
   arguments recorded with `neurospatial.layout.base.capture_build_params`
-  become `env.layout_parameters`. Both are optional labels.
+  become `env.layout_parameters`. Both are optional labels. Name the
+  arguments that are input data, such as positions, masks, polygons or
+  graphs, once in the decorator, as in
+  `@capture_build_params(data=("positions",))`. They are not recorded, and
+  any other argument that is not a scalar or a flat sequence of scalars
+  raises a `TypeError` when the engine is built, instead of being dropped
+  silently.
 - An external object that has no `binning()` method still needs an installed
   snapshot adapter (see the
   [interoperability guide](../user-guide/interoperability.md)).

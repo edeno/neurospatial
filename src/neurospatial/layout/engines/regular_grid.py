@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, ClassVar
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -34,9 +34,6 @@ class RegularGridLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    # Build arguments that are input data, not choices; they are left out
-    # of the environment's recorded layout parameters.
-    _data_parameters: ClassVar[frozenset[str]] = frozenset({"positions"})
     _layout_type_tag: str
     _build_params_used: dict[str, Any]
 
@@ -57,7 +54,7 @@ class RegularGridLayout(_GridMixin):
         """Return standardized category for this layout type."""
         return "grid"
 
-    @capture_build_params
+    @capture_build_params(data=("positions", "dimension_ranges"))
     def build(
         self,
         *,

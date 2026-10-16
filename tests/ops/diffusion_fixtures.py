@@ -78,7 +78,6 @@ def build_track_1d(bin_size: float = 2.0) -> tuple[Environment, None]:
         name="track",
         layout=layout,
         layout_type_used="Graph",
-        layout_params_used=params,
     )
     return env, None  # source chosen by index in the field builder
 

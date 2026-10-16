@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, ClassVar
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -27,11 +27,6 @@ class MaskedGridLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    # Build arguments that are input data, not choices; they are left out
-    # of the environment's recorded layout parameters.
-    _data_parameters: ClassVar[frozenset[str]] = frozenset(
-        {"active_mask", "grid_edges"}
-    )
     _layout_type_tag: str
     _build_params_used: dict[str, Any]
     bin_size_: NDArray[np.float64] | None = None
@@ -53,7 +48,7 @@ class MaskedGridLayout(_GridMixin):
         """Return standardized category for this layout type."""
         return "mask"
 
-    @capture_build_params
+    @capture_build_params(data=("active_mask", "grid_edges"))
     def build(
         self,
         *,

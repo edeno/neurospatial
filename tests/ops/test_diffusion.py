@@ -113,7 +113,6 @@ def build_track(bin_size: float, *, straight: bool) -> Environment:
         name="track",
         layout=layout,
         layout_type_used="Graph",
-        layout_params_used=params,
     )
 
 

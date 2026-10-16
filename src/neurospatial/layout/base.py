@@ -1,84 +1,183 @@
 import inspect
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, Protocol, TypeVar, overload, runtime_checkable
 
 import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
 
 T = TypeVar("T")
 
 
-def capture_build_params(build_method: Callable[..., T]) -> Callable[..., T]:
-    """Decorator to capture build parameters for layout engines.
+_SCALAR_CHOICES = (bool, int, float, str, type(None))
 
-    This decorator automatically captures all parameters passed to a layout
-    engine's `build()` method and stores them in `self._build_params_used`.
-    This eliminates the need for manual `locals().copy()` bookkeeping.
+
+def _choice(value: Any) -> Any:
+    """Return a build choice as a plain scalar or a tuple of scalars, or raise.
+
+    NumPy scalars become Python scalars; lists, tuples and 1-D integer or
+    floating-point arrays become tuples. Anything else raises ``TypeError``.
+    """
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            value = value[()]
+        elif value.ndim == 1 and value.dtype.kind in "iuf":
+            value = value.tolist()
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, _SCALAR_CHOICES):
+        return value
+    if isinstance(value, (list, tuple)):
+        items = tuple(_choice(item) for item in value)
+        if all(isinstance(item, _SCALAR_CHOICES) for item in items):
+            return items
+    raise TypeError(f"{type(value).__name__} is not a scalar or a flat sequence")
+
+
+def build_choices(params: Mapping[str, Any], *, owner: str) -> dict[str, Any]:
+    """Return build choices as plain values, refusing anything that is data.
+
+    A choice is a scalar (bool, number, string or None) or a flat sequence of
+    scalars, such as a per-axis ``bin_size``. Sequences become tuples and
+    NumPy scalars become Python scalars.
 
     Parameters
     ----------
-    build_method : callable
-        The build method to decorate.
+    params : mapping of str to object
+        Choices recorded by a layout engine or a derivation, or read back
+        from a saved environment.
+    owner : str
+        Where the choices come from, named in the error.
+
+    Returns
+    -------
+    dict of str to object
+        The choices, in ``params`` order.
+
+    Raises
+    ------
+    TypeError
+        If a value is not a scalar or a flat sequence of scalars.
+    """
+    choices: dict[str, Any] = {}
+    for name, value in params.items():
+        try:
+            choices[name] = _choice(value)
+        except TypeError as error:
+            raise TypeError(
+                _format_error(
+                    f"{owner} argument {name!r} is not a build choice: {error}.",
+                    why=(
+                        "Why: an environment records only scalar build choices, "
+                        "such as bin_size; input data (positions, masks, "
+                        "polygons, graphs) is described by its bins instead."
+                    ),
+                    fix=(
+                        f"declare it as data with @capture_build_params(data=({name!r},)) "
+                        "on the engine's build method"
+                    ),
+                )
+            ) from None
+    return choices
+
+
+@overload
+def capture_build_params(build_method: Callable[..., T], /) -> Callable[..., T]: ...
+
+
+@overload
+def capture_build_params(
+    *, data: Iterable[str] = ()
+) -> Callable[[Callable[..., T]], Callable[..., T]]: ...
+
+
+def capture_build_params(
+    build_method: Callable[..., T] | None = None,
+    /,
+    *,
+    data: Iterable[str] = (),
+) -> Callable[..., T] | Callable[[Callable[..., T]], Callable[..., T]]:
+    """Record a layout engine's build choices, declaring its data arguments once.
+
+    The decorated ``build()`` stores its arguments, defaults included, in
+    ``self._build_params_used`` after it returns; an environment built from
+    the engine reports them as ``env.layout_parameters``. Arguments named in
+    ``data`` are input data, such as positions, masks, polygons or graphs,
+    and are not recorded. Every other argument must be a build choice: a
+    scalar or a flat sequence of scalars.
+
+    Parameters
+    ----------
+    build_method : callable, optional
+        The build method, when the decorator is used bare
+        (``@capture_build_params``).
+    data : iterable of str, default=()
+        Names of the build arguments that are input data.
 
     Returns
     -------
     callable
-        Wrapped build method that captures parameters.
+        The wrapped build method, or a decorator when called with ``data``.
+
+    Raises
+    ------
+    TypeError
+        At decoration, if ``data`` names an argument ``build`` does not have.
+        At build, if an argument outside ``data`` is not a build choice.
 
     Examples
     --------
+    >>> import numpy as np
     >>> class MyLayout:
-    ...     @capture_build_params
-    ...     def build(self, *, bin_size: float, dimension_ranges=None):
-    ...         # Clean implementation without manual parameter capture
+    ...     @capture_build_params(data=("positions",))
+    ...     def build(self, *, positions, bin_size: float, connect: bool = True):
     ...         pass
-
-    Notes
-    -----
-    This decorator uses `inspect.signature()` to bind arguments and capture
-    all parameters (including defaults) that were passed to the method.
-    The `self` parameter is automatically excluded from the captured parameters.
-
+    >>> layout = MyLayout()
+    >>> layout.build(positions=np.zeros((5, 2)), bin_size=np.float64(2.0))
+    >>> layout._build_params_used
+    {'bin_size': 2.0, 'connect': True}
     """
-    sig = inspect.signature(build_method)
+    data_names = frozenset(data)
 
-    @wraps(build_method)
-    def wrapper(self, *args, **kwargs) -> T:
-        """
-        Capture build parameters before calling the original method.
+    def decorate(method: Callable[..., T]) -> Callable[..., T]:
+        signature = inspect.signature(method)
+        unknown = sorted(data_names - set(signature.parameters))
+        if unknown:
+            raise TypeError(
+                f"capture_build_params(data=...) names {unknown}, which "
+                f"{method.__qualname__} does not take."
+            )
+        variadic = {
+            name
+            for name, parameter in signature.parameters.items()
+            if parameter.kind is inspect.Parameter.VAR_KEYWORD
+        }
 
-        Parameters
-        ----------
-        *args : tuple
-            Positional arguments to pass to the build method.
-        **kwargs : dict
-            Keyword arguments to pass to the build method.
+        @wraps(method)
+        def wrapper(self: Any, *args: Any, **kwargs: Any) -> T:
+            bound = signature.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+            params: dict[str, Any] = {}
+            for name, value in list(bound.arguments.items())[1:]:
+                if name in variadic:
+                    params.update(value)
+                elif name not in data_names:
+                    params[name] = value
+            # Refuse data before building; record after, so the outermost
+            # build of a subclass that calls super().build() wins.
+            choices = build_choices(params, owner=f"{type(self).__name__}.build()")
+            result = method(self, *args, **kwargs)
+            self._build_params_used = choices
+            return result
 
-        Returns
-        -------
-        T
-            Return value from the original build method.
-        """
-        # Bind all arguments to the signature
-        bound = sig.bind(self, *args, **kwargs)
-        bound.apply_defaults()
+        return wrapper
 
-        # Convert to dict and remove 'self'
-        params = dict(bound.arguments)
-        params.pop("self", None)
-
-        # Store captured parameters
-        self._build_params_used = params
-
-        # Call the original method
-        return build_method(self, *args, **kwargs)
-
-    return wrapper
+    return decorate if build_method is None else decorate(build_method)
 
 
 @runtime_checkable
@@ -97,7 +196,8 @@ class LayoutEngine(Protocol):
     constructed from that record; diffusion, gradients and divergence use its
     faces. Custom engines implement the same method. An environment derives
     its graph, grid index and ranges from the record and reads only two other,
-    optional members: ``layout_type`` and ``_build_params_used``. The other
+    optional members: ``layout_type`` and the build choices that
+    :func:`capture_build_params` records in ``_build_params_used``. The other
     members below describe the built-in engines.
 
     Attributes
@@ -145,8 +245,8 @@ class LayoutEngine(Protocol):
         A string identifier for the type of layout (e.g., "RegularGrid").
         Used for introspection and serialization.
     _build_params_used : Dict[str, Any]
-        A dictionary of the parameters used to construct this layout instance.
-        Used for introspection and serialization.
+        The scalar build choices recorded by :func:`capture_build_params`;
+        input data arguments are not recorded.
     layout_type : str
         A standardized category for the layout type. Values:
         - "grid": Regular rectangular grid (RegularGridLayout)

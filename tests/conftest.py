@@ -326,7 +326,6 @@ def graph_env(
         name="PlusMazeGraph",
         layout=layout_instance,
         layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 
@@ -404,7 +403,6 @@ def simple_graph_env(simple_graph_for_layout) -> Environment:
         name="SimpleGraphEnvForMask",
         layout=layout_instance,
         layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 
@@ -495,7 +493,6 @@ def ymaze_env(ymaze_graph: nx.Graph) -> Environment:
         name="YMaze",
         layout=layout_instance,
         layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 
@@ -547,7 +544,6 @@ def tmaze_env(tmaze_graph: nx.Graph) -> Environment:
         name="TMaze",
         layout=layout_instance,
         layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 

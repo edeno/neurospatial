@@ -54,7 +54,11 @@ def publish_environment(
     frame=None,
     **kwargs,
 ):
-    """Publish a built layout, or republish another environment's geometry."""
+    """Publish a built layout, or republish another environment's geometry.
+
+    A built layout records its own build choices; ``layout_params_used``
+    replaces the choices only when republishing an environment.
+    """
     coordinates = kwargs.pop("_coordinates", None)
     if isinstance(layout, Environment):
         return publish_binning(
@@ -79,7 +83,6 @@ def publish_environment(
         layout,
         metadata=_Metadata(name, units, frame),
         layout_type=layout_type_used,
-        build_params=layout_params_used,
         regions=regions,
         coordinates=coordinates,
         **kwargs,

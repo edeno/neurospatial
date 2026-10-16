@@ -135,8 +135,10 @@ are read-only, and equality is by identity, so cached analyses and
 `with_regions` return a new object over the same geometry and cache.
 
 The build record (`_Provenance`) only describes how the bins were built, as
-scalar choices such as `bin_size`. It never holds input data; each built-in
-engine names its data arguments in `_data_parameters`. Behavior comes from the
+scalar choices such as `bin_size`. It never holds input data: an engine
+declares its data arguments once, with `@capture_build_params(data=(...))` on
+its `build` method, and any other argument that is not a scalar or a flat
+sequence of scalars is refused when the engine is built. Behavior comes from the
 owned binning, graph and arena, so do not branch on `layout_type` or build
 parameters.
 

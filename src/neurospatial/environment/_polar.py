@@ -78,6 +78,5 @@ def _create_polar_environment(
         cls,
         cast("LayoutEngine", layout),
         metadata=declared_metadata(cls, name=name, units=units, frame=frame),
-        build_params=params,
         coordinates=EgocentricPolarSystem(circular_angle),
     )

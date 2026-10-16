@@ -40,6 +40,7 @@ from neurospatial.geometry._derive import select_bins
 from neurospatial.geometry._diffusion import DiffusionGeometry
 from neurospatial.geometry._ownership import own_arena, own_binning
 from neurospatial.layout._construction import built_layout_data
+from neurospatial.layout.base import build_choices
 from neurospatial.layout.validation import (
     GraphValidationError,
     validate_connectivity_graph,
@@ -442,67 +443,19 @@ def _freeze_geometry_arrays(geometry: _PublishedGeometry) -> _PublishedGeometry:
     )
 
 
-_SCALAR_CHOICES = (bool, int, float, str, type(None))
-
-
-def _scalar_choice(value: Any) -> Any:
-    """Return ``value`` as a plain scalar, or ``UNSET`` if it is not one."""
-    if isinstance(value, np.ndarray) and value.ndim == 0:
-        value = value[()]
-    if isinstance(value, np.generic):
-        value = value.item()
-    return value if isinstance(value, _SCALAR_CHOICES) else UNSET
-
-
-def build_choices(params: Mapping[str, Any]) -> dict[str, Any]:
-    """Keep the scalar build choices of layout parameters and drop their data.
-
-    A choice is a scalar (bool, number, string or None) or a flat sequence
-    of scalars, such as a per-axis ``bin_size``: a list, a tuple or a 1-D
-    integer or floating-point array. Sequences become tuples and NumPy
-    scalars become Python scalars. Everything else is input data, not a
-    choice, and is dropped: boolean and multi-dimensional arrays (masks,
-    images, positions), graphs, polygons and nested sequences (grid edges,
-    edge orders, ranges). The geometry built from that data is owned by the
-    environment's binning.
-
-    Parameters
-    ----------
-    params : mapping of str to object
-        Parameters passed to a layout engine or recorded by a derivation.
-
-    Returns
-    -------
-    dict of str to object
-        The choices, in ``params`` order.
-    """
-    choices: dict[str, Any] = {}
-    for key, value in params.items():
-        if (
-            isinstance(value, np.ndarray)
-            and value.ndim == 1
-            and value.dtype.kind in "iuf"
-        ):
-            value = tuple(value.tolist())
-        if isinstance(value, (list, tuple)):
-            items = tuple(_scalar_choice(item) for item in value)
-            if not any(isinstance(item, _Unset) for item in items):
-                choices[key] = items
-            continue
-        choice = _scalar_choice(value)
-        if not isinstance(choice, _Unset):
-            choices[key] = choice
-    return choices
-
-
 @dataclass(frozen=True, init=False)
 class _Provenance:
     """How the bins were built: a layout label, a category and build choices.
 
     Provenance is descriptive. Geometry and behavior come from the owned
     ``Binning``, graph and arena, never from these labels. Only scalar build
-    choices are kept (see :func:`build_choices`), so a saved environment does
-    not grow with the data it was built from.
+    choices are kept (see :func:`neurospatial.layout.base.build_choices`), so
+    a saved environment does not grow with the data it was built from.
+
+    Raises
+    ------
+    TypeError
+        If a build choice is not a scalar or a flat sequence of scalars.
     """
 
     layout_type: str
@@ -514,7 +467,8 @@ class _Provenance:
     ) -> None:
         object.__setattr__(self, "layout_type", layout_type)
         object.__setattr__(self, "category", category)
-        object.__setattr__(self, "choices", tuple(build_choices(build_params).items()))
+        choices = build_choices(build_params, owner="layout_parameters")
+        object.__setattr__(self, "choices", tuple(choices.items()))
 
     @property
     def build_params(self) -> dict[str, Any]:
@@ -691,26 +645,12 @@ def publish(
     return env
 
 
-def _without_data(layout: object, params: Mapping[str, Any]) -> dict[str, Any]:
-    """Drop the build arguments a layout engine declares as input data.
-
-    Built-in engines list their data arguments (positions, masks, polygons,
-    graphs and the coordinates recorded from them) in ``_data_parameters``,
-    so the record keeps the same choices whether or not an optional data
-    argument was given. An engine without that declaration, such as a
-    custom one, keeps every recorded argument, including ``None`` choices.
-    """
-    data: frozenset[str] = getattr(type(layout), "_data_parameters", frozenset())
-    return {key: value for key, value in params.items() if key not in data}
-
-
 def publish_layout(
     cls: type[_EnvironmentT],
     layout: LayoutEngine,
     *,
     metadata: _Metadata,
     layout_type: str | None = None,
-    build_params: Mapping[str, Any] | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
     coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
@@ -728,9 +668,6 @@ def publish_layout(
         Name, units and frame.
     layout_type : str or None, optional
         Layout label; defaults to the binning kind.
-    build_params : mapping or None, optional
-        Build choices to record; defaults to the layout's own record. Either
-        way, arguments the engine declares as data are left out.
     regions : Regions or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
@@ -774,11 +711,7 @@ def publish_layout(
         binning,
         connectivity=graph,
         dimension_ranges=ranges,
-        provenance=_Provenance(
-            layout_type or tag,
-            category,
-            _without_data(layout, resolved if build_params is None else build_params),
-        ),
+        provenance=_Provenance(layout_type or tag, category, resolved),
         metadata=metadata,
         is_linearized_track=binning.linearization is not None,
         coordinate_kind="polar" if polar else "cartesian",

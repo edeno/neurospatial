@@ -292,7 +292,7 @@ def test_loaded_regular_grid_still_rebins(environment_round_trip):
     ids=["mixed", "numeric"],
 )
 def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_path):
-    """Data-backed tracks preserve node identities in geometry and provenance."""
+    """Data-backed tracks preserve node identities in their stored geometry."""
     native = Environment.linear_track(endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0)
     component = native._binning.linearization
     old_nodes = list(component.graph)
@@ -305,12 +305,7 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
         linearization=component,
         faces=KnownFaces(face_geometry(native._cache, native._binning)),
     )
-    parameters = {
-        "graph_definition": graph,
-        "edge_order": [labels],
-        "edge_spacing": 0.0,
-        "bin_size": 1.0,
-    }
+    parameters = {"edge_spacing": 0.0, "bin_size": 1.0}
     facade = publish_binning(
         binning,
         connectivity=native.connectivity,

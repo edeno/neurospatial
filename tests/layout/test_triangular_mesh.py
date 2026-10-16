@@ -307,15 +307,13 @@ class TestTriangularMeshLayoutBuild:
             layout.build(poly, point_spacing=10.0)
 
     def test_build_params_stored(self):
-        """Test that build parameters are stored correctly."""
+        """The build record keeps point_spacing and leaves out the polygon."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
 
         layout.build(poly, point_spacing=2.5)
 
-        assert layout._build_params_used["point_spacing"] == 2.5
-        assert "boundary_exterior_coords" in layout._build_params_used
-        assert "boundary_interior_coords_list" in layout._build_params_used
+        assert layout._build_params_used == {"point_spacing": 2.5}
 
     def test_triangular_mesh_build_capture_params(self):
         """build() captures point_spacing; positional point_spacing is rejected."""

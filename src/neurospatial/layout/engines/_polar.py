@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning
 from neurospatial.layout._assembly import assemble_binning
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
 
@@ -41,6 +42,7 @@ class _PolarGridLayout(MaskedGridLayout):
         """Return the standardized category for egocentric polar sectors."""
         return "polar"
 
+    @capture_build_params(data=("active_mask", "grid_edges"))
     def build(
         self,
         *,
@@ -80,9 +82,6 @@ class _PolarGridLayout(MaskedGridLayout):
         # must derive their inverse mapping from the new mask.
         self._active_mask_inverse_map = None
         self.circular_angle = bool(circular_angle)
-        # The masked-grid build captures the shared parameters; record the
-        # polar-specific option alongside them as provenance.
-        self._build_params_used["circular_angle"] = circular_angle
         assert self.connectivity is not None
         _fix_polar_edge_geometry(self.connectivity)
         n_distance, n_angle = active_mask.shape

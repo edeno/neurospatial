@@ -976,7 +976,6 @@ def env_path_graph_3nodes() -> Environment:
         name="PathGraph3",
         layout=gl,
         layout_type_used="Graph",
-        layout_params_used=layout_params,
     )
 
 

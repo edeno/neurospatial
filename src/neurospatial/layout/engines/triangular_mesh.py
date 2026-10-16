@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any, ClassVar
+from typing import Any
 
 import matplotlib.axes
 import networkx as nx
@@ -38,15 +38,6 @@ class TriangularMeshLayout:
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
     """
 
-    # Build arguments that are input data, not choices; they are left out
-    # of the environment's recorded layout parameters.
-    _data_parameters: ClassVar[frozenset[str]] = frozenset(
-        {
-            "boundary_polygon",
-            "boundary_exterior_coords",
-            "boundary_interior_coords_list",
-        }
-    )
     _layout_type_tag: str = "TriangularMesh"
     _build_params_used: dict[str, Any]
 
@@ -86,7 +77,7 @@ class TriangularMeshLayout:
         """Return standardized category for this layout type."""
         return "mesh"
 
-    @capture_build_params
+    @capture_build_params(data=("boundary_polygon",))
     def build(self, boundary_polygon: Polygon, *, point_spacing: float) -> None:
         """Build the triangular mesh layout.
 
@@ -112,18 +103,6 @@ class TriangularMeshLayout:
         if point_spacing <= 0:
             raise ValueError(f"point_spacing must be positive, got {point_spacing}.")
 
-        # Store build parameters.
-        # For boundary_polygon, store exterior and interior coords for better serialization.
-        # Note: This simple serialization of polygon might not capture all Shapely Polygon features perfectly.
-        boundary_exterior_coords = list(boundary_polygon.exterior.coords)
-        boundary_interior_coords_list = [
-            list(interior.coords) for interior in boundary_polygon.interiors
-        ]
-        self._build_params_used = {
-            "boundary_exterior_coords": boundary_exterior_coords,
-            "boundary_interior_coords_list": boundary_interior_coords_list,
-            "point_spacing": float(point_spacing),
-        }
         self._boundary_polygon_stored = (
             boundary_polygon  # Store the actual object for use
         )
