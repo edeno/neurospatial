@@ -142,20 +142,27 @@ def test_pickle_round_trip_has_empty_cache_and_equal_results(env):
         np.testing.assert_array_equal(value, expected[name], err_msg=name)
 
 
-def _run_concurrently(call):
-    """Call ``call`` from N_THREADS threads released at the same moment."""
-    barrier = threading.Barrier(N_THREADS)
-    results: list[object] = [None] * N_THREADS
+def _run_threads(calls):
+    """Run each callable in its own daemon thread, all released at once.
+
+    A deadlock fails the test after the join timeout instead of hanging the
+    run: daemon threads do not keep the interpreter alive.
+    """
+    barrier = threading.Barrier(len(calls))
+    results: list[object] = [None] * len(calls)
     errors: list[BaseException] = []
 
     def worker(index: int) -> None:
         barrier.wait()
         try:
-            results[index] = call()
+            results[index] = calls[index]()
         except BaseException as error:
             errors.append(error)
 
-    threads = [threading.Thread(target=worker, args=(i,)) for i in range(N_THREADS)]
+    threads = [
+        threading.Thread(target=worker, args=(i,), daemon=True)
+        for i in range(len(calls))
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -163,6 +170,21 @@ def _run_concurrently(call):
     assert not any(thread.is_alive() for thread in threads), "threads deadlocked"
     assert not errors, errors
     return results
+
+
+def _run_concurrently(call):
+    """Call ``call`` from N_THREADS threads released at the same moment."""
+    return _run_threads([call] * N_THREADS)
+
+
+def _counted(function, calls):
+    """Wrap a builder to record each call."""
+
+    def wrapper(*args, **kwargs):
+        calls.append(threading.get_ident())
+        return function(*args, **kwargs)
+
+    return wrapper
 
 
 def _slow_counted(function, calls):
@@ -304,3 +326,94 @@ def test_concurrent_mrf_bases_solve_the_eigenbasis_once(env, monkeypatch):
     assert len(calls) == 1
     for result in results:
         np.testing.assert_array_equal(result.B, results[0].B)
+
+
+def test_threads_on_an_environment_and_its_copies_share_one_computation(
+    env, monkeypatch
+):
+    """Relabelled copies share locks as well as values: one build in total."""
+    import scipy.spatial
+
+    from neurospatial.environment import fields
+    from neurospatial.ops import diffusion
+
+    field = np.linspace(0.0, 1.0, env.n_bins)
+    points = env.bin_centers + 0.1
+    reference = pickle.loads(pickle.dumps(env))
+    expected_smoothed = reference.smooth(field, 4.0)
+    expected_nearest = reference.nearest_bin(points)
+
+    geometry_calls: list[int] = []
+    eigensolve_calls: list[int] = []
+    tree_calls: list[int] = []
+    monkeypatch.setattr(
+        fields,
+        "_diffusion_geometry",
+        _counted(fields._diffusion_geometry, geometry_calls),
+    )
+    monkeypatch.setattr(
+        diffusion,
+        "_adaptive_symmetric_basis",
+        _counted(diffusion._adaptive_symmetric_basis, eigensolve_calls),
+    )
+    monkeypatch.setattr(
+        scipy.spatial, "cKDTree", _counted(scipy.spatial.cKDTree, tree_calls)
+    )
+    renamed = env.with_metadata(name="renamed")
+    relabelled = env.with_regions(Regions())
+
+    results = _run_threads(
+        [
+            lambda: env.smooth(field, 4.0),
+            lambda: renamed.smooth(field, 4.0),
+            lambda: relabelled.smooth(field, 4.0),
+            lambda: renamed.nearest_bin(points),
+            lambda: relabelled.nearest_bin(points),
+            lambda: env.nearest_bin(points),
+        ]
+    )
+
+    assert (len(geometry_calls), len(eigensolve_calls), len(tree_calls)) == (1, 1, 1)
+    for smoothed in results[:3]:
+        np.testing.assert_array_equal(smoothed, expected_smoothed)
+    for nearest in results[3:]:
+        np.testing.assert_array_equal(nearest, expected_nearest)
+
+
+def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
+    env, monkeypatch
+):
+    """Clearing while a smoothing call holds the eigenbasis returns at once."""
+    from neurospatial.ops import diffusion
+
+    field = np.linspace(0.0, 1.0, env.n_bins)
+    expected = pickle.loads(pickle.dumps(env)).smooth(field, 4.0)
+    applying = threading.Event()
+    cleared = threading.Event()
+    original = diffusion.diffusion_apply
+
+    def apply_after_clear(*args, **kwargs):
+        applying.set()
+        assert cleared.wait(timeout=60), "clear_cache() did not return"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(diffusion, "diffusion_apply", apply_after_clear)
+    smoothed: list[np.ndarray] = []
+    smoothing = threading.Thread(
+        target=lambda: smoothed.append(env.smooth(field, 4.0)), daemon=True
+    )
+    smoothing.start()
+    assert applying.wait(timeout=60), "smoothing never started"
+
+    clearing = threading.Thread(
+        target=lambda: (env.clear_cache(), cleared.set()), daemon=True
+    )
+    clearing.start()
+    clearing.join(timeout=60)
+    smoothing.join(timeout=60)
+
+    assert not clearing.is_alive(), "clear_cache() deadlocked"
+    assert not smoothing.is_alive(), "smoothing deadlocked"
+    np.testing.assert_array_equal(smoothed[0], expected)
+    monkeypatch.setattr(diffusion, "diffusion_apply", original)
+    np.testing.assert_array_equal(env.smooth(field, 4.0), expected)
