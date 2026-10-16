@@ -1039,3 +1039,33 @@ Keep your own session labels beside the environment:
 sessions = {env.name: {"session_id": "s1"}}
 labelled = env.with_metadata(name="s1")  # or set the environment's own name
 ```
+
+## Simulated plus-maze arms are numbered in linear order
+
+`simulation.mazes.make_plus_maze` now builds its linear track with
+`Environment.maze(kind="plus")`, the same builder as every other plus maze.
+Its arms are numbered in the order they are laid out along the linear
+position, clockwise from north. East and south swap numbers in each bin's
+`source_edge_id` and in the `edge_id` of the track graph:
+
+| Arm | Before | Now |
+| --- | --- | --- |
+| north | 0 | 0 |
+| south | 1 | 2 |
+| east | 2 | 1 |
+| west | 3 | 3 |
+
+Bin positions, linear positions (`pos_1D`) and every analysis are unchanged.
+Select an arm by where its bins lie, or by a region, rather than by a
+hard-coded number:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.simulation.mazes import make_plus_maze
+
+track = make_plus_maze(include_track=True).env_track
+arm = np.array([track.connectivity.nodes[b]["source_edge_id"] for b in range(track.n_bins)])
+# Before: east = arm == 2
+east = track.bin_centers[:, 0] > 0
+assert set(arm[east]) == {1}
+```
