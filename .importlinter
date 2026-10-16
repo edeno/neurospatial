@@ -10,6 +10,11 @@ containers =
     neurospatial
 exhaustive = True
 layers =
+    # Highest first. Storage, annotation and the contract-check kit sit on top.
+    # Rendering sits above every analysis package, so analysis never imports
+    # animation. behavior sits beside encoding (neither imports the other);
+    # this order is a design choice, so when a new edge needs another order,
+    # move a layer rather than adding an ignore.
     io | annotation | testing
     animation | events | simulation
     decoding
