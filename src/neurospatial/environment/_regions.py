@@ -20,7 +20,7 @@ from neurospatial.environment._cartesian import require_cartesian
 from neurospatial.environment._lookup import locate
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
-from neurospatial.ops.binning import polygon_regions_mask
+from neurospatial.ops.binning import _polygon_regions_mask
 from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
@@ -170,7 +170,7 @@ def _region_mask(
     # Polygon (and other area-bearing) regions: delegate to the
     # canonical containment predicate.
     if len(polygon_regions) > 0:
-        mask |= polygon_regions_mask(
+        mask |= _polygon_regions_mask(
             centers, polygon_regions, include_boundary=include_boundary
         )
 

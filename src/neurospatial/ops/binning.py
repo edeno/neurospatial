@@ -596,12 +596,12 @@ def regions_to_mask(
     if len(regions_obj) == 0:
         return np.zeros(env.n_bins, dtype=bool)
 
-    return polygon_regions_mask(
+    return _polygon_regions_mask(
         env.bin_centers, regions_obj, include_boundary=include_boundary
     )
 
 
-def polygon_regions_mask(
+def _polygon_regions_mask(
     bin_centers: NDArray[np.float64],
     regions: Regions,
     *,
