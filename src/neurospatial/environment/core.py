@@ -4201,9 +4201,9 @@ class Environment(Generic[_C]):
         form. No arbitrary code is executed at load time.
 
         """
-        from neurospatial.environment.serialization import _to_file
+        from neurospatial.io import to_file
 
-        return _to_file(self, path, overwrite=overwrite)
+        to_file(self, path, overwrite=overwrite)
 
     @classmethod
     def from_file(cls, path: str | Path) -> Environment[Any]:
@@ -4250,9 +4250,9 @@ class Environment(Generic[_C]):
         with a factory and save them again.
 
         """
-        from neurospatial.environment.serialization import _from_file
+        from neurospatial.io import from_file
 
-        return _from_file(cls, path)
+        return from_file(path)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
@@ -4287,9 +4287,9 @@ class Environment(Generic[_C]):
         format (npz) rather than converting to lists.
 
         """
-        from neurospatial.environment.serialization import _to_dict
+        from neurospatial.io import to_dict
 
-        return _to_dict(self)
+        return to_dict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Environment[Any]:
@@ -4321,9 +4321,9 @@ class Environment(Generic[_C]):
         from_file : Load from disk files
 
         """
-        from neurospatial.environment.serialization import _from_dict
+        from neurospatial.io import from_dict
 
-        return _from_dict(cls, data)
+        return from_dict(data)
 
     def to_nwb(
         self,
@@ -4403,10 +4403,14 @@ class Environment(Generic[_C]):
         ...     loaded_env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
 
         """
-        # Lazy import to keep pynwb optional
-        from neurospatial.environment.serialization import _to_nwb
+        try:
+            from neurospatial.io.nwb import write_environment
+        except ImportError as e:
+            raise ImportError(
+                "pynwb is required for NWB integration. Install with: pip install pynwb"
+            ) from e
 
-        return _to_nwb(self, nwbfile, name, overwrite=overwrite)
+        write_environment(nwbfile, self, name=name, overwrite=overwrite)
 
     def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
         """Get active bin indices that fall within a specified named region.
