@@ -146,3 +146,67 @@ def test_block_size_does_not_change_occupancy(monkeypatch, return_seconds):
         return_seconds=return_seconds,
     )
     np.testing.assert_array_equal(blocked, whole)
+
+
+def test_path_through_cell_corners_keeps_zero_length_pieces(unit_grid):
+    # The diagonal (0, 0) -> (3, 3) meets the x and y edges at the same lattice
+    # points, (1, 1) and (2, 2): each gives a zero-length piece owned by the
+    # cell above-right of the corner (half-open cells).
+    interval, cell, time = ray_grid_pieces(
+        np.array([[0.0, 0.0]]),
+        np.array([[3.0, 3.0]]),
+        unit_grid.edges,
+        unit_grid.shape,
+        np.array([3.0]),
+    )
+    np.testing.assert_array_equal(interval, [0, 0, 0, 0, 0])
+    np.testing.assert_array_equal(cell, [0, 4, 4, 8, 8])  # (0,0), (1,1), (2,2)
+    np.testing.assert_array_equal(time[[1, 3]], [0.0, 0.0])
+    np.testing.assert_allclose(time[[0, 2, 4]], [1.0, 1.0, 1.0], rtol=1e-15)
+
+
+def test_path_along_a_cell_edge_belongs_to_the_cells_above(unit_grid):
+    # Along y = 1 the path lies on the edge between rows 0 and 1; half-open
+    # cells [y_i, y_{i+1}) give it to row 1. Along the grid's top edge, y = 3,
+    # it lies outside every cell.
+    interval, cell, time = ray_grid_pieces(
+        np.array([[0.5, 1.0], [0.5, 3.0]]),
+        np.array([[3.5, 1.0], [3.5, 3.0]]),
+        unit_grid.edges,
+        unit_grid.shape,
+        np.array([6.0, 6.0]),
+    )
+    np.testing.assert_array_equal(interval, [0, 0, 0, 0])
+    np.testing.assert_array_equal(cell, [1, 4, 7, 10])  # (0,1) ... (3,1)
+    np.testing.assert_allclose(time, [1.0, 2.0, 2.0, 1.0], rtol=1e-15)
+
+
+def test_one_step_across_many_cells():
+    edges = (np.arange(1001.0), np.array([0.0, 1.0]))
+    interval, cell, time = ray_grid_pieces(
+        np.array([[0.5, 0.5]]),
+        np.array([[999.5, 0.5]]),
+        edges,
+        (1000, 1),
+        np.array([999.0]),
+    )
+    np.testing.assert_array_equal(cell, np.arange(1000))
+    expected = np.ones(1000)
+    expected[[0, -1]] = 0.5
+    np.testing.assert_allclose(time, expected, rtol=1e-12)
+    assert np.all(interval == 0)
+
+
+def test_pieces_of_paths_inside_the_grid_add_up_to_each_duration(unit_grid):
+    # Inside the grid every piece is kept, so an interval's pieces sum to its
+    # duration up to floating-point rounding of the piece fractions.
+    rng = np.random.default_rng(4)
+    upper = np.array([4.0, 3.0]) - 1e-9
+    starts = rng.uniform(0, upper, (2000, 2))
+    stops = rng.uniform(0, upper, (2000, 2))
+    durations = rng.exponential(1.0, 2000)
+    interval, _, time = ray_grid_pieces(
+        starts, stops, unit_grid.edges, unit_grid.shape, durations
+    )
+    totals = np.bincount(interval, weights=time, minlength=2000)
+    np.testing.assert_allclose(totals, durations, rtol=1e-13, atol=0)
