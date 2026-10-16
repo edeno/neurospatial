@@ -17,7 +17,12 @@ _SHARED = ("bin_centers", "n_bins", "neighbors", "path_between", "smooth")
 
 
 def _polar(cls=Environment):
-    return cls.from_polar_egocentric((0, 2), (-np.pi, np.pi), 1, np.pi / 2)
+    return cls.from_polar_egocentric(
+        distance_range=(0, 2),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1,
+        angle_bin_size=np.pi / 2,
+    )
 
 
 def _cartesian(cls=Environment):

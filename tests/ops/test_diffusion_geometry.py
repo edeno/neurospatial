@@ -469,10 +469,10 @@ def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal
     """Half-annuli have one shared face on an open axis and two on a circle."""
     env = built_from(
         lambda: Environment.from_polar_egocentric(
-            (1.0, 4.0),
-            (-np.pi, np.pi),
-            1.0,
-            np.pi,
+            distance_range=(1.0, 4.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=1.0,
+            angle_bin_size=np.pi,
             circular_angle=circular,
             connect_diagonal_neighbors=diagonal,
         )
@@ -492,10 +492,10 @@ def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal
 def test_two_polar_sectors_diffuse_at_the_physical_angular_rate(circular):
     """Diffusion agrees with the analytical solution for the two-cell system."""
     env = Environment.from_polar_egocentric(
-        (1.0, 2.0),
-        (-np.pi, np.pi),
-        1.0,
-        np.pi,
+        distance_range=(1.0, 2.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=np.pi,
         circular_angle=circular,
         connect_diagonal_neighbors=False,
     )

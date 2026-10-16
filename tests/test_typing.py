@@ -36,7 +36,10 @@ def env() -> Environment:
 @pytest.fixture
 def polar_env() -> Environment:
     return Environment.from_polar_egocentric(
-        (0.0, 50.0), (-np.pi, np.pi), 10.0, np.pi / 6
+        distance_range=(0.0, 50.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 6,
     )
 
 

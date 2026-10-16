@@ -14,7 +14,11 @@ from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarS
 
 def _polar():
     return Environment.from_polar_egocentric(
-        (0.0, 3.0), (-np.pi, np.pi), 1.0, np.pi / 2, units="cm"
+        distance_range=(0.0, 3.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=np.pi / 2,
+        units="cm",
     )
 
 

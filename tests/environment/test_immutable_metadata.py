@@ -117,10 +117,10 @@ def test_restoration_preserves_readonly_metadata_and_geometry(restore):
 
 def test_polar_replacement_preserves_concrete_type_and_circularity():
     env = Environment.from_polar_egocentric(
-        (1.0, 3.0),
-        (-np.pi, np.pi),
-        1.0,
-        np.pi,
+        distance_range=(1.0, 3.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=np.pi,
         circular_angle=True,
         units="cm",
         frame="animal",

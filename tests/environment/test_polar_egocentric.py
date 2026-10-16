@@ -1391,7 +1391,12 @@ def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
     """Value replacements and graph copies do not interpret angles as lengths."""
     from neurospatial import Environment
 
-    env = Environment.from_polar_egocentric((0, 4), (-np.pi, np.pi), 1, np.pi / 2)
+    env = Environment.from_polar_egocentric(
+        distance_range=(0, 4),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1,
+        angle_bin_size=np.pi / 2,
+    )
     regions = Regions()
     regions.add("goal", point=tuple(env.bin_centers[0]))
     changed = env.with_metadata(

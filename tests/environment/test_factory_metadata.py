@@ -62,8 +62,13 @@ def _create(kind, **metadata):
             },
             **metadata,
         )
-    factory = Environment.from_polar_egocentric
-    return factory((1, 3), (-np.pi, np.pi), 1.0, np.pi, **metadata)
+    return Environment.from_polar_egocentric(
+        distance_range=(1, 3),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=np.pi,
+        **metadata,
+    )
 
 
 _FACTORIES = [

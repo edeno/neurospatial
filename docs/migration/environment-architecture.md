@@ -341,3 +341,21 @@ env = Environment.from_grid_mask(active_mask, grid_edges)  # unchanged
 All three accept `regions=`, so every Cartesian factory takes the same `name=`,
 `units=`, `frame=` and `regions=` keywords.
 
+### Egocentric polar factory
+
+`from_polar_egocentric` has no data arguments, so every argument is a keyword.
+Swapping the distance and angle bin sizes used to build a valid but wrong
+environment without an error:
+
+```python
+# Before
+env = Environment.from_polar_egocentric((0, 50), (-np.pi, np.pi), 5.0, np.pi / 8)
+# Now
+env = Environment.from_polar_egocentric(
+    distance_range=(0, 50),
+    angle_range=(-np.pi, np.pi),
+    distance_bin_size=5.0,
+    angle_bin_size=np.pi / 8,
+)
+```
+

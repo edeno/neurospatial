@@ -63,7 +63,12 @@ if TYPE_CHECKING:
 
     def _factory_coordinate_inference(points: NDArray[np.float64]) -> None:
         cartesian = Environment.from_samples(points, bin_size=1.0)
-        polar = Environment.from_polar_egocentric((0.0, 3.0), (-3.0, 3.0), 1.0, 1.0)
+        polar = Environment.from_polar_egocentric(
+            distance_range=(0.0, 3.0),
+            angle_range=(-3.0, 3.0),
+            distance_bin_size=1.0,
+            angle_bin_size=1.0,
+        )
         assert_type(cartesian, Environment[CartesianSystem])
         assert_type(polar, Environment[EgocentricPolarSystem])
         cartesian.bin_at(points)

@@ -31,7 +31,12 @@ def _grid(n=8):
 @pytest.mark.parametrize("polar", [False, True])
 def test_coordinate_descriptor_is_an_independent_frozen_value(polar):
     env = (
-        Environment.from_polar_egocentric((0.0, 3.0), (-np.pi, np.pi), 1.0, np.pi / 2)
+        Environment.from_polar_egocentric(
+            distance_range=(0.0, 3.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=1.0,
+            angle_bin_size=np.pi / 2,
+        )
         if polar
         else _grid()
     )

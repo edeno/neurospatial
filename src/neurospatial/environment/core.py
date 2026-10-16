@@ -960,11 +960,11 @@ class Environment(Generic[_C]):
     @classmethod
     def from_polar_egocentric(
         cls,
+        *,
         distance_range: tuple[float, float],
         angle_range: tuple[float, float],
         distance_bin_size: float,
         angle_bin_size: float,
-        *,
         circular_angle: bool | None = None,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
@@ -999,6 +999,11 @@ class Environment(Generic[_C]):
             Whether to connect diagonally adjacent (distance, angle) bins.
         name : str, default=""
             Optional name for the environment.
+        units : str or None, default=None
+            Length unit of the distance axis (e.g. ``"cm"``); angles are
+            always radians.
+        frame : str or None, default=None
+            Coordinate frame label.
 
         Returns
         -------

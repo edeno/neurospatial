@@ -26,7 +26,12 @@ def test_nearest_queries_reuse_one_tree_until_the_cache_is_cleared():
 
 
 def test_public_nearest_query_keeps_raw_polar_coordinate_semantics():
-    env = Environment.from_polar_egocentric((0, 4), (-np.pi, np.pi), 1, np.pi / 2)
+    env = Environment.from_polar_egocentric(
+        distance_range=(0, 4),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1,
+        angle_bin_size=np.pi / 2,
+    )
     points = np.array([[1.2, 0.2], [2.7, -2.0]])
     distances = np.linalg.norm(env.bin_centers[None] - points[:, None], axis=2)
     expected = np.argmin(distances, axis=1)

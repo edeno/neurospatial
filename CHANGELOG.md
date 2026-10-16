@@ -166,6 +166,11 @@
   `Environment.from_pixel_mask(mask, pixel_size=0.5)`. `from_polygon`,
   `from_grid_mask` and `from_pixel_mask` accept `regions=`.
 
+- `Environment.from_polar_egocentric` takes every argument by keyword:
+  `from_polar_egocentric(distance_range=(0, 50), angle_range=(-np.pi, np.pi),
+  distance_bin_size=5.0, angle_bin_size=np.pi / 8)`. The ranges and bin sizes
+  are choices, not data, and four positional numbers were easy to swap.
+
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of

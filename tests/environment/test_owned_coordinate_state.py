@@ -27,7 +27,11 @@ from neurospatial.layout.base import LayoutEngine
 )
 def test_polar_coordinate_state_is_owned(n_angle, circular, restore):
     env = Environment.from_polar_egocentric(
-        (0.0, 3.0), (-np.pi, np.pi), 1.0, 2 * np.pi / n_angle, circular_angle=circular
+        distance_range=(0.0, 3.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=2 * np.pi / n_angle,
+        circular_angle=circular,
     )
     expected = env._coordinate_system
     assert isinstance(expected, EgocentricPolarSystem)

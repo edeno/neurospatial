@@ -2508,7 +2508,10 @@ def test_object_vector_plot_draws_left_on_left(polar_display_offset) -> None:
     )
 
     env = Environment.from_polar_egocentric(
-        (0.0, 50.0), (-np.pi, np.pi), 5.0, 2 * np.pi / 12
+        distance_range=(0.0, 50.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=2 * np.pi / 12,
     )
     distance, angle = env.bin_centers[:, 0], env.bin_centers[:, 1]
     firing_rate = 10.0 * np.exp(

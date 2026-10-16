@@ -35,6 +35,7 @@ _DATA_ARGUMENTS = {
     "from_pixel_mask": ("image_mask",),
     "from_bins": ("binning",),
     "combine": ("components",),
+    "from_polar_egocentric": (),
 }
 _LABELS = ("name", "units", "frame", "regions")
 
@@ -56,7 +57,12 @@ def test_factories_take_only_their_data_positionally(factory, data):
 
 
 @pytest.mark.parametrize(
-    "factory", [factory for factory in _DATA_ARGUMENTS if factory != "combine"]
+    "factory",
+    [
+        factory
+        for factory in _DATA_ARGUMENTS
+        if factory not in ("combine", "from_polar_egocentric")
+    ],
 )
 def test_cartesian_factories_accept_the_same_labels(factory):
     parameters = inspect.signature(getattr(Environment, factory)).parameters
