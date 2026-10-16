@@ -361,12 +361,12 @@ class TestMaze:
         with pytest.raises(ValueError, match="needs exactly"):
             Environment.maze(kind=kind, node_positions=nodes, bin_size=5.0)
 
-    def test_assemble_maze_graph_unknown_kind_raises(self):
+    def test_maze_track_graph_unknown_kind_raises(self):
         """Direct call with a bad kind raises instead of returning empty graph."""
-        from neurospatial.environment._factories import _assemble_maze_graph
+        from neurospatial.layout.helpers.track_graphs import maze_track_graph
 
         with pytest.raises(ValueError, match="Unknown maze kind"):
-            _assemble_maze_graph("circle", {"a": (0, 0)})
+            maze_track_graph("circle", {"a": (0, 0)})
 
     def test_no_topology_raises(self):
         with pytest.raises(ValueError, match="topology"):

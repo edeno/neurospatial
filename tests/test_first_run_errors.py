@@ -247,13 +247,13 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
     from neurospatial.decoding import bin_spikes_in_time, decode_position
     from neurospatial.decoding.likelihood import log_poisson_likelihood
     from neurospatial.decoding.posterior import normalize_to_posterior
-    from neurospatial.environment._factories import _assemble_maze_graph
     from neurospatial.events import (
         align_events,
         align_spikes_to_events,
         peri_event_histogram,
         population_peri_event_histogram,
     )
+    from neurospatial.layout.helpers.track_graphs import maze_track_graph
 
     r = recording
     bins = r.env.bin_at(r.positions)
@@ -267,7 +267,7 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
         "factory_shape": lambda: Environment.from_samples(
             np.arange(10.0), bin_size=2.0
         ),
-        "maze_kind": lambda: _assemble_maze_graph(
+        "maze_kind": lambda: maze_track_graph(
             "unknown", {0: (0.0, 0.0), 1: (1.0, 1.0)}
         ),
         "all_nan": lambda: Environment.from_samples(
