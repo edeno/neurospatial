@@ -15,11 +15,13 @@ from scipy.spatial import Delaunay, cKDTree
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment
+from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._locators import (
     HexLocator,
     MeshLocator,
     NearestBinLocator,
     RectilinearLocator,
+    _TriangleIndex,
 )
 
 
@@ -50,11 +52,11 @@ def _assert_mesh_membership(locator, points, actual):
             assert index == -1
             continue
         if index == -1:
-            # At an active/inactive shared edge, Qhull may choose either side.
+            # At an active/inactive shared edge, the lower-numbered triangle wins.
             assert not any(cell.contains(point) for cell in cells.values())
         else:
             assert index in cells
-            # find_simplex permits rounding error at a triangle edge.
+            # Lookup permits rounding error at a triangle edge.
             assert cells[index].distance(point) <= 1e-12
 
 
@@ -231,13 +233,90 @@ def test_mesh_locator_respects_boundary(built_environment, locator_parity):
     assert actual[4] == -1
 
 
-def test_mesh_locator_rejects_changed_triangulation():
-    """Reordering triangles changes bin identities and must be refused."""
-    points = np.array([[0.0, 0.0], [2.0, 0.0], [0.0, 3.0], [2.0, 3.0], [0.8, 1.2]])
-    triangles = Delaunay(points).simplices
-    locator = MeshLocator(points, triangles[::-1], np.arange(len(triangles)), None)
-    with pytest.raises(ValueError, match=r"simplices.*stored simplices"):
-        locator.locate(points[:1])
+# The corners of a unit square are cocircular, so either diagonal gives a valid
+# Delaunay triangulation; which one Qhull returns differs across platforms.
+_SQUARE = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+_DIAGONAL_02 = np.array([[0, 1, 2], [0, 2, 3]])
+_DIAGONAL_13 = np.array([[0, 1, 3], [1, 2, 3]])
+# Probes below/above each diagonal, on both diagonals, at a corner and outside.
+_SQUARE_PROBES = np.array(
+    [
+        [0.9, 0.2],
+        [0.2, 0.1],
+        [0.1, 0.6],
+        [0.5, 0.5],
+        [0.25, 0.75],
+        [0.0, 0.0],
+        [1.5, 0.5],
+        [-1e-3, 0.5],
+    ]
+)
+
+
+@pytest.mark.parametrize(
+    ("triangles", "expected"),
+    [
+        (_DIAGONAL_02, [0, 0, 1, 0, 1, 0, -1, -1]),
+        (_DIAGONAL_02[::-1], [1, 1, 0, 0, 0, 0, -1, -1]),
+        (_DIAGONAL_13, [1, 0, 0, 0, 0, 0, -1, -1]),
+        (_DIAGONAL_13[::-1], [0, 1, 1, 0, 0, 1, -1, -1]),
+    ],
+    ids=[
+        "diagonal_02",
+        "diagonal_02_reordered",
+        "diagonal_13",
+        "diagonal_13_reordered",
+    ],
+)
+def test_mesh_locator_follows_stored_triangles(triangles, expected):
+    """Lookup uses the stored triangles and numbering, whatever Qhull rebuilds.
+
+    A point on a shared edge or vertex belongs to the lowest-numbered stored
+    triangle that contains it. The codec round trip keeps the same lookup.
+    """
+    locator = MeshLocator(_SQUARE, triangles, np.arange(2), None)
+    np.testing.assert_array_equal(locator.locate(_SQUARE_PROBES), expected)
+    restored = decode(*encode(locator, "mesh"), "mesh")
+    np.testing.assert_array_equal(restored.simplices, triangles)
+    np.testing.assert_array_equal(restored.locate(_SQUARE_PROBES), expected)
+
+
+@pytest.mark.parametrize(
+    ("points", "triangles", "message"),
+    [
+        (_SQUARE, np.vstack([_DIAGONAL_02, _DIAGONAL_13[:1]]), "overlap"),
+        (_SQUARE, np.vstack([_DIAGONAL_02, _DIAGONAL_02[:1]]), "overlap"),
+        (_SQUARE, np.array([[0, 1, 2], [0, 2, 2]]), "repeat a vertex"),
+        (_SQUARE, np.array([[0, 1, 2], [0, 2, 4]]), "vertex index"),
+        (_SQUARE, np.array([[0, 1, 2], [0, -1, 3]]), "vertex index"),
+        (_SQUARE, np.array([[0, 1, 2]]).reshape(1, 3, 1), "shape"),
+        (np.vstack([_SQUARE, [[np.nan, 0.0]]]), _DIAGONAL_02, "finite"),
+    ],
+    ids=[
+        "overlapping",
+        "duplicated",
+        "repeated_vertex",
+        "index_too_large",
+        "negative_index",
+        "bad_shape",
+        "nonfinite_point",
+    ],
+)
+def test_mesh_locator_refuses_invalid_triangulation(points, triangles, message):
+    """Triangles that cannot assign each point to one bin are refused."""
+    locator = MeshLocator(points, triangles, np.arange(len(triangles)), None)
+    with pytest.raises(ValueError, match=message):
+        locator.locate(_SQUARE_PROBES)
+
+
+def test_mesh_locator_skips_flat_triangles_like_qhull_output():
+    """Qhull can emit zero-area slivers along straight edges; they hold no points."""
+    points = np.vstack([_SQUARE, [[0.5, 0.0]]])
+    flat = np.vstack([_DIAGONAL_02, [[0, 4, 1]]])
+    locator = MeshLocator(points, flat, np.array([0, 1, -1]), None)
+    reference = MeshLocator(_SQUARE, _DIAGONAL_02, np.arange(2), None)
+    probes = np.vstack([_SQUARE_PROBES, [[0.5, 0.0], [0.25, 0.0]]])
+    np.testing.assert_array_equal(locator.locate(probes), reference.locate(probes))
 
 
 @pytest.fixture(params=["rectilinear", "hex", "mesh", "nearest"])
@@ -306,7 +385,7 @@ def test_locators_own_constructor_buffers(locator_and_inputs):
     "restore", [copy.deepcopy, lambda x: pickle.loads(pickle.dumps(x))]
 )
 def test_locators_are_identity_hashed_and_read_only(locator_and_inputs, restore):
-    """Owned data survives copying while KD-tree and Delaunay memos rebuild."""
+    """Owned data survives copying while KD-tree and triangle-index memos rebuild."""
     locator, _, points = locator_and_inputs
     expected = locator.locate(points)
     equal_values = replace(locator)
@@ -317,7 +396,8 @@ def test_locators_are_identity_hashed_and_read_only(locator_and_inputs, restore)
     restored = restore(locator)
     assert restored != locator
     assert not any(
-        isinstance(value, (Delaunay, cKDTree)) for value in vars(restored).values()
+        isinstance(value, (_TriangleIndex, cKDTree))
+        for value in vars(restored).values()
     )
     for field in fields(restored):
         for array in _arrays(getattr(restored, field.name)):

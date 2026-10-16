@@ -347,7 +347,7 @@ def test_native_capture_does_not_materialize_faces(monkeypatch):
 @pytest.mark.parametrize("built_environment", ["mesh"], indirect=True)
 def test_restored_mesh_normal_validation_keeps_lookup_lazy(built_environment):
     loaded = from_dict(to_dict(built_environment))
-    assert loaded._binning.locator._delaunay is None
+    assert loaded._binning.locator._triangle_lookup is None
 
 
 def test_storage_refuses_normal_downgrade_and_boolean_arrays():

@@ -12,6 +12,17 @@
   `kind="similarity"` (or `"rigid"`) or smooth on the source environment. It
   previously suggested recentering coordinates, which does not help.
 
+- Triangular-mesh environments saved on one operating system now load on
+  another. Loading used to rebuild the Delaunay triangulation and refuse the
+  file when it differed from the saved triangles, which happens whenever sample
+  points are cocircular (any square lattice), because Qhull breaks those ties
+  differently across platforms. Point-to-bin lookup now uses the saved
+  triangles directly, with the same edge tolerance as before. A point exactly
+  on an edge or vertex shared by several triangles goes to the lowest-numbered
+  saved triangle. Files whose triangles overlap or reference missing or
+  repeated vertices are still refused, now with a message that names the
+  triangles.
+
 - Posterior means on polar environments are the probability-weighted centroid
   in the animal's egocentric plane, reported as `(distance, angle)` with the
   angle in the environment's range. A posterior split across the angle seam

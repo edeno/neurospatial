@@ -239,7 +239,7 @@ outlines or masks. Version 1/`1.x` records are refused with recreation guidance.
 Pure codecs in `geometry/_codecs.py` and `geometry/_arena.py` store typed arrays and JSON
 metadata; polygon WKB bytes and offsets preserve ordered cells and holes.
 Shared snapshot references retain locator ownership without duplicating each
-record. Bounded KD-tree and Delaunay memos are rebuilt from saved data.
+record. Bounded KD-tree and mesh triangle-lookup memos are rebuilt from saved data.
 Standard NWB containers reject slash-containing names, so a one-row ragged
 DynamicTable stores arrays under safe column names. Its description holds the
 JSON metadata and canonical-key/shape/dtype mapping, without padding or a
