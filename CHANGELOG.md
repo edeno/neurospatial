@@ -70,6 +70,10 @@
   (-1, labeled `"place"`; now NaN, labeled `"undetermined"`). Declare the
   measured outline, for example
   `OpenArena(outline, walls=..., physical_footprint_known=True)`.
+- The border-score examples in the neuroscience metrics guide raised on their
+  position-derived environments, which have no measured walls. They now
+  explain the physical-versus-analysis boundary choice, pass
+  `boundary_source="analysis"` and run in the documentation tests.
 - Prevent automatic combined-environment bridges from crossing a third
   component, including tiny and nearly collinear footprints. Long affine
   histories retain their arena through storage without using the composite
