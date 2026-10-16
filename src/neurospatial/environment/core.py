@@ -208,6 +208,10 @@ class Environment(Generic[_C]):
       ``neighbors`` and the other target queries) refuse NaN with an error,
       because a missing target has no answer. ``inf`` from
       ``distance_between`` only ever means "unreachable".
+    - Fields (``smooth``, ``diffuse``, ``interpolate``): a NaN bin has no
+      value. Smoothing averages over the observed bins and fills holes from
+      them; a bin stays NaN only when almost none of its smoothing weight
+      falls on observed bins (see Missing bins in ``smooth``).
 
     Examples
     --------
@@ -5862,7 +5866,8 @@ class Environment(Generic[_C]):
         ----------
         field : NDArray[np.float64], shape (n_bins,)
             Field values per bin to smooth. Must be a 1-D array with length
-            equal to n_bins.
+            equal to n_bins. NaN marks a missing bin, such as an unvisited
+            bin of a rate map; see Missing bins below. Must not contain Inf.
         bandwidth : float
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
@@ -5893,13 +5898,14 @@ class Environment(Generic[_C]):
         Returns
         -------
         smoothed : NDArray[np.float64], shape (n_bins,)
-            Smoothed field values.
+            Smoothed field values. NaN where too little of a bin's smoothing
+            weight falls on observed bins (see Missing bins below).
 
         Raises
         ------
         ValueError
-            If field has wrong shape, wrong dimensionality, bandwidth is not
-            positive, or mode is invalid.
+            If field has wrong shape, wrong dimensionality, contains Inf,
+            bandwidth is not positive, or mode is invalid.
 
         See Also
         --------
@@ -5957,6 +5963,21 @@ class Environment(Generic[_C]):
         not leak between disconnected components (even under truncation, because
         the eigenbasis modes are component-local).
 
+        **Missing bins.** NaN bins are missing observations, not zeros (see
+        Missing data in the class Notes). With ``m`` the observed mask, the
+        result is ``K(field * m) / s``, with NaN read as 0 in the product,
+        where ``s = K(m) / K(1)`` is the share of each bin's smoothing weight
+        that falls on observed bins. Holes are filled from their observed
+        neighbors, and a constant field with holes smooths exactly like the
+        full constant field in every mode. A bin, observed or not, stays NaN
+        when its ``s`` is at most 0.1% of the largest ``s`` in its connected
+        part of the environment, which includes every bin of a part with no
+        observed bin. The floor is 1000 times the operator's relative
+        truncation error (``1e-6``), which keeps the error of every kept value
+        near 0.1%.
+        With missing bins, ``mode='transition'`` no longer conserves the sum
+        of the observed values. A field without NaN gets the plain ``K · field``.
+
         Examples
         --------
         >>> # Smooth an intensive rate map without changing its units or level
@@ -6004,8 +6025,8 @@ class Environment(Generic[_C]):
         every bandwidth, mode, and neuron (auto-invalidated when the environment
         is mutated).
 
-        ``diffuse`` is a **pure linear operator**: it applies **no output clip
-        and no renormalization**. The always-retained per-component null mode
+        On fields without NaN, ``diffuse`` is a **pure linear operator**: it
+        applies **no output clip and no renormalization**. The always-retained per-component null mode
         makes mass conservation exact under truncation (``mode="transition"``
         preserves ``sum``; a constant field is preserved by ``mode="average"``),
         so smoothing a **signed** field is preserved. Where the result must be
@@ -6016,9 +6037,12 @@ class Environment(Generic[_C]):
         ----------
         fields : NDArray[np.float64], shape (n_bins,) or (n_bins, n_fields)
             Field(s) to smooth, indexed by bin. A 1-D field is smoothed and
-            returned 1-D; a 2-D batch smooths every column in one pass. NaN/Inf
-            are not validated (``diffuse`` is a raw linear operator: NaN in →
-            NaN out); callers needing validation use :meth:`smooth`.
+            returned 1-D; a 2-D batch smooths every column in one pass. NaN
+            marks a missing bin: each column is averaged over its own observed
+            bins, as described under Missing bins in :meth:`smooth`, and
+            columns without NaN are unchanged. With ``backend='jax'`` NaN is
+            not inspected (the input may be traced) and spreads through its
+            connected part. Inf is not validated; :meth:`smooth` refuses it.
         bandwidth : float
             Physical smoothing standard deviation σ (> 0), independent of bin
             size on any supported layout.

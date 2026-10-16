@@ -247,18 +247,6 @@ class TestSmoothValidation:
         with pytest.raises(ValueError, match=r"Field must be 1-D array"):
             env.smooth(field_2d, bandwidth=2.0)
 
-    def test_smooth_field_with_nan_raises_error(self):
-        """Field containing NaN should raise ValueError."""
-        rng = np.random.default_rng(42)
-        positions = rng.random((50, 2)) * 20
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        field = np.ones(env.n_bins)
-        field[0] = np.nan
-
-        with pytest.raises(ValueError, match=r"Field contains NaN values"):
-            env.smooth(field, bandwidth=2.0)
-
     def test_smooth_field_with_inf_raises_error(self):
         """Field containing Inf should raise ValueError."""
         rng = np.random.default_rng(42)

@@ -1,7 +1,8 @@
-"""A NaN sample is a missing sample on every layout, never an error.
+"""NaN marks missing data on every layout, never an error and never zero.
 
 Per-sample queries give a missing sample bin ``-1``, ``False`` or a NaN value,
 and the remaining samples get exactly the answers they get on their own.
+Smoothing averages over observed bins and leaves unsupported bins NaN.
 """
 
 from __future__ import annotations
@@ -13,6 +14,10 @@ from shapely.geometry import Polygon
 
 from neurospatial import Environment
 from neurospatial.layout import create_layout
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:Triangular mesh is non-K-orthogonal:UserWarning"
+)
 
 
 def _grid() -> Environment:
@@ -211,3 +216,132 @@ def test_transitions_skip_pairs_with_a_missing_or_outside_sample(cartesian_env, 
 def test_a_precomputed_sequence_with_minus_one_is_still_refused(cartesian_env):
     with pytest.raises(ValueError, match="Invalid bin indices"):
         cartesian_env.transitions(np.array([0, -1, 0], dtype=np.int32))
+
+
+# --- Smoothing over observed bins -------------------------------------------
+
+_MODES = ["average", "transition", "density"]
+
+
+def _holes(env: Environment) -> np.ndarray:
+    return np.random.default_rng(1).random(env.n_bins) < 0.3
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_smoothing_without_nan_is_the_plain_operator(any_env, mode):
+    from neurospatial.ops.diffusion import diffusion_apply
+
+    field = np.sin(np.arange(any_env.n_bins) * 0.37)
+    geometry = any_env.get_diffusion_geometry()
+    plain = diffusion_apply(
+        any_env._diffusion_eigenbasis,
+        geometry.W,
+        geometry.volumes,
+        geometry.n_components,
+        field[:, None],
+        3.0,
+        mode,
+    )[:, 0]
+    np.testing.assert_array_equal(any_env.smooth(field, 3.0, mode=mode), plain)
+    np.testing.assert_array_equal(any_env.diffuse(field, 3.0, mode=mode), plain)
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_a_constant_field_with_holes_smooths_like_the_full_constant(any_env, mode):
+    full = np.full(any_env.n_bins, 2.5)
+    holed = full.copy()
+    holed[_holes(any_env)] = np.nan
+    smoothed = any_env.smooth(holed, 3.0, mode=mode)
+    assert np.isfinite(smoothed).all()
+    np.testing.assert_allclose(
+        smoothed, any_env.smooth(full, 3.0, mode=mode), rtol=1e-11
+    )
+
+
+def test_an_interior_hole_is_filled_from_its_neighbors(any_env):
+    field = np.sin(np.arange(any_env.n_bins) * 0.37)
+    holed = field.copy()
+    holed[any_env.n_bins // 2] = np.nan
+    smoothed = any_env.smooth(holed, 3.0)
+    assert np.isfinite(smoothed).all()
+    assert field.min() <= smoothed[any_env.n_bins // 2] <= field.max()
+
+
+def test_a_batch_keeps_nan_free_fields_unchanged(any_env):
+    field = np.sin(np.arange(any_env.n_bins) * 0.37)
+    holed = np.cos(np.arange(any_env.n_bins) * 0.11)
+    holed[_holes(any_env)] = np.nan
+    batch = any_env.diffuse(np.column_stack([field, holed]), 3.0, mode="average")
+    filled = any_env.diffuse(
+        np.column_stack([field, np.nan_to_num(holed)]), 3.0, mode="average"
+    )
+    np.testing.assert_array_equal(batch[:, 0], filled[:, 0])
+    # Each field has its own observed mask; batching changes only roundoff.
+    np.testing.assert_allclose(
+        batch[:, 1], any_env.smooth(holed, 3.0), rtol=1e-12, atol=1e-14
+    )
+
+
+@pytest.fixture(scope="module")
+def two_rooms() -> Environment:
+    """Two 5 x 4 rooms on one grid, separated by an inactive column."""
+    mask = np.ones((11, 4), dtype=bool)
+    mask[5] = False
+    edges = (np.linspace(0, 22, 12), np.linspace(0, 8, 5))
+    return Environment.from_grid_mask(mask, grid_edges=edges)
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_a_room_with_no_observed_bin_stays_nan(two_rooms, mode):
+    labels = two_rooms.get_diffusion_geometry().labels
+    assert two_rooms.get_diffusion_geometry().n_components == 2
+    field = np.sin(np.arange(two_rooms.n_bins) * 0.37)
+    holed = np.where(labels == 1, np.nan, field)
+    smoothed = two_rooms.smooth(holed, 2.0, mode=mode)
+
+    assert np.isnan(smoothed[labels == 1]).all()
+    # The observed room is fully observed, so it smooths as if alone.
+    reference = two_rooms.smooth(np.where(labels == 1, 0.0, field), 2.0, mode=mode)
+    np.testing.assert_allclose(
+        smoothed[labels == 0], reference[labels == 0], rtol=1e-12
+    )
+
+
+@pytest.mark.parametrize("mode", _MODES)
+def test_bins_stay_nan_exactly_where_the_support_is_below_the_floor(mode):
+    from neurospatial.environment._fields import MISSING_SUPPORT_FLOOR
+
+    track = Environment.from_samples(np.linspace(0.0, 60.0, 400)[:, None], bin_size=1.0)
+    observed = track.bin_centers[:, 0] < 15.0
+    field = np.where(observed, np.cos(track.bin_centers[:, 0] / 4.0), np.nan)
+    smoothed = track.smooth(field, 2.0, mode=mode)
+
+    kernel = track.compute_kernel(2.0, mode=mode, cache=False)
+    # The share of each bin's smoothing weight that falls on observed bins.
+    support = (kernel @ observed) / (kernel @ np.ones(track.n_bins))
+    relative = support / support.max()
+    clear = np.abs(relative / MISSING_SUPPORT_FLOOR - 1.0) > 0.01
+    np.testing.assert_array_equal(
+        np.isnan(smoothed)[clear], (relative <= MISSING_SUPPORT_FLOOR)[clear]
+    )
+    # Holes next to the observed bins are filled; far ones stay NaN.
+    assert np.isfinite(smoothed[~observed]).any()
+    assert np.isnan(smoothed).any()
+
+
+def test_sparse_observations_with_a_wide_bandwidth_are_not_all_nan():
+    track = Environment.from_samples(
+        np.linspace(0.0, 200.0, 800)[:, None], bin_size=1.0
+    )
+    field = np.full(track.n_bins, np.nan)
+    field[::25] = 1.0
+    smoothed = track.smooth(field, 30.0)
+    assert np.isfinite(smoothed).all()
+    np.testing.assert_allclose(smoothed, 1.0, rtol=1e-6)
+
+
+def test_smooth_still_refuses_infinite_values(any_env):
+    field = np.zeros(any_env.n_bins)
+    field[0] = np.inf
+    with pytest.raises(ValueError, match="infinite"):
+        any_env.smooth(field, 3.0)

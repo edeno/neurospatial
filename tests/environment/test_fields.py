@@ -292,14 +292,6 @@ class TestSmooth:
         with pytest.raises(ValueError, match=r"mode must be"):
             medium_2d_env.smooth(field, bandwidth=2.0, mode="invalid")
 
-    def test_smooth_field_with_nan_raises(self, medium_2d_env):
-        """Test that field with NaN raises ValueError."""
-        field = np.ones(medium_2d_env.n_bins)
-        field[0] = np.nan
-
-        with pytest.raises(ValueError, match=r"Field contains NaN values"):
-            medium_2d_env.smooth(field, bandwidth=2.0)
-
     def test_smooth_field_with_inf_raises(self, medium_2d_env):
         """Test that field with Inf raises ValueError."""
         field = np.ones(medium_2d_env.n_bins)

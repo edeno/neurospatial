@@ -285,6 +285,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.smooth` and `env.diffuse` treat NaN bins as missing observations
+  instead of zeros. They smooth the field with NaN read as 0 and the observed
+  mask with the same operator, then divide, so holes are filled from their
+  observed neighbors and a constant field with holes stays constant in every
+  mode. A bin stays NaN when the share of its smoothing weight on observed
+  bins is at most 0.1% of the largest share in its connected part of the
+  environment, which includes every bin of a part with no observed bin.
+  Before, `smooth` refused any NaN and `diffuse` spread one NaN over its whole
+  connected part. Fields without NaN give exactly the same values as before.
+  `diffuse(backend="jax")` does not inspect NaN.
+
 - `compute_decision_analysis` represents each goal region by the region bin
   nearest the centroid of the region's bins, the same bin
   `trials_to_region_arrays` uses. It used the lowest-index bin, which depends

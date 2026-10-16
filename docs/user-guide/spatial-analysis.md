@@ -724,12 +724,17 @@ smoothing per-bin counts, occupancy, or probability mass while keeping their sum
 `compute_kernel` and the lower-level `diffuse` retain their existing defaults;
 select their mode explicitly when composing operators.
 
-`env.smooth` requires finite input and rejects NaN/Inf. For spike-derived rate
-maps, prefer `compute_spatial_rate`, which handles shared spike/occupancy support
-and estimator-specific smoothing. Applying another smoothing pass to a returned
-map changes that estimator. A masked average requires smoothing both the filled
-numerator and the validity weights, dividing, then restoring the desired mask;
-simply replacing missing observations with zero changes their meaning.
+`env.smooth` treats NaN bins as missing, never as zero. It smooths the field
+with NaN read as 0, smooths the observed-bin mask with the same operator, and
+divides, so holes are filled from their observed neighbors and a constant
+field with holes stays constant. A bin stays NaN when the share of its
+smoothing weight on observed bins is at most 0.1% of the largest share in its
+connected part of the environment, for example a room with no visits. Inf is
+refused. For spike-derived rate maps, prefer `compute_spatial_rate`, which
+handles shared spike/occupancy support and estimator-specific smoothing.
+Applying another smoothing pass to a returned map changes that estimator, and
+the filled holes are estimates: restore the original NaN mask if unvisited
+bins must stay empty.
 
 **Use Cases:**
 
@@ -1544,7 +1549,7 @@ When reporting analyses, include:
 
 > "Firing rate maps were computed on a 2.5 cm spatial grid (total bins: 256, active: 198).
 > Bins with <0.5 s occupancy were excluded. Firing rates were smoothed with a Gaussian
-> kernel (σ = 5 cm, 2.0 bins) using the `smooth()` method with `respect_nans=True`."
+> kernel (σ = 5 cm, 2.0 bins) using the `smooth()` method, averaging over visited bins only."
 
 ---
 
