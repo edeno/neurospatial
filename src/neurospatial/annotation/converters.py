@@ -301,7 +301,7 @@ def env_from_boundary_region(
     subtract_holes_from_boundary : Used to subtract holes from boundary.
 
     """
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
     if boundary.kind != "polygon":
         raise ValueError(f"Boundary must be polygon, got {boundary.kind}")

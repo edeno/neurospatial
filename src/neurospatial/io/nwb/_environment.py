@@ -461,7 +461,7 @@ def environment_from_position(
 
     _require_pynwb()
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.environment._factories import _from_samples
     from neurospatial.io.nwb._behavior import read_position
 

@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import vonmises
 
-from neurospatial import Environment
+from neurospatial.environment import Environment
 from neurospatial.ops.distance import distance_field
 
 

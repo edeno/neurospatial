@@ -306,7 +306,7 @@ def _create_egocentric_environment(
     Environment
         Egocentric polar environment with n_distance_bins * n_direction_bins bins.
     """
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
     return Environment.from_polar_egocentric(
         distance_range=distance_range,

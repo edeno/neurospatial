@@ -431,8 +431,8 @@ and `extensions` paths, independent `layout` and `ops`, `environment`, and the
 analysis, rendering and storage packages above it. A package imports only from layers below it, and a new
 top-level module must be added to a layer. The only upward imports are
 Environment facade methods that hand off to `io` or `animation`; each is listed
-in `ignore_imports`. Core packages also may not import from the lazy package
-root, which would hide the real dependency. The whole geometry package cannot
+in `ignore_imports`. No package may import from the lazy package root,
+which would hide the real dependency. The whole geometry package cannot
 import builders, environments, analysis, storage or rendering packages.
 Type-only imports are excluded. Affine convenience functions call the public
 environment method through a narrow consumer protocol; Environment retains

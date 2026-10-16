@@ -35,7 +35,8 @@ import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import unary_union
 
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 
 # Calibration: pixels to cm conversion for Sungod maze

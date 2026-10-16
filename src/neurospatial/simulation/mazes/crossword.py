@@ -33,7 +33,8 @@ from dataclasses import dataclass
 import networkx as nx
 from shapely.geometry import box as shapely_box
 
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,

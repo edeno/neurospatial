@@ -35,30 +35,19 @@ broken_contract_guidance =
     animation may import upward; list each such edge in ignore_imports.
 
 [importlinter:contract:package-root]
-name = Core packages never reach analysis code through the package root
+name = Packages import from defining modules, never the lazy package root
 type = forbidden
 source_modules =
-    neurospatial.environment
-    neurospatial.environment.**
-    neurospatial.layout
-    neurospatial.layout.**
-    neurospatial.ops
-    neurospatial.ops.**
-    neurospatial.regions
-    neurospatial.regions.**
-    neurospatial.arena
-    neurospatial.binning
-    neurospatial.geometry
-    neurospatial.geometry.**
-    neurospatial.extensions
+    neurospatial.**
 forbidden_modules =
     neurospatial
 as_packages = False
 allow_indirect_imports = True
 broken_contract_guidance =
     The package root resolves its exports lazily, so an import from it hides
-    which package is really used. Import from the defining package instead,
-    for example neurospatial.regions rather than neurospatial.
+    which package is really used and the layers contract cannot check it.
+    Import from the defining package instead, for example
+    neurospatial.environment or neurospatial.regions rather than neurospatial.
 
 [importlinter:contract:geometry]
 name = Owned geometry stays independent of analysis, storage and rendering

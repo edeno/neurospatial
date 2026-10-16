@@ -125,7 +125,7 @@ def open_field_session(
     ideal for testing place field detection algorithms.
     """
     # Import here to avoid circular dependencies
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.simulation.session import simulate_session
 
     # Validate parameters
@@ -297,7 +297,7 @@ def linear_track_session(
     track analysis. The environment spans [0, track_length] in cm.
     """
     # Import here to avoid circular dependencies
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.simulation.session import simulate_session
 
     # Validate parameters
@@ -479,7 +479,7 @@ def tmaze_alternation_session(
     # Import here to avoid circular dependencies
     import networkx as nx
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.simulation.session import simulate_session
 
     # Validate parameters
@@ -700,7 +700,7 @@ def boundary_cell_session(
     firing).
     """
     # Import here to avoid circular dependencies
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.simulation.models import BoundaryCellModel, PlaceCellModel
     from neurospatial.simulation.session import SimulationSession
     from neurospatial.simulation.spikes import generate_population_spikes
@@ -941,7 +941,7 @@ def grid_cell_session(
     creates a realistic population of grid cells from the same module.
     """
     # Import here to avoid circular dependencies
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.simulation.models import GridCellModel
     from neurospatial.simulation.session import SimulationSession
     from neurospatial.simulation.spikes import generate_population_spikes

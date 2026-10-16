@@ -6,8 +6,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial import Environment
 from neurospatial._exceptions import _format_error
+from neurospatial.environment import Environment
 
 logger = logging.getLogger(__name__)
 
