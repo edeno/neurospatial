@@ -184,9 +184,6 @@ env.animate_fields(
 Speed up rendering using multiple CPU cores:
 
 ```python
-# IMPORTANT: Clear caches before parallel rendering
-env.clear_cache()  # Makes environment pickle-able
-
 env.animate_fields(
     fields,
     frame_times=frame_times,
@@ -196,7 +193,9 @@ env.animate_fields(
 )
 ```
 
-**Why clear caches?** Parallel rendering uses Python's `multiprocessing`, which requires pickle-able objects. Cached properties (KDTrees, kernels) contain non-pickle-able objects.
+Parallel rendering uses Python's `multiprocessing`, which pickles the
+environment and overlays to send them to worker processes. The environment's
+cached analyses are never pickled, so there is no need to clear them first.
 
 ### Dry Run Mode
 
@@ -416,7 +415,6 @@ env.animate_fields(fields, frame_times=frame_times, backend="napari")
 # Option 2: Subsample for video (250 Hz → 30 fps)
 subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
 subsampled_times = subsample_frames(frame_times, source_fps=250, target_fps=30)
-env.clear_cache()
 env.animate_fields(
     subsampled,
     frame_times=subsampled_times,
@@ -467,7 +465,6 @@ interesting_subset = large_fields[1000:2000]
 subset_times = large_frame_times[1000:2000]
 
 # 3. Export subset as video
-env.clear_cache()
 env.animate_fields(
     interesting_subset,
     frame_times=subset_times,
@@ -606,7 +603,6 @@ Render video on server, download and view locally:
 
 ```python
 # On remote server (requires ffmpeg)
-env.clear_cache()
 env.animate_fields(
     fields,
     frame_times=frame_times,
@@ -708,22 +704,32 @@ env.animate_fields(fields, frame_times=frame_times)
 
 ### "Pickle error during parallel rendering"
 
-**Error**: `RuntimeError: Environment must be pickle-able for parallel rendering`
+**Error**: `ValueError: WHAT: Environment is not pickle-able, preventing parallel video rendering.`
+(or `OverlayData is not pickle-able`)
 
-**Solution**: Clear caches before parallel video export:
+**Why?** Parallel rendering uses `multiprocessing`, which pickles the
+environment and overlays to send them to worker processes. Something you
+supplied cannot be pickled: a lambda or local function, an open file or video
+reader, or a lock, stored in region metadata, graph attributes, an attribute
+you set on the environment, or an overlay. The environment's cached analyses
+are never pickled, so clearing them does not help.
+
+**Solution**: Find the object, then replace it with plain data (arrays,
+numbers, strings), or render serially:
 
 ```python
-env.clear_cache()  # Remove non-pickle-able cached properties
+import pickle
+
+pickle.dumps(env)  # the traceback names the object that cannot be pickled
+
 env.animate_fields(
     fields,
     frame_times=frame_times,
     backend="video",
-    n_workers=4,
+    n_workers=1,  # serial rendering pickles nothing
     save_path="output.mp4",
 )
 ```
-
-**Why?** Parallel rendering uses `multiprocessing`, which requires pickle-able objects. Cached KDTrees and kernels are not pickle-able.
 
 ### "HTML file too large"
 

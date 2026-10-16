@@ -799,28 +799,33 @@ trajectory_cm = trajectory_meters * 100
 
 **Error:**
 ```
-ValueError: overlay_data is not pickle-able for parallel rendering.
-  WHY: Parallel rendering (n_workers=4) requires serializing
-       overlay_data to send to worker processes.
-
-  HOW: Choose one of these solutions:
-    1. Remove unpickleable objects (lambdas, closures, local functions)
-    2. Ensure overlay_data uses only standard types (numpy arrays, strings, numbers)
-    3. Use n_workers=1 for serial rendering (no pickling required)
-    4. Call env.clear_cache() before parallel rendering
+ValueError: WHAT: overlay_data is not pickle-able for parallel rendering.
+WHY: Parallel rendering (n_workers=4) requires serializing overlay_data to send to worker processes.
+Fix: Choose one of these solutions:
+  1. Remove unpickleable objects (lambdas, closures, local functions)
+  2. Ensure overlay_data uses only standard types (numpy arrays, strings, numbers)
+  3. Use n_workers=1 for serial rendering (no pickling required)
 ```
+
+Parallel rendering pickles the overlays and the environment to send them to
+worker processes. Only objects you supplied can fail: a lambda or local
+function, an open file or video reader, a lock. The environment's cached
+analyses are never pickled, so clearing them does not help.
 
 **Solution:**
 ```python
-# Clear environment caches before parallel rendering
-env.clear_cache()
+import pickle
 
+pickle.dumps(overlay)  # raises on the object that cannot be pickled
+
+# Replace that object with plain data (arrays, numbers, strings), or render
+# serially, which pickles nothing:
 env.animate_fields(
     fields,
     frame_times=frame_times,
     overlays=[overlay],
     backend="video",
-    n_workers=4,  # Now works
+    n_workers=1,
     save_path="output.mp4"
 )
 ```
@@ -863,7 +868,8 @@ print(f"NaN count: {np.isnan(overlay.positions).sum()}")
 
 2. **Serial rendering (n_workers=1)**
    - Enable parallel rendering for video backend
-   - Ensure environment is pickle-able
+   - Keep overlays to plain data (arrays, numbers, strings) so they can be
+     sent to worker processes
 
 3. **High-resolution rendering**
    - Reduce dpi for video backend (default: 100)
@@ -872,7 +878,6 @@ print(f"NaN count: {np.isnan(overlay.positions).sum()}")
 **Optimize:**
 ```python
 # Parallel video rendering
-env.clear_cache()  # Ensure pickle-ability
 env.animate_fields(
     fields,
     frame_times=frame_times,
@@ -972,14 +977,14 @@ env.animate_fields(
 )
 ```
 
-### Clearing Caches for Parallel Rendering
+### Caches and Parallel Rendering
 
 Pickling an environment for worker processes never includes its cached
-analyses, so parallel rendering does not need a cleared cache. Clearing still
+analyses, so parallel rendering does not need a cleared cache. Clearing only
 frees the memory held by kernels and eigenbases in the main process:
 
 ```python
-# Release every cached analysis (takes no arguments)
+# Optional: release every cached analysis (takes no arguments)
 env.clear_cache()
 
 # Parallel rendering

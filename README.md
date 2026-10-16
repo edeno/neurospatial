@@ -578,7 +578,6 @@ frame_times = np.arange(len(fields)) / 30.0  # 30 Hz
 env.animate_fields(fields, frame_times=frame_times, backend="napari")
 
 # Video export with parallel rendering (best for presentations)
-env.clear_cache()  # Required for parallel rendering
 env.animate_fields(
     fields, frame_times=frame_times,
     save_path="animation.mp4", n_workers=4,
@@ -622,7 +621,6 @@ env.animate_fields(fields, frame_times=frame_times, backend="napari")
 # Or subsample for video export (250 Hz → 30 fps)
 subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
 sub_times = np.arange(len(subsampled)) / 30.0
-env.clear_cache()
 env.animate_fields(
     subsampled, frame_times=sub_times,
     save_path="replay.mp4", n_workers=4,
