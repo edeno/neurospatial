@@ -69,8 +69,10 @@ if TYPE_CHECKING:
 # support -- the share of its smoothing weight on observed bins -- is at most
 # this fraction of the largest support in its connected part. The truncated
 # operator reproduces the heat kernel to _HEAT_KERNEL_RANK_TOL (1e-6) of its
-# largest output, so a support 1e3 times above that keeps the error of the
-# averaged value near 0.1%; below it the ratio is truncation noise.
+# largest output, so above a support 1e3 times that the averaged value is
+# accurate to about 0.1% of the field's largest magnitude in the component
+# (not of each value: a 1000:1 field can be off by ~1% at its low end); below
+# it the ratio is truncation noise.
 MISSING_SUPPORT_FLOOR = _RESOLUTION_MARGIN * _HEAT_KERNEL_RANK_TOL
 
 

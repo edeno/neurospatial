@@ -5985,8 +5985,12 @@ class Environment(Generic[_C]):
         stays NaN when its ``s`` is at most 0.1% of the largest ``s`` in its
         connected part of the environment, which includes every bin of a part
         with no observed bin. The floor is 1000 times the operator's relative
-        truncation error (``1e-6``), which keeps the error of every kept value
-        near 0.1%. ``mode='transition'`` and ``mode='density'`` refuse NaN:
+        truncation error (``1e-6``). That error scales with the field's largest
+        magnitude in the connected part, not with each value: a kept value is
+        accurate to about 0.1% of that magnitude or better. For a field
+        spanning 1000:1 (1000 Hz next to 1 Hz) a kept bin near 1 Hz can be off
+        by about 1% of its own value, roughly 1e-5 of the 1000 Hz peak.
+        ``mode='transition'`` and ``mode='density'`` refuse NaN:
         missing bins have no defensible mass under a conserving operator, so
         fill them explicitly or use ``mode='average'`` for an intensive field.
         A field without NaN gets the plain ``K · field``.
