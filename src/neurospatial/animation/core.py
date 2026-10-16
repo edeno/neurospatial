@@ -19,7 +19,7 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.environment._protocols import AnimationConsumer
+    from neurospatial.environment import Environment
 
 # Playback speed limits
 MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
@@ -101,7 +101,7 @@ def _compute_playback_fps(
     return playback_fps, actual_speed
 
 
-def _validate_env_pickleable(env: AnimationConsumer) -> None:
+def _validate_env_pickleable(env: Environment) -> None:
     """Validate that environment can be pickled for parallel processing.
 
     Parameters
@@ -140,7 +140,7 @@ def _validate_env_pickleable(env: AnimationConsumer) -> None:
 
 
 def animate_fields(
-    env: AnimationConsumer,
+    env: Environment,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
@@ -493,7 +493,7 @@ def animate_fields(
         }
 
         return render_napari(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
+            env,
             fields,
             overlay_data=overlay_data,
             show_regions=show_regions,
@@ -542,7 +542,7 @@ def animate_fields(
             _validate_env_pickleable(env)
 
         return render_video(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
+            env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
             overwrite=overwrite,
@@ -559,7 +559,7 @@ def animate_fields(
         if save_path is None:
             save_path = "animation.html"
         return render_html(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
+            env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
             overwrite=overwrite,
@@ -574,7 +574,7 @@ def animate_fields(
         from neurospatial.animation.backends.widget_backend import render_widget
 
         return render_widget(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
+            env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             overlay_data=overlay_data,
             show_regions=show_regions,

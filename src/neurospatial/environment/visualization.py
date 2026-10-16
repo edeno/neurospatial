@@ -4,38 +4,86 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import matplotlib
 import matplotlib.axes
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import RegularPolygon
 from numpy.typing import NDArray
+from scipy.spatial import cKDTree
 
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._protocols import VisualizationConsumer
-from neurospatial.geometry._binning import TrackLinearization
+from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry._grid_frame import require_grid_context
 from neurospatial.geometry._polygon import PolygonCells
+from neurospatial.layout._plotting import plot_track_linear, polygon_patches
+from neurospatial.layout._plotting_binning import plot_binning
+from neurospatial.layout.helpers.utils import map_active_data_to_grid
+from neurospatial.regions import Regions
+from neurospatial.regions.plot import plot_regions
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
 
     from neurospatial.animation.config import ScaleBarConfig
-    from neurospatial.animation.overlays import OverlayProtocol
-else:
-    # Runtime import handled lazily in methods
-    ScaleBarConfig = "ScaleBarConfig"  # For type annotations only
 
 
 # Minimum extent threshold for scale bar (avoids issues with very small extents)
 _MIN_EXTENT_FOR_SCALE_BAR = 1e-6
 
 
+@dataclass(frozen=True)
+class PlotComponents:
+    """Owned environment components that the plotting functions read.
+
+    Parameters
+    ----------
+    binning : Binning
+        Published bins, cell shapes and grid structure.
+    connectivity : networkx.Graph
+        Navigation graph over the bins.
+    dimension_ranges : sequence of (float, float) or None
+        Plot extent per axis.
+    grid_edges : tuple of ndarray or None
+        Grid edges of the published grid index.
+    active_mask : ndarray of bool or None
+        Active cells of the published grid index.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        Axis labels and aspect of the bin coordinates.
+    units : str or None
+        Coordinate units for axis labels and scale bars.
+    name : str
+        Environment name for the layout title.
+    layout_type : str
+        Layout label for titles.
+    regions : Regions
+        Named regions drawn on request.
+    is_linearized_track : bool
+        Whether bins are positions along a linearized track.
+    """
+
+    binning: Binning
+    connectivity: nx.Graph
+    dimension_ranges: Sequence[tuple[float, float]] | None
+    grid_edges: tuple[NDArray[np.float64], ...] | None
+    active_mask: NDArray[np.bool_] | None
+    coordinates: CartesianSystem | EgocentricPolarSystem
+    units: str | None
+    name: str
+    layout_type: str
+    regions: Regions
+    is_linearized_track: bool
+
+
 def _add_scale_bar_if_requested(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     ax: matplotlib.axes.Axes,
     scale_bar: bool | ScaleBarConfig,
 ) -> None:
@@ -46,8 +94,8 @@ def _add_scale_bar_if_requested(
 
     Parameters
     ----------
-    env : Environment
-        The environment instance (provides dimension_ranges and units).
+    parts : PlotComponents
+        Plotted components; supplies dimension_ranges and units.
     ax : matplotlib.axes.Axes
         The axes to add the scale bar to.
     scale_bar : bool or ScaleBarConfig
@@ -62,20 +110,21 @@ def _add_scale_bar_if_requested(
     config = scale_bar if isinstance(scale_bar, _ScaleBarConfig) else _ScaleBarConfig()
 
     # Validate extent is available and reasonable
-    if not env.dimension_ranges:
+    dimension_ranges = parts.dimension_ranges
+    if not dimension_ranges:
         warnings.warn(
             "Cannot add scale bar: dimension_ranges not available",
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    elif not np.isfinite(env.dimension_ranges[0]).all():
+    elif not np.isfinite(dimension_ranges[0]).all():
         warnings.warn(
             "Cannot add scale bar: dimension_ranges contains non-finite values",
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
     else:
-        extent_x = env.dimension_ranges[0][1] - env.dimension_ranges[0][0]
+        extent_x = dimension_ranges[0][1] - dimension_ranges[0][0]
         if extent_x < _MIN_EXTENT_FOR_SCALE_BAR:
             warnings.warn(
                 f"Cannot add scale bar: extent too small ({extent_x})",
@@ -83,14 +132,14 @@ def _add_scale_bar_if_requested(
                 stacklevel=_external_stacklevel(),
             )
         else:
-            add_scale_bar_to_axes(ax, extent_x, env.units, config)
+            add_scale_bar_to_axes(ax, extent_x, parts.units, config)
 
 
 # Helper functions for layout-specific rendering
 
 
 def _plot_grid_field(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -101,11 +150,8 @@ def _plot_grid_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on grid layout using pcolormesh."""
-    from neurospatial.geometry._grid_frame import require_grid_context
-    from neurospatial.layout.helpers.utils import map_active_data_to_grid
-
     grid, frame = require_grid_context(
-        env._binning, "plot_field()", fix="supply rectangular cells"
+        parts.binning, "plot_field()", fix="supply rectangular cells"
     )
 
     # Validate 2D grid
@@ -146,7 +192,7 @@ def _plot_grid_field(
 
 
 def _plot_polygon_field(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -157,9 +203,7 @@ def _plot_polygon_field(
     **kwargs: Any,
 ) -> Any:
     """Render exact polygon rings with the standard missing-value colors."""
-    from neurospatial.layout._plotting import polygon_patches
-
-    shapes = env._binning.shapes
+    shapes = parts.binning.shapes
     assert isinstance(shapes, PolygonCells)
     cmap_obj = plt.get_cmap(cmap).copy()
     cmap_obj.set_bad(nan_color or "none")
@@ -174,7 +218,7 @@ def _plot_polygon_field(
 
 
 def _plot_hex_field(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -185,7 +229,7 @@ def _plot_hex_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on hexagonal layout using PatchCollection."""
-    shapes = env._binning.shapes
+    shapes = parts.binning.shapes
     if not isinstance(shapes, HexagonShapes):
         raise RuntimeError("Hexagonal field plotting requires hexagon cell shapes.")
 
@@ -224,7 +268,7 @@ def _plot_hex_field(
 
 
 def _plot_trimesh_field(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -235,7 +279,7 @@ def _plot_trimesh_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on triangular mesh layout using tripcolor."""
-    shapes = env._binning.shapes
+    shapes = parts.binning.shapes
     if not isinstance(shapes, TriangleShapes):
         raise RuntimeError("Mesh field plotting requires triangular cell shapes.")
     triangles = shapes.triangles
@@ -263,7 +307,7 @@ def _plot_trimesh_field(
 
 
 def _plot_1d_field(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     ylabel: str,
@@ -272,11 +316,11 @@ def _plot_1d_field(
     """Plot a track field in physical display coordinates without bridging gaps."""
     edges: tuple[NDArray[np.float64], ...] | None
     active_mask: NDArray[np.bool_] | None
-    linearization = env._binning.linearization
+    linearization = parts.binning.linearization
     if isinstance(linearization, TrackLinearization):
         edges, active_mask = linearization.grid_edges, linearization.active_mask
     else:
-        edges, active_mask = env.grid_edges, env.active_mask
+        edges, active_mask = parts.grid_edges, parts.active_mask
     if edges is None or active_mask is None:
         raise RuntimeError("Track field plotting requires grid_edges and active_mask.")
     x_positions = (edges[0][:-1] + edges[0][1:]) / 2
@@ -289,7 +333,7 @@ def _plot_1d_field(
     (line,) = ax.plot(x_positions, values, **kwargs)
     ax.fill_between(x_positions, 0, values, alpha=0.3, color=line.get_color())
 
-    unit_label = f" ({env.units})" if env.units else ""
+    unit_label = f" ({parts.units})" if parts.units else ""
     ax.set_xlabel(f"Linearized track coordinate{unit_label}", fontsize=12)
     ax.set_ylabel(ylabel if ylabel else "Field Value", fontsize=12)
     ax.set_title("1D Field Plot", fontsize=14)
@@ -298,7 +342,7 @@ def _plot_1d_field(
 
 
 def _plot_scatter_field(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes,
     cmap: str | Colormap,
@@ -309,13 +353,15 @@ def _plot_scatter_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field using scatter plot (fallback for unknown layouts)."""
+    bin_centers = parts.binning.bins.centers
+    n_bins = len(bin_centers)
     # Filter NaN values if nan_color is None
     if nan_color is None:
         valid_mask = ~np.isnan(field)
-        plot_centers = env.bin_centers[valid_mask]
+        plot_centers = bin_centers[valid_mask]
         plot_values = field[valid_mask]
     else:
-        plot_centers = env.bin_centers
+        plot_centers = bin_centers
         plot_values = field.copy()
 
     if len(plot_centers) == 0:
@@ -324,25 +370,21 @@ def _plot_scatter_field(
     # Scatter sizes are areas in display points, never physical coordinate
     # units. Estimate visible spacing after accounting for the eventual axes
     # limits and aspect ratio. A cap keeps sparse layouts readable as points.
-    if "s" not in kwargs and env.n_bins > 1:
-        from scipy.spatial import cKDTree
-
+    if "s" not in kwargs and n_bins > 1:
         ranges = (
-            np.asarray(env.dimension_ranges, dtype=float)
-            if env.dimension_ranges is not None
-            else np.column_stack(
-                (env.bin_centers.min(axis=0), env.bin_centers.max(axis=0))
-            )
+            np.asarray(parts.dimension_ranges, dtype=float)
+            if parts.dimension_ranges is not None
+            else np.column_stack((bin_centers.min(axis=0), bin_centers.max(axis=0)))
         )
         spans = ranges[:2, 1] - ranges[:2, 0]
         axes_points = np.asarray(ax.get_window_extent().size) * 72.0 / ax.figure.dpi
         points_per_unit = np.divide(axes_points, spans, out=np.ones(2), where=spans > 0)
-        if env._coordinate_system.equal_aspect and np.any(spans > 0):
+        if parts.coordinates.equal_aspect and np.any(spans > 0):
             points_per_unit[:] = np.min(points_per_unit[spans > 0])
-        display_centers = (env.bin_centers[:, :2] - ranges[:2, 0]) * points_per_unit
+        display_centers = (bin_centers[:, :2] - ranges[:2, 0]) * points_per_unit
         tree = cKDTree(display_centers)
         # Find nearest neighbor distance for sample
-        sample_size = min(100, env.n_bins)
+        sample_size = min(100, n_bins)
         distances, _ = tree.query(display_centers[:sample_size], k=2)
         typical_spacing = np.median(distances[:, 1])
         kwargs["s"] = (
@@ -354,7 +396,7 @@ def _plot_scatter_field(
     # Keep caller-supplied per-bin sizes aligned when skipping NaN bins.
     if nan_color is None:
         sizes = np.asarray(kwargs["s"])
-        if sizes.ndim > 0 and sizes.size == env.n_bins:
+        if sizes.ndim > 0 and sizes.size == n_bins:
             kwargs["s"] = sizes.ravel()[valid_mask]
     else:
         # Matplotlib otherwise drops nonfinite colors instead of showing the
@@ -380,7 +422,7 @@ def _plot_scatter_field(
 
 
 def _plot(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     ax: matplotlib.axes.Axes | None = None,
     show_regions: bool = False,
     layout_plot_kwargs: dict[str, Any] | None = None,
@@ -388,67 +430,61 @@ def _plot(
     scale_bar: bool | ScaleBarConfig = False,
     **kwargs: Any,
 ) -> matplotlib.axes.Axes:
-    """Implement Environment.plot using explicit visualization inputs."""
+    """Draw the bins and graph, optionally with regions and a scale bar."""
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
 
-    from neurospatial.layout._plotting_binning import plot_binning
-
     ax = plot_binning(
-        env._binning,
-        env.connectivity,
-        env.dimension_ranges,
-        env.layout_type or "",
+        parts.binning,
+        parts.connectivity,
+        parts.dimension_ranges,
+        parts.layout_type,
         ax=ax,
         **l_kwargs,
     )
     # layout.plot() always returns an Axes object, never None
     assert ax is not None
 
-    if show_regions and hasattr(env, "regions") and env.regions is not None:
-        from neurospatial.regions.plot import plot_regions
-
+    if show_regions:
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
-        plot_regions(env.regions, ax=ax, **r_kwargs)
+        plot_regions(parts.regions, ax=ax, **r_kwargs)
 
-    plot_title = env.name
-    if env.layout_type:
-        plot_title += f" ({env.layout_type})"
+    plot_title = parts.name
+    if parts.layout_type:
+        plot_title += f" ({parts.layout_type})"
 
     # Only set title if layout.plot didn't set one or user didn't pass one via kwargs to layout.plot
     if ax.get_title() == "":
         ax.set_title(plot_title)
 
     # Add scale bar if requested
-    _add_scale_bar_if_requested(env, ax, scale_bar)
+    _add_scale_bar_if_requested(parts, ax, scale_bar)
 
     return ax
 
 
 def _plot_1d(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     ax: matplotlib.axes.Axes | None = None,
     layout_plot_kwargs: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> matplotlib.axes.Axes | None:
-    """Implement Environment.plot_1d using explicit visualization inputs."""
+    """Draw a linearized track in its 1D coordinate, or warn for other layouts."""
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
-    if env.is_linearized_track:
-        linearization = env._binning.linearization
+    if parts.is_linearized_track:
+        linearization = parts.binning.linearization
         if isinstance(linearization, TrackLinearization):
-            from neurospatial.layout._plotting import plot_track_linear
-
             ax = plot_track_linear(
                 ax=ax,
-                title=env.layout_type or "",
+                title=parts.layout_type,
                 linearization=linearization,
                 grid_edges=linearization.grid_edges,
                 **l_kwargs,
             )
         else:
             warnings.warn(
-                f"Layout '{env.layout_type}' is 1D but does not "
+                f"Layout '{parts.layout_type}' is 1D but does not "
                 "have a 'plot_linear_layout' method. Skipping 1D plot.",
                 UserWarning,
                 stacklevel=_external_stacklevel(),
@@ -464,7 +500,7 @@ def _plot_1d(
 
 
 def _plot_field(
-    env: VisualizationConsumer,
+    parts: PlotComponents,
     field: NDArray[np.float64],
     ax: matplotlib.axes.Axes | None = None,
     cmap: str | Colormap = "viridis",
@@ -477,17 +513,20 @@ def _plot_field(
     scale_bar: bool | ScaleBarConfig = False,
     **kwargs: Any,
 ) -> matplotlib.axes.Axes:
-    """Implement Environment.plot_field using explicit visualization inputs."""
-    if field.ndim != 1 or field.shape[0] != env.n_bins:
+    """Draw a bin-valued field with the renderer that matches the cell shapes."""
+    binning = parts.binning
+    n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
+    is_linearized_track = parts.is_linearized_track
+    if field.ndim != 1 or field.shape[0] != n_bins:
         raise ValueError(
-            f"field must be 1D array with length n_bins={env.n_bins}, "
+            f"field must be 1D array with length n_bins={n_bins}, "
             f"got shape {field.shape}"
         )
 
     # Check dimensionality for spatial plots
-    if not env.is_linearized_track and env.n_dims > 2:
+    if not is_linearized_track and n_dims > 2:
         raise NotImplementedError(
-            f"Cannot plot {env.n_dims}D fields spatially. "
+            f"Cannot plot {n_dims}D fields spatially. "
             "Only 1D and 2D environments are supported. "
             "Consider using marginal plots, slicing, or 3D scatter plots instead."
         )
@@ -518,41 +557,40 @@ def _plot_field(
         vmax = vmin + 1.0
 
     # Choose rendering from the structure published with the bins.
-    binning = env._binning
     mappable = None
-    if env.n_dims == 1 and not env.is_linearized_track:
-        ax.plot(env.bin_centers[:, 0], field, **kwargs)
-        unit_label = f" ({env.units})" if env.units else ""
+    if n_dims == 1 and not is_linearized_track:
+        ax.plot(binning.bins.centers[:, 0], field, **kwargs)
+        unit_label = f" ({parts.units})" if parts.units else ""
         ax.set_xlabel(f"Position{unit_label}")
         ax.set_ylabel(colorbar_label or "Field Value")
     elif binning.rectilinear is not None or binning.grid_frame is not None:
         mappable = _plot_grid_field(
-            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
     elif isinstance(binning.shapes, HexagonShapes):
         mappable = _plot_hex_field(
-            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
     elif isinstance(binning.shapes, TriangleShapes):
         mappable = _plot_trimesh_field(
-            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
     elif isinstance(binning.shapes, PolygonCells):
         mappable = _plot_polygon_field(
-            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
-    elif binning.linearization is not None or env.is_linearized_track:
+    elif binning.linearization is not None or is_linearized_track:
         # Legacy saved tracks retain their previous missing-grid refusal
         # until loading restores their full linearization data.
-        mappable = _plot_1d_field(env, field, ax, colorbar_label, **kwargs)
+        mappable = _plot_1d_field(parts, field, ax, colorbar_label, **kwargs)
     else:
         mappable = _plot_scatter_field(
-            env, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
+            parts, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
         )
 
     # Add colorbar (not for 1D)
     # Note: mappable can be None if all field values are NaN and nan_color=None
-    if colorbar and mappable is not None and not env.is_linearized_track:
+    if colorbar and mappable is not None and not is_linearized_track:
         cbar = plt.colorbar(mappable, ax=ax)
         if colorbar_label:
             cbar.set_label(colorbar_label, fontsize=12)
@@ -564,87 +602,20 @@ def _plot_field(
     # wrong; relabel and skip the equal-aspect lock (a polar map's
     # angular extent is fixed by bin_centers[:, 1] but its distance
     # extent is independent and physical).
-    if not env.is_linearized_track and env.n_dims != 1:
-        system = env._coordinate_system
-        xlabel, ylabel = system.axis_labels(env.units)
+    if not is_linearized_track and n_dims != 1:
+        system = parts.coordinates
+        xlabel, ylabel = system.axis_labels(parts.units)
         if system.equal_aspect:
             ax.set_aspect("equal")
         ax.set_xlabel(xlabel, fontsize=12)
         ax.set_ylabel(ylabel, fontsize=12)
 
-        if env.dimension_ranges and len(env.dimension_ranges) >= 2:
-            ax.set_xlim(env.dimension_ranges[0])
-            ax.set_ylim(env.dimension_ranges[1])
+        dimension_ranges = parts.dimension_ranges
+        if dimension_ranges and len(dimension_ranges) >= 2:
+            ax.set_xlim(dimension_ranges[0])
+            ax.set_ylim(dimension_ranges[1])
 
     # Add scale bar if requested
-    _add_scale_bar_if_requested(env, ax, scale_bar)
+    _add_scale_bar_if_requested(parts, ax, scale_bar)
 
     return ax
-
-
-def _animate_fields(
-    env: VisualizationConsumer,
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
-    *,
-    frame_times: NDArray[np.float64],
-    backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
-    save_path: str | None = None,
-    overwrite: bool = False,
-    speed: float = 1.0,
-    cmap: str = "viridis",
-    vmin: float | None = None,
-    vmax: float | None = None,
-    frame_labels: Sequence[str] | None = None,
-    overlay_trajectory: NDArray[np.float64] | None = None,
-    title: str = "Spatial Field Animation",
-    dpi: int = 100,
-    codec: str = "h264",
-    bitrate: int = 5000,
-    n_workers: int | None = None,
-    dry_run: bool = False,
-    image_format: Literal["png", "jpeg"] = "png",
-    max_html_frames: int = 500,
-    contrast_limits: tuple[float, float] | None = None,
-    show_colorbar: bool = False,
-    colorbar_label: str = "",
-    overlays: list[OverlayProtocol] | None = None,
-    show_regions: bool | list[str] = False,
-    region_alpha: float = 0.3,
-    scale_bar: bool | ScaleBarConfig = False,
-    **kwargs: Any,
-) -> Any:
-    """Implement Environment.animate_fields using explicit visualization inputs."""
-    from neurospatial.animation.core import animate_fields as _animate
-
-    # frame_times is now required (no synthesis from fps)
-    # The core animate_fields() handles validation
-    return _animate(
-        env=env,
-        fields=fields,
-        backend=backend,
-        save_path=save_path,
-        overwrite=overwrite,
-        speed=speed,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        frame_labels=frame_labels,
-        overlay_trajectory=overlay_trajectory,
-        title=title,
-        dpi=dpi,
-        codec=codec,
-        bitrate=bitrate,
-        n_workers=n_workers,
-        dry_run=dry_run,
-        image_format=image_format,
-        max_html_frames=max_html_frames,
-        contrast_limits=contrast_limits,
-        show_colorbar=show_colorbar,
-        colorbar_label=colorbar_label,
-        overlays=overlays,
-        frame_times=frame_times,
-        show_regions=show_regions,
-        region_alpha=region_alpha,
-        scale_bar=scale_bar,
-        **kwargs,  # Forward backend-specific parameters (e.g., layout, layer_names for napari)
-    )

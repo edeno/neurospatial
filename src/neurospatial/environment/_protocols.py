@@ -102,69 +102,6 @@ class SubsetConsumer(Protocol):
     def units(self) -> str | None: ...
 
 
-class VisualizationConsumer(Protocol):
-    """Only the environment members read by visualization operations."""
-
-    @property
-    def _binning(self) -> Binning: ...
-
-    @property
-    def _coordinate_system(self) -> CoordinateSystem: ...
-
-    @property
-    def active_mask(self) -> NDArray[np.bool_] | None: ...
-
-    @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
-
-    @property
-    def connectivity(self) -> nx.Graph: ...
-
-    @property
-    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
-
-    @property
-    def grid_edges(self) -> tuple[NDArray[np.float64], ...] | None: ...
-
-    @property
-    def is_linearized_track(self) -> bool:
-        """Whether this is a 1D (linearized) environment."""
-        ...
-
-    @property
-    def layout_type(self) -> str | None:
-        """Type of layout engine used to create this environment, or None."""
-        ...
-
-    @property
-    def n_bins(self) -> int:
-        """Number of spatial bins in the environment."""
-        ...
-
-    @property
-    def n_dims(self) -> int:
-        """Number of spatial dimensions (1, 2, or 3)."""
-        ...
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def regions(self) -> Regions: ...
-
-    @property
-    def units(self) -> str | None: ...
-
-
-class AnimationConsumer(Protocol):
-    """Environment members read by animation/core.py."""
-
-    @property
-    def n_bins(self) -> int:
-        """Number of spatial bins in the environment."""
-        ...
-
-
 class FieldMetricsConsumer(Protocol):
     """Environment members read by encoding/_field_metrics.py."""
 

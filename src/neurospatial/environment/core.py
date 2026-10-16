@@ -119,6 +119,7 @@ if TYPE_CHECKING:
     from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment.factories import PolygonType
+    from neurospatial.environment.visualization import PlotComponents
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.geometry._polygon import ClipMapping
@@ -4740,6 +4741,24 @@ class Environment(Generic[_C]):
             include_boundary=include_boundary,
         )
 
+    def _plot_components(self) -> PlotComponents:
+        """Owned components the plotting functions read."""
+        from neurospatial.environment.visualization import PlotComponents
+
+        return PlotComponents(
+            binning=self._binning,
+            connectivity=self.connectivity,
+            dimension_ranges=self.dimension_ranges,
+            grid_edges=self.grid_edges,
+            active_mask=self.active_mask,
+            coordinates=self._coordinate_system,
+            units=self.units,
+            name=self.name,
+            layout_type=self.layout_type,
+            regions=self.regions,
+            is_linearized_track=self.is_linearized_track,
+        )
+
     def plot(
         self,
         ax: matplotlib.axes.Axes | None = None,
@@ -4802,7 +4821,7 @@ class Environment(Generic[_C]):
         from neurospatial.environment.visualization import _plot
 
         return _plot(
-            self,
+            self._plot_components(),
             ax,
             show_regions,
             layout_plot_kwargs,
@@ -4861,7 +4880,7 @@ class Environment(Generic[_C]):
         """
         from neurospatial.environment.visualization import _plot_1d
 
-        return _plot_1d(self, ax, layout_plot_kwargs, **kwargs)
+        return _plot_1d(self._plot_components(), ax, layout_plot_kwargs, **kwargs)
 
     def plot_field(
         self,
@@ -4980,11 +4999,10 @@ class Environment(Generic[_C]):
         >>> fig.savefig("field.png")
 
         """
-        # Validate field shape
         from neurospatial.environment.visualization import _plot_field
 
         return _plot_field(
-            self,
+            self._plot_components(),
             field,
             ax=ax,
             cmap=cmap,
@@ -5353,11 +5371,11 @@ class Environment(Generic[_C]):
         ... )
 
         """
-        from neurospatial.environment.visualization import _animate_fields
+        from neurospatial.animation.core import animate_fields
 
-        return _animate_fields(
-            self,
-            fields,
+        return animate_fields(
+            env=self,
+            fields=fields,
             frame_times=frame_times,
             backend=backend,
             save_path=save_path,
