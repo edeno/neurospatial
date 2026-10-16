@@ -2,7 +2,7 @@ import inspect
 from typing import Any
 
 from neurospatial._exceptions import _format_error
-from neurospatial.layout._labels import LayoutType, find_layout_type
+from neurospatial.layout._labels import LayoutType, _key, find_layout_type
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
@@ -43,6 +43,9 @@ def _engine_class(kind: object, caller: str) -> Any:
     elif member is LayoutType.COMBINED:
         why = "Why: a combined environment joins existing environments."
         fix = "join environments with Environment.combine({...})"
+    elif isinstance(kind, str) and _key(kind) == "mask":
+        why = "Why: 'mask' could mean a masked grid or an image mask."
+        fix = "use LayoutType.MASKED_GRID ('MaskedGrid') or LayoutType.IMAGE_MASK ('ImageMask')"
     else:
         why = "Why: the name matches no layout engine."
         fix = f"use one of {', '.join(list_available_layouts())}"

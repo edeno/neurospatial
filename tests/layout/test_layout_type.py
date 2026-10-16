@@ -88,7 +88,7 @@ def test_sample_factories_report_the_canonical_label(spelling, expected):
         ("Polar", "Environment.from_polar_egocentric"),
         ("Combined", "Environment.combine"),
         ("circle", "RegularGrid"),
-        ("mask", "MaskedGrid"),
+        ("mask", "could mean a masked grid or an image mask"),
     ],
 )
 def test_names_without_an_engine_are_refused_with_the_way_to_build_them(name, fix):
