@@ -511,8 +511,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   of the module that failed, instead of being reported as a missing pynwb.
   Pose and event reading and writing (`read_pose`, `read_events`,
   `write_events`, `write_laps`, `write_region_crossings` and
-  `dataframe_to_events_table`) do the same for their extensions: "ndx-pose is required" or "ndx-events is
-  required" appears only when that extension itself is not installed.
+  `dataframe_to_events_table`) do the same for their extensions:
+  "ndx-pose is required" or "ndx-events is required" appears only when that
+  extension itself is not installed.
 
 - `Environment.rebin(factor)` on an environment without a stored grid
   specification (for example one built with `Environment.from_bins` without
