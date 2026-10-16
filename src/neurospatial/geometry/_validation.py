@@ -324,6 +324,8 @@ class _LocatorGeometry:
     shapes_supported: bool = True
     similarity: bool = True
     polygons: tuple[Polygon, ...] | None = None
+    # Per-axis arithmetic error of ``polygons`` mapped through recovered maps.
+    polygon_error: NDArray[np.float64] | float = 0.0
     grid_indices: NDArray[np.intp] | None = None
     grid_linear: NDArray[np.float64] | None = None
     grid_linear_error: NDArray[np.float64] | None = None
@@ -727,7 +729,28 @@ def _locator_geometry(
     ]
     geometry.cell_gap *= float(np.min(np.linalg.svd(linear, compute_uv=False)))
     geometry.similarity &= bool(similarity)
+    if (
+        geometry.radius > 0
+        and geometry.polygons is None
+        and not (similarity and sign > 0)
+    ):
+        # The map does not keep hexagons regular, so derivation stores the
+        # parent's exact cells mapped forward; map the same cells here.
+        geometry.polygons = cells_from_locator(locator.base)
     if geometry.polygons is not None:
+        # Vertices carry the arithmetic error of recovering and applying this
+        # forward map, like centers; bound it at the cells' largest coordinates.
+        extent = np.max(
+            np.abs(shapely.get_coordinates(geometry.polygons)), axis=0, keepdims=True
+        )
+        _, vertex_error = _mapped_geometry(
+            extent,
+            np.broadcast_to(geometry.polygon_error, extent.shape),
+            matrix,
+            linear_error,
+            shift_error,
+        )
+        geometry.polygon_error = vertex_error[0]
         geometry.polygons = transform_polygon_cells(
             PolygonCells(geometry.polygons), matrix
         ).polygons
@@ -757,8 +780,6 @@ def _locator_geometry(
                 matrix[1, -1],
             ],
         )
-    if geometry.radius > 0 and not (similarity and sign > 0):
-        geometry.polygons = cells_from_locator(locator)
     if geometry.radius > 0:
         geometry.shapes_supported &= bool(similarity and sign > 0)
         geometry.radius *= scale
@@ -1265,9 +1286,14 @@ def _validate_components(
         for index, (actual, expected) in enumerate(
             zip(shapes.polygons, geometry.polygons, strict=True)
         ):
-            tolerance = np.minimum(
-                coordinate_errors[index],
-                _polygon_coordinate_errors(expected),
+            # Stored-coordinate rounding plus the arithmetic error of the cells
+            # recovered from the locator; the gap cap keeps it far below a cell.
+            tolerance = (
+                np.minimum(
+                    coordinate_errors[index],
+                    _polygon_coordinate_errors(expected),
+                )
+                + geometry.polygon_error
             )
             actual_normalized, expected_normalized = (
                 shapely.normalize(actual),

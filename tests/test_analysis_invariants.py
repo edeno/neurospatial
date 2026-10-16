@@ -9,7 +9,7 @@ from itertools import permutations
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from neurospatial import Environment, compute_spatial_rate, compute_spatial_rates
@@ -82,6 +82,9 @@ def test_single_and_population_estimators_agree(
     scale=st.floats(min_value=0.25, max_value=4.0),
     reflect=st.booleans(),
 )
+# A reflected quarter-scale map whose inverse used to fail hexagonal-cell
+# validation on a cell that its locator assigns correctly.
+@example(angle=-2.0965322377907283, scale=0.25, reflect=True)
 def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     analysis_invariant_env, angle, scale, reflect
 ):

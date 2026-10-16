@@ -491,6 +491,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   environments with holes or irregular outlines change accordingly; full
   rectangular hexagonal arenas are unchanged.
 
+- `env.apply_transform(...)` no longer refuses a valid environment with
+  "polygon cell N disagrees with its locator" after a chain of coordinate
+  changes, such as a scaled, rotated and reflected map followed by its
+  inverse. Clipped environments (`env.clip(...)`) and hexagonal environments
+  after a reflection store exact polygon cells, and the check compared them
+  with the cells recomputed from the stored transforms at storage precision
+  only, although recomputing them adds floating-point rounding. The check now
+  allows that rounding, as it already did for bin centers and mesh vertices,
+  and still caps it at a quarter of the smallest cell spacing.
+
 - `Environment.open_field(..., fill_holes=False)` works; it used to fail with
   a `TypeError` about multiple values for `fill_holes`.
 

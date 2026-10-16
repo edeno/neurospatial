@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from shapely import Polygon
 
 from neurospatial import Environment
 from neurospatial.geometry._binning import MissingFaces
@@ -411,6 +412,68 @@ def test_hexagonal_subset_boundary_matches_native_support(built_environment):
     np.testing.assert_array_equal(child.boundary_bins, expected.boundary_bins)
     translated = child.apply_transform(_affine(offset=(2.0, -3.0)))
     np.testing.assert_array_equal(translated.boundary_bins, expected.boundary_bins)
+
+
+def _small_cell_environment(kind):
+    hexagonal = Environment.from_samples(
+        np.array([[0.0, 0.0], [4.0, 4.0]]),
+        bin_size=1.0,
+        layout="hexagonal",
+        infer_active_bins=False,
+    )
+    if kind == "hex":
+        return hexagonal
+    if kind == "hex_clipped":
+        return hexagonal.clip(Polygon([(0.3, 0.2), (3.7, 0.2), (3.7, 3.1), (0.3, 3.1)]))
+    if kind == "grid_clipped":
+        grid = Environment.from_grid_mask(
+            np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+        )
+        return grid.clip(Polygon([(0.2, 0.1), (2.9, 0.3), (1.4, 2.8)]))
+    if kind == "polygon":
+        return Environment.from_polygon(
+            Polygon([(0, 0), (6, 0), (6, 4), (3, 6), (0, 4)]), bin_size=1.0
+        )
+    return Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon([(0, 0), (6, 0), (6, 6), (0, 6)]),
+            point_spacing=1.5,
+        )
+    )
+
+
+# Each chain once failed the cell check of exact polygon cells (clipped cells
+# and reflected hexagons) by floating-point roundoff far below a cell's size.
+@pytest.mark.parametrize(
+    "angle,scale,reflect",
+    [
+        (-2.0965322377907283, 0.25, True),
+        (0.8605556614246863, 0.5, False),
+        (2.245637299378165, 4.0, True),
+        (-0.08899906526957396, 0.25, True),
+    ],
+)
+@pytest.mark.parametrize(
+    "kind", ["hex", "hex_clipped", "grid_clipped", "polygon", "mesh"]
+)
+def test_cells_survive_a_similarity_and_its_inverse(kind, angle, scale, reflect):
+    env = _small_cell_environment(kind)
+    linear = scale * np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    if reflect:
+        linear[:, 0] *= -1
+    transform = _affine(linear, (10.0, -7.0))
+    moved = env.apply_transform(transform).apply_transform(_affine(offset=(3.0, 2.0)))
+    restored = moved.apply_transform(_affine(offset=(-3.0, -2.0))).apply_transform(
+        transform.inverse()
+    )
+    np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
+    np.testing.assert_allclose(restored.bin_sizes, env.bin_sizes, rtol=1e-12)
+    np.testing.assert_array_equal(
+        restored.bin_at(env.bin_centers), env.bin_at(env.bin_centers)
+    )
 
 
 def _derive_environment(parent, derivation):
