@@ -317,3 +317,31 @@ def test_binning_must_return_a_binning() -> None:
 
     with pytest.raises(TypeError, match=r"_Broken.binning\(\) returned dict"):
         _from_layout(_Broken())
+
+
+def test_explicit_mesh_and_track_bins_get_the_layout_node_attributes() -> None:
+    mesh = Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon(
+                [(0, 0), (30, 0), (30, 30), (0, 30)],
+                [[(10, 10), (20, 10), (20, 20), (10, 20)]],
+            ),
+            point_spacing=4.0,
+        )
+    )
+    track = Environment.from_layout(_track(5.0))
+    for env in (mesh, track):
+        explicit = Environment.from_bins(
+            replace(env.binning, faces=MissingFaces("Not needed here."))
+        )
+        assert _node_attributes(explicit.connectivity) == _node_attributes(
+            env.connectivity
+        )
+    # Mesh nodes name their triangle, which differs from the bin ID once a
+    # hole removes triangles.
+    flat = [
+        mesh.connectivity.nodes[n]["source_grid_flat_index"] for n in mesh.connectivity
+    ]
+    assert flat != list(range(mesh.n_bins))
+    assert mesh.active_mask[flat].all()

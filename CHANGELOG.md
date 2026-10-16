@@ -184,6 +184,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.connectivity` is built from the environment's bins for every layout,
+  so it carries the same node and edge attributes everywhere (`pos`,
+  `source_grid_flat_index`, `original_grid_nd_index`; `distance`, `vector`,
+  `edge_id` and, in 2-D, `angle_2d`), plus `pos_1D` and `source_edge_id` on
+  tracks. Graph, node and edge attributes that a layout engine adds to its
+  own graph are no longer published; keep such values in your own arrays
+  indexed by bin ID, or annotate the graph returned by `env.to_networkx()`.
+
+- `Environment.from_bins` on a binning with a triangular-mesh locator numbers
+  each node's `source_grid_flat_index` and `original_grid_nd_index` by its
+  triangle, as built mesh environments do and as `env.grid_shape` and
+  `env.active_mask` describe; it used to give the bin ID. On a binning with a
+  track linearization, `from_bins` now adds each node's `pos_1D` (linear
+  position) and `source_edge_id` (track-graph edge), as track factories do.
+
 - `env.with_metadata(...)` and `env.with_regions(...)` share their parent's
   analysis cache instead of starting with an empty one, because the bins are
   the same, so renaming an environment keeps the kernels and eigenbases
