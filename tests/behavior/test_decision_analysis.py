@@ -760,3 +760,44 @@ def test_pre_decision_heading_stats_all_stationary():
     assert np.isnan(
         pre_decision_heading_stats(np.arange(10) / 10, np.ones((10, 2)))
     ).all()
+
+
+def test_goal_regions_are_represented_by_their_centroid_bin():
+    """compute_decision_analysis and trials_to_region_arrays share one goal bin.
+
+    The representative is the region bin nearest the centroid of the region's
+    bins, not the lowest-index bin, so the decision boundary does not depend on
+    how bins happen to be numbered.
+    """
+    from shapely.geometry import box
+
+    from neurospatial.behavior import (
+        compute_decision_analysis,
+        distance_to_decision_boundary,
+        trials_to_region_arrays,
+    )
+    from neurospatial.behavior.segmentation import Trial
+
+    x, y = np.meshgrid(np.arange(0.0, 101.0, 2.0), np.arange(0.0, 11.0, 2.0))
+    env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    regions = Regions()
+    regions.add("west", polygon=box(0, 0, 10, 10))
+    regions.add("east", polygon=box(90, 0, 100, 10))
+    regions.add("middle", polygon=box(46, 0, 54, 10))
+    env = env.with_regions(regions)
+    times = np.arange(200) / 10.0
+    positions = np.c_[np.linspace(5.0, 95.0, times.size), np.full(times.size, 5.0)]
+
+    result = compute_decision_analysis(
+        env, times, positions, decision_region="middle", goal_regions=["west", "east"]
+    )
+
+    trial = Trial(times[0], times[-1], "west", "east", True)
+    start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
+    goals = [int(start_bins[0]), int(goal_bins[0])]
+    for name, goal in zip(["west", "east"], goals, strict=True):
+        assert goal != env.bins_in_region(name)[0]  # not the lowest-index bin
+    np.testing.assert_array_equal(
+        result.boundary.distance_to_boundary,
+        distance_to_decision_boundary(env, env.bin_at(positions), goals),
+    )

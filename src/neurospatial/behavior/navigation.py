@@ -116,6 +116,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _positive_dt
 
 if TYPE_CHECKING:
@@ -400,41 +401,6 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 # =============================================================================
 
 
-def _region_representative_bin(env: Environment, region_name: str) -> int:
-    """Return a single representative bin index for a (possibly multi-bin) region.
-
-    The representative is the region bin whose center is closest to the
-    centroid of all the region's bin centers. This is a stable, geometrically
-    meaningful summary of a multi-bin polygon region, unlike picking the first
-    bin (which depends on arbitrary bin ordering). Because the representative
-    is chosen from the region's own bins (nearest to the centroid), it always
-    lies inside the region, which is robust even for non-convex regions whose
-    geometric centroid falls outside the region.
-
-    Parameters
-    ----------
-    env : Environment
-        Spatial environment (for bin centers and region lookup).
-    region_name : str
-        Name of a region defined in ``env.regions``.
-
-    Returns
-    -------
-    int
-        Index of the representative bin, or -1 if the region contains no bins.
-    """
-    region_bins = env.bins_in_region(region_name)
-    if len(region_bins) == 0:
-        return -1
-    if len(region_bins) == 1:
-        return int(region_bins[0])
-
-    region_centers = env.bin_centers[region_bins]  # (n_region_bins, n_dims)
-    centroid = region_centers.mean(axis=0)  # (n_dims,)
-    nearest = int(np.argmin(np.linalg.norm(region_centers - centroid, axis=1)))
-    return int(region_bins[nearest])
-
-
 def trials_to_region_arrays(
     trials: list[Trial],
     times: NDArray[np.float64],
@@ -508,14 +474,14 @@ def trials_to_region_arrays(
 
         # Represent each region by its centroid bin (the region bin nearest the
         # centroid of the region's bins), not an arbitrary first bin.
-        start_bin = _region_representative_bin(env, trial.start_region)
-        if start_bin >= 0:
+        start_bin = region_representative_bin(env, trial.start_region)
+        if start_bin is not None:
             start_bins[mask] = start_bin
 
         # Get bins for end region (handle None for failed trials)
         if trial.end_region is not None:
-            goal_bin = _region_representative_bin(env, trial.end_region)
-            if goal_bin >= 0:
+            goal_bin = region_representative_bin(env, trial.end_region)
+            if goal_bin is not None:
                 goal_bins[mask] = goal_bin
         # For failed trials (end_region=None), goal_bins remains -1
 
