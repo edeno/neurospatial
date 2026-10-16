@@ -97,4 +97,6 @@ if TYPE_CHECKING:
         polar.bin_at(points)  # type: ignore[misc]
         Environment.bin_at(polar, points)  # type: ignore[arg-type]
         _ = polar.apply_transform  # type: ignore[misc]
-        assert_type(polar.copy(), Environment[EgocentricPolarSystem])
+        assert_type(
+            polar.with_metadata(name="copy"), Environment[EgocentricPolarSystem]
+        )
