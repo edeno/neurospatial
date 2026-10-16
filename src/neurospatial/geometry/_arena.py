@@ -1137,7 +1137,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
             "_TransformedArena",
             "_CombinedArena",
         }:
-            from neurospatial.extensions import _decode_snapshot
+            from neurospatial.geometry._adapters import _decode_snapshot
 
             snapshot = _decode_snapshot(meta, arrays, "")
             if not isinstance(snapshot, Arena):

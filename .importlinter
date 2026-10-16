@@ -18,8 +18,8 @@ layers =
     _results
     environment
     layout | ops
-    regions | arena | binning
-    geometry : extensions
+    regions | arena | binning | extensions
+    geometry
     _constants : _exceptions : _intervals : _logging : _lru : _stacklevel : _typing : _validation
 ignore_imports =
     # Environment facade methods that hand off to storage (to_file, from_file,

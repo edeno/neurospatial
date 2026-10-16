@@ -113,7 +113,7 @@ def prepare_bins(
         If records or their shared geometry disagree.
     """
     if type(binning) is not Binning:
-        from neurospatial.extensions import _snapshot_provider
+        from neurospatial.geometry._adapters import _snapshot_provider
 
         binning = _snapshot_provider(binning, "binning")
     assert isinstance(binning, Binning)

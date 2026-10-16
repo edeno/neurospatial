@@ -53,7 +53,7 @@ def built_layout_data(
     """
     produce = getattr(layout, "binning", None)
     if not callable(produce):
-        from neurospatial.extensions import _snapshot_provider
+        from neurospatial.geometry._adapters import _snapshot_provider
         from neurospatial.geometry._explicit import prepare_bins
 
         binning, graph, ranges, category = prepare_bins(

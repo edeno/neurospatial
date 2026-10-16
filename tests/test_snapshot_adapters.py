@@ -16,8 +16,8 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.extensions import (
-    SnapshotAdapter,
+from neurospatial.extensions import SnapshotAdapter
+from neurospatial.geometry._adapters import (
     _decode_snapshot,
     _snapshot_adapters,
     _snapshot_provider,
@@ -72,17 +72,17 @@ def _adapter(**overrides):
 
 @pytest.fixture(autouse=True)
 def _registry(monkeypatch):
-    from neurospatial import extensions
+    from neurospatial.geometry import _adapters
 
     entries = []
-    original_entry_points = extensions.metadata.entry_points
+    original_entry_points = _adapters.metadata.entry_points
 
     def installed(*, group):
         if group == "neurospatial.snapshot_adapters.v1":
             return entries
         return original_entry_points(group=group)
 
-    monkeypatch.setattr(extensions.metadata, "entry_points", installed)
+    monkeypatch.setattr(_adapters.metadata, "entry_points", installed)
     _snapshot_adapters.cache_clear()
     yield entries
     _snapshot_adapters.cache_clear()
@@ -189,12 +189,12 @@ def test_wrong_custom_role_cannot_fill_a_builtin_locator_field(_registry):
 
 
 def test_builtin_decode_does_not_discover_or_import_extensions(monkeypatch):
-    from neurospatial import extensions
+    from neurospatial.geometry import _adapters
 
     def fail(**kwargs):
         pytest.fail("built-in records must not load installed adapters")
 
-    monkeypatch.setattr(extensions.metadata, "entry_points", fail)
+    monkeypatch.setattr(_adapters.metadata, "entry_points", fail)
     meta, arrays = encode(NearestBinLocator(np.array([[0.0, 0.0]])), "builtin")
     assert type(decode(meta, arrays, "builtin")) is NearestBinLocator
 

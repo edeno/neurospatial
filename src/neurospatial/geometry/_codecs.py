@@ -119,7 +119,7 @@ def decode(
     codec = _CODECS.get(name) if isinstance(name, str) else None
     if codec is None:
         if isinstance(name, str):
-            from neurospatial.extensions import _decode_snapshot
+            from neurospatial.geometry._adapters import _decode_snapshot
 
             return _decode_snapshot(meta, arrays, prefix)
         raise ValueError(

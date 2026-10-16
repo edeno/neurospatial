@@ -426,9 +426,9 @@ loadable.
 
 Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Its layers
 contract places every top-level package and module: shared `_` utilities at
-the bottom, then `geometry` (with `extensions`), `regions`, independent
-`layout` and `ops`, `environment`, and the analysis, rendering and storage
-packages above it. A package imports only from layers below it, and a new
+the bottom, then `geometry`, then `regions` and the public `arena`, `binning`
+and `extensions` paths, independent `layout` and `ops`, `environment`, and the
+analysis, rendering and storage packages above it. A package imports only from layers below it, and a new
 top-level module must be added to a layer. The only upward imports are
 Environment facade methods that hand off to `io` or `animation`; each is listed
 in `ignore_imports`. Core packages also may not import from the lazy package
