@@ -16,6 +16,7 @@ from neurospatial import Environment
 from neurospatial.geometry._binning import MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._components import TriangleShapes
+from neurospatial.geometry._polygon import PolygonCells
 from neurospatial.io import from_dict, to_dict
 from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, estimate_transform
@@ -474,6 +475,38 @@ def test_cells_survive_a_similarity_and_its_inverse(kind, angle, scale, reflect)
     np.testing.assert_array_equal(
         restored.bin_at(env.bin_centers), env.bin_at(env.bin_centers)
     )
+
+
+@pytest.mark.parametrize("kind", ["hex", "hex_clipped", "grid_clipped"])
+def test_rounding_allowance_still_rejects_a_moved_cell_vertex(kind):
+    env = _small_cell_environment(kind)
+    angle, scale = -2.0965322377907283, 0.25
+    linear = scale * np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    linear[:, 0] *= -1
+    transform = _affine(linear, (10.0, -7.0))
+    restored = (
+        env.apply_transform(transform)
+        .apply_transform(_affine(offset=(3.0, 2.0)))
+        .apply_transform(_affine(offset=(-3.0, -2.0)))
+        .apply_transform(transform.inverse())
+    )
+    binning = restored._binning
+    assert isinstance(binning.shapes, PolygonCells)
+    centers = restored.bin_centers
+    spacing = np.min(np.linalg.norm(centers[1:] - centers[0], axis=1))
+    cell = binning.shapes.polygons[0]
+    ring = np.asarray(cell.exterior.coords)
+    # Pull one vertex toward the cell's center so cells still do not overlap.
+    inward = np.asarray(cell.centroid.coords[0]) - ring[0]
+    ring[0] += 1e-6 * spacing * inward / np.linalg.norm(inward)
+    ring[-1] = ring[0]
+    moved = (Polygon(ring), *binning.shapes.polygons[1:])
+    with pytest.raises(ValueError, match="polygon cell 0 disagrees with its locator"):
+        Environment.from_bins(
+            replace(binning, shapes=PolygonCells(moved)), arena=restored.arena
+        )
 
 
 def _derive_environment(parent, derivation):
