@@ -21,7 +21,7 @@ from scipy.spatial import cKDTree
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.geometry._coordinates import CartesianSystem
     from neurospatial.ops._protocols import CacheClearConsumer, NearestBinConsumer
 
 

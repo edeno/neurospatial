@@ -78,7 +78,7 @@ from neurospatial._results import ResultMixin
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.geometry._coordinates import CartesianSystem
 
 __all__ = [
     # Dataclass

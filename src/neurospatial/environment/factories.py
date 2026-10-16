@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
 import numpy as np
+import shapely
+import shapely.geometry
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
@@ -26,21 +28,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.layout.base import LayoutEngine
 
-try:
-    import shapely.geometry as _shp
-
-    _HAS_SHAPELY = True
-except ModuleNotFoundError:
-    _HAS_SHAPELY = False
-
-    class _Shp:
-        class Polygon:
-            pass
-
-    _shp = _Shp
-
-
-PolygonType = type[_shp.Polygon]
+PolygonType = type[shapely.geometry.Polygon]
 
 
 def _add_edge_with_distance(graph: nx.Graph, u: Any, v: Any) -> None:
@@ -747,8 +735,6 @@ def _from_layout(
         # native and transformed arena frames alike.
         domain = arena.polygonal_domain()
         if domain is not None:
-            import shapely
-
             keep = shapely.contains_xy(
                 domain, env.bin_centers[:, 0], env.bin_centers[:, 1]
             )

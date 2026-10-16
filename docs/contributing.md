@@ -267,8 +267,7 @@ Gaussian smoothing without an import back into the smoothing adapter. CI type-ch
 semantics, validation and codecs. It does not import environment adapters,
 layout builders, numerical solvers, storage backends or rendering libraries.
 `neurospatial.binning` and `neurospatial.arena` retain their public import paths.
-Private aliases keep existing supported pickle records readable; new code imports
-geometry from its current package.
+Import geometry from its package; there are no compatibility aliases.
 
 `layout/` constructs native binnings. `ops/` implements numerical algorithms on
 explicit geometry and arrays. These packages are independent peers above
@@ -354,8 +353,7 @@ lives in `environment/_subset.py`. Rebin construction policies remain distinct:
 factor mode retains native lazy faces and its recorded grid parameters, while
 resolution mode prepares faces for the retained affine frame. Both use the
 same atomic `Environment._from_binning` publisher for owned data, walls and
-fresh analysis caches. The old `environment.transforms` path only re-exports
-private implementation functions for compatibility.
+fresh analysis caches.
 `rebin(bin_size=...)` uses an owned `GridBinningSpec`, independently of descriptive
 provenance. It re-bins the retained known arena, preserving the grid anchor and
 affine frame; requested sizes are physical lengths along those axes. Subset and
@@ -377,10 +375,9 @@ there are no environment mixins or broad host protocol.
 
 Owned geometry, validation, codecs and pure coordinate math live in `geometry/`;
 native builders and their construction adapters live in `layout/`. The public
-`neurospatial.binning` and `neurospatial.arena` imports remain stable. Former
-private geometry modules contain explicit aliases so trusted builder-free
-pickles written before this move can still resolve their classes. They contain
-no parallel implementation. Older layout-bearing pickles remain unsupported.
+`neurospatial.binning` and `neurospatial.arena` imports remain stable. There
+are no compatibility alias modules, and pickles from earlier versions are not
+loadable.
 
 Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Environment
 adapters sit above independent `layout` and `ops` packages, which consume

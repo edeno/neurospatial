@@ -12,7 +12,8 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.arena import MaskArena, OpenArena, _TransformedArena
+from neurospatial.arena import MaskArena, OpenArena
+from neurospatial.geometry._arena import _TransformedArena
 from neurospatial.geometry._coordinates import EgocentricPolarSystem
 from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 from neurospatial.geometry._ownership import own_arena

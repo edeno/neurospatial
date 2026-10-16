@@ -38,18 +38,6 @@ from neurospatial.environment._publication import (
     _PublishedGeometry,
     _Unset,
 )
-
-# Older pickles resolve these private globals through core. The aliases keep
-# that lookup working while each type has one implementation in _publication.
-from neurospatial.environment._publication import (
-    _PublishedGraph as _PublishedGraph,
-)
-from neurospatial.environment._publication import (
-    _ReadOnlyGraphAttributes as _ReadOnlyGraphAttributes,
-)
-from neurospatial.environment._publication import (
-    _ReadOnlyGraphMetadata as _ReadOnlyGraphMetadata,
-)
 from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
 from neurospatial.environment.cartesian import (
     CARTESIAN_GRID_OPERATIONS,
@@ -226,12 +214,8 @@ class Environment(Generic[_C]):
     def __getstate__(self) -> dict[str, Any]:
         """Export owned state without copying or serializing transient analyses."""
         state = self.__dict__.copy()
-        for name in ("_kernel_cache", "_kdtree_cache", "_state_version"):
+        for name in ("_kernel_cache", "_kdtree_cache"):
             state.pop(name, None)
-        # Older builder-free values may carry caches for retired analyses.
-        for name in tuple(state):
-            if name.startswith("_versioned_cache__"):
-                state.pop(name)
         for cls in type(self).__mro__:
             for name, descriptor in vars(cls).items():
                 if isinstance(descriptor, cached_property):
@@ -241,14 +225,6 @@ class Environment(Generic[_C]):
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore owned state and reset transient caches without a builder."""
         self.__dict__.update(state)
-        if "_layout" in state or "layout" in state:
-            raise ValueError(
-                "Legacy layout-bearing pickles are not supported; load a dictionary, file or NWB export to migrate."
-            )
-        if self._is_fitted and getattr(self._geometry, "binning", None) is None:
-            raise ValueError(
-                "Environment pickle is missing owned binning data; load a dictionary, file or NWB export instead."
-            )
         if self._is_fitted:
             from neurospatial.geometry._ownership import own_arena
 
@@ -390,9 +366,6 @@ class Environment(Generic[_C]):
 
     def _reset_analysis_caches(self) -> None:
         """Discard this instance's memoized analyses without clearing shared values."""
-        self.__dict__.pop("_state_version", None)
-        for legacy_name in ("bin_sizes", "boundary_bins", "linearization_properties"):
-            self.__dict__.pop(legacy_name, None)
         if self._is_fitted:
             self.clear_cache(kdtree=False, kernels=False, cached_properties=True)
         self._kernel_cache = {}
@@ -1085,9 +1058,6 @@ class Environment(Generic[_C]):
 
         # Geometry is immutable; cached analyses last until explicitly cleared.
         if cached_properties:
-            for name in tuple(self.__dict__):
-                if name.startswith("_versioned_cache__"):
-                    self.__dict__.pop(name)
             for cls in type(self).__mro__:
                 for name, attr in vars(cls).items():
                     if isinstance(attr, cached_property):

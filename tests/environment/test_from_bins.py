@@ -1030,7 +1030,7 @@ def test_explicit_cell_faces_cannot_omit_or_invent_shared_faces(kind, change):
 
 
 def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
-    from neurospatial.layout._locators import TransformedLocator
+    from neurospatial.geometry._locators import TransformedLocator
 
     _, source = _cell_face_source("hex", "native")
     matrix = np.array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]])

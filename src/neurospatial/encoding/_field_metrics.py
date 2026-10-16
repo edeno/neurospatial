@@ -29,8 +29,8 @@ from scipy import stats
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
     from neurospatial.environment._protocols import FieldMetricsConsumer
+    from neurospatial.geometry._coordinates import CartesianSystem
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [

@@ -16,9 +16,8 @@ from neurospatial.arena import (
     OpenArena,
     TrackArena,
     UnknownArena,
-    decode_arena,
-    encode_arena,
 )
+from neurospatial.geometry._arena import decode_arena, encode_arena
 
 
 def arenas():

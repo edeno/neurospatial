@@ -10,7 +10,8 @@ import pytest
 from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
-from neurospatial.arena import MaskArena, OpenArena, UnknownArena, encode_arena
+from neurospatial.arena import MaskArena, OpenArena, UnknownArena
+from neurospatial.geometry._arena import encode_arena
 from neurospatial.io import from_dict, to_dict
 
 

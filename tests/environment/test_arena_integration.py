@@ -9,8 +9,9 @@ import pytest
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
-from neurospatial.arena import MaskArena, OpenArena, encode_arena
+from neurospatial.arena import MaskArena, OpenArena
 from neurospatial.decoding.posterior import _validate_encoding_environment
+from neurospatial.geometry._arena import encode_arena
 from neurospatial.ops.transforms import translate
 
 

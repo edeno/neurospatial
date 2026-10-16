@@ -445,7 +445,7 @@ def test_transformed_physical_walls_survive_history_and_transport(
 
 @pytest.mark.parametrize("matching_frame", [False, True])
 def test_saved_transformed_walls_still_refuse_cell_interior_crossings(matching_frame):
-    from neurospatial.arena import encode_arena
+    from neurospatial.geometry._arena import encode_arena
     from neurospatial.io import from_dict, to_dict
 
     transform = _wall_transform(1e6, 1.3)

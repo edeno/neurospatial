@@ -121,7 +121,7 @@ from neurospatial.behavior.segmentation import _positive_dt
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.behavior.segmentation import Trial
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.geometry._coordinates import CartesianSystem
 
 
 __all__ = [  # noqa: RUF022

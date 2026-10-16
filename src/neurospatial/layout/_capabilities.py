@@ -1,13 +1,8 @@
-"""Native builder interfaces and compatibility exports for owned grid data."""
+"""Native builder interfaces for owned grid data."""
 
 from typing import Protocol, runtime_checkable
 
-from neurospatial.geometry._capabilities import (
-    RectilinearGrid as RectilinearGrid,
-)
-from neurospatial.geometry._capabilities import (
-    require_rectilinear as require_rectilinear,
-)
+from neurospatial.geometry._capabilities import RectilinearGrid
 
 
 @runtime_checkable

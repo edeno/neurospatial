@@ -21,7 +21,7 @@ def test_environment_payload_uses_arena_schema():
 
 
 def test_builtin_arena_round_trip(built_environment, round_trip_environment):
-    from neurospatial.arena import encode_arena
+    from neurospatial.geometry._arena import encode_arena
 
     original = built_environment
     loaded = round_trip_environment(original)
@@ -69,7 +69,7 @@ def test_open_arena_walls_and_provenance_round_trip(
 
 @pytest.mark.parametrize("n_dims", [2, 3])
 def test_nested_transformed_mask_arena_round_trip(round_trip_environment, n_dims):
-    from neurospatial.arena import encode_arena
+    from neurospatial.geometry._arena import encode_arena
     from neurospatial.ops.transforms import AffineND
 
     mask = np.ones((2,) * n_dims, dtype=bool)
@@ -128,7 +128,8 @@ def test_v2_always_restores_unknown_arena(
     ["missing", "not_record", "codec", "version", "dimensions", "coordinate_kind"],
 )
 def test_malformed_arena_names_source(corrupted_environment_round_trip, corruption):
-    from neurospatial.arena import UnknownArena, encode_arena
+    from neurospatial.arena import UnknownArena
+    from neurospatial.geometry._arena import encode_arena
 
     def corrupt(metadata, arrays):
         if corruption == "missing":

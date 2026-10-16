@@ -106,7 +106,7 @@ if TYPE_CHECKING:
     from scipy import sparse
 
     from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.geometry._coordinates import CartesianSystem
     from neurospatial.ops._protocols import WaveletGeometryConsumer
 
 __all__ = [

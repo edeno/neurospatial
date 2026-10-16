@@ -30,7 +30,7 @@ class TestValidateEnvironment:
         # Create a minimal layout that hasn't been built
 
         # Don't call build(), so it remains unfitted
-        from neurospatial.environment._metadata import _Metadata
+        from neurospatial.environment._publication import _Metadata
 
         env = Environment.__new__(Environment)
         env._metadata = _Metadata("unfitted", None, None)

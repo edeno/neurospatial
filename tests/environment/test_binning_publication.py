@@ -241,20 +241,6 @@ def test_serialized_binning_preserves_ownership(
     )
 
 
-def test_pickle_without_owned_geometry_refuses(built_environment):
-    legacy = copy.deepcopy(built_environment)
-    vars(legacy._geometry).pop("binning")
-    with pytest.raises(ValueError, match="missing owned binning"):
-        pickle.loads(pickle.dumps(legacy))
-
-
-def test_layout_bearing_pickle_requires_supported_storage_migration(built_environment):
-    legacy = copy.deepcopy(built_environment)
-    legacy._layout = _source_layout(legacy)
-    with pytest.raises(ValueError, match="Legacy layout-bearing pickles"):
-        pickle.loads(pickle.dumps(legacy))
-
-
 def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
     """A restored graph has fresh state without modifying an existing value."""
     mask = np.ones((3, 3), dtype=bool)

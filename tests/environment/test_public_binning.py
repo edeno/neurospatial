@@ -10,7 +10,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.binning import KnownFaces
-from neurospatial.layout._native_faces import NativeFaces
+from neurospatial.geometry._native_faces import NativeFaces
 
 
 def _arrays(value, seen=None):

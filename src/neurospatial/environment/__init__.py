@@ -6,11 +6,9 @@ Use ``from neurospatial import Environment`` or this package's equivalent export
 
 from neurospatial.environment.core import Environment
 from neurospatial.environment.decorators import EnvironmentNotFittedError, check_fitted
-from neurospatial.environment.regions import _HAS_SHAPELY
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 
 __all__ = [
-    "_HAS_SHAPELY",
     "CartesianSystem",
     "EgocentricPolarSystem",
     "Environment",

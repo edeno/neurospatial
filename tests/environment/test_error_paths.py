@@ -119,29 +119,6 @@ class TestBinsInRegionErrorPaths:
             env.with_regions(region_builder)
         assert "test_poly" not in env.regions
 
-    def test_bins_in_region_polygon_without_shapely(self, monkeypatch):
-        """Test polygon region query when shapely not available."""
-        from shapely.geometry import Polygon as ShapelyPolygon
-
-        # Create 2D environment
-        env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-
-        # Add polygon region
-        polygon_coords = [(0, 0), (10, 0), (10, 10), (0, 10)]
-        shapely_poly = ShapelyPolygon(polygon_coords)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test_poly", polygon=shapely_poly)
-        env = env.with_regions(region_builder)
-
-        # Mock shapely as unavailable
-        import neurospatial.environment as env_module
-
-        monkeypatch.setattr(env_module, "_HAS_SHAPELY", False)
-
-        # Should raise RuntimeError
-        with pytest.raises(RuntimeError, match="Polygon region queries require"):
-            env.bins_in_region("test_poly")
-
     def test_bins_in_region_nonexistent_region(self):
         """Test bins_in_region with region name that doesn't exist."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)

@@ -15,13 +15,14 @@ from environment_helpers import publish_environment
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.arena import OpenArena, decode_arena
+from neurospatial.arena import OpenArena
 from neurospatial.extensions import (
     SnapshotAdapter,
     _decode_snapshot,
     _snapshot_adapters,
     _snapshot_provider,
 )
+from neurospatial.geometry._arena import decode_arena
 from neurospatial.geometry._binning import (
     Binning,
     MissingFaces,

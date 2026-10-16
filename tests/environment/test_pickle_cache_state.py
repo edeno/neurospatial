@@ -6,6 +6,7 @@ import copy
 import pickle
 from functools import cached_property
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -104,43 +105,28 @@ def test_computed_properties_are_not_copied_or_pickled(method):
     )
 
 
-@pytest.mark.parametrize("method", ["shallow", "copy", "deepcopy", "pickle"])
-def test_legacy_versioned_cache_payloads_are_discarded(method):
-    """Retired analyses are disposable even without a current descriptor."""
-    env = _environment()
-    key = "_versioned_cache___retired_analysis"
-    transient = _TransientWork()
-    vars(env)[key] = transient
-    vars(env)[f"{key}__version"] = 1
-    vars(env)["_state_version"] = 1
-
-    restored = _copy_environment(env, method)
-
-    assert vars(env)[key] is transient
-    assert vars(env)[f"{key}__version"] == 1
-    assert vars(env)["_state_version"] == 1
-    assert not any(name.startswith("_versioned_cache__") for name in vars(restored))
-    assert "_state_version" not in vars(restored)
-    np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
-
-
-def test_loading_builder_free_pickle_drops_legacy_analysis_state(monkeypatch):
-    env = _environment()
-    key = "_versioned_cache___retired_analysis"
-    vars(env)[key] = np.ones((env.n_bins, env.n_bins))
-    vars(env)[f"{key}__version"] = 1
-    vars(env)["_state_version"] = 1
-    # Emulate the old writer, which included memoized work in instance state.
-    with monkeypatch.context() as patch:
-        patch.setattr(Environment, "__getstate__", lambda self: self.__dict__.copy())
-        saved = pickle.dumps(env)
-
-    restored = pickle.loads(saved)
-
-    assert key in vars(env)
-    assert not any(name.startswith("_versioned_cache__") for name in vars(restored))
-    assert "_state_version" not in vars(restored)
-    np.testing.assert_array_equal(
-        restored.bin_at(env.bin_centers), np.arange(env.n_bins)
+def test_pickle_round_trip_keeps_published_values_immutable():
+    env = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool),
+        grid_edges=(np.arange(4.0),) * 2,
+        name="arena",
+        units="cm",
     )
-    np.testing.assert_array_equal(restored.bin_sizes, np.ones(env.n_bins))
+    payload = env.to_dict()
+    payload["graph"]["graph"]["recording"] = {"tags": ["original"]}
+    env = Environment.from_dict(payload)
+
+    restored = pickle.loads(pickle.dumps(env))
+
+    assert (restored.name, restored.units) == (env.name, env.units)
+    np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
+    for array in (restored.bin_centers, restored.grid_edges[0], restored.active_mask):
+        with pytest.raises(ValueError):
+            array.setflags(write=True)
+    with pytest.raises(nx.NetworkXError):
+        restored.connectivity.add_node(99)
+    with pytest.raises(TypeError, match="read-only"):
+        restored.connectivity.nodes[0]["pos"] = (99.0, 99.0)
+    exported = restored.connectivity.graph
+    exported["recording"]["tags"].append("caller")
+    assert restored.connectivity.graph["recording"]["tags"] == ["original"]

@@ -8,16 +8,12 @@ container.
 
 from __future__ import annotations
 
-# Conditional import for shapely (optional dependency)
-import importlib.util
-
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import RegionConsumer
 from neurospatial.regions import Region, Regions
-
-_HAS_SHAPELY = importlib.util.find_spec("shapely") is not None
 
 
 def _bins_in_region(env: RegionConsumer, region_name: str) -> NDArray[np.intp]:
@@ -37,17 +33,10 @@ def _bins_in_region(env: RegionConsumer, region_name: str) -> NDArray[np.intp]:
         return np.asarray(bin_idx[bin_idx != -1], dtype=np.intp)
 
     if region.kind == "polygon":
-        # Check shapely availability from parent module for test compatibility
-        import neurospatial.environment as _env_module
-
-        if not _env_module._HAS_SHAPELY:  # pragma: no cover
-            raise RuntimeError("Polygon region queries require 'shapely'.")
         if env.n_dims != 2:  # pragma: no cover
             raise ValueError(
                 "Polygon regions are only supported for 2D environments.",
             )
-
-        import shapely
 
         polygon = region.data
         contained_mask = shapely.contains_xy(

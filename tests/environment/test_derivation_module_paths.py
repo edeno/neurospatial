@@ -1,6 +1,4 @@
-"""Derivation modules retain private imports and shared publication behavior."""
-
-import pickle
+"""Derivations share one publication path and preserve annotations."""
 
 import networkx as nx
 import numpy as np
@@ -9,22 +7,6 @@ from shapely.geometry import LineString, box
 
 from neurospatial import Environment, Regions
 from neurospatial.arena import OpenArena
-
-
-def test_legacy_derivation_imports_resolve_to_their_single_implementation():
-    from neurospatial.environment import _rebin, _subset, transforms
-
-    targets = {
-        "_rebin": _rebin._rebin_factor,
-        "_require_native_grid_navigation": _rebin._require_native_grid_navigation,
-        "_subset": _subset._subset,
-        "_subset_mask": _subset._subset_mask,
-    }
-    for name, target in targets.items():
-        assert getattr(transforms, name) is target
-        # Protocol 0 GLOBAL is the lookup used by trusted older function pickles.
-        old_reference = f"cneurospatial.environment.transforms\n{name}\n.".encode()
-        assert pickle.loads(old_reference) is target
 
 
 @pytest.mark.parametrize("mode", ["factor", "resolution"])

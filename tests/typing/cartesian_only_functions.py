@@ -29,7 +29,7 @@ if TYPE_CHECKING:
         rate_map_centroid,
         spatial_autocorrelation,
     )
-    from neurospatial.environment._coordinates import (
+    from neurospatial.geometry._coordinates import (
         CartesianSystem,
         EgocentricPolarSystem,
     )

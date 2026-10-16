@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Breaking
+
+- Pickle files of an `Environment` written by an earlier version can no longer
+  be loaded. Pickle still works for passing an environment between processes
+  of the same version (for example with `multiprocessing`), but it is not a
+  storage format. Save with `env.to_file(...)` or NWB export and reload with
+  `Environment.from_file(...)`. See the
+  [migration page](docs/migration/environment-architecture.md).
+
+- Compatibility import paths are removed: `neurospatial.environment.transforms`,
+  `neurospatial.environment._coordinates`, `neurospatial.environment._metadata`,
+  `neurospatial.environment._ownership`, `neurospatial.environment._from_bins`
+  and the former private geometry modules under `neurospatial.layout`. The
+  private names that `neurospatial.arena` re-exported are gone as well; its
+  public arena classes are unchanged.
+
+- `neurospatial.environment._HAS_SHAPELY` is removed. Shapely is a required
+  dependency.
+
 ### Fixed
 
 - Smoothing on an environment transformed by an affine map fitted to noisy

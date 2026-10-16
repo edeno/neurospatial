@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.environment import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.geometry._coordinates import CartesianSystem
 
 __all__ = [
     "ProbabilityMappingParams",
