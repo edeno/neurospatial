@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.interpolate import RegularGridInterpolator
 
 from neurospatial import _constants
 from neurospatial._stacklevel import _external_stacklevel
@@ -234,6 +233,9 @@ def _interpolate_linear(
     requiring an inactive cell's value and out-of-bounds points return NaN.
 
     """
+    # Deferred: scipy.interpolate adds about 40 ms to importing neurospatial.
+    from scipy.interpolate import RegularGridInterpolator
+
     grid, frame = require_grid_context(
         binning,
         "interpolate(mode='linear')",
