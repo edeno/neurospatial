@@ -1,5 +1,7 @@
 """Ray hits and line of sight use retained physical walls, not analysis cuts."""
 
+import contextlib
+
 import numpy as np
 import pytest
 import shapely
@@ -718,17 +720,24 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
     positions = np.tile([2.5, 4.5], (len(times), 1))
     spikes = np.array([0.25])
     encode = compute_view_rates if population else compute_view_rate
-    result = encode(
-        env,
-        [spikes] if population else spikes,
-        times,
-        positions,
-        headings,
-        gaze_model="ray_cast",
-        method="binned",
-        bandwidth=0.0,
-        **options,
+    # Of two intervals one is a 9 s gap, so the median exceeds max_gap: flagged.
+    flagged = (
+        pytest.warns(UserWarning, match="probably not in seconds")
+        if excluded == "gap"
+        else contextlib.nullcontext()
     )
+    with flagged:
+        result = encode(
+            env,
+            [spikes] if population else spikes,
+            times,
+            positions,
+            headings,
+            gaze_model="ray_cast",
+            method="binned",
+            bandwidth=0.0,
+            **options,
+        )
     assert result.occupancy.sum() == expected_occupancy
     rates = result.firing_rates[0] if population else result.firing_rate
     assert np.nansum(rates * result.occupancy) == 1.0

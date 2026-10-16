@@ -29,10 +29,10 @@ def test_heading_from_velocity_isolated_sample_nan(two_epoch_recording):
     from neurospatial.ops.egocentric import heading_from_velocity
 
     r = two_epoch_recording
-    selected = [0, 1, 4999, 5000, 5001]
+    selected = [0, 1, 2, 4999, 5000, 5001, 5002]  # 4999 sits alone
     headings = heading_from_velocity(r.times[selected], r.positions[selected])
-    assert np.isnan(headings[2])
-    assert np.isfinite(headings[[0, 1, 3, 4]]).all()
+    assert np.isnan(headings[3])
+    assert np.isfinite(headings[[0, 1, 2, 4, 5, 6]]).all()
 
 
 def test_heading_interpolation_stays_in_run(two_epoch_recording):
