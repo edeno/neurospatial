@@ -18,6 +18,7 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Provenance, declared_metadata
 from neurospatial.geometry._arena import OpenArena, TrackArena
+from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._coordinates import CartesianSystem
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._ownership import own_arena
@@ -82,6 +83,26 @@ def _from_bins(
         regions=regions,
         arena=arena,
     )
+    # "Polar" belongs to from_polar_egocentric, and "Combined" to joined
+    # components (a CombinedLocator), never to other Cartesian bins.
+    if member is LayoutType.POLAR or (
+        member is LayoutType.COMBINED
+        and not isinstance(snapshot.locator, CombinedLocator)
+    ):
+        factory = (
+            "Environment.from_polar_egocentric"
+            if member is LayoutType.POLAR
+            else "Environment.combine"
+        )
+        raise ValueError(
+            _format_error(
+                f"from_bins cannot label these bins {snapshot.kind!r}.",
+                why=f"Why: the {member.value!r} layout label is reserved for "
+                f"environments built by {factory}.",
+                fix="give the Binning a kind of your own, such as 'MyBins', "
+                f"or build the environment with {factory}",
+            )
+        )
 
     if not np.array_equal(result.edge_pairs, snapshot.bins.pairs):
         raise ValueError(

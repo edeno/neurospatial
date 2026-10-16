@@ -362,7 +362,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `env.layout_type == "RegularGrid"` (it gave `"regular-grid"`), and
   `create_layout` also accepts `"grid"`, `"polygon"` and `"mesh"`. The new
   `neurospatial.layout.find_layout_type(name)` returns the `LayoutType` a
-  spelling names, or `None`. Derived
+  spelling names, or `None`. `from_bins` spells a `Binning.kind` that names
+  a layout canonically. It refuses `"Polar"`, which is reserved for
+  `from_polar_egocentric`, and `"Combined"` on bins that are not joined
+  components of `combine`. Derived
   environments keep their parent's label instead of `"MaskedGrid"` or
   `"subset"` (subset), `"PolygonCells"` (clip), `"RegularGrid"` (rebin of
   any grid) or `"<label>_transformed"` (apply_transform); `combine` reports

@@ -1082,3 +1082,27 @@ def test_stored_cell_faces_cannot_bypass_publication_geometry_checks(kind):
     payload["arrays"][key] = (np.asarray(payload["arrays"][key]) * 7.0).tolist()
     with pytest.raises(ValueError, match=rf"{_CELL_FACE_LABELS[kind]}\.A"):
         Environment.from_dict(payload)
+
+
+def _grid_binning(kind):
+    positions = np.random.default_rng(0).uniform(0, 10, (300, 2))
+    binning = Environment.from_samples(positions, bin_size=2.0).binning
+    return replace(binning, kind=kind, faces=KnownFaces(binning.faces.build()))
+
+
+@pytest.mark.parametrize(
+    ("kind", "factory"),
+    [("polar", "from_polar_egocentric"), ("Combined", "Environment.combine")],
+)
+def test_reserved_layout_labels_are_refused(kind, factory):
+    with pytest.raises(ValueError, match="reserved") as error:
+        Environment.from_bins(_grid_binning(kind))
+    assert factory in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("kind", "label"),
+    [("regular-grid", "RegularGrid"), ("grid", "RegularGrid"), ("MyBins", "MyBins")],
+)
+def test_bin_labels_are_spelled_canonically_or_kept(kind, label):
+    assert Environment.from_bins(_grid_binning(kind)).layout_type == label
