@@ -201,3 +201,64 @@ def test_from_layout_owns_a_copy_of_the_engine_bins():
     engine.active_mask[:] = False
     np.testing.assert_array_equal(env.bin_centers, centers)
     assert (env.name, env.units, env.n_bins) == ("arena", "cm", 6)
+
+
+@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("bin_count_threshold", 5),
+        # The default value passed explicitly is still a choice that would
+        # be ignored.
+        ("bin_count_threshold", 0),
+        ("dilate", True),
+        ("fill_holes", False),
+        ("close_gaps", True),
+    ],
+)
+def test_mask_option_without_inferred_bins_is_refused(
+    factory, option, value, positions
+):
+    with pytest.raises(ValueError, match=option) as caught:
+        getattr(Environment, factory)(
+            positions, bin_size=3.0, infer_active_bins=False, **{option: value}
+        )
+    message = str(caught.value)
+    assert f"{factory}(infer_active_bins=False) does not use" in message
+    assert "every bin in the extent is active" in message
+    assert "infer_active_bins=True" in message.split("Fix:")[1]
+
+
+@pytest.mark.parametrize("layout", ["RegularGrid", "Hexagonal"])
+def test_without_inferred_bins_every_bin_in_the_extent_is_active(layout, positions):
+    every_bin = Environment.from_samples(
+        positions, bin_size=3.0, layout=layout, infer_active_bins=False
+    )
+    inferred = Environment.from_samples(positions, bin_size=3.0, layout=layout)
+    # The unvisited 10 x 10 cm center is kept only when bins are not inferred.
+    center = np.array([[15.0, 15.0]])
+    assert every_bin.contains(center)[0]
+    assert not inferred.contains(center)[0]
+    assert every_bin.layout_parameters["bin_count_threshold"] == 0
+
+
+def test_options_that_apply_without_inferred_bins_are_accepted(positions):
+    env = Environment.from_samples(
+        positions,
+        bin_size=3.0,
+        infer_active_bins=False,
+        add_boundary_bins=True,
+        connect_diagonal_neighbors=False,
+    )
+    assert env.layout_parameters["add_boundary_bins"] is True
+    assert env.layout_parameters["connect_diagonal_neighbors"] is False
+
+
+@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
+@pytest.mark.parametrize("layout", ["TriangularMesh", "MaskedGrid", "Graph"])
+def test_layout_without_sample_tiling_is_refused(factory, layout, positions):
+    with pytest.raises(ValueError, match=f"cannot build layout='{layout}'") as caught:
+        getattr(Environment, factory)(positions, bin_size=3.0, layout=layout)
+    message = str(caught.value)
+    assert "layout='RegularGrid' and layout='Hexagonal'" in message
+    assert "Environment.from_layout" in message.split("Fix:")[1]

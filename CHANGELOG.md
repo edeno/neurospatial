@@ -191,6 +191,16 @@
   `from_samples` option (`name=`, `regions=`, `arena=`, `layout=`,
   `fill_holes=` and so on) instead of forwarding `**kwargs`.
 
+- `Environment.from_samples`, `Environment.open_field` and
+  `neurospatial.io.nwb.environment_from_position` refuse options that the
+  call would ignore. With `infer_active_bins=False` every bin in the extent is
+  active, so passing `bin_count_threshold`, `dilate`, `fill_holes` or
+  `close_gaps` raises `ValueError` (they used to be ignored without a word).
+  An unsupported `layout=` (anything but `"RegularGrid"` or `"Hexagonal"`)
+  raises `ValueError` listing the supported layouts and the factory to use
+  instead; it used to raise `NotImplementedError`. Errors from
+  `environment_from_position` name that function.
+
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of

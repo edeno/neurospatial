@@ -288,6 +288,13 @@ its diagonal connections (`dilate`, `fill_holes`, `close_gaps`,
 layout, so passing any of them with `layout="Hexagonal"` raises `ValueError`.
 Remove them from the call; leaving them out gives the same hexagons as before.
 
+In the same way, `bin_count_threshold`, `dilate`, `fill_holes` and `close_gaps`
+decide which bins the samples make active. With `infer_active_bins=False`
+every bin in the extent is active, so passing any of them raises `ValueError`
+instead of being ignored. A `layout=` other than `"RegularGrid"` or
+`"Hexagonal"` raises `ValueError` (it was `NotImplementedError`); build such a
+layout with `create_layout` and pass it to `from_layout`.
+
 `open_field` fills holes by default. To keep unvisited interior bins out, pass
 `fill_holes=False` (this used to raise a `TypeError`):
 

@@ -240,7 +240,7 @@ def _from_samples(
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
-    bin_count_threshold: int = 0,
+    bin_count_threshold: int | None = None,
     dilate: bool | None = None,
     fill_holes: bool | None = None,
     close_gaps: bool | None = None,
@@ -249,11 +249,11 @@ def _from_samples(
     factory: str = "from_samples",
     grid_defaults: dict[str, bool] = _REGULAR_GRID_ONLY_DEFAULTS,
 ) -> Environment:
-    """Implement Environment.from_samples and Environment.open_field.
+    """Implement Environment.from_samples, open_field and the NWB builder.
 
-    ``None`` for a regular-grid-only option means it was not passed; the
-    value then comes from ``grid_defaults``. ``factory`` names the public
-    method in error messages.
+    ``None`` for `bin_count_threshold` or a regular-grid-only option means it
+    was not passed; the value then comes from ``0`` or ``grid_defaults``.
+    ``factory`` names the public function in error messages.
     """
     try:
         positions = np.asarray(positions, dtype=float)
@@ -310,16 +310,25 @@ def _from_samples(
     layout_str = layout.value if isinstance(layout, LayoutType) else layout
     layout_normalized = _normalize_layout_name(layout_str)
 
-    # Check if this is a RegularGrid or Hexagonal layout (the only ones supporting from_samples)
+    # Only a regular grid and a hexagonal tiling are built from samples.
     if layout_normalized not in ("regulargrid", "hexagonal"):
-        available = list_available_layouts()
-        raise NotImplementedError(
-            f"Layout '{layout_str}' (normalized: '{layout_normalized}') is not supported "
-            f"by {factory}(). Only 'RegularGrid' and 'Hexagonal' layouts are supported. "
-            f"For other layouts, build the engine with "
-            f"neurospatial.layout.create_layout() and pass it to "
-            f"Environment.from_layout(), or use from_grid_mask(). "
-            f"Available layouts: {', '.join(available)}"
+        raise ValueError(
+            _format_error(
+                f"{factory}() cannot build layout={layout_str!r}; it supports "
+                "layout='RegularGrid' and layout='Hexagonal'.",
+                why=(
+                    "Why: only those layouts are tiled from position samples. "
+                    f"Other layouts ({', '.join(list_available_layouts())}) "
+                    "are built from their own inputs."
+                ),
+                fix=(
+                    "use layout='RegularGrid' or layout='Hexagonal'; for a "
+                    "polygon, mask or track use from_polygon, from_grid_mask, "
+                    "from_pixel_mask or from_graph; for other layouts build the "
+                    "engine with neurospatial.layout.create_layout(...) and "
+                    "pass it to Environment.from_layout"
+                ),
+            )
         )
 
     grid_options = {
@@ -351,12 +360,41 @@ def _from_samples(
             )
         )
 
+    # Mask options act only while active bins are inferred from the samples.
+    mask_options = {
+        "bin_count_threshold": bin_count_threshold,
+        "dilate": dilate,
+        "fill_holes": fill_holes,
+        "close_gaps": close_gaps,
+    }
+    passed_mask_options = [
+        option for option, value in mask_options.items() if value is not None
+    ]
+    if not infer_active_bins and passed_mask_options:
+        listed = ", ".join(passed_mask_options)
+        raise ValueError(
+            _format_error(
+                f"{factory}(infer_active_bins=False) does not use {listed}.",
+                why=(
+                    "Why: these options decide which bins the samples make "
+                    "active. With infer_active_bins=False every bin in the "
+                    "extent is active, so the options would be ignored."
+                ),
+                fix=(
+                    f"remove {listed} from the call, or set "
+                    "infer_active_bins=True to select bins from the samples"
+                ),
+            )
+        )
+
     # Build the dict of layout parameters
     # Common parameters for all layouts
     common_params = {
         "positions": positions,
         "infer_active_bins": infer_active_bins,
-        "bin_count_threshold": bin_count_threshold,
+        "bin_count_threshold": 0
+        if bin_count_threshold is None
+        else bin_count_threshold,
     }
 
     # Layout-specific parameters
@@ -423,7 +461,7 @@ def _open_field(
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
-    bin_count_threshold: int = 0,
+    bin_count_threshold: int | None = None,
     dilate: bool | None = None,
     fill_holes: bool | None = None,
     close_gaps: bool | None = None,

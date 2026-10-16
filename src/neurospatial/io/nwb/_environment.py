@@ -369,7 +369,7 @@ def environment_from_position(
     layout: LayoutType | str = "RegularGrid",
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
-    bin_count_threshold: int = 0,
+    bin_count_threshold: int | None = None,
     dilate: bool | None = None,
     fill_holes: bool | None = None,
     close_gaps: bool | None = None,
@@ -415,12 +415,14 @@ def environment_from_position(
         ``[(min, max), ...]`` extent to tile on each axis.
     infer_active_bins : bool, default True
         Whether to only include bins visited by the animal.
-    bin_count_threshold : int, default 0
-        Minimum samples per bin when ``infer_active_bins=True``.
+    bin_count_threshold : int, optional
+        Minimum samples per bin. Default 0. Only with
+        ``infer_active_bins=True``.
     dilate, fill_holes, close_gaps, add_boundary_bins, connect_diagonal_neighbors : bool, optional
         Regular grid only; see :meth:`Environment.from_samples` for their
         defaults. Passing any of them with ``layout="Hexagonal"`` raises
-        ``ValueError``.
+        ``ValueError``, and so does passing `dilate`, `fill_holes` or
+        `close_gaps` with ``infer_active_bins=False``.
 
     Returns
     -------
@@ -432,7 +434,9 @@ def environment_from_position(
     KeyError
         If no Position container found, or if specified position_name not found.
     ValueError
-        If a regular-grid-only option is passed with ``layout="Hexagonal"``.
+        If `layout` is neither "RegularGrid" nor "Hexagonal", or an option is
+        passed that the chosen layout or ``infer_active_bins=False`` does not
+        use. The message names ``environment_from_position``.
     ImportError
         If pynwb is not installed.
 
@@ -458,6 +462,7 @@ def environment_from_position(
     _require_pynwb()
 
     from neurospatial import Environment
+    from neurospatial.environment._factories import _from_samples
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
@@ -476,8 +481,10 @@ def environment_from_position(
             position_name=position_name,
         )
 
-    # Create Environment from position samples
-    return Environment.from_samples(
+    # Bin the samples exactly as Environment.from_samples does, naming this
+    # function in any error about the options.
+    return _from_samples(
+        Environment,
         positions,
         bin_size=bin_size,
         name=name,
@@ -494,6 +501,7 @@ def environment_from_position(
         close_gaps=close_gaps,
         add_boundary_bins=add_boundary_bins,
         connect_diagonal_neighbors=connect_diagonal_neighbors,
+        factory="environment_from_position",
     )
 
 

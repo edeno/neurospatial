@@ -2536,7 +2536,7 @@ class Environment(Generic[_C]):
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
-        bin_count_threshold: int = 0,
+        bin_count_threshold: int | None = None,
         dilate: bool | None = None,
         fill_holes: bool | None = None,
         close_gaps: bool | None = None,
@@ -2584,24 +2584,28 @@ class Environment(Generic[_C]):
             `positions`. By default the extent of the samples plus half a bin
             on each side.
         infer_active_bins : bool, default True
-            If True, only bins containing ≥ `bin_count_threshold` samples are "active."
+            If True, only bins containing ≥ `bin_count_threshold` samples are
+            "active." If False, every bin in the extent is active, and the
+            mask options (`bin_count_threshold`, `dilate`, `fill_holes`,
+            `close_gaps`) cannot be passed.
         connect_diagonal_neighbors : bool, optional
             Regular grid only. If True (the default), connect grid bins
             diagonally when building connectivity.
 
         Other Parameters
         ----------------
-        bin_count_threshold : int, default 0
-            Minimum number of data points required for a bin to be considered "active."
+        bin_count_threshold : int, optional
+            Minimum number of data points required for a bin to be considered
+            "active." Default 0. Only with ``infer_active_bins=True``.
         dilate : bool, optional
-            Regular grid only. If True, apply morphological dilation to the
-            active-bin mask. Default False.
+            Regular grid only, with ``infer_active_bins=True``. If True, apply
+            morphological dilation to the active-bin mask. Default False.
         fill_holes : bool, optional
-            Regular grid only. If True, fill holes in the active-bin mask.
-            Default False.
+            Regular grid only, with ``infer_active_bins=True``. If True, fill
+            holes in the active-bin mask. Default False.
         close_gaps : bool, optional
-            Regular grid only. If True, close small gaps between active bins.
-            Default False.
+            Regular grid only, with ``infer_active_bins=True``. If True, close
+            small gaps between active bins. Default False.
         add_boundary_bins : bool, optional
             Regular grid only. If True, add peripheral bins around the
             bounding region of samples. Default False.
@@ -2614,12 +2618,12 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If `positions` is not 2D or contains invalid coordinates, or if a
+            If `positions` is not 2D or contains invalid coordinates; if
+            `layout` is neither "RegularGrid" nor "Hexagonal"; if a
             regular-grid-only option (`dilate`, `fill_holes`, `close_gaps`,
             `add_boundary_bins`, `connect_diagonal_neighbors`) is passed with
-            ``layout="Hexagonal"``.
-        NotImplementedError
-            If `layout` is neither "RegularGrid" nor "Hexagonal".
+            ``layout="Hexagonal"``; or if a mask option is passed with
+            ``infer_active_bins=False``.
 
         See Also
         --------
@@ -2730,7 +2734,7 @@ class Environment(Generic[_C]):
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
-        bin_count_threshold: int = 0,
+        bin_count_threshold: int | None = None,
         dilate: bool | None = None,
         fill_holes: bool | None = None,
         close_gaps: bool | None = None,
@@ -2768,19 +2772,22 @@ class Environment(Generic[_C]):
             ``[(min, max), ...]`` extent to tile on each axis. See
             :meth:`from_samples`.
         infer_active_bins : bool, default True
-            If True, only bins containing ≥ `bin_count_threshold` samples are "active."
-        bin_count_threshold : int, default 0
+            If True, only bins containing ≥ `bin_count_threshold` samples are
+            "active." If False, every bin in the extent is active, and the
+            mask options cannot be passed. See :meth:`from_samples`.
+        bin_count_threshold : int, optional
             Minimum number of data points required for a bin to be "active."
+            Default 0. Only with ``infer_active_bins=True``.
         dilate : bool, optional
-            Regular grid only. If True, apply morphological dilation to the
-            active-bin mask. Default False.
+            Regular grid only, with ``infer_active_bins=True``. If True, apply
+            morphological dilation to the active-bin mask. Default False.
         fill_holes : bool, optional
-            Regular grid only. If True (the default here), fill holes in the
-            active-bin mask. Pass False to keep the unvisited interior bins
-            out.
+            Regular grid only, with ``infer_active_bins=True``. If True (the
+            default here), fill holes in the active-bin mask. Pass False to
+            keep the unvisited interior bins out.
         close_gaps : bool, optional
-            Regular grid only. If True, close small gaps between active bins.
-            Default False.
+            Regular grid only, with ``infer_active_bins=True``. If True, close
+            small gaps between active bins. Default False.
         add_boundary_bins : bool, optional
             Regular grid only. If True, add peripheral bins around the
             bounding region of samples. Default False.
@@ -2796,8 +2803,9 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If a regular-grid-only option is passed with
-            ``layout="Hexagonal"``.
+            If `layout` is neither "RegularGrid" nor "Hexagonal", if a
+            regular-grid-only option is passed with ``layout="Hexagonal"``, or
+            if a mask option is passed with ``infer_active_bins=False``.
 
         See Also
         --------

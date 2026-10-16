@@ -377,6 +377,34 @@ class TestEnvironmentFromPosition:
         assert env.regions.list_names() == ["goal"]
         assert env.layout_parameters == expected.layout_parameters
 
+    def test_every_binning_option_is_forwarded_unchanged(
+        self, sample_nwb_with_position, monkeypatch
+    ):
+        """Each option reaches the from_samples implementation as passed."""
+        import inspect
+
+        from neurospatial.environment import _factories
+        from neurospatial.io.nwb import environment_from_position
+
+        received = {}
+
+        def record(cls, positions, **options):
+            received.update(options)
+
+        monkeypatch.setattr(_factories, "_from_samples", record)
+        not_options = {"nwbfile", "processing_module", "position_name"}
+        names = [
+            name
+            for name in inspect.signature(environment_from_position).parameters
+            if name not in not_options
+        ]
+        # A distinct object per option: forwarding must not drop, swap or copy.
+        passed = {name: object() for name in names}
+        environment_from_position(sample_nwb_with_position, **passed)
+        assert received.pop("factory") == "environment_from_position"
+        assert received.keys() == passed.keys()
+        assert all(received[name] is passed[name] for name in names)
+
     def test_binning_options_match_from_samples(self):
         """Every from_samples option exists here with the same default."""
         import inspect
@@ -401,7 +429,10 @@ class TestEnvironmentFromPosition:
     def test_inapplicable_option_is_refused(self, sample_nwb_with_position):
         from neurospatial.io.nwb import environment_from_position
 
-        with pytest.raises(ValueError, match="does not use dilate"):
+        with pytest.raises(
+            ValueError,
+            match=r"environment_from_position\(layout='Hexagonal'\) does not use dilate",
+        ):
             environment_from_position(
                 sample_nwb_with_position, bin_size=5.0, layout="Hexagonal", dilate=True
             )
