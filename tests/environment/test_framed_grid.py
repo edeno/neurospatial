@@ -16,6 +16,7 @@ from neurospatial.binning import FramedGrid, RectilinearGrid
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._polygon import PolygonCells, materialize_cells
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, AffineND
 
 
@@ -211,8 +212,9 @@ def test_partial_clipping_drops_tensor_grid_and_keeps_parent_map():
 @pytest.mark.parametrize("kind", ["reflection", "shear"])
 def test_hexagon_conversion_retains_exact_vertices(kind):
     env = Environment.from_layout(
-        "Hexagonal",
-        {"hexagon_width": 4.0, "dimension_ranges": [(0.0, 12.0), (0.0, 12.0)]},
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0.0, 12.0), (0.0, 12.0)]
+        )
     )
     value = matrix(kind=kind)
     child = env.apply_transform(Affine2D(value))

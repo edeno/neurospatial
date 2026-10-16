@@ -13,6 +13,7 @@ from neurospatial import Environment
 from neurospatial.arena import MaskArena, OpenArena, UnknownArena
 from neurospatial.geometry._arena import encode_arena
 from neurospatial.io import from_dict, to_dict
+from neurospatial.layout import create_layout
 
 
 def _arena_record(arena):
@@ -37,7 +38,7 @@ def _regular(*, arena=None, holes=False, n_dims=2):
         ).reshape(-1, n_dims)
         keep = ~np.all((centers > 1) & (centers < 3), axis=1)
         params["positions"] = centers[keep]
-    return Environment.from_layout("RegularGrid", params, arena=arena)
+    return Environment.from_layout(create_layout("RegularGrid", **params), arena=arena)
 
 
 def _walled():
@@ -211,15 +212,15 @@ def test_rebin_nonpolygon_arena_uses_its_containment_contract():
 
 def test_rebin_refuses_when_no_coarse_center_is_in_the_arena():
     parent = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": ((0.0, 6.0),) * 2,
-            "positions": np.array([[0.5, 0.5]]),
-            "dilate": False,
-            "close_gaps": False,
-            "fill_holes": False,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=((0.0, 6.0),) * 2,
+            positions=np.array([[0.5, 0.5]]),
+            dilate=False,
+            close_gaps=False,
+            fill_holes=False,
+        )
     )
     # The only coarse center near the observed cell is (1.5, 1.5), outside it.
     with pytest.raises(ValueError, match=r"coarse.*center.*arena"):

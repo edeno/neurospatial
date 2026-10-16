@@ -16,6 +16,7 @@ from neurospatial.geometry._binning import MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._components import TriangleShapes
 from neurospatial.io import from_dict, to_dict
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, estimate_transform
 
 _CARTESIAN_CASES = [
@@ -396,13 +397,15 @@ def test_hexagonal_subset_boundary_matches_native_support(built_environment):
     keep = _keep_bins(parent)
     child = parent.subset(bins=keep)
     expected = Environment.from_layout(
-        "Hexagonal",
-        {
-            **parent.layout_parameters,
-            "positions": parent.bin_centers[keep],
-            "infer_active_bins": True,
-            "bin_count_threshold": 0,
-        },
+        create_layout(
+            "Hexagonal",
+            **{
+                **parent.layout_parameters,
+                "positions": parent.bin_centers[keep],
+                "infer_active_bins": True,
+                "bin_count_threshold": 0,
+            },
+        )
     )
     np.testing.assert_array_equal(expected.bin_centers, child.bin_centers)
     np.testing.assert_array_equal(child.boundary_bins, expected.boundary_bins)

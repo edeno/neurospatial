@@ -319,7 +319,7 @@ Environment()
 | `Environment.from_polygon()` | Grid bounded by polygon |
 | `Environment.from_grid_mask()` | Pre-defined N-D boolean mask |
 | `Environment.from_pixel_mask()` | Binary image mask |
-| `Environment.from_layout()` | Direct layout specification |
+| `Environment.from_layout()` | A built layout engine (triangular mesh, your own engine) |
 
 Factory methods ensure:
 

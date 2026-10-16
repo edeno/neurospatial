@@ -25,6 +25,7 @@ from environment_helpers import built_from, native_layout, publish_environment
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+from neurospatial.layout import create_layout
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.ops.diffusion import (
     _raw_heat_operator,
@@ -187,8 +188,7 @@ def mesh_env() -> Environment:
     """Well-shaped flat triangular mesh over a square (uniform point spacing)."""
     boundary = Polygon([(-30, -30), (30, -30), (30, 30), (-30, 30)])
     return Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": boundary, "point_spacing": 4.0},
+        create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=4.0)
     )
 
 
@@ -310,8 +310,9 @@ def test_sigma_recovery_mesh(mesh_env):
             mesh_env
             if spacing == 4.0
             else Environment.from_layout(
-                kind="TriangularMesh",
-                layout_params={"boundary_polygon": boundary, "point_spacing": spacing},
+                create_layout(
+                    "TriangularMesh", boundary_polygon=boundary, point_spacing=spacing
+                )
             )
         )
         with warnings.catch_warnings():
@@ -586,8 +587,7 @@ def test_mesh_skew_guard_warns():
     # Well-shaped: square, uniform spacing -> right-isoceles triangles, no warning.
     square = Polygon([(-30, -30), (30, -30), (30, 30), (-30, 30)])
     env_ok = Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": square, "point_spacing": 4.0},
+        create_layout("TriangularMesh", boundary_polygon=square, point_spacing=4.0)
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any UserWarning here fails the test
@@ -601,8 +601,9 @@ def test_mesh_skew_guard_warns():
     base = [(-30, -8), (30, -8), (30, 8), (-30, 8)]
     sheared = [(x + shear * y, y) for (x, y) in base]
     env_skew = Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": Polygon(sheared), "point_spacing": 4.0},
+        create_layout(
+            "TriangularMesh", boundary_polygon=Polygon(sheared), point_spacing=4.0
+        )
     )
     with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
         _ = env_skew._face_geometry

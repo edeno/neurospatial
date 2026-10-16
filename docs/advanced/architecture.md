@@ -86,7 +86,9 @@ such as `ops`, declare small consumer protocols of the operations they need.
 ## Custom construction
 
 Use `Environment.from_bins(...)` for explicit Cartesian `Binning` records, or
-`Environment.from_layout(...)` for supported layout construction. Every layout
+`Environment.from_layout(engine)` for a built layout engine: a built-in engine
+from `neurospatial.layout.create_layout(...)` or your own engine after its
+`build(...)`. A custom engine needs no registration. Every layout
 engine, built-in or custom, hands its geometry to the environment through
 `binning()`, which returns a `Binning` built from the engine's own state: bins in
 connectivity edge order, point lookup, lazily computed faces and any grid,

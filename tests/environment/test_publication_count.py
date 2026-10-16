@@ -14,6 +14,7 @@ from shapely.geometry import Point, Polygon, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.binning import KnownFaces
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import translate
 
 _POSITIONS = np.random.default_rng(0).uniform(0, 20, (500, 2))
@@ -70,11 +71,11 @@ FACTORIES = {
         bin_size=2.0,
     ),
     "from_layout_mesh": lambda: Environment.from_layout(
-        "TriangularMesh",
-        {
-            "boundary_polygon": Polygon([(0, 0), (8, 0), (8, 8), (0, 8)]),
-            "point_spacing": 2.0,
-        },
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon([(0, 0), (8, 0), (8, 8), (0, 8)]),
+            point_spacing=2.0,
+        )
     ),
     "from_polar_egocentric": lambda: Environment.from_polar_egocentric(
         distance_range=(0.0, 10.0),

@@ -23,6 +23,7 @@ OPT_IN = (
     "docs/getting-started/core-concepts.md",
     "docs/user-guide/composite-environments.md",
     "docs/user-guide/environments.md",
+    "docs/user-guide/layout-engines.md",
     "docs/user-guide/alignment.md",
     "docs/user-guide/animation.md",
     "docs/user-guide/interoperability.md",

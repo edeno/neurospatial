@@ -22,6 +22,7 @@ from neurospatial import Environment
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
+from neurospatial.layout import create_layout
 
 _BuiltEnvironment = Environment | Environment
 
@@ -334,7 +335,9 @@ def test_non_grid_nwb_record_retains_faces() -> None:
     from neurospatial.io.nwb import read_environment, write_environment
 
     env = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
     )
     nwb = pynwb.NWBFile(
         "geometry test", "binning-refusal", datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -353,7 +356,9 @@ def test_non_grid_nwb_record_retains_faces() -> None:
 def test_require_rectilinear_message_unchanged() -> None:
     """Linear interpolation still explains how a hexagonal user can proceed."""
     env = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
     )
     with pytest.raises(NotImplementedError) as exc:
         env.interpolate(np.ones(env.n_bins), env.bin_centers[:1], mode="linear")

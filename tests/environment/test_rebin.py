@@ -9,6 +9,7 @@ from shapely.geometry import Point
 
 from neurospatial import Environment
 from neurospatial.geometry._arena import encode_arena
+from neurospatial.layout import create_layout
 
 
 def _arena_record(arena):
@@ -105,12 +106,12 @@ def test_rebinned_environment_round_trips(
 ) -> None:
     """A saved coarse grid restores its cells, queries, graph and smoothing."""
     env = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": [(0, 4), (0, 4)],
-            "connect_diagonal_neighbors": diagonal,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(0, 4), (0, 4)],
+            connect_diagonal_neighbors=diagonal,
+        )
     ).rebin(factor)
     path = tmp_path / "coarse"
     env.to_file(path)
@@ -132,12 +133,12 @@ def test_rebin_identity_keeps_small_grid_edges(
 ) -> None:
     """Rebinning a full grid by one preserves edges even without interior nodes."""
     env = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": [(0, side) for side in shape],
-            "connect_diagonal_neighbors": diagonal,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(0, side) for side in shape],
+            connect_diagonal_neighbors=diagonal,
+        )
     )
     assert set(env.rebin(1).connectivity.edges()) == set(env.connectivity.edges())
 
@@ -390,7 +391,9 @@ class TestRebinValidation:
     def test_rebin_non_grid_layout_raises(self):
         """Factor rebinning needs rectangular cell geometry."""
         env = Environment.from_layout(
-            "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 20), (0, 20)]}
+            create_layout(
+                "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 20), (0, 20)]
+            )
         )
         with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
             env.rebin(factor=2)

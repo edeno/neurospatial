@@ -49,6 +49,7 @@ from shapely.geometry import Point, Polygon, box
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import resolve_spatial_bandwidth, smooth_rate_map
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout import create_layout
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.transforms import translate
@@ -79,8 +80,9 @@ def _base_environments() -> Iterator[tuple[str, Any]]:
     yield (
         "hex",
         Environment.from_layout(
-            "Hexagonal",
-            {"hexagon_width": 4.0, "dimension_ranges": [(0, 30), (0, 30)]},
+            create_layout(
+                "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 30), (0, 30)]
+            )
         ),
     )
     track = nx.Graph()
@@ -97,11 +99,11 @@ def _base_environments() -> Iterator[tuple[str, Any]]:
     yield (
         "mesh",
         Environment.from_layout(
-            "TriangularMesh",
-            {
-                "boundary_polygon": Polygon([(0, 0), (30, 0), (30, 30), (0, 30)]),
-                "point_spacing": 4.0,
-            },
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=Polygon([(0, 0), (30, 0), (30, 30), (0, 30)]),
+                point_spacing=4.0,
+            )
         ),
     )
     yield (

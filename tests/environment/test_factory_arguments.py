@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
 
 @pytest.fixture(scope="module")
@@ -34,6 +35,7 @@ _DATA_ARGUMENTS = {
     "from_grid_mask": ("active_mask", "grid_edges"),
     "from_pixel_mask": ("image_mask",),
     "from_bins": ("binning",),
+    "from_layout": ("layout",),
     "combine": ("components",),
     "from_polar_egocentric": (),
 }
@@ -177,3 +179,24 @@ def test_track_factories_share_the_edge_spacing_default():
         from_graph.to_linear(np.array([[20.0, 1.0]])), [21.0], atol=1e-12
     )
     assert from_graph.layout_parameters["edge_spacing"] == 0.0
+
+
+@pytest.mark.parametrize("layout", ["TriangularMesh", MaskedGridLayout])
+def test_from_layout_refuses_a_layout_name_or_class(layout):
+    with pytest.raises(TypeError, match="takes a built layout engine") as caught:
+        Environment.from_layout(layout)
+    assert "create_layout(" in str(caught.value)
+
+
+def test_from_layout_owns_a_copy_of_the_engine_bins():
+    engine = MaskedGridLayout()
+    engine.build(
+        active_mask=np.ones((2, 3), dtype=bool),
+        grid_edges=(np.arange(3.0), np.arange(4.0)),
+    )
+    env = Environment.from_layout(engine, name="arena", units="cm")
+    centers = env.bin_centers.copy()
+    engine.bin_centers[:] = -1.0
+    engine.active_mask[:] = False
+    np.testing.assert_array_equal(env.bin_centers, centers)
+    assert (env.name, env.units, env.n_bins) == ("arena", "cm", 6)

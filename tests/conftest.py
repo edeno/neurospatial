@@ -51,6 +51,7 @@ from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment, Regions
+from neurospatial.layout import create_layout
 from neurospatial.layout.engines.graph import GraphLayout
 
 # =============================================================================
@@ -1037,8 +1038,9 @@ def _build_environment(kind: str) -> Environment:
         return Environment.from_grid_mask(mask, grid_edges=(np.linspace(0, 15, 6),) * 2)
     if kind == "hex":
         return Environment.from_layout(
-            "Hexagonal",
-            {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+            create_layout(
+                "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+            )
         )
     if kind == "track":
         graph = nx.Graph()
@@ -1052,11 +1054,11 @@ def _build_environment(kind: str) -> Environment:
         )
     if kind == "mesh":
         return Environment.from_layout(
-            "TriangularMesh",
-            {
-                "boundary_polygon": Polygon([(0, 0), (12, 0), (12, 12), (0, 12)]),
-                "point_spacing": 4.0,
-            },
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=Polygon([(0, 0), (12, 0), (12, 12), (0, 12)]),
+                point_spacing=4.0,
+            )
         )
     if kind == "mesh_boundary":
         boundary = Polygon(
@@ -1064,7 +1066,9 @@ def _build_environment(kind: str) -> Environment:
             [[(4, 3), (6, 3), (6, 5), (4, 5)]],
         )
         return Environment.from_layout(
-            "TriangularMesh", {"boundary_polygon": boundary, "point_spacing": 1.5}
+            create_layout(
+                "TriangularMesh", boundary_polygon=boundary, point_spacing=1.5
+            )
         )
     if kind == "polar":
         return Environment.from_polar_egocentric(

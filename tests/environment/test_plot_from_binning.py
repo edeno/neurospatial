@@ -21,6 +21,7 @@ from matplotlib.patches import RegularPolygon
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
+from neurospatial.layout import create_layout
 
 
 def record_path(data, prefix, path):
@@ -431,7 +432,9 @@ def test_drawn_hexagons_are_the_environment_cells():
     from neurospatial.layout._plotting import hexagon_patches
 
     env = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
     )
     shapes = env.binning.shapes
     cells = materialize_cells(env.binning)

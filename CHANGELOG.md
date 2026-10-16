@@ -171,6 +171,15 @@
   distance_bin_size=5.0, angle_bin_size=np.pi / 8)`. The ranges and bin sizes
   are choices, not data, and four positional numbers were easy to swap.
 
+- `Environment.from_layout` takes a built layout engine instead of a layout
+  name and a dictionary of build parameters:
+  `Environment.from_layout(create_layout("TriangularMesh", boundary_polygon=arena, point_spacing=2.5))`.
+  It now also accepts your own layout engine after its `build(...)`, with no
+  registration. A layout name or an engine class raises `TypeError` with the
+  corrected call. `layout_type` and `layout_parameters` come from the engine's
+  own record, which includes the defaults it resolved. Grids, polygons, masks
+  and tracks keep their dedicated factories.
+
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of

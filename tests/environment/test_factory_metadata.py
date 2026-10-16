@@ -10,6 +10,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment, Region, Regions
 from neurospatial.arena import OpenArena
+from neurospatial.layout import create_layout
 
 
 def _create(kind, **metadata):
@@ -55,11 +56,11 @@ def _create(kind, **metadata):
         )
     if kind == "layout":
         return Environment.from_layout(
-            "MaskedGrid",
-            {
-                "active_mask": np.ones((3, 3), dtype=bool),
-                "grid_edges": (np.arange(4.0), np.arange(4.0)),
-            },
+            create_layout(
+                "MaskedGrid",
+                active_mask=np.ones((3, 3), dtype=bool),
+                grid_edges=(np.arange(4.0), np.arange(4.0)),
+            ),
             **metadata,
         )
     return Environment.from_polar_egocentric(
@@ -112,11 +113,11 @@ def test_every_cartesian_factory_snapshots_regions(kind):
 def test_explicit_arena_center_selection_retains_requested_name_labels_and_regions():
     regions = Regions([Region("goal", "point", [0.5, 0.5])])
     env = Environment.from_layout(
-        "MaskedGrid",
-        {
-            "active_mask": np.ones((3, 3), dtype=bool),
-            "grid_edges": (np.arange(4.0), np.arange(4.0)),
-        },
+        create_layout(
+            "MaskedGrid",
+            active_mask=np.ones((3, 3), dtype=bool),
+            grid_edges=(np.arange(4.0), np.arange(4.0)),
+        ),
         arena=OpenArena(box(0, 0, 2, 2)),
         regions=regions,
         name="selected",

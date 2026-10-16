@@ -359,3 +359,35 @@ env = Environment.from_polar_egocentric(
 )
 ```
 
+### `from_layout` takes a built layout engine
+
+`from_layout` used to take a layout name and a dictionary of build parameters,
+which repeated what `from_samples`, `from_polygon`, `from_grid_mask`,
+`from_pixel_mask` and `from_graph` already do with named, checked arguments.
+It now takes a layout engine you have built, so its job is the layouts that
+have no dedicated factory: a triangular mesh, a grid or hexagonal tiling over
+explicit ranges with no position samples, or an engine you wrote.
+
+```python
+from neurospatial.layout import create_layout
+
+# Before
+env = Environment.from_layout(
+    "TriangularMesh", {"boundary_polygon": arena, "point_spacing": 2.5}
+)
+# Now
+mesh = create_layout("TriangularMesh", boundary_polygon=arena, point_spacing=2.5)
+env = Environment.from_layout(mesh)
+
+# Your own engine: build it, then publish it
+engine = MyLayout()
+engine.build(...)
+env = Environment.from_layout(engine, units="cm")
+```
+
+The environment copies the bins from the engine's `binning()`, so changing the
+engine afterwards does not change the environment. `env.layout_parameters`
+comes from the engine's record of its `build(...)` arguments, including the
+defaults it resolved, for example `connect_diagonal_neighbors=True` for a
+masked grid.
+

@@ -31,6 +31,7 @@ from neurospatial.regions import Regions
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
     from neurospatial.geometry._arena import Arena
+    from neurospatial.layout.base import LayoutEngine
 
 PolygonType = type[shapely.geometry.Polygon]
 
@@ -767,6 +768,49 @@ def _build_layout(
         metadata=metadata,
         layout_type=kind,
         build_params=layout_params,
+        regions=regions,
+        arena=arena,
+        within_arena=True,
+    )
+
+
+def _from_layout(
+    cls: type[Environment[Any]],
+    layout: LayoutEngine,
+    *,
+    name: str = "",
+    units: str | None = None,
+    frame: str | None = None,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+) -> Environment:
+    """Implement Environment.from_layout: publish a built layout engine."""
+    if isinstance(layout, (str, type)):
+        given = repr(layout) if isinstance(layout, str) else layout.__name__
+        raise TypeError(
+            _format_error(
+                f"Environment.from_layout() takes a built layout engine, got {given}.",
+                why=(
+                    "Why: a layout name or class carries no bins; the engine "
+                    "must be built with its parameters first."
+                ),
+                fix=(
+                    "build the engine and pass it, e.g. "
+                    "Environment.from_layout(create_layout('TriangularMesh', "
+                    "boundary_polygon=polygon, point_spacing=2.0)) with "
+                    "create_layout from neurospatial.layout, or call build(...) "
+                    "on your own engine first. For grids, polygons, masks and "
+                    "tracks use from_samples, from_polygon, from_grid_mask, "
+                    "from_pixel_mask or from_graph"
+                ),
+            )
+        )
+    if arena is not None:
+        arena = own_arena(arena)
+    return _publication.publish_layout(
+        cls,
+        layout,
+        metadata=declared_metadata(cls, name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
         within_arena=True,

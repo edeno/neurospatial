@@ -14,6 +14,7 @@ from shapely.geometry import Point, Polygon, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout import create_layout
 
 _SCALARS = (bool, int, float, str, type(None))
 
@@ -34,7 +35,9 @@ FACTORIES = {
         np.random.default_rng(0).uniform(0, 20, (500, 2)), bin_size=(2.0, 4.0)
     ),
     "hexagonal": lambda: Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 3.0, "dimension_ranges": [(0, 12), (0, 12)]}
+        create_layout(
+            "Hexagonal", hexagon_width=3.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
     ),
     "from_polygon": lambda: Environment.from_polygon(
         Point(10, 10).buffer(10), bin_size=2.0
@@ -49,11 +52,11 @@ FACTORIES = {
     ),
     "from_graph": _track,
     "mesh": lambda: Environment.from_layout(
-        "TriangularMesh",
-        {
-            "boundary_polygon": Polygon([(0, 0), (8, 0), (8, 8), (0, 8)]),
-            "point_spacing": 2.0,
-        },
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon([(0, 0), (8, 0), (8, 8), (0, 8)]),
+            point_spacing=2.0,
+        )
     ),
     "from_polar_egocentric": lambda: Environment.from_polar_egocentric(
         distance_range=(0.0, 10.0),
@@ -75,7 +78,8 @@ def test_layout_parameters_hold_only_scalar_choices(factory):
     env = FACTORIES[factory]()
     params = env.layout_parameters
     assert all(_is_choice(value) for value in params.values()), params
-    # Data arguments are not choices.
+    # Data arguments are not choices. An engine's own record may list a data
+    # argument it was built without, as None, but never keeps the data.
     for data in (
         "positions",
         "active_mask",
@@ -87,7 +91,7 @@ def test_layout_parameters_hold_only_scalar_choices(factory):
         "edge_order",
         "dimension_ranges",
     ):
-        assert data not in params
+        assert params.get(data) is None
     json.dumps(params)
 
 

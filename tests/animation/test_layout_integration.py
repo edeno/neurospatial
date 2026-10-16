@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.layout import create_layout
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -30,11 +31,11 @@ def test_hexagonal_layout_with_video_backend(tmp_path):
 
     # Create hexagonal environment
     env = Environment.from_layout(
-        kind="hexagonal",
-        layout_params={
-            "hexagon_width": 10.0,
-            "dimension_ranges": ((-50.0, 50.0), (-50.0, 50.0)),
-        },
+        create_layout(
+            "hexagonal",
+            hexagon_width=10.0,
+            dimension_ranges=((-50.0, 50.0), (-50.0, 50.0)),
+        ),
         name="hexagonal_test",
     )
 
@@ -198,11 +199,7 @@ def test_triangular_mesh_layout_with_napari_backend(tmp_path, close_viewer):
     # Create triangular mesh environment with rectangular boundary
     boundary = Polygon([(-50, -50), (50, -50), (50, 50), (-50, 50)])
     env = Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={
-            "boundary_polygon": boundary,
-            "point_spacing": 15.0,
-        },
+        create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=15.0),
         name="triangular_test",
     )
 

@@ -14,6 +14,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import KnownFaces
+from neurospatial.layout import create_layout
 
 
 def grid():
@@ -281,12 +282,12 @@ def test_thin_grid_preserves_construction_choice_before_diagonals_exist(
         )
     else:
         env = Environment.from_layout(
-            "RegularGrid",
-            {
-                "bin_size": 1.0,
-                "dimension_ranges": [(0, 1), (0, 2)],
-                "connect_diagonal_neighbors": diagonal,
-            },
+            create_layout(
+                "RegularGrid",
+                bin_size=1.0,
+                dimension_ranges=[(0, 1), (0, 2)],
+                connect_diagonal_neighbors=diagonal,
+            )
         )
     assert env._binning.grid_spec.connect_diagonal is diagonal
     # Make the regular-family result exercise legacy identity coarsening too.

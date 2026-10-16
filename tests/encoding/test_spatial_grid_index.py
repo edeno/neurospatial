@@ -5,11 +5,14 @@ from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment
 from neurospatial.encoding.spatial import _extract_connected_component_graph
+from neurospatial.layout import create_layout
 
 
 def test_hex_logical_diagonals_do_not_join_unconnected_fields():
     env = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
     )
     mask = np.zeros(env.n_bins, dtype=bool)
     mask[[0, 5]] = True
@@ -83,13 +86,14 @@ def test_pickle_preserves_segmentation_connections():
 
 def test_from_layout_segmentation_keeps_resolved_default():
     env = Environment.from_layout(
-        "MaskedGrid",
-        {
-            "active_mask": np.ones((2, 2), dtype=bool),
-            "grid_edges": (np.arange(3.0),) * 2,
-        },
+        create_layout(
+            "MaskedGrid",
+            active_mask=np.ones((2, 2), dtype=bool),
+            grid_edges=(np.arange(3.0),) * 2,
+        )
     )
-    assert "connect_diagonal_neighbors" not in env.layout_parameters
+    # The engine's record keeps the default it resolved.
+    assert env.layout_parameters["connect_diagonal_neighbors"] is True
     mask = np.array([True, False, False, True])
     np.testing.assert_array_equal(
         _extract_connected_component_graph(0, mask, env), [0, 3]
@@ -102,11 +106,11 @@ def test_supplied_arena_keeps_resolved_segmentation_default():
     from neurospatial.arena import OpenArena
 
     env = Environment.from_layout(
-        "MaskedGrid",
-        {
-            "active_mask": np.ones((2, 2), dtype=bool),
-            "grid_edges": (np.arange(3.0),) * 2,
-        },
+        create_layout(
+            "MaskedGrid",
+            active_mask=np.ones((2, 2), dtype=bool),
+            grid_edges=(np.arange(3.0),) * 2,
+        ),
         arena=OpenArena(box(-1, -1, 3, 3)),
     )
     np.testing.assert_array_equal(

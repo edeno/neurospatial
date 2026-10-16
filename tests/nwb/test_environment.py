@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Regions
+from neurospatial.layout import create_layout
 
 # Skip all tests if pynwb is not installed
 pynwb = pytest.importorskip("pynwb")
@@ -1167,11 +1168,9 @@ class TestEnvironmentRoundTrip:
 
         # Create hexagonal layout environment
         env = Environment.from_layout(
-            kind="Hexagonal",
-            layout_params={
-                "hexagon_width": 5.0,  # Hexagonal uses hexagon_width
-                "dimension_ranges": [(0, 50), (0, 50)],
-            },
+            create_layout(
+                "Hexagonal", hexagon_width=5.0, dimension_ranges=[(0, 50), (0, 50)]
+            )
         )
 
         nwb_path = tmp_path / "test_hex.nwb"
@@ -1392,11 +1391,9 @@ class TestEnvironmentRoundTrip:
         boundary = Polygon([(0, 0), (50, 0), (50, 50), (0, 50)])
 
         env = Environment.from_layout(
-            kind="TriangularMesh",
-            layout_params={
-                "boundary_polygon": boundary,
-                "point_spacing": 5.0,  # Controls mesh density
-            },
+            create_layout(
+                "TriangularMesh", boundary_polygon=boundary, point_spacing=5.0
+            )
         )
 
         nwb_path = tmp_path / "test_triangular_mesh.nwb"
@@ -1442,11 +1439,9 @@ def _create_hexagonal_env():
     from neurospatial import Environment
 
     env = Environment.from_layout(
-        kind="Hexagonal",
-        layout_params={
-            "hexagon_width": 5.0,
-            "dimension_ranges": [(0, 50), (0, 50)],
-        },
+        create_layout(
+            "Hexagonal", hexagon_width=5.0, dimension_ranges=[(0, 50), (0, 50)]
+        )
     )
     return env
 
@@ -1513,8 +1508,7 @@ def _create_triangular_mesh_env():
 
     boundary = Polygon([(0, 0), (50, 0), (50, 50), (0, 50)])
     env = Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": boundary, "point_spacing": 5.0},
+        create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=5.0)
     )
     return env
 
@@ -2326,8 +2320,9 @@ def hexagonal_env_from_nwb(empty_nwb):
     from neurospatial.io.nwb import read_environment, write_environment
 
     env = Environment.from_layout(
-        kind="Hexagonal",
-        layout_params={"hexagon_width": 5.0, "dimension_ranges": [(0, 50), (0, 50)]},
+        create_layout(
+            "Hexagonal", hexagon_width=5.0, dimension_ranges=[(0, 50), (0, 50)]
+        )
     )
     write_environment(empty_nwb, env)
     return env, read_environment(empty_nwb)

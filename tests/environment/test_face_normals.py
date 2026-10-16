@@ -16,6 +16,7 @@ from neurospatial.binning import FaceNormals, KnownFaces
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.io import from_dict, to_dict
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, AffineND
 
 
@@ -251,8 +252,9 @@ def test_current_binning_requires_normal_field_and_other_codecs_stay_version_one
 @pytest.mark.parametrize("offset", [0.0, 1e6, 1e9])
 def test_rotated_hex_normals_use_source_lattice_at_large_offsets(offset):
     env = Environment.from_layout(
-        "Hexagonal",
-        {"hexagon_width": 4.0, "dimension_ranges": [(0.0, 12.0), (0.0, 12.0)]},
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0.0, 12.0), (0.0, 12.0)]
+        )
     )
     angle = 0.3
     matrix = np.array(

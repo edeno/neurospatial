@@ -11,6 +11,7 @@ from shapely.geometry import Polygon
 
 import neurospatial.layout.engines.triangular_mesh as mesh_engine
 from neurospatial import Environment
+from neurospatial.layout import create_layout
 
 
 def _mesh():
@@ -19,7 +20,7 @@ def _mesh():
         [[(4, 3), (6, 3), (6, 5), (4, 5)]],
     )
     return Environment.from_layout(
-        "TriangularMesh", {"boundary_polygon": boundary, "point_spacing": 1.5}
+        create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=1.5)
     )
 
 

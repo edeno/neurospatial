@@ -10,6 +10,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.encoding.spatial import detect_place_fields
+from neurospatial.layout import create_layout
 
 
 def _grid(*, diagonal: bool, shape: tuple[int, ...] = (2, 2), arena=None):
@@ -43,12 +44,12 @@ def test_diagonal_field_connections_survive_grid_derivation(diagonal, derivation
     """A diagonal is usable exactly when an edge survives publication."""
     if derivation == "rebin":
         env = Environment.from_layout(
-            "RegularGrid",
-            {
-                "bin_size": 1.0,
-                "dimension_ranges": [(0, 4), (0, 4)],
-                "connect_diagonal_neighbors": diagonal,
-            },
+            create_layout(
+                "RegularGrid",
+                bin_size=1.0,
+                dimension_ranges=[(0, 4), (0, 4)],
+                connect_diagonal_neighbors=diagonal,
+            )
         ).rebin(2)
     elif derivation == "arena":
         env = _grid(

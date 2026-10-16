@@ -36,6 +36,7 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
 )
 from neurospatial.geometry._polygon import ClippedLocator
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import translate
 
 
@@ -529,8 +530,11 @@ def test_public_arena_adapter_normalizes_before_lookup_and_selection(
     )
     if ingress == "layout_factory":
         env = Environment.from_layout(
-            "MaskedGrid",
-            {"active_mask": native.active_mask, "grid_edges": native.grid_edges},
+            create_layout(
+                "MaskedGrid",
+                active_mask=native.active_mask,
+                grid_edges=native.grid_edges,
+            ),
             name="adapted",
             arena=provider,
         )

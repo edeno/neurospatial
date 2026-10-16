@@ -44,10 +44,10 @@ from neurospatial.environment._cartesian import (
 from neurospatial.environment._clipping import _clip
 from neurospatial.environment._combine import _combine
 from neurospatial.environment._factories import (
-    _build_layout,
     _from_bins,
     _from_graph,
     _from_grid_mask,
+    _from_layout,
     _from_nwb,
     _from_pixel_mask,
     _from_polygon,
@@ -157,6 +157,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
     from neurospatial.geometry._polygon import ClipMapping
+    from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import (
         DiffusionEigenbasisCache,
         KernelMode,
@@ -3148,7 +3149,7 @@ class Environment(Generic[_C]):
         See Also
         --------
         from_samples : Create environment by binning position data.
-        from_layout : Create environment with custom LayoutEngine.
+        from_layout : Create environment from a built layout engine.
 
         Examples
         --------
@@ -3531,8 +3532,7 @@ class Environment(Generic[_C]):
     @classmethod
     def from_layout(
         cls,
-        kind: LayoutType | str,
-        layout_params: dict[str, Any],
+        layout: LayoutEngine,
         *,
         name: str = "",
         units: str | None = None,
@@ -3540,50 +3540,80 @@ class Environment(Generic[_C]):
         regions: Regions | None = None,
         arena: Arena | None = None,
     ) -> Environment[CartesianSystem]:
-        """Create an Environment with a specified layout type and its build parameters.
+        """Create an Environment from a built layout engine.
+
+        Use this for a layout that has no dedicated factory: a triangular
+        mesh, a grid tiled over explicit ranges without samples, or your own
+        layout engine. Build the engine first, with
+        :func:`neurospatial.layout.create_layout` or the engine's own
+        ``build(...)``, then pass it here. The environment copies what the
+        engine's ``binning()`` returns and keeps no reference to the engine.
 
         Parameters
         ----------
-        kind : LayoutType | str
-            The layout engine type to use. Can be a LayoutType enum member (recommended
-            for IDE autocomplete) or a case-insensitive string name
-            (e.g., "RegularGrid", "Hexagonal").
-        layout_params : Dict[str, Any]
-            A dictionary of parameters that will be passed to the `build`
-            method of the chosen `LayoutEngine`. Only the scalar choices among
-            them are kept in ``layout_parameters``; input data such as
-            positions, masks and polygons is not stored.
+        layout : LayoutEngine
+            A built layout engine: a built-in engine or any object that
+            implements the ``LayoutEngine`` protocol, including ``binning()``.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
-        regions : Optional[Regions], optional
-            A Regions instance to manage symbolic spatial regions within the environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         arena : Arena, optional
-            Continuous domain. Otherwise inferred from the supplied layout.
+            Continuous domain. Bins whose centers fall outside a known arena
+            are left out. Otherwise the domain is inferred from the layout.
 
         Returns
         -------
         Environment
-            A new Environment instance.
+            A new Environment instance. ``layout_type`` and
+            ``layout_parameters`` come from the engine's own record.
+
+        Raises
+        ------
+        TypeError
+            If `layout` is a layout name or class instead of a built engine.
+        LayoutNotBuiltError
+            If the engine has not been built.
 
         See Also
         --------
+        neurospatial.layout.create_layout : Build a built-in layout engine.
         from_samples : Create environment by binning position data.
         from_polygon : Create environment with polygon-defined boundary.
         from_grid_mask : Create environment from pre-defined boolean mask.
         from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
+        from_bins : Create environment from explicit binning records.
 
+        Examples
+        --------
+        A triangular mesh over a square arena, in cm:
+
+        >>> from shapely.geometry import box
+        >>> from neurospatial import Environment
+        >>> from neurospatial.layout import create_layout
+        >>> mesh = create_layout(
+        ...     "TriangularMesh", boundary_polygon=box(0, 0, 30, 30), point_spacing=4.0
+        ... )
+        >>> env = Environment.from_layout(mesh, name="arena", units="cm")
+        >>> env.layout_type
+        'TriangularMesh'
+
+        A hexagonal tiling of explicit ranges, without position samples:
+
+        >>> hexagons = create_layout(
+        ...     "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 30), (0, 30)]
+        ... )
+        >>> Environment.from_layout(hexagons).n_bins > 0
+        True
         """
-        # The layout is built from copies of the inputs, so editing the caller's
-        # arrays (or the base of a view) afterwards cannot change it.
-        return _build_layout(
+        return _from_layout(
             cls,
-            kind,
-            layout_params,
+            layout,
             name=name,
             units=units,
             frame=frame,

@@ -26,6 +26,7 @@ from neurospatial.binning import (
     SpatialBins,
 )
 from neurospatial.geometry._components import Outline
+from neurospatial.layout import create_layout
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.regions import Regions
 
@@ -455,12 +456,12 @@ def test_nearly_uniform_variable_measures_are_not_reinterpreted_as_native_cells(
 
 def test_rebin_uniformity_guard_preserves_native_large_offset_rounding():
     source = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 0.1,
-            "dimension_ranges": [(1e9, 1e9 + 1.0), (0.0, 1.0)],
-            "infer_active_bins": False,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=0.1,
+            dimension_ranges=[(1e9, 1e9 + 1.0), (0.0, 1.0)],
+            infer_active_bins=False,
+        )
     )
     restored = source.rebin(1)
     np.testing.assert_array_equal(restored.bin_centers, source.bin_centers)
@@ -592,12 +593,12 @@ def test_hex_data_roundtrip_preserves_fft_autocorrelation(transport, tmp_path):
     from neurospatial.encoding.grid import spatial_autocorrelation
 
     source = Environment.from_layout(
-        "Hexagonal",
-        {
-            "hexagon_width": 2.0,
-            "dimension_ranges": [(0.0, 10.0)] * 2,
-            "infer_active_bins": False,
-        },
+        create_layout(
+            "Hexagonal",
+            hexagon_width=2.0,
+            dimension_ranges=[(0.0, 10.0)] * 2,
+            infer_active_bins=False,
+        )
     )
     if transport == "dict":
         restored = Environment.from_dict(source.to_dict())
@@ -908,19 +909,21 @@ def _cell_face_source(kind, history):
 
     if kind == "hex":
         env = Environment.from_layout(
-            "Hexagonal",
-            {"hexagon_width": 4.0, "dimension_ranges": [(1e6, 1e6 + 12)] * 2}
-            if history == "large_offset"
-            else {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+            create_layout(
+                "Hexagonal",
+                **{"hexagon_width": 4.0, "dimension_ranges": [(1e6, 1e6 + 12)] * 2}
+                if history == "large_offset"
+                else {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+            )
         )
     else:
         origin = 1e6 if history == "large_offset" else 0.0
         env = Environment.from_layout(
-            "TriangularMesh",
-            {
-                "boundary_polygon": box(origin, origin, origin + 12, origin + 12),
-                "point_spacing": 4.0,
-            },
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=box(origin, origin, origin + 12, origin + 12),
+                point_spacing=4.0,
+            )
         )
     if history == "subset":
         env = env.subset(bins=np.arange(env.n_bins) % 3 != 0)

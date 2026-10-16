@@ -24,8 +24,8 @@ from neurospatial.geometry._diffusion import (
 )
 from neurospatial.geometry._locators import NearestBinLocator
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout import create_layout
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-from neurospatial.layout.factories import _LAYOUT_MAP
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.smoothing import compute_diffusion_kernels
@@ -129,20 +129,21 @@ def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
 
 
-def test_layout_subclass_publishes_through_its_binning(monkeypatch):
-    """A registered engine subclass uses the same binning() contract and faces."""
+def test_layout_subclass_publishes_through_its_binning():
+    """An unregistered engine subclass uses the same binning() contract and faces."""
 
     class RenamedGrid(MaskedGridLayout):
         pass
 
-    monkeypatch.setitem(_LAYOUT_MAP, "Renamed", RenamedGrid)
     params = {
         "active_mask": np.ones((2, 3), dtype=bool),
         "grid_edges": (np.arange(3.0), np.arange(4.0)),
     }
-    original = Environment.from_layout("MaskedGrid", params)
-    renamed = Environment.from_layout("Renamed", params)
-    assert renamed.layout_type == "Renamed"
+    subclass = RenamedGrid()
+    subclass.build(**params)
+    original = Environment.from_layout(create_layout("MaskedGrid", **params))
+    renamed = Environment.from_layout(subclass)
+    assert renamed.layout_type == original.layout_type == "MaskedGrid"
     np.testing.assert_array_equal(
         renamed.compute_kernel(1.0), original.compute_kernel(1.0)
     )
@@ -287,7 +288,9 @@ def test_missing_optional_descriptions_keep_authoritative_binning_geometry():
     )
 
     hexagonal = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 20), (0, 20)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 20), (0, 20)]
+        )
     )
     restored = from_dict(to_dict(hexagonal))
     assert tuple(restored.grid_edges) == ()
@@ -452,12 +455,12 @@ def test_polar_layout_supplies_annular_sector_geometry():
 
 def test_common_class_from_layout_builds_cartesian_geometry():
     env = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": [(0.0, 2.0)] * 2,
-            "infer_active_bins": False,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(0.0, 2.0)] * 2,
+            infer_active_bins=False,
+        )
     )
     assert env.coordinate_kind == "cartesian"
     np.testing.assert_array_equal(env.bin_sizes, np.ones(env.n_bins))
@@ -681,8 +684,9 @@ def test_mesh_skew_warning_is_raised_once_per_geometry_at_the_callers_line():
     shear = 6.0
     corners = [(x + shear * y, y) for x, y in [(-30, -8), (30, -8), (30, 8), (-30, 8)]]
     env = Environment.from_layout(
-        "TriangularMesh",
-        {"boundary_polygon": Polygon(corners), "point_spacing": 4.0},
+        create_layout(
+            "TriangularMesh", boundary_polygon=Polygon(corners), point_spacing=4.0
+        )
     )
     with pytest.warns(UserWarning, match="non-K-orthogonal") as record:
         env.compute_kernel(3.0)

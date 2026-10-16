@@ -9,6 +9,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+from neurospatial.layout import create_layout
 
 
 def grid(shift=0.0, *, dims=2, count=2, units="cm"):
@@ -232,12 +233,15 @@ def test_native_cell_families_keep_child_lookup_and_numeric_blocks(kind):
 
     if kind == "hex":
         child = Environment.from_layout(
-            "Hexagonal", {"hexagon_width": 1.0, "dimension_ranges": [(0, 3), (0, 3)]}
+            create_layout(
+                "Hexagonal", hexagon_width=1.0, dimension_ranges=[(0, 3), (0, 3)]
+            )
         )
     elif kind == "mesh":
         child = Environment.from_layout(
-            "TriangularMesh",
-            {"boundary_polygon": box(0, 0, 3, 3), "point_spacing": 0.75},
+            create_layout(
+                "TriangularMesh", boundary_polygon=box(0, 0, 3, 3), point_spacing=0.75
+            )
         )
     elif kind == "polygon":
         child = Environment.from_polygon(
