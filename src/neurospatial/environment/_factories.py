@@ -214,27 +214,46 @@ def _from_bins(
     return result
 
 
+# Options that only a regular grid reads, with the value each takes when it
+# is not passed. A hexagonal layout has six fixed neighbors and no mask
+# clean-up, so passing any of these with ``layout="Hexagonal"`` is an error.
+_REGULAR_GRID_ONLY_DEFAULTS: dict[str, bool] = {
+    "add_boundary_bins": False,
+    "dilate": False,
+    "fill_holes": False,
+    "close_gaps": False,
+    "connect_diagonal_neighbors": True,
+}
+
+
 def _from_samples(
     cls: type[Environment[Any]],
     positions: NDArray[np.float64],
-    bin_size: float | Sequence[float],
     *,
+    bin_size: float | Sequence[float],
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
     regions: Regions | None = None,
+    arena: Arena | None = None,
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
+    dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
     bin_count_threshold: int = 0,
-    dilate: bool = False,
-    fill_holes: bool = False,
-    close_gaps: bool = False,
-    add_boundary_bins: bool = False,
-    connect_diagonal_neighbors: bool = True,
-    arena: Arena | None = None,
-    **layout_specific_kwargs: Any,
+    dilate: bool | None = None,
+    fill_holes: bool | None = None,
+    close_gaps: bool | None = None,
+    add_boundary_bins: bool | None = None,
+    connect_diagonal_neighbors: bool | None = None,
+    factory: str = "from_samples",
+    grid_defaults: dict[str, bool] = _REGULAR_GRID_ONLY_DEFAULTS,
 ) -> Environment:
-    """Implement Environment.from_samples using explicit construction inputs."""
+    """Implement Environment.from_samples and Environment.open_field.
+
+    ``None`` for a regular-grid-only option means it was not passed; the
+    value then comes from ``grid_defaults``. ``factory`` names the public
+    method in error messages.
+    """
     try:
         positions = np.asarray(positions, dtype=float)
     except (TypeError, ValueError) as e:
@@ -295,9 +314,40 @@ def _from_samples(
         available = list_available_layouts()
         raise NotImplementedError(
             f"Layout '{layout_str}' (normalized: '{layout_normalized}') is not supported "
-            f"by from_samples(). Only 'RegularGrid' and 'Hexagonal' layouts are supported. "
-            f"For other layouts, use from_layout() or from_grid_mask(). "
+            f"by {factory}(). Only 'RegularGrid' and 'Hexagonal' layouts are supported. "
+            f"For other layouts, build the engine with "
+            f"neurospatial.layout.create_layout() and pass it to "
+            f"Environment.from_layout(), or use from_grid_mask(). "
             f"Available layouts: {', '.join(available)}"
+        )
+
+    grid_options = {
+        "add_boundary_bins": add_boundary_bins,
+        "dilate": dilate,
+        "fill_holes": fill_holes,
+        "close_gaps": close_gaps,
+        "connect_diagonal_neighbors": connect_diagonal_neighbors,
+    }
+    passed_grid_options = {
+        option: value for option, value in grid_options.items() if value is not None
+    }
+    if layout_normalized == "hexagonal" and passed_grid_options:
+        listed = ", ".join(passed_grid_options)
+        raise ValueError(
+            _format_error(
+                f"{factory}(layout={layout_str!r}) does not use {listed}.",
+                why=(
+                    "Why: these options shape the active-bin mask and the "
+                    "neighbor graph of a regular grid. A hexagonal layout "
+                    "always connects each hexagon to its six neighbors and "
+                    "does not clean up the active-bin mask, so the options "
+                    "would be ignored."
+                ),
+                fix=(
+                    f"remove {listed} from the call, or use "
+                    f"layout='RegularGrid' to apply {'them' if len(passed_grid_options) > 1 else 'it'}"
+                ),
+            )
         )
 
     # Build the dict of layout parameters
@@ -309,26 +359,18 @@ def _from_samples(
     }
 
     # Layout-specific parameters
-    specific_params = {
-        "regulargrid": {
+    if layout_normalized == "regulargrid":
+        specific_params: dict[str, Any] = {
             "bin_size": bin_size,
-            "add_boundary_bins": add_boundary_bins,
-            "dilate": dilate,
-            "fill_holes": fill_holes,
-            "close_gaps": close_gaps,
-            "connect_diagonal_neighbors": connect_diagonal_neighbors,
-        },
-        "hexagonal": {
-            "hexagon_width": bin_size,
-        },
-    }
+            **grid_defaults,
+            **passed_grid_options,
+        }
+    else:
+        specific_params = {"hexagon_width": bin_size}
 
-    # Build final params dict (validation already done above)
-    layout_params = {
-        **common_params,
-        **specific_params[layout_normalized],
-        **layout_specific_kwargs,
-    }
+    layout_params = {**common_params, **specific_params}
+    if dimension_ranges is not None:
+        layout_params["dimension_ranges"] = dimension_ranges
 
     finite_rows = np.all(np.isfinite(positions), axis=1)
     finite_positions = positions if np.all(finite_rows) else positions[finite_rows]
@@ -355,7 +397,7 @@ def _from_samples(
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-    return _from_layout(
+    return _build_layout(
         cls,
         layout_str,
         layout_params,
@@ -370,37 +412,44 @@ def _from_samples(
 def _open_field(
     cls: type[Environment[Any]],
     positions: NDArray[np.float64],
-    bin_size: float | Sequence[float],
     *,
+    bin_size: float | Sequence[float],
     name: str = "",
     units: str | None = None,
     frame: str | None = None,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
+    dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
     bin_count_threshold: int = 0,
-    dilate: bool = False,
-    close_gaps: bool = False,
-    add_boundary_bins: bool = False,
-    connect_diagonal_neighbors: bool = True,
-    **layout_specific_kwargs: Any,
+    dilate: bool | None = None,
+    fill_holes: bool | None = None,
+    close_gaps: bool | None = None,
+    add_boundary_bins: bool | None = None,
+    connect_diagonal_neighbors: bool | None = None,
 ) -> Environment:
-    """Implement Environment.open_field using explicit construction inputs."""
+    """Implement Environment.open_field: from_samples that fills holes by default."""
     return _from_samples(
         cls,
         positions,
-        bin_size,
+        bin_size=bin_size,
         name=name,
         units=units,
         frame=frame,
+        regions=regions,
+        arena=arena,
         layout=layout,
+        dimension_ranges=dimension_ranges,
         infer_active_bins=infer_active_bins,
         bin_count_threshold=bin_count_threshold,
         dilate=dilate,
-        fill_holes=True,
+        fill_holes=fill_holes,
         close_gaps=close_gaps,
         add_boundary_bins=add_boundary_bins,
         connect_diagonal_neighbors=connect_diagonal_neighbors,
-        **layout_specific_kwargs,
+        factory="open_field",
+        grid_defaults={**_REGULAR_GRID_ONLY_DEFAULTS, "fill_holes": True},
     )
 
 
@@ -586,7 +635,7 @@ def _from_graph(
         [[graph.nodes[u]["pos"], graph.nodes[v]["pos"]] for u, v in graph.edges],
         dtype=np.float64,
     )
-    return _from_layout(
+    return _build_layout(
         cls,
         "Graph",
         layout_params,
@@ -614,7 +663,7 @@ def _from_polygon(
         "bin_size": bin_size,
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
-    return _from_layout(
+    return _build_layout(
         cls,
         "ShapelyPolygon",
         layout_params,
@@ -643,7 +692,7 @@ def _from_grid_mask(
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
 
-    return _from_layout(
+    return _build_layout(
         cls,
         "MaskedGrid",
         layout_params,
@@ -672,7 +721,7 @@ def _from_pixel_mask(
         "connect_diagonal_neighbors": connect_diagonal_neighbors,
     }
 
-    return _from_layout(
+    return _build_layout(
         cls,
         "ImageMask",
         layout_params,
@@ -683,7 +732,7 @@ def _from_pixel_mask(
     )
 
 
-def _from_layout(
+def _build_layout(
     cls: type[Environment[Any]],
     kind: LayoutType | str,
     layout_params: dict[str, Any],
@@ -694,7 +743,7 @@ def _from_layout(
     regions: Regions | None = None,
     arena: Arena | None = None,
 ) -> Environment:
-    """Implement Environment.from_layout using explicit construction inputs."""
+    """Build a named native layout from its parameters and publish it."""
     layout_params = _owned_copy(layout_params)
     if arena is not None:
         arena = own_arena(arena)

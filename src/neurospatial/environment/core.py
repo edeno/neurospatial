@@ -44,10 +44,10 @@ from neurospatial.environment._cartesian import (
 from neurospatial.environment._clipping import _clip
 from neurospatial.environment._combine import _combine
 from neurospatial.environment._factories import (
+    _build_layout,
     _from_bins,
     _from_graph,
     _from_grid_mask,
-    _from_layout,
     _from_nwb,
     _from_pixel_mask,
     _from_polygon,
@@ -2520,22 +2520,22 @@ class Environment(Generic[_C]):
     def from_samples(
         cls,
         positions: NDArray[np.float64],
-        bin_size: float | Sequence[float],
         *,
+        bin_size: float | Sequence[float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
         regions: Regions | None = None,
+        arena: Arena | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
+        dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
-        dilate: bool = False,
-        fill_holes: bool = False,
-        close_gaps: bool = False,
-        add_boundary_bins: bool = False,
-        connect_diagonal_neighbors: bool = True,
-        arena: Arena | None = None,
-        **layout_specific_kwargs: Any,
+        dilate: bool | None = None,
+        fill_holes: bool | None = None,
+        close_gaps: bool | None = None,
+        add_boundary_bins: bool | None = None,
+        connect_diagonal_neighbors: bool | None = None,
     ) -> Environment[CartesianSystem]:
         """Create an Environment by binning (discretizing) `positions` into a layout grid.
 
@@ -2564,36 +2564,41 @@ class Environment(Generic[_C]):
             label). If provided, sets ``env.frame`` on the returned Environment.
         regions : Regions, optional
             Named regions to snapshot with the constructed environment.
-        layout : LayoutType | str, default LayoutType.REGULAR_GRID
-            Layout engine type to use. Can be a LayoutType enum member (recommended
-            for IDE autocomplete) or a case-insensitive string. For RegularGrid and
-            Hexagonal layouts, `bin_size` is supported. For "Hexagonal", `bin_size`
-            is interpreted as `hexagon_width`. See `list_available_layouts()` for
-            all options and `get_layout_parameters()` for layout-specific parameters.
-        infer_active_bins : bool, default True
-            If True, only bins containing ≥ `bin_count_threshold` samples are "active."
-        connect_diagonal_neighbors : bool, default True
-            If True, connect grid bins diagonally when building connectivity.
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
             from the active cells; an unvisited patch is not a declared wall.
+        layout : LayoutType | str, default LayoutType.REGULAR_GRID
+            ``"RegularGrid"`` or ``"Hexagonal"``, as a LayoutType member or a
+            case-insensitive string. For "Hexagonal", `bin_size` is the
+            hexagon width. Other layouts are built with
+            :func:`neurospatial.layout.create_layout` and
+            :meth:`from_layout`.
+        dimension_ranges : sequence of (float, float), optional
+            ``[(min, max), ...]`` extent to tile on each axis, in the units of
+            `positions`. By default the extent of the samples plus half a bin
+            on each side.
+        infer_active_bins : bool, default True
+            If True, only bins containing ≥ `bin_count_threshold` samples are "active."
+        connect_diagonal_neighbors : bool, optional
+            Regular grid only. If True (the default), connect grid bins
+            diagonally when building connectivity.
 
         Other Parameters
         ----------------
         bin_count_threshold : int, default 0
             Minimum number of data points required for a bin to be considered "active."
-        dilate : bool, default False
-            If True, apply morphological dilation to the active-bin mask.
-        fill_holes : bool, default False
-            If True, fill holes in the active-bin mask.
-        close_gaps : bool, default False
-            If True, close small gaps between active bins.
-        add_boundary_bins : bool, default False
-            If True, add peripheral bins around the bounding region of samples.
-
-        **layout_specific_kwargs : Any
-            Additional options passed to the selected layout engine; see
-            ``get_layout_parameters(layout)`` for supported names.
+        dilate : bool, optional
+            Regular grid only. If True, apply morphological dilation to the
+            active-bin mask. Default False.
+        fill_holes : bool, optional
+            Regular grid only. If True, fill holes in the active-bin mask.
+            Default False.
+        close_gaps : bool, optional
+            Regular grid only. If True, close small gaps between active bins.
+            Default False.
+        add_boundary_bins : bool, optional
+            Regular grid only. If True, add peripheral bins around the
+            bounding region of samples. Default False.
 
         Returns
         -------
@@ -2603,7 +2608,10 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If `positions` is not 2D or contains invalid coordinates.
+            If `positions` is not 2D or contains invalid coordinates, or if a
+            regular-grid-only option (`dilate`, `fill_holes`, `close_gaps`,
+            `add_boundary_bins`, `connect_diagonal_neighbors`) is passed with
+            ``layout="Hexagonal"``.
         NotImplementedError
             If `layout` is neither "RegularGrid" nor "Hexagonal".
 
@@ -2613,9 +2621,7 @@ class Environment(Generic[_C]):
         from_grid_mask : Create environment from pre-defined boolean mask.
         from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
-        from_layout : Create environment with custom LayoutEngine.
-        neurospatial.layout.factories.list_available_layouts : Get all available layout types.
-        neurospatial.layout.factories.get_layout_parameters : Get parameters for a layout type.
+        from_layout : Create environment from a built layout engine.
 
         Examples
         --------
@@ -2687,12 +2693,14 @@ class Environment(Generic[_C]):
         return _from_samples(
             cls,
             positions,
-            bin_size,
+            bin_size=bin_size,
             name=name,
             units=units,
             frame=frame,
             regions=regions,
+            arena=arena,
             layout=layout,
+            dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
             bin_count_threshold=bin_count_threshold,
             dilate=dilate,
@@ -2700,36 +2708,36 @@ class Environment(Generic[_C]):
             close_gaps=close_gaps,
             add_boundary_bins=add_boundary_bins,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
-            arena=arena,
-            **layout_specific_kwargs,
         )
 
     @classmethod
     def open_field(
         cls,
         positions: NDArray[np.float64],
-        bin_size: float | Sequence[float],
         *,
+        bin_size: float | Sequence[float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
+        arena: Arena | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
+        dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
-        dilate: bool = False,
-        close_gaps: bool = False,
-        add_boundary_bins: bool = False,
-        connect_diagonal_neighbors: bool = True,
-        **layout_specific_kwargs: Any,
+        dilate: bool | None = None,
+        fill_holes: bool | None = None,
+        close_gaps: bool | None = None,
+        add_boundary_bins: bool | None = None,
+        connect_diagonal_neighbors: bool | None = None,
     ) -> Environment[CartesianSystem]:
         """Create an open-arena Environment from sampled positions.
 
-        This is the only positions-based preset. It delegates to
-        :meth:`from_samples` and flips ``fill_holes=True`` -- a sensible
-        open-arena default that fills interior gaps left by uneven sampling,
-        so a freely explored 2D arena reads as one filled region rather than
-        a speckled mask. All other :meth:`from_samples` options pass through
-        unchanged.
+        This is the only positions-based preset. It is :meth:`from_samples`
+        with ``fill_holes=True`` by default on a regular grid: interior gaps
+        left by uneven sampling are filled, so a freely explored 2D arena
+        reads as one filled region rather than a speckled mask. Every other
+        option means the same as in :meth:`from_samples`.
 
         Parameters
         ----------
@@ -2741,43 +2749,55 @@ class Environment(Generic[_C]):
             Optional name for the resulting Environment.
         units : str or None, default None
             Spatial units for the environment coordinates (e.g. ``"cm"``).
-            Forwarded to :meth:`from_samples`, which sets ``env.units``.
         frame : str or None, default None
-            Coordinate frame identifier. Forwarded to :meth:`from_samples`,
-            which sets ``env.frame``.
+            Coordinate frame identifier.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
+        arena : Arena, optional
+            Explicit continuous domain. Without one, infer an estimated domain
+            from the active cells.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
-            Layout engine type to use. See :meth:`from_samples`.
+            ``"RegularGrid"`` or ``"Hexagonal"``. See :meth:`from_samples`.
+        dimension_ranges : sequence of (float, float), optional
+            ``[(min, max), ...]`` extent to tile on each axis. See
+            :meth:`from_samples`.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are "active."
         bin_count_threshold : int, default 0
             Minimum number of data points required for a bin to be "active."
-        dilate : bool, default False
-            If True, apply morphological dilation to the active-bin mask.
-        close_gaps : bool, default False
-            If True, close small gaps between active bins.
-        add_boundary_bins : bool, default False
-            If True, add peripheral bins around the bounding region of samples.
-        connect_diagonal_neighbors : bool, default True
-            If True, connect grid bins diagonally when building connectivity.
-        **layout_specific_kwargs
-            Additional keyword arguments forwarded to :meth:`from_samples`.
+        dilate : bool, optional
+            Regular grid only. If True, apply morphological dilation to the
+            active-bin mask. Default False.
+        fill_holes : bool, optional
+            Regular grid only. If True (the default here), fill holes in the
+            active-bin mask. Pass False to keep the unvisited interior bins
+            out.
+        close_gaps : bool, optional
+            Regular grid only. If True, close small gaps between active bins.
+            Default False.
+        add_boundary_bins : bool, optional
+            Regular grid only. If True, add peripheral bins around the
+            bounding region of samples. Default False.
+        connect_diagonal_neighbors : bool, optional
+            Regular grid only. If True (the default), connect grid bins
+            diagonally when building connectivity.
 
         Returns
         -------
         env : Environment
             A newly created open-arena Environment, fitted to the samples.
 
+        Raises
+        ------
+        ValueError
+            If a regular-grid-only option is passed with
+            ``layout="Hexagonal"``.
+
         See Also
         --------
         from_samples : The general factory this preset delegates to.
         linear_track : Linear / piecewise-linear track preset (explicit topology).
         maze : W / plus / T maze preset (explicit topology).
-
-        Notes
-        -----
-        ``fill_holes`` is forced to ``True`` and is therefore not exposed as a
-        parameter here. If you need the un-filled active mask, call
-        :meth:`from_samples` directly with ``fill_holes=False``.
 
         Examples
         --------
@@ -2792,18 +2812,21 @@ class Environment(Generic[_C]):
         return _open_field(
             cls,
             positions,
-            bin_size,
+            bin_size=bin_size,
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
+            arena=arena,
             layout=layout,
+            dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
             bin_count_threshold=bin_count_threshold,
             dilate=dilate,
+            fill_holes=fill_holes,
             close_gaps=close_gaps,
             add_boundary_bins=add_boundary_bins,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
-            **layout_specific_kwargs,
         )
 
     @classmethod
@@ -3527,7 +3550,7 @@ class Environment(Generic[_C]):
         """
         # The layout is built from copies of the inputs, so editing the caller's
         # arrays (or the base of a view) afterwards cannot change it.
-        return _from_layout(
+        return _build_layout(
             cls,
             kind,
             layout_params,

@@ -874,7 +874,9 @@ def half_visited_arena():
     Returns ``(env, spike_counts, occupancy)`` for one place field at (20, 5).
     """
     xx, yy = np.meshgrid(np.linspace(0, 200, 301), np.linspace(0, 10, 61))
-    env = Environment.from_samples(np.column_stack([xx.ravel(), yy.ravel()]), 2.0)
+    env = Environment.from_samples(
+        np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0
+    )
     centers = env.bin_centers
     occupancy = np.where(centers[:, 0] < 40, 0.1, 0.0)
     expected_rate = 20 * np.exp(-np.sum((centers - [20, 5]) ** 2, 1) / (2 * 6.0**2))

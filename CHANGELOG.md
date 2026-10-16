@@ -142,6 +142,17 @@
   track graph is still owned by the environment: read it from
   `env.binning.linearization.graph` (and `.edge_order`).
 
+- `Environment.from_samples` and `Environment.open_field` take `bin_size` as a
+  keyword: write `Environment.from_samples(positions, bin_size=2.0)`, not
+  `from_samples(positions, 2.0)`. Their signatures list every option, so a
+  misspelled option raises `TypeError` instead of reaching the layout engine;
+  `dimension_ranges=` is now a named option. The regular-grid-only options
+  (`dilate`, `fill_holes`, `close_gaps`, `add_boundary_bins`,
+  `connect_diagonal_neighbors`) raise `ValueError` with `layout="Hexagonal"`
+  instead of being ignored. `open_field` accepts `fill_holes=False` (it used to
+  fail with a `TypeError` about multiple values), `regions=` and `arena=`. See
+  the [migration page](docs/migration/environment-architecture.md#factory-arguments).
+
 ### Added
 
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of

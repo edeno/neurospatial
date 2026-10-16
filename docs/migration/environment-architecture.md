@@ -263,3 +263,35 @@ If you want space around a subset's cells in a figure, widen the axes limits
 after plotting, for example
 `(low, high) = child.dimension_ranges[0]; ax.set_xlim(low - 1, high + 1)`.
 
+## Factory arguments
+
+Every `Environment` factory takes its data positionally and every option by
+keyword, following the argument order used across neurospatial. Options that a
+layout does not use raise an error instead of being ignored.
+
+### `from_samples` and `open_field`
+
+`bin_size` is keyword-only:
+
+```python
+# Before
+env = Environment.from_samples(positions, 2.0)
+# Now
+env = Environment.from_samples(positions, bin_size=2.0)
+```
+
+Both factories list all their options. `dimension_ranges=` is a named option;
+other names that used to be forwarded to the layout engine now raise
+`TypeError`. The options that clean up a regular grid's active-bin mask or set
+its diagonal connections (`dilate`, `fill_holes`, `close_gaps`,
+`add_boundary_bins`, `connect_diagonal_neighbors`) mean nothing on a hexagonal
+layout, so passing any of them with `layout="Hexagonal"` raises `ValueError`.
+Remove them from the call; leaving them out gives the same hexagons as before.
+
+`open_field` fills holes by default. To keep unvisited interior bins out, pass
+`fill_holes=False` (this used to raise a `TypeError`):
+
+```python
+env = Environment.open_field(positions, bin_size=2.0, fill_holes=False)
+```
+

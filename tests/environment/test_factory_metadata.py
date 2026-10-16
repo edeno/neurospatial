@@ -16,11 +16,11 @@ def _create(kind, **metadata):
     positions = np.array([[0.0, 0.0], [0.0, 3.0], [3.0, 0.0], [3.0, 3.0]])
     if kind == "samples":
         return Environment.from_samples(
-            positions, 1.0, infer_active_bins=False, **metadata
+            positions, bin_size=1.0, infer_active_bins=False, **metadata
         )
     if kind == "open_field":
         return Environment.open_field(
-            positions, 1.0, infer_active_bins=False, **metadata
+            positions, bin_size=1.0, infer_active_bins=False, **metadata
         )
     if kind == "linear_track":
         return Environment.linear_track(
@@ -111,7 +111,7 @@ def test_sample_factory_snapshots_regions_without_passing_them_to_layout_builder
     regions = Regions([Region("goal", "point", [0.5, 0.5])])
     env = Environment.from_samples(
         np.array([[0.0, 0.0], [2.0, 2.0]]),
-        1.0,
+        bin_size=1.0,
         regions=regions,
         infer_active_bins=False,
     )
