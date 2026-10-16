@@ -300,7 +300,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `spatial_autocorrelation` and `field_shape_metrics`,
   `compute_egocentric_distance(metric="geodesic")` (it reported
   `Environment.bin_at()`), and `Environment.combine` (it raised a plain
-  `TypeError`).
+  `TypeError`). A function that takes two environments names the polar one,
+  for example `resample_field(dst_env=...)`. Where a polar environment has an
+  equivalent, the message ends with the code to run instead, also available as
+  `error.example`. The lookups it suggests keep containment: rows outside
+  `env.dimension_ranges` get bin `-1` (or NaN from `interpolate`), never the
+  nearest edge bin.
 
 - Three `neurospatial.ops` functions that only renamed an `Environment`
   method are removed; call the method instead.

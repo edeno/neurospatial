@@ -835,7 +835,10 @@ happens when you call the method, not when you look it up:
   analysis functions such as `spatial_autocorrelation`, and
   `Environment.combine`.
 - The message says what was refused, why it needs Cartesian positions, and what
-  to use on a polar environment.
+  to use on a polar environment. When a polar environment has an equivalent,
+  the message ends with the code, also in `error.example`. The suggested
+  lookups give `-1` for rows outside `env.dimension_ranges`;
+  `env.nearest_bin` alone would put them in the nearest edge bin.
 
 <!-- docs-test: run -->
 ```python
@@ -849,17 +852,20 @@ polar_env = Environment.from_polar_egocentric(
     angle_bin_size=np.pi / 4,
     units="cm",
 )
-points = np.array([[15.0, 0.3]])  # (distance, angle) of an object
+points = np.array([[15.0, 0.3], [55.0, 0.0]])  # (distance, angle); 2nd is beyond 40 cm
 # Before: if hasattr(polar_env, "bin_at"): ...
 # Before: except (AttributeError, NotImplementedError):
 try:
     bins = polar_env.bin_at(points)
 except CartesianOnlyError as error:
-    print(error)  # what, why, and the polar alternative
-    bins = polar_env.nearest_bin(points)
+    print(error)  # what, why, and the code to use on a polar environment
+    print(error.example)
 # To branch before calling, read the coordinate kind instead of hasattr
 if polar_env.coordinate_kind == "polar":
-    bins = polar_env.nearest_bin(points)
+    low, high = np.asarray(polar_env.dimension_ranges).T
+    inside = ((points >= low) & (points <= high)).all(axis=1)
+    bins = np.where(inside, polar_env.nearest_bin(points), -1)
+assert bins[1] == -1  # outside the surround, not the nearest edge bin
 ```
 
 A polar environment now answers `component_keys`, `bin_sources` and

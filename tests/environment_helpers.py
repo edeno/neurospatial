@@ -136,16 +136,17 @@ def native_layout(env):
     return layout_of(_BUILD_RECIPES[env])
 
 
-def call_unbound(env, name):
+def call_unbound(env, name, *, bound=False):
     """Call an Environment member through the class, as ``Environment.f(env, ...)``.
 
     Required arguments are passed as None, and a property's getter is called
-    directly, so a refusal must come before any argument is read.
+    directly, so a refusal must come before any argument is read. With
+    ``bound=True`` the member is called on the instance, as ``env.f(...)``.
     """
     member = inspect.getattr_static(Environment, name)
     if isinstance(member, property):
-        return member.fget(env)
-    args, kwargs = [env], {}
+        return getattr(env, name) if bound else member.fget(env)
+    args, kwargs = [] if bound else [env], {}
     for parameter in list(inspect.signature(member).parameters.values())[1:]:
         if parameter.default is not inspect.Parameter.empty:
             continue
@@ -153,4 +154,5 @@ def call_unbound(env, name):
             kwargs[parameter.name] = None
         else:
             args.append(None)
-    return member(*args, **kwargs)
+    function = getattr(env, name) if bound else member
+    return function(*args, **kwargs)

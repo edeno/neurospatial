@@ -257,14 +257,29 @@ class CartesianOnlyError(TypeError, NeurospatialError):
     ----------
     operation : str
         The refused call, e.g. ``"Environment.bin_at()"`` or
-        ``"distance_to(metric='euclidean')"``.
+        ``"Environment.distance_to(metric='euclidean')"``.
     why : str
         Why the operation needs Cartesian coordinates.
     fix : str
         What to use instead on a polar environment.
+    example : str or None, optional
+        Code for the alternative, shown after the fix: statements separated by
+        ``"; "`` whose last part is an expression giving the result. It uses
+        ``np`` and names such as ``env``, ``points`` or ``field``. None when
+        the alternative needs other data than the refused call had.
+
+    Attributes
+    ----------
+    operation : str
+        The refused call.
+    example : str or None
+        The code shown after the fix.
     """
 
-    def __init__(self, operation: str, *, why: str, fix: str) -> None:
+    def __init__(
+        self, operation: str, *, why: str, fix: str, example: str | None = None
+    ) -> None:
+        shown = fix if example is None else f"{fix}: {example}"
         super().__init__(
             _format_error(
                 f"{operation} does not work on a polar environment.",
@@ -272,10 +287,11 @@ class CartesianOnlyError(TypeError, NeurospatialError):
                     f"Why: {why} This environment's bins are (distance, angle) "
                     "pairs around the animal, not Cartesian (x, y) positions."
                 ),
-                fix=fix,
+                fix=shown,
             )
         )
         self.operation = operation
+        self.example = example
 
 
 class LayoutNotBuiltError(RuntimeError, NeurospatialError):

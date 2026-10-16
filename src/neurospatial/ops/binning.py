@@ -554,10 +554,10 @@ def resample_field(
     >>> np.allclose(resampled_identity, field)
     True
     """
-    for env in (src_env, dst_env):
+    for argument, env in (("src_env", src_env), ("dst_env", dst_env)):
         require_cartesian(
             env.coordinate_system,
-            "resample_field()",
+            f"resample_field({argument}=...)",
             why=(
                 "It matches each target bin to the nearest Cartesian source bin center."
             ),

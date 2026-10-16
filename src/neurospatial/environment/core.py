@@ -174,6 +174,21 @@ else:
     _C = TypeVar("_C", bound=CartesianSystem | EgocentricPolarSystem)
 
 
+def _polar_bins_example(rows: str) -> str:
+    """Code giving the bin of each polar row, with -1 for rows outside the ranges."""
+    return (
+        "low, high = np.asarray(env.dimension_ranges).T; "
+        f"inside = (({rows} >= low) & ({rows} <= high)).all(axis=1); "
+        f"np.where(inside, env.nearest_bin({rows}), -1)"
+    )
+
+
+_KEEP_INSIDE = (
+    "keep containment: rows outside env.dimension_ranges get -1, and "
+    "env.nearest_bin finds the bin of each row inside"
+)
+
+
 class Environment(Generic[_C]):
     """A discretized environment with owned coordinate meaning and connectivity.
 
@@ -1079,8 +1094,8 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="Containment finds the cell around each Cartesian position.",
-        fix="find the bins of (distance, angle) rows with env.nearest_bin(points), "
-        "or pass the rows with points= to a query such as env.distance_to",
+        fix=_KEEP_INSIDE,
+        example=_polar_bins_example("points"),
     )
     def bin_at(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
@@ -1214,6 +1229,8 @@ class Environment(Generic[_C]):
         why="It tests Cartesian positions against the arena boundary.",
         fix="compare the distance and angle columns of the points with "
         "env.dimension_ranges",
+        example="low, high = np.asarray(env.dimension_ranges).T; "
+        "((points >= low) & (points <= high)).all(axis=1)",
     )
     def contains(
         self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
@@ -1497,9 +1514,14 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="It assigns each Cartesian position sample to the cell that contains it.",
-        fix="for egocentric occupancy, pass the allocentric positions, headings "
-        "and object positions to neurospatial.encoding.compute_egocentric_rate, "
-        "whose result.occupancy is in seconds per (distance, angle) bin",
+        fix="compute egocentric occupancy from the allocentric recording: pass "
+        "the allocentric environment (room), the animal's positions and headings "
+        "and the object positions to neurospatial.encoding.compute_egocentric_rate. "
+        "Its distance_range, n_distance_bins and n_direction_bins set its own "
+        "polar bins, and result.occupancy is in seconds per bin",
+        example="neurospatial.encoding.compute_egocentric_rate(room, spike_times, "
+        "times, positions, headings, object_positions, distance_range=(0.0, 40.0), "
+        "n_distance_bins=4, n_direction_bins=8).occupancy",
     )
     def occupancy(
         self: Environment[CartesianSystem],
@@ -1678,7 +1700,8 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="It assigns each Cartesian position sample to the cell that contains it.",
-        fix="map (distance, angle) samples to bins with env.nearest_bin(points)",
+        fix=_KEEP_INSIDE,
+        example=_polar_bins_example("positions"),
     )
     def bin_sequence(
         self: Environment[CartesianSystem],
@@ -1779,7 +1802,8 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="It assigns each Cartesian position sample to the cell that contains it.",
-        fix="map (distance, angle) samples to bins with env.nearest_bin(points)",
+        fix=_KEEP_INSIDE,
+        example=_polar_bins_example("positions"),
     )
     def bin_sequence_with_runs(
         self: Environment[CartesianSystem],
@@ -1864,8 +1888,11 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="It evaluates the field at Cartesian query positions.",
-        fix="read the field at the bins of (distance, angle) rows: "
-        "field[env.nearest_bin(points)]",
+        fix=_KEEP_INSIDE + ", and a row with bin -1 gets NaN, not field[-1]",
+        example="low, high = np.asarray(env.dimension_ranges).T; "
+        "inside = ((points >= low) & (points <= high)).all(axis=1); "
+        "bins = np.where(inside, env.nearest_bin(points), -1); "
+        "np.where(bins >= 0, field[bins], np.nan)",
     )
     def interpolate(
         self: Environment[CartesianSystem],
@@ -1976,9 +2003,11 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="It merges blocks of cells on a Cartesian grid.",
-        fix="build a coarser polar environment with "
-        "Environment.from_polar_egocentric(...) and a larger distance_bin_size "
-        "or angle_bin_size",
+        fix="build a coarser polar environment over the same ranges with larger "
+        "distance_bin_size or angle_bin_size",
+        example="Environment.from_polar_egocentric(distance_range=env.dimension_ranges[0], "
+        "angle_range=env.dimension_ranges[1], distance_bin_size=20.0, "
+        "angle_bin_size=np.pi / 2)",
     )
     def rebin(
         self: Environment[CartesianSystem],
@@ -2143,8 +2172,8 @@ class Environment(Generic[_C]):
     @cartesian_only(
         why="It rebuilds the kept cells, their regions and their boundary in "
         "Cartesian coordinates.",
-        fix="keep the full polar environment and select bins with a boolean mask, "
-        "for example near = env.bin_centers[:, 0] < 20.0, then use rates[near]",
+        fix="keep the full polar environment and select bins with a boolean mask",
+        example="near = env.bin_centers[:, 0] < 20.0; field[near]",
     )
     def subset(
         self: Environment[CartesianSystem],
@@ -2260,8 +2289,8 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="It intersects the cells with a polygon in Cartesian coordinates.",
-        fix="keep the full polar environment and select bins with a boolean mask, "
-        "for example ahead = np.abs(env.bin_centers[:, 1]) < np.pi / 2",
+        fix="keep the full polar environment and select bins with a boolean mask",
+        example="ahead = np.abs(env.bin_centers[:, 1]) < np.pi / 2; field[ahead]",
     )
     def clip(
         self: Environment[CartesianSystem],
@@ -2302,8 +2331,12 @@ class Environment(Generic[_C]):
     @cartesian_only(
         why="An affine map moves Cartesian positions; it has no meaning for "
         "(distance, angle) pairs.",
-        fix="transform the allocentric positions before computing egocentric "
-        "distance and angle, for example with neurospatial.ops.allocentric_to_egocentric",
+        fix="transform the allocentric positions, then compute egocentric "
+        "distance and angle from them",
+        example="shifted = positions + np.array([10.0, 0.0]); np.stack("
+        "[neurospatial.ops.compute_egocentric_distance(shifted, headings, "
+        "object_positions), neurospatial.ops.compute_egocentric_bearing(shifted, "
+        "headings, object_positions)], axis=-1)",
     )
     def apply_transform(
         self: Environment[CartesianSystem],

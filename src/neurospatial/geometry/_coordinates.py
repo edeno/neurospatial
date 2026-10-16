@@ -155,6 +155,7 @@ def require_cartesian(
     *,
     why: str,
     fix: str,
+    example: str | None = None,
 ) -> None:
     """Refuse an operation that reads polar ``(distance, angle)`` bins as Cartesian.
 
@@ -173,6 +174,8 @@ def require_cartesian(
         One sentence on why the operation needs Cartesian coordinates.
     fix : str
         What works on a polar environment instead.
+    example : str or None, optional
+        Code for that alternative (see :class:`CartesianOnlyError`).
 
     Raises
     ------
@@ -180,4 +183,4 @@ def require_cartesian(
         If ``coordinates`` is an :class:`EgocentricPolarSystem`.
     """
     if isinstance(coordinates, EgocentricPolarSystem):
-        raise CartesianOnlyError(operation, why=why, fix=fix)
+        raise CartesianOnlyError(operation, why=why, fix=fix, example=example)

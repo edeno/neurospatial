@@ -51,6 +51,12 @@ def polar() -> Environment:
     )
 
 
+def _room() -> Environment:
+    """Allocentric 2-D environment paired with the polar one."""
+    x, y = np.meshgrid(np.arange(0.0, 20.0, 2.0), np.arange(0.0, 20.0, 2.0))
+    return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
+
+
 def _rates(env: Environment) -> np.ndarray:
     return np.random.default_rng(0).random(env.n_bins) + 0.1
 
@@ -73,15 +79,25 @@ def _polar_regions_env(env: Environment) -> Environment:
             lambda env: field_shift_distance(
                 env, _rates(env), np.arange(4), env, _rates(env), np.arange(4)
             ),
-            "field_shift_distance()",
+            "field_shift_distance(env_1=...)",
+        ),
+        (
+            lambda env: field_shift_distance(
+                _room(), _rates(_room()), np.arange(4), env, _rates(env), np.arange(4)
+            ),
+            "field_shift_distance(env_2=...)",
         ),
         (
             lambda env: spatial_autocorrelation(env, _rates(env)),
             "spatial_autocorrelation()",
         ),
         (
-            lambda env: resample_field(_rates(env), env, env),
-            "resample_field()",
+            lambda env: resample_field(_rates(env), env, _room()),
+            "resample_field(src_env=...)",
+        ),
+        (
+            lambda env: resample_field(_rates(_room()), _room(), env),
+            "resample_field(dst_env=...)",
         ),
         (
             lambda env: compute_egocentric_distance(
@@ -95,9 +111,15 @@ def _polar_regions_env(env: Environment) -> Environment:
         ),
         (
             lambda env: map_probabilities(
-                env, env, np.full(env.n_bins, 1.0 / env.n_bins)
+                env, _room(), np.full(env.n_bins, 1.0 / env.n_bins)
             ),
-            "map_probabilities()",
+            "map_probabilities(source_env=...)",
+        ),
+        (
+            lambda env: map_probabilities(
+                _room(), env, np.full(_room().n_bins, 1.0 / _room().n_bins)
+            ),
+            "map_probabilities(target_env=...)",
         ),
         (lambda env: spatial_basis(env, n_features=6, rng=0), "spatial_basis()"),
         (

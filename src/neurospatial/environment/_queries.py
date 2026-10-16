@@ -79,11 +79,12 @@ def _distance_to(
     if metric == "euclidean":
         require_cartesian(
             coordinates,
-            "distance_to(metric='euclidean')",
+            "Environment.distance_to(metric='euclidean')",
             why="The straight-line distance between bin centers treats them as "
             "Cartesian positions.",
             fix="use metric='geodesic', which follows the connectivity graph and "
             "its physical edge lengths",
+            example="env.distance_to(bins=[0], metric='geodesic')",
         )
         # Euclidean distance: straight-line distance to nearest target
         # Vectorized implementation using broadcasting for performance

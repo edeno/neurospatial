@@ -616,11 +616,17 @@ def _empirical_transitions(
         # Compute bin sequence from trajectory
         require_cartesian(
             coordinates,
-            "transitions(times=..., positions=...)",
+            "Environment.transitions(times=..., positions=...)",
             why="It assigns each Cartesian position sample to the cell that "
             "contains it.",
-            fix="map (distance, angle) samples to bins with env.nearest_bin(points) "
-            "and pass them as env.transitions(bins)",
+            fix="find each sample's bin, with -1 outside env.dimension_ranges, "
+            "split the sequence at the outside samples, and add the transitions "
+            "of each run",
+            example="low, high = np.asarray(env.dimension_ranges).T; "
+            "inside = ((positions >= low) & (positions <= high)).all(axis=1); "
+            "bins = np.where(inside, env.nearest_bin(positions), -1); "
+            "runs = [run[run >= 0] for run in np.split(bins, np.flatnonzero(bins < 0))]; "
+            "sum(env.transitions(run, normalize=False) for run in runs if run.size > 1)",
         )
         bins = _bin_sequence(
             times,

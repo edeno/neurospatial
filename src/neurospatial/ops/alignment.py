@@ -534,10 +534,10 @@ def map_probabilities(
         mode=mode,
         n_neighbors=n_neighbors,
     )
-    for env in (source_env, target_env):
+    for argument, env in (("source_env", source_env), ("target_env", target_env)):
         require_cartesian(
             env.coordinate_system,
-            "map_probabilities()",
+            f"map_probabilities({argument}=...)",
             why=(
                 "It matches each target bin to the nearest Cartesian source bin center."
             ),

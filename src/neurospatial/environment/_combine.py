@@ -89,10 +89,10 @@ def _combine(
         raise ValueError("Component keys must be nonempty strings without '/'.")
     if any(not isinstance(env, Environment) for env in values):
         raise TypeError("Environment.combine() takes Environment values.")
-    for env in values:
+    for key, env in zip(keys, values, strict=True):
         require_cartesian(
             env._coordinate_system,
-            "Environment.combine()",
+            f"Environment.combine(components[{key!r}])",
             why="It joins the cells of each component, and the bridges between "
             "them, in one shared Cartesian frame.",
             fix="combine allocentric Cartesian environments, and analyze each "

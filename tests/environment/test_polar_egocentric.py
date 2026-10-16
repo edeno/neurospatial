@@ -930,11 +930,11 @@ class TestPolarRaisesOnCartesianAssumingMethods:
                     times=np.array([0.0, 0.1]),
                     positions=np.array([[5.0, 0.0], [5.0, 0.0]]),
                 ),
-                "transitions(times=..., positions=...)",
+                "Environment.transitions(times=..., positions=...)",
             ),
             (
                 lambda env: env.distance_to(bins=[0], metric="euclidean"),
-                "distance_to(metric='euclidean')",
+                "Environment.distance_to(metric='euclidean')",
             ),
         ],
     )
@@ -1520,9 +1520,10 @@ def test_combine_refuses_polar_components_with_the_shared_error():
     room = Environment.from_samples(np.zeros((4, 2)), bin_size=1.0)
     with pytest.raises(CartesianOnlyError) as refused:
         Environment.combine({"room": room, "surround": polar_env})
-    assert refused.value.operation == "Environment.combine()"
+    assert refused.value.operation == "Environment.combine(components['surround'])"
     assert str(refused.value).startswith(
-        "Environment.combine() does not work on a polar environment."
+        "Environment.combine(components['surround']) does not work on a polar "
+        "environment."
     )
     with pytest.raises(TypeError, match="takes Environment values"):
         Environment.combine({"room": room, "other": object()})

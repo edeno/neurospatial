@@ -904,10 +904,10 @@ def field_shift_distance(
     .. [2] Colgin et al. (2008). Understanding memory through hippocampal remapping.
            Trends Neurosci 31(9).
     """
-    for env in (env_1, env_2):
+    for argument, env in (("env_1", env_1), ("env_2", env_2)):
         require_cartesian(
             env.coordinate_system,
-            "field_shift_distance()",
+            f"field_shift_distance({argument}=...)",
             why=(
                 "It measures the straight-line distance between Cartesian field "
                 "centroids."

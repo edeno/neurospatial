@@ -25,13 +25,14 @@ def _cartesian(cls=Environment):
     return cls.from_samples(np.zeros((4, 2)), bin_size=1.0)
 
 
+@pytest.mark.parametrize("bound", [True, False], ids=["bound", "unbound"])
 @pytest.mark.parametrize("name", sorted(CARTESIAN_OPERATIONS))
-def test_polar_bins_refuse_each_call_with_what_why_and_fix(name):
+def test_polar_bins_refuse_each_call_with_what_why_and_fix(name, bound):
     env = _polar()
     assert hasattr(env, name)
     assert callable(getattr(env, name))
     with pytest.raises(CartesianOnlyError) as refused:
-        call_unbound(env, name)
+        call_unbound(env, name, bound=bound)
     message = str(refused.value)
     what, why, fix = message.split("\n")
     assert what == f"Environment.{name}() does not work on a polar environment."
