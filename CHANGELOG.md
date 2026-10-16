@@ -357,6 +357,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- The linear track of `simulation.mazes.make_plus_maze` numbers its arms in
+  the order they are laid out along the linear position, clockwise from
+  north (north 0, east 1, south 2, west 3), as `Environment.maze(kind="plus")`
+  does. East and south used to have each other's number in the
+  `source_edge_id` of each bin and the `edge_id` of the track graph. Bin
+  positions, linear positions and every analysis are unchanged. The
+  simulated T and plus mazes are now built with `Environment.maze`.
+
 - `env.plot()` names the axes of a 2-D environment by what the coordinates
   mean, as `env.plot_field()` does: "X Position (cm)" and "Y Position (cm)"
   on a Cartesian environment, and "Distance (cm)" and "Angle (rad)" with a
