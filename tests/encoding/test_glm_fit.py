@@ -57,7 +57,7 @@ def test_structural_constant_base_uses_component_intercepts(two_path_env):
     numerical null-space discovery is involved.
     """
     occupancy = np.ones(two_path_env.n_bins)
-    basis = two_path_env._mrf_basis(occupancy, rank=5)
+    basis = two_path_env.get_mrf_basis(occupancy, rank=5)
 
     base = _structural_constant_base(basis.B, basis.n_live_components)
 
@@ -78,7 +78,7 @@ def test_recovers_place_fields(open_field_env, simulate_place_fields):
     env = open_field_env
     centers = [(5.0, 5.0), (11.0, 11.0), (5.0, 11.0)]
     counts_full, occ_full = simulate_place_fields(env, centers, seed=1)
-    basis = env._mrf_basis(occ_full, rank=30)
+    basis = env.get_mrf_basis(occ_full, rank=30)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=None)
@@ -99,7 +99,7 @@ def test_finite_rates_where_ratio_would_nan(open_field_env, simulate_place_field
     counts_full, occ_full = simulate_place_fields(
         env, [(8.0, 8.0)], occupancy=occ, seed=2
     )
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occupancy = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occupancy, penalty=None)
@@ -116,7 +116,7 @@ def test_reml_selects_sensible_lambda(open_field_env, simulate_place_fields):
     fixed lambda monotonically smooths the field (lower spatial variance)."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=3)
-    basis = env._mrf_basis(occ_full, rank=25)
+    basis = env.get_mrf_basis(occ_full, rank=25)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=None)
@@ -141,7 +141,7 @@ def test_reml_pooled_scaling(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(6.0, 6.0), (10.0, 10.0)], seed=4
     )
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
     constant_base = _structural_constant_base(basis.B, basis.n_live_components)
@@ -190,7 +190,7 @@ def test_reml_objective_callable(open_field_env, simulate_place_fields):
     args positionally with no TypeError, returning a finite (lambda, objective)."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=5)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
     constant_base = _structural_constant_base(basis.B, basis.n_live_components)
@@ -220,7 +220,7 @@ def test_reml_rejects_nonconverged_inner_fit(
 
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=25)
-    basis = env._mrf_basis(occ_full, rank=12)
+    basis = env.get_mrf_basis(occ_full, rank=12)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
     constant_base = _structural_constant_base(basis.B, basis.n_live_components)
@@ -255,7 +255,7 @@ def test_reml_raises_when_all_inner_fits_fail(
 
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=26)
-    basis = env._mrf_basis(occ_full, rank=12)
+    basis = env.get_mrf_basis(occ_full, rank=12)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
 
@@ -290,7 +290,7 @@ def test_r0_skips_reml(two_path_env):
     an arbitrary lambda."""
     env = two_path_env
     occ_full = np.ones(env.n_bins)
-    basis = env._mrf_basis(occ_full, rank=2)
+    basis = env.get_mrf_basis(occ_full, rank=2)
     assert basis.d.size - basis.n_live_components == 0  # penalty_rank == 0
     rng = np.random.default_rng(0)
     counts_full = rng.poisson(3.0, size=(env.n_bins, 2)).astype(np.int64)
@@ -308,7 +308,7 @@ def test_r0_final_fit_unpenalized(two_path_env):
     (never None) and returns finite rates; MRFFit.penalty stays None."""
     env = two_path_env
     occ_full = np.ones(env.n_bins)
-    basis = env._mrf_basis(occ_full, rank=2)
+    basis = env.get_mrf_basis(occ_full, rank=2)
     rng = np.random.default_rng(1)
     counts_full = rng.poisson(5.0, size=(env.n_bins, 3)).astype(np.int64)
     counts, occ = _restrict(counts_full, occ_full, basis)
@@ -341,7 +341,7 @@ def test_fixed_penalty_recorded(open_field_env, simulate_place_fields):
     not run so reml_objective is None."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=6)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=2.5)
@@ -358,7 +358,7 @@ def test_penalty_rank_structural(open_field_env, simulate_place_fields):
     eigenvalue-threshold recount."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=7)
-    basis = env._mrf_basis(occ_full, rank=18)
+    basis = env.get_mrf_basis(occ_full, rank=18)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=1.0)
@@ -375,7 +375,7 @@ def test_fit_no_rank_arg(open_field_env, simulate_place_fields):
 
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=8)
-    basis = env._mrf_basis(occ_full, rank=10**9)  # clamped to n_live_bins
+    basis = env.get_mrf_basis(occ_full, rank=10**9)  # clamped to n_live_bins
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=1.0)
@@ -388,7 +388,7 @@ def test_fit_rejects_unrestricted_counts(two_component_env, simulate_place_field
     env = two_component_env
     occ_full = np.zeros(env.n_bins)
     occ_full[0] = 5.0  # visit one bin of one component only
-    basis = env._mrf_basis(occ_full, rank=None)
+    basis = env.get_mrf_basis(occ_full, rank=None)
     assert basis.live_bins.size < env.n_bins  # dead component excluded
 
     counts_full, _ = simulate_place_fields(env, [(3.0, 3.0)], seed=9)
@@ -408,7 +408,7 @@ def test_deviance_formula(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(6.0, 6.0), (10.0, 10.0)], seed=10
     )
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=1.0)
@@ -440,7 +440,7 @@ def test_convergence_on_deviance(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(4.0, 4.0)], occupancy=occ, seed=11
     )
-    basis = env._mrf_basis(occ_full, rank=None)  # full rank -> null-mode drift
+    basis = env.get_mrf_basis(occ_full, rank=None)  # full rank -> null-mode drift
     counts, occupancy = _restrict(counts_full, occ_full, basis)
 
     coeffs, _eta, _mu, n_iter, max_step, converged = _newton_fit_numpy(
@@ -568,7 +568,7 @@ def test_fit_predictor_stays_in_box(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(8.0, 8.0)], occupancy=occ, peak_rate=200.0, seed=28
     )
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occupancy = _restrict(counts_full, occ_full, basis)
 
     coeffs, _eta, _mu, _n, _s, _c = _newton_fit_numpy(
@@ -629,7 +629,7 @@ def test_sparse_occupancy_in_domain_converges(open_field_env, simulate_place_fie
     counts_full, occ_full = simulate_place_fields(
         env, [(8.0, 8.0)], occupancy=occ, peak_rate=15.0, seed=29
     )
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occupancy = _restrict(counts_full, occ_full, basis)
 
     _c, _eta, _mu, _n, _s, converged = _newton_fit_numpy(
@@ -653,7 +653,7 @@ def test_fit_returns_consistent_triple(open_field_env, simulate_place_fields):
     from the FINAL coefficients: eta == clip(B @ coeffs), mu == occ * exp(eta)."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=12)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     from neurospatial.encoding._glm import _ETA_CLIP
@@ -679,7 +679,7 @@ def test_step_halve_returns_accepted_step(open_field_env, simulate_place_fields)
     the reported step is that accepted (halved) one -- guarding the diagnostic."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=13)
-    basis = env._mrf_basis(occ_full, rank=10)
+    basis = env.get_mrf_basis(occ_full, rank=10)
     counts, occ = _restrict(counts_full, occ_full, basis)
     B, penalty_diag = basis.B, 1.0 * basis.d
 
@@ -721,7 +721,7 @@ def test_step_halve_rejects_failed_descent(open_field_env, simulate_place_fields
     and signals line_search_ok=False."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=21)
-    basis = env._mrf_basis(occ_full, rank=10)
+    basis = env.get_mrf_basis(occ_full, rank=10)
     counts, occ = _restrict(counts_full, occ_full, basis)
     B, penalty_diag = basis.B, 1.0 * basis.d
 
@@ -754,7 +754,7 @@ def test_step_halve_rejects_nonfinite_trial(open_field_env, simulate_place_field
     signals failure, keeping the returned fit finite."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=22)
-    basis = env._mrf_basis(occ_full, rank=10)
+    basis = env.get_mrf_basis(occ_full, rank=10)
     counts, occ = _restrict(counts_full, occ_full, basis)
     B, penalty_diag = basis.B, 1.0 * basis.d
 
@@ -786,7 +786,7 @@ def test_newton_failed_line_search_not_reported_converged(
 
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=23)
-    basis = env._mrf_basis(occ_full, rank=10)
+    basis = env.get_mrf_basis(occ_full, rank=10)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     real_solve = np.linalg.solve
@@ -821,7 +821,7 @@ def test_pooled_flag_recorded(open_field_env, simulate_place_fields):
     source, since scalar cases are value-identical under both settings)."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=24)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     assert fit_mrf_gam(basis, counts, occ, penalty=None).pooled is True
@@ -837,7 +837,7 @@ def test_all_zero_spike_population(open_field_env):
     warning is emitted, no raise."""
     env = open_field_env
     occ_full = np.full(env.n_bins, 3.0)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts = np.zeros((basis.live_bins.size, 4), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
@@ -856,7 +856,7 @@ def test_all_zero_spike_fixed_penalty(open_field_env):
     still floor. The fixed-penalty contract holds even with no data."""
     env = open_field_env
     occ_full = np.full(env.n_bins, 3.0)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts = np.zeros((basis.live_bins.size, 2), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
@@ -876,7 +876,7 @@ def test_zero_spike_neuron(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(6.0, 6.0), (10.0, 10.0)], seed=14
     )
-    basis = env._mrf_basis(occ_full, rank=18)
+    basis = env.get_mrf_basis(occ_full, rank=18)
     counts, occ = _restrict(counts_full, occ_full, basis)
     counts = np.concatenate(
         [counts, np.zeros((counts.shape[0], 1), dtype=counts.dtype)], axis=1
@@ -907,7 +907,7 @@ def test_nonconvergence_warns(open_field_env, simulate_place_fields, monkeypatch
 
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=15)
-    basis = env._mrf_basis(occ_full, rank=25)
+    basis = env.get_mrf_basis(occ_full, rank=25)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     with pytest.warns(UserWarning, match="converge"):
@@ -926,7 +926,7 @@ def test_no_neurons(open_field_env):
     """counts.shape[1] == 0 -> empty-unit MRFFit; no fit runs, converged True."""
     env = open_field_env
     occ_full = np.full(env.n_bins, 3.0)
-    basis = env._mrf_basis(occ_full, rank=10)
+    basis = env.get_mrf_basis(occ_full, rank=10)
     counts = np.zeros((basis.live_bins.size, 0), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
@@ -946,7 +946,7 @@ def test_zero_occupancy_empty_basis(open_field_env):
     warns; no fit runs and nothing raises."""
     env = open_field_env
     occ_full = np.zeros(env.n_bins)
-    basis = env._mrf_basis(occ_full, rank=None)
+    basis = env.get_mrf_basis(occ_full, rank=None)
     assert basis.B.shape == (0, 0)
     counts = np.zeros((0, 3), dtype=np.int64)
     occ = np.zeros(0)
@@ -968,7 +968,7 @@ def test_dead_component_fits_live_bins(two_component_env, simulate_place_fields)
     labels = env._diffusion_geometry.labels
     occ_full = np.zeros(env.n_bins)
     occ_full[labels == 0] = 3.0  # visit only component 0
-    basis = env._mrf_basis(occ_full, rank=None)
+    basis = env.get_mrf_basis(occ_full, rank=None)
     assert basis.live_bins.size < env.n_bins  # component 1 excluded
 
     counts_full, _ = simulate_place_fields(
@@ -991,7 +991,7 @@ def test_penalty_zero_rank_deficient_warns(open_field_env, simulate_place_fields
     counts_full, occ_full = simulate_place_fields(
         env, [(4.0, 4.0)], occupancy=occ, seed=17
     )
-    basis = env._mrf_basis(occ_full, rank=None)  # r_eff == n_live_bins > n_exposed
+    basis = env.get_mrf_basis(occ_full, rank=None)  # r_eff == n_live_bins > n_exposed
     counts, occupancy = _restrict(counts_full, occ_full, basis)
     n_exposed = int((occupancy > 0).sum())
     assert n_exposed < basis.B.shape[1]  # rank-deficient on exposed bins

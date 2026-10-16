@@ -74,7 +74,7 @@ def _fresh_holder(env):
 def test_mrfbasis_shapes(open_field_env):
     """B is (n_live_bins, r_eff), d is (r_eff,), r_eff matches the formula."""
     occ = np.ones(open_field_env.n_bins)
-    basis = open_field_env._mrf_basis(occ, rank=None)
+    basis = open_field_env.get_mrf_basis(occ, rank=None)
 
     n_live_bins = basis.live_bins.size
     r_eff = max(basis.n_live_components, min(n_live_bins, _DEFAULT_MAX_RANK))
@@ -88,7 +88,7 @@ def test_structural_nulls_zeroed(open_field_env):
     """d[:n_live] is bit-exact 0.0; exactly n_live entries are zero; fills are
     genuine (positive-eigenvalue) modes; penalty_rank is exact."""
     occ = np.ones(open_field_env.n_bins)
-    basis = open_field_env._mrf_basis(occ, rank=20)
+    basis = open_field_env.get_mrf_basis(occ, rank=20)
 
     # Single component -> 1 intercept (d == 0) + 19 fill modes.
     assert basis.n_live_components == 1
@@ -110,7 +110,7 @@ def test_live_component_budget(two_component_env):
     occ = np.zeros(two_component_env.n_bins)
     occ[labels == live_comp] = 1.0
 
-    basis = two_component_env._mrf_basis(occ, rank=None)
+    basis = two_component_env.get_mrf_basis(occ, rank=None)
 
     assert basis.n_live_components == 1
     # Every live bin belongs to the live component (dead component excluded).
@@ -127,7 +127,7 @@ def test_live_bins_cover_whole_component_not_just_visited_bins(two_component_env
     occ = np.zeros(two_component_env.n_bins)
     occ[comp_bins[0]] = 5.0  # visit ONE bin; leave the rest of the component at 0
 
-    basis = two_component_env._mrf_basis(occ, rank=None)
+    basis = two_component_env.get_mrf_basis(occ, rank=None)
 
     assert basis.n_live_components == 1
     # All bins of the visited component are live, not just the visited one -- a
@@ -142,7 +142,7 @@ def test_live_bins_cover_whole_component_not_just_visited_bins(two_component_env
 def test_two_3node_paths_rank2(two_path_env):
     """Two visited disjoint paths at rank=2 -> the all-null (r==0) basis."""
     occ = np.ones(two_path_env.n_bins)
-    basis = two_path_env._mrf_basis(occ, rank=2)
+    basis = two_path_env.get_mrf_basis(occ, rank=2)
 
     assert basis.n_live_components == 2
     assert basis.B.shape[1] == 2  # r_eff == n_live_components
@@ -152,7 +152,7 @@ def test_two_3node_paths_rank2(two_path_env):
 def test_zero_occupancy_empty_basis(open_field_env):
     """All-zero occupancy -> the empty (0, 0) basis (degenerate case)."""
     occ = np.zeros(open_field_env.n_bins)
-    basis = open_field_env._mrf_basis(occ, rank=None)
+    basis = open_field_env.get_mrf_basis(occ, rank=None)
 
     assert basis.B.shape == (0, 0)
     assert basis.live_bins.size == 0
@@ -165,10 +165,10 @@ def test_rank_clamped_both_ways(open_field_env):
     occ = np.ones(open_field_env.n_bins)
     n_live_bins = int((occ > 0).sum())
 
-    low = open_field_env._mrf_basis(occ, rank=1)
+    low = open_field_env.get_mrf_basis(occ, rank=1)
     assert low.B.shape[1] == low.n_live_components  # floored to n_live_components
 
-    high = open_field_env._mrf_basis(occ, rank=10**9)
+    high = open_field_env.get_mrf_basis(occ, rank=10**9)
     assert high.B.shape[1] == n_live_bins  # clamped down to n_live_bins
 
 
@@ -183,7 +183,7 @@ def test_intercept_is_constant_per_component(polar_env):
     """
     _W, volumes, _nc, labels = _geometry(polar_env)
     occ = np.ones(polar_env.n_bins)
-    basis = polar_env._mrf_basis(occ, rank=8)
+    basis = polar_env.get_mrf_basis(occ, rank=8)
 
     lbl_live = labels[basis.live_bins]
     for j in range(basis.n_live_components):
@@ -214,7 +214,7 @@ def test_fill_applies_inv_sqrt_volume(polar_env):
     """
     _W, volumes, _nc, labels = _geometry(polar_env)
     occ = np.ones(polar_env.n_bins)
-    basis = polar_env._mrf_basis(occ, rank=8)
+    basis = polar_env.get_mrf_basis(occ, rank=8)
 
     n_live = basis.n_live_components
     n_fill = basis.B.shape[1] - n_live
@@ -241,7 +241,7 @@ def test_fill_exercised_rank_gt_nlive(asymmetric_two_component_env):
     _Q, Lam, mode_comp, _vol, labels = _full_eigs(env)
     occ = np.ones(env.n_bins)
     n_live_components = 2
-    basis = env._mrf_basis(occ, rank=n_live_components + 2)
+    basis = env.get_mrf_basis(occ, rank=n_live_components + 2)
 
     assert basis.n_live_components == n_live_components
     n_fill = basis.B.shape[1] - n_live_components
@@ -269,7 +269,7 @@ def test_both_components_present_asymmetric(asymmetric_two_component_env):
     env = asymmetric_two_component_env
     _W, _vol, _nc, labels = _geometry(env)
     occ = np.ones(env.n_bins)
-    basis = env._mrf_basis(occ, rank=2)
+    basis = env.get_mrf_basis(occ, rank=2)
 
     assert basis.n_live_components == 2
     assert basis.B.shape[1] == 2
@@ -289,7 +289,7 @@ def test_multiple_live_and_dead_components(four_component_env):
     occ = np.zeros(env.n_bins)
     occ[np.isin(labels, live)] = 1.0
 
-    basis = env._mrf_basis(occ, rank=None)
+    basis = env.get_mrf_basis(occ, rank=None)
 
     assert basis.n_live_components == 2
     np.testing.assert_array_equal(
@@ -340,7 +340,7 @@ def test_nonfinite_occupancy_raises(two_component_env, bad_value):
     occ = np.ones(two_component_env.n_bins)
     occ[0] = bad_value
     with pytest.raises(ValueError, match="finite"):
-        two_component_env._mrf_basis(occ, rank=None)
+        two_component_env.get_mrf_basis(occ, rank=None)
 
 
 def test_negative_occupancy_raises(two_component_env):
@@ -349,7 +349,7 @@ def test_negative_occupancy_raises(two_component_env):
     occ = np.ones(two_component_env.n_bins)
     occ[0] = -5.0
     with pytest.raises(ValueError, match="non-negative"):
-        two_component_env._mrf_basis(occ, rank=None)
+        two_component_env.get_mrf_basis(occ, rank=None)
 
 
 def test_null_absent_from_eigenbasis_raises():
@@ -383,7 +383,7 @@ def test_clipped_fill_eigenvalue_raises():
 
 def test_growth_continues_until_null_covered(open_field_env, monkeypatch):
     """If a component's null is absent from a truncated eigenbasis (a positive
-    mode sorted before it), _mrf_basis keeps growing rather than handing the
+    mode sorted before it), get_mrf_basis keeps growing rather than handing the
     selector a null-less basis and dying on its raise."""
     env = open_field_env  # single component
     occ = np.ones(env.n_bins)
@@ -401,7 +401,7 @@ def test_growth_continues_until_null_covered(open_field_env, monkeypatch):
 
     monkeypatch.setattr(diff, "_ensure_global_modes", fake_ensure)
 
-    basis = env._mrf_basis(occ, rank=5)  # must NOT raise
+    basis = env.get_mrf_basis(occ, rank=5)  # must NOT raise
 
     assert calls["n"] >= 2  # it grew past the null-less first solve
     assert basis.B.shape[1] == 5
@@ -437,7 +437,7 @@ def test_g_floors_at_n_components(four_component_env):
     r_eff_live = int((labels == 0).sum())
     assert r_eff_live < n_components  # would raise without the G floor
 
-    basis = env._mrf_basis(occ, rank=None)  # must NOT raise
+    basis = env.get_mrf_basis(occ, rank=None)  # must NOT raise
     assert basis.n_live_components == 1
     assert basis.B.shape[1] == r_eff_live
 
@@ -451,7 +451,7 @@ def test_growth_past_dead_modes(dead_dominant_env):
     occ[labels == live_comp] = 1.0
     n_live_bins = int((labels == live_comp).sum())
 
-    basis = env._mrf_basis(occ, rank=None)
+    basis = env.get_mrf_basis(occ, rank=None)
 
     assert basis.n_live_components == 1
     assert basis.B.shape[1] == n_live_bins  # all live modes exposed
@@ -464,14 +464,14 @@ def test_growth_past_dead_modes(dead_dominant_env):
 # Cached-eigenbasis resolver behavior (reuse / purity / mode recovery)
 # ---------------------------------------------------------------------------
 def test_reuses_cached_diffusion_geometry(open_field_env):
-    """_mrf_basis reuses the cached _diffusion_geometry (no rebuild)."""
+    """get_mrf_basis reuses the cached _diffusion_geometry (no rebuild)."""
     env = open_field_env
     occ = np.ones(env.n_bins)
     geom_before = env._diffusion_geometry
     geometry_before = env._geometry
 
-    env._mrf_basis(occ, rank=10)
-    env._mrf_basis(occ, rank=10)
+    env.get_mrf_basis(occ, rank=10)
+    env.get_mrf_basis(occ, rank=10)
 
     assert env._geometry is geometry_before
     assert env._diffusion_geometry is geom_before  # same cached object
@@ -491,14 +491,14 @@ def test_reuses_eigensolve(sparse_regime_env, monkeypatch):
 
     monkeypatch.setattr(diff, "_symmetric_eigenbasis", counting)
 
-    env._mrf_basis(occ, rank=50)  # sparse regime -> persisted holder
+    env.get_mrf_basis(occ, rank=50)  # sparse regime -> persisted holder
     g_after_first = env._mrf_eigenbasis["G"]
     assert g_after_first == 50
     first_calls = calls["n"]
     assert first_calls > 0
 
-    env._mrf_basis(occ, rank=50)  # same rank -> cache hit
-    env._mrf_basis(occ, rank=30)  # smaller rank -> still a cache hit
+    env.get_mrf_basis(occ, rank=50)  # same rank -> cache hit
+    env.get_mrf_basis(occ, rank=30)  # smaller rank -> still a cache hit
 
     assert calls["n"] == first_calls  # no additional eigensolve
     assert env._mrf_eigenbasis["G"] == g_after_first  # holder G unchanged
@@ -509,7 +509,7 @@ def test_holder_resets_on_clear_cache(sparse_regime_env):
     explicit cache-clearing contract), so it never outlives a geometry."""
     env = sparse_regime_env
     occ = np.ones(env.n_bins)
-    env._mrf_basis(occ, rank=50)
+    env.get_mrf_basis(occ, rank=50)
     assert env._mrf_eigenbasis["G"] == 50  # grown
 
     env.clear_cache(cached_properties=True)
@@ -564,7 +564,7 @@ def test_dense_basis_not_persisted(open_field_env):
     assert holder["Q"].shape == (n, 0)
 
     # rank=40 on a 64-bin env: G=40 >= 0.5*64=32 -> dense (transient).
-    basis = env._mrf_basis(occ, rank=40)
+    basis = env.get_mrf_basis(occ, rank=40)
 
     assert basis.B.shape == (n, 40)
     assert env._mrf_eigenbasis["G"] == 0  # holder stayed at its sparse value

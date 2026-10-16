@@ -43,7 +43,7 @@ class TestPublishedValueOwnership:
         )
         env.compute_kernel(1.0)
         env.diffuse(np.ones(env.n_bins), 1.0)
-        env._mrf_basis(np.ones(env.n_bins), rank=3)
+        env.get_mrf_basis(np.ones(env.n_bins), rank=3)
         env.get_differential_operator()
         env._kdtree_cache = cKDTree(env.bin_centers)
         old_geometry = env._diffusion_geometry

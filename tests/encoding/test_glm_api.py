@@ -737,7 +737,9 @@ def test_value_domain(
 
     # rank clamps DOWN (> n_live_bins): huge rank -> r_eff == n_live_bins, no raise.
     big = compute_spatial_rate(env, st, times, positions, method="glm", rank=100_000)
-    n_live = int(np.asarray(env._mrf_basis(np.ones(env.n_bins), rank=None).B).shape[0])
+    n_live = int(
+        np.asarray(env.get_mrf_basis(np.ones(env.n_bins), rank=None).B).shape[0]
+    )
     assert big.rank == n_live
 
     # rank clamps UP (< n_live_components): a 2-live-component env, rank=1 -> r_eff == 2.
@@ -762,7 +764,9 @@ def test_value_domain_overflow(open_field_env: Environment) -> None:
 
     # rank: magnitude is CLAMPED, never rejected -- a huge int must not raise and
     # must clamp to the effective rank (n_live_bins here).
-    n_live = int(np.asarray(env._mrf_basis(np.ones(env.n_bins), rank=None).B).shape[0])
+    n_live = int(
+        np.asarray(env.get_mrf_basis(np.ones(env.n_bins), rank=None).B).shape[0]
+    )
     big = compute_spatial_rate(env, st, times, positions, method="glm", rank=10**1000)
     assert big.rank == n_live
 
@@ -1142,7 +1146,7 @@ def test_all_layouts_smoke(
     """glm assembly runs on grid / masked-multi-component / 1D / hex / polar / mesh.
 
     Each layout exercises a distinct connectivity + bin-volume geometry that the
-    ``_mrf_basis`` -> ``live_bins`` scatter runs over.
+    ``get_mrf_basis`` -> ``live_bins`` scatter runs over.
     """
     import importlib.util
 

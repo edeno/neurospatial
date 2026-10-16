@@ -6445,12 +6445,6 @@ class Environment(Generic[_C]):
 
         return _mrf_basis(self, occupancy, rank=rank)
 
-    def _mrf_basis(
-        self, occupancy: NDArray[np.float64], *, rank: int | None
-    ) -> MRFBasis:
-        """Compatibility delegate for the former private penalty-basis adapter."""
-        return self.get_mrf_basis(occupancy, rank=rank)
-
     def transitions(
         self,
         bins: NDArray[np.int32] | None = None,

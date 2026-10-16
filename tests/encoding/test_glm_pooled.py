@@ -72,7 +72,7 @@ def test_selector_returns_boundary_triple(open_field_env, simulate_place_fields)
     boundary; REML-skip (penalty_rank == 0) returns (None, None, None)."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=5)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
 
@@ -102,7 +102,7 @@ def test_pooled_true_unchanged(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(5.0, 5.0), (11.0, 11.0)], seed=2
     )
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=None)  # default pooled=True
@@ -128,7 +128,7 @@ def test_pooled_false_per_unit_lambda(open_field_env, simulate_varied_smoothness
     centers = [(5.0, 5.0), (11.0, 11.0), (8.0, 8.0)]
     sigmas = [1.5, 8.0, 4.0]  # sharp, broad, medium
     counts_full, occ_full = simulate_varied_smoothness(env, centers, sigmas, seed=3)
-    basis = env._mrf_basis(occ_full, rank=30)
+    basis = env.get_mrf_basis(occ_full, rank=30)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
@@ -164,7 +164,7 @@ def test_pooled_false_shapes(open_field_env, simulate_place_fields):
     env = open_field_env
     centers = [(5.0, 5.0), (11.0, 11.0), (5.0, 11.0), (11.0, 5.0)]
     counts_full, occ_full = simulate_place_fields(env, centers, seed=4)
-    basis = env._mrf_basis(occ_full, rank=25)
+    basis = env.get_mrf_basis(occ_full, rank=25)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
@@ -188,7 +188,7 @@ def test_pooled_false_r0_scalar_none(two_path_env):
     scalar penalty=None (population-level), NOT a per-unit vector; rates finite."""
     env = two_path_env
     occ_full = np.ones(env.n_bins)
-    basis = env._mrf_basis(occ_full, rank=2)
+    basis = env.get_mrf_basis(occ_full, rank=2)
     assert basis.d.size - basis.n_live_components == 0  # penalty_rank == 0
     rng = np.random.default_rng(0)
     counts_full = rng.poisson(3.0, size=(env.n_bins, 3)).astype(np.int64)
@@ -213,7 +213,7 @@ def test_pooled_false_zero_spike_fallback(open_field_env, simulate_place_fields)
     counts_full, occ_full = simulate_place_fields(
         env, [(5.0, 5.0), (11.0, 11.0)], seed=7
     )
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
     # Append a genuine zero-spike unit as the last column.
     counts = np.column_stack([counts, np.zeros(counts.shape[0], dtype=counts.dtype)])
@@ -254,7 +254,7 @@ def test_pooled_false_multiple_zero_spike_share_fallback(
     counts_full, occ_full = simulate_place_fields(
         env, [(5.0, 5.0), (11.0, 11.0)], seed=17
     )
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
     # Two silent units appended (indices 2 and 3).
     counts = np.column_stack(
@@ -282,7 +282,7 @@ def test_pooled_false_all_zero_spike(open_field_env):
     scalar penalty=None, reml_objective=None, floor fields, NO pooled REML run."""
     env = open_field_env
     occ_full = np.full(env.n_bins, 3.0)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts = np.zeros((basis.live_bins.size, 4), dtype=np.int64)
     occ = occ_full[basis.live_bins]
 
@@ -304,7 +304,7 @@ def test_fixed_penalty_precedence(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(5.0, 5.0), (11.0, 11.0)], seed=8
     )
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=2.5, pooled=False)
@@ -326,7 +326,7 @@ def test_reml_boundary_diagnostic_pooled(open_field_env, simulate_flat_weak_sign
     boundary; a well-structured field is interior (False)."""
     env = open_field_env
     counts_full, occ_full = simulate_flat_weak_signal(env, 2, seed=11)
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     with pytest.warns(UserWarning, match="upper"):
@@ -342,7 +342,7 @@ def test_reml_boundary_diagnostic_interior(open_field_env, simulate_place_fields
     """A well-identified field is interior: reml_at_boundary is False."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=12)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=True)
@@ -354,7 +354,7 @@ def test_reml_boundary_diagnostic_per_unit(open_field_env, simulate_flat_weak_si
     at the boundary, with EXACTLY ONE aggregate boundary warning (not one/unit)."""
     env = open_field_env
     counts_full, occ_full = simulate_flat_weak_signal(env, 3, seed=13)
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     with pytest.warns(UserWarning) as rec:
@@ -385,7 +385,7 @@ def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_sign
     and falls back to positional 'unit index/indices' when they are not."""
     env = open_field_env
     counts_full, occ_full = simulate_flat_weak_signal(env, 2, seed=21)
-    basis = env._mrf_basis(occ_full, rank=20)
+    basis = env.get_mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     # Labels supplied -> the warning carries them, not bare indices.
@@ -416,7 +416,7 @@ def test_unit_ids_misalignment_rejected(open_field_env, simulate_place_fields):
     counts_full, occ_full = simulate_place_fields(
         env, [(5.0, 5.0), (11.0, 11.0)], seed=9
     )
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)  # 2 units
 
     for bad in (["only-one"], "scalar-id", ["a", "b", "c"]):
@@ -431,7 +431,7 @@ def test_reml_boundary_none_when_reml_skipped(
     run), for both pooled settings."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=14)
-    basis = env._mrf_basis(occ_full, rank=15)
+    basis = env.get_mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
     # Fixed penalty.
@@ -442,7 +442,7 @@ def test_reml_boundary_none_when_reml_skipped(
     # r == 0.
     r0_env = two_path_env
     occ0 = np.ones(r0_env.n_bins)
-    basis0 = r0_env._mrf_basis(occ0, rank=2)
+    basis0 = r0_env.get_mrf_basis(occ0, rank=2)
     rng = np.random.default_rng(0)
     counts0_full = rng.poisson(3.0, size=(r0_env.n_bins, 2)).astype(np.int64)
     counts0, occ0r = _restrict(counts0_full, occ0, basis0)
@@ -464,7 +464,7 @@ def test_aggregate_diagnostics(open_field_env, simulate_place_fields, monkeypatc
     counts_full, occ_full = simulate_place_fields(
         env, [(5.0, 5.0), (11.0, 11.0)], seed=15
     )
-    basis = env._mrf_basis(occ_full, rank=18)
+    basis = env.get_mrf_basis(occ_full, rank=18)
     counts, occ = _restrict(counts_full, occ_full, basis)
     # Add a lone zero-spike unit; its final fit runs on an all-zero column and is
     # the only fit uniquely identifiable without disturbing the informative REML.
