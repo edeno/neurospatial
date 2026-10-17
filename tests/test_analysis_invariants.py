@@ -85,6 +85,9 @@ def test_single_and_population_estimators_agree(
 # A reflected quarter-scale map whose inverse used to fail hexagonal-cell
 # validation on a cell that its locator assigns correctly.
 @example(angle=-2.0965322377907283, scale=0.25, reflect=True)
+# A scaled grid whose stored centers drifted from its re-mapped cell edges
+# over four transforms, so the inverse failed geometry validation.
+@example(angle=0.0, scale=1.263995540083514, reflect=False)
 def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     analysis_invariant_env, angle, scale, reflect
 ):
@@ -119,6 +122,29 @@ def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     )
     np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
     np.testing.assert_array_equal(restored.bin_at(points), original_bins)
+
+
+def test_chained_grid_transforms_accept_their_inverse():
+    """Scaling a masked grid four times and back keeps its cells and centers.
+
+    The cell edges are mapped at each step; the stored centers must stay the
+    midpoints of those edges, or the inverse no longer validates.
+    """
+    mask = np.ones((3, 3), dtype=bool)
+    mask[1, 1] = False
+    env = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
+    matrix = np.eye(3)
+    matrix[:2, :2] = 1.263995540083514 * np.eye(2)
+    matrix[:2, 2] = [10.0, -7.0]
+    transform = Affine2D(matrix)
+    shifted = env.apply_transform(transform).apply_transform(translate(3.0, 2.0))
+    restored = shifted.apply_transform(translate(-3.0, -2.0)).apply_transform(
+        transform.inverse()
+    )
+    np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
+    np.testing.assert_array_equal(restored.bin_at(env.bin_centers), np.arange(8))
+    for edges in restored.grid_edges:
+        assert np.allclose(edges, np.arange(4.0), atol=1e-12)
 
 
 @pytest.mark.parametrize("n_dims", [1, 2, 3])

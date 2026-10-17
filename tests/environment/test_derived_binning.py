@@ -595,7 +595,10 @@ def test_derived_round_trip(
 
 
 @pytest.mark.parametrize("origin", [0.0, 1e9])
-def test_mapped_center_roundoff_survives_save_load(origin, round_trip_environment):
+def test_scaled_grid_centers_are_the_mapped_edge_midpoints(
+    origin, round_trip_environment
+):
+    """A scaled grid stores its centers once, as midpoints of its mapped edges."""
     parent = Environment.from_grid_mask(
         np.ones((3, 2), dtype=bool),
         grid_edges=(origin + np.arange(4) * 0.1, origin + np.arange(3) * 0.2),
@@ -603,13 +606,19 @@ def test_mapped_center_roundoff_survives_save_load(origin, round_trip_environmen
     transform = _affine(np.diag([1.3, 0.7]), (0.1, 0.2))
     child = parent.apply_transform(transform)
     grid = child._binning.rectilinear
-    axes = [(edges[:-1] + edges[1:]) / 2 for edges in grid.edges]
+    axes = [edges[:-1] + np.diff(edges) / 2 for edges in grid.edges]
     midpoints = np.stack(
         [axis.ravel() for axis in np.meshgrid(*axes, indexing="ij")], axis=1
     )
-    assert not np.array_equal(child.bin_centers, midpoints)
+    np.testing.assert_array_equal(child.bin_centers, midpoints)
+    # The mapped parent centers agree to rounding: one unit in the last place
+    # of the coordinates, which includes the 1e9 origin.
+    mapped = transform(parent.bin_centers)
+    np.testing.assert_allclose(
+        child.bin_centers, mapped, rtol=0, atol=4 * np.spacing(origin + 1.0)
+    )
     loaded = round_trip_environment(child)
-    np.testing.assert_array_equal(loaded.bin_centers, transform(parent.bin_centers))
+    np.testing.assert_array_equal(loaded.bin_centers, child.bin_centers)
     np.testing.assert_array_equal(
         loaded.bin_at(transform(parent.bin_centers)), np.arange(parent.n_bins)
     )

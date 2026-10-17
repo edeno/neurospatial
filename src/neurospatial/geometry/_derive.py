@@ -356,7 +356,19 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             "bin measures must remain finite and positive",
             "rescale the coordinate units before applying the transform",
         )
-    centers = _mapped(parent.centers, matrix)
+    # Edge-defined cells keep one source of truth: their centers are the
+    # midpoints of the mapped edges, so a chain of transforms cannot drift
+    # the stored centers away from the cells the locator assigns.
+    locator: Locator | None = (
+        binning.locator.transformed(transform)
+        if isinstance(binning.locator, RectilinearLocator)
+        else None
+    )
+    centers = (
+        locator.active_centers()
+        if isinstance(locator, RectilinearLocator)
+        else _mapped(parent.centers, matrix)
+    )
     sizes = parent.sizes * factor
     if (
         not np.all(np.isfinite(centers))
@@ -401,11 +413,6 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         )
     bins = SpatialBins.from_arrays(
         centers, sizes, parent.measure_dim, parent.pairs, distances
-    )
-    locator: Locator | None = (
-        binning.locator.transformed(transform)
-        if isinstance(binning.locator, RectilinearLocator)
-        else None
     )
     if locator is None:
         locator = TransformedLocator(

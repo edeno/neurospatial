@@ -14,7 +14,7 @@ from scipy.spatial import cKDTree
 from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, get_centers
 from neurospatial.geometry._hex_lookup import points_to_hex_bin_ind
 from neurospatial.geometry._regular_lookup import points_to_regular_grid_bin_ind
 
@@ -164,6 +164,29 @@ class RectilinearLocator(ReadOnlyState):
             active_mask=self.active_mask,
             inverse_map=self.flat_to_active,
         ).astype(np.intp, copy=False)
+
+    def active_centers(self) -> NDArray[np.float64]:
+        """Midpoints of the active cells, in active-bin (row-major) order.
+
+        Returns
+        -------
+        ndarray of float64, shape (n_active, n_dims)
+            The cell centers implied by ``edges``. Stored bin centers of a
+            rectilinear binning are these values, so centers and edges cannot
+            disagree.
+        """
+        mask = (
+            np.ones(self.shape, dtype=bool)
+            if self.active_mask is None
+            else self.active_mask
+        )
+        coordinates = np.unravel_index(np.flatnonzero(mask), self.shape)
+        return np.column_stack(
+            [
+                get_centers(edge)[index]
+                for edge, index in zip(self.edges, coordinates, strict=True)
+            ]
+        )
 
     def subset(self, keep: NDArray[np.bool_]) -> RectilinearLocator:
         """Keep whole active cells in their original row-major order."""

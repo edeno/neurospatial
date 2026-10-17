@@ -336,12 +336,7 @@ def _rectilinear_geometry(
         mapping[active] = np.arange(len(active))
         _equal(locator.flat_to_active, mapping, "locator flat_to_active ordering")
     coordinates = np.unravel_index(active, shape)
-    centers = np.column_stack(
-        [
-            get_centers(edge)[index]
-            for edge, index in zip(edges, coordinates, strict=True)
-        ]
-    )
+    centers = locator.active_centers()
     # Mapped endpoints and mapped centers can differ by a few ULPs even for
     # positive diagonal transforms. Eight endpoint ULPs cover the multiply,
     # shift, subtraction and midpoint operations, including cancellation.

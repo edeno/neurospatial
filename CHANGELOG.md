@@ -873,6 +873,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- A grid environment that went through a chain of scalings and translations
+  no longer refuses its own inverse transform. Each step mapped the cell edges
+  and, separately, the stored bin centers; after a few steps the two disagreed
+  by a few rounding units and the inverse failed with "bins.centers and
+  locator geometry does not match the binning geometry". The centers of a
+  scaled or translated grid are now the midpoints of its mapped edges. Values
+  change by at most one rounding unit of the coordinates (7e-15 cm at 35 cm).
+
 - `Environment.animate_fields` warns once when you pass an option the chosen
   backend ignores, such as `crf=` with `backend="html"` or `overwrite=True`
   with napari, naming the backend that uses it and the call that would. With
