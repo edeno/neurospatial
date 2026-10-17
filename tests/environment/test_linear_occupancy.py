@@ -660,3 +660,42 @@ class TestLinearOccupancyMaskedGrid:
         )
 
         assert occ_linear.sum() == pytest.approx(occ_start.sum(), rel=1e-6)
+
+
+def _cell_less_bins():
+    """Four unit bins given by centers and sizes only, with no cell shapes."""
+    from neurospatial.binning import Binning, KnownFaces, NearestBinLocator, SpatialBins
+    from neurospatial.geometry._diffusion import FaceGeometry
+
+    centers = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+    pairs = np.array([[0, 1], [0, 2], [1, 3], [2, 3]])
+    bins = SpatialBins(centers, np.ones(4), 2, pairs, np.ones(4))
+    faces = KnownFaces(FaceGeometry(pairs, np.ones(4), np.ones(4), bins.sizes))
+    return Environment.from_bins(
+        Binning("declared", bins, NearestBinLocator(centers), faces)
+    )
+
+
+@pytest.mark.parametrize(
+    ("build", "positions"),
+    [
+        (_cell_less_bins, np.array([[0.1, 0.1], [0.9, 0.2], [0.8, 0.9]])),
+        (
+            lambda: Environment.linear_track(
+                endpoints=[(0.0, 0.0), (10.0, 0.0)], bin_size=1.0, track_width=2.0
+            ),
+            np.array([[0.5, 0.0], [4.5, 0.2], [8.5, -0.1]]),
+        ),
+    ],
+    ids=["cell-less bins", "track"],
+)
+def test_linear_allocation_without_cell_outlines_points_to_start(build, positions):
+    env = build()
+    times = np.array([0.0, 0.1, 0.3])  # s
+    with pytest.raises(NotImplementedError) as caught:
+        env.occupancy(times, positions, time_allocation="linear")
+    message = str(caught.value)
+    assert "Why: linear allocation divides the time" in message
+    assert message.splitlines()[-1].startswith("Fix: use time_allocation='start'")
+    occupancy = env.occupancy(times, positions, time_allocation="start")
+    assert occupancy.sum() == pytest.approx(0.3)

@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString
 from shapely.strtree import STRtree
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry import (
     Arena,
     Binning,
@@ -21,6 +22,7 @@ from neurospatial.geometry import (
     MaskArena,
     PolygonCells,
     RectilinearLocator,
+    TrackArena,
     UnknownArena,
     _CombinedArena,
     _TransformedArena,
@@ -254,14 +256,24 @@ def _uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
             return False
     if arena.polygonal_domain() is None:
         support = (
-            "a restricted MaskArena"
+            "a grid with a restricted arena mask"
             if isinstance(arena, MaskArena)
-            else "this known Arena"
+            else "a track"
+            if isinstance(arena, TrackArena)
+            else "this arena"
         )
         raise NotImplementedError(
-            f"Linear occupancy cannot subdivide {support} without exact planar "
-            "polygon support. Use time_allocation='start' or construct a grid "
-            "whose active cells lie wholly within a matching Arena mask."
+            _format_error(
+                f"time_allocation='linear' cannot split time among the bins of "
+                f"{support}.",
+                why="Why: linear allocation divides the time between two samples "
+                "among the bins the straight path crosses, cut at the arena's "
+                "outline, and this arena has no exact polygon outline (a track's "
+                "corridor has round ends, for example).",
+                fix="use time_allocation='start', which counts each interval in "
+                "the bin of its first sample; for a grid, build it so that its "
+                "active cells lie wholly within a matching arena mask",
+            )
         )
     return True
 
@@ -321,7 +333,21 @@ def retained_linear_intervals(
         raise ValueError(
             "polygon allocation needs (n_samples, 2) positions and one validity per interval"
         )
-    cells = materialize_cells(binning)
+    try:
+        cells = materialize_cells(binning)
+    except ValueError as error:
+        raise NotImplementedError(
+            _format_error(
+                "time_allocation='linear' needs the shape of every bin, and "
+                "these bins have centers and sizes but no cell shapes.",
+                why="Why: linear allocation divides the time between two samples "
+                "among the bins the straight path crosses, so it needs each "
+                "bin's edges. Bins given to Environment.from_bins without a grid, "
+                "hexagonal or mesh locator or polygon cells do not have them.",
+                fix="use time_allocation='start', which counts each interval in "
+                "the bin of its first sample",
+            )
+        ) from error
     frame = binning.grid_frame
     source_locator = None
     domain = arena.polygonal_domain() if arena.domain_known else None

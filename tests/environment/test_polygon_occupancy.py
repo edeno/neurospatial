@@ -385,7 +385,7 @@ def test_restricted_nd_mask_refuses_unimplemented_linear_subdivision():
         grid_edges=(np.array([0.0, 2.0]), np.array([0.0, 1.0]), np.array([0.0, 1.0])),
         arena=arena,
     )
-    with pytest.raises(NotImplementedError, match="restricted MaskArena"):
+    with pytest.raises(NotImplementedError, match="restricted arena mask"):
         env.occupancy(
             np.array([0.0, 1.0]),
             np.array([[0.75, 0.5, 0.5], [1.75, 0.5, 0.5]]),

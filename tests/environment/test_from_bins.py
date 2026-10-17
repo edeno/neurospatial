@@ -77,7 +77,7 @@ def test_nearest_only_bins_keep_explicit_lookup_and_refuse_cell_capabilities():
         env.compute_kernel(bandwidth=1.0)
     with pytest.raises(ValueError, match=r"cell|polygon|clip"):
         env.clip(box(-1, -1, 3, 4))
-    with pytest.raises(ValueError, match=r"cell|linear"):
+    with pytest.raises(NotImplementedError, match=r"time_allocation='start'"):
         env.occupancy(
             np.array([0.0, 1.0]),
             np.array([[0.0, 0.0], [2.0, 3.0]]),

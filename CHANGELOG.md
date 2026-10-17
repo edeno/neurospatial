@@ -636,6 +636,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   catch `NotImplementedError`; see the migration page. Rate-map
   `grid_score()` and `summary_table()` still report NaN there.
 
+- `env.occupancy(..., time_allocation="linear")` on bins without cell shapes
+  (bins passed to `Environment.from_bins` with only centers and sizes) raises
+  `NotImplementedError` instead of a `ValueError` about locators, and its
+  message, like the one for tracks, says why linear allocation needs each
+  bin's outline and points to `time_allocation="start"`.
+
 - On a track, `bin_at` and `nearest_bin(tie_break="closest_center")` search
   one KD-tree, so a position exactly equidistant from two or more bin centers
   goes to the same bin in both. `bin_at` used a tree of its own and could pick
