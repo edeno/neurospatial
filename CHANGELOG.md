@@ -407,6 +407,22 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   given `grid_orientation` are rotated by π/6. To reproduce an earlier
   simulation, pass `grid_orientation=old + np.pi / 6`.
 
+- Grid orientation values change units and frame.
+  `grid_properties().orientation` (and `SpatialRateResult.grid_properties()`)
+  read the autocorrelogram as an
+  image, with its first axis as y, but `spatial_autocorrelation` puts the
+  environment's x on the first axis, so the reported angle was the lattice
+  angle reflected about 45°. It was also in degrees. Orientation is now the
+  angle of the field lattice in the environment's frame, in radians from +x
+  (East) counterclockwise toward +y (North), in [0, π/3): a hexagonal
+  lattice repeats every π/3. `orientation_std` is in radians too, and
+  `peak_coords` columns are offsets along x and y. Convert old values with
+  `np.radians((90 - old) % 60)`; this is approximate, because old values
+  also averaged in a spare peak that could lie on the second ring of fields
+  (see Fixed), so they were off by up to about 5°. The migration page has
+  before-and-after values. A grid cell simulated with
+  `GridCellModel(grid_orientation=θ)` is reported with orientation θ.
+
 ### Changed
 
 - `spatial_autocorrelation` raises `NotImplementedError` instead of
@@ -673,18 +689,6 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   change by a median of about 0.01-0.02 either way. Grid-cell labels from
   threshold screens can change for borderline cells whose score was near the
   threshold.
-
-- Grid orientation values change. `grid_properties().orientation` (and
-  `SpatialRateResult.grid_properties()`) read the autocorrelogram as an
-  image, with its first axis as y, but `spatial_autocorrelation` puts the
-  environment's x on the first axis, so the reported angle was the lattice
-  angle reflected about 45°. It was also in degrees. Orientation is now the
-  angle of the field lattice in the environment's frame, in radians from +x
-  (East) counterclockwise toward +y (North), in [0, π/3): a hexagonal
-  lattice repeats every π/3. `orientation_std` is in radians too, and
-  `peak_coords` columns are offsets along x and y. Convert old values with
-  `np.radians((90 - old) % 60)`. A grid cell simulated with
-  `GridCellModel(grid_orientation=θ)` is reported with orientation θ.
 
 - `grid_properties()` averaged the orientation over every detected peak,
   including the spare one it detects beyond `n_peaks`, which can lie on the

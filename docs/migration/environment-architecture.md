@@ -1127,3 +1127,56 @@ except NotImplementedError:
 
 Rate-map `grid_score()` and `summary_table()` report NaN on these
 environments, as before for tracks and meshes.
+
+## Grid orientation is in radians, in the environment's frame
+
+`grid_properties(...).orientation` used to be in degrees, in [0, 60), and
+measured in the autocorrelogram's image layout, which reflected the field
+lattice about 45°. It is now the lattice angle in the environment's frame:
+radians from +x (East) counterclockwise toward +y (North), in [0, π/3),
+because a hexagonal lattice repeats every 60°. `orientation_std` is in
+radians too. `GridCellModel(grid_orientation=...)` takes the same angle, so a
+simulated grid cell is reported with the orientation it was given:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.encoding.grid import (
+    autocorrelation_pixel_size,
+    grid_properties,
+    spatial_autocorrelation,
+)
+from neurospatial.simulation import GridCellModel
+
+open_field = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # x, y in cm
+arena = Environment.from_samples(open_field, bin_size=2.0, units="cm")
+cell = GridCellModel(arena, grid_spacing=30.0, grid_orientation=np.radians(20.0))
+autocorr = spatial_autocorrelation(arena, cell.firing_rate(arena.bin_centers))
+properties = grid_properties(autocorr, autocorrelation_pixel_size(arena))
+# Before: properties.orientation was about 10 (degrees, reflected about 45°)
+assert abs(np.degrees(properties.orientation) - 20.0) < 2.0
+```
+
+To compare with orientations computed by an earlier version, convert them:
+
+<!-- docs-test: run -->
+```python
+old_orientation_deg = 10.0  # from an earlier version
+orientation = np.radians((90.0 - old_orientation_deg) % 60.0)  # 20° in radians
+```
+
+The conversion is approximate. Earlier versions also averaged in a spare
+peak that could lie on the second ring of fields, so old values were off by
+up to about 5°. Recompute orientations from your rate maps when you can.
+
+`GridCellModel(grid_orientation=θ)` used to set the angle of its plane waves,
+which put the field lattice π/6 further counterclockwise. To reproduce a
+simulation made with an earlier version, add π/6:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.simulation import GridCellModel
+
+earlier_grid_orientation = 0.0
+# Before: GridCellModel(env, grid_spacing=30.0, grid_orientation=earlier_grid_orientation)
+cell = GridCellModel(env, grid_spacing=30.0, grid_orientation=earlier_grid_orientation + np.pi / 6)
+```
