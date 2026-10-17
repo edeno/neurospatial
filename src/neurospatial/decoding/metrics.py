@@ -23,8 +23,10 @@ from typing import TYPE_CHECKING, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry import require_cartesian
+
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 def decoding_error(
@@ -115,6 +117,14 @@ def decoding_error(
                 "env is required when metric='geodesic'. "
                 "Provide an Environment instance for geodesic distance computation."
             )
+        require_cartesian(
+            env.coordinate_system,
+            "decoding_error(metric='geodesic')",
+            why="It locates the decoded and actual positions as allocentric "
+            "positions in the environment's bins.",
+            fix="decode on the allocentric environment the positions were "
+            "recorded in, or use metric='euclidean' on Cartesian positions",
+        )
 
         from neurospatial.ops.distance import geodesic_distance_matrix
 

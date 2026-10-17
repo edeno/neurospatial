@@ -5,27 +5,34 @@ from __future__ import annotations
 import copy
 import pickle
 import warnings
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timezone
 
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import (
+    built_from,
+    face_graph,
+    native_layout,
+    publish_binning,
+    publish_environment,
+)
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
-from neurospatial.layout._capabilities import RectilinearGridProvider
-from neurospatial.layout._construction import binning_from_layout
+from neurospatial.layout import create_layout
+from neurospatial.ops.transforms import translate
 
 _BuiltEnvironment = Environment | Environment
 
 
 def _source_layout(env: _BuiltEnvironment):
     """Build an independent native oracle for the published snapshot."""
-    return _native_oracle(env)
+    return native_layout(env)
 
 
 def _query_points(env: _BuiltEnvironment) -> np.ndarray:
@@ -78,13 +85,8 @@ def test_binning_capabilities_match_layout_protocols(
     env = built_environment
     layout = _source_layout(env)
     binning = env._binning
-    assert (binning.rectilinear is not None) == isinstance(
-        layout, RectilinearGridProvider
-    )
+    assert (binning.rectilinear is not None) == hasattr(layout, "rectilinear_grid")
     assert (binning.linearization is not None) == layout.is_linearized_track
-    assert binning.faces.available == callable(
-        getattr(layout, "finite_volume_geometry", None)
-    )
     if not hasattr(layout, "bin_shapes"):
         assert binning.shapes is None
     if not hasattr(layout, "outline"):
@@ -123,7 +125,7 @@ def test_binning_published_once(built_environment: _BuiltEnvironment) -> None:
         env._binning = published
     with pytest.raises(FrozenInstanceError):
         published.kind = "different"
-    other = binning_from_layout(_source_layout(env), env.connectivity)
+    other = _source_layout(env).binning()
     assert other != published
     assert len({published, other}) == 2
 
@@ -141,28 +143,26 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     actual, actual_warnings = _lookup_with_warnings(env._binning.locator.locate, points)
     np.testing.assert_array_equal(actual, expected)
     assert actual_warnings == expected_warnings
-    if not env._is_polar:
-        if env.arena.domain_known:
-            inside = env.arena.contains(points)
-            # Qhull can choose either triangle at a shared edge, depending
-            # on preceding queries. Compare the same arena-filtered batch.
-            expected = np.full_like(expected, -1)
-            expected[inside], expected_warnings = _lookup_with_warnings(
-                env._binning.locator.locate, points[inside]
-            )
-        indices, bin_warnings = _lookup_with_warnings(env.bin_at, points)
-        np.testing.assert_array_equal(indices, expected)
-        assert bin_warnings == expected_warnings
-        if env.is_linearized_track and not env.arena.domain_known:
-            with pytest.raises(NotImplementedError, match="track_width"):
-                env.contains(points)
-        else:
-            contains, contains_warnings = _lookup_with_warnings(env.contains, points)
-            np.testing.assert_array_equal(contains, expected != -1)
-            assert contains_warnings == expected_warnings
+    if env.arena.domain_known:
+        # Polar angles are wrapped into the angle range before the lookup.
+        query = env.arena.wrap_angles(points) if env._is_polar else points
+        inside = env.arena.contains(query)
+        # Qhull can choose either triangle at a shared edge, depending
+        # on preceding queries. Compare the same arena-filtered batch.
+        expected = np.full_like(expected, -1)
+        expected[inside], expected_warnings = _lookup_with_warnings(
+            env._binning.locator.locate, query[inside]
+        )
+    indices, bin_warnings = _lookup_with_warnings(env.bin_at, points)
+    np.testing.assert_array_equal(indices, expected)
+    assert bin_warnings == expected_warnings
+    if env.is_linearized_track and not env.arena.domain_known:
+        with pytest.raises(NotImplementedError, match="track_width"):
+            env.contains(points)
     else:
-        assert not hasattr(env, "bin_at")
-        assert not hasattr(env, "contains")
+        contains, contains_warnings = _lookup_with_warnings(env.contains, points)
+        np.testing.assert_array_equal(contains, expected != -1)
+        assert contains_warnings == expected_warnings
     np.testing.assert_array_equal(points, untouched)
     assert points.flags.writeable
     assert actual.dtype == np.intp
@@ -194,10 +194,10 @@ def test_faces_match_layout_and_cache_lifetime(
 ) -> None:
     """Faces share pair order and measures while caching stays on the environment."""
     env = built_environment
-    graph, sizes = _source_layout(env).finite_volume_geometry()
+    graph, sizes = face_graph(_source_layout(env).binning())
     expected = FaceGeometry.from_graph(graph, sizes)
-    faces = env._face_geometry
-    assert faces is env._face_geometry
+    faces = face_geometry(env._cache, env._binning)
+    assert faces is face_geometry(env._cache, env._binning)
     for actual, reference in zip(faces, expected, strict=True):
         np.testing.assert_array_equal(actual, reference)
         assert not actual.flags.writeable
@@ -212,7 +212,7 @@ def test_faces_match_layout_and_cache_lifetime(
     published = env._binning
     env.clear_cache()
     assert env._binning is published
-    assert env._face_geometry is not faces
+    assert face_geometry(env._cache, env._binning) is not faces
     np.testing.assert_allclose(env.smooth(field, bandwidth=1.0), before)
 
 
@@ -241,20 +241,6 @@ def test_serialized_binning_preserves_ownership(
     )
 
 
-def test_pickle_without_owned_geometry_refuses(built_environment):
-    legacy = copy.deepcopy(built_environment)
-    vars(legacy._geometry).pop("binning")
-    with pytest.raises(ValueError, match="missing owned binning"):
-        pickle.loads(pickle.dumps(legacy))
-
-
-def test_layout_bearing_pickle_requires_supported_storage_migration(built_environment):
-    legacy = copy.deepcopy(built_environment)
-    legacy._layout = _source_layout(legacy)
-    with pytest.raises(ValueError, match="Legacy layout-bearing pickles"):
-        pickle.loads(pickle.dumps(legacy))
-
-
 def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
     """A restored graph has fresh state without modifying an existing value."""
     mask = np.ones((3, 3), dtype=bool)
@@ -263,12 +249,12 @@ def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
     replacement = Environment.from_grid_mask(
         mask, grid_edges=edges, connect_diagonal_neighbors=False
     )
-    old_binning, old_faces = env._binning, env._face_geometry
+    old_binning, old_faces = env._binning, face_geometry(env._cache, env._binning)
     restored = Environment.from_dict(replacement.to_dict())
     assert restored._binning is not old_binning
-    assert restored._face_geometry is not old_faces
+    assert face_geometry(restored._cache, restored._binning) is not old_faces
     assert env._binning is old_binning
-    assert env._face_geometry is old_faces
+    assert face_geometry(env._cache, env._binning) is old_faces
     np.testing.assert_array_equal(
         restored._binning.bins.pairs, list(replacement.connectivity.edges())
     )
@@ -277,28 +263,32 @@ def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
 
 def test_invalid_binning_is_not_published(monkeypatch) -> None:
     """An invalid measure must leave the previous geometry and caches intact."""
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+    env = built_from(
+        lambda: Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
     )
     geometry, published = env._geometry, env._binning
-    kernel = env.compute_kernel(1.0)
-    cached_kernel = env._kernel_cache[(1.0, "density")]
+    kernel = env.compute_kernel(bandwidth=1.0)
+    cache, n_cached = env._cache, len(env._cache)
     layout = _source_layout(env)
     monkeypatch.setattr(layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
     with pytest.raises(ValueError, match="sizes"):
-        binning_from_layout(layout, layout.connectivity)
-    with pytest.raises(TypeError, match=r"owned.*snapshot|Migrate custom"):
-        publish_environment(layout=layout, layout_type_used=layout._layout_type_tag)
+        layout.binning()
+    with pytest.raises(ValueError, match="sizes"):
+        publish_environment(layout=layout, layout_type_used=layout.layout_type)
     assert env._geometry is geometry
     assert env._binning is published
-    assert env._kernel_cache[(1.0, "density")] is cached_kernel
-    np.testing.assert_array_equal(env.compute_kernel(1.0), kernel)
+    assert env._cache is cache and len(cache) == n_cached
+    np.testing.assert_array_equal(env.compute_kernel(bandwidth=1.0), kernel)
 
 
 def test_faces_reject_changed_pair_order() -> None:
     """Native recipes retain the supplied authoritative pair order."""
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+    env = built_from(
+        lambda: Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
     )
     reordered = nx.Graph()
     reordered.add_nodes_from(reversed(list(env.connectivity.nodes)))
@@ -307,31 +297,15 @@ def test_faces_reject_changed_pair_order() -> None:
         map(frozenset, env.connectivity.edges)
     )
     assert list(reordered.edges) != list(env.connectivity.edges)
-    binning = binning_from_layout(_source_layout(env), reordered)
+    layout = _source_layout(env)
+    layout.connectivity = reordered
+    binning = layout.binning()
     faces = binning.faces.build()
     np.testing.assert_array_equal(faces.edges, binning.bins.pairs)
-    expected = env._face_geometry
+    expected = face_geometry(env._cache, env._binning)
     by_pair = {frozenset(pair): i for i, pair in enumerate(expected.edges)}
     for i, pair in enumerate(faces.edges):
         assert faces.A[i] == expected.A[by_pair[frozenset(pair)]]
-
-
-def test_publication_rejects_graph_nodes_without_bins():
-    env = Environment.from_grid_mask(
-        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
-    )
-    graph = env.connectivity.copy()
-    graph.add_node(4, pos=(10.0, 10.0))
-    with pytest.raises(ValueError, match=r"nodes|bins"):
-        Environment._from_binning(
-            env._binning,
-            connectivity=graph,
-            dimension_ranges=env.dimension_ranges,
-            layout_type_tag=env.layout_type,
-            layout_type=env._layout_category,
-            build_params={},
-            is_linearized_track=False,
-        )
 
 
 @pytest.mark.nwb
@@ -341,7 +315,9 @@ def test_non_grid_nwb_record_retains_faces() -> None:
     from neurospatial.io.nwb import read_environment, write_environment
 
     env = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
     )
     nwb = pynwb.NWBFile(
         "geometry test", "binning-refusal", datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -360,7 +336,9 @@ def test_non_grid_nwb_record_retains_faces() -> None:
 def test_require_rectilinear_message_unchanged() -> None:
     """Linear interpolation still explains how a hexagonal user can proceed."""
     env = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
     )
     with pytest.raises(NotImplementedError) as exc:
         env.interpolate(np.ones(env.n_bins), env.bin_centers[:1], mode="linear")
@@ -371,11 +349,113 @@ def test_require_rectilinear_message_unchanged() -> None:
     )
 
 
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
+def test_polar_publication_refuses_coordinates_that_disagree_with_the_arena():
+    from neurospatial.geometry._coordinates import EgocentricPolarSystem
 
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    return Environment._create_layout(env.layout_type, env.layout_parameters)
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 10.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 2,
+    )
+    assert env.arena.circular
+    with pytest.raises(ValueError, match="circular=True") as error:
+        publish_binning(
+            env._binning,
+            layout_type=env.layout_type,
+            coordinates=EgocentricPolarSystem(False),
+            arena=env.arena,
+        )
+    assert "Fix: pass coordinates matching the arena's circular flag" in str(
+        error.value
+    )
+
+
+def _center_lookup_paths():
+    import networkx as nx
+    from shapely.geometry import box
+
+    from neurospatial.binning import KnownFaces
+
+    positions = np.random.default_rng(0).uniform(0, 20, (500, 2))
+    track = nx.Graph()
+    track.add_node(0, pos=(0.0, 0.0))
+    track.add_node(1, pos=(10.0, 0.0))
+    track.add_edge(0, 1, distance=10.0)
+
+    def grid():
+        return Environment.from_grid_mask(
+            np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0),) * 2
+        )
+
+    def from_bins():
+        binning = grid()._binning
+        return Environment.from_bins(
+            replace(binning, faces=KnownFaces(binning.faces.build()))
+        )
+
+    return {
+        "from_samples": lambda: Environment.from_samples(positions, bin_size=4.0),
+        "hexagonal": lambda: Environment.from_samples(
+            positions, bin_size=4.0, layout="Hexagonal"
+        ),
+        "from_polygon": lambda: Environment.from_polygon(box(0, 0, 8, 8), bin_size=2.0),
+        "from_grid_mask": grid,
+        "from_pixel_mask": lambda: Environment.from_pixel_mask(
+            np.ones((3, 3), dtype=bool), pixel_size=2.0
+        ),
+        "from_graph": lambda: Environment.from_graph(
+            track, [(0, 1)], edge_spacing=0.0, bin_size=2.0
+        ),
+        "from_layout": lambda: Environment.from_layout(
+            create_layout(
+                "TriangularMesh", boundary_polygon=box(0, 0, 8, 8), point_spacing=2.0
+            )
+        ),
+        "from_polar_egocentric": lambda: Environment.from_polar_egocentric(
+            distance_range=(0.0, 10.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 2,
+        ),
+        "from_bins": from_bins,
+        "rebin_factor": lambda: grid().rebin(2),
+        "rebin_bin_size": lambda: grid().rebin(bin_size=2.0),
+        "subset": lambda: grid().subset(mask=np.arange(16) % 2 == 0),
+        "clip": lambda: grid().clip(box(0, 0, 3, 3)),
+        "apply_transform": lambda: grid().apply_transform(translate(1.0, 0.0)),
+        "combine": lambda: Environment.combine(
+            {"a": grid(), "b": grid().apply_transform(translate(10.0, 0.0))}
+        ),
+        "from_dict": lambda: Environment.from_dict(grid().to_dict()),
+    }
+
+
+@pytest.mark.parametrize("path", sorted(_center_lookup_paths()))
+def test_every_publication_checks_that_bin_centers_locate_their_bins(monkeypatch, path):
+    """Factories, engines, derivations and readers all run the lookup check."""
+    from neurospatial.geometry import _validation
+
+    checked = []
+    check = _validation._validate_center_lookup
+
+    def recording(binning):
+        checked.append(binning.bins.n_bins)
+        return check(binning)
+
+    monkeypatch.setattr(_validation, "_validate_center_lookup", recording)
+    env = _center_lookup_paths()[path]()
+    assert checked[-1] == env.n_bins
+
+
+def test_center_lookup_check_refuses_a_locator_that_places_centers_elsewhere():
+    from neurospatial.binning import NearestBinLocator
+    from neurospatial.geometry._validation import _validate_center_lookup
+
+    env = Environment.from_grid_mask(
+        np.ones((1, 3), dtype=bool), grid_edges=(np.arange(2.0), np.arange(4.0))
+    )
+    centers = env._binning.bins.centers
+    swapped = NearestBinLocator(centers, bin_indices=np.array([1, 0, 2]))
+    with pytest.raises(ValueError, match="locator bin-center lookup"):
+        _validate_center_lookup(replace(env._binning, locator=swapped))

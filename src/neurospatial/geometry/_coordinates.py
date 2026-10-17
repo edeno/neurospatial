@@ -6,13 +6,14 @@ ask it for coordinate math, length scales and plot labels.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar, Protocol
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial._exceptions import CartesianOnlyError
 
 
 class CellLengthConsumer(Protocol):
@@ -43,6 +44,10 @@ class CoordinateSystem(Protocol):
         """The ranges of the axes measured in length units."""
         ...
 
+    def cartesian_embedding(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Points in a Cartesian frame where Euclidean distance is physical distance."""
+        ...
+
     def fallback_lengths(self, env: CellLengthConsumer) -> NDArray[np.float64]:
         """Length scales when no connectivity edge has a positive distance."""
         ...
@@ -71,6 +76,10 @@ class CartesianSystem:
     ) -> Sequence[tuple[float, float]]:
         """Every axis is a length."""
         return dimension_ranges
+
+    def cartesian_embedding(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """The points themselves: Cartesian positions are already Cartesian."""
+        return points
 
     def fallback_lengths(self, env: CellLengthConsumer) -> NDArray[np.float64]:
         """Edge length of a cube with each bin's volume."""
@@ -118,9 +127,9 @@ class EgocentricPolarSystem:
         # OPEN (circular_angle=False -- no seam edges in the graph), bins at -pi
         # and +pi are genuinely far apart, so wrapping would leak smoothing
         # across a boundary the caller deliberately left open; use the raw
-        # angular difference instead. Circularity is derived from the
-        # connectivity graph (presence of seam edges), so it stays consistent
-        # with the graph and survives serialization. The diffusion_kde path is
+        # angular difference instead. Circularity comes from the environment's
+        # EgocentricSurround arena, which the layout's seam edges agree with
+        # and which survives serialization. The diffusion_kde path is
         # unaffected: it smooths over the environment graph directly.
         if self.circular:
             d_theta = (d_theta_raw + np.pi) % (2.0 * np.pi) - np.pi
@@ -136,6 +145,26 @@ class EgocentricPolarSystem:
         """Only the distance axis is a length."""
         return dimension_ranges[:1]
 
+    def cartesian_embedding(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Place ``(distance, angle)`` rows in the animal's egocentric plane.
+
+        Parameters
+        ----------
+        points : ndarray, shape (n_points, 2)
+            ``(distance, angle)`` rows, angles in radians (0 = ahead,
+            +π/2 = left).
+
+        Returns
+        -------
+        ndarray, shape (n_points, 2)
+            ``(distance · cos(angle), distance · sin(angle))``: x ahead of the
+            animal and y to its left, in the distance units. Euclidean
+            distance between two rows is the physical distance between the
+            places they name, and angles a whole turn apart coincide.
+        """
+        distance, angle = points[:, 0], points[:, 1]
+        return np.column_stack((distance * np.cos(angle), distance * np.sin(angle)))
+
     def fallback_lengths(self, env: CellLengthConsumer) -> NDArray[np.float64]:
         """Radial bin widths from the polar grid's distance axis."""
         edges = env.grid_edges
@@ -148,84 +177,41 @@ class EgocentricPolarSystem:
         return f"Distance{suffix}", "Angle (rad)"
 
 
-def polar_circularity(
-    grid_shape: tuple[int, ...] | None,
-    connectivity: nx.Graph,
-    parameters: Mapping[str, object],
-) -> bool:
-    """Normalize legacy circularity once: saved small grids, otherwise graph seams.
-
-    Used only when a legacy record has no owned polar arena declaration.
-    Current environments take circularity from their EgocentricSurround.
-    """
-    if grid_shape is not None and grid_shape[1] <= 2:
-        return bool(parameters.get("circular_angle", False))
-
-    if connectivity.number_of_edges() == 0:
-        return False
-
-    # Collect per-edge (Δr, |Δθ|) using node "pos" attributes
-    # (pos[0]=distance, pos[1]=angle). Same-ring edges have Δr ~ 0.
-    same_ring_dtheta: list[float] = []
-    min_step = np.inf
-    for u, v in connectivity.edges():
-        pos_u = connectivity.nodes[u]["pos"]
-        pos_v = connectivity.nodes[v]["pos"]
-        d_r = abs(float(pos_v[0]) - float(pos_u[0]))
-        d_theta = abs(float(pos_v[1]) - float(pos_u[1]))
-        if d_theta > 0:
-            min_step = min(min_step, d_theta)
-        # Same-ring edge: distance unchanged (radial component ~ 0).
-        if d_r <= 1e-9 and d_theta > 0:
-            same_ring_dtheta.append(d_theta)
-
-    if not np.isfinite(min_step) or not same_ring_dtheta:
-        return False
-
-    # A seam edge spans many regular steps; a regular angular edge spans
-    # one. Use a threshold of 1.5x the smallest step: seam edges (which
-    # span (n_angle - 1) steps for n_angle >= 3) clear it comfortably,
-    # while regular angular edges do not.
-    threshold = 1.5 * min_step
-    return any(dt > threshold for dt in same_ring_dtheta)
-
-
-_POLAR_COORDINATES = (
-    "this is a polar environment whose bin_centers[:, 0] is distance and "
-    "bin_centers[:, 1] is angle in radians, so operations that assume Cartesian "
-    "(x, y[, z]) coordinates or a Cartesian grid would silently return "
-    "geometric nonsense."
-)
-
-
-def _require_cartesian_coordinates(
-    env: object, operation: str, *, instead: str
+def require_cartesian(
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+    operation: str,
+    *,
+    why: str,
+    fix: str,
+    example: str | None = None,
 ) -> None:
-    """Refuse a domain function that reads polar bin centers as Cartesian.
+    """Refuse an operation that reads polar ``(distance, angle)`` bins as Cartesian.
+
+    Cartesian-only refusals that hold the environment's coordinate descriptor
+    go through this check: the ``@cartesian_only`` Environment members, the
+    Cartesian-only modes of shared methods, and analysis functions in other
+    packages. Code that holds only an arena, such as ``boundary_geometry``,
+    raises :class:`CartesianOnlyError` itself from ``arena.coordinate_kind``,
+    with the same message layout.
 
     Parameters
     ----------
-    env : Environment
-        Environment whose bin centers the operation reads. Duck-typed
-        objects without owned coordinates are treated as Cartesian.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        The environment's coordinate descriptor, ``env.coordinate_system``.
     operation : str
-        The refused call as the caller wrote it, e.g. ``"mean_position()"``
+        The refused call as the caller wrote it, e.g. ``"Environment.bin_at()"``
         or ``"rate_map_centroid(method='euclidean')"``.
-    instead : str
-        One sentence naming the polar-safe alternative.
+    why : str
+        One sentence on why the operation needs Cartesian coordinates.
+    fix : str
+        What works on a polar environment instead.
+    example : str or None, optional
+        Code for that alternative (see :class:`CartesianOnlyError`).
 
     Raises
     ------
     CartesianOnlyError
-        If ``env`` stores polar ``(distance, angle)`` bins.
+        If ``coordinates`` is an :class:`EgocentricPolarSystem`.
     """
-    # Duck-typed environments without owned coordinates are Cartesian arrays.
-    if isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem):
-        from neurospatial._exceptions import CartesianOnlyError
-
-        raise CartesianOnlyError(
-            type(env).__name__,
-            operation,
-            reason="Cartesian-coordinate operation",
-            explanation=f"{_POLAR_COORDINATES} {instead}",
-        )
+    if isinstance(coordinates, EgocentricPolarSystem):
+        raise CartesianOnlyError(operation, why=why, fix=fix, example=example)

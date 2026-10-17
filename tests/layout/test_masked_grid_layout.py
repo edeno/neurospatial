@@ -26,7 +26,7 @@ def test_point_inside_bbox_but_masked_returns_negative_one():
     layout, _ = _build_masked_layout()
 
     # Cell center (1.5, 1.5) lies inside the bounding box but is masked out.
-    result = layout.point_to_bin_index(np.array([[1.5, 1.5]]))
+    result = layout.binning().locator.locate(np.array([[1.5, 1.5]]))
     assert result[0] == -1
 
 
@@ -35,7 +35,7 @@ def test_point_in_active_region():
     layout, _ = _build_masked_layout()
 
     # Cell center (0.5, 0.5) is the first active bin.
-    result = layout.point_to_bin_index(np.array([[0.5, 0.5]]))
+    result = layout.binning().locator.locate(np.array([[0.5, 0.5]]))
     assert result[0] >= 0
     np.testing.assert_allclose(layout.bin_centers[result[0]], [0.5, 0.5])
 
@@ -49,7 +49,7 @@ def test_point_on_mask_boundary():
     """
     layout, _ = _build_masked_layout()
 
-    result = layout.point_to_bin_index(np.array([[1.0, 0.5]]))
+    result = layout.binning().locator.locate(np.array([[1.0, 0.5]]))
     assert result[0] >= 0
     # The assigned cell is in the active bottom row (y in [0, 1)).
     assert layout.bin_centers[result[0]][1] == 0.5
@@ -168,7 +168,7 @@ def test_accepts_fine_bins_at_large_offsets(offset, bin_size):
     keep = np.zeros(env.n_bins, dtype=bool)
     keep[::2] = True
 
-    sub = env.subset(bins=keep)
+    sub = env.subset(mask=keep)
 
     parent_grid = env._binning.rectilinear
     grid = sub._binning.rectilinear

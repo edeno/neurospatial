@@ -76,13 +76,16 @@ def _require_pynwb() -> Any:
     Raises
     ------
     ImportError
-        If pynwb is not installed.
+        If pynwb is not installed. Any other import failure, such as a
+        missing or broken pynwb dependency, propagates unchanged.
     """
     try:
         import pynwb
 
         return pynwb
-    except ImportError as e:
+    except ModuleNotFoundError as e:
+        if e.name != "pynwb":
+            raise
         raise ImportError(
             "pynwb is required for NWB integration. "
             "Install with: pip install neurospatial[nwb]"
@@ -101,13 +104,16 @@ def _require_ndx_pose() -> Any:
     Raises
     ------
     ImportError
-        If ndx-pose is not installed.
+        If ndx-pose is not installed. Any other import failure, such as a
+        missing or broken ndx-pose dependency, propagates unchanged.
     """
     try:
         import ndx_pose
 
         return ndx_pose
-    except ImportError as e:
+    except ModuleNotFoundError as e:
+        if e.name != "ndx_pose":
+            raise
         raise ImportError(
             "ndx-pose is required for pose data. "
             "Install with: pip install neurospatial[nwb]"
@@ -126,13 +132,16 @@ def _require_ndx_events() -> Any:
     Raises
     ------
     ImportError
-        If ndx-events is not installed.
+        If ndx-events is not installed. Any other import failure, such as a
+        missing or broken ndx-events dependency, propagates unchanged.
     """
     try:
         import ndx_events
 
         return ndx_events
-    except ImportError as e:
+    except ModuleNotFoundError as e:
+        if e.name != "ndx_events":
+            raise
         raise ImportError(
             "ndx-events is required for event data. "
             "Install with: pip install neurospatial[nwb]"

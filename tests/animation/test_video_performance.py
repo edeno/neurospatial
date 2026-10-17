@@ -44,7 +44,6 @@ def perf_env() -> Environment:
     rng = np.random.default_rng(42)
     positions = rng.random((1000, 2)) * 200
     env = Environment.from_samples(positions, bin_size=10.0)
-    env.clear_cache()  # Ensure pickle-able for parallel tests
     return env
 
 

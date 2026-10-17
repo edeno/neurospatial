@@ -181,7 +181,7 @@ bin_idx = env.bin_at(point)
 print(f"Point {point[0]} is in bin {bin_idx[0]}")
 
 # Find neighbors of a bin
-neighbors = env.neighbors(bin_idx[0])
+neighbors = env.neighbors(bins=bin_idx[0])
 print(f"Bin {bin_idx[0]} has {len(neighbors)} neighbors")
 
 # Visualize the environment
@@ -415,6 +415,7 @@ env = Environment.from_graph(
     edge_order=[(4, 0), (0, 1), (0, 2), (0, 3)],  # traversal order
     edge_spacing=0.0,  # no gaps between edges
     bin_size=2.0,  # cm
+    track_width=10.0,  # measured corridor width, cm; positions farther out get bin -1
     name="PlusMaze"
 )
 
@@ -578,7 +579,6 @@ frame_times = np.arange(len(fields)) / 30.0  # 30 Hz
 env.animate_fields(fields, frame_times=frame_times, backend="napari")
 
 # Video export with parallel rendering (best for presentations)
-env.clear_cache()  # Required for parallel rendering
 env.animate_fields(
     fields, frame_times=frame_times,
     save_path="animation.mp4", n_workers=4,
@@ -622,7 +622,6 @@ env.animate_fields(fields, frame_times=frame_times, backend="napari")
 # Or subsample for video export (250 Hz → 30 fps)
 subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
 sub_times = np.arange(len(subsampled)) / 30.0
-env.clear_cache()
 env.animate_fields(
     subsampled, frame_times=sub_times,
     save_path="replay.mp4", n_workers=4,

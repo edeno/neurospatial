@@ -20,6 +20,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import numpy as np
+
 # Add benchmarks to path
 sys.path.insert(0, str(Path(__file__).parent))
 from utils import (
@@ -68,16 +70,13 @@ def benchmark_video_export(
     get_memory_mb()
     start_time = time.perf_counter()
 
-    # Clear cache for parallel rendering
-    env.clear_cache()
-
     animate_fields(
         env,
         fields,
         backend="video",
         overlays=overlays,
         save_path=str(output_path),
-        fps=30,
+        frame_times=np.arange(len(fields)) / 30.0,
         n_workers=n_workers,
         dpi=72,  # Lower DPI for faster benchmarking
     )

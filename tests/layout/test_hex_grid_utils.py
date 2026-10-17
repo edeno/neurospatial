@@ -2,6 +2,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
+from neurospatial import geometry
 from neurospatial.layout.helpers import hexagonal as hgu
 
 
@@ -53,11 +54,13 @@ def test_create_hex_grid_invalid_hexagon_width():
 def test_cartesian_to_fractional_cube_and_round_trip():
     points = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float64)
     hex_radius = 1.0
-    q, r, s = hgu._cartesian_to_fractional_cube(points[:, 0], points[:, 1], hex_radius)
+    q, r, s = geometry.cartesian_to_fractional_cube(
+        points[:, 0], points[:, 1], hex_radius
+    )
     assert q.shape == (3,)
     assert r.shape == (3,)
     assert s.shape == (3,)
-    q_ax, r_ax = hgu._round_fractional_cube_to_integer_axial(q, r, s)
+    q_ax, r_ax = geometry.round_fractional_cube_to_integer_axial(q, r, s)
     assert q_ax.shape == (3,)
     assert r_ax.shape == (3,)
     # Check that q_ax + r_ax + s_ax == 0 for all points
@@ -69,20 +72,20 @@ def test_axial_to_offset_bin_indices_and_points_to_hex_bin_ind():
     q_axial = np.array([0, 1, 2])
     r_axial = np.array([0, 0, 0])
     n_hex_x, n_hex_y = 3, 1
-    indices = hgu._axial_to_offset_bin_indices(q_axial, r_axial, n_hex_x, n_hex_y)
+    indices = geometry.axial_to_offset_bin_indices(q_axial, r_axial, n_hex_x, n_hex_y)
     assert np.all(indices == np.array([0, 1, 2]))
     # Out of bounds
-    indices = hgu._axial_to_offset_bin_indices(
+    indices = geometry.axial_to_offset_bin_indices(
         np.array([3]), np.array([0]), n_hex_x, n_hex_y
     )
     assert indices[0] == -1
 
-    # Test _points_to_hex_bin_ind
+    # Test points_to_hex_bin_ind
     _bin_centers, centers_shape, hex_radius, _, min_x, min_y, _ = hgu._create_hex_grid(
         np.array([[0, 0], [1, 0], [2, 0]], dtype=np.float64), hexagon_width=1.0
     )
     points = np.array([[0, 0], [1, 0], [2, 0], [100, 100]], dtype=np.float64)
-    indices = hgu._points_to_hex_bin_ind(
+    indices = geometry.points_to_hex_bin_ind(
         points, min_x, min_y, hex_radius, centers_shape
     )
     assert indices.shape == (4,)
@@ -112,8 +115,8 @@ def test_infer_active_bins_from_hex_grid():
 
 
 def test_get_hex_grid_neighbor_deltas():
-    even_neighbors = hgu._get_hex_grid_neighbor_deltas(False)
-    odd_neighbors = hgu._get_hex_grid_neighbor_deltas(True)
+    even_neighbors = geometry.get_hex_grid_neighbor_deltas(False)
+    odd_neighbors = geometry.get_hex_grid_neighbor_deltas(True)
     assert len(even_neighbors) == 6
     assert len(odd_neighbors) == 6
     # Check that neighbor deltas are tuples of ints
@@ -156,7 +159,7 @@ def test_points_to_hex_bin_ind_nan_handling():
     _bin_centers, centers_shape, hex_radius, _, min_x, min_y, _ = hgu._create_hex_grid(
         np.array([[0, 0], [1, 0]], dtype=np.float64), hexagon_width=1.0
     )
-    indices = hgu._points_to_hex_bin_ind(
+    indices = geometry.points_to_hex_bin_ind(
         positions, min_x, min_y, hex_radius, centers_shape
     )
     assert indices[1] == -1 and indices[2] == -1
@@ -170,7 +173,7 @@ class TestNumericalStabilityHexagonal:
     """
 
     def test_cartesian_to_cube_very_small_radius(self):
-        """Test _cartesian_to_fractional_cube with hex_radius near numerical precision limits.
+        """Test cartesian_to_fractional_cube with hex_radius near numerical precision limits.
 
         When hex_radius is very small (approaching numerical precision), the
         function should either raise a clear error or handle gracefully without
@@ -182,16 +185,18 @@ class TestNumericalStabilityHexagonal:
         # Test hex_radius just below minimum threshold (should raise error)
         # MIN_HEX_RADIUS should be ~1e-10
         with pytest.raises(ValueError, match="hex_radius too small"):
-            hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=1e-12)
+            geometry.cartesian_to_fractional_cube(points_x, points_y, hex_radius=1e-12)
 
         # Test hex_radius at minimum threshold (should work)
-        q, r, s = hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=1e-8)
+        q, r, s = geometry.cartesian_to_fractional_cube(
+            points_x, points_y, hex_radius=1e-8
+        )
         assert np.all(np.isfinite(q)), "q contains inf/nan"
         assert np.all(np.isfinite(r)), "r contains inf/nan"
         assert np.all(np.isfinite(s)), "s contains inf/nan"
 
     def test_cartesian_to_cube_zero_radius_handling(self):
-        """Test _cartesian_to_fractional_cube with hex_radius exactly zero.
+        """Test cartesian_to_fractional_cube with hex_radius exactly zero.
 
         Zero and near-zero values should raise ValueError to prevent division
         by zero and numerical instability.
@@ -201,16 +206,18 @@ class TestNumericalStabilityHexagonal:
 
         # Exact zero should raise error (below MIN_HEX_RADIUS threshold)
         with pytest.raises(ValueError, match="hex_radius too small"):
-            hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=0.0)
+            geometry.cartesian_to_fractional_cube(points_x, points_y, hex_radius=0.0)
 
         # Very small value (near-zero but not exactly zero) should also raise error
         very_small = 1e-15
         with pytest.raises(ValueError, match="hex_radius too small"):
-            hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius=very_small)
+            geometry.cartesian_to_fractional_cube(
+                points_x, points_y, hex_radius=very_small
+            )
 
         # Value just above MIN_HEX_RADIUS should work without error
         barely_valid = 1.1e-10
-        q, r, s = hgu._cartesian_to_fractional_cube(
+        q, r, s = geometry.cartesian_to_fractional_cube(
             points_x, points_y, hex_radius=barely_valid
         )
         assert np.all(np.isfinite(q)), "q contains inf/nan"
@@ -227,7 +234,7 @@ class TestNumericalStabilityHexagonal:
         points_y = np.array([0.0, 1.0, 2.0, -1.0, -2.0])
         hex_radius = 1.0
 
-        q, r, s = hgu._cartesian_to_fractional_cube(points_x, points_y, hex_radius)
+        q, r, s = geometry.cartesian_to_fractional_cube(points_x, points_y, hex_radius)
 
         # Check cube coordinate constraint
         constraint = q + r + s

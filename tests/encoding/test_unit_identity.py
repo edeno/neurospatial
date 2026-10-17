@@ -498,14 +498,14 @@ def test_mixed_type_labels_keep_their_types():
     """[1, "u"] must not become ["1", "u"]; an int label stays an int."""
     from neurospatial._results import resolve_unit_ids
     from neurospatial.encoding import SpikeTrains
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
 
     resolved = resolve_unit_ids([1, "u"], 2)
     assert resolved.tolist() == [1, "u"]
     assert [type(label) for label in resolved.tolist()] == [int, str]
 
     group = SpikeTrains([np.array([0.1]), np.array([0.2, 0.3])], unit_ids=[1, "u"])
-    trains, labels = as_spike_trains_with_ids(group)
+    trains, labels = _as_spike_trains_with_ids(group)
     assert labels.tolist() == [1, "u"]
     np.testing.assert_array_equal(trains[1], [0.2, 0.3])
 

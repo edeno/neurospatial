@@ -38,7 +38,8 @@ import networkx as nx
 import numpy as np
 from shapely.geometry import Polygon
 
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import union_polygons
 
@@ -105,7 +106,10 @@ def make_honeycomb_maze(
     MazeEnvironments
         Contains:
         - env_2d: 2D polygon-based environment
-        - env_track: 1D linearized track environment (if include_track=True)
+        - env_track: 1D linearized track environment (if include_track=True);
+          its ``track_width`` is one platform's width, so a sample within one
+          platform radius of the centerline is on the track, including a few in
+          the gaps between platforms
 
     Notes
     -----
@@ -162,7 +166,7 @@ def make_honeycomb_maze(
 
     # Create hexagonal polygon for each platform
     # Platform radius is approximately spacing / 2 to allow slight gap between platforms
-    platform_radius = dims.spacing / 2.5
+    platform_radius = _platform_radius(dims)
     platform_polygons = [
         _make_hexagon_polygon(center, platform_radius) for center in positions
     ]
@@ -313,6 +317,11 @@ def _make_hexagon_polygon(
     return Polygon(vertices)
 
 
+def _platform_radius(dims: HoneycombDims) -> float:
+    """Corner radius of each hexagonal platform, leaving a gap between them."""
+    return dims.spacing / 2.5
+
+
 def _create_honeycomb_track_graph(
     dims: HoneycombDims,
     bin_size: float,
@@ -378,12 +387,16 @@ def _create_honeycomb_track_graph(
     # Start from center platform
     add_edges_from_node("platform_0")
 
-    # Create the 1D environment
+    # Create the 1D environment. The platforms are the widest walkable part,
+    # so the track is as wide as a platform: a sample within one platform
+    # radius of the centerline is on the track, which also admits a few
+    # samples in the gap between two platforms.
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
+        track_width=2.0 * _platform_radius(dims),
         name="honeycomb_1d",
     )
     env_track = env_track.with_metadata(units="cm")

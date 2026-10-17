@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import replace
 from types import SimpleNamespace
 
-import networkx as nx
 import numpy as np
 import pytest
 from shapely.affinity import translate
@@ -19,14 +18,13 @@ from neurospatial.geometry._binning import (
 )
 from neurospatial.geometry._derive import subset_binning, transform_binning
 from neurospatial.geometry._locators import RectilinearLocator
-from neurospatial.geometry._polygon import (
+from neurospatial.geometry._polygon import _representative, certify_faces
+from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
     PolygonCells,
-    _representative,
-    certify_faces,
 )
-from neurospatial.geometry._validation import _validate_components, _validate_graph
+from neurospatial.geometry._validation import validate_components
 
 
 def _binning(polygons, *, pairs=(), known=False):
@@ -58,15 +56,7 @@ def _binning(polygons, *, pairs=(), known=False):
 
 
 def _publish(binning):
-    graph = nx.Graph()
-    for index, center in enumerate(binning.bins.centers):
-        graph.add_node(index, pos=center)
-    for (u, v), distance in zip(
-        binning.bins.pairs, binning.bins.pair_distances, strict=True
-    ):
-        graph.add_edge(int(u), int(v), distance=distance)
-    _validate_graph(binning, graph)
-    _validate_components(binning, False, "cartesian")
+    validate_components(binning, False, "cartesian")
 
 
 def _matrix(angle=0.0, offset=0.0):

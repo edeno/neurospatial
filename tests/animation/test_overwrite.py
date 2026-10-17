@@ -147,9 +147,10 @@ def test_default_html_path_is_protected(animation_data, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("backend", ["napari", "widget"])
-def test_overwrite_is_not_forwarded_to_interactive_backends(
+def test_overwrite_is_ignored_with_a_warning_by_interactive_backends(
     animation_data, monkeypatch, backend
 ):
+    """Interactive backends write no file; overwrite=True warns and is dropped."""
     received = []
 
     def interactive(env, fields, **kwargs):
@@ -160,6 +161,6 @@ def test_overwrite_is_not_forwarded_to_interactive_backends(
         interactive,
     )
     env, fields, times = animation_data
-    env.animate_fields(fields, frame_times=times, backend=backend, overwrite=True)
-    assert len(received) == 1
+    with pytest.warns(UserWarning, match="overwrite is used by the video and html"):
+        env.animate_fields(fields, frame_times=times, backend=backend, overwrite=True)
     assert "overwrite" not in received[0]

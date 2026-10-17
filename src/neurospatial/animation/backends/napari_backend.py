@@ -14,6 +14,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.animation._region_names import shown_region_names
+from neurospatial.animation._utils import _emit_status
+
 # Import shared coordinate transforms
 from neurospatial.animation.core import MAX_PLAYBACK_FPS
 from neurospatial.animation.transforms import EnvScale as _EnvScale
@@ -1268,7 +1271,7 @@ def _build_video_napari_affine(
     if isinstance(video_data.reader, np.ndarray):
         video_h, video_w = video_data.reader.shape[1:3]
     else:
-        # VideoReader provides frame_size_px as (width, height)
+        # _VideoReader provides frame_size_px as (width, height)
         video_w, video_h = video_data.reader.frame_size_px
 
     # Build video→env matrix based on env_bounds
@@ -2186,23 +2189,15 @@ def _render_regions(
     """
     layers: list[Layer] = []
 
-    if not show_regions or len(env.regions) == 0:
+    region_names = shown_region_names(env, show_regions)
+    if not region_names:
         return layers
-
-    # Determine which regions to show
-    if isinstance(show_regions, bool):
-        region_names = list(env.regions.keys())
-    else:
-        region_names = show_regions
 
     # Collect region shapes
     region_shapes: list[NDArray[np.float64]] = []
     region_properties: dict[str, list[str]] = {"name": []}
 
     for region_name in region_names:
-        if region_name not in env.regions:
-            continue
-
         region = env.regions[region_name]
 
         # Convert region to napari shape
@@ -2786,8 +2781,8 @@ def render_napari(
     sample_rate_hz: float | None = None,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
     frame_times: NDArray[np.float64] | None = None,
-    **kwargs: Any,
-) -> napari.Viewer:
+    dry_run: bool = False,
+) -> napari.Viewer | None:
     """Launch Napari viewer with lazy-loaded field animation.
 
     Napari provides GPU-accelerated rendering with on-demand frame loading,
@@ -2887,15 +2882,17 @@ def render_napari(
         seed the ``PlaybackController`` so time-accurate playback works even when
         no overlays are present. If None, falls back to
         ``overlay_data.frame_times`` when available.
-    **kwargs : dict
-        Additional parameters (gracefully ignored for compatibility
-        with other backends)
+    dry_run : bool, default=False
+        If True, check that napari is available and the environment can be
+        shown, report the number of frames, and return None without opening
+        a viewer.
 
     Returns
     -------
-    viewer : napari.Viewer
-        Napari viewer instance. Call `napari.run()` to block until
-        window is closed, or interact with viewer programmatically.
+    viewer : napari.Viewer or None
+        Napari viewer instance, or None if ``dry_run=True``. Call
+        `napari.run()` to block until window is closed, or interact with
+        viewer programmatically.
 
     Raises
     ------
@@ -3038,16 +3035,6 @@ def render_napari(
         raise NotImplementedError(
             "Napari raster images do not support framed grids; use Matplotlib, video or HTML rendering."
         )
-    # Warn about unknown kwargs for easier debugging
-    if kwargs:
-        unknown_keys = ", ".join(sorted(kwargs.keys()))
-        warnings.warn(
-            f"render_napari received unknown keyword arguments that will be ignored: "
-            f"{unknown_keys}. These may be parameters intended for other backends.",
-            UserWarning,
-            stacklevel=2,
-        )
-
     if not NAPARI_AVAILABLE:
         raise ImportError(
             "Napari backend requires napari. Install with:\n"
@@ -3092,7 +3079,12 @@ def render_napari(
             sample_rate_hz=sample_rate_hz,
             max_playback_fps=max_playback_fps,
             frame_times=frame_times,
+            dry_run=dry_run,
         )
+
+    if dry_run:
+        _report_napari_dry_run(len(fields), fps)
+        return None
 
     # Single-field viewer (original behavior)
     # At this point, fields is either:
@@ -3159,19 +3151,12 @@ def render_napari(
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
     # Scale is (time, y, x) for shape (time, height, width, channels)
     layer_scale: tuple[float, float, float] | None = None
-    if (
-        hasattr(env, "grid_shape")
-        and env.grid_shape is not None
-        and len(env.grid_shape) == 2
-        and env.dimension_ranges is not None
-    ):
-        n_x, n_y = env.grid_shape
-        (x_min, x_max), (y_min, y_max) = env.dimension_ranges
-        # After transposition: image is (n_y, n_x) so scale is (y_scale, x_scale)
-        y_scale = (y_max - y_min) / n_y if n_y > 0 else 1.0
-        x_scale = (x_max - x_min) / n_x if n_x > 0 else 1.0
+    # The image has one pixel per cell of the full grid (grid_edges and
+    # grid_shape), not of the active cells' extent (dimension_ranges).
+    pixel_grid = _EnvScale.from_env(env)
+    if pixel_grid is not None:
         # Scale for (time, height, width): time=1 (no scaling)
-        layer_scale = (1.0, y_scale, x_scale)
+        layer_scale = (1.0, *pixel_grid.pixel_size)
 
     # Add image layer (RGB - no contrast_limits needed)
     viewer.add_image(
@@ -3342,6 +3327,14 @@ def render_napari(
     return viewer
 
 
+def _report_napari_dry_run(n_frames: int, fps: int) -> None:
+    """Report a napari dry run, after the inputs were checked."""
+    _emit_status(
+        f"Napari dry run: {n_frames:,} frames at {fps} fps. No viewer was "
+        "opened. To proceed, call again with dry_run=False."
+    )
+
+
 def _render_multi_field_napari(
     env: Environment,
     field_sequences: list[list[NDArray[np.float64]]],
@@ -3365,7 +3358,8 @@ def _render_multi_field_napari(
     sample_rate_hz: float | None = None,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
     frame_times: NDArray[np.float64] | None = None,
-) -> napari.Viewer:
+    dry_run: bool = False,
+) -> napari.Viewer | None:
     """Render multiple field sequences in a single napari viewer.
 
     Creates separate image layers for each field sequence, arranged according
@@ -3461,6 +3455,10 @@ def _render_multi_field_napari(
                 f"number of sequences ({n_sequences})"
             )
 
+    if dry_run:
+        _report_napari_dry_run(sequence_lengths[0], fps)
+        return None
+
     from neurospatial.animation.rendering import compute_global_colormap_range
 
     # Compute global color scale across ALL sequences for consistent comparison
@@ -3492,17 +3490,12 @@ def _render_multi_field_napari(
     # Compute scale for napari (converts pixels to environment units)
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
     layer_scale: tuple[float, float, float] | None = None
-    if (
-        hasattr(env, "grid_shape")
-        and env.grid_shape is not None
-        and len(env.grid_shape) == 2
-        and env.dimension_ranges is not None
-    ):
-        n_x, n_y = env.grid_shape
-        (x_min, x_max), (y_min, y_max) = env.dimension_ranges
-        y_scale = (y_max - y_min) / n_y if n_y > 0 else 1.0
-        x_scale = (x_max - x_min) / n_x if n_x > 0 else 1.0
-        layer_scale = (1.0, y_scale, x_scale)
+    # The image has one pixel per cell of the full grid (grid_edges and
+    # grid_shape), not of the active cells' extent (dimension_ranges).
+    pixel_grid = _EnvScale.from_env(env)
+    if pixel_grid is not None:
+        # Scale for (time, height, width): time=1 (no scaling)
+        layer_scale = (1.0, *pixel_grid.pixel_size)
 
     # Add image layers
     for renderer, name in zip(lazy_renderers, layer_names, strict=True):

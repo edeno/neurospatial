@@ -427,32 +427,6 @@ def test_render_napari_frame_labels(simple_env, simple_fields):
 
 
 @pytest.mark.napari
-def test_render_napari_gracefully_accepts_extra_params(simple_env, simple_fields):
-    """Test that render_napari accepts extra parameters gracefully (via **kwargs)."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer_class.return_value = mock_viewer
-
-        # Should not raise error even with video/html-specific params
-        viewer = render_napari(
-            simple_env,
-            simple_fields,
-            dpi=150,  # Video/HTML parameter
-            codec="h264",  # Video parameter
-            image_format="jpeg",  # HTML parameter
-        )
-
-        # Should still work
-        assert viewer is not None
-
-
-@pytest.mark.napari
 def test_render_napari_playback_controls(simple_env, simple_fields):
     """Test that playback controls are configured correctly."""
     pytest.importorskip("napari")
@@ -628,54 +602,25 @@ def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
 
 
 # ============================================================================
-# Unknown kwargs warning test
+# Unknown keyword test
 # ============================================================================
 
 
 @pytest.mark.napari
-def test_render_napari_warns_on_unknown_kwargs(simple_env, simple_fields):
-    """Test that render_napari emits warning for unknown kwargs."""
+def test_render_napari_refuses_unknown_keywords(simple_env, simple_fields):
+    """An option render_napari does not take raises instead of being ignored."""
     pytest.importorskip("napari")
 
     from neurospatial.animation.backends.napari_backend import render_napari
 
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer_class.return_value = mock_viewer
-
-        # Should emit UserWarning about unknown kwargs
-        with pytest.warns(UserWarning, match="unknown keyword arguments"):
-            render_napari(
-                simple_env,
-                simple_fields,
-                unknown_param=42,
-                another_unknown="test",
-            )
-
-
-@pytest.mark.napari
-def test_render_napari_warning_lists_unknown_keys(simple_env, simple_fields):
-    """Test that unknown kwargs warning includes the key names."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer_class.return_value = mock_viewer
-
-        # Check that specific key names appear in warning (alphabetically sorted)
-        with pytest.warns(UserWarning, match="bar_param.*foo_param"):
-            render_napari(
-                simple_env,
-                simple_fields,
-                foo_param=1,
-                bar_param=2,
-            )
+    with (
+        patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class,
+        pytest.raises(TypeError, match="unknown_param"),
+    ):
+        render_napari(simple_env, simple_fields, unknown_param=42)
+    mock_viewer_class.assert_not_called()
 
 
 # ============================================================================
@@ -689,23 +634,19 @@ def test_env_scale_caches_correct_values(simple_env):
 
     scale = _EnvScale(simple_env)
 
-    # Check bounds match environment
-    (x_min, x_max), (y_min, y_max) = simple_env.dimension_ranges
-    assert scale.x_min == x_min
-    assert scale.x_max == x_max
-    assert scale.y_min == y_min
-    assert scale.y_max == y_max
+    # The image grid is the full grid: its edges, not the active extent.
+    x_edges, y_edges = simple_env.grid_edges
+    assert (scale.x_min, scale.x_max) == (x_edges[0], x_edges[-1])
+    assert (scale.y_min, scale.y_max) == (y_edges[0], y_edges[-1])
 
     # Check grid shape matches
     n_x, n_y = simple_env.grid_shape
     assert scale.n_x == n_x
     assert scale.n_y == n_y
 
-    # Check scale factors are computed correctly
-    expected_x_scale = (n_x - 1) / (x_max - x_min) if (x_max - x_min) > 0 else 1.0
-    expected_y_scale = (n_y - 1) / (y_max - y_min) if (y_max - y_min) > 0 else 1.0
-    assert scale.x_scale == pytest.approx(expected_x_scale)
-    assert scale.y_scale == pytest.approx(expected_y_scale)
+    # Pixels per environment unit: one pixel per grid cell.
+    assert scale.x_scale == pytest.approx(n_x / (x_edges[-1] - x_edges[0]))
+    assert scale.y_scale == pytest.approx(n_y / (y_edges[-1] - y_edges[0]))
 
 
 def test_env_scale_from_env_returns_none_for_none():
@@ -961,7 +902,7 @@ def test_playback_widget_scrubbing_updates_immediately():
 
 
 # ============================================================================
-# Array Input Tests (Task 2.1: render_napari accepts 2D arrays)
+# Array Input Tests (render_napari accepts 2D arrays)
 # ============================================================================
 
 
@@ -1334,7 +1275,7 @@ class TestMultiscaleDisabled:
 
 
 class TestSpeedBasedAPI:
-    """Test render_napari() speed-based API (Task 5.1).
+    """Test render_napari() speed-based API.
 
     The new API uses speed multiplier (e.g., 0.5× = half speed) instead of
     raw fps. This matches how scientists think about playback speed.
@@ -1444,8 +1385,8 @@ class TestSpeedBasedAPI:
             render_napari(env, fields, fps=30)
 
     @pytest.mark.napari
-    def test_render_napari_speed_not_in_unknown_kwargs_warning(self, env, fields):
-        """Test that speed/sample_rate_hz/max_playback_fps don't trigger unknown kwargs warning."""
+    def test_render_napari_takes_speed_parameters(self, env, fields):
+        """speed, sample_rate_hz and max_playback_fps are render_napari options."""
         pytest.importorskip("napari")
 
         from neurospatial.animation.backends.napari_backend import render_napari
@@ -1456,32 +1397,19 @@ class TestSpeedBasedAPI:
             mock_viewer = _create_mock_viewer()
             mock_viewer_class.return_value = mock_viewer
 
-            import warnings
-
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-
-                # These should NOT trigger unknown kwargs warning
-                render_napari(
-                    env,
-                    fields,
-                    speed=0.5,
-                    sample_rate_hz=30.0,
-                    max_playback_fps=60,
-                    fps=15,
-                )
-
-                # Check no "unknown keyword arguments" warning
-                unknown_kwarg_warnings = [
-                    x for x in w if "unknown keyword arguments" in str(x.message)
-                ]
-                assert len(unknown_kwarg_warnings) == 0, (
-                    f"Got unexpected warning: {unknown_kwarg_warnings}"
-                )
+            viewer = render_napari(
+                env,
+                fields,
+                speed=0.5,
+                sample_rate_hz=30.0,
+                max_playback_fps=60,
+                fps=15,
+            )
+            assert viewer is mock_viewer
 
 
 class TestSpeedControlWidgetSignature:
-    """Test _add_speed_control_widget() new signature (Task 5.2).
+    """Test _add_speed_control_widget() new signature.
 
     The widget should accept speed-based parameters to enable showing
     speed multipliers instead of raw fps values.
@@ -1571,7 +1499,7 @@ class TestSpeedControlWidgetSignature:
 
 
 class TestSpeedSliderImplementation:
-    """Test speed-based slider implementation (Task 5.3).
+    """Test speed-based slider implementation.
 
     The widget should show speed multiplier (e.g., 0.5×) as the primary control,
     with fps shown as secondary info.

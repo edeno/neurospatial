@@ -13,7 +13,7 @@ from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Region, Regions
 
@@ -288,7 +288,7 @@ def env_from_boundary_region(
     Returns
     -------
     Environment
-        Discretized environment fitted to the boundary polygon.
+        Environment whose bins cover the boundary polygon.
 
     Raises
     ------
@@ -301,7 +301,7 @@ def env_from_boundary_region(
     subtract_holes_from_boundary : Used to subtract holes from boundary.
 
     """
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
     if boundary.kind != "polygon":
         raise ValueError(f"Boundary must be polygon, got {boundary.kind}")

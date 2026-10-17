@@ -2,11 +2,11 @@
 
 import numpy as np
 import pytest
+from environment_helpers import layout_of
 from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.layout._capabilities import RectilinearGridProvider
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.layout.engines.hexagonal import HexagonalLayout
 from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
@@ -15,7 +15,10 @@ from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
 @pytest.fixture(params=["samples", "mask", "pixels", "polygon", "polar"])
 def grid_layout(request):
     """Built grids whose coordinates match their per-axis cells."""
-    kind = request.param
+    return layout_of(lambda: _grid_environment(request.param))
+
+
+def _grid_environment(kind):
     if kind == "samples":
         env = Environment.from_samples(
             np.array([[0, 0], [0, 2], [2, 0], [2, 2]], dtype=float), bin_size=1.0
@@ -35,13 +38,13 @@ def grid_layout(request):
             distance_bin_size=1.0,
             angle_bin_size=np.pi / 2,
         )
-    return _native_oracle(env)
+    return env
 
 
 def test_grid_capability_matches_cell_centers(grid_layout):
     """Descriptor edges and activity reproduce the layout's bin order."""
-    assert isinstance(grid_layout, RectilinearGridProvider)
-    grid = grid_layout.rectilinear_grid()
+    grid = grid_layout.binning().rectilinear
+    assert grid is not None
     axes = [(edges[:-1] + edges[1:]) / 2 for edges in grid.edges]
     centers = np.stack(
         [axis.ravel() for axis in np.meshgrid(*axes, indexing="ij")], axis=1
@@ -65,7 +68,7 @@ def test_unbuilt_grid_refuses_cell_geometry(grid_layout):
 def test_non_grid_capabilities(layout_type):
     """Only graph layouts provide track conversion; none has rectangular cells."""
     layout = layout_type()
-    assert not isinstance(layout, RectilinearGridProvider)
+    assert not hasattr(layout, "rectilinear_grid")
     assert layout.is_linearized_track == (layout_type is GraphLayout)
 
 
@@ -77,19 +80,8 @@ def test_saved_layout_facade_keeps_capabilities_in_the_binning():
         endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0
     )
     loaded = from_dict(to_dict(original))
-    layout = loaded
-    assert not isinstance(layout, RectilinearGridProvider)
+    assert not hasattr(loaded, "rectilinear_grid")
     assert loaded._binning.faces.available
     assert loaded._binning.linearization is not None
     points = np.array([[0.5, 0.0], [1.5, 0.0]])
     np.testing.assert_array_equal(loaded.to_linear(points), original.to_linear(points))
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

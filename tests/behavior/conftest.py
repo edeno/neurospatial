@@ -130,7 +130,7 @@ def grid_env_with_last_bin_region():
 
     # Sanity: the region really does cover the last bin (so the -1 wrap would
     # otherwise land inside the region).
-    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.mapping import regions_to_mask
 
     assert regions_to_mask(env, ["last_region"])[last_bin]
 

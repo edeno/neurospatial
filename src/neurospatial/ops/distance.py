@@ -109,6 +109,8 @@ def geodesic_distance_between_points(
     bin_from: int,
     bin_to: int,
     default: float = np.inf,
+    *,
+    weight: str | None = "distance",
 ) -> float:
     """Compute geodesic distance between two specific nodes in a graph.
 
@@ -122,11 +124,13 @@ def geodesic_distance_between_points(
         Target node/bin index.
     default : float, default=np.inf
         Value to return if no path exists or nodes are invalid.
+    weight : str or None, default="distance"
+        Edge attribute holding each edge's length. None counts edges (hops).
 
     Returns
     -------
     float
-        Shortest path length from bin_from to bin_to using edge weight "distance".
+        Shortest path length from bin_from to bin_to, summing ``weight``.
         Returns `default` if either index is invalid or no path exists.
 
     """
@@ -135,7 +139,7 @@ def geodesic_distance_between_points(
             G,
             source=bin_from,
             target=bin_to,
-            weight="distance",
+            weight=weight,
         )
         return float(length)
     except (nx.NetworkXNoPath, nx.NodeNotFound):

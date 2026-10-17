@@ -39,8 +39,8 @@ np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
 np.testing.assert_array_equal(restored.edge_pairs, env.edge_pairs)
 ```
 
-For ordinary copying or persistence, use `env.copy()` or the existing storage
-methods. They preserve supported Cartesian and polar geometry directly.
+An `Environment` is immutable, so it needs no copy. For persistence, use the
+existing storage methods. They preserve supported Cartesian and polar geometry directly.
 `from_bins` constructs Cartesian environments; it is not a polar restoration API.
 
 ## Numerical operations
@@ -52,9 +52,9 @@ trees, matrix factorizations and bounded kernel caches.
 | --- | --- |
 | `env.coordinate_system` | Read the immutable Cartesian or polar coordinate descriptor. |
 | `env.get_diffusion_geometry()` | Obtain conductances, volumes and connected components for supported finite-volume geometry. |
-| `env.diffusion_accuracy(bandwidth)` | Query the current diffusion approximation's numerical noise floor. |
+| `env.diffusion_accuracy(bandwidth=...)` | Query the current diffusion approximation's numerical noise floor. |
 | `env.get_mrf_basis(occupancy, rank=...)` | Resolve an occupancy-supported MRF penalty basis using the environment's cached eigenbasis. |
-| `env.compute_gaussian_kernel(bandwidth)` | Obtain cached Gaussian weights without exposing the mutable cache. |
+| `env.compute_gaussian_kernel(bandwidth=...)` | Obtain cached Gaussian weights without exposing the mutable cache. |
 
 These operations do not grant missing geometric capabilities. Unsupported
 diffusion geometry still refuses with guidance. Polar coordinate descriptors
@@ -62,8 +62,7 @@ retain the distinction between length and angle.
 
 Use `nearest_bin` for nearest-center queries; Cartesian `bin_at` retains exact
 cell ownership. Existing free functions delegate through public operations.
-`clear_cache()` releases cached analyses, and copies and pickle records omit
-disposable analysis caches. Existing `compute_kernel()` continues to return an
+`clear_cache()` releases cached analyses, and pickle records omit them. Existing `compute_kernel()` continues to return an
 independent editable diffusion matrix.
 
 ## Contributor imports

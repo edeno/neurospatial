@@ -8,13 +8,16 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from environment_helpers import publish_binning
 from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.binning import FaceNormals, KnownFaces
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.io import from_dict, to_dict
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, AffineND
 
 
@@ -31,7 +34,7 @@ def _grid(n_dims=2, diagonal=True):
 def test_native_grid_normals_match_shared_faces(n_dims, diagonal):
     env = _grid(n_dims, diagonal)
     values = env._binning.face_normals.values
-    faces = env._face_geometry
+    faces = face_geometry(env._cache, env._binning)
     delta = (
         env.bin_centers[env.edge_pairs[:, 1]] - env.bin_centers[env.edge_pairs[:, 0]]
     )
@@ -54,7 +57,7 @@ def test_planar_normals_are_perpendicular_to_true_shared_edges(built_environment
     cells = materialize_cells(env._binning)
     for index, (u, v) in enumerate(env.edge_pairs):
         shared = cells[u].boundary.intersection(cells[v].boundary)
-        if env._face_geometry.A[index] == 0:
+        if face_geometry(env._cache, env._binning).A[index] == 0:
             np.testing.assert_array_equal(normals[index], 0)
             continue
         coordinates = np.asarray(shared.coords)
@@ -69,7 +72,7 @@ def test_planar_normals_are_perpendicular_to_true_shared_edges(built_environment
 def test_subset_normal_rows_keep_edge_orientation(built_environment):
     env = built_environment
     keep = np.arange(env.n_bins) % 3 != 0
-    child = env.subset(bins=keep)
+    child = env.subset(mask=keep)
     edges = keep[env.edge_pairs].all(axis=1)
     np.testing.assert_array_equal(
         child._binning.face_normals.values, env._binning.face_normals.values[edges]
@@ -172,9 +175,11 @@ def test_invalid_normal_records_refused(invalid):
 )
 def test_explicit_bins_reject_inconsistent_normals(corruption):
     env = _grid()
-    binning = replace(env._binning, faces=KnownFaces(env._face_geometry))
+    binning = replace(
+        env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
+    )
     values = binning.face_normals.values.copy()
-    active = np.flatnonzero(env._face_geometry.A > 0)[0]
+    active = np.flatnonzero(face_geometry(env._cache, env._binning).A > 0)[0]
     if corruption == "reverse":
         values[active] *= -1
     elif corruption == "tangent":
@@ -183,7 +188,10 @@ def test_explicit_bins_reject_inconsistent_normals(corruption):
     elif corruption == "active_zero":
         values[active] = 0
     elif corruption == "path_unit":
-        values[np.flatnonzero(env._face_geometry.A == 0)[0]] = [1.0, 0.0]
+        values[np.flatnonzero(face_geometry(env._cache, env._binning).A == 0)[0]] = [
+            1.0,
+            0.0,
+        ]
     elif corruption == "wrong_shape":
         values = values[:-1]
     normals = FaceNormals(values)
@@ -228,7 +236,9 @@ def test_legacy_binning_keeps_old_transform_capabilities():
     original = env.apply_transform(Affine2D(matrix))
     legacy = loaded.apply_transform(Affine2D(matrix))
     for actual, expected in zip(
-        legacy._face_geometry, original._face_geometry, strict=True
+        face_geometry(legacy._cache, legacy._binning),
+        face_geometry(original._cache, original._binning),
+        strict=True,
     ):
         np.testing.assert_array_equal(actual, expected)
 
@@ -250,8 +260,9 @@ def test_current_binning_requires_normal_field_and_other_codecs_stay_version_one
 @pytest.mark.parametrize("offset", [0.0, 1e6, 1e9])
 def test_rotated_hex_normals_use_source_lattice_at_large_offsets(offset):
     env = Environment.from_layout(
-        "Hexagonal",
-        {"hexagon_width": 4.0, "dimension_ranges": [(0.0, 12.0), (0.0, 12.0)]},
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0.0, 12.0), (0.0, 12.0)]
+        )
     )
     angle = 0.3
     matrix = np.array(
@@ -308,7 +319,7 @@ def test_explicit_pair_reordering_reverses_only_its_normal():
         pairs,
         env._binning.bins.pair_distances[order],
     )
-    old = env._face_geometry
+    old = face_geometry(env._cache, env._binning)
     faces = KnownFaces(
         FaceGeometry(pairs, old.A[order], old.distance[order], env.bin_sizes)
     )
@@ -322,24 +333,21 @@ def test_explicit_pair_reordering_reverses_only_its_normal():
 
 def test_native_capture_does_not_materialize_faces(monkeypatch):
     from neurospatial import Environment
-    from neurospatial.layout.engines.regular_grid import RegularGridLayout
+    from neurospatial.geometry._native_faces import NativeFaces
 
     def refuse(self):
         pytest.fail("native construction must retain lazy face building")
 
-    monkeypatch.setattr(RegularGridLayout, "finite_volume_geometry", refuse)
+    monkeypatch.setattr(NativeFaces, "build", refuse)
     env = Environment.from_samples(
         np.array([[0.0, 0.0], [3.0, 4.0]]), bin_size=1.0, infer_active_bins=False
     )
     assert env._binning.face_normals is not None
-    bridge = Environment._from_binning(
+    bridge = publish_binning(
         env._binning,
-        connectivity=env.to_networkx(),
         dimension_ranges=env.dimension_ranges,
-        layout_type_tag=env.layout_type,
-        layout_type=env._layout_category,
+        layout_type=env.layout_type,
         build_params=env.layout_parameters,
-        is_linearized_track=False,
     )
     assert bridge._binning.face_normals is not None
 
@@ -347,7 +355,7 @@ def test_native_capture_does_not_materialize_faces(monkeypatch):
 @pytest.mark.parametrize("built_environment", ["mesh"], indirect=True)
 def test_restored_mesh_normal_validation_keeps_lookup_lazy(built_environment):
     loaded = from_dict(to_dict(built_environment))
-    assert loaded._binning.locator._triangle_lookup is None
+    assert len(loaded._cache) == 0
 
 
 def test_storage_refuses_normal_downgrade_and_boolean_arrays():
@@ -385,7 +393,7 @@ def test_non_geometric_bins_do_not_invent_normals():
 
 def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
     env = _grid()
-    old = env._face_geometry
+    old = face_geometry(env._cache, env._binning)
     # Diagonal neighbors share only a corner, so their physical face really
     # has zero area while their navigation connection remains present.
     contact = np.flatnonzero(old.A == 0)[0]
@@ -401,21 +409,16 @@ def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
 
 @pytest.mark.parametrize("built_environment", ["polar_open"], indirect=True)
 def test_polar_records_refuse_cartesian_normal_components(built_environment):
-    from neurospatial import Environment
-
     env = built_environment
     delta = (
         env.bin_centers[env.edge_pairs[:, 1]] - env.bin_centers[env.edge_pairs[:, 0]]
     )
     normals = delta / np.linalg.norm(delta, axis=1)[:, None]
     with pytest.raises(ValueError, match="Cartesian"):
-        Environment._from_binning(
+        publish_binning(
             replace(env._binning, face_normals=FaceNormals(normals)),
-            connectivity=env.to_networkx(),
             dimension_ranges=env.dimension_ranges,
-            layout_type_tag=env.layout_type,
-            layout_type=env._layout_category,
+            layout_type=env.layout_type,
             build_params=env.layout_parameters,
-            is_linearized_track=False,
-            coordinate_kind="polar",
+            coordinates=env._geometry.coordinates,
         )

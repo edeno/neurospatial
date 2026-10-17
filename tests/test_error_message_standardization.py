@@ -274,27 +274,15 @@ class TestMixinsErrorMessages:
 
         # Create a minimal instance
         mixin = _GridMixin()
-        points = np.array([[5, 5]])
 
         with pytest.raises(RuntimeError) as exc_info:
-            mixin.point_to_bin_index(points)
+            mixin.locator()
 
         error_msg = str(exc_info.value)
         # Should mention that grid is not built
         assert "not built" in error_msg.lower() or "missing" in error_msg.lower()
         # Should mention what's missing (edges or shape)
         assert ("edges" in error_msg.lower()) or ("shape" in error_msg.lower())
-
-    def test_kdtree_not_built_returns_negative_one(self):
-        """Test that KDTree not built doesn't crash, returns -1."""
-        from neurospatial.layout.mixins import _KDTreeMixin
-
-        mixin = _KDTreeMixin()
-        points = np.array([[5, 5]])
-
-        # Should return -1 for all points when KDTree not built
-        result = mixin.point_to_bin_index(points)
-        assert np.all(result == -1)
 
     def test_points_for_tree_not_2d_shows_actual_shape(self):
         """Test that _build_kdtree with wrong shape shows actual shape."""

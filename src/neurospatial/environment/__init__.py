@@ -2,18 +2,30 @@
 
 Both Cartesian and polar factories return Environment. Public methods delegate
 scientific operations to domain functions; coordinate-specific calls are guarded.
-Use ``from neurospatial import Environment`` or this package's equivalent export."""
+Use ``from neurospatial import Environment`` or this package's equivalent export.
+``BinSequenceWithRuns`` is the result of ``Environment.bin_sequence_with_runs``."""
 
+from neurospatial.environment._factories import _from_samples as _from_samples
+from neurospatial.environment._publication import (
+    _declared_metadata as _declared_metadata,
+)
+from neurospatial.environment._publication import _Provenance as _Provenance
+from neurospatial.environment._publication import _publish as _publish
+from neurospatial.environment._targets import (
+    _validate_sample_targets as _validate_sample_targets,
+)
+from neurospatial.environment._targets import (
+    _validate_target_bins as _validate_target_bins,
+)
+from neurospatial.environment._trajectory import BinSequenceWithRuns
 from neurospatial.environment.core import Environment
-from neurospatial.environment.decorators import EnvironmentNotFittedError, check_fitted
-from neurospatial.environment.regions import _HAS_SHAPELY
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry import CartesianSystem, EgocentricPolarSystem
 
+# The ``_`` names imported here are internal helpers shared with other
+# neurospatial packages; they are not public API.
 __all__ = [
-    "_HAS_SHAPELY",
+    "BinSequenceWithRuns",
     "CartesianSystem",
     "EgocentricPolarSystem",
     "Environment",
-    "EnvironmentNotFittedError",
-    "check_fitted",
 ]

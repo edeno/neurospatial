@@ -192,7 +192,6 @@ env.animate_fields(fields_mmap, frame_times=frame_times, backend="napari")
 ### F. Video Export Instead of Interactive
 For very large datasets, export to video instead of interactive:
 ```python
-env.clear_cache()  # Required for parallel rendering
 env.animate_fields(
     fields,
     frame_times=frame_times,

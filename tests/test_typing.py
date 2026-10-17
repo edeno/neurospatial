@@ -2,9 +2,9 @@
 
 Covers, without pynapple installed:
 
-- ``EnvironmentLike`` is a purpose-built NARROW Protocol (not the internal
-  ``EnvironmentProtocol`` mixin re-export) that ``Environment`` and the polar
-  sibling both structurally satisfy, matched to ``is_environment_like``.
+- ``EnvironmentLike`` is a narrow Protocol that Cartesian and polar
+  ``Environment`` instances both structurally satisfy, matched to
+  ``is_environment_like``.
 - ``is_environment_like`` accepts an ``Environment`` and the polar sibling
   (regression for the ``isinstance(env, Environment)``-False surprise) and
   rejects arbitrary objects.
@@ -24,7 +24,6 @@ from neurospatial._typing import (
     EnvironmentLike,
     is_environment_like,
 )
-from neurospatial.environment._protocols import FieldConsumer
 
 
 @pytest.fixture
@@ -37,23 +36,21 @@ def env() -> Environment:
 @pytest.fixture
 def polar_env() -> Environment:
     return Environment.from_polar_egocentric(
-        (0.0, 50.0), (-np.pi, np.pi), 10.0, np.pi / 6
+        distance_range=(0.0, 50.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 6,
     )
 
 
 def test_environmentlike_is_narrow_protocol(
     env: Environment, polar_env: Environment
 ) -> None:
-    # EnvironmentLike is now a purpose-built NARROW Protocol, no longer the
-    # internal mixin ``EnvironmentProtocol`` re-export (which published ~14
-    # private members and disagreed with the 3-attr runtime check).
-    assert EnvironmentLike is not FieldConsumer
-
     # Environment and its polar sibling both structurally satisfy the narrow
     # surface (bin_centers / connectivity / neighbors), and it agrees with the
     # runtime ``is_environment_like`` duck-check.
     def _accepts_env_like(e: EnvironmentLike) -> tuple[object, object, object]:
-        return e.bin_centers, e.connectivity, e.neighbors(0)
+        return e.bin_centers, e.connectivity, e.neighbors(bins=0)
 
     _accepts_env_like(env)
     _accepts_env_like(polar_env)

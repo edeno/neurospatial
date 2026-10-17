@@ -2,11 +2,11 @@ import networkx as nx
 import numpy as np
 import pytest
 
+from neurospatial.geometry import points_to_regular_grid_bin_ind
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
     _create_regular_grid_connectivity_graph,
     _infer_active_bins_from_regular_grid,
-    _points_to_regular_grid_bin_ind,
 )
 from neurospatial.layout.helpers.utils import get_n_bins
 
@@ -168,7 +168,7 @@ def test_points_to_regular_grid_bin_ind_basic():
     edges = (np.array([0, 1, 2]), np.array([0, 1, 2]))
     shape = (2, 2)
     points = np.array([[0.5, 0.5], [1.5, 1.5], [2.5, 2.5], [np.nan, 1]])
-    inds = _points_to_regular_grid_bin_ind(points, edges, shape)
+    inds = points_to_regular_grid_bin_ind(points, edges, shape)
     # First two points are in-bounds, third is out, fourth is nan
     assert inds[0] == 0
     assert inds[1] == 3
@@ -183,7 +183,7 @@ def test_points_to_regular_grid_bin_ind_with_active_mask():
     points = np.array([[0.5, 0.5], [1.5, 1.5]])
     active_mask = np.zeros((2, 2), dtype=bool)
     active_mask[1, 1] = True
-    inds = _points_to_regular_grid_bin_ind(points, edges, shape, active_mask)
+    inds = points_to_regular_grid_bin_ind(points, edges, shape, active_mask)
     # Only the second point is in the active bin
     assert inds[0] == -1
     assert inds[1] == 0
@@ -196,7 +196,7 @@ def test_points_to_bin_dimensionality_mismatch_raises():
     shape = (2, 2)
     points = np.array([[0.5, 0.5, 0.5]])
     with pytest.raises(ValueError, match="Dimensionality mismatch"):
-        _points_to_regular_grid_bin_ind(points, edges, shape)
+        points_to_regular_grid_bin_ind(points, edges, shape)
 
 
 def test_create_and_connectivity_for_3d_grid():
@@ -288,7 +288,7 @@ def test_create_and_connectivity_for_3d_grid():
 
 def test_points_to_regular_grid_bin_ind_3d_and_oob():
     """
-    Test that `_points_to_regular_grid_bin_ind` correctly handles 3D points:
+    Test that `points_to_regular_grid_bin_ind` correctly handles 3D points:
 
       - (0.5,0.5,0.5) should map to some valid bin index ≥ 0.
       - (2.0,2.0,2.0) should map to -1 (out-of-bounds).
@@ -314,7 +314,7 @@ def test_points_to_regular_grid_bin_ind_3d_and_oob():
     )
 
     # Now call with the correct signature: (points, grid_edges, grid_shape, active_mask)
-    idxs = _points_to_regular_grid_bin_ind(pts, edges_tuple, grid_shape, active_mask)
+    idxs = points_to_regular_grid_bin_ind(pts, edges_tuple, grid_shape, active_mask)
 
     assert isinstance(idxs, np.ndarray)
     assert idxs.shape == (3,)

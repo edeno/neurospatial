@@ -16,22 +16,6 @@ class IntervalSetLike:
 
 
 @pytest.mark.parametrize(
-    "name",
-    [
-        "interval_valid_mask",
-        "start_allocated_occupancy",
-        "observed_interval_mask",
-        "observed_runs",
-    ],
-)
-def test_trajectory_keeps_shared_time_support_imports(name):
-    from neurospatial import _intervals
-    from neurospatial.environment import trajectory
-
-    assert getattr(trajectory, name) is getattr(_intervals, name)
-
-
-@pytest.mark.parametrize(
     ("value", "expected"),
     [
         ((0, 10), [[0, 10]]),

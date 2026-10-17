@@ -178,7 +178,7 @@ class TestPopulationCoverage:
         for i in range(n_bins):
             firing_rates[i, i] = 10.0  # Peak at bin i
             # Add some neighbors
-            for j in simple_env.neighbors(i):
+            for j in simple_env.neighbors(bins=i):
                 firing_rates[i, j] = 5.0
 
         result = population_coverage(simple_env, firing_rates, min_size=1)
@@ -194,7 +194,7 @@ class TestPopulationCoverage:
         firing_rates = np.zeros((n_neurons, n_bins))
         for i in range(n_neurons):
             firing_rates[i, i] = 10.0
-            for j in simple_env.neighbors(i):
+            for j in simple_env.neighbors(bins=i):
                 if j < n_bins:
                     firing_rates[i, j] = 5.0
 
@@ -232,7 +232,7 @@ class TestPopulationCoverage:
         # Single neuron with a place field
         firing_rates = np.zeros((1, n_bins))
         firing_rates[0, 0] = 10.0
-        for j in simple_env.neighbors(0):
+        for j in simple_env.neighbors(bins=0):
             firing_rates[0, j] = 5.0
 
         result = population_coverage(simple_env, firing_rates, min_size=1)
@@ -300,18 +300,6 @@ class TestPopulationCoverage:
                 assert field.dtype == np.int64
 
     # Validation tests
-    def test_environment_not_fitted_error(self) -> None:
-        """Test error when environment is not fitted."""
-        from unittest.mock import MagicMock
-
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        rng = np.random.default_rng(42)
-        env = MagicMock(spec=Environment)
-        env._is_fitted = False
-        firing_rates = rng.random((5, 10))
-        with pytest.raises(EnvironmentNotFittedError, match="population_coverage"):
-            population_coverage(env, firing_rates)
 
     def test_shape_mismatch_error(self, simple_env: Environment) -> None:
         """Test error when firing_rates shape doesn't match n_bins."""
@@ -363,7 +351,7 @@ class TestPopulationCoverage:
             population_coverage(simple_env, firing_rates, max_mean_rate=-1.0)
 
     def test_n_jobs_parity(self, simple_env: Environment) -> None:
-        """population_coverage(n_jobs=2) equals n_jobs=1 on the same input (Task 2.3)."""
+        """population_coverage(n_jobs=2) equals n_jobs=1 on the same input."""
         n_bins = simple_env.n_bins
         # A handful of neurons with distinct place fields.
         rng = np.random.default_rng(7)
@@ -372,7 +360,7 @@ class TestPopulationCoverage:
         for i in range(n_neurons):
             peak = (i * 7) % n_bins
             firing_rates[i, peak] = 10.0
-            for j in simple_env.neighbors(peak):
+            for j in simple_env.neighbors(bins=peak):
                 firing_rates[i, j] = 5.0
         # Add a little noise so detection is non-trivial.
         firing_rates += rng.random((n_neurons, n_bins)) * 0.1
@@ -513,30 +501,6 @@ class TestPlotPopulationCoverage:
         returned_ax = plot_population_coverage(env, result, ax=custom_ax)
         assert returned_ax is custom_ax
         plt.close()
-
-    def test_environment_not_fitted_error(self) -> None:
-        """Test error when environment is not fitted."""
-        from unittest.mock import MagicMock
-
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        env = MagicMock(spec=Environment)
-        env._is_fitted = False
-        # Create a minimal valid result
-        result = PopulationCoverageResult(
-            coverage_fraction=0.5,
-            is_covered=np.array([True]),
-            field_count=np.array([1]),
-            covered_bins=np.array([0]),
-            uncovered_bins=np.array([]),
-            uncovered_positions=np.array([]).reshape(0, 2),
-            n_neurons=1,
-            n_place_cells=1,
-            n_fields=1,
-            place_fields=[[np.array([0])]],
-        )
-        with pytest.raises(EnvironmentNotFittedError, match="plot_population_coverage"):
-            plot_population_coverage(env, result)
 
     def test_wrong_result_type_error(
         self, env_and_result: tuple[Environment, PopulationCoverageResult]

@@ -65,7 +65,7 @@ bin_idx = env.bin_at(point)
 print(f"Point {point[0]} is in bin {bin_idx[0]}")
 
 # Find neighbors
-neighbors = env.neighbors(bin_idx[0])
+neighbors = env.neighbors(bins=bin_idx[0])
 print(f"Bin {bin_idx[0]} has {len(neighbors)} neighbors")
 ```
 

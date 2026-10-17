@@ -3,8 +3,6 @@
 This module tests the public API dataclass (TimeSeriesOverlay) and its
 internal data container (TimeSeriesData), including validation, conversion,
 and window extraction functionality.
-
-Following TDD: These tests are written BEFORE implementation.
 """
 
 from __future__ import annotations
@@ -1559,7 +1557,6 @@ class TestTimeSeriesVideoRender:
         rng = np.random.default_rng(42)
         positions = rng.random((50, 2)) * 100
         env = Environment.from_samples(positions, bin_size=10.0)
-        env.clear_cache()  # Ensure pickle-able
         return env
 
     @pytest.fixture
@@ -2896,9 +2893,6 @@ class TestTimeSeriesIntegration:
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_integration.mp4"
 
-        # Clear cache for parallel rendering
-        simple_env.clear_cache()
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = simple_env.animate_fields(
@@ -2907,9 +2901,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,  # Sequential for test stability
-                progress=False,
             )
 
         # Video should be created
@@ -2955,8 +2947,6 @@ class TestTimeSeriesIntegration:
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_stacked.mp4"
 
-        simple_env.clear_cache()
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = simple_env.animate_fields(
@@ -2965,9 +2955,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,
-                progress=False,
             )
 
         assert result.exists()
@@ -3006,8 +2994,6 @@ class TestTimeSeriesIntegration:
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_grouped.mp4"
 
-        simple_env.clear_cache()
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = simple_env.animate_fields(
@@ -3016,9 +3002,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,
-                progress=False,
             )
 
         assert result.exists()
@@ -3060,8 +3044,6 @@ class TestTimeSeriesIntegration:
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_normalized.mp4"
 
-        simple_env.clear_cache()
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = simple_env.animate_fields(
@@ -3070,9 +3052,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,
-                progress=False,
             )
 
         assert result.exists()

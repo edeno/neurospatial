@@ -13,9 +13,6 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-# These imports will fail until we implement the module
-# This is expected for TDD - tests fail first
-
 
 class TestToRadians:
     """Tests for _to_radians internal helper."""

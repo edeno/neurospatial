@@ -146,3 +146,19 @@ def test_phase_precession_function_does_not_shadow_module() -> None:
     module = importlib.import_module("neurospatial.encoding.phase_precession")
     assert encoding.phase_precession is module
     assert encoding.compute_phase_precession is module.compute_phase_precession
+
+
+def test_environment_import_loads_no_plotting_or_table_libraries() -> None:
+    """Workers that only bin positions do not pay for pyplot or pandas."""
+    import subprocess
+
+    code = (
+        "import sys\n"
+        "from neurospatial import Environment\n"
+        "loaded = [m for m in ('matplotlib.pyplot', 'pandas') if m in sys.modules]\n"
+        "print(','.join(loaded))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == ""

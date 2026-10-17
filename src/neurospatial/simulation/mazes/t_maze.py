@@ -26,9 +26,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import networkx as nx
-
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -234,49 +233,19 @@ def _create_t_maze_track_graph(
         1D linearized environment representing the T-maze track.
     """
     half_stem = dims.stem_length / 2.0
-
-    # Key positions
-    start_pos = (0.0, -half_stem)
-    junction_pos = (0.0, half_stem)
-    left_end_pos = (-dims.arm_length, half_stem)
-    right_end_pos = (dims.arm_length, half_stem)
-
-    # Create track graph
-    graph = nx.Graph()
-
-    # Add nodes with positions
-    graph.add_node("start", pos=start_pos)
-    graph.add_node("junction", pos=junction_pos)
-    graph.add_node("left_end", pos=left_end_pos)
-    graph.add_node("right_end", pos=right_end_pos)
-
-    # Add edges with distances
-    # Stem edge: start to junction
-    stem_distance = dims.stem_length
-    graph.add_edge("start", "junction", distance=stem_distance)
-
-    # Arm edges: junction to each arm end
-    arm_distance = dims.arm_length
-    graph.add_edge("junction", "left_end", distance=arm_distance)
-    graph.add_edge("junction", "right_end", distance=arm_distance)
-
-    # Edge order for linearization
-    # We'll linearize as: start -> junction -> left_end (main path)
-    # with junction -> right_end as a branch
-    edge_order = [
-        ("start", "junction"),
-        ("junction", "left_end"),
-        ("junction", "right_end"),
-    ]
-
-    # Create the 1D environment
-    env_track = Environment.from_graph(
-        graph=graph,
-        edge_order=edge_order,
-        edge_spacing=0.0,  # No spacing between edges
+    # Node order [stem_end, junction, arm_left, arm_right] gives the stem
+    # and both arms, linearized in that order.
+    return Environment.maze(
+        kind="t",
+        node_positions={
+            "start": (0.0, -half_stem),
+            "junction": (0.0, half_stem),
+            "left_end": (-dims.arm_length, half_stem),
+            "right_end": (dims.arm_length, half_stem),
+        },
         bin_size=bin_size,
+        track_width=dims.width,
+        edge_spacing=0.0,
         name="t_maze_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
-
-    return env_track

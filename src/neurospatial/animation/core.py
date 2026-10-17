@@ -16,32 +16,239 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.animation._region_names import shown_region_names
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.environment._protocols import AnimationConsumer
+    from neurospatial.environment import Environment
 
 # Playback speed limits
 MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
 MIN_PLAYBACK_FPS: int = 1  # Minimum usable playback
 DEFAULT_SPEED: float = 1.0  # Real-time by default
 
-_NON_NAPARI_BACKEND_KWARGS = frozenset(
-    {
-        "bitrate",
-        "codec",
-        "colorbar_label",
-        "contrast_limits",
-        "dpi",
-        "dry_run",
-        "image_format",
-        "max_html_frames",
-        "n_workers",
-        "overlay_trajectory",
-        "show",
-        "show_colorbar",
-    }
+# The caller options each backend uses. A name in no backend's set is refused;
+# one that only other backends use is ignored with a warning. None means the
+# caller did not pass the option.
+_BACKEND_OPTIONS: dict[str, frozenset[str]] = {
+    "napari": frozenset(
+        {
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "title",
+            "cache_size",
+            "chunk_size",
+            "max_chunks",
+            "layout",
+            "layer_names",
+            "show_regions",
+            "region_alpha",
+            "scale_bar",
+            "dry_run",
+        }
+    ),
+    "video": frozenset(
+        {
+            "save_path",
+            "overwrite",
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "dpi",
+            "codec",
+            "crf",
+            "preset",
+            "bitrate",
+            "n_workers",
+            "show_regions",
+            "region_alpha",
+            "scale_bar",
+            "dry_run",
+        }
+    ),
+    "html": frozenset(
+        {
+            "save_path",
+            "overwrite",
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "dpi",
+            "image_format",
+            "max_html_frames",
+            "title",
+            "embed",
+            "frames_dir",
+            "n_workers",
+            "show_regions",
+            "region_alpha",
+            "scale_bar",
+            "dry_run",
+        }
+    ),
+    "widget": frozenset(
+        {
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "dpi",
+            "image_format",
+            "initial_cache_size",
+            "cache_limit",
+            "show_regions",
+            "region_alpha",
+            "dry_run",
+        }
+    ),
+}
+
+# animate_fields parameters every backend uses: they set the frame timing and
+# the overlays rather than how one backend draws.
+_SHARED_OPTIONS = frozenset(
+    {"backend", "overlays", "frame_times", "speed", "max_playback_fps"}
 )
+
+
+# A call that selects each backend, for advice; video always needs a file.
+_BACKEND_CALLS: dict[str, str] = {
+    "napari": "backend='napari'",
+    "video": "backend='video', save_path='animation.mp4'",
+    "html": "backend='html', save_path='animation.html'",
+    "widget": "backend='widget'",
+}
+
+
+def _auto_reason(backend: str, n_frames: int, save_path: str | None) -> str:
+    """Why ``backend="auto"`` picked ``backend`` for these inputs."""
+    if backend in ("video", "html"):
+        return f"save_path ends in {Path(str(save_path)).suffix!r}"
+    if backend == "widget":
+        return "this is a Jupyter session and save_path is not a video or .html file"
+    if n_frames > 10_000:
+        return f"there are {n_frames:,} frames, more than 10,000"
+    return (
+        "save_path is not a video or .html file, this is not a Jupyter "
+        f"session, and there are {n_frames:,} frames (10,000 or fewer)"
+    )
+
+
+def _owners(name: str) -> list[str]:
+    """The backends that use option ``name``."""
+    return [kind for kind, names in _BACKEND_OPTIONS.items() if name in names]
+
+
+def _chosen(backend: str, auto_reason: str | None) -> str:
+    """Say which backend ``auto`` chose and why; nothing when it was named."""
+    if auto_reason is None:
+        return ""
+    return (
+        f"backend='auto' chose {backend!r} because {auto_reason}; name a "
+        "backend to choose another. "
+    )
+
+
+def _backend_options(
+    backend: str, options: dict[str, Any], *, auto_reason: str | None = None
+) -> dict[str, Any]:
+    """Return the options ``backend`` uses, and warn about the others.
+
+    Parameters
+    ----------
+    backend : str
+        The backend that renders.
+    options : dict
+        The options the caller passed.
+    auto_reason : str, optional
+        Why ``backend="auto"`` chose ``backend``; None when it was named.
+
+    Returns
+    -------
+    dict
+        The options ``backend`` uses.
+
+    Raises
+    ------
+    TypeError
+        If an option is not an option of any backend; the message names the
+        closest valid option.
+
+    Warns
+    -----
+    UserWarning
+        Once, naming each option that another backend uses and this one
+        ignores.
+    """
+    known = frozenset().union(*_BACKEND_OPTIONS.values())
+    for name in options:
+        if name not in known:
+            raise _unknown_option_error(backend, name, auto_reason)
+    uses = _BACKEND_OPTIONS[backend]
+    ignored = [name for name in options if name not in uses]
+    if ignored:
+        warnings.warn(
+            _ignored_options_message(backend, ignored, auto_reason),
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return {name: value for name, value in options.items() if name in uses}
+
+
+def _ignored_options_message(
+    backend: str, ignored: list[str], auto_reason: str | None
+) -> str:
+    """Name each ignored option, the backend that uses it, and how to use it."""
+    lines = []
+    for name in ignored:
+        owners = _owners(name)
+        plural = "s" if len(owners) > 1 else ""
+        lines.append(
+            f"{name} is used by the {' and '.join(owners)} backend{plural}; "
+            f"the {backend} backend ignores it."
+        )
+    owners = list(dict.fromkeys(owner for name in ignored for owner in _owners(name)))
+    choices = " or ".join(_BACKEND_CALLS[owner] for owner in owners)
+    return (
+        _chosen(backend, auto_reason)
+        + "\n".join(lines)
+        + f"\nTo use {'them' if len(ignored) > 1 else 'it'}, pass {choices}; "
+        "otherwise remove " + ", ".join(f"{name}=" for name in ignored) + "."
+    )
+
+
+def _unknown_option_error(
+    backend: str, name: str, auto_reason: str | None
+) -> TypeError:
+    """Explain an option no backend has, with the closest valid name."""
+    from difflib import get_close_matches
+
+    valid = sorted(frozenset().union(*_BACKEND_OPTIONS.values()) | _SHARED_OPTIONS)
+    matches = get_close_matches(name, valid, n=1)
+    if name == "fps":
+        # The playback rate is derived, so the nearest name would mislead.
+        fix = (
+            "remove fps=; the playback rate is the sampling rate of "
+            "frame_times times speed, so pass speed=2.0 to play twice as fast "
+            "as real time"
+        )
+    elif matches:
+        fix = f"pass {matches[0]}= instead of {name}="
+    else:
+        fix = f"remove {name}=...; the options are {', '.join(valid)}"
+    return TypeError(
+        _format_error(
+            f"animate_fields() got an unknown option {name!r}. "
+            + _chosen(backend, auto_reason),
+            why="Why: no backend has this option, and ignoring it would hide "
+            "a misspelled option.",
+            fix=fix,
+        )
+    )
 
 
 def _compute_playback_fps(
@@ -101,7 +308,7 @@ def _compute_playback_fps(
     return playback_fps, actual_speed
 
 
-def _validate_env_pickleable(env: AnimationConsumer) -> None:
+def _validate_env_pickleable(env: Environment) -> None:
     """Validate that environment can be pickled for parallel processing.
 
     Parameters
@@ -131,26 +338,28 @@ def _validate_env_pickleable(env: AnimationConsumer) -> None:
             f"rendering.\n"
             f"  Pickling failed with: {type(e).__name__}: {e}\n\n"
             f"WHY: Video backend with parallel rendering (n_workers > 1) requires "
-            f"pickling the Environment to pass it to worker processes. Unpickleable "
-            f"objects include KDTree caches, lambdas, and certain class instances.\n\n"
-            f"{_pickling_guidance()}"
+            f"pickling the Environment to pass it to worker processes. Something "
+            f"attached to it cannot be pickled, such as a lambda, a local function "
+            f"or an open file. Cached analyses are never pickled, so they are not "
+            f"the cause.\n\n"
+            f"{_pickling_guidance('environment')}"
         ) from e
 
 
 def animate_fields(
-    env: AnimationConsumer,
+    env: Environment,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
-    overwrite: bool = False,
+    overwrite: bool | None = None,
     overlays: list[OverlayProtocol] | None = None,
-    frame_times: NDArray[np.float64],  # REQUIRED - no default
-    speed: float = DEFAULT_SPEED,  # NEW: replaces fps in public API
-    max_playback_fps: int = MAX_PLAYBACK_FPS,  # NEW: advanced knob with strong default
+    frame_times: NDArray[np.float64],
+    speed: float = DEFAULT_SPEED,
+    max_playback_fps: int = MAX_PLAYBACK_FPS,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
-    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    scale_bar: bool | Any = None,  # bool | ScaleBarConfig
     **kwargs: Any,
 ) -> Any:
     """Main animation dispatcher.
@@ -171,7 +380,7 @@ def animate_fields(
     Parameters
     ----------
     env : Environment
-        Fitted environment defining spatial structure.
+        Environment defining spatial structure.
     fields : ndarray of shape (n_frames, n_bins) or list of ndarray of shape (n_bins,)
         Fields to animate, dtype float64. If ndarray, first dimension is time.
         If list of arrays, each array represents one frame.
@@ -224,8 +433,9 @@ def animate_fields(
         Use higher values (e.g., 120) for high-refresh displays.
     show_regions : bool or list of str, default=False
         Whether to render region overlays. If True, all regions defined in env.regions
-        are rendered. If list of strings, only those region names are rendered.
-        Regions rendered as semi-transparent polygons. Default is False.
+        are rendered. If list of strings, only those region names are rendered;
+        a name not in env.regions raises RegionNotFoundError with the closest
+        name. Regions rendered as semi-transparent polygons. Default is False.
     region_alpha : float, default=0.3
         Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque. Only used when show_regions
@@ -245,8 +455,6 @@ def animate_fields(
     ------
     FileExistsError
         If an output already exists and overwrite is False.
-    RuntimeError
-        If environment is not fitted
     ValueError
         If fields is empty, field shapes don't match, or backend is invalid
     RuntimeError
@@ -309,16 +517,22 @@ def animate_fields(
     - **100K+ frames**: Use ``backend="napari"`` for interactive exploration.
       Napari has O(1) frame seek time regardless of dataset size.
     - **Export to video**: Use ``backend="video"`` with ``n_workers=4`` for
-      parallel rendering. Call ``env.clear_cache()`` first.
+      parallel rendering.
     - **Subsampling**: For high-frequency data (e.g., 250 Hz), subsample to
       30-60 fps with ``subsample_frames(fields, source_fps=250, target_fps=30)``
       from ``neurospatial.animation``.
 
     **Parallel video rendering:**
 
-    Ensure environment is pickle-able by calling ``env.clear_cache()`` before
-    animating with ``n_workers > 1``.
+    With ``n_workers > 1`` the environment and overlays are pickled and sent
+    to worker processes. Cached analyses are never pickled. If something you
+    attached (a lambda, a local function, an open file) cannot be pickled,
+    the call raises ``ValueError`` before rendering; use ``n_workers=1`` or
+    replace that object with plain data.
     """
+    # A misspelled region name fails here, before any frame is rendered.
+    shown_region_names(env, show_regions)
+
     # Detect if input is a 2D+ numpy array (potential memmap)
     # This must happen before any conversion to preserve array format for napari
     fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2
@@ -358,12 +572,6 @@ def animate_fields(
                 )
             )
         n_frames = len(fields)
-
-    # Validate environment is fitted
-    if not hasattr(env, "_is_fitted") or not env._is_fitted:
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        raise EnvironmentNotFittedError("animate_fields", is_function=True)
 
     # Detect multi-field format (napari-specific feature)
     # Multi-field: list of sequences (e.g., [[field1, field2], [field3, field4]])
@@ -431,12 +639,6 @@ def animate_fields(
             stacklevel=2,
         )
 
-    # Pass computed values and playback parameters to backends via kwargs
-    kwargs["fps"] = playback_fps
-    kwargs["sample_rate_hz"] = sample_rate_hz
-    kwargs["speed"] = speed
-    kwargs["max_playback_fps"] = max_playback_fps
-
     # Convert overlays to internal OverlayData if provided
     overlay_data = None
     if overlays is not None:
@@ -457,8 +659,10 @@ def animate_fields(
             _validate_pickle_ability(overlay_data, n_workers=n_workers)
 
     # Auto-select backend
+    auto_reason = None
     if backend == "auto":
         backend = _select_backend(n_frames, save_path)
+        auto_reason = _auto_reason(backend, n_frames, save_path)
 
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)
@@ -485,28 +689,47 @@ def animate_fields(
             "animate_fields()."
         )
 
+    if backend not in _BACKEND_OPTIONS:
+        raise ValueError(
+            _format_error(
+                f"Unknown backend: {backend}",
+                fix="pass backend='napari', 'video', 'html', 'widget', or 'auto'",
+                why="Why: only the advertised rendering backends are supported.",
+            )
+        )
+    # Refuse unknown options and warn about ignored ones before rendering.
+    # None means not passed: each backend then applies its own default.
+    passed = {
+        "save_path": save_path,
+        "overwrite": overwrite,
+        "show_regions": show_regions,
+        "region_alpha": region_alpha,
+        "scale_bar": scale_bar,
+        **kwargs,
+    }
+    options = _backend_options(
+        backend,
+        {name: value for name, value in passed.items() if value is not None},
+        auto_reason=auto_reason,
+    )
+
     # Route to backend with early validation
     if backend == "napari":
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        napari_kwargs = {
-            key: value
-            for key, value in kwargs.items()
-            if key not in _NON_NAPARI_BACKEND_KWARGS
-        }
-
         return render_napari(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
+            env,
             fields,
             overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
             # Forward frame_times explicitly: it is a named animate_fields
             # parameter (not in **kwargs), so the PlaybackController gets the
             # user's timestamps even when there are no overlays.
             frame_times=frame_times,
-            **napari_kwargs,
+            fps=playback_fps,
+            sample_rate_hz=sample_rate_hz,
+            speed=speed,
+            max_playback_fps=max_playback_fps,
+            **options,
         )
 
     elif backend == "video":
@@ -530,7 +753,8 @@ def animate_fields(
                 "  backend='widget' - Jupyter notebook widget"
             )
 
-        if save_path is None:
+        video_path = options.pop("save_path", None)
+        if video_path is None:
             raise ValueError(
                 _format_error(
                     "save_path required for video backend, got None",
@@ -539,60 +763,53 @@ def animate_fields(
                 )
             )
 
+        if "crf" in options and "bitrate" in options:
+            warnings.warn(
+                f"bitrate={options['bitrate']!r} and crf={options['crf']!r} were "
+                "both passed; the video is encoded at the constant bitrate, so "
+                "crf is ignored. Pass only crf= for constant quality, or only "
+                "bitrate= for a fixed bitrate.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+
         # Validate environment pickle-ability for parallel rendering
-        n_workers = kwargs.get("n_workers")
+        n_workers = options.get("n_workers")
         if n_workers and n_workers > 1:
             _validate_env_pickleable(env)
 
         return render_video(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
+            env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            save_path,
-            overwrite=overwrite,
+            video_path,
             overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
-            **kwargs,
+            frame_times=frame_times,
+            fps=playback_fps,
+            **options,
         )
 
     elif backend == "html":
         from neurospatial.animation.backends.html_backend import render_html
 
-        if save_path is None:
-            save_path = "animation.html"
         return render_html(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
+            env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            save_path,
-            overwrite=overwrite,
+            options.pop("save_path", None),
             overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
-            **kwargs,
-        )
-
-    elif backend == "widget":
-        from neurospatial.animation.backends.widget_backend import render_widget
-
-        return render_widget(
-            env,  # type: ignore[arg-type]  # Backend signatures pending update
-            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
-            **kwargs,
+            fps=playback_fps,
+            **options,
         )
 
     else:
-        raise ValueError(
-            _format_error(
-                f"Unknown backend: {backend}",
-                fix="pass backend='napari', 'video', 'html', 'widget', or 'auto'",
-                why="Why: only the advertised rendering backends are supported.",
-            )
+        from neurospatial.animation.backends.widget_backend import render_widget
+
+        return render_widget(
+            env,
+            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
+            overlay_data=overlay_data,
+            frame_times=frame_times,
+            fps=playback_fps,
+            **options,
         )
 
 

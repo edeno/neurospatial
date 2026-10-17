@@ -74,16 +74,19 @@ from numpy.typing import NDArray
 from scipy import fft, ndimage, stats
 from scipy.signal import find_peaks
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.environment import Environment
+    from neurospatial.geometry import CartesianSystem
 
 __all__ = [
     # Dataclass
     "GridProperties",
     # Functions
+    "autocorrelation_pixel_size",
     "grid_properties",
     "grid_scale",
     "grid_score",
@@ -92,10 +95,13 @@ __all__ = [
     "spatial_autocorrelation_radial",
 ]
 
-# Axis flip detection threshold for orientation consensus algorithm.
-# This is 1/4 of the 60° hexagonal periodicity. When angles cluster
-# near ±15° from the 0°/60° boundary, axis flip correction is applied.
-_AXIS_FLIP_THRESHOLD_DEG = 15.0
+# Hexagonal lattices repeat every 60 degrees, so orientation is an angle
+# modulo pi / 3 radians.
+_HEX_PERIOD = np.pi / 3
+# Axis flip detection threshold for the orientation consensus: a quarter of
+# the period. When angles cluster near +/-15 degrees of the 0 / 60 degree
+# boundary, the axis flip correction is applied.
+_AXIS_FLIP_THRESHOLD = _HEX_PERIOD / 4
 
 
 @dataclass(repr=False)
@@ -112,17 +118,19 @@ class GridProperties(ResultMixin):
         Grid spacing (distance between fields) in the same units as bin_size.
         Computed as median distance from center to 6 nearest peaks.
     orientation : float
-        Grid orientation in degrees, range [0, 60). The angle of the grid
-        relative to horizontal, normalized to the 60° periodicity of hexagonal
-        grids.
+        Grid orientation in radians, range [0, pi/3): the angle of the field
+        lattice in the environment's allocentric frame, from +x (East)
+        counterclockwise toward +y (North), modulo pi/3, the period of a
+        hexagonal lattice.
     orientation_std : float
-        Standard deviation of orientation estimates across the 6 peaks.
-        Lower values indicate more consistent/reliable orientation.
+        Standard deviation of the orientation estimates of the peaks, in
+        radians. Lower values indicate a more consistent orientation.
     peak_coords : NDArray[np.float64]
         Coordinates of detected peaks relative to autocorrelogram center,
         shape (n_peaks, 2) where columns are ``(x_offset, y_offset)`` in
-        bin-coordinate space (Cartesian). Typically 6 peaks for a
-        well-formed grid.
+        pixels of the autocorrelogram, along the environment's x and y
+        (axis 0 and axis 1 of the map). Typically 6 peaks for a well-formed
+        grid.
 
         .. note::
 
@@ -196,17 +204,25 @@ def spatial_autocorrelation(
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (height, width)
-        2D autocorrelation map with the same shape as the environment grid.
-        Center corresponds to zero lag. Values in [-1, 1].
+    autocorr : NDArray[np.float64], shape (n_x, n_y)
+        2D autocorrelation map with square pixels; each pixel side is
+        :func:`autocorrelation_pixel_size`, the smaller cell width. Center
+        corresponds to zero lag. Values in [-1, 1]. When the two cell widths
+        are equal (to within 1/100 of a cell across the grid) the map has the
+        environment's grid shape; otherwise the lags along the wider axis are
+        interpolated onto the finer spacing, so the map can be larger along
+        that axis.
 
     Raises
     ------
     ValueError
         If ``firing_rate.shape != (env.n_bins,)``.
-        If ``env`` is not a regular 2D grid (use
-        :func:`spatial_autocorrelation_radial` instead).
         If all firing rates are NaN or constant.
+    NotImplementedError
+        If ``env`` is not a regular 2D grid of rectangular cells, one width
+        along each axis, with at least half of them active, for example a
+        hexagonal, mesh, track or 3D environment, or a grid with uneven edges
+        (use :func:`spatial_autocorrelation_radial` instead).
     CartesianOnlyError
         If ``env`` is polar: a ``(distance, angle)`` grid is not a Cartesian
         lattice, so its 2D autocorrelogram and grid score are meaningless.
@@ -273,27 +289,170 @@ def spatial_autocorrelation(
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
-        "spatial_autocorrelation()",
-        instead=(
-            "A 2D autocorrelogram needs a Cartesian grid; compute it on an "
-            "allocentric Cartesian environment."
-        ),
-    )
+    _require_fft_grid(env, "spatial_autocorrelation()")
     _validate_autocorr_input(env, firing_rate)
 
-    if _detect_grid_method(env) != "fft":
-        raise ValueError(
-            "spatial_autocorrelation requires a regular 2D grid environment "
-            "(grid_shape attribute on layout, with >=50% of bins active). "
-            "For irregular environments, use spatial_autocorrelation_radial "
-            "to obtain a 1D distance-correlation profile."
-        )
+    autocorr = _spatial_autocorrelation_fft(env, firing_rate)
+    cell_widths = tuple(float(np.median(np.diff(edge))) for edge in env.grid_edges)
+    return _square_lags(autocorr, cell_widths)
 
-    return _spatial_autocorrelation_fft(env, firing_rate)
+
+def _require_fft_grid(env: Environment, operation: str) -> None:
+    """Refuse environments without a regular 2D grid for the FFT lag map.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment to check.
+    operation : str
+        The refused call, named in the error.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    NotImplementedError
+        If ``env`` has no 2D grid of rectangular cells, its cells along an
+        axis are not one width, or fewer than half of its grid cells are
+        active.
+    """
+    require_cartesian(
+        env.coordinate_system,
+        operation,
+        why="The autocorrelogram shifts the rate map along Cartesian x and y.",
+        fix=(
+            "compute it on an allocentric environment, for example "
+            "Environment.from_samples(positions, bin_size=...)"
+        ),
+    )
+    if _detect_grid_method(env) == "fft":
+        return
+    if len(env.grid_edges) != 2:
+        found = (
+            f"this environment's {env.layout_type} layout has no 2D grid of "
+            "rectangular cells"
+        )
+    elif not _uniform_spacing(env.grid_edges):
+        axis = next(
+            axis
+            for axis, edge in enumerate(env.grid_edges)
+            if not _uniform_spacing((edge,))
+        )
+        widths = np.diff(env.grid_edges[axis])
+        found = (
+            f"its cells along axis {axis} are not all one width: widths "
+            f"range from {widths.min():.6g} to {widths.max():.6g}"
+        )
+    else:
+        found = f"only {env.n_bins} of its {env.active_mask.size} grid cells are active"
+    raise NotImplementedError(
+        _format_error(
+            f"{operation} needs a regular 2D grid of rectangular cells, one width "
+            f"along each axis, with at least half of them active; {found}.",
+            why=(
+                "Why: the FFT shifts the rate map one cell at a time along "
+                "rows and columns, so each shift is one distance only when "
+                "the cells along an axis share one width."
+            ),
+            fix=(
+                "use spatial_autocorrelation_radial(env, firing_rate), which "
+                "works on every layout, with periodicity_score"
+            ),
+        )
+    )
+
+
+def autocorrelation_pixel_size(env: Environment) -> float:
+    """Physical side of the square pixels of :func:`spatial_autocorrelation`.
+
+    The autocorrelogram's pixels are square, with the smaller of the grid's
+    two cell widths as their side, so a distance in pixels times this size is
+    a distance in the environment's units. Pass it as ``bin_size`` to
+    :func:`grid_scale` and :func:`grid_properties`.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment with a regular 2D grid, as for
+        :func:`spatial_autocorrelation`.
+
+    Returns
+    -------
+    float
+        Pixel side in the environment's units, e.g. cm.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    NotImplementedError
+        If :func:`spatial_autocorrelation` refuses ``env``: no regular 2D
+        grid of rectangular cells (hexagonal, mesh, track or 3D layouts),
+        uneven cells along an axis, or fewer than half of the cells active.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.grid import autocorrelation_pixel_size
+    >>> mask = np.ones((4, 5), dtype=bool)
+    >>> edges = (np.linspace(0.0, 12.0, 5), np.linspace(0.0, 10.0, 6))
+    >>> env = Environment.from_grid_mask(mask, grid_edges=edges)
+    >>> autocorrelation_pixel_size(env)
+    2.0
+    """
+    _require_fft_grid(env, "autocorrelation_pixel_size()")
+    return min(float(np.median(np.diff(edge))) for edge in env.grid_edges)
+
+
+# Below this many pixels of accumulated lag error, treating the two cell widths
+# as one changes no lag by more than 1/100 of a cell, so the autocorrelogram is
+# used as computed. Grids fitted to a recorded range (from_samples) can differ
+# between axes by a few percent and are then resampled.
+_SQUARE_LAG_TOLERANCE = 0.01
+
+
+def _square_lags(
+    autocorr: NDArray[np.float64], widths: tuple[float, ...]
+) -> NDArray[np.float64]:
+    """Resample a lag map with per-axis cell widths onto square pixels.
+
+    Parameters
+    ----------
+    autocorr : ndarray of float64, shape (n_x, n_y)
+        Lag map in cell steps, zero lag at index ``n // 2`` along each axis.
+    widths : tuple of float
+        Physical cell width along each axis.
+
+    Returns
+    -------
+    ndarray of float64
+        Lag map with square pixels whose side is ``min(widths)``, zero lag at
+        the center. Returned unchanged when the two widths are equal to within
+        ``_SQUARE_LAG_TOLERANCE`` pixels across the map.
+    """
+    side = min(widths)
+    shape = autocorr.shape
+    error = max(
+        n * (width / side - 1.0) for n, width in zip(shape, widths, strict=True)
+    )
+    if error <= _SQUARE_LAG_TOLERANCE:
+        return autocorr
+    centers = [n // 2 for n in shape]
+    axes = []
+    for n, c, width in zip(shape, centers, widths, strict=True):
+        below = int(np.floor(c * width / side + 1e-9))
+        above = int(np.floor((n - 1 - c) * width / side + 1e-9))
+        # Keep the parity of the computed map, so zero lag sits where
+        # fftshift put it: index size // 2, with one more lag below zero
+        # than above it on an even axis.
+        odd = n % 2
+        reach = min(below, above + 1 - odd)
+        lags = np.arange(-reach, reach + odd)
+        axes.append(c + lags * side / width)
+    coordinates = np.meshgrid(*axes, indexing="ij")
+    squared = ndimage.map_coordinates(autocorr, coordinates, order=1, mode="nearest")
+    return np.asarray(squared, dtype=np.float64)
 
 
 def spatial_autocorrelation_radial(
@@ -388,29 +547,48 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
     Returns
     -------
     method : {'fft', 'graph'}
-        'fft' if environment is a regular 2D grid, 'graph' otherwise.
+        'fft' if environment is a regular 2D grid of rectangular cells,
+        'graph' otherwise.
     """
-    # Check if environment has grid_shape attribute (regular grid)
-    if not hasattr(env, "grid_shape"):
+    # Hexagonal lattices also have a 2D grid shape, but no rectangular cell
+    # edges: their rows are offset, so an FFT over them is not a 2D lag map.
+    if len(env.grid_edges) != 2:
+        return "graph"
+    # A lag of k cells is a distance only when the cells along an axis share
+    # one width; the two axes may differ, and the lags are rescaled to them.
+    if not _uniform_spacing(env.grid_edges):
         return "graph"
 
-    grid_shape = env.grid_shape
-
-    # grid_shape can be None or tuple
-    if grid_shape is None or len(grid_shape) != 2:
+    # Check if grid is reasonably regular (not too sparse): if less than 50%
+    # of bins are active, treat it as irregular.
+    active_mask = env.active_mask
+    if np.sum(active_mask) / active_mask.size < 0.5:
         return "graph"
-
-    # Check if grid is reasonably regular (not too sparse)
-    # If active_mask exists, check that most bins are active
-    if hasattr(env, "active_mask"):
-        active_mask = env.active_mask
-        if active_mask is not None:
-            # If less than 50% of bins are active, treat as irregular
-            fill_fraction = np.sum(active_mask) / active_mask.size
-            if fill_fraction < 0.5:
-                return "graph"
 
     return "fft"
+
+
+# Cell widths may differ by this fraction of the median width and still count
+# as one width. Edges computed as origin + i * width carry rounding errors of a
+# few ulp of the coordinates, far below this; a relative width error of 1e-6
+# shifts the farthest lag of a 10,000-cell axis by at most 0.01 cell.
+_SPACING_RTOL = 1e-6
+
+
+def _uniform_spacing(edges: tuple[NDArray[np.float64], ...]) -> bool:
+    """Whether the cells along each axis share one width; axes may differ.
+
+    Parameters
+    ----------
+    edges : tuple of ndarray
+        Cell edges along each axis, ``env.grid_edges``.
+    """
+    for edge in edges:
+        widths = np.diff(edge)
+        reference = float(np.median(widths))
+        if np.max(np.abs(widths - reference)) > _SPACING_RTOL * reference:
+            return False
+    return True
 
 
 def _spatial_autocorrelation_fft(
@@ -429,7 +607,7 @@ def _spatial_autocorrelation_fft(
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (height, width)
+    autocorr : NDArray[np.float64], shape (n_x, n_y)
         2D autocorrelation map.
 
     Raises
@@ -437,21 +615,7 @@ def _spatial_autocorrelation_fft(
     ValueError
         If environment is not a regular 2D grid.
     """
-    # Validate environment has grid structure
-    if not hasattr(env, "grid_shape"):
-        raise ValueError(
-            "FFT method requires environment with grid_shape attribute. "
-            "Use spatial_autocorrelation_radial for irregular topologies."
-        )
-
     grid_shape = env.grid_shape
-
-    if grid_shape is None:
-        raise ValueError(
-            "FFT method requires environment with grid_shape. "
-            "Use spatial_autocorrelation_radial for irregular topologies."
-        )
-
     if len(grid_shape) != 2:
         raise ValueError(
             f"FFT method requires 2D grid, got {len(grid_shape)}D grid. "
@@ -463,18 +627,7 @@ def _spatial_autocorrelation_fft(
 
     # Fill in values from firing_rate
     # Need to map flat bin indices to grid indices
-    if hasattr(env, "active_mask"):
-        active_mask = env.active_mask
-        if active_mask is not None:
-            rate_map_2d[active_mask] = firing_rate
-        else:
-            # Reshape flat firing rate to 2D grid
-            reshaped = firing_rate.reshape(grid_shape)
-            rate_map_2d[:, :] = reshaped
-    else:
-        # Reshape flat firing rate to 2D grid
-        reshaped = firing_rate.reshape(grid_shape)
-        rate_map_2d[:, :] = reshaped
+    rate_map_2d[env.active_mask] = firing_rate
 
     # Missing bins contribute no centered signal, including inactive grid cells.
     valid_mask = np.isfinite(rate_map_2d)
@@ -650,9 +803,12 @@ def grid_score(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
-        Should be centered (zero lag at center).
+        Zero lag at index ``n // 2`` along each axis, where
+        ``scipy.fft.fftshift`` puts it. An even axis's first entry, the most
+        negative lag, has no positive partner and is not used, so rotations
+        are about the zero-lag pixel.
     inner_radius_fraction : float, optional
         Inner radius of annular region as fraction of image semi-axis.
         Default is 0.2 (20% of half-width). Must be in (0, 1).
@@ -756,13 +912,16 @@ def grid_score(
     if not np.all(np.isfinite(autocorr_2d)):
         return np.nan
 
+    # Radii are fractions of half the map's smaller side, as before centering.
+    semi_axis = min(autocorr_2d.shape) / 2
+
+    # Rotate about zero lag: an odd map centered on it, so ndimage.rotate's
+    # center ((n - 1) / 2) and the annulus center are the zero-lag pixel.
+    autocorr_2d = _zero_lag_centered(autocorr_2d)
     height, width = autocorr_2d.shape
 
     # Create annular mask (ring region between inner and outer radii)
-    center_y, center_x = height / 2, width / 2
-
-    # Use minimum of height/width for radius calculation (handle non-square)
-    semi_axis = min(height, width) / 2
+    center_y, center_x = (height - 1) / 2, (width - 1) / 2
 
     inner_radius = inner_radius_fraction * semi_axis
     outer_radius = outer_radius_fraction * semi_axis
@@ -1014,6 +1173,27 @@ def periodicity_score(
     return float(score)
 
 
+def _zero_lag_centered(autocorr_2d: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Center an autocorrelogram on its zero-lag pixel.
+
+    Parameters
+    ----------
+    autocorr_2d : ndarray of float64, shape (n_0, n_1)
+        Lag map with zero lag at index ``n // 2`` along each axis, as
+        ``scipy.fft.fftshift`` and :func:`spatial_autocorrelation` place it.
+
+    Returns
+    -------
+    ndarray of float64
+        View with every axis of odd length and zero lag at its middle index
+        ``(n - 1) / 2``. An even axis loses its first entry, the most
+        negative lag, which has no positive partner.
+    """
+    return autocorr_2d[
+        tuple(slice(1, None) if n % 2 == 0 else slice(None) for n in autocorr_2d.shape)
+    ]
+
+
 def _find_autocorr_peaks(
     autocorr_2d: NDArray[np.float64],
     *,
@@ -1027,7 +1207,7 @@ def _find_autocorr_peaks(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D autocorrelation map with center at zero lag.
     min_distance : int, optional
         Minimum distance between peaks in pixels. Default is 5.
@@ -1042,16 +1222,16 @@ def _find_autocorr_peaks(
     Returns
     -------
     peak_coords : NDArray[np.float64], shape (n_peaks, 2)
-        Peak coordinates relative to center, as ``(x_offset, y_offset)``
-        in Cartesian convention (x = column offset; y = row offset, with
-        positive y pointing **down** to match the underlying image-array
-        coordinates the autocorrelogram was computed in). Sorted by
+        Peak coordinates relative to center, as ``(x_offset, y_offset)``:
+        axis 0 of the map runs along the environment's x and axis 1 along
+        y, as :func:`spatial_autocorrelation` lays it out. Sorted by
         distance from center (closest first).
     """
     from skimage.feature import peak_local_max
 
+    autocorr_2d = _zero_lag_centered(autocorr_2d)
     height, width = autocorr_2d.shape
-    center_y, center_x = height / 2, width / 2
+    center_y, center_x = (height - 1) / 2, (width - 1) / 2
 
     # Determine center exclusion radius
     if exclude_center_radius is None:
@@ -1084,11 +1264,10 @@ def _find_autocorr_peaks(
         return np.array([]).reshape(0, 2)
 
     # Convert to center-relative coordinates. ``peaks`` from
-    # ``peak_local_max`` is image-indexed (row, col); we reorder to the
-    # Cartesian ``(x, y) == (col_offset, row_offset)`` convention used
-    # everywhere else in the package.
-    peak_coords_image = peaks.astype(np.float64) - np.array([center_y, center_x])
-    peak_coords_relative = peak_coords_image[:, [1, 0]]
+    # ``peak_local_max`` is (axis 0, axis 1); the autocorrelogram's axis 0
+    # runs along the environment's x and axis 1 along y, as
+    # ``spatial_autocorrelation`` lays it out, so the offsets are (x, y).
+    peak_coords_relative = peaks.astype(np.float64) - np.array([center_y, center_x])
 
     # Compute distances from center (Euclidean — independent of axis order).
     distances = np.sqrt(
@@ -1131,7 +1310,7 @@ def grid_scale(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
         Should be centered (zero lag at center).
     bin_size : float
@@ -1252,9 +1431,11 @@ def grid_properties(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
-        Should be centered (zero lag at center).
+        Zero lag at index ``n // 2`` along each axis; axis 0 runs along the
+        environment's x and axis 1 along y, so orientation is measured in
+        the environment's frame.
     bin_size : float
         Size of each spatial bin in physical units (e.g., cm).
         Used to convert pixel distances to physical distances.
@@ -1276,8 +1457,9 @@ def grid_properties(
         Dataclass containing:
         - score: Grid score [-2, 2]
         - scale: Grid spacing in physical units
-        - orientation: Grid orientation in degrees [0, 60)
-        - orientation_std: Standard deviation of orientation
+        - orientation: lattice angle in radians [0, pi/3), from +x (East)
+          counterclockwise toward +y (North), modulo pi/3
+        - orientation_std: Standard deviation of orientation, in radians
         - peak_coords: Detected peak coordinates (n_peaks, 2)
         - n_peaks: Number of peaks detected
 
@@ -1324,7 +1506,7 @@ def grid_properties(
     >>> # props = grid_properties(autocorr, bin_size=2.0)
     >>> # print(f"Score: {props.score:.2f}")
     >>> # print(f"Scale: {props.scale:.1f} cm")
-    >>> # print(f"Orientation: {props.orientation:.1f}° ± {props.orientation_std:.1f}°")
+    >>> # print(f"Orientation: {np.degrees(props.orientation):.1f} degrees")
     >>> # print(f"Detected {props.n_peaks} peaks")
 
     See Also
@@ -1382,29 +1564,34 @@ def grid_properties(
     distances_to_use = distances_pixels[: min(n_peaks, len(distances_pixels))]
     scale = float(np.median(distances_to_use)) * bin_size
 
-    # Compute orientation from peak angles. peak_coords is now (x, y),
-    # so arctan2(y, x) reads peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
-    angles_rad = np.arctan2(peak_coords[:, 1], peak_coords[:, 0])
-    angles_deg = np.degrees(angles_rad) % 360
-    orientations = angles_deg % 60
+    # Compute orientation from the angles of the same n_peaks nearest peaks
+    # as the scale: the extra peak detected as a spare can lie on the second
+    # ring, at another angle. peak_coords is (x, y), so arctan2(y, x) reads
+    # peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
+    ring = peak_coords[: min(n_peaks, len(peak_coords))]
+    orientations = np.arctan2(ring[:, 1], ring[:, 0]) % _HEX_PERIOD
 
     # Axis flip correction
-    dist_to_60 = 60 - orientations
-    adjusted = np.where(dist_to_60 < orientations, orientations - 60, orientations)
+    adjusted = np.where(
+        _HEX_PERIOD - orientations < orientations,
+        orientations - _HEX_PERIOD,
+        orientations,
+    )
 
-    n_positive = np.sum(adjusted > _AXIS_FLIP_THRESHOLD_DEG)
-    n_negative = np.sum(adjusted < -_AXIS_FLIP_THRESHOLD_DEG)
+    n_positive = np.sum(adjusted > _AXIS_FLIP_THRESHOLD)
+    n_negative = np.sum(adjusted < -_AXIS_FLIP_THRESHOLD)
 
     if n_positive > 0 and n_negative > 0:
         if n_positive > n_negative:
-            adjusted = np.where(adjusted < 0, adjusted + 60, adjusted)
+            adjusted = np.where(adjusted < 0, adjusted + _HEX_PERIOD, adjusted)
         else:
-            adjusted = np.where(adjusted > 0, adjusted - 60, adjusted)
+            adjusted = np.where(adjusted > 0, adjusted - _HEX_PERIOD, adjusted)
 
-    orientation = float(np.nanmean(adjusted)) % 60
+    orientation = float(np.nanmean(adjusted)) % _HEX_PERIOD
     orientation_std = float(np.nanstd(adjusted))
 
-    if np.abs(orientation - 60) < 0.1:
+    # A mean just below the period is orientation 0 (within 0.1 degree).
+    if _HEX_PERIOD - orientation < np.radians(0.1):
         orientation = 0.0
 
     return GridProperties(

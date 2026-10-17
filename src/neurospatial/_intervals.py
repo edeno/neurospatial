@@ -25,7 +25,7 @@ from neurospatial._stacklevel import _external_stacklevel
 class _PositionBinLookup(Protocol):
     """Map position samples to bin IDs for an optional interval-start gate."""
 
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
 
 _ACCEPTED_FORMS = (
@@ -498,36 +498,114 @@ def observed_interval_mask(
     times = np.asarray(times, dtype=np.float64)
     resolved_epochs = as_intervals(epochs, name="epochs")
     mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
-    if mask.size and not mask.any():
-        _warn_all_intervals_excluded(times, max_gap=max_gap, epochs=resolved_epochs)
+    warn_excluded_intervals(times, mask, max_gap=max_gap, epochs=resolved_epochs)
     return mask
 
 
-def _warn_all_intervals_excluded(
+def warn_excluded_intervals(
     times: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
     *,
     max_gap: float | None,
-    epochs: NDArray[np.float64] | None,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    start_bin_gate: bool = False,
+    result: str = "the result is empty or NaN rather than a measurement",
+    suppress_hint: str = "",
 ) -> None:
-    """Name the gate that left a position-only analysis with no observed data."""
-    causes = [f"max_gap={max_gap}"] if max_gap is not None else []
-    fixes = []
-    if max_gap is not None:
-        fixes.append(
-            f"max_gap is in seconds and the median sampling interval is "
-            f"{float(np.median(np.diff(times))):.4g} s; raise max_gap above it "
-            f"or pass max_gap=None to disable gap gating"
-        )
-    if epochs is not None:
-        causes.append("epochs")
-        fixes.append("check that epochs overlap `times` (same clock, seconds)")
-    warnings.warn(
-        f"Interval filtering excluded ALL trajectory intervals (active gate(s) "
-        f"{', '.join(causes)}), so the result is empty or NaN rather than a "
-        f"measurement. Fix: {'; '.join(fixes)}.",
-        UserWarning,
-        stacklevel=_external_stacklevel(),
+    """Warn when the interval gates leave no data or ``times`` look wrong.
+
+    Every analysis that applies the shared ``max_gap`` gate calls this with its
+    final interval mask, so they all warn alike. It emits at most one
+    ``UserWarning``, and nothing for fewer than two samples:
+
+    - When every interval is excluded, the message names the active gates and
+      how to fix each one, so an empty result is not mistaken for a
+      measurement.
+    - Otherwise, when the median sampling interval exceeds ``max_gap``, most
+      intervals count as recording gaps. That usually means ``times`` are not
+      in seconds (for example milliseconds), and the message says so.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample timestamps, expected in seconds.
+    interval_mask : ndarray of bool, shape (n_samples - 1,)
+        The analysis's final interval validity.
+    max_gap : float or None
+        The gap threshold in seconds, or None when gap gating is off.
+    epochs, spike_window : ndarray, shape (n_windows, 2), or None
+        Active normalized time windows, named when supplied.
+    min_speed : float or None
+        Active speed threshold, named when set.
+    start_bin_gate : bool, default=False
+        Whether the mask also drops intervals at samples outside the
+        environment or at NaN positions.
+    result : str
+        What an all-excluded mask leaves, e.g. ``"the rate map is empty"``.
+    suppress_hint : str, optional
+        Closing sentence naming how to silence the warning.
+    """
+    if interval_mask.size == 0:
+        return
+    dt = np.diff(np.asarray(times, dtype=np.float64))
+    median_dt = float(np.median(dt))
+    slow_clock = max_gap is not None and median_dt > max_gap
+    clock = (
+        f"the median sampling interval is {median_dt:.4g} s, longer than "
+        f"max_gap={max_gap} s, so `times` are probably not in seconds"
     )
+    if interval_mask.any():
+        if slow_clock:
+            n_gaps = int(np.count_nonzero(dt > max_gap))
+            message = (
+                f"{n_gaps} of {dt.size} sampling intervals are longer than "
+                f"max_gap={max_gap} s and are excluded as recording gaps: {clock}. "
+                f"Fix: convert times to seconds (divide milliseconds by 1000); "
+                f"if the sampling really is this coarse, raise max_gap above "
+                f"{median_dt:.4g} or pass max_gap=None to disable gap gating. "
+                f"{suppress_hint}"
+            )
+            warnings.warn(
+                message.rstrip(), UserWarning, stacklevel=_external_stacklevel()
+            )
+        return
+
+    gates = [f"max_gap={max_gap}"] if max_gap is not None else []
+    fixes = []
+    if slow_clock:
+        fixes.append(
+            f"{clock}: convert times to seconds, raise max_gap above "
+            f"{median_dt:.4g}, or pass max_gap=None to disable gap gating"
+        )
+    elif max_gap is not None and np.any(dt > max_gap):
+        fixes.append("pass max_gap=None to disable gap gating")
+    if min_speed is not None:
+        gates.append(f"min_speed={min_speed}")
+        fixes.append(
+            f"check that min_speed={min_speed} is in the positions' length "
+            "units per second"
+        )
+    windows = [
+        name
+        for name, value in (("epochs", epochs), ("spike_window", spike_window))
+        if value is not None
+    ]
+    if windows:
+        gates.extend(windows)
+        fixes.append(
+            f"check that {'/'.join(windows)} overlap `times` (same clock, seconds)"
+        )
+    if start_bin_gate:
+        gates.append("samples out of bounds or at NaN positions")
+        fixes.append("check that positions use the environment's coordinates")
+    message = (
+        f"Interval filtering excluded ALL trajectory intervals (active gate(s) "
+        f"{', '.join(gates)}), so {result}. Fix: {'; '.join(fixes)}. "
+        f"{suppress_hint}"
+    )
+    warnings.warn(message.rstrip(), UserWarning, stacklevel=_external_stacklevel())
 
 
 def observed_runs(

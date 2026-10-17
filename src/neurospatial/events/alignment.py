@@ -19,10 +19,10 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain, resolve_time_windows
-from neurospatial.decoding._binning import (
+from neurospatial.decoding import (
+    _count_spikes_in_time_bins,
     _time_bin_rounding,
-    count_spikes_in_time_bins,
-    time_bins_in_windows,
+    _time_bins_in_windows,
 )
 from neurospatial.events._core import PeriEventResult, PopulationPeriEventResult
 
@@ -104,7 +104,9 @@ def _make_bin_edges(
     bin_centers : NDArray[np.float64], shape (n_bins,)
         Centers of each full bin; all lie within ``[window[0], window[1]]``.
     """
-    left, right = time_bins_in_windows(np.asarray([window], dtype=np.float64), bin_size)
+    left, right = _time_bins_in_windows(
+        np.asarray([window], dtype=np.float64), bin_size
+    )
     edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
     return edges, left + bin_size / 2
 
@@ -309,7 +311,7 @@ def _count_peri_event_bins(
     ):
         start = np.searchsorted(spikes, edges[0], side="left")
         stop = np.searchsorted(spikes, edges[-1], side="left")
-        histograms[i] = count_spikes_in_time_bins(
+        histograms[i] = _count_spikes_in_time_bins(
             [spikes[start:stop]], edges[:-1], edges[1:]
         )[:, 0]
     return histograms
@@ -585,9 +587,9 @@ def population_peri_event_histogram(
     """
     # Extract trains by unit label from a spike group (iterating a TsGroup
     # yields its keys, not its trains).
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding import _as_spike_trains_with_ids
 
-    trains, extracted_ids = as_spike_trains_with_ids(spike_times)
+    trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
 
     # Validate spike_trains
     if len(trains) == 0:

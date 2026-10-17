@@ -57,9 +57,6 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._binning import (
-    _warn_if_population_silent,
-)
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
@@ -67,15 +64,18 @@ from neurospatial.encoding._significance import (
     resolve_shuffle_settings,
 )
 from neurospatial.encoding._smoothing import _warn_if_fully_masked
+from neurospatial.encoding._spatial_counts import (
+    _warn_if_population_silent,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
-    from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
-    from neurospatial.geometry._coordinates import EgocentricPolarSystem
+    from neurospatial.environment import Environment
+    from neurospatial.geometry import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -1573,7 +1573,7 @@ def compute_egocentric_rate(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    The function uses the egocentric binning layer (``_egocentric_binning.py``)
+    The function uses the egocentric binning layer (``_egocentric_counts.py``)
     to convert spike times to spike counts based on distance and direction to
     the nearest object, then the smoothing layer (``_smoothing.py``) to compute
     the smoothed firing rate.
@@ -1797,7 +1797,7 @@ def compute_object_vector_rate(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    The function uses the allocentric binning layer (``_egocentric_binning.py``)
+    The function uses the allocentric binning layer (``_egocentric_counts.py``)
     to convert spike times to spike counts based on distance and direction to
     the nearest object, then the smoothing layer (``_smoothing.py``) to compute
     the smoothed firing rate.
@@ -1871,7 +1871,7 @@ def _validate_object_vector_metric(
             _format_error(
                 f"{context}: Invalid metric: {metric!r}; expected 'euclidean' or 'geodesic'.",
                 why="Why: nearest-object distance uses a straight line or the environment graph",
-                fix="pass metric='euclidean', or metric='geodesic' with a fitted env",
+                fix="pass metric='euclidean', or metric='geodesic' with an env",
             )
         )
     if metric == "geodesic" and env is None:
@@ -1879,7 +1879,7 @@ def _validate_object_vector_metric(
             _format_error(
                 f"{context}: metric='geodesic' requires env parameter.",
                 why="Why: geodesic distance needs the environment's connectivity graph",
-                fix="pass a fitted env, or use metric='euclidean' with env=None",
+                fix="pass an env, or use metric='euclidean' with env=None",
             )
         )
 
@@ -1913,7 +1913,7 @@ def _object_vector_rate(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._egocentric_binning import (
+    from neurospatial.encoding._egocentric_counts import (
         normalize_object_positions,
         prepare_egocentric_binning,
     )
@@ -1921,18 +1921,18 @@ def _object_vector_rate(
         _validate_smoothing_parameters,
     )
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
     # `env` is optional in this function (None is permitted with the
     # euclidean distance metric, since geodesic distance is the only
-    # path that needs an env-derived graph). Only validate fitted-state
-    # if the user supplied an env; the geodesic path raises its own
+    # path that needs an env-derived graph). Only validate the env
+    # if the user supplied one; the geodesic path raises its own
     # explicit error a few lines below if env is None.
     if env is not None:
-        validate_env_fitted(
+        _validate_env_argument(
             env,
             context=context,
             arguments=(
@@ -2097,7 +2097,7 @@ def compute_egocentric_rates(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
@@ -2393,7 +2393,7 @@ def compute_object_vector_rates(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
@@ -2618,7 +2618,7 @@ def _object_vector_rates(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._egocentric_binning import (
+    from neurospatial.encoding._egocentric_counts import (
         normalize_object_positions,
         prepare_egocentric_binning,
     )
@@ -2626,17 +2626,17 @@ def _object_vector_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
     # `env` is optional in this function (None is permitted with the
-    # euclidean distance metric); only validate fitted-state when supplied.
+    # euclidean distance metric); only validate it when supplied.
     if env is not None:
-        validate_env_fitted(
+        _validate_env_argument(
             env,
             context=context,
             arguments=(
@@ -2663,7 +2663,7 @@ def _object_vector_rates(
 
     # Normalize spike times to canonical list-of-arrays format, surfacing the
     # unit labels a spike group (e.g. a pynapple TsGroup) carries.
-    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
+    spike_times_list, extracted_unit_ids = _as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
     # Resolve and validate per-unit identity labels (defaults to arange). A
@@ -3562,7 +3562,7 @@ def _object_vector_significance(
     )
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
-    from neurospatial.encoding._egocentric_binning import (
+    from neurospatial.encoding._egocentric_counts import (
         _compute_object_coords,
         _coords_to_flat_bin_idx,
         _create_egocentric_environment,
@@ -3573,14 +3573,14 @@ def _object_vector_significance(
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
-    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
     times = np.array(times, dtype=np.float64, copy=True)
     positions = np.array(positions, dtype=np.float64, copy=True)
@@ -3616,7 +3616,7 @@ def _object_vector_significance(
         unit_ids=ids,
     )
     if env is not None:
-        validate_env_fitted(
+        _validate_env_argument(
             env,
             context=context,
             arguments=arguments,
@@ -3729,7 +3729,7 @@ def object_vector_cell_significance(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Sample timestamps in seconds, sorted and aligned with the raw coordinates.
 
@@ -3921,7 +3921,7 @@ def egocentric_object_vector_cell_significance(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Sample timestamps in seconds, sorted and aligned with the raw coordinates.
 

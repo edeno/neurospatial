@@ -2,10 +2,10 @@ import networkx as nx
 import numpy as np
 import pytest
 
+from neurospatial.geometry import project_1d_to_2d
 from neurospatial.layout.helpers.graph import (
     _find_bin_for_linear_position,
     _get_graph_bins,
-    _project_1d_to_2d,
 )
 
 
@@ -18,7 +18,7 @@ def simple_graph():
     G.add_node(2, pos=(2.0, 0.0))
     G.add_edge(0, 1)
     G.add_edge(1, 2)
-    # Add 'distance' attribute for _project_1d_to_2d
+    # Add 'distance' attribute for project_1d_to_2d
     for u, v in G.edges():
         pos_u = np.array(G.nodes[u]["pos"])
         pos_v = np.array(G.nodes[v]["pos"])
@@ -87,7 +87,7 @@ def test_project_1d_to_2d_basic(simple_graph):
             simple_graph.edges[e]["distance"] = np.linalg.norm(pos1 - pos0)
     # Positions: 0.0 (start), 0.5 (mid first edge), 1.0 (junction), 1.5 (mid second edge), 2.0 (end)
     positions = np.array([0.0, 0.5, 1.0, 1.5, 2.0])
-    coords = _project_1d_to_2d(positions, simple_graph, edge_order)
+    coords = project_1d_to_2d(positions, simple_graph, edge_order)
     expected = np.array(
         [
             [0.0, 0.0],
@@ -108,7 +108,7 @@ def test_project_1d_to_2d_with_gap(simple_graph):
             pos1 = np.array(simple_graph.nodes[e[1]]["pos"])
             simple_graph.edges[e]["distance"] = np.linalg.norm(pos1 - pos0)
     positions = np.array([0.0, 0.5, 1.0, 1.25, 1.5, 2.0, 2.5])
-    coords = _project_1d_to_2d(positions, simple_graph, edge_order, edge_spacing=0.5)
+    coords = project_1d_to_2d(positions, simple_graph, edge_order, edge_spacing=0.5)
     # The gap is between 1.0 and 1.5, so 1.25 should be projected to the end of first edge or start of second
     expected = np.array(
         [
@@ -132,7 +132,7 @@ def test_project_1d_to_2d_nan(simple_graph):
             pos1 = np.array(simple_graph.nodes[e[1]]["pos"])
             simple_graph.edges[e]["distance"] = np.linalg.norm(pos1 - pos0)
     positions = np.array([0.0, np.nan, 2.0])
-    coords = _project_1d_to_2d(positions, simple_graph, edge_order)
+    coords = project_1d_to_2d(positions, simple_graph, edge_order)
     assert np.isnan(coords[1]).all()
     np.testing.assert_allclose(coords[0], [0.0, 0.0])
     np.testing.assert_allclose(coords[2], [2.0, 0.0])
@@ -141,7 +141,7 @@ def test_project_1d_to_2d_nan(simple_graph):
 def test_project_1d_to_2d_invalid_shape(simple_graph):
     edge_order = [(0, 1), (1, 2)]
     with pytest.raises(ValueError):
-        _project_1d_to_2d(np.ones((2, 2)), simple_graph, edge_order)
+        project_1d_to_2d(np.ones((2, 2)), simple_graph, edge_order)
 
 
 def test_find_bin_for_linear_position_basic():
@@ -225,7 +225,7 @@ def test_get_graph_bins_and_project_on_T_junction():
     G.add_node(1, pos=(0.0, 0.0))
     G.add_node(2, pos=(-1.0, -1.0))
     G.add_node(3, pos=(+1.0, -1.0))
-    # Add 'distance' explicitly so _project_1d_to_2d can use it:
+    # Add 'distance' explicitly so project_1d_to_2d can use it:
     G.add_edge(0, 1, distance=1.0)  # e0
     G.add_edge(1, 2, distance=np.sqrt(2))  # e1
     G.add_edge(1, 3, distance=np.sqrt(2))  # e2
@@ -263,9 +263,9 @@ def test_get_graph_bins_and_project_on_T_junction():
     # There are (total active bins) + 1 = 6 edges when spacing=0, but we only assert it has length 6:
     assert bin_edges.shape[0] == 6
 
-    # 5) Call _project_1d_to_2d using the actual signature:
-    #    _project_1d_to_2d(linear_positions, graph, edge_order, edge_spacing)
-    projected_nd = _project_1d_to_2d(bin_centers_1d, G, edge_order, edge_spacing)
+    # 5) Call project_1d_to_2d using the actual signature:
+    #    project_1d_to_2d(linear_positions, graph, edge_order, edge_spacing)
+    projected_nd = project_1d_to_2d(bin_centers_1d, G, edge_order, edge_spacing)
     # Shape should be (5,2)
     assert projected_nd.shape == (5, 2)
 

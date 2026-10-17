@@ -1,15 +1,15 @@
-"""Copies and pickle carry geometry without transient analysis work."""
+"""Derived environments and pickle carry geometry without transient analysis work."""
 
 from __future__ import annotations
 
-import copy
 import pickle
-from functools import cached_property
 
+import networkx as nx
 import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.environment._cache import DIFFUSION_KERNELS
 
 
 class _TransientWork:
@@ -26,31 +26,38 @@ def _environment():
     )
 
 
-@pytest.mark.parametrize("method", ["copy", "deepcopy", "pickle"])
-def test_copy_and_pickle_skip_transient_work_without_clearing_source(method):
+def _refuse_build():
+    raise AssertionError("the source cache was cleared")
+
+
+def _derive_or_pickle(env, method):
+    if method == "derived":
+        return env.subset(mask=np.ones(env.n_bins, dtype=bool))
+    return pickle.loads(pickle.dumps(env))
+
+
+@pytest.mark.parametrize("method", ["derived", "pickle"])
+def test_derived_and_pickle_skip_transient_work_without_clearing_source(method):
     env = _environment()
     key = (0.5, "density")
     transient = _TransientWork()
-    env._kernel_cache[key] = transient
-    if method == "copy":
-        restored = env.copy()
-    elif method == "deepcopy":
-        restored = copy.deepcopy(env)
-    else:
-        restored = pickle.loads(pickle.dumps(env))
+    env._cache.get_recent(DIFFUSION_KERNELS, key, lambda: transient)
 
-    assert env._kernel_cache[key] is transient
-    assert restored._kernel_cache == {}
+    restored = _derive_or_pickle(env, method)
+
+    assert env._cache.get_recent(DIFFUSION_KERNELS, key, _refuse_build) is transient
+    assert len(restored._cache) == 0
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(
-        restored.compute_kernel(0.5), _environment().compute_kernel(0.5)
+        restored.compute_kernel(bandwidth=0.5),
+        _environment().compute_kernel(bandwidth=0.5),
     )
 
 
 def test_pickle_size_does_not_grow_after_analysis():
     env = _environment()
     cold = pickle.dumps(env)
-    kernel = env.compute_kernel(0.5)
+    kernel = env.compute_kernel(bandwidth=0.5)
     env.get_differential_operator()
     env.get_divergence_operator()
     _ = env.boundary_bins
@@ -58,89 +65,84 @@ def test_pickle_size_does_not_grow_after_analysis():
     warm = pickle.dumps(env)
 
     assert len(warm) <= len(cold) + 1024
-    np.testing.assert_array_equal(env.compute_kernel(0.5), kernel)
-    np.testing.assert_array_equal(pickle.loads(warm).compute_kernel(0.5), kernel)
+    np.testing.assert_array_equal(env.compute_kernel(bandwidth=0.5), kernel)
+    np.testing.assert_array_equal(
+        pickle.loads(warm).compute_kernel(bandwidth=0.5), kernel
+    )
 
 
-def _copy_environment(env, method):
-    if method == "shallow":
-        return copy.copy(env)
-    if method == "copy":
-        return env.copy()
-    if method == "deepcopy":
-        return copy.deepcopy(env)
-    return pickle.loads(pickle.dumps(env))
-
-
-@pytest.mark.parametrize("method", ["shallow", "copy", "deepcopy", "pickle"])
-def test_computed_properties_are_not_copied_or_pickled(method):
+@pytest.mark.parametrize("method", ["derived", "pickle"])
+def test_computed_analyses_are_not_copied_or_pickled(method):
     env = _environment()
-    env.get_differential_operator()
+    expected_operator = env.get_differential_operator().toarray()
     env.get_divergence_operator()
     env.get_bin_attributes()
     env.get_edge_attributes()
-    _ = env.boundary_bins, env.bin_sizes, env.linearization_properties
-    _ = env._diffusion_geometry, env._diffusion_eigenbasis, env._mrf_eigenbasis
-    _ = env._gaussian_kernels, env._source_flat_to_active_node_id_map
-    transient = _TransientWork()
-    keys = []
-    for cls in type(env).__mro__:
-        for name, descriptor in vars(cls).items():
-            if not isinstance(descriptor, cached_property):
-                continue
-            assert name in vars(env)
-            vars(env)[name] = transient
-            keys.append(name)
+    env.compute_gaussian_kernel(bandwidth=1.0)
+    env.nearest_bin(env.bin_centers)
+    _ = env.boundary_bins
+    env.diffuse(np.ones(env.n_bins), bandwidth=1.0)
+    env.get_mrf_basis(np.ones(env.n_bins), rank=3)
+    populated = len(env._cache)
+    assert populated >= 10
 
-    restored = _copy_environment(env, method)
+    restored = _derive_or_pickle(env, method)
 
-    assert all(vars(env)[key] is transient for key in keys)
-    assert not any(key in vars(restored) for key in keys)
+    assert len(env._cache) == populated
+    assert len(restored._cache) == 0
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(restored.bin_sizes, np.ones(env.n_bins))
-    assert restored.get_differential_operator().shape == (
-        env.n_bins,
-        len(env.edge_pairs),
-    )
-
-
-@pytest.mark.parametrize("method", ["shallow", "copy", "deepcopy", "pickle"])
-def test_legacy_versioned_cache_payloads_are_discarded(method):
-    """Retired analyses are disposable even without a current descriptor."""
-    env = _environment()
-    key = "_versioned_cache___retired_analysis"
-    transient = _TransientWork()
-    vars(env)[key] = transient
-    vars(env)[f"{key}__version"] = 1
-    vars(env)["_state_version"] = 1
-
-    restored = _copy_environment(env, method)
-
-    assert vars(env)[key] is transient
-    assert vars(env)[f"{key}__version"] == 1
-    assert vars(env)["_state_version"] == 1
-    assert not any(name.startswith("_versioned_cache__") for name in vars(restored))
-    assert "_state_version" not in vars(restored)
-    np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
-
-
-def test_loading_builder_free_pickle_drops_legacy_analysis_state(monkeypatch):
-    env = _environment()
-    key = "_versioned_cache___retired_analysis"
-    vars(env)[key] = np.ones((env.n_bins, env.n_bins))
-    vars(env)[f"{key}__version"] = 1
-    vars(env)["_state_version"] = 1
-    # Emulate the old writer, which included memoized work in instance state.
-    with monkeypatch.context() as patch:
-        patch.setattr(Environment, "__getstate__", lambda self: self.__dict__.copy())
-        saved = pickle.dumps(env)
-
-    restored = pickle.loads(saved)
-
-    assert key in vars(env)
-    assert not any(name.startswith("_versioned_cache__") for name in vars(restored))
-    assert "_state_version" not in vars(restored)
     np.testing.assert_array_equal(
-        restored.bin_at(env.bin_centers), np.arange(env.n_bins)
+        restored.get_differential_operator().toarray(), expected_operator
     )
-    np.testing.assert_array_equal(restored.bin_sizes, np.ones(env.n_bins))
+
+
+def test_pickle_round_trip_keeps_published_values_immutable():
+    env = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool),
+        grid_edges=(np.arange(4.0),) * 2,
+        name="arena",
+        units="cm",
+    )
+
+    restored = pickle.loads(pickle.dumps(env))
+
+    assert (restored.name, restored.units) == (env.name, env.units)
+    np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
+    for array in (restored.bin_centers, restored.grid_edges[0], restored.active_mask):
+        with pytest.raises(ValueError, match="read-only"):
+            array[...] = 0
+    with pytest.raises(nx.NetworkXError):
+        restored.connectivity.add_node(99)
+    with pytest.raises(TypeError, match="read-only"):
+        restored.connectivity.nodes[0]["pos"] = (99.0, 99.0)
+    with pytest.raises(TypeError, match="read-only"):
+        restored.connectivity.graph["caller"] = 1
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda state: state.pop("_provenance"),
+        lambda state: state.update(_extra=1),
+        lambda state: state.update(_geometry=None),
+    ],
+    ids=["missing-field", "unknown-field", "wrong-type"],
+)
+def test_unpickling_a_foreign_state_says_to_use_environment_files(edit):
+    env = _environment()
+    state = dict(env.__dict__)
+    edit(state)
+    blank = Environment.__new__(Environment)
+
+    with pytest.raises(TypeError, match="not hold an Environment") as error:
+        blank.__setstate__(state)
+
+    assert "Environment.from_file(path)" in str(error.value)
+
+
+def test_unpickling_a_non_mapping_state_is_refused():
+    blank = Environment.__new__(Environment)
+
+    with pytest.raises(TypeError, match=r"its state is tuple"):
+        blank.__setstate__((None, {}))

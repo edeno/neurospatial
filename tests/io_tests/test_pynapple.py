@@ -124,7 +124,7 @@ def test_from_pynapple_tsgroup_to_spatial_rates() -> None:
 
     # Plain-array reference (ids default to arange).
     from_arrays = compute_spatial_rates(env, trains, times, positions, bandwidth=5.0)
-    # A raw TsGroup flows in directly: `as_spike_trains_with_ids` extracts trains
+    # A raw TsGroup flows in directly: `_as_spike_trains_with_ids` extracts trains
     # by unit-id index (a TsGroup is a UserDict; iterating it would yield KEYS),
     # so the rates match the plain-array path AND the [7, 9] ids flow through.
     from_group = compute_spatial_rates(env, tsgroup, times, positions, bandwidth=5.0)

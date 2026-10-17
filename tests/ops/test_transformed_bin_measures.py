@@ -40,7 +40,7 @@ def test_transformed_rectangular_cells_keep_physical_measures(n_dims, n_cells, k
     expected = np.full(env.n_bins, np.prod(widths) * expected_scale)
     np.testing.assert_allclose(transformed.bin_sizes, expected)
     np.testing.assert_allclose(env.bin_sizes, np.prod(widths))
-    np.testing.assert_allclose(transformed.copy().bin_sizes, expected)
+    np.testing.assert_allclose(transformed.with_metadata().bin_sizes, expected)
 
 
 def test_transformed_bent_track_keeps_similarity_lengths_and_refuses_anisotropy():
@@ -76,7 +76,7 @@ def test_transformed_bin_measures_stay_read_only_after_copy_and_cache_clear():
         grid_edges=(np.arange(3.0) * 2, np.arange(3.0)),
     ).apply_transform(scale_2d(2, 3))
     expected = np.full(env.n_bins, 12.0)
-    for candidate in (env, env.copy()):
+    for candidate in (env, env.with_metadata()):
         with pytest.raises(ValueError, match="read-only"):
             candidate.bin_sizes[:] = 0
         candidate.clear_cache()

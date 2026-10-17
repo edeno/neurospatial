@@ -66,7 +66,6 @@ def test_all_public_methods_present():
         "linearization_properties",
         # Core
         "info",
-        "copy",
         # Properties
         "n_dims",
         "n_bins",

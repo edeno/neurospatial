@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import pickle
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
@@ -17,8 +16,6 @@ from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
 from neurospatial.ops import MRFBasis
 from neurospatial.ops.basis import _diffusion_generator
 from neurospatial.ops.diffusion import (
-    diffusion_apply_rtol,
-    diffusion_component_labels,
     diffusion_kernel,
 )
 
@@ -32,7 +29,12 @@ def _grid(n=8):
 @pytest.mark.parametrize("polar", [False, True])
 def test_coordinate_descriptor_is_an_independent_frozen_value(polar):
     env = (
-        Environment.from_polar_egocentric((0.0, 3.0), (-np.pi, np.pi), 1.0, np.pi / 2)
+        Environment.from_polar_egocentric(
+            distance_range=(0.0, 3.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=1.0,
+            angle_bin_size=np.pi / 2,
+        )
         if polar
         else _grid()
     )
@@ -59,17 +61,17 @@ def _geometry_arrays(geometry):
 
 
 def test_diffusion_exports_reuse_buffers_without_exposing_cache_headers(monkeypatch):
-    from neurospatial.environment import fields
+    from neurospatial.environment import _fields
 
     env = _grid()
-    build = fields._diffusion_geometry
+    build = _fields._build_diffusion_geometry
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(1)
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(fields, "_diffusion_geometry", counted)
+    monkeypatch.setattr(_fields, "_build_diffusion_geometry", counted)
     first = env.get_diffusion_geometry()
     second = env.get_diffusion_geometry()
     assert isinstance(first, DiffusionGeometry)
@@ -81,8 +83,8 @@ def test_diffusion_exports_reuse_buffers_without_exposing_cache_headers(monkeypa
     ):
         assert exported is not other
         assert np.shares_memory(exported, other)
-        with pytest.raises(ValueError):
-            exported.setflags(write=True)
+        with pytest.raises(ValueError, match="read-only"):
+            exported[...] = 0
     first.W.data = np.zeros_like(first.W.data)
     first.W.indices = np.zeros_like(first.W.indices)
     first.W.indptr = np.zeros_like(first.W.indptr)
@@ -92,7 +94,7 @@ def test_diffusion_exports_reuse_buffers_without_exposing_cache_headers(monkeypa
     for actual, wanted in zip(_geometry_arrays(fresh), expected, strict=True):
         np.testing.assert_array_equal(actual, wanted)
     assert len(calls) == 1
-    env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+    env.clear_cache()
     rebuilt = env.get_diffusion_geometry()
     assert len(calls) == 2
     assert not np.shares_memory(rebuilt.W.data, second.W.data)
@@ -109,30 +111,28 @@ def test_diffusion_components_follow_conductance_instead_of_navigation():
 
 
 def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
-    from neurospatial.ops import smoothing
+    from neurospatial.environment import _fields
 
     env = _grid()
-    build = smoothing._gaussian_kernel
+    build = _fields._gaussian_kernel
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(1)
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(smoothing, "_gaussian_kernel", counted)
-    first = env.compute_gaussian_kernel(1.0)
+    monkeypatch.setattr(_fields, "_gaussian_kernel", counted)
+    first = env.compute_gaussian_kernel(bandwidth=1.0)
     expected = first.copy()
-    second = env.compute_gaussian_kernel(1.0)
+    second = env.compute_gaussian_kernel(bandwidth=1.0)
     assert len(calls) == 1
     assert first is not second and np.shares_memory(first, second)
     with pytest.raises(ValueError):
-        first.setflags(write=True)
-    with pytest.raises(ValueError):
         first[:] = 0
     first.shape = (env.n_bins, env.n_bins, 1)
-    np.testing.assert_array_equal(env.compute_gaussian_kernel(1.0), expected)
-    env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
-    rebuilt = env.compute_gaussian_kernel(1.0)
+    np.testing.assert_array_equal(env.compute_gaussian_kernel(bandwidth=1.0), expected)
+    env.clear_cache()
+    rebuilt = env.compute_gaussian_kernel(bandwidth=1.0)
     assert len(calls) == 2
     assert not np.shares_memory(rebuilt, second)
     np.testing.assert_array_equal(rebuilt, expected)
@@ -141,7 +141,7 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
 @pytest.mark.parametrize("bandwidth", [0.0, -1.0, np.nan, np.inf])
 def test_gaussian_rejects_nonpositive_or_nonfinite_bandwidth(bandwidth):
     with pytest.raises(ValueError, match="finite and positive"):
-        _grid().compute_gaussian_kernel(bandwidth)
+        _grid().compute_gaussian_kernel(bandwidth=bandwidth)
 
 
 def test_mrf_exports_are_independent_without_repeating_the_eigensolve(monkeypatch):
@@ -187,33 +187,33 @@ def test_accuracy_query_reports_resolution_without_building_a_basis(monkeypatch)
         return build(*args, **kwargs)
 
     monkeypatch.setattr(diffusion, "_symmetric_eigenbasis", counted)
-    conservative = env.diffusion_accuracy(1.0)
+    conservative = env.diffusion_accuracy(bandwidth=1.0)
     assert calls == []
-    env.diffuse(np.ones(env.n_bins), 1.0)
+    env.diffuse(np.ones(env.n_bins), bandwidth=1.0)
     assert calls
     n_calls = len(calls)
-    assert env.diffusion_accuracy(1.0) < conservative
-    assert env.diffusion_accuracy(2.0) == conservative
+    assert env.diffusion_accuracy(bandwidth=1.0) < conservative
+    assert env.diffusion_accuracy(bandwidth=2.0) == conservative
     assert len(calls) == n_calls
 
 
-@pytest.mark.parametrize("method", ["shallow", "deepcopy", "pickle"])
-def test_copies_restore_analysis_with_independently_owned_caches(method):
+@pytest.mark.parametrize("method", ["derived", "pickle"])
+def test_derived_and_unpickled_environments_restore_analysis_with_independently_owned_caches(
+    method,
+):
     env = _grid()
     geometry = env.get_diffusion_geometry()
-    gaussian = env.compute_gaussian_kernel(1.0)
-    if method == "shallow":
-        restored = copy.copy(env)
-    elif method == "deepcopy":
-        restored = copy.deepcopy(env)
+    gaussian = env.compute_gaussian_kernel(bandwidth=1.0)
+    if method == "derived":
+        restored = env.subset(mask=np.ones(env.n_bins, dtype=bool))
     else:
         restored = pickle.loads(pickle.dumps(env))
     new_geometry = restored.get_diffusion_geometry()
-    new_gaussian = restored.compute_gaussian_kernel(1.0)
+    new_gaussian = restored.compute_gaussian_kernel(bandwidth=1.0)
     assert not np.shares_memory(new_geometry.W.data, geometry.W.data)
     assert not np.shares_memory(new_gaussian, gaussian)
     assert np.shares_memory(env.get_diffusion_geometry().W.data, geometry.W.data)
-    assert np.shares_memory(env.compute_gaussian_kernel(1.0), gaussian)
+    assert np.shares_memory(env.compute_gaussian_kernel(bandwidth=1.0), gaussian)
     for actual, wanted in zip(
         _geometry_arrays(new_geometry), _geometry_arrays(geometry), strict=True
     ):
@@ -228,16 +228,20 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
         diffusion_accuracy=env.diffusion_accuracy,
         compute_gaussian_kernel=env.compute_gaussian_kernel,
         bin_centers=env.bin_centers,
+        bin_center_tree=env.bin_center_tree,
         binning=env.binning,
     )
-    np.testing.assert_array_equal(diffusion_kernel(host, 1.0), env.compute_kernel(1.0))
-    n_components, labels = diffusion_component_labels(host)
-    assert n_components == 1
-    np.testing.assert_array_equal(labels, np.zeros(env.n_bins, dtype=int))
-    assert diffusion_apply_rtol(host, 1.0) == env.diffusion_accuracy(1.0)
     np.testing.assert_array_equal(
-        _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(1.0)
+        diffusion_kernel(host, 1.0), env.compute_kernel(bandwidth=1.0)
     )
     np.testing.assert_array_equal(
-        _diffusion_generator(host).toarray(), _diffusion_generator(env).toarray()
+        _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(bandwidth=1.0)
+    )
+    np.testing.assert_array_equal(
+        _diffusion_generator(
+            host.bin_centers, host.bin_center_tree(), host.get_diffusion_geometry()
+        ).toarray(),
+        _diffusion_generator(
+            env.bin_centers, env.bin_center_tree(), env.get_diffusion_geometry()
+        ).toarray(),
     )

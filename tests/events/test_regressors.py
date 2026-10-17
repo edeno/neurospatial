@@ -1482,6 +1482,7 @@ class TestDistanceToBoundary:
             edge_order=list(graph.edges),
             edge_spacing=0.0,
             bin_size=5.0,
+            track_width=5.0,
         )
 
         edge_bins = _find_edge_bins(env)

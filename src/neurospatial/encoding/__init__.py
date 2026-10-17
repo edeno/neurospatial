@@ -38,6 +38,16 @@ from neurospatial.encoding._metrics import (
     spatial_coverage_single_cell,
     spatial_information,
 )
+from neurospatial.encoding._smoothing import (
+    _validate_spatial_method_params as _validate_spatial_method_params,
+)
+from neurospatial.encoding._spikes import (
+    _as_spike_trains_with_ids as _as_spike_trains_with_ids,
+)
+from neurospatial.encoding._validation import (
+    _validate_env_argument as _validate_env_argument,
+)
+from neurospatial.encoding._validation import _validate_times as _validate_times
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -73,6 +83,7 @@ from neurospatial.encoding.egocentric import (
 # Grid cell analysis
 from neurospatial.encoding.grid import (
     GridProperties,
+    autocorrelation_pixel_size,
     grid_properties,
     grid_scale,
     grid_score,
@@ -126,6 +137,8 @@ from neurospatial.encoding.view import (
     spatial_view_cell_significance,
 )
 
+# The ``_`` names imported here are internal helpers shared with other
+# neurospatial packages; they are not public API.
 __all__ = [  # noqa: RUF022 - organized by category
     "egocentric_object_vector_cell_significance",
     "object_vector_cell_significance",
@@ -173,6 +186,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "plot_object_vector_tuning",
     # Grid cell analysis
     "GridProperties",
+    "autocorrelation_pixel_size",
     "grid_properties",
     "grid_scale",
     "grid_score",

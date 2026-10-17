@@ -87,7 +87,86 @@ Creating animation overlays from NWB:
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+# Type checkers see the real signatures; at runtime the names load on first
+# access, so the NWB dependencies stay optional.
+if TYPE_CHECKING:
+    from neurospatial.io.nwb._behavior import (
+        read_head_direction as read_head_direction,
+    )
+    from neurospatial.io.nwb._behavior import (
+        read_position as read_position,
+    )
+    from neurospatial.io.nwb._environment import (
+        environment_from_position as environment_from_position,
+    )
+    from neurospatial.io.nwb._environment import (
+        read_environment as read_environment,
+    )
+    from neurospatial.io.nwb._environment import (
+        write_environment as write_environment,
+    )
+    from neurospatial.io.nwb._events import (
+        dataframe_to_events_table as dataframe_to_events_table,
+    )
+    from neurospatial.io.nwb._events import (
+        read_events as read_events,
+    )
+    from neurospatial.io.nwb._events import (
+        read_intervals as read_intervals,
+    )
+    from neurospatial.io.nwb._events import (
+        read_trials as read_trials,
+    )
+    from neurospatial.io.nwb._events import (
+        write_events as write_events,
+    )
+    from neurospatial.io.nwb._events import (
+        write_laps as write_laps,
+    )
+    from neurospatial.io.nwb._events import (
+        write_region_crossings as write_region_crossings,
+    )
+    from neurospatial.io.nwb._events import (
+        write_trials as write_trials,
+    )
+    from neurospatial.io.nwb._fields import (
+        read_place_field as read_place_field,
+    )
+    from neurospatial.io.nwb._fields import (
+        write_occupancy as write_occupancy,
+    )
+    from neurospatial.io.nwb._fields import (
+        write_place_field as write_place_field,
+    )
+    from neurospatial.io.nwb._fields import (
+        write_spatial_rates as write_spatial_rates,
+    )
+    from neurospatial.io.nwb._holders import (
+        NWBHeadDirection as NWBHeadDirection,
+    )
+    from neurospatial.io.nwb._holders import (
+        NWBPosition as NWBPosition,
+    )
+    from neurospatial.io.nwb._holders import (
+        NWBUnits as NWBUnits,
+    )
+    from neurospatial.io.nwb._overlays import (
+        bodypart_overlay_from_nwb as bodypart_overlay_from_nwb,
+    )
+    from neurospatial.io.nwb._overlays import (
+        head_direction_overlay_from_nwb as head_direction_overlay_from_nwb,
+    )
+    from neurospatial.io.nwb._overlays import (
+        position_overlay_from_nwb as position_overlay_from_nwb,
+    )
+    from neurospatial.io.nwb._pose import (
+        read_pose as read_pose,
+    )
+    from neurospatial.io.nwb._units import (
+        read_units as read_units,
+    )
 
 # Lazy imports - functions are imported when first accessed
 # This keeps NWB dependencies optional

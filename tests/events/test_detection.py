@@ -255,12 +255,13 @@ class TestAddPositions:
         """
         from neurospatial.events.detection import add_positions
 
-        events = pd.DataFrame({"timestamp": [1.0]})
-        times = np.array([0.0, 1.0, 2.0])
+        events = pd.DataFrame({"timestamp": [0.1]})
+        times = np.array([0.0, 0.1, 0.2])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
         # Correct (keyword) call works.
-        add_positions(events, times=times, positions=positions)
+        result = add_positions(events, times=times, positions=positions)
+        np.testing.assert_allclose(result[["x", "y"]].to_numpy(), [[1.0, 1.0]])
 
         # Old positional order is now a loud TypeError, not a wrong result.
         with pytest.raises(TypeError):

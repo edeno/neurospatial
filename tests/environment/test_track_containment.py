@@ -1,4 +1,4 @@
-"""A track's topology supports projection; containment also needs its width."""
+"""A track's topology supports projection; every position lookup needs its width."""
 
 import pickle
 from datetime import datetime, timezone
@@ -7,7 +7,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import AffineND
 
 
@@ -16,35 +16,71 @@ def _track(width):
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))
     graph.add_edge(0, 1, distance=10.0)
-    return Environment.from_graph(graph, [(0, 1)], 0.0, 2.0, track_width=width)
+    return Environment.from_graph(
+        graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=width
+    )
 
 
-@pytest.mark.parametrize("factory", ["from_graph", "linear_track", "maze"])
-def test_unknown_track_footprint_refuses_containment_but_retains_projection(factory):
+def _widthless(factory):
     if factory == "from_graph":
-        env = _track(None)
-    elif factory == "linear_track":
-        env = Environment.linear_track(endpoints=[(0, 0), (10, 0)], bin_size=2.0)
-    else:
-        env = Environment.maze(
-            "t",
-            node_positions={
-                "start": (0, 0),
-                "junction": (0, 10),
-                "left": (-10, 10),
-                "right": (10, 10),
-            },
-            bin_size=2.0,
-        )
+        return _track(None)
+    if factory == "linear_track":
+        return Environment.linear_track(endpoints=[(0, 0), (10, 0)], bin_size=2.0)
+    return Environment.maze(
+        kind="t",
+        node_positions={
+            "start": (0, 0),
+            "junction": (0, 10),
+            "left": (-10, 10),
+            "right": (10, 10),
+        },
+        bin_size=2.0,
+    )
+
+
+_POSITION_LOOKUPS = {
+    "bin_at": lambda env, probes: env.bin_at(probes),
+    "contains": lambda env, probes: env.contains(probes),
+    "occupancy": lambda env, probes: env.occupancy(np.array([0.0, 0.1]), probes),
+    "bin_sequence": lambda env, probes: env.bin_sequence(np.array([0.0, 0.1]), probes),
+    "transitions": lambda env, probes: env.transitions(
+        times=np.array([0.0, 0.1]), positions=probes
+    ),
+    "points=": lambda env, probes: env.distance_to(points=probes[:1]),
+}
+
+
+@pytest.mark.parametrize("lookup", sorted(_POSITION_LOOKUPS))
+@pytest.mark.parametrize("factory", ["from_graph", "linear_track", "maze"])
+def test_a_track_without_width_refuses_position_lookups(factory, lookup):
+    """A centerline cannot say how far off it a position is still on the track."""
+    env = _widthless(factory)
     probes = np.array([[1.0, 0.0], [1000.0, 1000.0]])
-    assert (env.bin_at(probes) >= 0).all()
-    with pytest.raises(NotImplementedError, match=r"track_width.*bin_at"):
-        env.contains(probes)
+    with pytest.raises(NotImplementedError, match="without track_width"):
+        _POSITION_LOOKUPS[lookup](env, probes)
+    # Projection onto the centerline does not need the width.
+    assert np.isfinite(env.to_linear(probes[:1])).all()
+
+
+def test_a_point_region_on_a_track_without_width_is_refused():
+    regions = Regions()
+    regions.add("reward", point=(1000.0, 1000.0))
+    env = _track(None).with_regions(regions)
+    with pytest.raises(NotImplementedError, match="without track_width"):
+        env.bins_in_region("reward")
+
+
+def test_a_track_with_width_gives_far_positions_no_bin():
+    env = _track(2.0)
+    probes = np.array([[1.0, 0.0], [1.0, 0.99], [1.0, 1.01], [500.0, 500.0]])
+    np.testing.assert_array_equal(env.bin_at(probes) >= 0, [True, True, False, False])
+    with pytest.raises(ValueError, match="outside the environment"):
+        env.distance_to(points=[[500.0, 500.0]])
 
 
 @pytest.mark.parametrize("width", [None, 2.0])
 @pytest.mark.parametrize("derivation", ["native", "subset", "transform"])
-@pytest.mark.parametrize("storage", ["copy", "pickle", "dict", "file", "nwb"])
+@pytest.mark.parametrize("storage", ["derived", "pickle", "dict", "file", "nwb"])
 def test_track_containment_contract_survives_derivation_and_storage(
     tmp_path, width, derivation, storage
 ):
@@ -52,16 +88,16 @@ def test_track_containment_contract_survives_derivation_and_storage(
     probes = np.array([[1.0, 0.75], [9.0, 0.0], [5.0, 1000.0]])
     expected = np.array([True, True, False])
     if derivation == "subset":
-        env = env.subset(bins=env.bin_centers[:, 0] < 5)
+        env = env.subset(mask=env.bin_centers[:, 0] < 5)
         expected[1] = False
     elif derivation == "transform":
         matrix = np.array([[0.0, -2.0, 20.0], [2.0, 0.0, -10.0], [0.0, 0.0, 1.0]])
         env = env.apply_transform(AffineND(matrix))
         probes = probes @ matrix[:2, :2].T + matrix[:2, 2]
 
-    assigned = env.bin_at(probes)
-    if storage == "copy":
-        restored = env.copy()
+    assigned = None if width is None else env.bin_at(probes)
+    if storage == "derived":
+        restored = env.with_metadata()
     elif storage == "pickle":
         restored = pickle.loads(pickle.dumps(env))
     elif storage == "dict":
@@ -85,11 +121,12 @@ def test_track_containment_contract_survives_derivation_and_storage(
             restored = read_environment(io.read())
 
     for candidate in (env, restored):
-        np.testing.assert_array_equal(candidate.bin_at(probes), assigned)
         if width is None:
-            with pytest.raises(NotImplementedError, match=r"track_width.*bin_at"):
-                candidate.contains(probes)
+            for lookup in (candidate.bin_at, candidate.contains):
+                with pytest.raises(NotImplementedError, match="without track_width"):
+                    lookup(probes)
         else:
+            np.testing.assert_array_equal(candidate.bin_at(probes), assigned)
             np.testing.assert_array_equal(candidate.contains(probes), expected)
 
 
@@ -101,7 +138,7 @@ def test_track_presets_accept_a_declared_width(factory):
         )
     else:
         env = Environment.maze(
-            "t",
+            kind="t",
             node_positions={
                 "start": (0, 0),
                 "junction": (0, 10),

@@ -9,7 +9,7 @@ from itertools import permutations
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from neurospatial import Environment, compute_spatial_rate, compute_spatial_rates
@@ -82,6 +82,15 @@ def test_single_and_population_estimators_agree(
     scale=st.floats(min_value=0.25, max_value=4.0),
     reflect=st.booleans(),
 )
+# A reflected quarter-scale map whose inverse used to fail hexagonal-cell
+# validation on a cell that its locator assigns correctly.
+@example(angle=-2.0965322377907283, scale=0.25, reflect=True)
+# A scaled grid whose stored centers drifted from its re-mapped cell edges
+# over four transforms, so the inverse failed geometry validation.
+@example(angle=0.0, scale=1.263995540083514, reflect=False)
+# A subnormal rotation angle: its sine has fewer significant bits than the
+# relative roundoff model assumed, so the recovered grid frame was refused.
+@example(angle=2.2250738585e-313, scale=4.0, reflect=False)
 def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     analysis_invariant_env, angle, scale, reflect
 ):
@@ -116,6 +125,52 @@ def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     )
     np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
     np.testing.assert_array_equal(restored.bin_at(points), original_bins)
+
+
+@pytest.mark.parametrize("angle", [2.2250738585e-313, 5e-324, -1e-310])
+def test_grid_rotated_by_a_subnormal_angle_is_accepted(angle):
+    """A rotation by an angle below the normal range keeps a valid grid frame."""
+    mask = np.ones((3, 3), dtype=bool)
+    mask[1, 1] = False
+    env = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
+    matrix = np.eye(3)
+    matrix[:2, :2] = 4.0 * np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    matrix[:2, 2] = [10.0, -7.0]
+    transform = Affine2D(matrix)
+    rotated = env.apply_transform(transform)
+    np.testing.assert_allclose(
+        rotated.bin_centers, transform(env.bin_centers), rtol=0, atol=1e-12
+    )
+    np.testing.assert_array_equal(
+        rotated.bin_at(transform(env.bin_centers)), np.arange(env.n_bins)
+    )
+    restored = rotated.apply_transform(transform.inverse())
+    np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
+
+
+def test_chained_grid_transforms_accept_their_inverse():
+    """Scaling a masked grid four times and back keeps its cells and centers.
+
+    The cell edges are mapped at each step; the stored centers must stay the
+    midpoints of those edges, or the inverse no longer validates.
+    """
+    mask = np.ones((3, 3), dtype=bool)
+    mask[1, 1] = False
+    env = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
+    matrix = np.eye(3)
+    matrix[:2, :2] = 1.263995540083514 * np.eye(2)
+    matrix[:2, 2] = [10.0, -7.0]
+    transform = Affine2D(matrix)
+    shifted = env.apply_transform(transform).apply_transform(translate(3.0, 2.0))
+    restored = shifted.apply_transform(translate(-3.0, -2.0)).apply_transform(
+        transform.inverse()
+    )
+    np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
+    np.testing.assert_array_equal(restored.bin_at(env.bin_centers), np.arange(8))
+    for edges in restored.grid_edges:
+        assert np.allclose(edges, np.arange(4.0), atol=1e-12)
 
 
 @pytest.mark.parametrize("n_dims", [1, 2, 3])

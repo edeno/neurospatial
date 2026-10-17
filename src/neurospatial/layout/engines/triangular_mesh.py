@@ -12,13 +12,19 @@ from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._components import Outline, TriangleShapes
-from neurospatial.geometry._locators import MeshLocator
+from neurospatial.geometry import (
+    Binning,
+    MeshLocator,
+    Outline,
+    TriangleShapes,
+    component_extent,
+)
+from neurospatial.layout._assembly import assemble_binning
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
-    _compute_mesh_dimension_ranges,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
     _sample_polygon_boundary,
@@ -36,7 +42,7 @@ class TriangularMeshLayout:
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
     """
 
-    _layout_type_tag: str = "TriangularMesh"
+    layout_type: str = LayoutType.TRIANGULAR_MESH.value
     _build_params_used: dict[str, Any]
 
     bin_centers: NDArray[np.float64]
@@ -70,17 +76,7 @@ class TriangularMeshLayout:
         self._boundary_polygon_stored = None
         self._locator = None
 
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "mesh"
-
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return False - triangular mesh layouts cannot be rendered as 2D images."""
-        return False
-
-    @capture_build_params
+    @capture_build_params(data=("boundary_polygon",))
     def build(self, boundary_polygon: Polygon, *, point_spacing: float) -> None:
         """Build the triangular mesh layout.
 
@@ -106,18 +102,6 @@ class TriangularMeshLayout:
         if point_spacing <= 0:
             raise ValueError(f"point_spacing must be positive, got {point_spacing}.")
 
-        # Store build parameters.
-        # For boundary_polygon, store exterior and interior coords for better serialization.
-        # Note: This simple serialization of polygon might not capture all Shapely Polygon features perfectly.
-        boundary_exterior_coords = list(boundary_polygon.exterior.coords)
-        boundary_interior_coords_list = [
-            list(interior.coords) for interior in boundary_polygon.interiors
-        ]
-        self._build_params_used = {
-            "boundary_exterior_coords": boundary_exterior_coords,
-            "boundary_interior_coords_list": boundary_interior_coords_list,
-            "point_spacing": float(point_spacing),
-        }
         self._boundary_polygon_stored = (
             boundary_polygon  # Store the actual object for use
         )
@@ -178,8 +162,10 @@ class TriangularMeshLayout:
         # Validate connectivity graph has required attributes
         validate_connectivity_graph(self.connectivity, n_dims=2)
 
-        # 7. Compute dimension_ranges based on active bin centers
-        self.dimension_ranges = _compute_mesh_dimension_ranges(self.bin_centers)
+        # 7. Cell extent: the mesh boundary's bounds
+        self.dimension_ranges = component_extent(
+            outline=self.outline(), shapes=self.bin_shapes()
+        )
 
         # 8. Set grid-related attributes for protocol conformance
         # The "conceptual grid" here is the list of all Delaunay triangles.
@@ -219,45 +205,40 @@ class TriangularMeshLayout:
         )
 
     def locator(self) -> MeshLocator:
-        """Return the owned locator, rebuilding it for older saved layouts."""
+        """Return the owned locator, building it on first use."""
         if self._locator is None:
             self._build_locator()
         assert self._locator is not None
         return self._locator
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map each 2D point to an active triangle index, or -1 if outside.
+    def binning(self) -> Binning:
+        """Return owned triangles, lookup and lazy shared-edge faces.
 
-        Query points must lie inside the boundary polygon.
-
-        Parameters
-        ----------
-        points : NDArray[np.float64], shape (n_points, 2)
-            2D points to map to triangle indices.
-
-        Returns
-        -------
-        NDArray[np.intp]
-            Each entry is in [0..n_active-1] or -1 if outside.
-
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
         """
-        if (
-            self._full_delaunay_tri is None
-            or self._original_simplex_to_active_idx_map is None
-        ):
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in (
-                        "_full_delaunay_tri",
-                        "_original_simplex_to_active_idx_map",
-                    )
-                    if getattr(self, name) is None
-                ),
-            )
-
-        return self.locator().locate(points)
+        tri = self._full_delaunay_tri
+        if tri is None or self._active_original_simplex_indices is None:
+            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+        return assemble_binning(
+            self.connectivity,
+            kind=self.layout_type,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=self.bin_centers.shape[1],
+            locator=self.locator(),
+            faces="mesh",
+            face_arrays=(
+                tri.points,
+                tri.simplices,
+                np.asarray(self._active_original_simplex_indices),
+            ),
+            shapes=self.bin_shapes(),
+            outline=self.outline(),
+            dimension_ranges=self.dimension_ranges,
+        )
 
     @property
     def is_linearized_track(self) -> bool:
@@ -336,7 +317,7 @@ class TriangularMeshLayout:
 
         return plot_triangles(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             shapes=self.bin_shapes(),
             outline=self.outline(),
             connectivity=self.connectivity,
@@ -456,29 +437,3 @@ class TriangularMeshLayout:
         volumes = np.abs(determinants) / n_factorial
 
         return np.asarray(volumes, dtype=np.float64)
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Triangle-mesh face measure: the shared triangle-edge length on every edge.
-
-        Bins are triangle centroids; the shared face between two adjacent triangles
-        is their common edge (two shared vertices), whose length is ``A``. Centroid
-        two-point flux is exact only as the dual approaches K-orthogonality, so a
-        skew guard warns when too many interior edges are strongly non-orthogonal.
-        The skew is a property of the mesh, so an environment warns once, when it
-        first builds (and caches) its diffusion geometry, at the scientist's call.
-        """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        if self._full_delaunay_tri is None:
-            raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
-        from neurospatial.geometry._face_builders import mesh_geometry
-
-        tri = self._full_delaunay_tri
-        return mesh_geometry(
-            self.connectivity,
-            self.bin_centers,
-            self.bin_sizes(),
-            tri.points,
-            tri.simplices,
-            np.asarray(self._active_original_simplex_indices),
-        )

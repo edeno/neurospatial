@@ -24,6 +24,7 @@ presence differs. Outputs must match exactly.
 from __future__ import annotations
 
 import argparse
+import copy
 import inspect
 import sys
 import tempfile
@@ -48,6 +49,7 @@ from shapely.geometry import Point, Polygon, box
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import resolve_spatial_bandwidth, smooth_rate_map
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout import create_layout
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.transforms import translate
@@ -78,8 +80,9 @@ def _base_environments() -> Iterator[tuple[str, Any]]:
     yield (
         "hex",
         Environment.from_layout(
-            "Hexagonal",
-            {"hexagon_width": 4.0, "dimension_ranges": [(0, 30), (0, 30)]},
+            create_layout(
+                "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 30), (0, 30)]
+            )
         ),
     )
     track = nx.Graph()
@@ -96,11 +99,11 @@ def _base_environments() -> Iterator[tuple[str, Any]]:
     yield (
         "mesh",
         Environment.from_layout(
-            "TriangularMesh",
-            {
-                "boundary_polygon": Polygon([(0, 0), (30, 0), (30, 30), (0, 30)]),
-                "point_spacing": 4.0,
-            },
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=Polygon([(0, 0), (30, 0), (30, 30), (0, 30)]),
+                point_spacing=4.0,
+            )
         ),
     )
     yield (
@@ -236,8 +239,8 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
         "geometry": lambda: env,
         "boundary_bins": lambda: env.boundary_bins,
         "ncomp": lambda: env._diffusion_geometry.n_components,
-        "smooth": lambda: env.smooth(x["field"], 3.0),
-        "diffuse": lambda: env.diffuse(x["field"], 3.0),
+        "smooth": lambda: env.smooth(x["field"], bandwidth=3.0),
+        "diffuse": lambda: env.diffuse(x["field"], bandwidth=3.0),
         "grad": lambda: gradient(env, x["field"]),
         "divgrad": lambda: divergence(env, gradient(env, x["field"])),
         "wavelet": lambda: heat_kernel_wavelet_basis(
@@ -256,20 +259,20 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
         ),
         "plot_labels": lambda: _plot_labels(env, x["field"]),
         # Graph queries.
-        "neighbors": lambda: env.neighbors(0),
-        "path_between": lambda: env.path_between(0, n_last),
-        "reachable_from": lambda: env.reachable_from(0, radius=2, metric="hops"),
-        "rings": lambda: env.rings(0, hops=2),
+        "neighbors": lambda: env.neighbors(bins=0),
+        "path_between": lambda: env.path_between(bins=[0, n_last]),
+        "reachable_from": lambda: env.reachable_from(bins=0, radius=2, metric="hops"),
+        "rings": lambda: env.rings(bins=0, hops=2),
         "components": lambda: env.components(),
-        "distance_to_geodesic": lambda: env.distance_to([0], metric="geodesic"),
-        "distance_to_euclidean": lambda: env.distance_to([0], metric="euclidean"),
+        "distance_to_geodesic": lambda: env.distance_to(bins=[0], metric="geodesic"),
+        "distance_to_euclidean": lambda: env.distance_to(bins=[0], metric="euclidean"),
         # Coordinate queries.
         "bin_at": lambda: env.bin_at(x["points"]),
         "contains": lambda: env.contains(x["points"]),
         "distance_between": lambda: env.distance_between(
-            env.bin_centers[0], env.bin_centers[n_last]
+            points=env.bin_centers[[0, n_last]]
         ),
-        "neighbors_of_point": lambda: env.neighbors(env.bin_centers[n_last]),
+        "neighbors_of_point": lambda: env.neighbors(points=env.bin_centers[[n_last]]),
         "interpolate_nearest": lambda: env.interpolate(x["field"], x["points"]),
         "interpolate_linear": lambda: env.interpolate(
             x["field"], x["points"], mode="linear"
@@ -309,7 +312,7 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
         "region_membership": lambda: env.region_membership(),
         # Environments derived from this one.
         "rebin": lambda: env.rebin(2),
-        "subset": lambda: env.subset(bins=x["half"]),
+        "subset": lambda: env.subset(mask=x["half"]),
         "subset_inverted_polygon": lambda: env.subset(
             polygon=x["polygon"], invert=True
         ),
@@ -317,7 +320,7 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
     }
     for mode in ("average", "transition", "density"):
         probes[f"kernel_{mode}"] = lambda mode=mode: env.compute_kernel(
-            3.0, mode=mode, cache=False
+            bandwidth=3.0, mode=mode, cache=False
         )
     for key, probe in probes.items():
         _record(out, f"{tag}/{key}", probe)
@@ -353,7 +356,7 @@ def record(path: Path) -> None:
         for variant_name, variant in list(_variants(name, base)):
             for tag, env in (
                 (variant_name, variant),
-                (f"{variant_name}|copy", variant.copy()),
+                (f"{variant_name}|copy", copy.deepcopy(variant)),
             ):
                 regions = type(env.regions)(env.regions.values())
                 regions.add("baseline_point", point=x["point"])

@@ -33,10 +33,12 @@ class TestBinSizeTypeValidation:
         with pytest.raises(TypeError) as exc_info:
             Environment.from_samples(data, bin_size="5.0")
 
-        error_msg = str(exc_info.value)
-        assert "bin_size" in error_msg.lower()
-        assert "string" in error_msg.lower() or "str" in error_msg.lower()
-        assert "float" in error_msg.lower() or "numeric" in error_msg.lower()
+        # The message names the argument, the type it got and that it needs a
+        # number.
+        error_msg = str(exc_info.value).lower()
+        assert "bin_size" in error_msg
+        assert "str" in error_msg
+        assert "number" in error_msg
 
     def test_bin_size_list_with_numeric_string_succeeds(self):
         """bin_size as list containing numeric strings should work (NumPy converts)."""
@@ -129,9 +131,11 @@ class TestDataSamplesTypeValidation:
         with pytest.raises(TypeError) as exc_info:
             Environment.from_samples("not an array", bin_size=2.0)
 
-        error_msg = str(exc_info.value)
-        assert "data_samples" in error_msg.lower() or "array" in error_msg.lower()
-        assert "string" in error_msg.lower() or "str" in error_msg.lower()
+        # The message says the positions must be numeric and names what it got.
+        error_msg = str(exc_info.value).lower()
+        assert "positions" in error_msg
+        assert "numeric" in error_msg
+        assert "str" in error_msg
 
     def test_data_samples_list_of_numeric_strings_succeeds(self):
         """data_samples as list of numeric strings should work (NumPy converts)."""
@@ -144,8 +148,11 @@ class TestDataSamplesTypeValidation:
         with pytest.raises(TypeError) as exc_info:
             Environment.from_samples({"x": [1, 2], "y": [3, 4]}, bin_size=2.0)
 
-        error_msg = str(exc_info.value)
-        assert "data_samples" in error_msg.lower() or "array" in error_msg.lower()
+        # The message says the positions must be numeric and names what it got.
+        error_msg = str(exc_info.value).lower()
+        assert "positions" in error_msg
+        assert "numeric" in error_msg
+        assert "dict" in error_msg
 
 
 class TestDimensionRangeTypeValidation:

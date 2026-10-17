@@ -111,13 +111,13 @@ def create_benchmark_env(
     Returns
     -------
     Environment
-        A fitted Environment with the specified grid size.
+        An Environment with the specified grid size.
 
     Examples
     --------
     >>> from benchmark_datasets import SMALL_CONFIG, create_benchmark_env
     >>> env = create_benchmark_env(SMALL_CONFIG, seed=42)
-    >>> env._is_fitted
+    >>> env.n_bins > 0
     True
     """
     from neurospatial import Environment

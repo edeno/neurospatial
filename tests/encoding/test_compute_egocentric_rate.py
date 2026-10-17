@@ -3,7 +3,7 @@
 This module tests the compute_egocentric_rate(None) function for computing egocentric
 firing rate maps for object-vector cells.
 
-Task 5.7: Implement compute_egocentric_rate(None) function
+compute_egocentric_rate():
 - Accept single spike_times array
 - Accept object_positions array
 - Support distance_range and bin count parameters
@@ -644,12 +644,12 @@ class TestComputeEgocentricRatePrecomputation:
         spike_times: np.ndarray,
     ) -> None:
         """compute_egocentric_rate should reuse coordinates for counts and occupancy."""
-        from neurospatial.encoding import _egocentric_binning
+        from neurospatial.encoding import _egocentric_counts
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
         call_count = 0
-        original = _egocentric_binning._compute_object_coords
+        original = _egocentric_counts._compute_object_coords
 
         def counting_compute_object_coords(*args, **kwargs):
             nonlocal call_count
@@ -657,7 +657,7 @@ class TestComputeEgocentricRatePrecomputation:
             return original(*args, **kwargs)
 
         monkeypatch.setattr(
-            _egocentric_binning,
+            _egocentric_counts,
             "_compute_object_coords",
             counting_compute_object_coords,
         )

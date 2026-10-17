@@ -41,6 +41,74 @@ The inferred domain describes the active cells. An unvisited patch does not
 establish a physical wall. Inspect the support before interpreting missing
 occupancy as inaccessible space.
 
+## Presets for common apparatus { #presets }
+
+Three presets cover the usual apparatus. Each returns an ordinary
+`Environment`, so every analysis below works the same way on it.
+
+`open_field()` bins tracked positions like `from_samples()` but fills interior
+holes. A patch in the middle of the arena that the animal happened not to
+visit stays in the analysis, as an unvisited bin rather than a gap:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+rng = np.random.default_rng(0)
+positions = rng.uniform(0.0, 100.0, size=(5000, 2))  # 100 x 100 cm box
+# The animal never crossed an 8 cm patch in the center
+positions = positions[np.linalg.norm(positions - 50.0, axis=1) > 8.0]
+
+arena = Environment.open_field(positions, bin_size=5.0, units="cm")
+visited = Environment.from_samples(positions, bin_size=5.0, units="cm")
+
+center = np.array([[50.0, 50.0]])
+assert arena.contains(center).all()  # the patch is part of the arena
+assert not visited.contains(center).any()  # from_samples keeps only visited bins
+```
+
+`linear_track()` and `maze()` build tracks from their geometry, not from
+positions, and linearize them so place fields can be computed along the track.
+`linear_track()` takes the track's endpoints (or a list of corner positions for
+a bent track). `maze()` takes a plus, T or W maze from the positions of its
+center, junctions and arm ends. `track_width` is the full corridor width;
+positions farther from the centerline than half of it are outside the track:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+track = Environment.linear_track(
+    endpoints=[(0.0, 0.0), (180.0, 0.0)],
+    bin_size=2.0,
+    track_width=8.0,
+    units="cm",
+)
+assert track.is_linearized_track
+np.testing.assert_allclose(track.to_linear(np.array([[90.0, 2.0]])), [90.0])
+assert track.bin_at(np.array([[90.0, 20.0]]))[0] == -1  # 20 cm off the track
+
+plus_maze = Environment.maze(
+    kind="plus",
+    node_positions={
+        "center": (0.0, 0.0),
+        "north": (0.0, 50.0),
+        "south": (0.0, -50.0),
+        "east": (50.0, 0.0),
+        "west": (-50.0, 0.0),
+    },
+    bin_size=2.0,
+    track_width=8.0,
+    units="cm",
+)
+assert plus_maze.is_linearized_track
+```
+
+For any other track, build a NetworkX graph of the centerline and pass it to
+`from_graph()`.
+
 ## Start with a mask
 
 ### A grid in physical coordinates
@@ -189,22 +257,25 @@ np.testing.assert_array_equal(rebuilt.bin_centers, original.bin_centers)
 no conversion. Polar snapshots retain radius/angle coordinates; use environment
 storage to restore those, because `from_bins()` constructs Cartesian geometry.
 
-For nearest-center assignment, use `env.nearest_bin(points)`; the existing
-`map_points_to_bins(env, points)` function forwards to it. Both reuse the
-environment's query tree and retain the same tie-breaking and distance limits.
-This is different from `bin_at()`, which checks Cartesian cell containment.
-For compatibility, nearest-center queries on polar environments compare the
-stored radius and angle columns as ordinary Euclidean coordinates with mixed
-units. These values are not physical polar distances or containment tests.
+For nearest-center assignment, use `env.nearest_bin(positions)`. It reuses the
+environment's query tree and supports tie-breaking and distance limits.
+This is different from `bin_at()`, which finds the cell that contains each
+position (on a polar environment, each `(distance, angle)` row).
+On an egocentric polar environment, `nearest_bin` measures physical distance:
+it places the bin centers and the `(distance, angle)` rows in the animal's
+plane, `(distance * cos(angle), distance * sin(angle))`, before comparing
+them. Its distances and `max_distance` are in the environment's length units.
+It is still not a containment test: use `bin_at()` for the bin that holds a
+row.
 
 For a custom numerical analysis, use `env.coordinate_system` to interpret the
 columns and `env.get_diffusion_geometry()` to inspect conductances, cell measures
 and connected diffusion components. These are independent read-only exports.
 The environment keeps its expensive geometry and eigenbasis caches private.
 
-`env.compute_gaussian_kernel(bandwidth)` returns unnormalized Gaussian weights
-that ignore walls; `env.diffuse(field, bandwidth)` respects the numerical boundary
-geometry. After diffusion, `env.diffusion_accuracy(bandwidth)` reports its relative
+`env.compute_gaussian_kernel(bandwidth=...)` returns unnormalized Gaussian weights
+that ignore walls; `env.diffuse(field, bandwidth=...)` respects the numerical boundary
+geometry. After diffusion, `env.diffusion_accuracy(bandwidth=...)` reports its relative
 noise floor. A spatial model can request a Markov random field smoothness basis
 with `env.get_mrf_basis(occupancy, rank=...)`.
 
@@ -220,18 +291,21 @@ env: Environment[CartesianSystem] = Environment.from_grid_mask(
 geometry = env.get_diffusion_geometry()
 assert geometry.W.shape == (9, 9)
 assert geometry.n_components == 1
-weights = env.compute_gaussian_kernel(1.0)
+weights = env.compute_gaussian_kernel(bandwidth=1.0)
 assert not weights.flags.writeable
-smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), 1.0)
-assert env.diffusion_accuracy(1.0) <= 1e-6
+smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), bandwidth=1.0)
+assert env.diffusion_accuracy(bandwidth=1.0) <= 1e-6
 basis = env.get_mrf_basis(np.ones(env.n_bins), rank=4)
 assert basis.B.shape == (env.n_bins, 4)
 ```
 
-Geometry and Gaussian exports have independent headers over immutable buffers;
-repeated reads reuse those buffers. Use `.copy()` for editable arrays or sparse
-matrices. MRF basis arrays are already independent and editable. Environment
-copies and restored files start with fresh private analysis caches.
+Geometry and Gaussian exports are new read-only objects over the cached,
+immutable arrays, so repeated reads do not copy them. Use `.copy()` for
+editable arrays or sparse matrices. MRF basis arrays are already independent
+and editable. All of these come from the environment's one analysis cache.
+`with_metadata` and `with_regions` share it, because their bins are the same;
+derived environments and restored files start with an empty one (see
+[Performance and caching](performance.md)).
 
 ## Add known geometry when available
 
@@ -288,9 +362,15 @@ assert all(left[u] == left[v] for u, v in env.connectivity.edges)
 
 For a linearized track, `from_graph(..., track_width=...)` supplies a measured
 full width in the graph's coordinate units. Containment uses distance to the
-actual centerline segments, with round end caps. Omit the width for an abstract
-graph whose physical footprint is unknown; its existing graph lookup remains
-available, but `env.arena.contains(...)` cannot establish physical containment.
+actual centerline segments, with round end caps: a position farther than half
+the width from every segment gets bin `-1`. A track built without a width has
+no footprint, so `bin_at`, `contains`, `occupancy`, the bin sequences,
+`points=` queries and point regions refuse with `NotImplementedError`.
+`env.with_track_width(width)` gives such a track, including one saved by an
+earlier version, its measured width and keeps its bins; `to_linear`, `linear_to_nd` and the graph
+queries on bin indices still work. `to_linear` projects every position onto
+the centerline, however far off the track, so check `bin_at(positions) >= 0`
+on a track with a width before trusting linear positions.
 Egocentric polar environments similarly record their radial and angular
 analysis support without inferring physical walls.
 
@@ -323,7 +403,7 @@ recent `clip()` call. Subsets select its rows and transforms preserve them;
 a subsequent clip creates a new immediate-parent mapping. The array is
 read-only and survives saving and loading.
 
-Clipping preserves units, frame and arena, and drops analysis regions. It does
+Clipping preserves the name, units, frame, arena and named regions. It does
 not transfer counts, occupancy, rates or fitted decoders. Reassign raw positions
 and events to the new bins and fit again. A parent mapping alone cannot say
 how activity was distributed between split pieces. Splitting bins also changes
@@ -426,10 +506,14 @@ subdivision currently requires 2-D polygon support. Higher-dimensional masks
 must match the grid support for linear allocation; otherwise the method raises
 with guidance to use start allocation or a matching grid.
 
-Other common queries are `env.neighbors(bin_index)`,
-`env.path_between(source_bin, target_bin)` and
-`env.distance_between(point_a, point_b)`. See the
-[API reference](../api/index.md) for their coordinate and distance conventions.
+Other common queries are `env.neighbors(bins=bin_index)`,
+`env.path_between(bins=[start_bin, end_bin])` and
+`env.distance_between(points=[point_a, point_b])`. Each query takes its target
+by keyword: `bins=` for bin indices, `points=` for coordinates (one row per
+point, mapped to the bin that contains it) and, for `distance_to`, `region=`
+for a named region. A bin index and a coordinate look alike as numbers, so the
+keyword says which one you mean. See the [API reference](../api/index.md) for
+their coordinate and distance conventions.
 
 ## Choose physical walls or analysis boundaries
 
@@ -544,7 +628,7 @@ env = Environment.from_grid_mask(
     np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
     arena=OpenArena(box(0, 0, 10, 10), walls=(LineString([(5, 0), (5, 10)]),)),
 )
-crop = env.subset(bins=env.bin_centers[:, 0] < 4)
+crop = env.subset(mask=env.bin_centers[:, 0] < 4)
 hit = compute_viewed_location(
     np.array([[2.5, 4.5]]), np.array([0.0]), env=crop,
     method="ray_cast", max_distance=30,
@@ -623,7 +707,7 @@ env = Environment.from_grid_mask(
     np.ones((6, 6), dtype=bool),
     grid_edges=(np.arange(7.0),) * 2, units="cm", frame="lab",
 )
-crop = env.subset(bins=env.bin_centers[:, 0] < 2)
+crop = env.subset(mask=env.bin_centers[:, 0] < 2)
 coarse = crop.rebin(bin_size=2.0)
 assert coarse.n_bins == 9  # rebuild the whole retained arena
 np.testing.assert_allclose(coarse.bin_sizes, 4.0)

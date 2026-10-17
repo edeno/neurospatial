@@ -30,13 +30,13 @@ from numpy.typing import NDArray
 from scipy.special import gammaln
 
 from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
-from neurospatial.decoding._binning import validate_dt
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
+from neurospatial.decoding._time_bins import validate_dt
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry import Arena
 
 
 class SpatialRatesLike(Protocol):
@@ -56,7 +56,7 @@ def _same_arena(first: Arena, second: Arena) -> bool:
     """Compare continuous meaning independently of polygon ring storage order."""
     from shapely.ops import unary_union
 
-    from neurospatial.geometry._arena import encode_arena
+    from neurospatial.geometry import encode_arena
 
     if first is second:
         return True
@@ -101,9 +101,9 @@ def _validate_encoding_environment(
     if source is None or source is env:
         return
 
-    from neurospatial.encoding._validation import validate_env_fitted
+    from neurospatial.encoding import _validate_env_argument
 
-    validate_env_fitted(
+    _validate_env_argument(
         env, context=context, arguments="spike_counts, encoding_models, dt"
     )
     mismatch = None
@@ -124,7 +124,7 @@ def _validate_encoding_environment(
         ):
             mismatch = "weighted connectivity"
     if mismatch is None:
-        from neurospatial.geometry._polygon import PolygonCells, materialize_cells
+        from neurospatial.geometry import PolygonCells, materialize_cells
 
         if not _same_arena(source.arena, env.arena):
             mismatch = "continuous arena or physical walls"
@@ -143,7 +143,7 @@ def _validate_encoding_environment(
                 ):
                     mismatch = "polygon cell geometry"
                 else:
-                    from neurospatial.geometry._codecs import encode
+                    from neurospatial.geometry import encode
 
                     try:
                         source_meta, source_arrays = encode(
@@ -1095,9 +1095,9 @@ def _prepare_decode_inputs(
         ``True`` where ``encoding_models`` is non-finite (NaN or Inf), or
         ``None`` when the model is entirely finite.
     """
-    from neurospatial.encoding._validation import validate_env_fitted
+    from neurospatial.encoding import _validate_env_argument
 
-    validate_env_fitted(
+    _validate_env_argument(
         env, context=context, arguments="spike_counts, encoding_models, dt"
     )
 

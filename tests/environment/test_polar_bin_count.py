@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding._egocentric_binning import compute_egocentric_occupancy
+from neurospatial.encoding._egocentric_counts import compute_egocentric_occupancy
 from neurospatial.encoding.egocentric import compute_egocentric_rate
 
 

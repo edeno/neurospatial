@@ -8,7 +8,7 @@ from shapely.geometry import LineString, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.encoding._binning import bin_spike_trains
+from neurospatial.encoding._spatial_counts import bin_spike_trains
 from neurospatial.io import from_dict, to_dict
 from neurospatial.ops.transforms import AffineND
 
@@ -106,10 +106,12 @@ def test_linear_counts_and_dwell_share_affine_holes_entry_exit_and_gaps(linear, 
         dwell,
         atol=2e-6,
     )
-    np.testing.assert_array_equal(
-        child.occupancy(times, mapping(points), time_allocation="linear", max_gap=1.0),
-        0.0,
-    )
+    # A gate shorter than every 4 s interval excludes them all, and says so.
+    with pytest.warns(UserWarning, match="excluded ALL.*probably not in seconds"):
+        gated = child.occupancy(
+            times, mapping(points), time_allocation="linear", max_gap=1.0
+        )
+    np.testing.assert_array_equal(gated, 0.0)
 
 
 @pytest.mark.parametrize("linear", MAPS)
@@ -168,12 +170,10 @@ def test_napari_raster_helpers_refuse_framed_grids_explicitly():
 
 
 def test_nearest_interpolation_still_uses_world_euclidean_distance_under_shear():
-    from neurospatial.ops.binning import map_points_to_bins
-
     env = grid().apply_transform(transform(np.array([[1.0, 2.0], [0.0, 1.0]])))
     points = env._binning.grid_frame.to_world(np.array([[1.1, 1.1], [1.9, 1.9]]))
     field = np.arange(env.n_bins, dtype=float)
-    owners = map_points_to_bins(env, points)
+    owners = env.nearest_bin(points)
     np.testing.assert_array_equal(env.interpolate(field, points), field[owners])
 
 
@@ -191,7 +191,7 @@ def test_interpolation_does_not_snap_nearby_queries_over_a_hole():
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
 def test_nested_subset_3d_fractions_preserve_native_outside_stop_normalization(offset):
-    env = grid(3, hole=True).subset(bins=np.arange(26) % 5 != 1)
+    env = grid(3, hole=True).subset(mask=np.arange(26) % 5 != 1)
     rotation = np.eye(3)
     rotation[:2, :2] = [[0.8, -0.6], [0.6, 0.8]]
     first = transform(rotation, offset)

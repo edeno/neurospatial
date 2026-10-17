@@ -3,8 +3,6 @@
 This module tests:
 1. Configurable throttle frequency during playback (10 Hz vs 20 Hz)
 2. xlim caching to avoid redundant set_xlim() calls
-
-Following TDD: These tests are written BEFORE implementation.
 """
 
 from __future__ import annotations

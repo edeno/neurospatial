@@ -9,7 +9,7 @@ import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 from matplotlib.patches import RegularPolygon
 
 from neurospatial import Environment
@@ -18,14 +18,11 @@ from neurospatial.ops.transforms import Affine2D
 
 
 def _owned_layout(parent, tag):
-    return Environment._from_binning(
+    return publish_binning(
         parent._binning,
-        connectivity=parent.connectivity,
         dimension_ranges=parent.dimension_ranges,
-        layout_type_tag=tag,
-        layout_type=parent._layout_category,
+        layout_type=tag,
         build_params={},
-        is_linearized_track=parent.is_linearized_track,
     )
 
 
@@ -40,23 +37,15 @@ class _ExternalGridLayout:
         self.grid_edges = ()
         self.grid_shape = (parent.n_bins,)
         self.active_mask = np.ones(parent.n_bins, dtype=bool)
-        self._layout_type_tag = "ExternalGrid"
         self._build_params_used = {}
         self.is_linearized_track = False
-        self.layout_type = "custom"
-        self.is_grid_compatible = False
+        self.layout_type = "ExternalGrid"
 
     def build(self, **kwargs):
         pass
 
     def bin_sizes(self):
         return self.parent.bin_sizes
-
-    def finite_volume_geometry(self):
-        return self.parent.finite_volume_geometry()
-
-    def point_to_bin_index(self, points):
-        return self.parent.bin_at(points)
 
     def plot(self, ax=None, **kwargs):
         return self.parent.plot(ax=ax, **kwargs)
@@ -73,20 +62,15 @@ class _ExternalTrackLayout:
         self.grid_edges = tuple(edge.copy() for edge in parent.grid_edges)
         self.grid_shape = parent.grid_shape
         self.active_mask = parent.active_mask.copy()
-        self._layout_type_tag = "ExternalTrack"
         self._build_params_used = {}
         self.is_linearized_track = True
-        self.layout_type = "graph"
-        self.is_grid_compatible = False
+        self.layout_type = "ExternalTrack"
 
     def build(self, **kwargs):
         pass
 
     def bin_sizes(self):
         return self.parent.bin_sizes
-
-    def point_to_bin_index(self, points):
-        return self.parent.bin_at(points)
 
     def to_linear(self, points):
         return self.parent.to_linear(points)
@@ -106,7 +90,9 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     operation, has_linear_grid
 ):
     """A custom track migrates to explicit owned data before derivation."""
-    native = Environment.linear_track(endpoints=[[0.0, 0.0], [10.0, 0.0]], bin_size=2.0)
+    native = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [10.0, 0.0]], bin_size=2.0, track_width=1.0
+    )
     layout = _ExternalTrackLayout(native)
     if not has_linear_grid:
         layout.grid_edges = ()
@@ -116,7 +102,11 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     ):
         publish_environment("external_track", layout, "ExternalTrack", {})
     parent = publish_environment(
-        "external_track", _owned_layout(native, "ExternalTrack"), "ExternalTrack", {}
+        "external_track",
+        _owned_layout(native, "ExternalTrack"),
+        "ExternalTrack",
+        {},
+        arena=native.arena,
     )
     source_writeability = tuple(
         array.flags.writeable for array in (*layout.grid_edges, layout.active_mask)
@@ -132,7 +122,7 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     linear_scale = 1.0
     forward = Affine2D(np.eye(3))
     if operation == "subset":
-        child = parent.subset(bins=keep)
+        child = parent.subset(mask=keep)
         indices = indices[keep]
     elif operation == "translation":
         child = parent.apply_transform(translation)
@@ -144,9 +134,9 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     else:
         child = (
             parent.apply_transform(similarity)
-            .subset(bins=keep)
+            .subset(mask=keep)
             .apply_transform(similarity.inverse())
-            .subset(bins=np.array([True, False, True]))
+            .subset(mask=np.array([True, False, True]))
         )
         indices = indices[keep][[0, 2]]
 
@@ -222,7 +212,7 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     )
     keep = np.arange(parent.n_bins) % 3 != 1
     if operation == "subset":
-        child, expected = parent.subset(bins=keep), native.subset(bins=keep)
+        child, expected = parent.subset(mask=keep), native.subset(mask=keep)
     elif operation == "translation":
         child, expected = (
             parent.apply_transform(transform),
@@ -231,16 +221,19 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     else:
         child = (
             parent.apply_transform(transform)
-            .subset(bins=keep)
+            .subset(mask=keep)
             .apply_transform(transform.inverse())
         )
-        expected = native.subset(bins=keep)
+        expected = native.subset(mask=keep)
     points = np.vstack((expected.bin_centers, [[-100.0, -100.0]]))
     np.testing.assert_array_equal(child.bin_at(points), expected.bin_at(points))
     np.testing.assert_array_equal(child.bin_sizes, expected.bin_sizes)
     field = np.sin(np.arange(child.n_bins))
     np.testing.assert_allclose(
-        child.smooth(field, 5.0), expected.smooth(field, 5.0), rtol=1e-12, atol=1e-12
+        child.smooth(field, bandwidth=5.0),
+        expected.smooth(field, bandwidth=5.0),
+        rtol=1e-12,
+        atol=1e-12,
     )
     loaded = from_dict(to_dict(child))
     np.testing.assert_array_equal(loaded.bin_at(points), expected.bin_at(points))
@@ -258,11 +251,15 @@ def test_subset_plot_bounds_include_whole_retained_cells(
     keep[0] = True
     if selection == "outer_cells":
         keep[-1] = True
-    child = parent.subset(bins=keep)
+    child = parent.subset(mask=keep)
     if child._binning.rectilinear is not None:
+        # The retained cells, not the whole lattice the subset keeps.
         grid = child._binning.rectilinear
-        low = np.array([axis[0] for axis in grid.edges])
-        high = np.array([axis[-1] for axis in grid.edges])
+        cells = np.argwhere(grid.active_mask)
+        low = np.array([edge[cells[:, d].min()] for d, edge in enumerate(grid.edges)])
+        high = np.array(
+            [edge[cells[:, d].max() + 1] for d, edge in enumerate(grid.edges)]
+        )
     else:
         shapes = child._binning.shapes
         if hasattr(shapes, "radius"):
@@ -286,9 +283,12 @@ def test_subset_plot_bounds_include_whole_retained_cells(
             else:
                 child.plot_field(np.ones(child.n_bins), ax=axes, colorbar=False)
             figure.canvas.draw()
+        # Matplotlib's patch transform rounds hexagon vertices a few ulps
+        # past the exact cell, which the limits need not cover.
+        rounding = 1e-12 * float(np.max(high - low))
         for axis, limits in enumerate((axes.get_xlim(), axes.get_ylim())):
-            assert limits[0] <= low[axis]
-            assert limits[1] >= high[axis]
+            assert limits[0] <= low[axis] + rounding
+            assert limits[1] >= high[axis] - rounding
         assert not [
             warning
             for warning in caught

@@ -6,7 +6,7 @@ This guide covers the differential operator infrastructure for graph signal proc
 
 Neurospatial provides differential operators that extend classical calculus to graph-structured spatial environments:
 
-- **`compute_differential_operator(env)`** - Builds the fundamental differential operator matrix **D**
+- **`env.get_differential_operator()`** - Builds the fundamental differential operator matrix **D**
 - **`gradient(env, field)`** - Computes gradient of scalar fields (node values → edge values)
 - **`divergence(env, edge_field)`** - Computes divergence of edge fields (edge values → node values)
 - **Laplacian** - Composition of divergence and gradient: `div(grad(f))`
@@ -54,7 +54,7 @@ $$
                = -M^{-1} D\,\mathrm{diag}(A d)\,q.
 $$
 
-These operators need finite-volume geometry. Factory-built grids, hexagonal layouts, tracks, and supported meshes provide it. NWB-reconstructed layouts currently do not: `gradient`, `divergence`, and `compute_differential_operator` raise `NotImplementedError` with a `Fix:` line, as `env.smooth` does.
+These operators need finite-volume geometry. Factory-built grids, hexagonal layouts, tracks, and supported meshes provide it. NWB-reconstructed layouts currently do not: `gradient`, `divergence`, and `env.get_differential_operator()` raise `NotImplementedError` with a `Fix:` line, as `env.smooth` does.
 
 ### Accessing the Differential Operator
 
@@ -467,10 +467,9 @@ plt.show()
 
 ## API Reference
 
-- `neurospatial.ops.compute_differential_operator(env)` - Build differential operator matrix
 - `neurospatial.ops.gradient(env, field)` - Compute gradient (scalar → edge field)
 - `neurospatial.ops.divergence(env, edge_field)` - Compute divergence (edge → scalar field)
 - `env.get_differential_operator()` - Cached differential operator method
 - `env.get_divergence_operator()` - Cached divergence operator that `divergence` applies
 - `neurospatial.ops.distance_field(graph, sources)` - Multi-source geodesic distances
-- `env.smooth(field, bandwidth)` - Gaussian smoothing on graph
+- `env.smooth(field, bandwidth=...)` - Gaussian smoothing on graph

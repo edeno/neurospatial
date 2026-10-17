@@ -5,13 +5,10 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
-from neurospatial.layout.helpers.regular_grid import (
-    _create_regular_grid_connectivity_graph,
-)
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
-from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class ImageMaskLayout(_GridMixin):
@@ -35,12 +32,11 @@ class ImageMaskLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.IMAGE_MASK.value
     _build_params_used: dict[str, Any]
 
     def __init__(self) -> None:
         """Initialize an ImageMaskLayout engine."""
-        self._layout_type_tag = "ImageMask"
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2), dtype=np.float64)
         self.connectivity = None
@@ -49,17 +45,7 @@ class ImageMaskLayout(_GridMixin):
         self.grid_shape = None
         self.active_mask = None
 
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "mask"
-
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return True - image mask layouts can be rendered as 2D images."""
-        return True
-
-    @capture_build_params
+    @capture_build_params(data=("image_mask",))
     def build(
         self,
         *,
@@ -74,7 +60,7 @@ class ImageMaskLayout(_GridMixin):
         The layout follows the (x, y) coordinate convention: dimension 0 is x
         (image columns), dimension 1 is y (image rows). `grid_shape`,
         `grid_edges`, `bin_centers`, and `active_mask` are all expressed in
-        (x, y) order so that `point_to_bin_index` digitizes ``points[:, 0]``
+        (x, y) order so that the grid locator digitizes ``points[:, 0]``
         against the x edges and ``points[:, 1]`` against the y edges.
 
         Parameters
@@ -143,7 +129,7 @@ class ImageMaskLayout(_GridMixin):
 
         # Coordinate convention: dimension 0 is x (cols), dimension 1 is y (rows).
         # grid_shape, grid_edges, bin_centers, and active_mask are all in (x, y)
-        # order so that point_to_bin_index digitizes points[:, 0] against x_edges
+        # order so that the grid locator digitizes points[:, 0] against x_edges
         # and points[:, 1] against y_edges (matching dimension_ranges and every
         # other grid engine).
         self.grid_shape = (n_cols, n_rows)
@@ -170,14 +156,6 @@ class ImageMaskLayout(_GridMixin):
         # image_mask is (rows, cols) == (y, x); transpose to (x, y) so its ravel
         # aligns row-for-row with full_grid_bin_centers above.
         self.active_mask = np.ascontiguousarray(image_mask.T)
-        self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
-        self.connectivity = _create_regular_grid_connectivity_graph(
-            full_grid_bin_centers=full_grid_bin_centers,
-            active_mask_nd=self.active_mask,
-            grid_shape=self.grid_shape,
-            connect_diagonal=connect_diagonal_neighbors,
+        self._assign_cells(
+            full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
         )
-
-        # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=2)
-        self._build_locator(connect_diagonal=connect_diagonal_neighbors)

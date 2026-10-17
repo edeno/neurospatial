@@ -19,9 +19,6 @@ pytest.importorskip("cv2")
 from neurospatial import Environment
 from neurospatial.ops.transforms import VideoCalibration
 
-# We'll import calibrate_video from the animation module when implemented
-# For TDD, tests are written first before implementation exists
-
 
 @pytest.fixture
 def tiny_video_path(tmp_path: Path) -> Path:

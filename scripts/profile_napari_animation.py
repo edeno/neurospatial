@@ -226,7 +226,7 @@ def run_napari_animation(
             fields,
             overlays=overlays,
             backend="napari",
-            colormap="hot",
+            cmap="hot",
             title="Profiling Session",
         )
 

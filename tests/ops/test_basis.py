@@ -40,7 +40,7 @@ def test_heat_kernel_uses_smooth_generator(fv_env):
     from scipy.sparse.linalg import expm_multiply
     from scipy.spatial import cKDTree
 
-    from neurospatial.ops.binning import _estimate_typical_bin_spacing
+    from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
     weights, volumes, _, _ = fv_env._diffusion_geometry
     spacing = _estimate_typical_bin_spacing(
@@ -469,6 +469,28 @@ class TestSpatialBasis:
         b1 = spatial_basis(simple_2d_env, rng=42)
         b2 = spatial_basis(simple_2d_env, rng=42)
         assert_allclose(b1, b2)
+
+    @pytest.mark.parametrize(
+        "nodes",
+        [[(0.0, 0.0), (200.0, 0.0)], [(0.0, 0.0), (120.0, 0.0), (120.0, 80.0)]],
+        ids=["straight", "L-shaped"],
+    )
+    def test_track_scale_is_the_track_length(self, nodes):
+        """On a track, sigma is a fraction of the 200 cm the animal can run.
+
+        The bounding box of a straight track has zero height, and an L-shaped
+        track's bounding box (120 x 80 cm) says nothing about its length.
+        """
+        from neurospatial import Environment
+
+        track = Environment.linear_track(
+            node_positions=nodes, bin_size=2.0, track_width=10.0, units="cm"
+        )
+        basis = spatial_basis(track, coverage="medium", n_features=12, rng=0)
+        expected = geodesic_rbf_basis(
+            track, n_centers=4, sigma=[10.0, 20.0, 40.0], normalize="unit", rng=0
+        )
+        assert_allclose(basis, expected)
 
 
 # =============================================================================

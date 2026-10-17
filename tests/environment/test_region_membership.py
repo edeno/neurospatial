@@ -169,32 +169,25 @@ class TestRegionMembershipBoundaryBehavior:
 class TestRegionMembershipRegionTypes:
     """Test behavior with different region types."""
 
-    def test_point_regions_not_supported(self):
-        """Test that point regions raise an error or are handled appropriately."""
+    def test_point_region_covers_the_bin_containing_it(self):
+        """A point region covers exactly the bin that contains the point."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-
-        # Add a point region
         region_builder = Regions(env.regions.values())
         region_builder.add("point", point=[5.0, 5.0])
         env = env.with_regions(region_builder)
 
-        # Point regions should either raise an error or return all False
-        # (a point has no area, so no bin centers can be "inside" it)
         membership = env.region_membership()
 
-        # Should have the right shape
         assert membership.shape == (env.n_bins, 1)
-
-        # All values should be False (no bin can be inside a point)
-        assert not np.any(membership[:, 0])
+        np.testing.assert_array_equal(
+            np.flatnonzero(membership[:, 0]), env.bin_at(np.array([[5.0, 5.0]]))
+        )
 
     def test_mixed_region_types(self):
-        """Test with a mix of point and polygon regions."""
+        """Point and polygon columns each follow the one region rule."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
-
-        # Add both types
         region_builder = Regions(env.regions.values())
         region_builder.add("poly", polygon=box(2, 2, 8, 8))
         region_builder.add("point", point=[5.0, 5.0])
@@ -202,13 +195,14 @@ class TestRegionMembershipRegionTypes:
 
         membership = env.region_membership()
 
-        # Check shape
         assert membership.shape == (env.n_bins, 2)
-
-        # Polygon should have some members
-        assert np.any(membership[:, 0])
-        # Point should have no members (or possibly one if using a tolerance)
-        assert not np.any(membership[:, 1])
+        np.testing.assert_array_equal(
+            np.flatnonzero(membership[:, 0]), env.bins_in_region("poly")
+        )
+        np.testing.assert_array_equal(
+            np.flatnonzero(membership[:, 1]), env.bins_in_region("point")
+        )
+        assert membership[:, 1].sum() == 1
 
     def test_empty_polygon(self):
         """Test with an empty/degenerate polygon."""
@@ -344,16 +338,6 @@ class TestRegionMembershipEdgeCases:
 
 class TestRegionMembershipValidation:
     """Test input validation."""
-
-    def test_requires_fitted_environment(self):
-        """Test that method requires fitted environment."""
-        env = Environment.__new__(Environment)
-        env._is_fitted = False
-
-        with pytest.raises(
-            RuntimeError, match="requires the environment to be fully initialized"
-        ):
-            env.region_membership()
 
     def test_regions_parameter_validation(self):
         """Test that regions parameter is validated."""

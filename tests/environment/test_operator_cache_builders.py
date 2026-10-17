@@ -9,7 +9,6 @@ from neurospatial.binning import FaceGeometry
 from neurospatial.ops.calculus import (
     _compute_differential_operator,
     _compute_divergence_operator,
-    compute_differential_operator,
 )
 
 
@@ -38,7 +37,7 @@ def test_public_calculus_paths_share_owned_operator_caches() -> None:
         ) as divergence,
     ):
         expected = env.get_differential_operator().toarray()
-        exported = compute_differential_operator(env)
+        exported = env.get_differential_operator()
         exported.data[:] = 0
         env.get_divergence_operator()
         env.get_divergence_operator()
@@ -46,6 +45,6 @@ def test_public_calculus_paths_share_owned_operator_caches() -> None:
             env.get_differential_operator().toarray(), expected
         )
         assert differential.call_count == divergence.call_count == 1
-        env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
+        env.clear_cache()
         env.get_divergence_operator()
         assert differential.call_count == divergence.call_count == 2

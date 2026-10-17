@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
-
-if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._arrays import ReadOnlyState
 
 
 @dataclass(frozen=True, eq=False)
-class RectilinearGrid:
+class RectilinearGrid(ReadOnlyState):
     """Axis-aligned rectangular cells, in the layout's own coordinates.
 
     Attributes
@@ -43,36 +39,3 @@ class RectilinearGrid:
             array.setflags(write=False)
         object.__setattr__(self, "edges", edges)
         object.__setattr__(self, "active_mask", active_mask)
-
-    def __setstate__(self, state: dict[str, object]) -> None:
-        """Restore write protection after pickle or deepcopy."""
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        for array in (*self.edges, self.active_mask):
-            array.setflags(write=False)
-
-
-def require_rectilinear(
-    binning: Binning, operation: str, *, fix: str
-) -> RectilinearGrid:
-    """Return the published rectangular cells, or raise naming ``operation``.
-
-    Raises
-    ------
-    NotImplementedError
-        If the binning has no axis-aligned rectangular cells.
-    """
-    if binning.rectilinear is not None:
-        return binning.rectilinear
-    raise NotImplementedError(
-        _format_error(
-            f"{operation} needs a grid of axis-aligned rectangular cells; this "
-            f"environment's {binning.kind} layout does not have one.",
-            why=(
-                "Why: it reads the cell edges along each axis, which grids built "
-                "by from_samples, from_grid_mask, from_pixel_mask and "
-                "from_polygon provide."
-            ),
-            fix=fix,
-        )
-    )

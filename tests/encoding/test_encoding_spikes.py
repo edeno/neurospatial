@@ -3,8 +3,6 @@
 This module tests spike format normalization for encoding functions:
 - as_spike_trains: Converts various input formats to canonical list-of-arrays
 
-TDD approach: Tests written first, implementation follows.
-
 Input formats supported:
 - 1D array (single neuron) → wrapped in list
 - 2D array (n_neurons, max_spikes) with NaN padding → split, NaNs removed

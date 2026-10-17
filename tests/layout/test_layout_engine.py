@@ -4,7 +4,9 @@ import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import Polygon as ShapelyPoly
+from shapely.geometry import box
 
+from neurospatial import Regions
 from neurospatial.environment import Environment
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import (
@@ -57,7 +59,7 @@ def test_create_layout_regular_grid():
     assert not layout.is_linearized_track
 
 
-def test_regular_grid_point_to_bin_index():
+def test_regular_grid_locates_points():
     rng = np.random.default_rng(42)
     data = rng.random((100, 2)) * 10
     layout = create_layout(
@@ -68,7 +70,7 @@ def test_regular_grid_point_to_bin_index():
         add_boundary_bins=False,
     )
     points = np.array([[1.0, 1.0], [5.0, 5.0], [100.0, 100.0]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (3,)
     assert np.any(inds >= 0)
 
@@ -103,7 +105,7 @@ def test_create_layout_hexagonal():
     assert not layout.is_linearized_track
 
 
-def test_hexagonal_point_to_bin_index():
+def test_hexagonal_locates_points():
     rng = np.random.default_rng(42)
     data = rng.random((100, 2)) * 10
     layout = create_layout(
@@ -113,7 +115,7 @@ def test_hexagonal_point_to_bin_index():
         infer_active_bins=True,
     )
     points = np.array([[1.0, 1.0], [5.0, 5.0], [100.0, 100.0]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (3,)
     assert np.any(inds >= 0)
 
@@ -165,7 +167,7 @@ def test_create_layout_image_mask():
     assert not layout.is_linearized_track
 
 
-def test_image_mask_point_to_bin_index():
+def test_image_mask_locates_points():
     mask = np.zeros((5, 5), dtype=bool)
     mask[2, 2] = True
     layout = create_layout(
@@ -174,7 +176,7 @@ def test_image_mask_point_to_bin_index():
         pixel_size=1.0,
     )
     points = np.array([[2.5, 2.5], [0.5, 0.5]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (2,)
     assert inds[0] >= 0
 
@@ -202,7 +204,7 @@ def test_create_layout_graph():
     assert layout.is_linearized_track
 
 
-def test_graph_point_to_bin_index():
+def test_graph_locates_points():
     G = nx.Graph()
     G.add_node(0, pos=(0, 0))
     G.add_node(1, pos=(1, 0))
@@ -218,7 +220,7 @@ def test_graph_point_to_bin_index():
         bin_size=0.5,
     )
     points = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
-    inds = layout.point_to_bin_index(points)
+    inds = layout.binning().locator.locate(points)
     assert inds.shape == (3,)
     assert np.any(inds >= 0)
 
@@ -336,9 +338,6 @@ def test_layout_engine_protocol_adherence(
     assert hasattr(layout, "grid_edges"), f"{layout_kind} missing grid_edges"
     assert hasattr(layout, "grid_shape"), f"{layout_kind} missing grid_shape"
     assert hasattr(layout, "active_mask"), f"{layout_kind} missing active_mask"
-    assert hasattr(layout, "_layout_type_tag"), (
-        f"{layout_kind} missing _layout_type_tag"
-    )
     assert hasattr(layout, "_build_params_used"), (
         f"{layout_kind} missing _build_params_used"
     )
@@ -367,16 +366,21 @@ def test_layout_engine_protocol_adherence(
     assert isinstance(layout.is_linearized_track, bool), (
         f"{layout_kind}.is_linearized_track not bool"
     )
-    assert layout._layout_type_tag == layout_kind, (
-        f"{layout_kind}._layout_type_tag mismatch"
-    )
-    # Ensure build_params_used stores the input params or a superset
-    # Note: TriangularMesh serializes boundary_polygon as boundary_exterior_coords
-    # and boundary_interior_coords_list, so we skip this check for that layout
-    if layout_kind != "TriangularMesh":
-        for k in params:
-            assert k in layout._build_params_used, (
-                f"{layout_kind}._build_params_used missing '{k}'"
+    assert layout.layout_type == layout_kind, f"{layout_kind}.layout_type mismatch"
+    # The record keeps every build choice and no input data (positions,
+    # masks, polygons, graphs, nested ranges).
+    from neurospatial.layout.base import _choice
+
+    for k, value in params.items():
+        try:
+            expected = _choice(value)
+        except TypeError:
+            assert k not in layout._build_params_used, (
+                f"{layout_kind}._build_params_used records data argument '{k}'"
+            )
+        else:
+            assert layout._build_params_used[k] == expected, (
+                f"{layout_kind}._build_params_used missing choice '{k}'"
             )
 
     if layout.active_mask is not None:
@@ -437,53 +441,36 @@ def test_layout_engine_protocol_adherence(
             )
             assert "edge_id" in edge_data  # Usually present
 
-
-def test_normalize_layout_name_consistency():
-    """Ensure environment.factories._normalize_layout_name matches layout.factories._normalize_name.
-
-    This test prevents drift between the two normalization implementations.
-    Both functions should produce identical output for the same input.
-    """
-    from neurospatial.environment.factories import _normalize_layout_name
-    from neurospatial.layout.factories import _normalize_name
-
-    test_cases = [
-        "RegularGrid",
-        "regular_grid",
-        "REGULAR_GRID",
-        "Regular-Grid",
-        "regular__grid",
-        "Hexagonal",
-        "hexagonal",
-        "HEXAGONAL",
-        "Hex-agonal",
-        "Graph",
-        "GRAPH",
-        "MaskedGrid",
-        "masked_grid",
-        "ImageMask",
-        "image_mask",
-    ]
-
-    for name in test_cases:
-        assert _normalize_layout_name(name) == _normalize_name(name), (
-            f"Normalization mismatch for '{name}': "
-            f"_normalize_layout_name={_normalize_layout_name(name)}, "
-            f"_normalize_name={_normalize_name(name)}"
-        )
+    # 4. The owned binning snapshots this layout's own bins and connectivity.
+    binning = layout.binning()
+    edges = list(layout.connectivity.edges(data=True))
+    assert binning.kind == layout.layout_type
+    np.testing.assert_array_equal(binning.bins.centers, layout.bin_centers)
+    np.testing.assert_array_equal(binning.bins.sizes, layout.bin_sizes())
+    np.testing.assert_array_equal(
+        binning.bins.pairs, np.array([(u, v) for u, v, _ in edges]).reshape(-1, 2)
+    )
+    np.testing.assert_array_equal(
+        binning.bins.pair_distances, [data["distance"] for _, _, data in edges]
+    )
+    assert binning.bins.measure_dim == (
+        1 if layout.is_linearized_track else layout.bin_centers.shape[1]
+    )
+    np.testing.assert_array_equal(
+        binning.locator.locate(layout.bin_centers), np.arange(len(layout.bin_centers))
+    )
+    assert binning.faces.available
+    np.testing.assert_array_equal(binning.faces.build().edges, binning.bins.pairs)
+    assert (binning.linearization is not None) == layout.is_linearized_track
 
 
-def test_point_to_bin_index_dtype_is_intp():
+def test_located_bin_dtype_is_intp():
     """Layout index arrays are ``np.intp`` (portable), never int32/int_.
 
     Tripwire for the index-dtype convention documented in
-    ``neurospatial.environment._protocols``: point/region *index* arrays are
-    ``np.intp``, while trajectory *sequence* arrays (``bin_sequence`` /
-    ``BinSequenceWithRuns``) deliberately stay ``int32`` (pinned in
-    ``tests/environment/test_bin_sequence.py``). On 64-bit ``np.intp`` equals
-    ``int64``, so this catches a regression to the narrower ``int32`` and
-    records intent; a true ``int_`` vs ``intp`` divergence is only observable
-    on a Windows test runner (where ``np.int_`` is 32-bit).
+    ``neurospatial.environment._trajectory``: every bin-index array is
+    ``np.intp``. On 64-bit ``np.intp`` equals ``int64``, so this catches a
+    regression to the narrower ``int32``.
     """
     rng = np.random.default_rng(0)
     data = rng.random((200, 2)) * 10
@@ -495,7 +482,7 @@ def test_point_to_bin_index_dtype_is_intp():
         ("Hexagonal", {"hexagon_width": 2.0}),
     ]:
         layout = create_layout(name, positions=data, infer_active_bins=True, **kwargs)
-        assert layout.point_to_bin_index(points).dtype == np.intp, name
+        assert layout.binning().locator.locate(points).dtype == np.intp, name
 
     # RegularGrid uses geometric containment: the outside point maps to the -1
     # sentinel -- confirm it survives under the intp dtype.
@@ -506,7 +493,7 @@ def test_point_to_bin_index_dtype_is_intp():
         bin_size=2.0,
         add_boundary_bins=False,
     )
-    assert grid.point_to_bin_index(points)[-1] == -1
+    assert grid.binning().locator.locate(points)[-1] == -1
 
     # GraphLayout is the _KDTreeMixin path (the historical int32 source).
     track = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
@@ -514,15 +501,125 @@ def test_point_to_bin_index_dtype_is_intp():
 
 
 def test_environment_index_surface_dtype_is_intp():
-    """The public index surface (``bin_at`` / ``boundary_bins``) is ``np.intp``.
+    """Every method that returns bin indices returns ``np.intp``.
 
-    ``bin_at`` normalizes whatever an arbitrary ``LayoutEngine`` returns to
-    ``np.intp`` at the Environment boundary, pinning the user-facing contract
+    One dtype means a result from any of them indexes a field the same way,
     independent of the layout.
     """
     rng = np.random.default_rng(0)
     env = Environment.open_field(rng.random((300, 2)) * 40, bin_size=4.0)
-    pts = np.array([[10.0, 10.0], [1e6, 1e6]])
-    assert env.bin_at(pts).dtype == np.intp
-    assert env.bin_at(pts)[-1] == -1  # geometric grid: outside -> -1 sentinel
-    assert env.boundary_bins.dtype == np.intp
+    pts = np.array([[10.0, 10.0], [1e6, 1e6], [np.nan, 1.0]])
+    times = np.arange(len(pts)) / 30.0
+    regions = Regions()
+    regions.add("corner", polygon=box(0.0, 0.0, 12.0, 12.0))
+    env = env.with_regions(regions)
+    assert env.bin_at(pts)[-2] == -1  # geometric grid: outside -> -1 sentinel
+    index_arrays = {
+        "bin_at": env.bin_at(pts),
+        "nearest_bin": env.nearest_bin(pts),
+        "nearest_bin finite": env.nearest_bin(pts[:1]),
+        "nearest_bin with distance": env.nearest_bin(pts, return_dist=True)[0],
+        "boundary_bins": env.boundary_bins,
+        "bins_in_region": env.bins_in_region("corner"),
+        "bin_sequence": env.bin_sequence(times, pts),
+        "bin_sequence_with_runs": env.bin_sequence_with_runs(times, pts).bins,
+        "components": env.components()[0],
+        "rings": env.rings(bins=0, hops=1)[1],
+        "edge_pairs": env.edge_pairs,
+    }
+    for name, indices in index_arrays.items():
+        assert indices.dtype == np.intp, name
+
+
+class TestBuildChoices:
+    """capture_build_params records scalar choices and refuses undeclared data."""
+
+    def test_declared_data_is_left_out_and_choices_are_plain_values(self):
+        from neurospatial.layout.base import capture_build_params
+
+        class Engine:
+            @capture_build_params(data=("positions",))
+            def build(self, *, positions, bin_size, per_axis=(1, 2), label=None):
+                pass
+
+        engine = Engine()
+        engine.build(positions=np.zeros((4, 2)), bin_size=np.float64(2.0))
+        assert engine._build_params_used == {
+            "bin_size": 2.0,
+            "per_axis": (1, 2),
+            "label": None,
+        }
+        assert type(engine._build_params_used["bin_size"]) is float
+
+    @pytest.mark.parametrize("style", ["named", "kwargs"])
+    def test_undeclared_data_is_refused_and_the_printed_fix_works(self, style):
+        """Both build signatures refuse data, and declaring it as the error says works."""
+        from neurospatial.layout.base import capture_build_params
+
+        def engine(decorator):
+            if style == "named":
+
+                class Engine:
+                    @decorator
+                    def build(self, *, positions, bin_size):
+                        self.built = positions
+
+            else:
+
+                class Engine:  # the protocol's documented build(**kwargs) form
+                    @decorator
+                    def build(self, **kwargs):
+                        self.built = kwargs["positions"]
+
+            return Engine()
+
+        refused = engine(capture_build_params)
+        with pytest.raises(TypeError, match=r"'positions' is not a build choice") as e:
+            refused.build(positions=np.zeros((4, 2)), bin_size=2.0)
+        assert "@capture_build_params(data=('positions',))" in str(e.value)
+        assert not hasattr(refused, "built")
+
+        declared = engine(capture_build_params(data=("positions",)))
+        declared.build(positions=np.zeros((4, 2)), bin_size=2.0)
+        assert declared._build_params_used == {"bin_size": 2.0}
+        assert declared.built.shape == (4, 2)
+
+    def test_unknown_data_name_is_refused_at_decoration(self):
+        from neurospatial.layout.base import capture_build_params
+
+        with pytest.raises(TypeError, match="does not take") as error:
+
+            class Engine:
+                @capture_build_params(data=("points",))
+                def build(self, *, positions):
+                    pass
+
+        assert "Fix: list only names" in str(error.value)
+
+    def test_subclass_build_record_wins_over_its_parent_build(self):
+        """A subclass that calls super().build() records its own choices."""
+        from neurospatial.layout.engines._polar import _PolarGridLayout
+
+        layout = _PolarGridLayout()
+        layout.build(
+            active_mask=np.ones((2, 4), dtype=bool),
+            grid_edges=(np.arange(3.0), np.linspace(-np.pi, np.pi, 5)),
+            circular_angle=False,
+        )
+        assert layout._build_params_used == {
+            "connect_diagonal_neighbors": True,
+            "circular_angle": False,
+        }
+
+    def test_saved_data_is_dropped_on_read_and_choices_kept(self):
+        """Files that recorded input data among the parameters still load."""
+        from neurospatial import Environment
+
+        env = Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+        )
+        data = env.to_dict()
+        data["layout_parameters"]["grid_edges"] = [[0.0, 1.0, 2.0]] * 2
+        restored = Environment.from_dict(data)
+        assert restored.layout_parameters == env.layout_parameters
+        np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)

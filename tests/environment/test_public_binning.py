@@ -10,7 +10,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.binning import KnownFaces
-from neurospatial.layout._native_faces import NativeFaces
+from neurospatial.geometry._native_faces import NativeFaces
 
 
 def _arrays(value, seen=None):
@@ -30,7 +30,7 @@ def _arrays(value, seen=None):
 
 
 @pytest.mark.parametrize("restore", ["direct", "copy", "pickle"])
-def test_public_binning_has_independent_array_headers_and_buffers(
+def test_public_binning_is_read_only_with_independent_array_headers(
     built_environment, restore
 ):
     env = built_environment
@@ -42,17 +42,14 @@ def test_public_binning_has_independent_array_headers_and_buffers(
         exported = pickle.loads(pickle.dumps(exported))
     arrays = list(_arrays(exported))
     assert len(arrays) == len(expected)
-    for exported_array, owned_array in zip(arrays, _arrays(env._binning), strict=True):
-        assert not np.shares_memory(exported_array, owned_array)
+    for exported_array in arrays:
         assert not exported_array.flags.writeable
-        exported_array.shape = (exported_array.size,)
-        try:
-            exported_array.setflags(write=True)
-        except ValueError:
-            assert not exported_array.flags.writeable
-        else:
-            if exported_array.size:
+        if exported_array.size:
+            with pytest.raises(ValueError, match="read-only"):
                 exported_array.flat[0] = 0
+        # A snapshot's headers are its own, so reshaping one cannot reach
+        # the environment.
+        exported_array.shape = (exported_array.size,)
     for actual, (shape, values) in zip(_arrays(env.binning), expected, strict=True):
         assert actual.shape == shape
         np.testing.assert_array_equal(actual, values)
@@ -77,13 +74,18 @@ def test_from_bins_requires_explicit_faces_for_native_binning():
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
     exported = env.binning
-    with pytest.raises(TypeError, match="explicit KnownFaces or MissingFaces"):
+    with pytest.raises(TypeError, match="needs the cell faces themselves") as caught:
         Environment.from_bins(exported)
+    fix = str(caught.value).split("Fix:")[1]
+    assert "replace(binning, faces=KnownFaces(binning.faces.build()))" in fix
+    assert "NativeFaces" not in str(caught.value)
     rebuilt = Environment.from_bins(
         replace(exported, faces=KnownFaces(exported.faces.build())), arena=env.arena
     )
     np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
-    np.testing.assert_array_equal(rebuilt.compute_kernel(0.5), env.compute_kernel(0.5))
+    np.testing.assert_array_equal(
+        rebuilt.compute_kernel(bandwidth=0.5), env.compute_kernel(bandwidth=0.5)
+    )
 
 
 @pytest.mark.parametrize("restore", ["direct", "copy", "pickle"])
@@ -93,7 +95,7 @@ def test_public_binning_detaches_nested_track_metadata(restore: str) -> None:
     graph.add_node(1, pos=(4.0, 0.0))
     graph.add_edge(0, 1, distance=4.0)
     graph.graph["recording"] = {"labels": ["original"], "samples": np.array([1.0, 2.0])}
-    env = Environment.from_graph(graph, [(0, 1)], 0.0, 1.0)
+    env = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0)
     exported = env.binning
     if restore == "copy":
         exported = copy.deepcopy(exported)

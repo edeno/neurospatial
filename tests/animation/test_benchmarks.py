@@ -144,9 +144,6 @@ def test_parallel_rendering_scalability(small_benchmark_env, tmp_path):
     rng = np.random.default_rng(42)
     fields = [rng.random(small_benchmark_env.n_bins) for _ in range(n_frames)]
 
-    # Clear cache to ensure pickle-ability
-    small_benchmark_env.clear_cache()
-
     # Test different worker counts
     worker_counts = [1, 2, 4, 8]
     render_times = {}

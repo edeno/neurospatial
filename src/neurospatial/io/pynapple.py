@@ -113,11 +113,11 @@ def from_pynapple(
     # surfaces the group's ids. For a genuine group the ids are never ``None``,
     # so the cast to the non-optional group return arm is safe.
     if hasattr(obj, "index"):
-        from neurospatial.encoding._spikes import as_spike_trains_with_ids
+        from neurospatial.encoding import _as_spike_trains_with_ids
 
         return cast(
             "tuple[list[NDArray[np.float64]], NDArray[Any]]",
-            as_spike_trains_with_ids(obj),
+            _as_spike_trains_with_ids(obj),
         )
 
     raise TypeError(

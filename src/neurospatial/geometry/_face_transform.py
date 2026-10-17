@@ -9,11 +9,14 @@ from numpy.typing import NDArray
 
 from neurospatial.geometry._arrays import get_centers
 from neurospatial.geometry._binning import KnownFaces, MissingFaces
+from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals, _unit_rows
+from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Binning, Locator
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import Locator
 
 # A dimensionless tangential residual. This does not relax native mesh skew.
 ORTHOGONALITY_TOLERANCE = 1e-12
@@ -75,8 +78,6 @@ def _combined_vectors(
     locator: Locator,
 ) -> tuple[NDArray[np.intp], NDArray[np.float64]] | None:
     """Carry child vectors through wrappers without subtracting world offsets."""
-    from neurospatial.geometry._composition import CombinedLocator
-    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 
     if isinstance(locator, CombinedLocator):
         bins = locator.spatial_bins()

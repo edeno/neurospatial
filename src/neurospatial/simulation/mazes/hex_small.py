@@ -38,8 +38,10 @@ import numpy as np
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._geometry import widest_corridor
 
 # Calibration: pixels to cm conversion for Frank Lab hex maze
 _CM_PER_PIXEL = 1 / 3.14
@@ -691,7 +693,10 @@ def make_small_hex_maze(
     MazeEnvironments
         Contains:
         - env_2d: 2D polygon-based environment (barriers subtracted)
-        - env_track: 1D linearized track environment (if include_track=True)
+        - env_track: 1D linearized track environment (if include_track=True);
+          its ``track_width`` is the widest corridor between barriers, so a sample
+          within half that width of the centerline is on the track, and a
+          narrower corridor can admit a few samples just outside its walls
 
     Notes
     -----
@@ -818,7 +823,7 @@ def make_small_hex_maze(
     env_track = None
     if include_track:
         env_track = _create_hex_track_graph(
-            hex_centers, barrier_polygons, bin_size, dims
+            hex_centers, barrier_polygons, navigable_polygon, bin_size, dims
         )
 
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
@@ -827,6 +832,7 @@ def make_small_hex_maze(
 def _create_hex_track_graph(
     hex_centers: list[tuple[float, float]],
     barrier_polygons: list[Polygon],
+    navigable_polygon: Polygon,
     bin_size: float,
     dims: SmallHexDims,
 ) -> Environment:
@@ -841,6 +847,8 @@ def _create_hex_track_graph(
         List of hex center positions (x, y) in cm.
     barrier_polygons : list[Polygon]
         List of barrier polygons (already centered).
+    navigable_polygon : Polygon
+        The walkable area (already centered); it sets the track's width.
     bin_size : float
         Spatial bin size in cm.
     dims : SmallHexDims
@@ -904,11 +912,19 @@ def _create_hex_track_graph(
     edge_order = [(f"hex_{i}", f"hex_{j}") for i, j, _ in adjacencies]
 
     # Create the 1D environment
+    # The corridors between barriers differ in width, so the track takes the
+    # widest one, measured at the middle of each connection: a sample within
+    # half that width of the centerline is on the track, which lets a narrower
+    # corridor admit a few samples just outside its walls.
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
+        track_width=widest_corridor(
+            navigable_polygon,
+            [(graph.nodes[u]["pos"], graph.nodes[v]["pos"]) for u, v in edge_order],
+        ),
         name="small_hex_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

@@ -62,10 +62,14 @@ env = Environment.from_graph(
     edge_order=[(0, 1)],
     edge_spacing=0.0,
     bin_size=2.0,
+    track_width=10.0,  # full corridor width
 )
 ```
 
-**Key feature**: Converts 2D positions to 1D linear coordinates with `env.to_linear()`
+**Key feature**: Converts 2D positions to 1D linear coordinates with `env.to_linear()`.
+Pass the corridor's measured `track_width` so that `bin_at`, `occupancy` and the
+rate maps can tell positions on the track from positions off it (bin `-1`);
+without it they refuse.
 
 ### MaskedGridLayout
 **Grid with active/inactive regions** - automatically used when `infer_active_bins=True`.
@@ -114,20 +118,23 @@ env = Environment.from_polygon(arena, bin_size=2.5)
 **Memory**: ⭐⭐⭐⭐ (efficient)
 **Setup complexity**: ⭐⭐⭐⭐ (easy)
 
+<!-- docs-test: run -->
 ```python
 from shapely.geometry import Polygon
 
+from neurospatial import Environment
+from neurospatial.layout import create_layout
+
 arena = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
 
-# Triangular meshes use from_layout(), not from_samples().
-env = Environment.from_layout(
-    kind="TriangularMesh",
-    layout_params={
-        "boundary_polygon": arena,
-        "point_spacing": 2.5,
-    },
-)
+# Triangular meshes have no dedicated factory: build the layout engine,
+# then pass it to from_layout().
+mesh = create_layout("TriangularMesh", boundary_polygon=arena, point_spacing=2.5)
+env = Environment.from_layout(mesh, units="cm")
 ```
+
+`Environment.from_layout` takes any built layout engine, including one you
+write yourself (see [Custom construction](../advanced/architecture.md#custom-construction)).
 
 ### ImageMaskLayout
 **Binary image-based** boundaries from video analysis.

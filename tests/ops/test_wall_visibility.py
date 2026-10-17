@@ -1,5 +1,7 @@
 """Ray hits and line of sight use retained physical walls, not analysis cuts."""
 
+import contextlib
+
 import numpy as np
 import pytest
 import shapely
@@ -26,7 +28,7 @@ def room(*, wall=True):
 
 def test_physical_wall_hit_is_exact_and_independent_of_analysis_crop():
     env = room()
-    crop = env.subset(bins=env.bin_centers[:, 0] < 4)
+    crop = env.subset(mask=env.bin_centers[:, 0] < 4)
     for e in (env, crop, Environment.from_dict(crop.to_dict())):
         np.testing.assert_allclose(
             compute_viewed_location(
@@ -117,7 +119,7 @@ def wall_observer_rays():
 @pytest.mark.parametrize("source", ["physical", "analysis"])
 @pytest.mark.parametrize("restore", [False, True])
 def test_observer_on_outer_wall_sees_the_room_it_faces(source, restore):
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
     if restore:
@@ -208,7 +210,7 @@ def test_cues_and_viewed_bins_are_occluded_by_internal_wall():
 
 def test_missing_analysis_bins_do_not_occlude_physical_cues():
     full = room(wall=False)
-    crop = full.subset(bins=full.bin_centers[:, 0] < 4)
+    crop = full.subset(mask=full.bin_centers[:, 0] < 4)
     cues = np.array([[7.5, 4.5]])
     visible, _, _ = visible_cues(crop, np.array([2.5, 4.5]), 0.0, cues)
     assert visible[0]
@@ -343,7 +345,7 @@ def test_wall_cue_visibility_survives_frame_rounding(offset):
 
 
 def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
     from neurospatial.ops.transforms import Affine2D
 
     a = 0.3
@@ -365,7 +367,7 @@ def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
 
 
 def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
     from neurospatial.ops.transforms import Affine2D
 
     a = 0.3
@@ -377,7 +379,7 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
         ]
     )
     parent = room()
-    cropped = parent.subset(bins=parent.bin_centers[:, 0] < 4).apply_transform(
+    cropped = parent.subset(mask=parent.bin_centers[:, 0] < 4).apply_transform(
         Affine2D(matrix)
     )
     clipped = parent.clip(box(4.2, 4.2, 5, 4.8)).apply_transform(Affine2D(matrix))
@@ -397,7 +399,7 @@ def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
 def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
     from shapely.geometry import Polygon
 
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     polygon = Polygon([(0.2, 0.1), (9.8, 1.1), (7.3, 9.4), (1.5, 7.8)])
     grid = Environment.from_grid_mask(
@@ -429,7 +431,7 @@ def test_slanted_wall_hits_keep_all_supported_view_bins(transform, restore):
     one = _precompute_view_bins(env, origins[:1], headings[:1], gaze_model="ray_cast")[
         0
     ]
-    selected = env.subset(bins=np.arange(env.n_bins) != one)
+    selected = env.subset(mask=np.arange(env.n_bins) != one)
     np.testing.assert_array_equal(
         _precompute_view_bins(
             selected, origins[:1], headings[:1], gaze_model="ray_cast"
@@ -459,7 +461,7 @@ CURVED_AND_SLANTED_ARENAS = {
 
 @pytest.mark.parametrize("name", list(CURVED_AND_SLANTED_ARENAS))
 def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
     from neurospatial.encoding.view import compute_view_rate
 
     polygon = CURVED_AND_SLANTED_ARENAS[name]
@@ -511,7 +513,7 @@ def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
 def test_wall_ownership_does_not_cross_a_missing_analysis_strip(gap):
     from shapely.geometry import Polygon
 
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     polygon = Polygon([(0.2, 0.1), (9.8, 1.1), (7.3, 9.4), (1.5, 7.8)])
     grid = Environment.from_grid_mask(
@@ -529,14 +531,14 @@ def test_wall_ownership_does_not_cross_a_missing_analysis_strip(gap):
 
 @pytest.mark.parametrize("offset", [1e-14, 1e-13, 1e-12, 1e-7])
 def test_wall_contact_cannot_change_a_resolved_dropped_parent(offset):
-    from neurospatial.encoding._view_binning import _precompute_view_bins
+    from neurospatial.encoding._view_counts import _precompute_view_bins
 
     full = Environment.from_grid_mask(
         np.ones((10, 10), dtype=bool),
         grid_edges=(np.arange(11.0),) * 2,
         arena=OpenArena(box(0, 0, 10, 10)),
     )
-    selected = full.subset(bins=np.arange(full.n_bins) != 94)
+    selected = full.subset(mask=np.arange(full.n_bins) != 94)
     observer = np.array([[2.5, 2.5]])
     target = np.array([10.0, 4.0 + offset])
     delta = target - observer[0]
@@ -572,7 +574,7 @@ def test_joined_rooms_keep_their_separating_wall_for_rays_and_cues(restore):
 @pytest.mark.parametrize("scale", [0.01, 1.0, 100.0])
 @pytest.mark.parametrize("offset", [0.0, 1000.0])
 def test_slanted_wall_cues_remain_visible_at_interpolated_contacts(scale, offset):
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString(np.array([[0.0, 0.0], [3.0, 2.0]]) * scale + offset)
     observer = np.array([0.2, -1.0]) * scale + offset
@@ -588,7 +590,7 @@ def test_slanted_wall_cues_remain_visible_at_interpolated_contacts(scale, offset
 def test_wall_cue_rounding_does_not_hide_an_earlier_occluder():
     import shapely
 
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString([(0.0, 0.0), (3.0, 2.0)])
     observer = np.array([0.2, -1.0])
@@ -605,7 +607,7 @@ def test_wall_cue_rounding_does_not_hide_an_earlier_occluder():
 
 
 def test_wall_cue_rounding_does_not_allow_collinear_wall_overlap():
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString([(0.0, 0.0), (3.0, 2.0)])
     assert not clear_segments(wall, np.array([0.0, 0.0]), np.array([[3.0, 2.0]]))[0]
@@ -670,10 +672,10 @@ def test_unowned_physical_wall_hit_refuses_view_encoding_without_fabricating_rat
 
 
 def test_one_unowned_physical_hit_refuses_instead_of_silently_losing_exposure():
-    from neurospatial.encoding._view_binning import prepare_view_binning
+    from neurospatial.encoding._view_counts import prepare_view_binning
 
     full = room(wall=False)
-    cropped = full.subset(bins=full.bin_centers[:, 0] < 4)
+    cropped = full.subset(mask=full.bin_centers[:, 0] < 4)
     positions = np.tile([2.5, 4.5], (3, 1))
     with pytest.raises(NotImplementedError, match=r"Physical wall hit.*retained bin"):
         prepare_view_binning(
@@ -696,7 +698,7 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
     from neurospatial.encoding.view import compute_view_rate, compute_view_rates
 
     full = room(wall=False)
-    env = full.subset(bins=full.bin_centers[:, 0] < 4)
+    env = full.subset(mask=full.bin_centers[:, 0] < 4)
     times = np.arange(3.0)
     headings = np.array([np.pi, 0.0, 0.0])
     options = {"max_gap": None}
@@ -718,17 +720,24 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
     positions = np.tile([2.5, 4.5], (len(times), 1))
     spikes = np.array([0.25])
     encode = compute_view_rates if population else compute_view_rate
-    result = encode(
-        env,
-        [spikes] if population else spikes,
-        times,
-        positions,
-        headings,
-        gaze_model="ray_cast",
-        method="binned",
-        bandwidth=0.0,
-        **options,
+    # Of two intervals one is a 9 s gap, so the median exceeds max_gap: flagged.
+    flagged = (
+        pytest.warns(UserWarning, match="probably not in seconds")
+        if excluded == "gap"
+        else contextlib.nullcontext()
     )
+    with flagged:
+        result = encode(
+            env,
+            [spikes] if population else spikes,
+            times,
+            positions,
+            headings,
+            gaze_model="ray_cast",
+            method="binned",
+            bandwidth=0.0,
+            **options,
+        )
     assert result.occupancy.sum() == expected_occupancy
     rates = result.firing_rates[0] if population else result.firing_rate
     assert np.nansum(rates * result.occupancy) == 1.0
@@ -741,7 +750,7 @@ def test_unowned_wall_hits_outside_selected_time_do_not_refuse_encoding(
 def test_slanted_wall_cues_with_cancelled_coordinates_remain_visible(
     endpoints, fraction
 ):
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString(endpoints)
     target = np.array(wall.interpolate(fraction, normalized=True).coords[0])
@@ -750,7 +759,7 @@ def test_slanted_wall_cues_with_cancelled_coordinates_remain_visible(
 
 
 def test_cue_rounding_does_not_borrow_precision_from_an_unrelated_wall_axis():
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString([(1.0, -1e12), (1.0, 1e12)])
     assert not clear_segments(
@@ -760,7 +769,7 @@ def test_cue_rounding_does_not_borrow_precision_from_an_unrelated_wall_axis():
 
 @pytest.mark.parametrize("extent,gap", [(1e12, 1e-5), (1e6, 1e-10)])
 def test_cue_rounding_does_not_inherit_distant_wall_endpoint_precision(extent, gap):
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString([(-extent, -extent), (extent, extent)])
     assert not clear_segments(wall, np.array([-1.0, 0.0]), np.array([[gap, 0.0]]))[0]
@@ -786,7 +795,7 @@ def test_cue_rounding_does_not_inherit_distant_wall_endpoint_precision(extent, g
     ],
 )
 def test_slanted_wall_contact_rounding_couples_the_cues_local_axes(endpoints, fraction):
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString(endpoints)
     target = np.array(wall.interpolate(fraction, normalized=True).coords[0])
@@ -796,7 +805,7 @@ def test_slanted_wall_contact_rounding_couples_the_cues_local_axes(endpoints, fr
 
 
 def test_wall_cue_rounding_ignores_repeated_wall_vertices():
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     wall = LineString([(0.0, 0.0), (0.0, 0.0), (3.0, 2.0)])
     with np.errstate(divide="raise", invalid="raise"):
@@ -806,7 +815,7 @@ def test_wall_cue_rounding_ignores_repeated_wall_vertices():
 @pytest.mark.parametrize("swap", [False, True])
 @pytest.mark.parametrize("offset", [0.0, 1e12])
 def test_wall_cue_rounding_does_not_borrow_perpendicular_axis_precision(swap, offset):
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     endpoints = np.array([[-1e-5, offset], [0.0, offset]])
     observer = np.array([-1.0, offset])
@@ -821,7 +830,7 @@ def test_wall_cue_rounding_does_not_borrow_perpendicular_axis_precision(swap, of
 
 
 def test_wall_overlap_blocks_even_when_shorter_than_endpoint_rounding():
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     start, end = 1e12, np.nextafter(1e12, np.inf)
     wall = LineString([(start, 0.0), (end, 0.0)])
@@ -830,7 +839,7 @@ def test_wall_overlap_blocks_even_when_shorter_than_endpoint_rounding():
 
 @pytest.mark.parametrize("swap", [False, True])
 def test_point_occluder_does_not_borrow_perpendicular_axis_precision(swap):
-    from neurospatial.ops._boundaries import clear_segments
+    from neurospatial.geometry._boundaries import clear_segments
 
     endpoints = np.array([[-1.0, 1e12], [1.0, 1e12]])
     observer = np.array([-1.0, 1e12 - 1.0])

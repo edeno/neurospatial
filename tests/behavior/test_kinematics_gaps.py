@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Regions
+from neurospatial._intervals import observed_interval_mask
 from neurospatial.behavior import Trial
 from neurospatial.behavior.decisions import (
     compute_pre_decision_metrics,
@@ -27,7 +28,6 @@ from neurospatial.behavior.vte import (
     compute_vte_trial,
     head_sweep_from_positions,
 )
-from neurospatial.environment.trajectory import observed_interval_mask
 
 
 def test_interval_velocity_has_physical_units_and_masks_gap():
@@ -128,12 +128,12 @@ def test_heading_direction_labels_post_pause_sample(two_epoch_recording):
 
 def test_goal_alignment_nan_outside_runs(two_epoch_recording):
     r = two_epoch_recording
-    selected = [0, 1, 4999, 5000, 5001]
+    selected = [0, 1, 2, 4999, 5000, 5001, 5002]  # 4999 sits alone
     actual = instantaneous_goal_alignment(
         r.times[selected], r.positions[selected], r.positions[-1], min_speed=0
     )
-    assert np.isnan(actual[2])
-    assert np.isfinite(actual[[0, 1, 3, 4]]).all()
+    assert np.isnan(actual[3])
+    assert np.isfinite(actual[[0, 1, 2, 4, 5, 6]]).all()
     full = instantaneous_goal_alignment(
         r.times, r.positions, r.positions[-1], min_speed=0
     )
@@ -191,10 +191,15 @@ def test_full_home_range_excludes_zero_dwell_bins():
 
 def test_curvature_isolated_sample_nan(two_epoch_recording):
     r = two_epoch_recording
-    selected = [0, 1, 4999, 5000, 5001]
+    selected = [0, 1, 2, 4999, 5000, 5001, 5002]  # 4999 sits alone
     curvature = compute_trajectory_curvature(r.positions[selected], r.times[selected])
-    assert np.isnan(curvature[2])
-    np.testing.assert_array_equal(curvature[[0, 1, 3, 4]], np.zeros(4))
+    assert np.isnan(curvature[3])
+    # Each observed run gets the curvature it has on its own.
+    for run in ([0, 1, 2], [5000, 5001, 5002]):
+        alone = compute_trajectory_curvature(r.positions[run], r.times[run])
+        rows = [selected.index(i) for i in run]
+        np.testing.assert_allclose(curvature[rows], alone, rtol=1e-12)
+        assert np.isfinite(alone).all()
 
 
 def test_goal_metrics_keep_known_wall_clock_time(two_epoch_recording):
@@ -241,7 +246,7 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
 def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     r = continuous_recording
     positions, times = r.positions[:601:50], r.times[:601:50]
-    env = r.env.copy()
+    env = r.env
     bins = env.bin_at(positions)
     region_builder = Regions(env.regions.values())
     region_builder.add("decision", point=tuple(env.bin_centers[bins[-1]]))

@@ -14,6 +14,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import KnownFaces
+from neurospatial.layout import create_layout
 
 
 def grid():
@@ -26,7 +27,7 @@ def grid():
 
 
 def test_rebin_new_resolution_restores_arena_after_analysis_crop():
-    env = grid().subset(bins=grid().bin_centers[:, 0] < 2)
+    env = grid().subset(mask=grid().bin_centers[:, 0] < 2)
     coarse = env.rebin(bin_size=2.0)
     expected = np.array([[x, y] for x in [1, 3, 5] for y in [1, 3, 5]])
     np.testing.assert_array_equal(coarse.bin_centers, expected)
@@ -40,7 +41,7 @@ def test_rebin_new_resolution_restores_arena_after_analysis_crop():
 def test_rebin_reports_original_area_left_without_a_new_bin():
     # 4-unit cells over a 6-unit arena: only the cell centered at (2, 2) lies
     # strictly inside, so 20 of the 36 original bins lose their bin.
-    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    env = Environment.from_polygon(box(0, 0, 6, 6), bin_size=1.0)
     with pytest.warns(UserWarning, match="without a new bin") as record:
         coarse = env.rebin(bin_size=4.0)
     lost = coarse.bin_at(env.bin_centers) < 0
@@ -52,7 +53,7 @@ def test_rebin_reports_original_area_left_without_a_new_bin():
 
 @pytest.mark.parametrize("size", [1.0, 2.0, 3.0, 0.5])
 def test_rebin_covering_the_arena_does_not_warn(size):
-    env = Environment.from_polygon(box(0, 0, 6, 6), 1.0)
+    env = Environment.from_polygon(box(0, 0, 6, 6), bin_size=1.0)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         coarse = env.rebin(bin_size=size)
@@ -63,7 +64,9 @@ def test_rebin_covering_the_arena_does_not_warn(size):
 def _u_maze():
     """Fine U-maze: a 2-wide barrier separates two arms joined below y = 5."""
     footprint = box(0, 0, 20, 20).difference(box(9, 5, 11, 20))
-    return Environment.from_polygon(footprint, 1.0, connect_diagonal_neighbors=False)
+    return Environment.from_polygon(
+        footprint, bin_size=1.0, connect_diagonal_neighbors=False
+    )
 
 
 def _arm_to_arm_path(env):
@@ -188,7 +191,7 @@ def test_missing_spec_unknown_arena_and_mutually_exclusive_arguments():
         parent.rebin()
     explicit = replace(parent._binning, grid_spec=None)
     explicit = replace(explicit, faces=KnownFaces(parent._binning.faces.build()))
-    with pytest.raises(NotImplementedError, match="specification"):
+    with pytest.raises(NotImplementedError, match="do not record"):
         Environment.from_bins(explicit, arena=parent.arena).rebin(bin_size=2)
     with pytest.raises(NotImplementedError, match="known arena"):
         Environment.from_bins(
@@ -207,7 +210,7 @@ def test_new_resolution_nd_and_file_round_trip(tmp_path, dims):
     assert coarse.n_bins == 2**dims
     np.testing.assert_allclose(coarse.bin_sizes, 2**dims)
     np.testing.assert_allclose(
-        coarse.diffuse(np.ones(coarse.n_bins), 1, mode="average"), 1
+        coarse.diffuse(np.ones(coarse.n_bins), bandwidth=1, mode="average"), 1
     )
 
 
@@ -229,7 +232,7 @@ def test_legacy_payload_does_not_infer_spec_from_provenance():
     data["binning"].pop("grid_spec")
     restored = Environment.from_dict(data)
     assert restored._binning.grid_spec is None
-    with pytest.raises(NotImplementedError, match="specification"):
+    with pytest.raises(NotImplementedError, match="do not record"):
         restored.rebin(bin_size=2)
 
 
@@ -279,12 +282,12 @@ def test_thin_grid_preserves_construction_choice_before_diagonals_exist(
         )
     else:
         env = Environment.from_layout(
-            "RegularGrid",
-            {
-                "bin_size": 1.0,
-                "dimension_ranges": [(0, 1), (0, 2)],
-                "connect_diagonal_neighbors": diagonal,
-            },
+            create_layout(
+                "RegularGrid",
+                bin_size=1.0,
+                dimension_ranges=[(0, 1), (0, 2)],
+                connect_diagonal_neighbors=diagonal,
+            )
         )
     assert env._binning.grid_spec.connect_diagonal is diagonal
     # Make the regular-family result exercise legacy identity coarsening too.
@@ -295,3 +298,29 @@ def test_thin_grid_preserves_construction_choice_before_diagonals_exist(
             for u, v in refined.edge_pairs
         )
         assert actual is diagonal
+
+
+def test_factor_rebin_without_spec_records_the_choice_it_built():
+    """A coarse grid records the diagonal choice used to connect it.
+
+    The coarse grid here is one cell wide, so it has no diagonal pair to show
+    the choice; later new-resolution re-binning must still add diagonals.
+    """
+    env = Environment.from_grid_mask(
+        np.ones((4, 2), dtype=bool), grid_edges=(np.arange(5.0), np.arange(3.0))
+    )
+    binning = replace(
+        env.binning, faces=KnownFaces(env.binning.faces.build()), grid_spec=None
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        coarse = Environment.from_bins(binning).rebin((2, 2))
+    assert coarse.grid_shape == (2, 1)
+    assert coarse.layout_parameters["connect_diagonal_neighbors"] is True
+    assert coarse._binning.grid_spec.connect_diagonal is True
+    np.testing.assert_array_equal(coarse._binning.grid_spec.origin, [0.0, 0.0])
+    refined = coarse.rebin(bin_size=1.0)
+    assert any(
+        np.count_nonzero(refined.bin_centers[u] != refined.bin_centers[v]) > 1
+        for u, v in refined.edge_pairs
+    )

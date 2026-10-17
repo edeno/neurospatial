@@ -2,161 +2,1022 @@
 
 ## [Unreleased]
 
-### Fixed
+### Breaking
 
-- Smoothing on an environment transformed by an affine map fitted to noisy
-  landmarks (`estimate_transform(..., kind="affine")`) still refuses, because
-  the fit absorbs tracking noise as a real stretch or shear. The refusal now
-  reports the measured stretch and angle error, explains that the bandwidth
-  would not be applied equally in every direction, and names the fix: fit
-  `kind="similarity"` (or `"rigid"`) or smooth on the source environment. It
-  previously suggested recentering coordinates, which does not help.
+These `Environment` changes come with before-and-after code on the environment
+architecture [migration
+page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
-- Triangular-mesh environments saved on one operating system now load on
-  another. Loading used to rebuild the Delaunay triangulation and refuse the
-  file when it differed from the saved triangles, which happens whenever sample
-  points are cocircular (any square lattice), because Qhull breaks those ties
-  differently across platforms. Point-to-bin lookup now uses the saved
-  triangles directly, with the same edge tolerance as before. A point exactly
-  on an edge or vertex shared by several triangles goes to the lowest-numbered
-  saved triangle. Files whose triangles overlap or reference missing or
-  repeated vertices are still refused, now with a message that names the
-  triangles.
+- `Environment.animate_fields` raises `TypeError` for an option that no
+  backend accepts, naming the closest option, instead of ignoring it: a
+  misspelled `frame_label=` used to change nothing. `fps=` raises too (use
+  `speed=`). The unused `contrast_limits`, `show_colorbar` and
+  `colorbar_label` options are removed.
 
-- `Environment.rebin(factor=...)` keeps a coarse cell whose center lies on the
-  arena boundary, such as the cell beside a missing corner of a grid mask or of
-  a grid-aligned polygon. Two-dimensional arenas previously required strictly
-  interior centers, unlike 1-D and 3-D masks, so a factor of 2 dropped coarse
-  cells that held recorded fine bins (3 of 15 bins of a 4-by-4 mask without one
-  corner), and positions in them mapped to `-1`. A factor of 2 now merges every
-  fine bin of a grid mask inside the (possibly truncated) coarse extent.
+- `Environment.from_polar_egocentric` refuses an `angle_range` wider than one
+  turn (2π) with a `ValueError` that shows a one-turn range. Angles a whole
+  turn apart name one direction, so after angle wrapping the bins past the
+  first turn would never hold a sample; such a range used to be accepted.
 
-- Both `rebin` modes warn when original bins are left without a new bin,
-  naming their count, their share of the area and how to cover them. Positions
-  in those bins map to `-1`, so their time and spikes silently dropped out of
-  totals: about 2.5% of a circular arena's fine bins at `factor=2`, and 56% of
-  a 6-by-6 arena at `bin_size=4`.
+- A track built without `track_width` (`Environment.linear_track`,
+  `Environment.maze`, `Environment.from_graph`) no longer assigns 2-D positions
+  to bins. `bin_at`, `contains`, `occupancy`, `bin_sequence`,
+  `bin_sequence_with_runs`, `transitions(times=..., positions=...)`, `points=`
+  queries, point regions, and every analysis that maps positions with them
+  (rate maps, decoding, behavior metrics) raise `NotImplementedError`.
+  Before, a position any distance from the track, such as a reflection 5 m
+  away, was put in its nearest bin and counted as occupancy and spikes there;
+  `distance_to(points=[[500, 500]])` measured from the nearest bin. Pass the
+  measured full width when you build the track, for example
+  `Environment.linear_track(endpoints=[(0, 0), (200, 0)], bin_size=2.0,
+  track_width=10.0)`; positions farther than half the width from the
+  centerline then get bin `-1` and add no occupancy. A track you already
+  have, including one saved by an earlier version and read with
+  `Environment.from_file`, `from_dict` or `from_nwb`, takes its width with the
+  new `env.with_track_width(10.0)`, which keeps its bins; the error message
+  shows that call. `linear_to_nd` and
+  graph queries on bin indices do not need the width. `to_linear` does not
+  either, because it projects every position onto the nearest point of the
+  centerline, however far off the track: drop off-track samples (bin `-1`
+  from `bin_at` on a track with a width) before using linear positions. The
+  simulated mazes in `neurospatial.simulation.mazes` with a corridor width
+  (linear track, T, Y, W, plus, radial arm, repeated T and Y, crossword,
+  Hamlet, Hampton Court and rat hexmaze) now pass it to their track, and
+  `tmaze_alternation_session` builds 10 cm corridors. The Sungod, honeycomb
+  and small hex mazes have no single corridor width; their tracks take the
+  widest one (the widest arm, one platform, the widest corridor between
+  barriers), so a sample within half that width of the centerline counts as
+  on the track and a narrower corridor can admit a few samples just outside
+  its walls.
 
-- `rebin` warns when new bins on both sides of a barrier in the arena outline
-  are connected because they meet only outside the arena. In a U-maze with a
-  2-unit barrier, 5-unit bins shortened the path between the arm ends from 37
-  to 5. The connections are kept, as in `from_polygon` at the same bin size;
-  the warning names them and how to fix it: smaller bins, or the barrier's
-  edges declared as internal walls.
+- Pickle files of an `Environment` written by an earlier version can no longer
+  be loaded. Pickle still works for passing an environment between processes
+  of the same version (for example with `multiprocessing`), but it is not a
+  storage format. An environment state from another version raises a
+  `TypeError` that says to use files instead.
+  Save with `env.to_file(...)` or NWB export and reload with
+  `Environment.from_file(...)`.
 
-- Posterior means on polar environments are the probability-weighted centroid
-  in the animal's egocentric plane, reported as `(distance, angle)` with the
-  angle in the environment's range. A posterior split across the angle seam
-  behind the animal now has a `mean_position` behind it, not straight ahead.
-  This covers `mean_position`, `DecodingResult.mean_position` and
-  `to_dataframe()`, and `decode_position_summary`; a centroid at the animal has
-  a NaN angle.
+- Old import paths are removed. The compatibility modules
+  `neurospatial.environment.transforms`, `._coordinates`, `._metadata`,
+  `._ownership` and `._from_bins`, the former private geometry modules under
+  `neurospatial.layout`, the private names re-exported by `neurospatial.arena`
+  and `neurospatial.environment._HAS_SHAPELY` are gone (shapely is a required
+  dependency). The modules that implement `Environment` methods are private:
+  `neurospatial.environment.fields`, `.queries`, `.metrics`, `.trajectory`,
+  `.regions`, `.visualization`, `.polar`, `.cartesian` and `.factories` are
+  now `_fields`, `_queries` and so on, and
+  `neurospatial.environment.serialization` is removed. Call the `Environment`
+  methods (for example `env.smooth`, `env.occupancy`, `env.to_file`) instead,
+  and import `BinSequenceWithRuns` from `neurospatial.environment`. The public
+  arena classes in `neurospatial.arena` are unchanged.
 
-- Domain functions that read bin centers as Cartesian `(x, y)` coordinates now
-  raise `CartesianOnlyError` on polar environments instead of returning wrong
-  numbers. The refusals cover `field_shape_metrics`,
-  `field_shift_distance`, `spatial_autocorrelation`, `map_points_to_bins`,
-  `resample_field`, `map_probabilities`, `spatial_basis`,
-  `graph_turn_sequence` and `detect_laps`. Type checkers reject polar
-  environments for these functions. Some functions refuse only their Cartesian
-  mode and keep a graph-based mode for polar environments:
-  `rate_map_centroid(method="euclidean")`,
-  `compute_field_emd(metric="euclidean")`,
-  `select_basis_centers(method="kmeans")` (also the default `center_method` of
-  the basis functions), `path_progress` and `distance_to_region` with
-  `metric="euclidean"`, `trajectory_similarity` with `"hausdorff"` or `"dtw"`,
-  and `detect_runs_between_regions` with `min_speed`.
+- `neurospatial.ops.binning` is renamed `neurospatial.ops.mapping`, so it is
+  no longer confused with `neurospatial.binning`, which holds the `Binning`
+  records. It maps points to bins, regions to bin masks and fields between
+  environments. Import `regions_to_mask`, `resample_field` and
+  `TieBreakStrategy` from `neurospatial.ops` or `neurospatial.ops.mapping`.
 
-- `Environment.from_bins` and environment loading now check supplied
-  finite-volume faces for hexagonal and triangular-mesh bins against the cells:
-  each face length must equal the shared cell edge (zero when cells share no
-  edge) and each face distance the center-to-center distance. Inconsistent
-  faces previously passed silently and changed smoothing and diffusion results.
+- `Environment` is an immutable value. Two environments are equal only when
+  they are the same object. `env == "name"` used to compare the environment's
+  name; it now returns `False` without an error, so a check such as
+  `if env == "session1":` silently takes the other branch. Write
+  `env.name == "session1"` instead. Environments can be used in sets and as
+  dictionary keys. `Environment.copy()` is removed because an environment
+  cannot change after it is built; `copy.copy(env)` and `copy.deepcopy(env)`
+  return the same object. Use `with_metadata`, `with_regions`, `subset` or
+  `rebin` to get a changed environment.
 
-- Ray-cast view rates no longer refuse when cells clipped to a curved or
-  slanted wall reach it: a hit is owned by the cell within that cell's
-  coordinate rounding of the hit, instead of an overlay of nearly coincident
-  edges. Cells that stop short of the wall still refuse, and the message names
-  the route that builds wall-reaching cells:
-  `Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
+- `EnvironmentNotFittedError` (error code E1004), the `check_fitted`
+  decorator and the `neurospatial.environment.decorators` module are removed.
+  An environment always has its bins and connectivity; calling
+  `Environment()` directly still raises E1006. Passing something that is not
+  an environment to an analysis function raises `TypeError` naming the
+  corrected call.
 
-- Observers tracked exactly on a wall no longer view their own position. A ray
-  or cue sight line that leaves the wall into the room reaches the next wall;
-  only facing out through the wall or exactly along it gives a zero-distance
-  contact. Standing on an internal wall views the side faced. Gaze hits,
-  viewsheds, visible cues, view-rate bins and simulated view cells agree.
+- `Environment.clear_cache()` takes no arguments and releases every cached
+  analysis (KD-tree, smoothing kernels, eigenbases, operators, boundary bins
+  and attribute tables), including the search structures behind `bin_at` on
+  tracks, triangular meshes and clipped environments. On a track, `bin_at`
+  and `nearest_bin` share one KD-tree. The `kdtree=`, `kernels=` and
+  `cached_properties=` options and
+  `neurospatial.ops.binning.clear_kdtree_cache` are removed; call
+  `env.clear_cache()` instead.
 
-- Preserve static attribute and protocol checking for the common Environment;
-  runtime Cartesian/polar capability filtering no longer admits missing methods.
+- `Environment.to_linear()` and `Environment.linear_to_nd()` raise `TypeError`
+  instead of `AttributeError` when the environment is not a linearized track.
+  The message is unchanged.
 
-- Check physical view-map ownership only for samples with selected exposure.
-  Missing wall bins raise actionable guidance; excluded/final samples and raw
-  geometric hits retain their meanings. Slanted wall cues tolerate local cue
-  rounding while earlier crossings and wall overlaps remain blocked.
-- Physical border scores require complete represented and observed wall
-  coverage, distinguishing missing measurements from measured zero firing.
-  Unsupported scores and batch summaries provide setup guidance rather than
-  treating an unobserved wall as zero activity.
-  When the border score is unavailable, `summary_table()` labels a spatially
-  tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
-  border cell; single-unit and population tables agree.
-  Physical border scores refuse combined environments in which a component has
-  no measured footprint, naming the component, instead of scoring its fields
-  against walls in other components (euclidean returned -1 for a wall-hugging
-  field). Declare each component's outline or use `boundary_source="analysis"`.
-  A single arena that declares internal walls but not its footprint
-  (`OpenArena(..., physical_footprint_known=False)`) is refused the same way:
-  a field along its outer edge was scored against the internal walls alone
-  (-1, labeled `"place"`; now NaN, labeled `"undetermined"`). Declare the
-  measured outline, for example
-  `OpenArena(outline, walls=..., physical_footprint_known=True)`.
-- The border-score examples in the neuroscience metrics guide raised on their
-  position-derived environments, which have no measured walls. They now
-  explain the physical-versus-analysis boundary choice, pass
-  `boundary_source="analysis"` and run in the documentation tests.
-- Prevent automatic combined-environment bridges from crossing a third
-  component, including tiny and nearly collinear footprints. Long affine
-  histories retain their arena through storage without using the composite
-  nesting budget. Clipped diffusion keeps its own certification boundary.
+- Egocentric polar environments (`Environment.from_polar_egocentric`) report
+  `env.layout_type == "Polar"` instead of `"MaskedGrid"`, and their printed
+  summary says `Polar`. Their bins are distance-by-angle sectors, not
+  Cartesian grid cells. Files saved before this change load as `"Polar"` too.
+  To detect a polar environment, test
+  `env.coordinate_kind == "polar"` instead of the layout name.
 
-- Omit transient analysis caches before copy/pickle; retain JSON-compatible
-  protected graph metadata. Explicit bins now reject wall-crossing supplied
-  pairs, keep drawing outlines separate from physical evidence, and validate
-  finite-volume faces against their grid geometry across coordinate scales.
-  Clipping preserves declared navigation paths and stores equal parent maps once.
+- A polar environment takes the choice of whether its angle wraps around only
+  from its stored `EgocentricSurround` arena. Old files (`Environment-v2`
+  files and NWB environment schema 2.0) stored no arena, so a polar
+  environment in one of them is refused with a message to re-save it.
+  Cartesian environments in those files still load.
 
-- Reject circular region metadata before exhausting the interpreter stack,
-  avoiding a test-worker crash on Windows/Python 3.10.
+- Custom layout engines must implement `binning()`, which returns the
+  `Binning` the environment keeps: the bins, their neighbor pairs, point
+  lookup, the faces between cells (or why they are missing), any grid, track,
+  shape and outline records and, when the cells do not show it, the
+  `dimension_ranges` the bins cover. An engine needs only `build(...)` and
+  `binning()`: the environment derives its connectivity graph, `grid_edges`,
+  `grid_shape`, `active_mask` and `dimension_ranges` from the `Binning` and
+  no longer reads an engine's `connectivity`, `dimension_ranges` or grid
+  attributes, so attributes an engine adds to its own graph do not reach
+  `env.connectivity`. Lookup and faces come only from `binning()`, so to
+  change them, change what `binning()` returns. Two labels
+  are read when an engine has them: its `layout_type` label, and the
+  build arguments recorded with `neurospatial.layout.base.capture_build_params`
+  (`env.layout_parameters`). All built-in engines implement `binning()`, a
+  subclass of a built-in engine inherits a working one, and `LayoutEngine`
+  lists the method. Objects without `binning()` still need an installed
+  snapshot adapter. The private `neurospatial.layout._capabilities` module
+  (`RectilinearGridProvider`) is removed; read `layout.binning().rectilinear`.
 
-- Compare point regions by coordinate values, avoiding ambiguous NumPy truth
-  values on Python 3.10–3.12 and when comparing independent region copies.
-- Label place fields from actual graph connections, preserving diagonal links
-  and physical walls after derivation and storage. Polygon clipping now retains
-  per-parent ownership at floating-point precision and exposes analysis boundary
-  bins. Wall-crossing checks also handle exact on-wall trajectory samples.
-- Require declared track width for containment; nearest-track projection stays
-  available through `bin_at`. Track and maze presets accept `track_width`.
-- Reject cyclic environment metadata before recursive decoding, avoiding a
-  Windows/Python 3.10 stack crash while retaining shared acyclic records.
+- `env.connectivity` is rebuilt from the bins every time an environment is
+  built, derived or read back, so it holds only the standard node and edge
+  attributes, as numbers and tuples, and `env.connectivity.graph` is an empty
+  read-only mapping. Reading an attribute returns the stored value without a
+  copy; editing any of them is refused. `env.to_networkx()` and
+  `env.connectivity.copy()` return independent, editable graphs. A file, dict
+  or NWB record still stores the graph for other tools, but loading rebuilds
+  it from the bins: attributes added to a saved graph are not read back.
 
-- Preserve coincident track centers, native mesh indexing and reserved user
-  graph attributes through environment storage. Malformed JSON/NWB/NPZ records
-  now report contextual recovery guidance.
+- Derived environments keep the labels of the environment they came from.
+  `subset()` and `clip()` keep the named regions (they used to drop them), and
+  `subset()` keeps the name. `rebin()` keeps the name (no `_rebinned` suffix).
+  `apply_transform()` keeps the name (no `_transformed` suffix) and no longer
+  invents a frame: the new frame is the `frame=` you pass, or `None`.
 
-- Preserve intended radial/angular bin counts when a polar step divides its
-  range but floating-point division rounds above an integer. Polar circularity
-  now defaults to automatic: full circles wrap, partial angle ranges remain
-  open, and explicitly wrapping a partial range is rejected.
+- `env.layout_parameters` (and the `layout_parameters` record in files, dicts
+  and NWB) holds only the scalar build choices, such as `bin_size`,
+  `connect_diagonal_neighbors` or `circular_angle`. Input data is no longer
+  kept: the positions given to `from_samples`, the masks of `from_grid_mask`,
+  `from_pixel_mask` and polar environments, polygons, the track graph and
+  edge order of `from_graph`, and nested values such as `dimension_ranges`
+  (read `env.dimension_ranges`). A saved environment no longer grows with the
+  length of the trajectory it was built from (a 100,000-sample `from_samples`
+  file went from 7.5 MB to 0.46 MB, the same size as a 10-sample one). The
+  track graph is still owned by the environment: read it from
+  `env.binning.linearization.graph` (and `.edge_order`).
 
-- Preserve dotted recording names in environment file prefixes, so saving
-  `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
-  and `.npz` paths remain accepted.
+- Factories take their data positionally and every option by keyword:
+  - `Environment.from_samples(positions, bin_size=2.0)` and
+    `Environment.open_field(positions, bin_size=2.0)`, not
+    `from_samples(positions, 2.0)`. Their signatures list every option, so a
+    misspelled option raises `TypeError` instead of reaching the layout
+    engine.
+  - `Environment.from_graph(graph, edge_order, bin_size=2.0)`. `edge_spacing`
+    was a required positional argument before `bin_size`; it is now a keyword
+    that defaults to `0.0` (edges end to end), as in `linear_track` and
+    `maze`.
+  - `Environment.maze(kind="plus", node_positions=..., bin_size=...)`.
+  - `Environment.from_polygon(polygon, bin_size=2.0)` and
+    `Environment.from_pixel_mask(mask, pixel_size=0.5)`.
+  - `Environment.from_polar_egocentric(distance_range=(0, 50),
+    angle_range=(-np.pi, np.pi), distance_bin_size=5.0,
+    angle_bin_size=np.pi / 8)`. Four positional numbers were easy to swap.
 
-- Preserve physical diffusion faces on grids with small coordinate units;
-  exactly nonzero axis displacements no longer disappear below an absolute
-  `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
+  An option passed by position raises a `TypeError` that names the keyword
+  and shows the corrected call: `Environment.from_samples(positions, 4.0)`
+  says to pass `bin_size=4.0` by keyword, and
+  `Environment.from_graph(graph, edge_order, 0.0, 2.0)` says to pass
+  `edge_spacing=0.0, bin_size=2.0`. Other argument errors, such as a
+  misspelled option, keep Python's own message.
+
+- `Environment.from_samples`, `Environment.open_field` and
+  `neurospatial.io.nwb.environment_from_position` refuse option values that
+  the call would ignore, instead of ignoring them without a word. A
+  regular-grid-only option (`dilate`, `fill_holes`, `close_gaps`,
+  `add_boundary_bins`, `connect_diagonal_neighbors`) set to anything but its
+  default raises `ValueError` with `layout="Hexagonal"`. With
+  `infer_active_bins=False` every bin in the extent is active, so changing
+  `bin_count_threshold`, `dilate`, `fill_holes` or `close_gaps` from its
+  default raises `ValueError`. The defaults are accepted with any layout, and
+  the signatures show them (`dilate: bool = False`,
+  `bin_count_threshold: int = 0`, `connect_diagonal_neighbors: bool = True`;
+  `fill_holes` defaults to `True` in `open_field`). `open_field` also accepts
+  `fill_holes=False` with `layout="Hexagonal"` or `infer_active_bins=False`,
+  because neither fills holes. A `layout=` other than `"RegularGrid"` or
+  `"Hexagonal"` raises `ValueError` listing the supported
+  layouts and the factory to use instead; it used to raise
+  `NotImplementedError`. Errors from `environment_from_position` name that
+  function.
+
+- `Environment.from_layout` takes a built layout engine instead of a layout
+  name and a dictionary of build parameters:
+  `Environment.from_layout(create_layout("TriangularMesh",
+  boundary_polygon=arena, point_spacing=2.5))`. A layout name or an engine
+  class raises `TypeError` with the corrected call. `layout_type` and
+  `layout_parameters` come from the engine's own record, which includes the
+  defaults it resolved but never its input data: a built-in engine's
+  positions, masks, polygons, graphs and boundary coordinates are left out,
+  whether or not they were given. Grids, polygons, masks and tracks keep
+  their dedicated factories.
+
+- `Environment.from_nwb` only loads an environment saved in the file:
+  `Environment.from_nwb(nwbfile, name="linear_track")`. The record name is
+  `name=` (it was `scratch_name=`), matching `env.to_nwb(nwbfile, name)` and
+  `read_environment`, and defaults to `"spatial_environment"`. To build an
+  environment from the file's Position data, call
+  `neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=...)`
+  instead of `from_nwb(nwbfile, bin_size=...)`. It takes `bin_size` as a
+  keyword and lists every `from_samples` option (`name=`, `regions=`,
+  `arena=`, `layout=`, `fill_holes=` and so on) instead of forwarding
+  `**kwargs`. `from_nwb(nwbfile, bin_size=...)` raises a `TypeError` that
+  shows that call. When the file has no saved environment of that name,
+  `from_nwb` and `read_environment` raise a `KeyError` that lists the saved
+  environments and, if the file has Position data, names it and points to
+  `environment_from_position`.
+
+- Every region query now uses one rule for which bins a region covers. A
+  point region covers the bin that contains the point. A polygon region covers
+  the bins whose centers lie inside it or on its edge; pass
+  `include_boundary=False` to count only centers strictly inside. The rule is
+  shared by `bins_in_region`, `region_mask`, `region_membership`,
+  `distance_to` with a region name, `subset(region_names=...)`,
+  `subset(polygon=...)` and `neurospatial.ops.mapping.regions_to_mask`, so
+  they agree on every layout. Before, they disagreed:
+  - `region_membership()` and `regions_to_mask()` gave a point region no bins
+    (`regions_to_mask` also warned). They now give the bin that contains the
+    point. Time spent at a point region, and visits, crossings and laps found
+    through `regions_to_mask`, now count that bin.
+  - `bins_in_region()`, `subset(region_names=...)` and `subset(polygon=...)`
+    left out bins whose centers lie exactly on a polygon's edge, while
+    `region_mask` included them. All of them now include those bins.
+    `bins_in_region` and `subset` take `include_boundary=False` for the old
+    interior-only selection (`subset` refuses it together with `mask=`).
+    Analyses built on `bins_in_region` can change when a polygon
+    edge passes through bin centers: the decision-region entry time in
+    `decision_region_entry_time`, `compute_decision_analysis` and
+    `compute_vte_session`, the goal bins and decision boundary of
+    `compute_decision_analysis`, the start and goal bins of
+    `trials_to_region_arrays`, and the region boundary of
+    `neurospatial.events.distance_to_boundary(region_name=...)`.
+  - `subset(region_names=[...])` keeps the bin that contains a point region
+    instead of raising `ValueError`.
+  - `distance_to("reward")` with a point region measures the distance to the
+    bin that contains the point. It used to warn that the region had no bins
+    and then raise. A region that covers no bin, such as a point outside the
+    environment, raises a `ValueError` that says so.
+  - On egocentric polar environments a point region is read in the same
+    (distance, angle) coordinates as `bin_centers`; `bins_in_region` and
+    `region_mask` used to refuse point regions there.
+  - A polygon region on an environment whose bins are not 2-D raises
+    `ValueError` with a fix in `region_membership` and `regions_to_mask`; it
+    used to raise `NotImplementedError`.
+
+- Graph and distance queries take their target by keyword: `bins=` for bin
+  indices, `points=` for coordinates and, for `distance_to`, `region=` for a
+  region name. Exactly one is required. A bin index and a coordinate look the
+  same as numbers, and the old positional argument guessed between them:
+  `env.distance_to([50.7, 12.3])` measured the distance to bins 50 and 12,
+  and `env.neighbors([0, 1])` treated bins 0 and 1 as the point (0, 1).
+  - `env.distance_to(targets)` is `env.distance_to(bins=...)`,
+    `env.distance_to(points=...)` or `env.distance_to(region="reward")`.
+  - `env.neighbors(i)`, `env.reachable_from(i, ...)` and
+    `env.rings(center_bin=i, ...)` take `bins=i` or one point,
+    `points=[[x, y]]`.
+  - `env.path_between(a, b)` is `env.path_between(bins=[a, b])` or
+    `env.path_between(points=[[x0, y0], [x1, y1]])`.
+  - `env.distance_between(p1, p2)` is
+    `env.distance_between(points=[p1, p2])` or
+    `env.distance_between(bins=[a, b])`; `edge_weight=` is keyword-only.
+
+  `bins=` takes an int or an integer array. Floats and booleans raise
+  `TypeError` and point to `points=`; `env.bin_center_of` refuses them too and
+  points to `env.bin_at`, with `(distance, angle)` rows on polar environments.
+  `BinIndexOutOfRangeError` names the same lookup. `bin_center_of` also refuses a 2-D
+  array of indices, for which it used to return an array of shape
+  `(a, b, n_dims)`; pass a 1-D array. `points=` has shape `(n_points, n_dims)`, one row per
+  point, in the same coordinates as `bin_centers` (distance and angle on a
+  polar environment). Points with NaN or inf coordinates, or outside the
+  environment, raise `ValueError` that names the first such row.
+  `distance_between` used to return `inf` for a point outside the
+  environment; it now raises. It also works on egocentric polar environments,
+  where it used to raise `CartesianOnlyError`: the path length follows the
+  graph, and points are (distance, angle). A target passed by position or
+  under its old name (`targets=`, `bin_index=`, `center_bin=`, ...) raises a
+  `TypeError` that says which keyword applies and shows the corrected call:
+  `env.neighbors(5)` suggests `env.neighbors(bins=5)`, and
+  `env.distance_to("reward")` suggests `env.distance_to(region="reward")`.
+
+- Behavior functions that take bin targets check them the way the queries
+  check `bins=`: `distance_to_region(target_bins=)`, `cost_to_goal(goal_bins=)`,
+  `path_progress(start_bins=, goal_bins=)`, `geodesic_voronoi_labels`,
+  `distance_to_decision_boundary` and `goal_reward_field`. Floats and
+  booleans raise `TypeError` instead of being
+  truncated to bin indices, and out-of-range bins raise
+  `BinIndexOutOfRangeError` (a `ValueError`). `-1`, the value `bin_at` gives
+  a position outside the environment, is never accepted as a single target,
+  whether it is an int or a one-element array such as
+  `env.bin_at([[x, y]])`: `target_bins=-1` and `goal_bins=-1` used to return
+  all-NaN distances and now raise. Only an array with one entry per sample
+  (shape `(len(position_bins),)`, as built by `trials_to_region_arrays`) is
+  per sample, and there `-1` still marks a sample with no target and gives
+  NaN; an array of any other length raises `ValueError`. `path_progress`
+  also accepts one start and one goal bin for every sample.
+  `approach_rate(..., metric="geodesic")` raises for a goal outside the
+  environment; it used to return all-NaN rates. `shortest_path_length(...,
+  metric="geodesic")` measures with `env.distance_between`: a start outside
+  the environment used to return the distance from the last bin without a
+  warning, and a goal outside raised an unrelated graph error; both now raise
+  `ValueError` naming the point. So `compute_path_efficiency` and
+  `subgoal_efficiency` with `metric="geodesic"` raise that `ValueError` when
+  the trajectory starts outside the environment. `geodesic_voronoi_labels`
+  and `distance_to_decision_boundary` raise `ValueError` for an empty goal
+  list; `distance_to_decision_boundary` used to return `inf` for every sample.
+
+- `Environment.subset(bins=mask)` is now `env.subset(mask=mask)`, so `bins=`
+  means integer bin indices everywhere. `mask=` is still a boolean array with
+  one entry per bin. Integer values in `mask=` raise `ValueError` that shows how
+  to build a mask from bin indices.
+
+- Cartesian-only methods stay visible on egocentric polar environments and
+  refuse when called. `hasattr(polar_env, "subset")` is now `True` and
+  `dir(polar_env)` lists `subset`, `rebin`, `interpolate` and the other
+  Cartesian-only methods; calling one raises `CartesianOnlyError`.
+  `CartesianOnlyError` is now a `TypeError` (the operation does not apply to
+  this kind of environment) and no longer an `AttributeError` or
+  `NotImplementedError`; import it as `neurospatial.CartesianOnlyError`.
+  Replace `hasattr` checks with `env.coordinate_kind == "polar"`, and
+  `except (AttributeError, NotImplementedError)` with
+  `except CartesianOnlyError`. Every Cartesian-only refusal now raises this
+  error with one message layout: what was refused, why it needs Cartesian
+  positions, and what works on a polar environment. That includes the
+  Cartesian modes of shared methods (`distance_to(metric="euclidean")`,
+  `occupancy(time_allocation="linear")`), analysis functions such as
+  `spatial_autocorrelation` and `field_shape_metrics`,
+  `compute_egocentric_distance(metric="geodesic")` (it reported
+  `Environment.bin_at()`), and `Environment.combine` (it raised a plain
+  `TypeError`). A function that takes two environments names the polar one,
+  for example `resample_field(dst_env=...)`. Where a polar environment has an
+  equivalent, the message ends with the code to run instead, also available as
+  `error.example`. The suggested code keeps containment: rows outside the
+  environment get bin `-1` (or NaN from `interpolate`), never the nearest
+  edge bin.
+
+- `bin_at`, `contains`, `occupancy`, `bin_sequence`, `bin_sequence_with_runs`
+  and `transitions(times=..., positions=...)` work on egocentric polar
+  environments, where they used to raise `CartesianOnlyError`. Each row is
+  `(distance, angle)` and gets the bin whose cell holds it, or `-1` outside
+  the distance and angle ranges, the same lookup the `points=` queries use.
+  `occupancy` gives each interval to the bin of its first sample, as on any
+  environment, so egocentric occupancy (seconds with the object at each
+  distance and direction) comes straight from per-sample `(distance, angle)`
+  rows; `time_allocation="linear"` still refuses polar environments.
+  `CARTESIAN_OPERATIONS` no longer lists these methods. Analysis functions
+  that read positions as the animal's allocentric positions and relied on
+  `bin_at` to refuse polar environments now refuse them with their own name:
+  `compute_spatial_rate`, `compute_spatial_rates`, `place_cell_significance`,
+  `compute_directional_place_fields`, the view-rate functions,
+  `compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
+  `compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
+  the `distance_to_reward` and `distance_to_boundary` event regressors,
+  `simulate_trajectory_ou` (and so `simulate_session`), and the boundary,
+  object-vector, spatial-view and geodesic place-cell models.
+
+- Three `neurospatial.ops` functions that only renamed an `Environment`
+  method are removed; call the method instead.
+  `map_points_to_bins(env, points, ...)` is `env.nearest_bin(points, ...)`,
+  `compute_differential_operator(env)` is `env.get_differential_operator()`,
+  and `apply_transform_to_environment(env, transform, ...)` is
+  `env.apply_transform(transform, ...)`. The arguments and results are the
+  same, with one difference: `map_points_to_bins` refused polar environments,
+  and `env.nearest_bin` accepts them.
+
+- `neurospatial.layout.validation.validate_environment` is removed. Every
+  environment is checked when it is built, so a built environment always
+  passes it. Set units and frame when you build the environment, for example
+  `Environment.from_samples(positions, bin_size=2.0, units="cm", frame="room")`,
+  or later with `env.with_metadata(units=..., frame=...)`.
+
+- The built-in layout engines no longer have `point_to_bin_index`,
+  `finite_volume_geometry` or `is_grid_compatible`, and the `LayoutEngine`
+  protocol no longer lists the first and last. An environment never used
+  them: it locates points and builds cell faces from the engine's
+  `binning()`. Use `env.bin_at(points)`, or
+  `engine.binning().locator.locate(points)` on a built engine;
+  `engine.binning().faces.build()` for the cell faces; and
+  `binning.rectilinear is not None` to ask whether the bins form a
+  rectangular grid.
+
+- A custom layout engine that records its build arguments with
+  `neurospatial.layout.base.capture_build_params` declares its input-data
+  arguments in the decorator: `@capture_build_params(data=("positions",))`.
+  They are left out of `env.layout_parameters`. Any other argument that is not
+  a scalar or a flat sequence of scalars now raises a `TypeError` naming it
+  when the engine is built; it used to be dropped without notice. The
+  built-in engines declare their data the same way, replacing their
+  `_data_parameters` attribute, and their recorded choices are unchanged.
+  When a saved environment's `layout_parameters` hold input data, as files
+  from earlier versions do, the data is dropped on reading and the scalar
+  choices are kept; the bins are stored in the file.
+
+- One layout label. `LayoutType` (now also with `POLAR` and `COMBINED`) is
+  the only vocabulary: a built-in engine's `layout_type` is its `LayoutType`
+  value (`RegularGridLayout().layout_type == "RegularGrid"`, it was the
+  category `"grid"`), `env.binning.kind` holds the same label, and
+  `env.layout_type` reports it. Engine categories such as `"grid"` or
+  `"mask"`, the private `_layout_type_tag` and the `layout_category` field of
+  saved files are gone. User spellings are reported canonically:
+  `from_samples(..., layout="regular-grid")` gives
+  `env.layout_type == "RegularGrid"` (it gave `"regular-grid"`), and
+  `create_layout` also accepts `"grid"`, `"polygon"` and `"mesh"`. The new
+  `neurospatial.layout.find_layout_type(name)` returns the `LayoutType` a
+  spelling names, or `None`. `from_bins` spells a `Binning.kind` that names
+  a layout canonically. It refuses `"Polar"`, which is reserved for
+  `from_polar_egocentric`, and `"Combined"` on bins that are not joined
+  components of `combine`. Derived
+  environments keep their parent's label instead of `"MaskedGrid"` or
+  `"subset"` (subset), `"PolygonCells"` (clip), `"RegularGrid"` (rebin of
+  any grid) or `"<label>_transformed"` (apply_transform); `combine` reports
+  `"Combined"` (it was `"combined"`). The new `env.derivations` lists the
+  derivations applied, oldest first, for example `("subset", "rebin")`.
+  `layout_parameters` keeps the parent's build choices through `subset`,
+  `clip` and `apply_transform` (they used to be replaced by
+  `{"source": ..., "original_n_bins": ...}` or gain `"transformed": True`),
+  and `rebin(bin_size=...)` records `bin_size` and
+  `connect_diagonal_neighbors` as `rebin(factor)` does. Files from earlier
+  versions load with the canonical label and their derivation markers as
+  `derivations`. A subclass of a built-in engine that sets its own
+  `layout_type` reports it everywhere; it used to report the parent's
+  label as `env.layout_type`.
+
+- Assigning or deleting a public attribute of an `Environment` raises an
+  `AttributeError` that says what to call instead. That includes new names:
+  `env.session_id = "s1"` used to attach a value silently and now says to keep
+  your own labels next to the environment, for example in a dict keyed by
+  `env.name`.
+
+- Building from any layout engine, including a custom one, and `rebin` now
+  check that each bin center is located in its own bin, as `from_bins`,
+  `subset` and the readers already did. The built-in engines pass; a custom
+  engine whose binning fails the check is refused with a `ValueError`.
+
+- `GridCellModel(grid_orientation=θ)` (and `simulate_session(...,
+  orientation=θ)`) now means the angle of the field lattice: the direction
+  from a firing field to its neighbors, in radians from +x counterclockwise,
+  modulo π/3. This is the orientation `grid_properties` reports, so
+  simulating at θ and analysing the rate map returns θ. It used to set the
+  angle of the first of the three plane waves, which puts the lattice π/6
+  (30°) further counterclockwise, so simulated rate maps and spikes for a
+  given `grid_orientation` are rotated by π/6. To reproduce an earlier
+  simulation, pass `grid_orientation=old + np.pi / 6`.
+
+- Grid orientation values change units and frame.
+  `grid_properties().orientation` (and `SpatialRateResult.grid_properties()`)
+  read the autocorrelogram as an
+  image, with its first axis as y, but `spatial_autocorrelation` puts the
+  environment's x on the first axis, so the reported angle was the lattice
+  angle reflected about 45°. It was also in degrees. Orientation is now the
+  angle of the field lattice in the environment's frame, in radians from +x
+  (East) counterclockwise toward +y (North), in [0, π/3): a hexagonal
+  lattice repeats every π/3. `orientation_std` is in radians too.
+  `peak_coords` columns are now offsets along x then y, as documented; they
+  used to come out y first, so code that read `peak_coords[:, 0]` as the x
+  offset was reading y. Convert old orientation values with
+  `np.radians((90 - old) % 60)`; this is approximate, because old values
+  also averaged in a spare peak that could lie on the second ring of fields
+  (see Fixed), so they were off by up to about 5°. The migration page has
+  before-and-after values. A grid cell simulated with
+  `GridCellModel(grid_orientation=θ)` is reported with orientation θ.
+
+- `Environment` method options are keyword-only, as factory options already
+  were. `bandwidth` is keyword-only in `smooth`, `diffuse`, `compute_kernel`,
+  `compute_gaussian_kernel` and `diffusion_accuracy`: write
+  `env.smooth(rate, bandwidth=5.0)`, not `env.smooth(rate, 5.0)`. In
+  `plot`, `plot_1d` and `plot_field`, everything after the field and `ax` is
+  keyword-only (`env.plot_field(rate, ax, cmap="magma")`), and `to_nwb` takes
+  `name=` by keyword, as `from_nwb` does. A positional call raises a
+  `TypeError` that names the keyword and shows the corrected call, as the
+  factories do: `env.smooth(rate, 5.0)` suggests
+  `env.smooth(field, bandwidth=5.0)`. `env.subset(bins=mask)` says to pass
+  `mask=`. The migration page has before-and-after calls.
+
+- `env.animate_fields(overlay_trajectory=...)` is removed. No backend drew it
+  (napari dropped it and the others ignored it), although the animation guide
+  said napari showed it as a track. Pass
+  `overlays=[PositionOverlay(positions=..., times=..., trail_length=...)]`
+  instead.
+
+- The coordinate argument of `bin_at`, `contains`, `nearest_bin`,
+  `to_linear` and `interpolate` is named `positions`, the name analysis
+  functions use (it was `points_nd`, `points` or `nd_position`). Only a call
+  that passed it by keyword changes: `env.bin_at(points_nd=xy)` becomes
+  `env.bin_at(xy)` or `env.bin_at(positions=xy)`. The `points=` query
+  target of `distance_to`, `neighbors` and the other graph queries is
+  unchanged.
+
+- A nonzero `edge_spacing` on a track with one edge (for example
+  `Environment.linear_track(endpoints=..., edge_spacing=5.0)`) raises
+  `ValueError`. A gap goes between consecutive edges, so the value used to be
+  recorded in `layout_parameters` and ignored. Remove it, or use
+  `node_positions` with more than two points for a track with segments.
+
+- A misspelled region name in `animate_fields(show_regions=[...])` (every
+  backend), `regions_containing_points(region_names=...)` or
+  `plot_regions(region_names=...)` raises `RegionNotFoundError` with the
+  closest name, before anything is drawn. These names used to be skipped,
+  `plot_regions` with a warning, so a region silently went missing from the
+  animation, the table or the plot. Fix the name. A single string, such as
+  `show_regions="goal"`, now means that one region; it used to be read
+  letter by letter.
+
+- `graph_turn_sequence(env, position_bins)` no longer takes `start_bin` and
+  `end_bin`. They were documented as orienting the path but were never used:
+  the order of `position_bins` already sets the direction of travel, and the
+  result did not depend on them. Drop the two arguments from the call.
+
+### Changed
+
+- `Environment.from_bins(binning)` is annotated as taking a `Binning`. An
+  object from another package that an installed snapshot adapter converts
+  still works at runtime, but a static type checker now flags the call; wrap
+  it as `typing.cast(Binning, obj)` there.
+
+- `nearest_bin` on an egocentric polar environment measures physical
+  distance. It places the bin centers and the `(distance, angle)` rows in the
+  animal's plane, `(distance * cos(angle), distance * sin(angle))`, before
+  comparing them, so its distances, `max_distance` and the default
+  far-point limit are in the environment's length units and angles a whole
+  turn apart name one direction. It used to compare the stored columns as if
+  centimeters and radians were one unit, and could return a bin on the other
+  side of the animal. Results change for polar environments only.
+  `bin_center_tree()` is still the tree over the stored columns.
+
+- Every `Environment` method that returns bin indices returns `np.intp`, the
+  dtype NumPy uses for indexing, as `bin_at` already did. `bin_sequence`,
+  `bin_sequence_with_runs(...).bins`, `components` and `rings` returned
+  `int32`, and `nearest_bin` was declared `int64`; all are now `np.intp`
+  (64-bit on 64-bit systems). The values are unchanged. `neighbors` and
+  `path_between` still return lists of Python ints.
+
+- `env.smooth` takes the same field layout as `env.diffuse`: one field of
+  shape `(n_bins,)` or a batch of shape `(n_bins, n_fields)`, one column per
+  field. It used to refuse any 2-D array. An array with its bins on the
+  second axis, such as population rates `(n_units, n_bins)`, is refused by
+  both with `Fix: pass field.T` (or `fields.T`) instead of a bare shape
+  error, and passing a `SpatialRateResult` or `SpatialRatesResult` raises
+  `TypeError` naming the array to smooth:
+  `env.smooth(result.firing_rates.T, bandwidth=...).T`.
+
+- Common construction mistakes now say what failed, why and how to fix it,
+  instead of surfacing an internal error:
+  - a transposed `positions` array of shape `(n_dims, n_samples)` in
+    `from_samples` or `open_field` raised `Exceeds the limit (4300 digits) for
+    integer string conversion`; it now says the grid would need too many bins
+    and to pass `positions.T`;
+  - non-numeric positions name the conversion to apply
+    (`df[['x', 'y']].to_numpy(dtype=float)`);
+  - a shapely polygon passed as `arena=` asked to install an adapter package;
+    it now says to pass `arena=OpenArena(polygon)`;
+  - `Environment.from_bins(env.binning)` shows the two lines that build the
+    faces first;
+  - `env.rebin(1.5)` raised `TypeError: 'float' object is not iterable`; a
+    factor that is not a whole number now raises `ValueError` suggesting
+    `rebin(2)` or `rebin(bin_size=...)` with the matching size;
+  - `env.apply_transform(np.eye(3))` raised `AttributeError`; a matrix now
+    raises `TypeError` saying to wrap it, `AffineND(matrix)`;
+  - `linear_track(endpoints=[0, 200])` raised `'int' object is not
+    iterable`; it now shows the (x, y) points to pass;
+  - a track graph whose nodes lack `pos` (`from_graph`, `maze(track_graph=)`)
+    raised `KeyError: 'pos'`; it now names the node and how to set `pos`;
+  - a `bin_size` sequence whose length differs from the number of position
+    columns, or any sequence with `layout="Hexagonal"`, names the expected
+    length instead of an internal argument;
+  - `dimension_ranges` that is not one finite `(min, max)` pair per position
+    column raises `ValueError` naming the rule it breaks (the number of
+    pairs, a value that is not finite, or a minimum that is not below its
+    maximum) and showing the pairs for your positions. A reversed pair such
+    as `(100, 0)`, a zero-width pair such as `(50, 50)` or a non-finite pair
+    used to build a grid silently;
+  - `rebin` on bins that are not a rectangular grid gives a call that
+    rebuilds those bins at the new size: `from_samples(..., layout="Hexagonal")`
+    for hexagons, `from_graph(env.binning.linearization.graph, ...)` for a
+    track, `from_layout(create_layout("TriangularMesh", ...))` for a mesh,
+    `env.rebin(bin_size=...)` for a clipped grid, or `env.smooth(field,
+    bandwidth=...)` for a coarser scale. A grid with unequal cells says so;
+  - `rebin` factors that are not integers (including `2.0`), are 0 or larger
+    than the grid, or have the wrong length; a 3-D transform passed to
+    `apply_transform` on 2-D bins; three `endpoints` for `linear_track`
+    (use `node_positions`); bare numbers in `maze(node_positions=...)`;
+    an `edge_spacing` sequence with the wrong number of gaps; `bin_size` as
+    text; a list of points passed to `from_polygon`; `grid_edges` that do not
+    fit the `from_grid_mask` mask; and a list of names passed to
+    `region_membership` all name the call that works. The suggested code in
+    every refusal is run by the test suite on the input that was refused.
+
+- An infinite coordinate in the positions given to `from_samples`,
+  `open_field` or `environment_from_position` is treated as a missing sample,
+  like NaN, which these factories already leave out. It used to raise
+  `Requested binning overflows` (grids) or `OverflowError` (hexagons).
+
+- Every lookup of a region by name raises `RegionNotFoundError` with the
+  closest existing name, for example `Fix: pass region_name='reward'` for
+  `env.bins_in_region("rewrd")`. This covers `env.regions[name]`,
+  `bins_in_region`, `subset(region_names=...)`, the `Regions` editing methods
+  (`remove`, `update_region`, `region_center`), `region_reward_field`,
+  `compute_region_coverage`, `decision_region_entry_time` and
+  `compute_decision_analysis`, which used to raise a bare `KeyError` or a
+  `ValueError` without a suggestion. `RegionNotFoundError` is both a
+  `KeyError` and a `ValueError`, so existing `except` blocks still catch it.
+
+- `spatial_autocorrelation` raises `NotImplementedError` instead of
+  `ValueError` on tracks, meshes, 3-D grids and grids with fewer than half of
+  their cells active, the type used for every environment whose geometry
+  cannot run an analysis. Code that caught `ValueError` around it should
+  catch `NotImplementedError`; see the migration page. Rate-map
+  `grid_score()` and `summary_table()` still report NaN there.
+
+- `env.occupancy(..., time_allocation="linear")` on bins without cell shapes
+  (bins passed to `Environment.from_bins` with only centers and sizes) raises
+  `NotImplementedError` instead of a `ValueError` about locators, and its
+  message, like the one for tracks, says why linear allocation needs each
+  bin's outline and points to `time_allocation="start"`.
+
+- On a track, `bin_at` and `nearest_bin(tie_break="closest_center")` search
+  one KD-tree, so a position exactly equidistant from two or more bin centers
+  goes to the same bin in both. `bin_at` used a tree of its own and could pick
+  another of the equidistant bins; for such positions its answer can differ
+  from earlier versions. Every other position gets the same bin as before.
+
+- A track graph attribute that cannot be saved at all, such as a function or
+  a lock, is refused when the track environment is built, with a `TypeError`
+  naming the node or edge and the attribute. It used to fail later, when the
+  environment was pickled or written. Attributes that pickle can store but
+  JSON cannot (sets, dates, NaN) still build; `to_file`, `to_dict` and NWB
+  export refuse them with a `ValueError` that now names the attribute.
+
+- On a polar environment, wall geometry (`border_score`, view-cell rates with
+  walls, `boundary_source=...`) and `time_allocation="linear"` rate maps raise
+  `CartesianOnlyError` instead of `NotImplementedError`, like every other
+  operation that reads polar bins as Cartesian positions. Wall geometry on a
+  3-D environment still raises `NotImplementedError`. The error reference
+  page lists the two error types for environments that cannot run an
+  analysis.
+
+- The linear track of `simulation.mazes.make_plus_maze` numbers its arms in
+  the order they are laid out along the linear position, clockwise from
+  north (north 0, east 1, south 2, west 3), as `Environment.maze(kind="plus")`
+  does. East and south used to have each other's number in the
+  `source_edge_id` of each bin and the `edge_id` of the track graph. Bin
+  positions, linear positions and every analysis are unchanged. The
+  simulated T and plus mazes are now built with `Environment.maze`.
+
+- `env.plot()` names the axes of a 2-D environment by what the coordinates
+  mean, as `env.plot_field()` does: "X Position (cm)" and "Y Position (cm)"
+  on a Cartesian environment, and "Distance (cm)" and "Angle (rad)" with a
+  free aspect ratio on a polar one. It used to label every environment
+  "Dimension 0" and "Dimension 1" (or "X coordinate" and "Y coordinate").
+
+- On an egocentric polar environment, `env.component_keys`, `env.bin_sources`
+  and `env.get_bridge_attributes()` give the answers of any environment that
+  was not combined: an empty tuple, `None` and an empty table. They used to
+  raise `CartesianOnlyError`, although they read only the records that
+  `Environment.combine` keeps and never the coordinates.
+
+- `env.occupancy`, `env.bin_sequence`, `env.bin_sequence_with_runs` and
+  `env.transitions(times=..., positions=...)` warn when the `max_gap` gate
+  and the other interval gates exclude every interval, and when the median
+  sampling interval is longer than `max_gap`, which usually means `times` are
+  not in seconds (milliseconds turn every frame into a recording gap).
+  `occupancy` also warns when no interval keeps any time because every sample
+  is NaN or outside, with either `time_allocation`. They used to return an
+  empty or mostly empty result silently. The same warning
+  comes from `compute_spatial_rate(s)` and the behavior analyses that share
+  the gate, which now also warn about a median interval longer than
+  `max_gap` when some intervals survive.
+
+- `env.smooth` and `env.diffuse` with `mode="average"` treat NaN bins as
+  missing observations instead of zeros. They smooth the field with NaN read
+  as 0 and the observed mask with the same operator, then divide, so holes
+  are filled from their observed neighbors and a constant field with holes
+  stays constant. A bin stays NaN when the share of its smoothing weight on
+  observed bins is at most 0.1% of the largest share in its connected part of
+  the environment, which includes every bin of a part with no observed bin.
+  Binned rate maps and `resample_field(method="diffuse")` use the same
+  masked-average code, each with its own far-field floor (a
+  bandwidth-dependent one for binned maps, none for resampling), so their
+  NaN bins far from observations can differ from `smooth`'s. `mode="transition"` and
+  `mode="density"` refuse a field with NaN, because missing bins have no
+  defensible mass under a conserving operator: fill them explicitly, or use
+  `mode="average"` for an intensive field. `diffuse(backend="jax")` refuses
+  a concrete field with NaN and points to `backend="numpy"`. Before, `smooth`
+  refused any NaN and `diffuse` silently turned every bin NaN. Fields without
+  NaN give exactly the same values as before.
+
+- `compute_decision_analysis` represents each goal region by the region bin
+  nearest the centroid of the region's bins, the same bin
+  `trials_to_region_arrays` uses. It used the lowest-index bin, which depends
+  on how bins are numbered and sits at the region's corner; the new choice
+  depends on numbering only for ties, where the lowest index among the
+  equally near bins is chosen. The goal labels
+  and `distance_to_boundary` change for goal regions that cover more than one
+  bin.
+
+- `env.connectivity` is built from the environment's bins for every layout,
+  so it carries the same node and edge attributes everywhere (`pos`,
+  `source_grid_flat_index`, `original_grid_nd_index`; `distance`, `vector`,
+  `edge_id` and, in 2-D, `angle_2d`), plus `pos_1D` and `source_edge_id` on
+  tracks. Graph, node and edge attributes that a layout engine adds to its
+  own graph are no longer published; keep such values in your own arrays
+  indexed by bin ID, or annotate the graph returned by `env.to_networkx()`.
+
+- `Environment.from_bins` on a binning with a triangular-mesh locator numbers
+  each node's `source_grid_flat_index` and `original_grid_nd_index` by its
+  triangle, as built mesh environments do and as `env.grid_shape` and
+  `env.active_mask` describe; it used to give the bin ID. On a binning with a
+  track linearization, `from_bins` now adds each node's `pos_1D` (linear
+  position) and `source_edge_id` (track-graph edge), as track factories do.
+
+- `env.with_metadata(...)` and `env.with_regions(...)` share their parent's
+  analysis cache instead of starting with an empty one, because the bins are
+  the same, so renaming an environment keeps the kernels and eigenbases
+  already computed. Clearing the cache of one clears it for all of them.
+  Derived environments (`subset`, `clip`, `rebin`, `apply_transform`,
+  `combine`) and environments loaded from files, dicts, NWB or pickles start
+  with their own empty cache. Each cached analysis is computed once even when
+  several threads request it at the same time. `smooth`, `diffuse` and
+  `get_mrf_basis` calls on one environment and its relabelled copies run one
+  at a time, because each holds a lock on the shared cache for the whole call; use
+  worker processes for parallel smoothing.
+
+- A factory given an `arena=` that leaves out some bins (for example
+  `from_grid_mask(..., arena=OpenArena(polygon))`) selects the bins before
+  building the environment, instead of building it, subsetting it and
+  building it again. The bins, graph and ranges are unchanged, but
+  `layout_type` and `layout_parameters` now describe the factory's layout (for
+  example `"MaskedGrid"` with `connect_diagonal_neighbors`) whether or not the
+  arena dropped a bin; they used to switch to a subset record.
+
+- `dimension_ranges` is the extent of the bins' cells for every layout, and
+  `Environment.subset()` reports the extent of the cells it keeps, with no
+  added margin, so a subset never reports a larger range than its parent.
+  Hexagonal environments report their hexagons' extent, corners included,
+  instead of the range the tiling was asked to cover (a tiling requested over
+  `(0, 30)` with 4 cm hexagons reports `(-2, 36)`); triangular meshes report
+  their boundary's bounds instead of the bounds of the triangle centroids;
+  tracks report the centerline their bins cover, end to end, instead of the
+  bin-center bounds (a 200 cm linear track reports `(0, 200)`, not
+  `(1, 199)`). Subsets of hexagonal, triangular-mesh and clipped polygon-cell
+  environments (`env.clip(...)`) used to add 5% on each side; a mesh subset
+  now bounds only its kept triangles, so a subset of one corner of a mesh no
+  longer reports the extent of the whole mesh, and a track subset bounds the
+  centerline its kept bins cover. `apply_transform` reports the extent of the
+  transformed cells rather than the box around the transformed ranges, which
+  was wider after a rotation. Grids report the extent of their active cells:
+  a grid subset reports the cells it keeps rather than the whole lattice it
+  keeps in `grid_edges`, and a grid whose border rows or columns are all
+  inactive reports its active cells. Napari draws a grid field over the full
+  lattice, so its overlay and scale-bar mapping now read `grid_edges` and
+  `grid_shape`, with each pixel centered on its cell (overlays used to be
+  stretched by up to half a pixel). Readers of `dimension_ranges` change
+  with it on hexagonal, mesh, track and grid-subset environments: plot limits
+  (a hexagonal `env.plot()` is framed by its cells' extent, the same limits as
+  `env.plot_field()`, with no extra margin), `env.info()`, the automatic scale of `ops.spatial_basis`, the "bandwidth
+  spans the environment" warning, the uniform field placement of
+  `simulate_session`, and the extent animation overlays and an uncalibrated
+  video are drawn over. The same
+  applies to the bins an `arena=` removes in `Environment.from_layout`,
+  `from_grid_mask` and `from_pixel_mask`. For `Environment.from_bins`, the
+  ranges of triangular-mesh bins bound the triangles' vertices rather than
+  every stored mesh point. The migration page has a table for each layout.
+
+- A `CartesianOnlyError` from a Cartesian-only method or property, such as
+  `subset`, `rebin` or `interpolate`, names the class of the environment that
+  refused the call. On a subclass of `Environment`,
+  `polar_env.interpolate(field, points)` reports
+  `MyEnvironment.interpolate() does not work on a polar environment.`, for the
+  bound call and for `Environment.interpolate(polar_env, field, points)` alike.
+
+- Derived environments no longer repeat the warning about unrecognized units.
+
+- **Breaking:** Cartesian and egocentric polar factories now return one public
+  `Environment` class. Use `env.coordinate_kind` for coordinate meaning and
+  `Environment.from_polar_egocentric(...)` instead of the removed
+  `EgocentricPolarEnvironment.create(...)`. Radius remains in length units and
+  angle in radians; polar Cartesian-only calls still refuse, including unbound
+  calls. Factory-inferred static types preserve those restrictions. Supported
+  dictionary, file and NWB records retain their coordinate semantics.
+
+- Points in discarded subset bins map to `-1` rather than a nearby retained bin.
+  Non-uniform scaling of hexagonal or mesh environments and general affine maps
+  disable finite-volume smoothing with an explanation. Tracks refuse
+  non-similarity transforms; rebuild them from transformed graph nodes instead.
+
+- Environment files and dictionaries now use `Environment-v3`; NWB environment
+  records use schema `3.0`. They preserve Arena, walls, exact cells and clip
+  mappings without rebuilding layouts. Version 2/`2.0` remains readable with an
+  explicitly unknown Arena. Version 1/`1.x` must be recreated with a factory.
+- Polygon-aware lookup excludes points outside the declared domain and in its
+  holes. Linear occupancy subdivides entry, exit and re-entry intervals on
+  exact polygon support, and refuses unresolved physical-wall crossings.
+  Default encoding and occupancy retain their existing interval-allocation
+  conventions.
+- Rebinning preserves the original arena and selects coarse bins by center,
+  including inferred mask holes. Physical walls remain closed; coarse cells
+  that cannot represent them are refused.
+
+- Point lookup consistently rejects incorrect coordinate widths, including
+  hexagonal inputs with extra columns and empty or non-finite grid queries.
+
+- `Environment.bin_sizes` now returns an owned, read-only array, like
+  `bin_centers`.
+
+- Rewrite all nine tutorials around spatial neuroscience questions, using
+  simple technical English, explanations of analysis choices, figure
+  interpretation, and instructions for using recorded data. Update the shared
+  catalog and keep example-data setup separate from the main analysis.
+
+- Consolidate the 27 feature-oriented notebooks into nine standalone task
+  tutorials covering environments, rate maps, behavior, real data, simulation,
+  held-out decoding, events, visualization and NWB. Combine the J16 neural and
+  maze analyses, add executable specialized recipes in the user guide, and
+  update catalog, links, mirrored outputs and full-collection CI.
+
+- **Breaking:** `env.smooth` now defaults to `mode="average"`, preserving the
+  units and level of a rate map. Pass `mode="density"` explicitly to retain
+  the previous count-to-density default; kernel constructors are unchanged.
+- **Breaking:** field detection and population coverage now default to no
+  map-mean exclusion (`max_mean_rate=np.inf`). Pass `max_mean_rate=10.0` to
+  retain the previous filter. Its unweighted spatial-bin mean is not a
+  recording-time mean or a cell-type verdict. Coverage displays report maps
+  with segmented fields rather than asserting cell identity.
+
+- Review all 27 tutorials for coherent workflows, current APIs, valid geometry,
+  observed support, independent simulation randomness and calibrated scientific
+  language. Correct rate-map and direction labels, add held-out decoding,
+  preserve real-data transition endpoints/gaps, and make desktop viewers and
+  long video exports opt-in. Refresh worked outputs and align prerequisite links.
+
+- Directional place fields, decode summaries, batch scores, behavior metrics
+  and run bins, assembly results and trajectory-fit results now own read-only
+  copies of their array fields, including after pickle/deepcopy. Directional
+  mappings also prevent replacing entries. **Behavior change:** copy arrays
+  before editing values. Decode-summary xarray exports remain editable copies.
+- Rate and peri-event results store read-only copies of their arrays. This
+  covers spatial, directional, view and object-vector results (single-unit
+  and population) and both peri-event results. Editing an array a result was
+  built from no longer changes it, and editing a result's arrays in place, for
+  example `rates.firing_rates /= peak`, raises instead of silently changing
+  what the result reports. **Breaking:** copy before modifying values:
+  `normalized = np.array(rates.firing_rates) / peak`. `to_xarray()` and
+  `to_dataframe()` return editable copies; editing a `to_xarray()` Dataset
+  used to edit the result.
+- `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
+  on environments built with `from_polygon`, `from_grid_mask` and
+  `from_pixel_mask`, and on grid environments read from NWB. They previously
+  required a `RegularGrid` layout. Inactive cells behave as on masked
+  `from_samples` environments.
+- Polar environments no longer define the twelve Cartesian methods. Accessing
+  one raises `CartesianOnlyError`, both a `NotImplementedError` and an
+  `AttributeError`, with the same message. `hasattr` reports them as absent and
+  type checkers flag the call. Refusals inside shared methods name the call
+  that was made.
+- **Behavior change:** an environment's geometry is read-only once built:
+  its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
+  and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
+  edits, so such edits used to return stale results silently. Build a new
+  environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
+  Factories copy array inputs, so the caller's own arrays stay writable and
+  later edits to them do not reach the environment.
+- Layout setup synchronizes restored geometry and invalidates all environment
+  caches. The polar layout builds physical distances and circular seams before
+  environment initialization, and records its `circular_angle` build option.
+- Layout engines, including a polar layout with annular-sector cells, supply
+  their own finite-volume cell faces. Dense kernels, spectral diffusion,
+  smoothness bases, gradients and divergence all use that one capability, and
+  the diffusion consumers share one validated operator snapshot. Numerical
+  schemes are unchanged.
+- **Behavior change:** `compute_diffusion_kernels` rejects directed graphs and
+  multigraphs, whose reciprocal or parallel edges were summed into doubled
+  conductances. Collapse them first with `nx.Graph(graph)`.
+
+- Extend rate-result `analysis_settings` and `spatial_support` to directional,
+  view and object-vector analyses, preserving exact retained intervals and
+  family settings through indexing, tables and NetCDF-compatible xarray exports.
+  Shared binning preparation keeps counts, occupancy and provenance aligned.
+- **Behavior change:** view and smoothed object-vector encoders now use the same
+  unit-aware physical bandwidth default as spatial encoding. Polar results
+  inherit the supplied environment's distance units; angular smoothing retains
+  its existing units and defaults.
+
+- **Behavior change:** spatial encoding defaults to a 5 cm smoothing bandwidth
+  in declared metric units (0.05 m / 50 mm), or 2.5 median graph-edge lengths
+  for unspecified/custom units. Explicit bandwidths retain their coordinate
+  units; bandwidths spanning the environment warn about lost spatial tuning.
+- Align unit-indexed metadata by identity in spike containers and population
+  results. Reject missing, duplicate or conflicting metadata identities; an
+  unnamed default RangeIndex retains positional interpretation.
+
+- **Breaking:** video and HTML animation exports default to `overwrite=False`, refusing existing outputs before rendering or dry-run estimates. HTML checks its default filename and nonempty frames directory before creating directories; ffmpeg uses `-n` unless overwrite is explicit. Environment saves share the same paired-target check and corrected-call wording.
+
+- **Breaking:** rate summary tables lead with rate/information, place classification last, and carry estimator, physical units, direction frame and resolved classification thresholds in `DataFrame.attrs`. Singular/population columns match; constant `method` is no longer a summary column, and labels are documented as heuristic screens.
+
+- **Breaking:** population rate summaries name `n_units` and `max_peak_firing_rate` explicitly. Shared occupancy remains seconds observed once; singular summaries add cheap family metrics and stay safe for all-NaN maps without computing grid/border scores.
+
+- **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
+
+- **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
+
+- **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.
+
+- **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
+
+- **Breaking:** standardize required trajectory pairs as `(times, positions)` in `approach_rate`, `compute_decision_analysis`, `compute_goal_directed_metrics`, `compute_path_efficiency`, `compute_pre_decision_metrics`, `compute_vte_session`, `compute_vte_trial`, `extract_pre_decision_window`, `goal_bias`, `head_sweep_from_positions`, `instantaneous_goal_alignment`, `mean_square_displacement`, `pre_decision_heading_stats`, `pre_decision_speed_stats`, `segment_by_velocity`, `time_efficiency`, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`. Place `env` first in `compute_region_coverage`, `field_shape_metrics`, `rate_map_coherence`, `map_points_to_bins`, `shuffle_place_fields_circular_2d` and `calibrate_video`. Rename the spike parameters on `bin_spikes_in_time`, `population_peri_event_histogram`, `restrict_spike_trains` and `validate_simulation` to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
+
+- **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.
+
+- **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
+
+- **Breaking:** default `ObjectVectorCellModel` to allocentric direction tuning without headings, which changes simulated spikes, without an error, for code that relied on heading-relative tuning. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
+
+- Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
+
+- Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
+
+- `Environment.combine`, and `subset` and loading of a combined environment,
+  check component overlap only for cells whose bounding boxes intersect instead
+  of every pair of cells. Combining two 1 m square arenas at 2 cm bins takes
+  about 2 s instead of 21 s; the overlap check for two 1 m arenas at 1 cm bins
+  takes 0.9 s instead of 141 s. The same overlaps, contacts and error messages
+  are reported.
 
 ### Added
+
+- `Environment.with_track_width(width)` gives a track its measured full width
+  and keeps its bins, linear coordinates, name, units, frame and regions. Use
+  it on a track built without `track_width`, such as one saved by an earlier
+  version, which refuses to look up 2-D positions: after
+  `Environment.from_file(path).with_track_width(10.0)`, positions more than
+  5 cm from the centerline get bin `-1` and rate maps, occupancy and decoding
+  work again. It adds `"with_track_width"` to `env.derivations` and refuses an
+  environment that is not a track.
+
+- `neurospatial.ops.KernelMode` names the values `mode=` accepts in
+  `Environment.compute_kernel`, `smooth` and `diffuse`
+  (`"transition"`, `"density"`, `"average"`), for type annotations in your
+  own analysis code.
+
+- `neurospatial.layout.ScaleBarConfig` is the scale-bar settings class that
+  `Environment.plot(scale_bar=...)` accepts. It is the same class as
+  `neurospatial.animation.ScaleBarConfig`, now importable without the
+  animation package.
+
+- `neurospatial.encoding.autocorrelation_pixel_size(env)` gives the side, in
+  the environment's units, of the square pixels of `spatial_autocorrelation`.
+  Pass it as `bin_size` to `grid_scale` and `grid_properties`.
+
+- `Environment.bin_center_tree()` returns the KD-tree over `bin_centers`
+  that `nearest_bin` searches, built once and kept in the analysis cache.
+  Use it for the `k` nearest bins with their distances.
+  `map_probabilities`, `select_basis_centers(method="kmeans")`,
+  `heat_kernel_wavelet_basis` and the simulated place cells now search this
+  tree instead of building their own, with identical results; repeated
+  `map_probabilities` calls onto a 160,000-bin grid take 28 ms instead of
+  38 ms.
+
+- `neurospatial.environment.BinSequenceWithRuns`, the result type of
+  `Environment.bin_sequence_with_runs()`, is importable from a public path for
+  type annotations and `isinstance` checks.
+
+- `Environment.from_layout` accepts your own layout engine after its
+  `build(...)`, with no registration. The engine can be a plain class with
+  only `build(...)` and `binning()`. Subclasses of built-in engines, which
+  used to be refused, now build environments normally.
+
+- `Binning` has a `dimension_ranges` field: the `(low, high)` extent of each
+  axis the bins' cells cover. `env.binning.dimension_ranges` equals
+  `env.dimension_ranges`, so `Environment.from_bins(env.binning)` keeps the
+  ranges. An environment computes the ranges from the cells (grid, outline,
+  cell shapes or a track's centerline); only bins without cells, such as
+  point bins, use the value set on the `Binning`.
+
+- `subset()` and `rebin()` accept `name=` like `clip()` and
+  `apply_transform()`.
+
+- `from_polygon`, `from_grid_mask`, `from_pixel_mask`, `from_graph`,
+  `linear_track` and `maze` accept `regions=`, so every Cartesian factory
+  takes the same `name=`, `units=`, `frame=` and `regions=` keywords.
+  `open_field` accepts `regions=` and `arena=`, and `from_samples` and
+  `open_field` accept `dimension_ranges=` as a named option.
+
+- Every arena type has `domain_bounds()`, the lower and upper corners of a box
+  that encloses its known Cartesian domain (`None` for an unknown domain, a
+  track without a width or a polar surround). `Environment.rebin(bin_size=...)`
+  uses it to lay out the new grid.
+
+- `neurospatial.ops.geodesic_distance_between_points` accepts `weight=`, the
+  edge attribute that measures length (`"distance"` by default; `None` counts
+  edges). `Environment.distance_between` now calls it, so the two always
+  agree.
 
 - Expose detached, read-only `env.binning` snapshots and public coordinate,
   diffusion-geometry, diffusion-accuracy, MRF-basis and Gaussian-kernel
@@ -342,160 +1203,429 @@
 
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
-### Changed
+### Performance
 
-- **Breaking:** Cartesian and egocentric polar factories now return one public
-  `Environment` class. Use `env.coordinate_kind` for coordinate meaning and
-  `Environment.from_polar_egocentric(...)` instead of the removed
-  `EgocentricPolarEnvironment.create(...)`. Radius remains in length units and
-  angle in radians; polar Cartesian-only calls still refuse, including unbound
-  calls. Factory-inferred static types preserve those restrictions. Supported
-  dictionary, file and NWB records retain their coordinate semantics.
+- `from neurospatial import Environment` no longer imports
+  `matplotlib.pyplot` or `pandas`; they load when you first plot or ask for a
+  table. The import takes about 0.27 s instead of 0.42 s, which helps
+  scripts and worker processes that only bin positions.
 
-- Points in discarded subset bins map to `-1` rather than a nearby retained bin.
-  Non-uniform scaling of hexagonal or mesh environments and general affine maps
-  disable finite-volume smoothing with an explanation. Tracks refuse
-  non-similarity transforms; rebuild them from transformed graph nodes instead.
+- Renaming an environment no longer discards its cached analyses: on a
+  3,586-bin open field, the first `compute_spatial_rate` call after
+  `with_metadata(name=...)` takes 0.51 s instead of 0.88 s.
 
-- Environment files and dictionaries now use `Environment-v3`; NWB environment
-  records use schema `3.0`. They preserve Arena, walls, exact cells and clip
-  mappings without rebuilding layouts. Version 2/`2.0` remains readable with an
-  explicitly unknown Arena. Version 1/`1.x` must be recreated with a factory.
-- Polygon-aware lookup excludes points outside the declared domain and in its
-  holes. Linear occupancy subdivides entry, exit and re-entry intervals on
-  exact polygon support, and refuses unresolved physical-wall crossings.
-  Default encoding and occupancy retain their existing interval-allocation
-  conventions.
-- Rebinning preserves the original arena and selects coarse bins by center,
-  including inferred mask holes. Physical walls remain closed; coarse cells
-  that cannot represent them are refused.
+- Reading graph attributes of `env.connectivity` is about 5 times faster, and
+  Dijkstra shortest paths on `env.connectivity` about 2 times faster, because
+  attributes are frozen once instead of copied on every read.
 
-- Point lookup consistently rejects incorrect coordinate widths, including
-  hexagonal inputs with extra columns and empty or non-finite grid queries.
+- A 200 × 200 grid mask cropped by an `arena=` builds about 2.7 times faster,
+  because the bins are selected before the environment is built.
 
-- `Environment.bin_sizes` now returns an owned, read-only array, like
-  `bin_centers`.
+- Building an environment checks its connectivity graph against its bins with
+  array operations instead of a Python loop over every bin and pair: for a
+  22,500-bin grid the check takes 0.08 s instead of 0.45 s.
 
-- Rewrite all nine tutorials around spatial neuroscience questions, using
-  simple technical English, explanations of analysis choices, figure
-  interpretation, and instructions for using recorded data. Update the shared
-  catalog and keep example-data setup separate from the main analysis.
-
-- Consolidate the 27 feature-oriented notebooks into nine standalone task
-  tutorials covering environments, rate maps, behavior, real data, simulation,
-  held-out decoding, events, visualization and NWB. Combine the J16 neural and
-  maze analyses, add executable specialized recipes in the user guide, and
-  update catalog, links, mirrored outputs and full-collection CI.
-
-- **Breaking:** `env.smooth` now defaults to `mode="average"`, preserving the
-  units and level of a rate map. Pass `mode="density"` explicitly to retain
-  the previous count-to-density default; kernel constructors are unchanged.
-- **Breaking:** field detection and population coverage now default to no
-  map-mean exclusion (`max_mean_rate=np.inf`). Pass `max_mean_rate=10.0` to
-  retain the previous filter. Its unweighted spatial-bin mean is not a
-  recording-time mean or a cell-type verdict. Coverage displays report maps
-  with segmented fields rather than asserting cell identity.
-
-- Review all 27 tutorials for coherent workflows, current APIs, valid geometry,
-  observed support, independent simulation randomness and calibrated scientific
-  language. Correct rate-map and direction labels, add held-out decoding,
-  preserve real-data transition endpoints/gaps, and make desktop viewers and
-  long video exports opt-in. Refresh worked outputs and align prerequisite links.
-
-- Directional place fields, decode summaries, batch scores, behavior metrics
-  and run bins, assembly results and trajectory-fit results now own read-only
-  copies of their array fields, including after pickle/deepcopy. Directional
-  mappings also prevent replacing entries. **Behavior change:** copy arrays
-  before editing values. Decode-summary xarray exports remain editable copies.
-- Rate and peri-event results store read-only copies of their arrays. This
-  covers spatial, directional, view and object-vector results (single-unit
-  and population) and both peri-event results. Editing an array a result was
-  built from no longer changes it, and editing a result's arrays in place, for
-  example `rates.firing_rates /= peak`, raises instead of silently changing
-  what the result reports. **Breaking:** copy before modifying values:
-  `normalized = np.array(rates.firing_rates) / peak`. `to_xarray()` and
-  `to_dataframe()` return editable copies; editing a `to_xarray()` Dataset
-  used to edit the result.
-- `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
-  on environments built with `from_polygon`, `from_grid_mask` and
-  `from_pixel_mask`, and on grid environments read from NWB. They previously
-  required a `RegularGrid` layout. Inactive cells behave as on masked
-  `from_samples` environments.
-- Polar environments no longer define the twelve Cartesian methods. Accessing
-  one raises `CartesianOnlyError`, both a `NotImplementedError` and an
-  `AttributeError`, with the same message. `hasattr` reports them as absent and
-  type checkers flag the call. Refusals inside shared methods name the call
-  that was made.
-- **Behavior change:** an environment's geometry is read-only once built:
-  its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
-  and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
-  edits, so such edits used to return stale results silently. Build a new
-  environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
-  Factories copy array inputs, so the caller's own arrays stay writable and
-  later edits to them do not reach the environment.
-- Layout setup synchronizes restored geometry and invalidates all environment
-  caches. The polar layout builds physical distances and circular seams before
-  environment initialization, and records its `circular_angle` build option.
-- Layout engines, including a polar layout with annular-sector cells, supply
-  their own finite-volume cell faces. Dense kernels, spectral diffusion,
-  smoothness bases, gradients and divergence all use that one capability, and
-  the diffusion consumers share one validated operator snapshot. Numerical
-  schemes are unchanged.
-- **Behavior change:** `compute_diffusion_kernels` rejects directed graphs and
-  multigraphs, whose reciprocal or parallel edges were summed into doubled
-  conductances. Collapse them first with `nx.Graph(graph)`.
-
-- Extend rate-result `analysis_settings` and `spatial_support` to directional,
-  view and object-vector analyses, preserving exact retained intervals and
-  family settings through indexing, tables and NetCDF-compatible xarray exports.
-  Shared binning preparation keeps counts, occupancy and provenance aligned.
-- **Behavior change:** view and smoothed object-vector encoders now use the same
-  unit-aware physical bandwidth default as spatial encoding. Polar results
-  inherit the supplied environment's distance units; angular smoothing retains
-  its existing units and defaults.
-
-- **Behavior change:** spatial encoding defaults to a 5 cm smoothing bandwidth
-  in declared metric units (0.05 m / 50 mm), or 2.5 median graph-edge lengths
-  for unspecified/custom units. Explicit bandwidths retain their coordinate
-  units; bandwidths spanning the environment warn about lost spatial tuning.
-- Align unit-indexed metadata by identity in spike containers and population
-  results. Reject missing, duplicate or conflicting metadata identities; an
-  unnamed default RangeIndex retains positional interpretation.
-
-- **Breaking:** video and HTML animation exports default to `overwrite=False`, refusing existing outputs before rendering or dry-run estimates. HTML checks its default filename and nonempty frames directory before creating directories; ffmpeg uses `-n` unless overwrite is explicit. Environment saves share the same paired-target check and corrected-call wording.
-
-- **Breaking:** rate summary tables lead with rate/information, place classification last, and carry estimator, physical units, direction frame and resolved classification thresholds in `DataFrame.attrs`. Singular/population columns match; constant `method` is no longer a summary column, and labels are documented as heuristic screens.
-
-- **Breaking:** population rate summaries name `n_units` and `max_peak_firing_rate` explicitly. Shared occupancy remains seconds observed once; singular summaries add cheap family metrics and stay safe for all-NaN maps without computing grid/border scores.
-
-- **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
-
-- **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
-
-- **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.
-
-- **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
-
-- **Breaking:** standardize required trajectory pairs as `(times, positions)` in `approach_rate`, `compute_decision_analysis`, `compute_goal_directed_metrics`, `compute_path_efficiency`, `compute_pre_decision_metrics`, `compute_vte_session`, `compute_vte_trial`, `extract_pre_decision_window`, `goal_bias`, `head_sweep_from_positions`, `instantaneous_goal_alignment`, `mean_square_displacement`, `pre_decision_heading_stats`, `pre_decision_speed_stats`, `segment_by_velocity`, `time_efficiency`, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`. Place `env` first in `compute_region_coverage`, `field_shape_metrics`, `rate_map_coherence`, `map_points_to_bins`, `shuffle_place_fields_circular_2d` and `calibrate_video`. Rename the spike parameters on `bin_spikes_in_time`, `population_peri_event_histogram`, `restrict_spike_trains` and `validate_simulation` to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
-
-- **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.
-
-- **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
-
-- **Breaking:** default `ObjectVectorCellModel` to allocentric direction tuning without headings, which changes simulated spikes, without an error, for code that relied on heading-relative tuning. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
-
-- Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
-
-- Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
-
-- `Environment.combine`, and `subset` and loading of a combined environment,
-  check component overlap only for cells whose bounding boxes intersect instead
-  of every pair of cells. Combining two 1 m square arenas at 2 cm bins takes
-  about 2 s instead of 21 s; the overlap check for two 1 m arenas at 1 cm bins
-  takes 0.9 s instead of 141 s. The same overlaps, contacts and error messages
-  are reported.
+- `Environment.occupancy(time_allocation="linear")` on 1-D and 3-D
+  rectangular grids splits every interval across the cells its straight path
+  crosses at once, instead of one interval at a time: a 20,000-sample 3-D
+  trajectory sampled at 5 Hz on a 21 × 21 × 21 grid takes 0.07 s instead of
+  1.2 s. Occupancy values are unchanged.
 
 ### Fixed
+
+- `apply_transform` accepts a rotation by an angle so small that its sine is
+  below the normal floating-point range (about 1e-308), such as 2e-313
+  radians. The check that the stored grid frame matches the transform used
+  only relative rounding errors, which vanish for such tiny values, so it
+  refused the environment it had just built. Its error bound now also counts
+  the absolute rounding of these tiny products.
+
+- A grid environment that went through a chain of scalings and translations
+  no longer refuses its own inverse transform. Each step mapped the cell edges
+  and, separately, the stored bin centers; after a few steps the two disagreed
+  by a few rounding units and the inverse failed with "bins.centers and
+  locator geometry does not match the binning geometry". The centers of a
+  scaled or translated grid are now the midpoints of its mapped edges. Values
+  change by at most one rounding unit of the coordinates (7e-15 cm at 35 cm).
+
+- `Environment.animate_fields` warns once when you pass an option the chosen
+  backend ignores, such as `crf=` with `backend="html"` or `overwrite=True`
+  with napari, naming the backend that uses it and the call that would. With
+  `backend="auto"` the warning says which backend was chosen and why.
+  Backend options left out use each backend's own default.
+
+- Video export uses constant-quality encoding (`crf=18`) by default, and
+  `crf=` reaches the encoder. `Environment.animate_fields` used to send
+  `bitrate=5000` on every call, which replaced constant quality, so `crf=`
+  was silently ignored. For a short test animation the default output is
+  visually the same (SSIM 0.9999 against the old encoding) and less than
+  half the size. Passing both `crf=` and `bitrate=` warns that the bitrate
+  wins and `crf` is ignored.
+
+- `Environment.animate_fields(..., dry_run=True)` writes nothing on every
+  backend and returns `None` after reporting what it would render. The HTML
+  backend ignored `dry_run` and wrote `animation.html` into the working
+  directory; napari opened a viewer and the widget displayed. The HTML backend
+  now also draws `scale_bar=`, which it ignored.
+
+- Time-series overlays are drawn by the video and widget backends of
+  `animate_fields`. Those backends never received the frame timestamps the
+  panels are aligned to, so the panels were silently left out.
+
+- Static type checkers accept `Environment.from_polygon(polygon, ...)` with a
+  shapely `Polygon`; it was annotated as taking the `Polygon` class itself.
+  `from_file`, `from_dict` and `from_nwb` (and `neurospatial.io.from_file`,
+  `from_dict` and `neurospatial.io.nwb.read_environment`) keep the static type
+  `Environment[Any]`, because the stored data decides whether the
+  environment is Cartesian or polar; their docstrings now say so and point
+  to `env.coordinate_kind`. The `neurospatial.io.nwb` functions, which load
+  lazily, now have their declared types instead of `Any`.
+
+- The presets `Environment.open_field`, `Environment.linear_track` and
+  `Environment.maze` are easy to find: the `from_samples` docstring, a new
+  Presets section in the environments guide, the quickstart and Core Concepts
+  point to them. Every Core Concepts example now runs as written (several used
+  undefined `data`, `polygon` and `graph` variables), and the quickstart's
+  example peak rate (about 12 Hz) matches what the code prints.
+
+- The `Environment` docstring examples run in the documentation tests. The
+  skipped ones now execute on fixed example data, so they show real output:
+  `from_dict` compares the round trip with `np.array_equal(env.bin_centers,
+  reconstructed.bin_centers)` (it asserted `env == reconstructed`, which is
+  False now that environments compare by identity), and `to_linear`,
+  `subset`, `interpolate`, `smooth`, `transitions` and `to_nwb` show their
+  results. `n_dims`, `from_polygon`, `plot_1d` and
+  `linearization_properties` no longer document errors or keys that do not
+  exist. Only the napari and video examples of `animate_fields` stay
+  skipped, because they need a display and ffmpeg.
+
+- `simulate_trajectory_sinusoidal` runs over the whole length of the track,
+  in linear position. It used the x range of the track's coordinates, so a
+  bent track was shortened to its horizontal extent: an L-shaped 120 + 80 cm
+  track oscillated over 120 cm instead of 200 cm.
+
+- `PlaceCellModel(metric="euclidean")` on an egocentric polar environment
+  measures the distance between places in the animal's plane,
+  `(d cos(angle), d sin(angle))`, so `width` (and its default, three bin
+  spacings) is a length. It used to subtract `(distance, angle)` rows as if
+  centimeters and radians were one unit. A per-axis `width` on a polar
+  environment raises `CartesianOnlyError` with code that passes one width.
+
+- `neurospatial.testing.assert_environment_contract` works on a track built
+  without `track_width`: it checks that position lookups refuse with the fix
+  that names `track_width`, instead of failing on the refusal. A track with a
+  width gets the full lookup checks against `expected_bins`.
+
+- `ops.spatial_basis` sizes its basis by the track length on a linearized
+  track. It used the geometric mean of the axis extents, which is zero for a
+  straight track (it raised "sigma values must be positive") and unrelated to
+  the length of a bent one: an L-shaped 200 cm track was sized as 98 cm.
+
+- On egocentric polar environments, a `(distance, angle)` row whose angle is a
+  whole turn outside the angle range finds the bin of that direction. Before,
+  `points=` queries, point regions and the polar lookups refused or skipped
+  it as outside the environment, and on a full circle the angle `π` itself,
+  the same direction as `-π`, was outside. A partial angle range still
+  excludes the directions it leaves out.
+
+- `graph_turn_sequence` labelled every turn backwards. In the package's y-up
+  frame (x East, y North), heading North and then turning West is a left turn,
+  but it was reported as `"right"`; every `"left"` and `"right"` in its output
+  is now swapped back to the animal's own side. Recompute saved turn
+  sequences. Positions in image pixels, where y points down, must be flipped
+  to y-up first, as the docstring now says.
+
+- `env.layout_parameters` reports only options that shaped the bins.
+  `Environment.open_field(..., infer_active_bins=False)` recorded
+  `fill_holes=True`, its default, although every bin is active and nothing was
+  filled; it now records `fill_holes=False`, and `bin_count_threshold`,
+  `dilate` and `close_gaps` are recorded as `0`/`False` whenever active bins
+  are not inferred. A 1-D grid (from 1-D samples or a 1-D mask) has no
+  diagonal neighbors, and neither has any grid `rebin` derives from it, so it
+  records `connect_diagonal_neighbors=False` whatever was passed; it used to
+  record the default `True`. The bins are unchanged. A 2-D grid one cell wide
+  keeps the choice, because refining it creates diagonal neighbors.
+
+- `Environment.from_graph`, `linear_track` and `maze` accept a NumPy scalar
+  `edge_spacing` (for example `np.float32(2.0)` read from a config array) as
+  they accept a Python number. It used to raise `IndexError` or `TypeError`.
+
+- `spatial_autocorrelation` accepted hexagonal environments and treated the
+  hexagon lattice as a rectangular grid. Its rows are offset, so the
+  autocorrelogram and the grid score computed from it were wrong. It now
+  raises `NotImplementedError` on every environment without a regular 2-D
+  grid of rectangular cells (hexagonal, mesh, track, 3-D, or a grid with
+  fewer than half of its cells active), and names
+  `spatial_autocorrelation_radial`, which works on every layout. Tracks,
+  meshes and sparse grids raised `ValueError` before. Rate-map
+  `summary_table()` reports a NaN `grid_score` on hexagonal environments.
+
+- `spatial_autocorrelation` reported lags in cell steps. On a grid whose two
+  axes have different cell widths (a `from_polygon` grid of a 50 × 37 cm box
+  with `bin_size=3` has 2.94 × 2.85 cm cells; small arenas can differ by tens
+  of percent), rotating the autocorrelogram for the grid score and measuring
+  peak distances for the grid scale mixed the two widths, so both were
+  distorted. The autocorrelogram now has square pixels: lags along the wider
+  axis are interpolated onto the finer width whenever the two widths differ
+  by more than 1/100 of a cell across the grid. Grids fitted with
+  `from_samples` differ by up to a few percent between axes, and their grid
+  scores move by about 0.004 (at most 0.04 in a sweep of 30 arenas). On a
+  120 cm arena with 2 × 3 cm cells, a hexagonal rate map with 30 cm spacing
+  now scores 0.99 with scale 29.7 cm, as on 2 × 2 cm cells (1.03, 29.7 cm);
+  it scored -0.13 with scale 26.1 cm. A grid with uneven edges along one axis
+  (possible through `Environment.from_bins`) has no single lag per step and
+  raises the same `NotImplementedError`, naming
+  `spatial_autocorrelation_radial`.
+
+- Grid scores change on every grid. `grid_score` rotated the
+  autocorrelogram about the array center, `(n - 1) / 2`, while zero lag sits
+  at `n // 2`, so on an even-sized map every rotation was half a pixel off
+  zero lag; on an odd-sized map the annulus and the peaks used by
+  `grid_scale` and `grid_properties` were centered half a pixel off. Scores
+  therefore jumped between even and odd arenas (about 0.1 for the same
+  hexagonal cell). The metrics now drop an even axis's most negative lag,
+  which has no positive partner, and measure everything about the zero-lag
+  pixel. Hexagonal maps score higher, mostly on even-sized grids (median
+  +0.09 over 30 random `from_samples` arenas; a perfect synthetic
+  autocorrelogram scores 1.52 instead of 1.40); noise and shuffled maps
+  change by a median of about 0.01-0.02 either way. Grid-cell labels from
+  threshold screens can change for borderline cells whose score was near the
+  threshold.
+
+- `grid_properties()` averaged the orientation over every detected peak,
+  including the spare one it detects beyond `n_peaks`, which can lie on the
+  second ring of fields at another angle. Orientation was off by about 5°
+  on synthetic hexagonal maps; it now uses the same `n_peaks` nearest peaks
+  as the scale and is within about 1-2°.
+
+- `SpatialRateResult.grid_properties()` converted pixels to distance with
+  the smallest cell *area*, so its `scale` was in the wrong units (off by a
+  factor of the cell width, e.g. 4× for 4 cm cells). It now uses
+  `autocorrelation_pixel_size(env)`, the autocorrelogram's pixel side.
+
+- A position sample with a NaN coordinate is a missing sample in every
+  per-sample query. `env.nearest_bin` gives it bin
+  `-1` and distance NaN, and `env.interpolate` gives it NaN; both used to
+  raise, `nearest_bin` with a SciPy error about finite values. A point with an
+  infinite coordinate is outside: bin `-1` and distance `inf`, or NaN from
+  `interpolate`. `env.interpolate` also accepts a field with NaN bins, such as
+  a rate map with unvisited bins, and returns NaN only where a point needs a
+  NaN bin's value; it used to refuse the whole field.
+
+- `env.transitions(times=..., positions=...)` counts a pair only when both of
+  its samples are inside the environment, so a sample outside or with a NaN
+  coordinate adds no transition. It used to raise "Invalid bin indices ...
+  -1 (outside) values are not allowed" for any such sample, although the
+  docstring said the trajectory input handles outside samples. A precomputed
+  `bins=` sequence that holds `-1` is still refused.
+
+- Track environments (`from_graph`, `linear_track`, `maze`) store each
+  connectivity edge's `vector` and `angle_2d` from the lower to the higher bin
+  ID, as every other layout does. They pointed the other way, so
+  `env.get_edge_attributes()` reported track vectors from target to source.
+  On a track with gaps between segments (`edge_spacing > 0`), each node's
+  `source_grid_flat_index` and `original_grid_nd_index` now name its cell of
+  the linear grid described by `env.grid_shape` and `env.active_mask`; they
+  used to give the bin's position among the active bins, which pointed at gap
+  cells after the first gap.
+
+- The `edge_id` of each connectivity edge is its row in `env.edge_pairs` on
+  every layout, so it can index edge values such as gradients and fluxes.
+  Edges across the angular seam of a polar environment, and the edges of a
+  hexagonal, triangular-mesh or track environment after `subset()`, used to
+  keep IDs that did not match their rows.
+
+- `env.boundary_bins` on a hexagonal environment checks all six neighbors of
+  each hexagon, so every hexagon next to a hole, a concave notch or a
+  `subset()` cut is a boundary bin. It used to check only four of the six
+  (east, west and one diagonal pair), so two of the six hexagons around a
+  removed interior hexagon were missed. Border scores with
+  `boundary_source="analysis"` and `BoundaryCellModel` firing on hexagonal
+  environments with holes or irregular outlines change accordingly; full
+  rectangular hexagonal arenas are unchanged.
+
+- `env.apply_transform(...)` no longer refuses a valid environment with
+  "polygon cell N disagrees with its locator" after a chain of coordinate
+  changes, such as a scaled, rotated and reflected map followed by its
+  inverse. Clipped environments (`env.clip(...)`) and hexagonal environments
+  after a reflection store exact polygon cells, and the check compared them
+  with the cells recomputed from the stored transforms at storage precision
+  only, although recomputing them adds floating-point rounding. The check now
+  allows that rounding, as it already did for bin centers and mesh vertices,
+  and still caps it at a quarter of the smallest cell spacing.
+
+- `Environment.open_field(..., fill_holes=False)` works; it used to fail with
+  a `TypeError` about multiple values for `fill_holes`.
+
+- NWB reading and writing (`Environment.from_nwb`, `env.to_nwb` and the
+  `neurospatial.io.nwb` functions) report "pynwb is required" only when pynwb
+  itself is not installed. Any other import failure, such as a missing or
+  broken pynwb dependency like `hdmf`, now reaches you unchanged with the name
+  of the module that failed, instead of being reported as a missing pynwb.
+  Pose and event reading and writing (`read_pose`, `read_events`,
+  `write_events`, `write_laps`, `write_region_crossings` and
+  `dataframe_to_events_table`) do the same for their extensions:
+  "ndx-pose is required" or "ndx-events is required" appears only when that
+  extension itself is not installed.
+
+- `Environment.rebin(factor)` on an environment without a stored grid
+  specification (for example one built with `Environment.from_bins` without
+  `grid_spec`) records the diagonal-neighbor choice it used to connect the
+  coarse grid. It previously guessed the choice from the coarse grid's
+  connections, which recorded "no diagonals" when the coarse grid was one cell
+  wide, so a later `rebin(bin_size=...)` dropped diagonal neighbors.
+
+- Smoothing on an environment transformed by an affine map fitted to noisy
+  landmarks (`estimate_transform(..., kind="affine")`) still refuses, because
+  the fit absorbs tracking noise as a real stretch or shear. The refusal now
+  reports the measured stretch and angle error, explains that the bandwidth
+  would not be applied equally in every direction, and names the fix: fit
+  `kind="similarity"` (or `"rigid"`) or smooth on the source environment. It
+  previously suggested recentering coordinates, which does not help.
+
+- Triangular-mesh environments saved on one operating system now load on
+  another. Loading used to rebuild the Delaunay triangulation and refuse the
+  file when it differed from the saved triangles, which happens whenever sample
+  points are cocircular (any square lattice), because Qhull breaks those ties
+  differently across platforms. Point-to-bin lookup now uses the saved
+  triangles directly, with the same edge tolerance as before. A point exactly
+  on an edge or vertex shared by several triangles goes to the lowest-numbered
+  saved triangle. Files whose triangles overlap or reference missing or
+  repeated vertices are still refused, now with a message that names the
+  triangles.
+
+- `Environment.rebin(factor=...)` keeps a coarse cell whose center lies on the
+  arena boundary, such as the cell beside a missing corner of a grid mask or of
+  a grid-aligned polygon. Two-dimensional arenas previously required strictly
+  interior centers, unlike 1-D and 3-D masks, so a factor of 2 dropped coarse
+  cells that held recorded fine bins (3 of 15 bins of a 4-by-4 mask without one
+  corner), and positions in them mapped to `-1`. A factor of 2 now merges every
+  fine bin of a grid mask inside the (possibly truncated) coarse extent.
+
+- Both `rebin` modes warn when original bins are left without a new bin,
+  naming their count, their share of the area and how to cover them. Positions
+  in those bins map to `-1`, so their time and spikes silently dropped out of
+  totals: about 2.5% of a circular arena's fine bins at `factor=2`, and 56% of
+  a 6-by-6 arena at `bin_size=4`.
+
+- `rebin` warns when new bins on both sides of a barrier in the arena outline
+  are connected because they meet only outside the arena. In a U-maze with a
+  2-unit barrier, 5-unit bins shortened the path between the arm ends from 37
+  to 5. The connections are kept, as in `from_polygon` at the same bin size;
+  the warning names them and how to fix it: smaller bins, or the barrier's
+  edges declared as internal walls.
+
+- Posterior means on polar environments are the probability-weighted centroid
+  in the animal's egocentric plane, reported as `(distance, angle)` with the
+  angle in the environment's range. A posterior split across the angle seam
+  behind the animal now has a `mean_position` behind it, not straight ahead.
+  This covers `mean_position`, `DecodingResult.mean_position` and
+  `to_dataframe()`, and `decode_position_summary`; a centroid at the animal has
+  a NaN angle.
+
+- Domain functions that read bin centers as Cartesian `(x, y)` coordinates now
+  raise `CartesianOnlyError` on polar environments instead of returning wrong
+  numbers. The refusals cover `field_shape_metrics`,
+  `field_shift_distance`, `spatial_autocorrelation`,
+  `resample_field`, `map_probabilities`, `spatial_basis`,
+  `graph_turn_sequence` and `detect_laps`. Type checkers reject polar
+  environments for these functions. Some functions refuse only their Cartesian
+  mode and keep a graph-based mode for polar environments:
+  `rate_map_centroid(method="euclidean")`,
+  `compute_field_emd(metric="euclidean")`,
+  `select_basis_centers(method="kmeans")` (also the default `center_method` of
+  the basis functions), `path_progress` and `distance_to_region` with
+  `metric="euclidean"`, `trajectory_similarity` with `"hausdorff"` or `"dtw"`,
+  and `detect_runs_between_regions` with `min_speed`.
+
+- `Environment.from_bins` and environment loading now check supplied
+  finite-volume faces for hexagonal and triangular-mesh bins against the cells:
+  each face length must equal the shared cell edge (zero when cells share no
+  edge) and each face distance the center-to-center distance. Inconsistent
+  faces previously passed silently and changed smoothing and diffusion results.
+
+- Ray-cast view rates no longer refuse when cells clipped to a curved or
+  slanted wall reach it: a hit is owned by the cell within that cell's
+  coordinate rounding of the hit, instead of an overlay of nearly coincident
+  edges. Cells that stop short of the wall still refuse, and the message names
+  the route that builds wall-reaching cells:
+  `Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
+
+- Observers tracked exactly on a wall no longer view their own position. A ray
+  or cue sight line that leaves the wall into the room reaches the next wall;
+  only facing out through the wall or exactly along it gives a zero-distance
+  contact. Standing on an internal wall views the side faced. Gaze hits,
+  viewsheds, visible cues, view-rate bins and simulated view cells agree.
+
+- Preserve static attribute and protocol checking for the common Environment;
+  runtime Cartesian/polar capability filtering no longer admits missing methods.
+
+- Check physical view-map ownership only for samples with selected exposure.
+  Missing wall bins raise actionable guidance; excluded/final samples and raw
+  geometric hits retain their meanings. Slanted wall cues tolerate local cue
+  rounding while earlier crossings and wall overlaps remain blocked.
+- Physical border scores require complete represented and observed wall
+  coverage, distinguishing missing measurements from measured zero firing.
+  Unsupported scores and batch summaries provide setup guidance rather than
+  treating an unobserved wall as zero activity.
+  When the border score is unavailable, `summary_table()` labels a spatially
+  tuned non-grid cell `"undetermined"` instead of `"place"`, since it may be a
+  border cell; single-unit and population tables agree.
+  Physical border scores refuse combined environments in which a component has
+  no measured footprint, naming the component, instead of scoring its fields
+  against walls in other components (euclidean returned -1 for a wall-hugging
+  field). Declare each component's outline or use `boundary_source="analysis"`.
+  A single arena that declares internal walls but not its footprint
+  (`OpenArena(..., physical_footprint_known=False)`) is refused the same way:
+  a field along its outer edge was scored against the internal walls alone
+  (-1, labeled `"place"`; now NaN, labeled `"undetermined"`). Declare the
+  measured outline, for example
+  `OpenArena(outline, walls=..., physical_footprint_known=True)`.
+- The border-score examples in the neuroscience metrics guide raised on their
+  position-derived environments, which have no measured walls. They now
+  explain the physical-versus-analysis boundary choice, pass
+  `boundary_source="analysis"` and run in the documentation tests.
+- Prevent automatic combined-environment bridges from crossing a third
+  component, including tiny and nearly collinear footprints. Long affine
+  histories retain their arena through storage without using the composite
+  nesting budget. Clipped diffusion keeps its own certification boundary.
+
+- Omit transient analysis caches before copy/pickle; retain JSON-compatible
+  protected graph metadata. Explicit bins now reject wall-crossing supplied
+  pairs, keep drawing outlines separate from physical evidence, and validate
+  finite-volume faces against their grid geometry across coordinate scales.
+  Clipping preserves declared navigation paths and stores equal parent maps once.
+
+- Reject circular region metadata before exhausting the interpreter stack,
+  avoiding a test-worker crash on Windows/Python 3.10.
+
+- Compare point regions by coordinate values, avoiding ambiguous NumPy truth
+  values on Python 3.10–3.12 and when comparing independent region copies.
+- Label place fields from actual graph connections, preserving diagonal links
+  and physical walls after derivation and storage. Polygon clipping now retains
+  per-parent ownership at floating-point precision and exposes analysis boundary
+  bins. Wall-crossing checks also handle exact on-wall trajectory samples.
+- Require declared track width for containment. Track and maze presets accept
+  `track_width`.
+- Reject cyclic environment metadata before recursive decoding, avoiding a
+  Windows/Python 3.10 stack crash while retaining shared acyclic records.
+
+- Preserve coincident track centers, native mesh indexing and reserved user
+  graph attributes through environment storage. Malformed JSON/NWB/NPZ records
+  now report contextual recovery guidance.
+
+- Preserve intended radial/angular bin counts when a polar step divides its
+  range but floating-point division rounds above an integer. Polar circularity
+  now defaults to automatic: full circles wrap, partial angle ranges remain
+  open, and explicitly wrapping a partial range is rejected.
+
+- Preserve dotted recording names in environment file prefixes, so saving
+  `rat1.day1` and `rat1.day2` produces independent file pairs. Explicit `.json`
+  and `.npz` paths remain accepted.
+
+- Preserve physical diffusion faces on grids with small coordinate units;
+  exactly nonzero axis displacements no longer disappear below an absolute
+  `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
 
 - Keep valid gaze hits on slanted physical walls during view encoding, using
   retained wall contact and parent-bin ownership to avoid crossing missing bins.

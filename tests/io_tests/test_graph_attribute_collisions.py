@@ -1,4 +1,4 @@
-"""Node-link storage separates graph identity fields from user attributes."""
+"""Node-link storage separates track-graph identity fields from user attributes."""
 
 from datetime import datetime, timezone
 
@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
 
 def _annotate(graph):
@@ -20,26 +19,20 @@ def _annotate(graph):
     graph.edges[edge]["id"] = "measured-edge-id"
 
 
-def _environment(context):
-    if context == "connectivity":
-        layout = RegularGridLayout()
-        layout.build(bin_size=1.0, dimension_ranges=[(0, 2), (0, 1)])
-        _annotate(layout.connectivity)
-        return Environment._from_built_layout(layout, name="annotated")
+def _environment():
     graph = nx.Graph()
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))
     graph.add_edge(0, 1, distance=10.0)
     _annotate(graph)
-    return Environment.from_graph(graph, list(graph.edges), 0.0, 2.0)
+    return Environment.from_graph(
+        graph, list(graph.edges), edge_spacing=0.0, bin_size=2.0, track_width=2.0
+    )
 
 
-@pytest.mark.parametrize("context", ["connectivity", "track"])
 @pytest.mark.parametrize("storage", ["dict", "file", "nwb"])
-def test_reserved_user_attributes_survive_environment_storage(
-    tmp_path, context, storage
-):
-    env = _environment(context)
+def test_reserved_user_attributes_survive_environment_storage(tmp_path, storage):
+    env = _environment()
     if storage == "dict":
         restored = Environment.from_dict(env.to_dict())
     elif storage == "file":
@@ -58,16 +51,7 @@ def test_reserved_user_attributes_survive_environment_storage(
         with pynwb.NWBHDF5IO(str(tmp_path / "graph.nwb"), "r") as io:
             restored = read_environment(io.read())
 
-    if context == "connectivity":
-        pairs = [(env.connectivity, restored.connectivity)]
-    else:
-        pairs = [
-            (env._binning.linearization.graph, restored._binning.linearization.graph),
-            (
-                env.layout_parameters["graph_definition"],
-                restored.layout_parameters["graph_definition"],
-            ),
-        ]
+    pairs = [(env._binning.linearization.graph, restored._binning.linearization.graph)]
     for source, loaded in pairs:
         assert list(loaded) == list(source)
         assert list(loaded.edges) == list(source.edges)

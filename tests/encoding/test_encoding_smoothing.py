@@ -2,8 +2,6 @@
 
 This module tests the shared smoothing functions that will be used by
 encoding result computation functions (compute_spatial_rate, etc.).
-
-Following TDD approach: tests written before implementation.
 """
 
 from __future__ import annotations
@@ -13,6 +11,7 @@ import weakref
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from numpy.typing import NDArray
 
 from neurospatial import Environment, _constants
 
@@ -22,6 +21,7 @@ from neurospatial.encoding._smoothing import (
     smooth_rate_map,
     smooth_rate_maps_batch,
 )
+from neurospatial.environment._cache import GAUSSIAN_KERNELS
 
 # =============================================================================
 # Test Fixtures
@@ -152,7 +152,7 @@ class TestSmoothRateMapDiffusionKDE:
         assert peak_idx == center_idx
 
         # Value should spread to neighbors (non-zero in adjacent bins)
-        neighbors = simple_env.neighbors(center_idx)
+        neighbors = simple_env.neighbors(bins=center_idx)
         for neighbor_idx in neighbors:
             assert result[neighbor_idx] > 0
 
@@ -310,7 +310,7 @@ class TestSmoothRateMapGaussianKDE:
         assert peak_idx == center_idx
 
         # Value should spread to neighbors
-        neighbors = simple_env.neighbors(center_idx)
+        neighbors = simple_env.neighbors(bins=center_idx)
         for neighbor_idx in neighbors:
             assert result[neighbor_idx] > 0
 
@@ -404,7 +404,7 @@ class TestSmoothRateMapBinned:
         center_idx = simple_env.n_bins // 2
 
         # Neighbors should have non-zero values
-        neighbors = simple_env.neighbors(center_idx)
+        neighbors = simple_env.neighbors(bins=center_idx)
         assert any(result[n] > 0 for n in neighbors)
 
     def test_handles_nan_values(self, simple_env, spike_counts_center):
@@ -872,7 +872,9 @@ def half_visited_arena():
     Returns ``(env, spike_counts, occupancy)`` for one place field at (20, 5).
     """
     xx, yy = np.meshgrid(np.linspace(0, 200, 301), np.linspace(0, 10, 61))
-    env = Environment.from_samples(np.column_stack([xx.ravel(), yy.ravel()]), 2.0)
+    env = Environment.from_samples(
+        np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0
+    )
     centers = env.bin_centers
     occupancy = np.where(centers[:, 0] < 40, 0.1, 0.0)
     expected_rate = 20 * np.exp(-np.sum((centers - [20, 5]) ** 2, 1) / (2 * 6.0**2))
@@ -896,9 +898,9 @@ class TestDiffusionKdeUnresolvedFarField:
         if backend == "jax":
             pytest.importorskip("jax")
         env, spike_counts, occupancy = half_visited_arena
-        dense = env.compute_kernel(bandwidth, mode="density") @ np.column_stack(
-            [spike_counts, occupancy]
-        )
+        dense = env.compute_kernel(
+            bandwidth=bandwidth, mode="density"
+        ) @ np.column_stack([spike_counts, occupancy])
         dense_rate = dense[:, 0] / dense[:, 1]
 
         if batch:
@@ -945,7 +947,7 @@ class TestDiffusionKdeUnresolvedFarField:
         env, spike_counts, occupancy = half_visited_arena
         visited = occupancy > 0
         raw_rate = np.where(visited, spike_counts / np.where(visited, occupancy, 1), 0)
-        average = env.compute_kernel(bandwidth, mode="average")
+        average = env.compute_kernel(bandwidth=bandwidth, mode="average")
         dense_rate = (average @ raw_rate) / (average @ visited.astype(float))
 
         kwargs = {"method": "binned", "bandwidth": bandwidth, "backend": backend}
@@ -1011,7 +1013,7 @@ class TestEigenbasisCacheReuse:
                 uniform_occupancy,
                 method="diffusion_kde",
                 bandwidth=2.0,
-                kernel=simple_env.compute_kernel(2.0, mode="density"),
+                kernel=simple_env.compute_kernel(bandwidth=2.0, mode="density"),
             )
 
 
@@ -1184,10 +1186,7 @@ class TestPolarGaussianKernelSeam:
         circular_kernel = _get_gaussian_kernel(env_circular, bandwidth)
         open_kernel = _get_gaussian_kernel(env_open, bandwidth)
         assert circular_kernel is not open_kernel
-        assert np.shares_memory(
-            env_circular._gaussian_kernels[bandwidth], circular_kernel
-        )
-        assert np.shares_memory(env_open._gaussian_kernels[bandwidth], open_kernel)
+        assert not np.shares_memory(circular_kernel, open_kernel)
         seam_a, seam_b, *_ = self._ring_indices(env_open)
         assert circular_kernel[seam_a, seam_b] > 1e-3
         assert open_kernel[seam_a, seam_b] < 1e-3
@@ -1211,7 +1210,11 @@ def test_gaussian_kernel_is_released_with_environment() -> None:
         bin_size=1.0,
     )
     _get_gaussian_kernel(env, bandwidth=1.0)
-    kernel_ref = weakref.ref(env._gaussian_kernels[1.0])
+
+    def refuse() -> NDArray[np.float64]:
+        raise AssertionError("the kernel was not cached")
+
+    kernel_ref = weakref.ref(env._cache.get_recent(GAUSSIAN_KERNELS, 1.0, refuse))
     assert kernel_ref() is not None
     del env
     gc.collect()
@@ -1222,23 +1225,27 @@ def test_gaussian_kernel_cache_keeps_most_recently_used_kernels(
     simple_env: Environment, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A bandwidth sweep keeps only the most recently used dense kernels."""
-    monkeypatch.setattr(_constants, "MAX_CACHED_KERNELS", 2)
-    first = _get_gaussian_kernel(simple_env, bandwidth=1.0)
-    _get_gaussian_kernel(simple_env, bandwidth=2.0)
-    assert np.shares_memory(_get_gaussian_kernel(simple_env, bandwidth=1.0), first)
-    _get_gaussian_kernel(simple_env, bandwidth=3.0)
+    monkeypatch.setattr(GAUSSIAN_KERNELS, "limit", 2)
+    env = simple_env
+    first = _get_gaussian_kernel(env, bandwidth=1.0)
+    second = _get_gaussian_kernel(env, bandwidth=2.0)
+    assert np.shares_memory(_get_gaussian_kernel(env, bandwidth=1.0), first)
+    third = _get_gaussian_kernel(env, bandwidth=3.0)  # drops 2.0
 
-    assert list(simple_env._gaussian_kernels) == [1.0, 3.0]
+    assert np.shares_memory(_get_gaussian_kernel(env, bandwidth=1.0), first)
+    assert np.shares_memory(_get_gaussian_kernel(env, bandwidth=3.0), third)
+    assert not np.shares_memory(_get_gaussian_kernel(env, bandwidth=2.0), second)
 
 
-def test_clearing_kernels_releases_gaussian_kernels(simple_env: Environment) -> None:
-    """clear_cache(kernels=True) frees Gaussian kernels without clearing properties."""
-    kernel = _get_gaussian_kernel(simple_env, bandwidth=2.0)
+def test_clearing_the_cache_releases_gaussian_kernels(simple_env: Environment) -> None:
+    """clear_cache() frees Gaussian kernels; a rebuild gives the same weights."""
+    env = simple_env
+    kernel = _get_gaussian_kernel(env, bandwidth=2.0)
 
-    simple_env.clear_cache(kernels=True, cached_properties=False)
+    env.clear_cache()
 
-    assert simple_env._gaussian_kernels == {}
-    rebuilt = _get_gaussian_kernel(simple_env, bandwidth=2.0)
+    assert GAUSSIAN_KERNELS not in env._cache
+    rebuilt = _get_gaussian_kernel(env, bandwidth=2.0)
     assert rebuilt is not kernel
     np.testing.assert_array_equal(rebuilt, kernel)
 

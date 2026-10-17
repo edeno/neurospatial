@@ -27,10 +27,11 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import stats
 
+from neurospatial.geometry import require_cartesian
+
 if TYPE_CHECKING:
-    from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
-    from neurospatial.environment._protocols import FieldMetricsConsumer
+    from neurospatial.environment import Environment
+    from neurospatial.geometry import CartesianSystem
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
@@ -48,14 +49,14 @@ __all__ = [
 
 
 def field_size(
-    env: FieldMetricsConsumer,
+    env: Environment,
     field_bins: NDArray[np.int64],
 ) -> float:
     """Compute field size (area) in physical units.
 
     Parameters
     ----------
-    env : FieldMetricsConsumer
+    env : Environment
         Spatial environment.
     field_bins : array
         Bin indices comprising the field.
@@ -176,14 +177,16 @@ def rate_map_centroid(
     import networkx as nx
 
     if method == "euclidean":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "rate_map_centroid(method='euclidean')",
-            instead=(
-                "Use method='geodesic', which returns the field bin that "
-                "minimizes rate-weighted graph distance."
+            why=(
+                "A rate-weighted mean of bin centers averages them as Cartesian "
+                "positions."
+            ),
+            fix=(
+                "use method='geodesic', which returns the field bin that minimizes "
+                "rate-weighted graph distance"
             ),
         )
 
@@ -344,7 +347,7 @@ def rate_map_coherence(
 
     Parameters
     ----------
-    env : FieldMetricsConsumer
+    env : Environment
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
@@ -675,14 +678,16 @@ def field_shape_metrics(
     .. [2] Knierim et al. (1995). Place cells, head direction cells, and the
            learning of landmark stability. J Neurosci 15(3).
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "field_shape_metrics()",
-        instead=(
-            "Eccentricity and orientation need Cartesian bin centers; compute "
-            "field shape on an allocentric Cartesian environment."
+        why=(
+            "Eccentricity and orientation come from the covariance of Cartesian bin "
+            "centers."
+        ),
+        fix=(
+            "compute field shape on an allocentric environment, for example "
+            "Environment.from_samples(positions, bin_size=...)"
         ),
     )
     # Initialize with NaN defaults
@@ -840,7 +845,7 @@ def field_shift_distance(
     **Cross-session alignment**:
 
     For comparing across sessions, environments should be aligned (e.g., using
-    estimate_transform and apply_transform_to_environment) to account for
+    estimate_transform and Environment.apply_transform) to account for
     camera shifts, rotation, or scaling. If environments are not aligned,
     distance will include alignment error.
 
@@ -899,15 +904,17 @@ def field_shift_distance(
     .. [2] Colgin et al. (2008). Understanding memory through hippocampal remapping.
            Trends Neurosci 31(9).
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    for env in (env_1, env_2):
-        _require_cartesian_coordinates(
-            env,
-            "field_shift_distance()",
-            instead=(
-                "Field centroids need Cartesian bin centers; compare field "
-                "positions on allocentric Cartesian environments."
+    for argument, env in (("env_1", env_1), ("env_2", env_2)):
+        require_cartesian(
+            env.coordinate_system,
+            f"field_shift_distance({argument}=...)",
+            why=(
+                "It measures the straight-line distance between Cartesian field "
+                "centroids."
+            ),
+            fix=(
+                "compare field positions on allocentric environments, for example "
+                "Environment.from_samples(positions, bin_size=...)"
             ),
         )
     # Compute centroids for both fields
@@ -950,10 +957,12 @@ def field_shift_distance(
             distance = float(np.linalg.norm(centroid_1 - centroid_2))
             return distance
 
-        # Compute geodesic distance using centroids (coordinates), not bin indices
         try:
-            geodesic_dist = env_1.distance_between(centroid_1, centroid_2)
-            return float(geodesic_dist)
+            # Both centroids are measured on env_1's graph; bin_2 indexes env_2.
+            end_bin = env_1.bin_at(centroid_2.reshape(1, -1))[0]
+            if end_bin < 0:
+                return np.inf
+            return float(env_1.distance_between(bins=[bin_1, end_bin]))
         except Exception as e:
             warnings.warn(
                 f"Failed to compute geodesic distance: {e}. Falling back to Euclidean distance.",
@@ -1107,14 +1116,13 @@ def compute_field_emd(
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
     if metric == "euclidean":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "compute_field_emd(metric='euclidean')",
-            instead=(
-                "Use metric='geodesic', whose ground distance follows physical "
-                "graph edge lengths."
+            why="Its ground distance is the straight line between bin centers.",
+            fix=(
+                "use metric='geodesic', whose ground distance follows physical graph "
+                "edge lengths"
             ),
         )
 

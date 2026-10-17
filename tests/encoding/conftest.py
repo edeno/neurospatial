@@ -242,7 +242,7 @@ def frame_family(request):
 
     name = request.param
     module = importlib.import_module(f"neurospatial.encoding.{name}")
-    binning = importlib.import_module(f"neurospatial.encoding._{name}_binning")
+    binning = importlib.import_module(f"neurospatial.encoding._{name}_counts")
     predicate_name = {
         "directional": "is_head_direction_cell",
         "view": "is_spatial_view_cell",

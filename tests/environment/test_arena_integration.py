@@ -9,8 +9,9 @@ import pytest
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
-from neurospatial.arena import MaskArena, OpenArena, encode_arena
+from neurospatial.arena import MaskArena, OpenArena
 from neurospatial.decoding.posterior import _validate_encoding_environment
+from neurospatial.geometry._codecs import encode_arena
 from neurospatial.ops.transforms import translate
 
 
@@ -47,7 +48,7 @@ def test_polygon_gate_and_inactive_support_are_distinct():
     probes = np.array([[4.9, 1.8], [4.5, 2.5], [0.0, 0.0]])
     np.testing.assert_array_equal(env.bin_at(probes), [-1, -1, 10])
     np.testing.assert_array_equal(env.contains(probes), env.bin_at(probes) >= 0)
-    child = env.subset(bins=np.arange(env.n_bins) != 10)
+    child = env.subset(mask=np.arange(env.n_bins) != 10)
     assert _arena_record(child.arena) == _arena_record(env.arena)
     assert child.arena.contains(np.array([[0.0, 0.0]]))[0]
     assert not child.contains(np.array([[0.0, 0.0]]))[0]
@@ -71,14 +72,17 @@ def test_known_track_width_rejects_distant_points():
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(100.0, 0.0))
     graph.add_edge(0, 1, distance=100.0)
-    known = Environment.from_graph(graph, [(0, 1)], 0.0, 2.0, track_width=4.0)
-    abstract = Environment.from_graph(graph, [(0, 1)], 0.0, 2.0)
+    known = Environment.from_graph(
+        graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=4.0
+    )
+    abstract = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
     probes = np.array([[50.0, 2.0], [50.0, 2.1], [1000.0, 1000.0]])
     np.testing.assert_array_equal(known.contains(probes), [True, False, False])
+    np.testing.assert_array_equal(known.bin_at(probes) >= 0, [True, False, False])
     assert not abstract.arena.domain_known
-    assert (abstract.bin_at(probes) >= 0).all()
-    with pytest.raises(NotImplementedError, match="track_width"):
-        abstract.contains(probes)
+    for lookup in (abstract.bin_at, abstract.contains):
+        with pytest.raises(NotImplementedError, match="track_width"):
+            lookup(probes)
 
 
 def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():
@@ -90,9 +94,9 @@ def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():
     )
     left = env.bin_centers[:, 0] < 2
     assert all(left[u] == left[v] for u, v in env.connectivity.edges)
-    kernel = env.compute_kernel(1.0)
+    kernel = env.compute_kernel(bandwidth=1.0)
     assert np.all(kernel[np.ix_(left, ~left)] == 0)
-    child = env.subset(bins=env.bin_centers[:, 1] < 2)
+    child = env.subset(mask=env.bin_centers[:, 1] < 2)
     assert _arena_record(child.arena) == _arena_record(arena)
     assert child.arena.walls[0].equals(arena.walls[0])
 
@@ -115,22 +119,19 @@ def test_clip_splits_bins_and_preserves_mapping_through_derivation():
     assert child.n_bins == 2
     np.testing.assert_allclose(child.bin_sizes, [0.2, 0.2])
     np.testing.assert_array_equal(child.clip_mapping.parent_bin_indices, [0, 0])
-    assert child.clip_mapping is not child._binning.clip_mapping
-    assert child.clip_mapping.n_parent_bins == child._binning.clip_mapping.n_parent_bins
-    np.testing.assert_array_equal(
-        child.clip_mapping.parent_bin_indices,
-        child._binning.clip_mapping.parent_bin_indices,
-    )
+    # The owned record is immutable, so it is returned without copying.
+    assert child.clip_mapping is child._binning.clip_mapping
+    assert not child.clip_mapping.parent_bin_indices.flags.writeable
     assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert not child.connectivity.edges
     for variant in (
-        child.copy(),
+        child.with_metadata(),
         pickle.loads(pickle.dumps(child)),
         child.apply_transform(translate(10, 0)),
     ):
         np.testing.assert_array_equal(variant.clip_mapping.parent_bin_indices, [0, 0])
         assert not variant.clip_mapping.parent_bin_indices.flags.writeable
-    subset = child.subset(bins=np.array([False, True]))
+    subset = child.subset(mask=np.array([False, True]))
     np.testing.assert_array_equal(subset.clip_mapping.parent_bin_indices, [0])
     assert not subset.contains(np.array([[0.1, 0.5]]))[0]
     assert parent.n_bins == 1
@@ -242,7 +243,7 @@ def test_analytic_domain_needs_materialization_for_exact_clipping():
 
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"arena= takes an arena from neurospatial.arena",
     ):
         Environment.from_grid_mask(
             np.ones((1, 1), bool),

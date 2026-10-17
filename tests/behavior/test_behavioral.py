@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from neurospatial import Environment, Regions
+from neurospatial import BinIndexOutOfRangeError, Environment, Regions
 from neurospatial.behavior.navigation import trials_to_region_arrays
 from neurospatial.behavior.segmentation import Trial
 
@@ -656,10 +656,10 @@ def test_distance_to_region_invalid_bins(simple_environment_with_regions):
     assert np.isnan(distances[1])  # Invalid bin → NaN
     assert not np.isnan(distances[2])  # Valid bin
 
-    # Test 2: Invalid target bin (scalar)
+    # Test 2: -1 is the outside marker, never a single target
     position_bins = np.array([0, 1, 2])
-    distances = distance_to_region(position_bins, env, target_bins=-1)
-    assert np.all(np.isnan(distances))  # All should be NaN with invalid target
+    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
+        distance_to_region(position_bins, env, target_bins=-1)
 
     # Test 3: Dynamic targets with some invalid
     target_bins = np.array([goal_bin, -1, goal_bin])
@@ -1395,10 +1395,10 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
     assert np.isnan(cost[1])  # Invalid bin → NaN
     assert not np.isnan(cost[2])  # Valid bin
 
-    # Test 2: Invalid goal bin (scalar)
+    # Test 2: -1 is the outside marker, never a single goal
     position_bins = np.array([0, 1, 2])
-    cost = cost_to_goal(position_bins, env, goal_bins=-1)
-    assert np.all(np.isnan(cost))  # All should be NaN with invalid goal
+    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
+        cost_to_goal(position_bins, env, goal_bins=-1)
 
     # Test 3: Dynamic goals with some invalid
     goal_bins_array = np.array([goal_bin, -1, goal_bin])
@@ -1413,15 +1413,13 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
 # =============================================================================
 
 
-def test_graph_turn_sequence_ymaze_left(ymaze_env):
-    """Test turn sequence for Y-maze left choice."""
+def test_graph_turn_sequence_ymaze_north_arm_into_west_arm_is_right(ymaze_env):
+    """Walking South down the North arm, the Northwest arm is on the right."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
 
     # Y-maze has bins along edges, not just at nodes
-    # Create a realistic trajectory that traverses from straight arm to center to left arm
-    # This creates a clear left turn at the center junction
 
     bin_centers = env.bin_centers
     node_positions = {
@@ -1434,7 +1432,8 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
         distances = np.linalg.norm(bin_centers - pos, axis=1)
         return np.argmin(distances)
 
-    # Find bins along the path: straight → center → left (makes a left turn)
+    # Find bins along the path: straight → center → left arm. Heading South,
+    # the West side is the animal's right, so this is a right turn.
     straight_bin = find_closest_bin(node_positions[1])
     center_bin = find_closest_bin(node_positions[0])
     left_bin = find_closest_bin(node_positions[2])
@@ -1453,24 +1452,17 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=straight_bin,
-        end_bin=left_bin,
         min_samples_per_edge=10,
     )
 
-    # Should detect a left turn
-    assert isinstance(turn_seq, str)
-    assert "left" in turn_seq.lower()
+    assert turn_seq == "right"
 
 
-def test_graph_turn_sequence_ymaze_right(ymaze_env):
-    """Test turn sequence for Y-maze right choice."""
+def test_graph_turn_sequence_ymaze_north_arm_into_east_arm_is_left(ymaze_env):
+    """Walking South down the North arm, the Northeast arm is on the left."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
-
-    # Create a realistic trajectory that traverses from straight arm to center to right arm
-    # This creates a clear right turn at the center junction
 
     bin_centers = env.bin_centers
     node_positions = {
@@ -1483,7 +1475,8 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
         distances = np.linalg.norm(bin_centers - pos, axis=1)
         return np.argmin(distances)
 
-    # Find bins along the path: straight → center → right (makes a right turn)
+    # Find bins along the path: straight → center → right arm. Heading South,
+    # the East side is the animal's left, so this is a left turn.
     straight_bin = find_closest_bin(node_positions[1])
     center_bin = find_closest_bin(node_positions[0])
     right_bin = find_closest_bin(node_positions[3])
@@ -1502,14 +1495,10 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=straight_bin,
-        end_bin=right_bin,
         min_samples_per_edge=10,
     )
 
-    # Should detect a right turn
-    assert isinstance(turn_seq, str)
-    assert "right" in turn_seq.lower()
+    assert turn_seq == "left"
 
 
 def test_graph_turn_sequence_grid_multiple(small_2d_env):
@@ -1530,8 +1519,8 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
     path_positions = [
         bin_centers[0],  # Start
         bin_centers[0] + [2, 0],  # Move right
-        bin_centers[0] + [2, 2],  # Move up (right turn)
-        bin_centers[0] + [0, 2],  # Move left (right turn again)
+        bin_centers[0] + [2, 2],  # Move up (North): a left turn
+        bin_centers[0] + [0, 2],  # Move West: a left turn again
     ]
 
     # Find bins closest to each position
@@ -1552,15 +1541,49 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=path_bins[0],
-        end_bin=path_bins[-1],
         min_samples_per_edge=20,
     )
 
-    # Should detect multiple turns
-    assert isinstance(turn_seq, str)
-    # If there are turns, sequence should contain "-"
-    # May be empty if path is too simple or bins don't form clear turns
+    # East, then North, then West: two counterclockwise turns.
+    assert turn_seq == "left-left"
+
+
+def _turns_along(env, corners, samples_per_bin=60):
+    """Turn labels for a walk that dwells in the bin at each corner, in order."""
+    from neurospatial.behavior.navigation import graph_turn_sequence
+
+    bins = env.bin_at(np.asarray(corners, dtype=float))
+    assert np.all(bins >= 0)
+    return graph_turn_sequence(
+        env, np.repeat(bins, samples_per_bin), min_samples_per_edge=20
+    )
+
+
+@pytest.fixture(scope="module")
+def turn_grid():
+    """A 30 x 30 cm open field with 3 cm bins, x East and y North (y-up)."""
+    x, y = np.meshgrid(np.arange(0.0, 30.0), np.arange(0.0, 30.0))
+    return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=3.0)
+
+
+@pytest.mark.parametrize(
+    ("corners", "expected"),
+    [
+        # Heading North, then West: counterclockwise, the animal's left.
+        ([(16.5, 1.5), (16.5, 16.5), (1.5, 16.5)], "left"),
+        # Heading North, then East: clockwise, the animal's right.
+        ([(1.5, 1.5), (1.5, 16.5), (16.5, 16.5)], "right"),
+        # Heading East, then North (left), then West (left).
+        ([(1.5, 1.5), (16.5, 1.5), (16.5, 16.5), (1.5, 16.5)], "left-left"),
+        # Heading East, then North (left), then East (right).
+        ([(1.5, 1.5), (13.5, 1.5), (13.5, 13.5), (28.5, 13.5)], "left-right"),
+    ],
+)
+def test_graph_turn_sequence_labels_turns_in_the_animal_frame(
+    turn_grid, corners, expected
+):
+    """Left and right are egocentric: +pi/2 from the heading is left (y-up)."""
+    assert _turns_along(turn_grid, corners) == expected
 
 
 def test_graph_turn_sequence_straight(ymaze_env):
@@ -1593,15 +1616,11 @@ def test_graph_turn_sequence_straight(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=center_bin,
-        end_bin=straight_bin,
         min_samples_per_edge=10,
     )
 
-    # Should return empty string (no turns)
-    assert isinstance(turn_seq, str)
-    # For a straight path from center to straight ahead, no turn should be detected
-    # The result might be empty "" or might not contain "left" or "right"
+    # Center → straight ahead is one direction, so no turn.
+    assert turn_seq == ""
 
 
 def test_graph_turn_sequence_min_samples_filter(ymaze_env):
@@ -1637,15 +1656,11 @@ def test_graph_turn_sequence_min_samples_filter(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=center_bin,
-        end_bin=left_bin,
         min_samples_per_edge=50,
     )
 
-    # Should return empty string (brief crossing filtered out)
-    assert isinstance(turn_seq, str)
-    # With only 5 samples on the edge, it should be filtered
-    # Result should be empty or not contain "left"
+    # The 5-sample crossing is below min_samples_per_edge, so nothing is left.
+    assert turn_seq == ""
 
 
 def test_graph_turn_sequence_3d(simple_3d_env):
@@ -1670,43 +1685,18 @@ def test_graph_turn_sequence_3d(simple_3d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=start_bin,
-        end_bin=end_bin,
         min_samples_per_edge=5,  # Lower threshold for 3D
     )
 
-    # Should return a string (might be empty for simple 3D paths)
-    assert isinstance(turn_seq, str)
-    # Function should handle 3D without errors
+    # Turns are read in the x-y plane. The walk climbs in z and steps along y
+    # at constant x, so its x-y direction never changes: no turn to report.
+    assert np.unique(env.bin_centers[np.unique(position_bins), 0]).size == 1
+    assert turn_seq == ""
 
 
 # =============================================================================
 # Public API Export Tests
 # =============================================================================
-
-
-def test_path_progress_unfitted_environment():
-    """Test path_progress raises error for unfitted environment."""
-    import pytest
-
-    from neurospatial import Environment, EnvironmentNotFittedError
-    from neurospatial.behavior.navigation import path_progress
-
-    # Create environment and manually mark as unfitted - deterministic grid
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-    env._is_fitted = False  # Manually mark as unfitted
-
-    # Should raise EnvironmentNotFittedError
-    with pytest.raises(EnvironmentNotFittedError, match="path_progress"):
-        path_progress(
-            np.array([0, 1, 2]),
-            env,
-            start_bins=np.array([0, 0, 0]),
-            goal_bins=np.array([2, 2, 2]),
-        )
 
 
 def test_path_progress_array_length_mismatch():
@@ -1722,59 +1712,14 @@ def test_path_progress_array_length_mismatch():
     env = Environment.from_samples(positions, bin_size=2.0)
 
     # Mismatched lengths
-    with pytest.raises(ValueError, match="Array length mismatch"):
+    with pytest.raises(
+        ValueError, match=r"start_bins= with shape \(2,\), but there are 3 samples"
+    ):
         path_progress(
             np.array([0, 1, 2]),
             env,
             start_bins=np.array([0, 0]),  # Wrong length!
             goal_bins=np.array([2, 2, 2]),
-        )
-
-
-def test_distance_to_region_unfitted_environment():
-    """Test distance_to_region raises error for unfitted environment."""
-    import pytest
-
-    from neurospatial import Environment, EnvironmentNotFittedError
-    from neurospatial.behavior.navigation import distance_to_region
-
-    # Create environment and manually mark as unfitted - deterministic grid
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-    env._is_fitted = False  # Manually mark as unfitted
-
-    # Should raise EnvironmentNotFittedError
-    with pytest.raises(EnvironmentNotFittedError, match="distance_to_region"):
-        distance_to_region(
-            np.array([0, 1, 2]),
-            env,
-            target_bins=5,
-        )
-
-
-def test_graph_turn_sequence_unfitted_environment():
-    """Test graph_turn_sequence raises error for unfitted environment."""
-    import pytest
-
-    from neurospatial import Environment, EnvironmentNotFittedError
-    from neurospatial.behavior.navigation import graph_turn_sequence
-
-    # Create environment and manually mark as unfitted - deterministic grid
-    x = np.linspace(0, 10, 6)
-    xx, yy = np.meshgrid(x, x)
-    positions = np.column_stack([xx.ravel(), yy.ravel()])
-    env = Environment.from_samples(positions, bin_size=2.0)
-    env._is_fitted = False  # Manually mark as unfitted
-
-    # Should raise EnvironmentNotFittedError
-    with pytest.raises(EnvironmentNotFittedError, match="graph_turn_sequence"):
-        graph_turn_sequence(
-            env,
-            position_bins=np.array([0, 1, 2]),
-            start_bin=0,
-            end_bin=2,
         )
 
 
@@ -1826,8 +1771,8 @@ def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions
     assert costs[0] > 0
 
 
-def test_distance_to_region_invalid_scalar_target():
-    """Test distance_to_region with invalid scalar target (-1)."""
+def test_distance_to_region_refuses_scalar_outside_marker():
+    """A single target of -1 (bin_at's outside marker) raises."""
     from neurospatial.behavior.navigation import distance_to_region
 
     # Deterministic grid - no randomness needed
@@ -1838,9 +1783,5 @@ def test_distance_to_region_invalid_scalar_target():
 
     position_bins = np.array([0, 1, 2, 3, 4])
 
-    # Invalid scalar target
-    distances = distance_to_region(position_bins, env, target_bins=-1)
-
-    # Should return all NaN
-    assert distances.shape == (5,)
-    assert np.all(np.isnan(distances))
+    with pytest.raises(BinIndexOutOfRangeError, match="-1 is the value bin_at"):
+        distance_to_region(position_bins, env, target_bins=-1)

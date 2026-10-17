@@ -36,6 +36,8 @@ from matplotlib import colormaps
 from matplotlib.colors import to_hex
 from numpy.typing import NDArray
 
+from neurospatial.animation._region_names import shown_region_names
+
 if TYPE_CHECKING:
     from neurospatial.animation._video_io import VideoReaderProtocol
     from neurospatial.animation.skeleton import Skeleton
@@ -2154,7 +2156,10 @@ class VideoOverlay:
           RGB video frames pre-loaded into memory.
     calibration : VideoCalibration | None, optional
         Coordinate transform from video pixels to environment cm.
-        If None, video is displayed in pixel coordinates without transform.
+        If None, the video frame is stretched over ``env.dimension_ranges``,
+        the extent of the environment's active cells. On a subset, or a grid
+        whose border cells are inactive, that is smaller than the arena the
+        camera saw, so a video of the whole arena needs a calibration there.
         Created using calibrate_from_scale_bar() or calibrate_from_landmarks().
         Default is None.
     times : ndarray of shape (n_frames,), dtype float64, optional
@@ -2444,10 +2449,10 @@ class VideoOverlay:
             reader: NDArray[np.uint8] | Any = self.source
             n_video_frames = self.source.shape[0]
         else:
-            # File path - create VideoReader
-            from neurospatial.animation._video_io import VideoReader
+            # File path - create _VideoReader
+            from neurospatial.animation._video_io import _VideoReader
 
-            reader = VideoReader(
+            reader = _VideoReader(
                 self.source,
                 cache_size=self.cache_size,
                 downsample=self.downsample,
@@ -2755,7 +2760,7 @@ class VideoData:
     For pickle-safety with parallel rendering:
 
     - Pre-loaded arrays (NDArray[np.uint8]) are pickle-safe
-    - VideoReader instances implement pickle protocol (drops cache on pickle)
+    - _VideoReader instances implement pickle protocol (drops cache on pickle)
     """
 
     frame_indices: NDArray[np.int_]
@@ -2798,7 +2803,7 @@ class VideoData:
             frame: NDArray[np.uint8] = self.reader[video_frame_idx]
             return frame
         else:
-            # VideoReader case - uses subscript access
+            # _VideoReader case - uses subscript access
             result: NDArray[np.uint8] = self.reader[video_frame_idx]
             return result
 
@@ -3555,7 +3560,7 @@ def _validate_pickle_ability(
             f"WHY: Parallel video rendering (n_workers > 1) requires pickling "
             f"OverlayData to pass it to worker processes. Unpickleable objects "
             f"include lambdas, closures, local functions, and certain class instances.\n\n"
-            f"{_pickling_guidance(n_workers=n_workers)}"
+            f"{_pickling_guidance('overlays')}"
         ) from e
 
 
@@ -4227,12 +4232,7 @@ def _convert_overlays_to_data(
     # Key 0 means "apply to all frames"
     normalized_regions: dict[int, list[str]] | None = None
     if show_regions:
-        if isinstance(show_regions, bool):
-            # True → all region names from env.regions
-            normalized_regions = {0: list(env.regions.keys())}
-        else:
-            # list[str] → wrap in dict
-            normalized_regions = {0: show_regions}
+        normalized_regions = {0: shown_region_names(env, show_regions)}
 
     # Aggregate all overlay data
     overlay_data = OverlayData(

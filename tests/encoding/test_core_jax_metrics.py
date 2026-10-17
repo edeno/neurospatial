@@ -7,8 +7,6 @@ metrics. Tests verify:
 3. Results are numerically equivalent to NumPy implementations
 4. Functions handle edge cases properly
 5. JAX-specific features (jit, vmap) work correctly
-
-Following TDD approach: tests written before implementation.
 """
 
 from __future__ import annotations

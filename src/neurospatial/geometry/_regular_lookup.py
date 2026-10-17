@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-def _points_to_regular_grid_bin_ind(
+def points_to_regular_grid_bin_ind(
     points: NDArray[np.float64],
     grid_edges: tuple[NDArray[np.float64], ...],
     grid_shape: tuple[int, ...],

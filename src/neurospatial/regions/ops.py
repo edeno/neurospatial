@@ -48,19 +48,27 @@ Example usage (conceptual):
 
 """
 
+from __future__ import annotations
+
 import warnings
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 import shapely
 from numpy.typing import NDArray
 from shapely import points
 from shapely.geometry import Polygon
 
+from neurospatial._exceptions import RegionNotFoundError
+
 from .._constants import POINT_REGION_TOLERANCE
-from ..ops.transforms import SpatialTransform
 from .core import Region, Regions
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from ..ops.transforms import SpatialTransform
 
 
 def _prepare_points(
@@ -300,9 +308,20 @@ def regions_containing_points(
 
     Notes
     -----
-    - If `region_names` contains names not found in `regions`, they are silently ignored.
+    - A name in `region_names` that is not in `regions` raises
+      :class:`~neurospatial.RegionNotFoundError` with the closest name.
 
     """
+    import pandas as pd
+
+    if isinstance(region_names, str):
+        region_names = [region_names]  # one name, not its characters
+    for name in region_names or ():
+        if name not in regions:
+            raise RegionNotFoundError(
+                name, available=list(regions), argument="region_names", in_list=True
+            )
+
     transformed_pts = _prepare_points(pts, transform)
     n_points = transformed_pts.shape[0]
 

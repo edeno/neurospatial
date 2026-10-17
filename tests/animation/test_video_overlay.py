@@ -122,20 +122,18 @@ class TestNapariVideoOverlay:
         - Layer has correct name pattern
         - Layer is an Image type
         """
-        import napari
 
-        viewer = napari.Viewer(show=False)
+        viewer = None
         try:
             # Create frame times
             n_frames = len(video_test_fields)
             frame_times = np.linspace(0, 1.0, n_frames)
 
             # Add field with video overlay
-            video_test_env.animate_fields(
+            viewer = video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
-                viewer=viewer,
                 frame_times=frame_times,
             )
 
@@ -151,7 +149,8 @@ class TestNapariVideoOverlay:
             )
 
         finally:
-            viewer.close()
+            if viewer is not None:
+                viewer.close()
 
     def test_video_spatial_alignment(
         self,
@@ -165,19 +164,17 @@ class TestNapariVideoOverlay:
         - Video layer has an affine transform
         - Transform positions video in environment coordinate space
         """
-        import napari
 
-        viewer = napari.Viewer(show=False)
+        viewer = None
         try:
             # Create frame times
             n_frames = len(video_test_fields)
             frame_times = np.linspace(0, 1.0, n_frames)
 
-            video_test_env.animate_fields(
+            viewer = video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
-                viewer=viewer,
                 frame_times=frame_times,
             )
 
@@ -206,7 +203,8 @@ class TestNapariVideoOverlay:
             )
 
         finally:
-            viewer.close()
+            if viewer is not None:
+                viewer.close()
 
     def test_video_temporal_sync(
         self,
@@ -220,19 +218,17 @@ class TestNapariVideoOverlay:
         - Initial frame is loaded
         - Frame changes when dims slider moves
         """
-        import napari
 
-        viewer = napari.Viewer(show=False)
+        viewer = None
         try:
             # Create frame times
             n_frames = len(video_test_fields)
             frame_times = np.linspace(0, 1.0, n_frames)
 
-            video_test_env.animate_fields(
+            viewer = video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
-                viewer=viewer,
                 frame_times=frame_times,
             )
 
@@ -263,7 +259,8 @@ class TestNapariVideoOverlay:
                 assert video_layer.data is not None, "Video data should persist"
 
         finally:
-            viewer.close()
+            if viewer is not None:
+                viewer.close()
 
 
 # =============================================================================
@@ -292,9 +289,6 @@ class TestVideoExportIntegration:
         """
         output_path = tmp_path / "output_with_video.mp4"
 
-        # Clear cache for pickle safety
-        video_test_env.clear_cache()
-
         # Create frame times
         n_frames = len(video_test_fields)
         frame_times = np.linspace(0, 1.0, n_frames)
@@ -305,7 +299,6 @@ class TestVideoExportIntegration:
             overlays=[video_overlay_array],
             backend="video",
             save_path=str(output_path),
-            fps=10,
             n_workers=1,  # Serial for reliability
             frame_times=frame_times,
         )
@@ -341,9 +334,6 @@ class TestVideoExportIntegration:
         serial_path = tmp_path / "serial_output.mp4"
         parallel_path = tmp_path / "parallel_output.mp4"
 
-        # Clear cache for pickle safety
-        video_test_env.clear_cache()
-
         # Create frame times
         n_frames = len(video_test_fields)
         frame_times = np.linspace(0, 1.0, n_frames)
@@ -354,13 +344,9 @@ class TestVideoExportIntegration:
             overlays=[video_overlay_array],
             backend="video",
             save_path=str(serial_path),
-            fps=10,
             n_workers=1,
             frame_times=frame_times,
         )
-
-        # Clear cache again before parallel
-        video_test_env.clear_cache()
 
         # Parallel rendering
         video_test_env.animate_fields(
@@ -368,7 +354,6 @@ class TestVideoExportIntegration:
             overlays=[video_overlay_array],
             backend="video",
             save_path=str(parallel_path),
-            fps=10,
             n_workers=2,
             frame_times=frame_times,
         )
@@ -424,9 +409,6 @@ class TestVideoExportIntegration:
         below_path = tmp_path / "below.mp4"
         above_path = tmp_path / "above.mp4"
 
-        # Clear cache
-        video_test_env.clear_cache()
-
         # Create frame times
         n_frames = len(video_test_fields)
         frame_times = np.linspace(0, 1.0, n_frames)
@@ -437,13 +419,9 @@ class TestVideoExportIntegration:
             overlays=[overlay_below],
             backend="video",
             save_path=str(below_path),
-            fps=10,
             n_workers=1,
             frame_times=frame_times,
         )
-
-        # Clear cache
-        video_test_env.clear_cache()
 
         # Render with z_order="above"
         video_test_env.animate_fields(
@@ -451,7 +429,6 @@ class TestVideoExportIntegration:
             overlays=[overlay_above],
             backend="video",
             save_path=str(above_path),
-            fps=10,
             n_workers=1,
             frame_times=frame_times,
         )

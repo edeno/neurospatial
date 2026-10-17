@@ -10,8 +10,10 @@ import pytest
 from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
-from neurospatial.arena import MaskArena, OpenArena, UnknownArena, encode_arena
+from neurospatial.arena import MaskArena, OpenArena, UnknownArena
+from neurospatial.geometry._codecs import encode_arena
 from neurospatial.io import from_dict, to_dict
+from neurospatial.layout import create_layout
 
 
 def _arena_record(arena):
@@ -36,7 +38,7 @@ def _regular(*, arena=None, holes=False, n_dims=2):
         ).reshape(-1, n_dims)
         keep = ~np.all((centers > 1) & (centers < 3), axis=1)
         params["positions"] = centers[keep]
-    return Environment.from_layout("RegularGrid", params, arena=arena)
+    return Environment.from_layout(create_layout("RegularGrid", **params), arena=arena)
 
 
 def _walled():
@@ -52,7 +54,7 @@ def test_rebin_preserves_walls_in_the_layout_facade(factor):
     child = parent.rebin(factor)
     assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert child.units == "cm" and child.frame == "camera"
-    assert child.name == "arena_rebinned"
+    assert child.name == "arena"
     assert nx.number_connected_components(child.connectivity) == 2
     sides = child.bin_centers[:, 0] < 2
     assert all(sides[u] == sides[v] for u, v in child.connectivity.edges)
@@ -98,7 +100,7 @@ def _corner_missing_environment(kind):
     if kind == "polygon":
         footprint = box(0, 0, 4, 4).difference(box(0, 0, 1, 1))
         return Environment.from_polygon(
-            footprint, 1.0, connect_diagonal_neighbors=False
+            footprint, bin_size=1.0, connect_diagonal_neighbors=False
         )
     n_dims = 3 if kind == "mask-3d" else 2
     mask = np.ones((4,) * n_dims, dtype=bool)
@@ -151,7 +153,7 @@ def test_factor_rebin_reports_fine_bins_left_outside_every_coarse_cell():
     # Perimeter coarse cells of a circle have centers outside it, so some
     # recorded fine bins have no coarse cell. The warning quantifies the loss.
     circle = Point(0, 0).buffer(10.0, quad_segs=64)
-    fine = Environment.from_polygon(circle, 1.0)
+    fine = Environment.from_polygon(circle, bin_size=1.0)
     with pytest.warns(UserWarning, match="without a new bin") as record:
         coarse = fine.rebin(2)
     lost = coarse.bin_at(fine.bin_centers) < 0
@@ -165,7 +167,7 @@ def test_factor_rebin_reports_fine_bins_left_outside_every_coarse_cell():
 
     # The suggested route covers the whole arena: no fine bin is lost and
     # the exact cells add up to the arena's area.
-    covering = Environment.from_polygon(box(*circle.bounds), 2.0)
+    covering = Environment.from_polygon(box(*circle.bounds), bin_size=2.0)
     exact = Environment.from_bins(covering.clip(circle).binning, arena=fine.arena)
     assert np.all(exact.bin_at(fine.bin_centers) >= 0)
     assert exact.bin_sizes.sum() == pytest.approx(circle.area)
@@ -210,15 +212,15 @@ def test_rebin_nonpolygon_arena_uses_its_containment_contract():
 
 def test_rebin_refuses_when_no_coarse_center_is_in_the_arena():
     parent = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": ((0.0, 6.0),) * 2,
-            "positions": np.array([[0.5, 0.5]]),
-            "dilate": False,
-            "close_gaps": False,
-            "fill_holes": False,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=((0.0, 6.0),) * 2,
+            positions=np.array([[0.5, 0.5]]),
+            dilate=False,
+            close_gaps=False,
+            fill_holes=False,
+        )
     )
     # The only coarse center near the observed cell is (1.5, 1.5), outside it.
     with pytest.raises(ValueError, match=r"coarse.*center.*arena"):
@@ -248,25 +250,18 @@ def test_sparse_rebin_result_remains_in_the_regular_grid_family():
 @pytest.mark.parametrize("holes", [False, True])
 def test_rebin_publishes_only_the_final_environment(monkeypatch, holes):
     parent = _regular(holes=holes)
-    setup = Environment._from_binning.__func__
-    published = []
+    from environment_helpers import record_publications
 
-    def counted(cls, binning, **kwargs):
-        instance = setup(cls, binning, **kwargs)
-        published.append(instance)
-        return instance
-
-    monkeypatch.setattr(Environment, "_from_binning", classmethod(counted))
+    published = record_publications(monkeypatch)
     child = parent.rebin(2)
     assert published == [child]
     assert child._geometry is not parent._geometry
-    assert child._kernel_cache == {}
-    assert child._kdtree_cache is None
+    assert len(child._cache) == 0
 
 
 def test_rebin_arena_survives_subset_copy_and_dict_roundtrip():
     child = _walled().rebin(2)
-    child = child.subset(bins=child.bin_centers[:, 1] < 4)
+    child = child.subset(mask=child.bin_centers[:, 1] < 4)
     restored = from_dict(to_dict(child))
     for variant in (child, copy.deepcopy(child), restored):
         assert variant.arena.domain_known and variant.arena.physical_footprint_known

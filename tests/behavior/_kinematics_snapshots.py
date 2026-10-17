@@ -55,8 +55,7 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     # Unique visit counts avoid depending on an unstable sort's tied-bin order.
     home_bins = np.repeat(np.arange(20), np.arange(10, 30))
     home_times = r.times[: len(home_bins)]
-    # Avoid changing the session-scoped fixture's regions.
-    env = r.env.copy()
+    env = r.env
     region_builder = Regions(env.regions.values())
     region_builder.add("decision", point=tuple(env.bin_centers[bins[4000]]))
     env = env.with_regions(region_builder)

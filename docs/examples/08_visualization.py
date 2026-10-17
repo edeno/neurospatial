@@ -320,7 +320,6 @@ if RUN_VIDEO_EXPORT:
         raise RuntimeError(
             "Install the ffmpeg executable before enabling RUN_VIDEO_EXPORT."
         )
-    env.clear_cache()
     env.animate_fields(
         fields,
         overlays=[*overlays, video_overlay],

@@ -21,10 +21,12 @@ import networkx as nx
 import numpy as np
 import pytest
 import scipy.sparse
-from environment_helpers import publish_environment
+from environment_helpers import built_from, face_graph, publish_environment
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
+from neurospatial.layout import create_layout
 from neurospatial.layout.engines.graph import GraphLayout
 from neurospatial.ops.diffusion import (
     _raw_heat_operator,
@@ -111,7 +113,6 @@ def build_track(bin_size: float, *, straight: bool) -> Environment:
         name="track",
         layout=layout,
         layout_type_used="Graph",
-        layout_params_used=params,
     )
 
 
@@ -172,11 +173,13 @@ def nearest_bin(coords: np.ndarray, target) -> int:
 @pytest.fixture(scope="module")
 def polar_env() -> Environment:
     """Full-circle polar env (non-uniform mass matrix M = annular-sector area)."""
-    return Environment.from_polar_egocentric(
-        distance_range=(0.0, 40.0),
-        angle_range=(-np.pi, np.pi),
-        distance_bin_size=2.0,
-        angle_bin_size=np.pi / 12,
+    return built_from(
+        lambda: Environment.from_polar_egocentric(
+            distance_range=(0.0, 40.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=2.0,
+            angle_bin_size=np.pi / 12,
+        )
     )
 
 
@@ -185,8 +188,7 @@ def mesh_env() -> Environment:
     """Well-shaped flat triangular mesh over a square (uniform point spacing)."""
     boundary = Polygon([(-30, -30), (30, -30), (30, 30), (-30, 30)])
     return Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": boundary, "point_spacing": 4.0},
+        create_layout("TriangularMesh", boundary_polygon=boundary, point_spacing=4.0)
     )
 
 
@@ -271,15 +273,15 @@ def test_sigma_recovery_graph():
     so a source near the junction is not oversmoothed."""
     bandwidth = 5.0
     for bin_size in (1.0, 2.0):
-        env = build_track(bin_size, straight=False)
-        graph_fv, _ = _native_oracle(env).finite_volume_geometry()
+        env = built_from(lambda size=bin_size: build_track(size, straight=False))
+        graph_fv, _ = face_graph(env._binning)
         # Junction (inter-segment) edges: the FV along-track distance must exceed
         # the raw Euclidean chord (which cuts the corner and would oversmooth).
         junction_edges = [
             (u, v)
             for u, v in graph_fv.edges()
-            if graph_fv.nodes[u].get("source_edge_id")
-            != graph_fv.nodes[v].get("source_edge_id")
+            if env.connectivity.nodes[u]["source_edge_id"]
+            != env.connectivity.nodes[v]["source_edge_id"]
         ]
         assert junction_edges, "L-track must have at least one junction edge"
         for u, v in junction_edges:
@@ -308,8 +310,9 @@ def test_sigma_recovery_mesh(mesh_env):
             mesh_env
             if spacing == 4.0
             else Environment.from_layout(
-                kind="TriangularMesh",
-                layout_params={"boundary_polygon": boundary, "point_spacing": spacing},
+                create_layout(
+                    "TriangularMesh", boundary_polygon=boundary, point_spacing=spacing
+                )
             )
         )
         with warnings.catch_warnings():
@@ -355,7 +358,7 @@ def test_density_integrates_to_one(polar_env):
 
 def test_low_level_average_row_stochastic(polar_env):
     """compute_diffusion_kernels(..., mode='average') returns row-stochastic H."""
-    graph_fv, volumes = _native_oracle(polar_env).finite_volume_geometry()
+    graph_fv, volumes = face_graph(polar_env._binning)
     kernel = compute_diffusion_kernels(
         graph_fv, volumes=volumes, sigma=5.0, mode="average"
     )
@@ -366,7 +369,7 @@ def test_low_level_average_row_stochastic(polar_env):
 def test_raw_heat_operator_m_self_adjoint(polar_env):
     """Raw operator (pre clip/normalize): H @ 1 = 1 and M_i H_ij = M_j H_ji on a
     non-uniform-M (polar) env -- the C1 invariants the mode outputs no longer expose."""
-    graph_fv, volumes = _native_oracle(polar_env).finite_volume_geometry()
+    graph_fv, volumes = face_graph(polar_env._binning)
     W = build_W_from_graph(graph_fv)
     H = _raw_heat_operator(W, volumes, sigma=5.0)
 
@@ -385,13 +388,15 @@ def test_corner_split_gives_two_diffusion_components():
     # them in env.connectivity, but the diagonal shares only a corner => A = 0.
     mask = np.array([[True, False], [False, True]], dtype=bool)
     edges = np.array([0.0, 1.0, 2.0])
-    env = Environment.from_grid_mask(
-        active_mask=mask, grid_edges=(edges, edges), connect_diagonal_neighbors=True
+    env = built_from(
+        lambda: Environment.from_grid_mask(
+            active_mask=mask, grid_edges=(edges, edges), connect_diagonal_neighbors=True
+        )
     )
     assert env.n_bins == 2
     assert env.connectivity.has_edge(0, 1), "corner bins must be 8-connected"
 
-    graph_fv, _ = _native_oracle(env).finite_volume_geometry()
+    graph_fv, _ = face_graph(env._binning)
     assert graph_fv.edges[0, 1]["A"] == 0.0, "corner-touching edge must have A == 0"
     assert env._diffusion_geometry.n_components == 2, (
         "corner-only pair must be two W-components"
@@ -582,12 +587,11 @@ def test_mesh_skew_guard_warns():
     # Well-shaped: square, uniform spacing -> right-isoceles triangles, no warning.
     square = Polygon([(-30, -30), (30, -30), (30, 30), (-30, 30)])
     env_ok = Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": square, "point_spacing": 4.0},
+        create_layout("TriangularMesh", boundary_polygon=square, point_spacing=4.0)
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any UserWarning here fails the test
-        _ = env_ok._face_geometry
+        _ = face_geometry(env_ok._cache, env_ok._binning)
 
     # Skewed: a heavily sheared thin parallelogram -> elongated, obtuse triangles.
     # The lattice's Delaunay diagonals are a platform-dependent tie-break; at
@@ -597,20 +601,9 @@ def test_mesh_skew_guard_warns():
     base = [(-30, -8), (30, -8), (30, 8), (-30, 8)]
     sheared = [(x + shear * y, y) for (x, y) in base]
     env_skew = Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": Polygon(sheared), "point_spacing": 4.0},
+        create_layout(
+            "TriangularMesh", boundary_polygon=Polygon(sheared), point_spacing=4.0
+        )
     )
     with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
-        _ = env_skew._face_geometry
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)
+        _ = face_geometry(env_skew._cache, env_skew._binning)

@@ -12,11 +12,8 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.stats.shuffle import (
-    ShuffleTestResult,
-    _validate_circular_shift_settings,
-    shuffle_spike_times_circular,
-)
+from neurospatial.stats import _validate_circular_shift_settings
+from neurospatial.stats.shuffle import ShuffleTestResult, shuffle_spike_times_circular
 
 _SHUFFLE_DEFAULTS = MappingProxyType(
     {"n_shuffles": 1000, "min_shift": 20.0, "alpha": 0.05}

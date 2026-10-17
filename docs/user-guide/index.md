@@ -58,6 +58,7 @@ Each page covers a specific feature area with:
 **Common Tasks:**
 
 - [Creating different environment types](environments.md#factory-methods)
+- [Open-field, linear-track and maze presets](environments.md#presets)
 - [Choosing the right layout engine](layout-engines.md#quick-decision-guide)
 - [Defining regions](regions.md)
 - [Annotating video frames](video-annotation.md)

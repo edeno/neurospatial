@@ -24,7 +24,7 @@ from neurospatial.ops.transforms import (
 )
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 def calibrate_video(

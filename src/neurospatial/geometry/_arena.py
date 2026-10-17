@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import itertools
 import math
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 
@@ -19,6 +18,7 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import ReadOnlyState
 
 __all__ = [
     "Arena",
@@ -67,6 +67,17 @@ class Arena(Protocol):
         """Return exact planar polygonal support when available."""
         ...
 
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Return a box enclosing the known Cartesian domain.
+
+        Returns
+        -------
+        ndarray of float64, shape (2, n_dims), or None
+            Lower and upper corners, or None when the domain is unknown or
+            has no Cartesian box (for example a track without a width).
+        """
+        ...
+
 
 def _error(what: str, fix: str) -> ValueError:
     return ValueError(_format_error(what, fix=fix))
@@ -106,6 +117,11 @@ def _unknown() -> NotImplementedError:
             fix="supply explicit arena geometry or a positive full track width",
         )
     )
+
+
+def _polygon_bounds(polygon: Polygon | MultiPolygon) -> NDArray[np.float64]:
+    """Lower and upper corners of a planar polygon, shape (2, 2)."""
+    return np.array([polygon.bounds[:2], polygon.bounds[2:]])
 
 
 def _polygon(value: Any, name: str = "polygon") -> Polygon | MultiPolygon:
@@ -166,7 +182,7 @@ def _mapped(
     return result
 
 
-def _mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
+def mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
     # Cell vertices use this same array arithmetic. A different affine
     # implementation can round their common vertices differently, inventing
     # slivers where a transformed arena boundary meets its cells.
@@ -177,20 +193,6 @@ def _mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
     unique, indices = np.unique(coordinates, axis=0, return_inverse=True)
     mapped = _mapped(unique, matrix)
     return shapely.set_coordinates(geometry, mapped[indices])
-
-
-class _ArrayState:
-    """Restore owned-array protection after pickle and deepcopy."""
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            if isinstance(value, np.ndarray):
-                value.setflags(write=False)
-            elif isinstance(value, tuple):
-                for item in value:
-                    if isinstance(item, np.ndarray):
-                        item.setflags(write=False)
-            object.__setattr__(self, name, value)
 
 
 @dataclass(frozen=True, eq=False)
@@ -247,6 +249,10 @@ class UnknownArena:
 
     def polygonal_domain(self) -> None:
         """Return no invented polygon."""
+        return None
+
+    def domain_bounds(self) -> None:
+        """An unknown domain has no bounds."""
         return None
 
 
@@ -315,9 +321,13 @@ class OpenArena:
         """Return the immutable stored polygonal domain."""
         return self.polygon
 
+    def domain_bounds(self) -> NDArray[np.float64]:
+        """Bound the stored polygon."""
+        return _polygon_bounds(self.polygon)
+
 
 @dataclass(frozen=True, eq=False)
-class MaskArena(_ArrayState):
+class MaskArena(ReadOnlyState):
     """Closed union of active Cartesian cells, without inferred physical walls.
 
     Parameters
@@ -448,9 +458,28 @@ class MaskArena(_ArrayState):
         ]
         return cast("Polygon | MultiPolygon", shapely.union_all(cells))
 
+    def domain_bounds(self) -> NDArray[np.float64]:
+        """Bound the active cells (their exact union in two dimensions)."""
+        polygon = self.polygonal_domain()
+        if polygon is not None:
+            return _polygon_bounds(polygon)
+        cells = np.argwhere(self.active_mask)
+        return np.array(
+            [
+                [
+                    edge[int(low)]
+                    for edge, low in zip(self.edges, cells.min(axis=0), strict=True)
+                ],
+                [
+                    edge[int(high) + 1]
+                    for edge, high in zip(self.edges, cells.max(axis=0), strict=True)
+                ],
+            ]
+        )
+
 
 @dataclass(frozen=True, eq=False)
-class TrackArena(_ArrayState):
+class TrackArena(ReadOnlyState):
     """Union of exact constant-width capsules around centerline segments.
 
     Parameters
@@ -554,6 +583,17 @@ class TrackArena(_ArrayState):
         """Do not approximate round caps with a polygonal buffer."""
         return None
 
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Bound the capsules of a track with a known width."""
+        if self.width is None:
+            return None
+        return np.array(
+            [
+                self.segments.min(axis=(0, 1)) - self.width / 2,
+                self.segments.max(axis=(0, 1)) + self.width / 2,
+            ]
+        )
+
 
 @dataclass(frozen=True, eq=False)
 class EgocentricSurround:
@@ -566,8 +606,11 @@ class EgocentricSurround:
     angle_range : tuple of float
         Finite increasing angular limits in radians.
     circular : bool
-        Normalize equivalent angles modulo two pi before testing the window.
-        Partial windows retain their configured angular exclusions.
+        Whether the angular axis wraps across the seam, so the bins at the
+        two ends of the angle range are neighbors. Containment does not
+        depend on it: an angle names a direction, so every window compares
+        angles modulo two pi (see :meth:`wrap_angles`), and a partial window
+        keeps its configured angular exclusions.
     """
 
     distance_range: tuple[float, float]
@@ -593,17 +636,52 @@ class EgocentricSurround:
                     "pass two ordered limits with nonnegative radial distances",
                 )
             object.__setattr__(self, name, (float(values[0]), float(values[1])))
+        low, high = self.angle_range
+        if high - low > 2 * np.pi and not np.isclose(
+            high - low, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0
+        ):
+            raise _error(
+                "angle_range spans more than one full turn (2π).",
+                "pass at most one turn; angles a whole turn apart name one direction",
+            )
         object.__setattr__(self, "circular", _boolean(self.circular, "circular"))
 
+    def wrap_angles(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Express each angle in ``[low, low + 2π)`` of the angle range.
+
+        An angle and the same angle plus a whole number of turns name one
+        direction. Distances are unchanged, and a NaN or infinite angle stays
+        NaN.
+
+        Parameters
+        ----------
+        positions : ndarray, shape (n_positions, 2)
+            ``(distance, angle)`` rows, angles in radians.
+
+        Returns
+        -------
+        ndarray, shape (n_positions, 2)
+            A copy with each angle wrapped to start at the range's low limit.
+            On a full circle that is the angle range itself; on a partial
+            window, an angle inside the window is unchanged.
+        """
+        query = np.array(np.atleast_2d(positions), dtype=np.float64, copy=True)
+        low = self.angle_range[0]
+        with np.errstate(invalid="ignore"):
+            query[:, 1] = low + np.remainder(query[:, 1] - low, 2 * np.pi)
+        return query
+
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
-        """Test native ``(distance, angle)`` positions, including window edges."""
+        """Test native ``(distance, angle)`` positions against the closed window.
+
+        The window includes its edges, while the bins are half-open: a row
+        exactly at the outer distance limit, or at the upper angle of a
+        partial window, is inside the window but in no bin, so
+        ``Environment.bin_at`` gives it ``-1``.
+        """
         query, finite = _query(positions, 2)
-        selected = query[finite]
+        selected = self.wrap_angles(query[finite])
         angles = selected[:, 1]
-        if self.circular:
-            angles = self.angle_range[0] + np.remainder(
-                angles - self.angle_range[0], 2 * np.pi
-            )
         inside = np.zeros(len(query), dtype=np.bool_)
         inside[finite] = (
             (selected[:, 0] >= self.distance_range[0])
@@ -624,9 +702,13 @@ class EgocentricSurround:
         """A polar window is not a Cartesian polygon."""
         return None
 
+    def domain_bounds(self) -> None:
+        """A polar window has no Cartesian box."""
+        return None
+
 
 @dataclass(frozen=True, eq=False)
-class _TransformedArena(_ArrayState):
+class _TransformedArena(ReadOnlyState):
     """Owned affine frame with locally bounded inverse arithmetic uncertainty."""
 
     base: Arena
@@ -695,7 +777,7 @@ class _TransformedArena(_ArrayState):
 
     @property
     def walls(self) -> tuple[LineString, ...]:
-        return tuple(_mapped_geometry(wall, self.forward) for wall in self.base.walls)
+        return tuple(mapped_geometry(wall, self.forward) for wall in self.base.walls)
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)
@@ -746,8 +828,17 @@ class _TransformedArena(_ArrayState):
         return (
             None
             if domain is None
-            else cast("Polygon | MultiPolygon", _mapped_geometry(domain, self.forward))
+            else cast("Polygon | MultiPolygon", mapped_geometry(domain, self.forward))
         )
+
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Bound the mapped corners of the base domain's box."""
+        limits = self.base.domain_bounds()
+        if limits is None:
+            return None
+        corners = np.array(list(itertools.product(*limits.T)))
+        mapped = corners @ self.forward[:-1, :-1].T + self.forward[:-1, -1]
+        return np.array([mapped.min(axis=0), mapped.max(axis=0)])
 
 
 def _track_distances(
@@ -859,13 +950,6 @@ def _contains_with_error(
     return inside
 
 
-def _wkb(geometry: shapely.Geometry) -> NDArray[np.uint8]:
-    result: NDArray[np.uint8] = np.frombuffer(
-        shapely.to_wkb(geometry), dtype=np.uint8
-    ).copy()
-    return result
-
-
 @dataclass(frozen=True, eq=False)
 class _CombinedArena:
     """Union of owned component domains without inventing physical walls."""
@@ -915,225 +999,13 @@ class _CombinedArena:
             return None
         return cast("Polygon | MultiPolygon", shapely.union_all(polygons))
 
-
-def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
-    """Encode built-in arena data with local array keys, without I/O.
-
-    Parameters
-    ----------
-    arena : Arena
-        A supported immutable arena value.
-
-    Returns
-    -------
-    metadata : dict
-        JSON-compatible tagged data with codec version one.
-    arrays : dict of ndarray
-        Independent writable numerical arrays using local field names.
-    """
-    meta: dict[str, Any] = {"codec": type(arena).__name__, "codec_version": 1}
-    arrays: dict[str, NDArray[Any]] = {}
-    if type(arena) is _CombinedArena:
-        entries = []
-        for index, child in enumerate(arena.children):
-            entry, values = encode_arena(child)
-            entries.append(entry)
-            arrays.update(
-                {f"children/{index}/{key}": value for key, value in values.items()}
-            )
-        meta["children"] = entries
-    elif type(arena) is UnknownArena:
-        meta.update(n_dims=arena.n_dims, coordinate_kind=arena.coordinate_kind)
-    elif type(arena) is OpenArena:
-        meta.update(
-            n_walls=len(arena.walls),
-            physical_footprint_known=arena.physical_footprint_known,
-        )
-        arrays["polygon_wkb"] = _wkb(arena.polygon)
-        arrays.update(
-            {f"walls_wkb_{i}": _wkb(wall) for i, wall in enumerate(arena.walls)}
-        )
-    elif type(arena) is MaskArena:
-        meta.update(
-            n_dims=arena.n_dims, physical_footprint_known=arena.physical_footprint_known
-        )
-        arrays.update(
-            {f"edges_{axis}": edge.copy() for axis, edge in enumerate(arena.edges)}
-        )
-        arrays["active_mask"] = arena.active_mask.copy()
-    elif type(arena) is TrackArena:
-        meta["width"] = arena.width
-        arrays["segments"] = arena.segments.copy()
-    elif type(arena) is EgocentricSurround:
-        meta.update(
-            distance_range=list(arena.distance_range),
-            angle_range=list(arena.angle_range),
-            circular=arena.circular,
-        )
-    elif type(arena) is _TransformedArena:
-        base_meta, base_arrays = encode_arena(arena.base)
-        meta["base"] = base_meta
-        arrays["forward"] = arena.forward.copy()
-        arrays.update({f"base/{key}": value for key, value in base_arrays.items()})
-    else:
-        raise _error(
-            f"Cannot encode unregistered arena type {type(arena).__name__!r}.",
-            "use a built-in arena type with a supported codec",
-        )
-    return meta, arrays
-
-
-def _count(meta: Mapping[str, Any], name: str, *, minimum: int = 0) -> int:
-    value = meta[name]
-    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-        raise _error(
-            f"{name} must be an integer >= {minimum}.", "restore valid arena metadata"
-        )
-    return int(value)
-
-
-def _read_wkb(arrays: Mapping[str, NDArray[Any]], name: str) -> shapely.Geometry:
-    data = np.asarray(arrays[name])
-    if data.ndim != 1 or data.dtype != np.uint8:
-        raise _error(
-            f"{name} must be a one-dimensional uint8 WKB array.",
-            "restore valid arena geometry bytes",
-        )
-    return cast("shapely.Geometry", shapely.from_wkb(data.tobytes()))
-
-
-def _check_arena_nesting(meta: Mapping[str, Any]) -> None:
-    """Bound composite nesting without limiting valid affine histories."""
-    stack: list[tuple[object, int, bool]] = [(meta, 0, False)]
-    active: set[int] = set()
-    while stack:
-        value, depth, leaving = stack.pop()
-        if leaving:
-            active.remove(id(value))
-            continue
-        if depth > 32:
-            raise ValueError("Arena nesting exceeds 32 levels; flatten the domains.")
-        if not isinstance(value, Mapping):
-            continue
-        if id(value) in active:
-            raise ValueError("Cyclic arena metadata cannot describe a valid domain.")
-        active.add(id(value))
-        stack.append((value, depth, True))
-        if value.get("codec") == "_CombinedArena":
-            children = value.get("children", ())
-            if isinstance(children, (list, tuple)):
-                stack.extend((child, depth + 1, False) for child in children)
-        elif value.get("codec") == "_TransformedArena":
-            stack.append((value.get("base", {}), depth, False))
-
-
-def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) -> Arena:
-    """Validate and own an arena payload, without builders or I/O.
-
-    Parameters
-    ----------
-    meta : mapping
-        Tagged arena metadata produced by :func:`encode_arena`.
-    arrays : mapping of ndarray
-        Local arrays; all published array buffers are copied.
-
-    Returns
-    -------
-    Arena
-        Validated immutable geometry with protected owned arrays.
-
-    Raises
-    ------
-    ValueError
-        If a codec/version is unknown or stored geometry is malformed.
-    """
-    _check_arena_nesting(meta)
-    try:
-        kind = meta.get("codec")
-        if isinstance(kind, str) and kind not in {
-            "UnknownArena",
-            "OpenArena",
-            "MaskArena",
-            "TrackArena",
-            "EgocentricSurround",
-            "_TransformedArena",
-            "_CombinedArena",
-        }:
-            from neurospatial.extensions import _decode_snapshot
-
-            snapshot = _decode_snapshot(meta, arrays, "")
-            if not isinstance(snapshot, Arena):
-                raise ValueError("The installed adapter must decode an arena snapshot.")
-            return snapshot
-        if _count(meta, "codec_version", minimum=1) != 1:
-            raise _error(
-                "Unsupported arena codec version.",
-                "read this record with a version that supports its arena codec",
-            )
-        kind = meta["codec"]
-        if kind == "_CombinedArena":
-            return _CombinedArena(
-                tuple(
-                    decode_arena(
-                        entry,
-                        {
-                            key.removeprefix(f"children/{index}/"): value
-                            for key, value in arrays.items()
-                            if key.startswith(f"children/{index}/")
-                        },
-                    )
-                    for index, entry in enumerate(meta["children"])
-                )
-            )
-        if kind == "UnknownArena":
-            return UnknownArena(
-                _count(meta, "n_dims", minimum=1),
-                coordinate_kind=meta["coordinate_kind"],
-            )
-        if kind == "OpenArena":
-            return OpenArena(
-                cast("Polygon | MultiPolygon", _read_wkb(arrays, "polygon_wkb")),
-                walls=tuple(
-                    cast("LineString", _read_wkb(arrays, f"walls_wkb_{i}"))
-                    for i in range(_count(meta, "n_walls"))
-                ),
-                physical_footprint_known=_boolean(
-                    meta["physical_footprint_known"], "physical_footprint_known"
-                ),
-            )
-        if kind == "MaskArena":
-            return MaskArena(
-                tuple(
-                    arrays[f"edges_{axis}"]
-                    for axis in range(_count(meta, "n_dims", minimum=1))
-                ),
-                arrays["active_mask"],
-                physical_footprint_known=_boolean(
-                    meta["physical_footprint_known"], "physical_footprint_known"
-                ),
-            )
-        if kind == "TrackArena":
-            return TrackArena(arrays["segments"], meta["width"])
-        if kind == "EgocentricSurround":
-            return EgocentricSurround(
-                meta["distance_range"],
-                meta["angle_range"],
-                _boolean(meta["circular"], "circular"),
-            )
-        if kind == "_TransformedArena":
-            base_arrays = {
-                key.removeprefix("base/"): value
-                for key, value in arrays.items()
-                if key.startswith("base/")
-            }
-            return _TransformedArena(
-                decode_arena(meta["base"], base_arrays), arrays["forward"]
-            )
-        raise _error(
-            f"Unknown arena codec {kind!r}.",
-            "install a version supporting this required arena codec",
-        )
-    except (KeyError, TypeError, shapely.errors.GEOSException) as exc:
-        raise _error(
-            f"Malformed arena payload: {exc}.", "restore a complete valid arena record"
-        ) from exc
+    def domain_bounds(self) -> NDArray[np.float64] | None:
+        """Bound the union, or every component box when it is not polygonal."""
+        polygon = self.polygonal_domain()
+        if polygon is not None:
+            return _polygon_bounds(polygon)
+        limits = [child.domain_bounds() for child in self.children]
+        if any(limit is None for limit in limits):
+            return None
+        children = np.array(limits)
+        return np.array([children[:, 0].min(axis=0), children[:, 1].max(axis=0)])

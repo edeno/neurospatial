@@ -115,8 +115,8 @@ compute_spatial_rate(env, spike_times, times, positions, ...)
 
 # This matches the existing neurospatial API:
 env.occupancy(times, positions)
-env.smooth(field, bandwidth)
-map_points_to_bins(env, points)
+env.smooth(field, bandwidth=bandwidth)
+env.nearest_bin(positions)
 distance_field(env.connectivity, sources)
 ```
 
@@ -376,7 +376,7 @@ print(f"Spatial information: {np.sum(place_field > 0.5 * np.nanmax(place_field))
 For complete parameter descriptions and examples, see:
 
 - [`compute_spatial_rate()`](../api/neurospatial/encoding/spatial.md#neurospatial.encoding.spatial.compute_spatial_rate) - Place field computation
-- [`bin_spike_train()`](../api/neurospatial/encoding/_binning.md#neurospatial.encoding._binning.bin_spike_train) - Spike binning helper
+- [`bin_spike_train()`](../api/neurospatial/encoding/_spatial_counts.md#neurospatial.encoding._spatial_counts.bin_spike_train) - Spike binning helper
 - [`Environment.occupancy()`](../api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.occupancy) - Occupancy computation
 - [`Environment.smooth()`](../api/neurospatial/environment/core.md#neurospatial.environment.core.Environment.smooth) - Spatial field smoothing
 

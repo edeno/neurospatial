@@ -1,4 +1,4 @@
-"""Pure coordinate conversion and point assignment on hexagonal cells."""
+"""Pure coordinate conversion, point assignment and neighbors on hexagonal cells."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 MIN_HEX_RADIUS = 1e-10
 
 
-def _cartesian_to_fractional_cube(
+def cartesian_to_fractional_cube(
     points_x: NDArray[np.float64],
     points_y: NDArray[np.float64],
     hex_radius: float,
@@ -77,7 +77,7 @@ def _cartesian_to_fractional_cube(
     return q_frac, r_frac, s_frac
 
 
-def _round_fractional_cube_to_integer_axial(
+def round_fractional_cube_to_integer_axial(
     q_frac: NDArray[np.float64],
     r_frac: NDArray[np.float64],
     s_frac: NDArray[np.float64],
@@ -143,7 +143,7 @@ def _round_fractional_cube_to_integer_axial(
     return q_axial, r_axial
 
 
-def _axial_to_offset_bin_indices(
+def axial_to_offset_bin_indices(
     q_axial: NDArray[np.int_],
     r_axial: NDArray[np.int_],
     n_hex_x: int,
@@ -196,7 +196,7 @@ def _axial_to_offset_bin_indices(
     return final_bin_idx
 
 
-def _points_to_hex_bin_ind(
+def points_to_hex_bin_ind(
     points: NDArray[np.float64],
     grid_offset_x: float,
     grid_offset_y: float,
@@ -255,18 +255,18 @@ def _points_to_hex_bin_ind(
     adj_points_y: NDArray[np.float64] = valid_points[:, 1] - grid_offset_y
 
     # Convert Cartesian to fractional cube coordinates
-    q_frac, r_frac, s_frac = _cartesian_to_fractional_cube(
+    q_frac, r_frac, s_frac = cartesian_to_fractional_cube(
         adj_points_x,
         adj_points_y,
         hex_radius,
     )
 
     # Round fractional cube coordinates to integer axial coordinates
-    q_axial, r_axial = _round_fractional_cube_to_integer_axial(q_frac, r_frac, s_frac)
+    q_axial, r_axial = round_fractional_cube_to_integer_axial(q_frac, r_frac, s_frac)
 
     # Convert axial coordinates to 1D bin indices
     n_hex_y, n_hex_x = centers_shape
-    bin_indices_for_valid_points = _axial_to_offset_bin_indices(
+    bin_indices_for_valid_points = axial_to_offset_bin_indices(
         q_axial,
         r_axial,
         n_hex_x,
@@ -276,3 +276,32 @@ def _points_to_hex_bin_ind(
     output_indices[valid_mask] = bin_indices_for_valid_points
 
     return output_indices
+
+
+def get_hex_grid_neighbor_deltas(is_odd_row: bool) -> list[tuple[int, int]]:
+    """Return (delta_col, delta_row) coordinate deltas for hexagon neighbors.
+
+    This is for an "odd-r" pointy-top hex grid, where odd rows (1, 3, ...)
+    are typically shifted right relative to even rows (0, 2, ...).
+    The y-axis (row index) increases "upwards" in grid coordinates.
+
+    Parameters
+    ----------
+    is_odd_row : bool
+        True if the current hexagon's row index is odd, False otherwise.
+
+    Returns
+    -------
+    List[Tuple[int, int]]
+        A list of 6 (delta_col, delta_row) tuples, each representing the
+        offset to one of the 6 neighbors.
+
+    """
+    if is_odd_row:
+        # Neighbors for an odd row (shifted right): E, W, NW, NE, SW, SE
+        # (dc, dr)
+        return [(1, 0), (-1, 0), (0, 1), (1, 1), (0, -1), (1, -1)]
+    # Even row
+    # Neighbors for an even row: E, W, NW, NE, SW, SE
+    # (dc, dr)
+    return [(1, 0), (-1, 0), (-1, 1), (0, 1), (-1, -1), (0, -1)]

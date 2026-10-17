@@ -4,19 +4,13 @@ from __future__ import annotations
 
 import copy as copy_module
 import logging
-import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
-from functools import cached_property
 from typing import (
     TYPE_CHECKING,
     Any,
-    ClassVar,
     Generic,
     Literal,
-    NoReturn,
     TypeVar,
-    cast,
 )
 
 import networkx as nx
@@ -26,62 +20,122 @@ from scipy import sparse
 from typing_extensions import Self
 
 from neurospatial._exceptions import _format_error
-from neurospatial._logging import log_environment_created
-from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._keyword_hint import keyword_hint
+from neurospatial.environment._affine import _apply_transform
+from neurospatial.environment._cache import (
+    BIN_ATTRIBUTES,
+    BOUNDARY_BINS,
+    DIFFERENTIAL_OPERATOR,
+    DIVERGENCE_OPERATOR,
+    EDGE_ATTRIBUTES,
+    AnalysisCache,
+)
+from neurospatial.environment._cartesian import (
+    cartesian_only,
+    cartesian_only_members,
+)
+from neurospatial.environment._clipping import _clip
+from neurospatial.environment._combine import _combine
+from neurospatial.environment._factories import (
+    _from_bins,
+    _from_graph,
+    _from_grid_mask,
+    _from_layout,
+    _from_nwb,
+    _from_pixel_mask,
+    _from_polygon,
+    _from_samples,
+    _linear_track,
+    _maze,
+    _open_field,
+)
+from neurospatial.environment._fields import (
+    _compute_gaussian_kernel,
+    _compute_kernel,
+    _diffuse,
+    _interpolate,
+    _mrf_basis,
+    _smooth,
+    diffusion_eigenbasis,
+    diffusion_geometry,
+    require_face_geometry,
+)
+from neurospatial.environment._lookup import center_tree, nearest_bin
+from neurospatial.environment._metrics import (
+    _bin_attributes,
+    _copy_attributes,
+    _edge_attributes,
+    _get_bridge_attributes,
+)
+from neurospatial.environment._polar import _create_polar_environment
 from neurospatial.environment._publication import (
     UNSET,
-    _freeze_geometry_arrays,
-    _freeze_graph_attributes,
-    _GeometryView,
+    _diffusion_geometry_view,
     _Metadata,
-    _MetadataView,
+    _Provenance,
     _PublishedGeometry,
+    _replace_metadata,
+    _restored_state,
     _Unset,
+    editable_graph,
+    publish_derived,
 )
-
-# Older pickles resolve these private globals through core. The aliases keep
-# that lookup working while each type has one implementation in _publication.
-from neurospatial.environment._publication import (
-    _PublishedGraph as _PublishedGraph,
+from neurospatial.environment._queries import (
+    _bin_center_of,
+    _components,
+    _distance_to,
+    _linear_to_nd,
+    _path_between,
+    _reachable_from,
+    _rings,
+    _to_linear,
 )
-from neurospatial.environment._publication import (
-    _ReadOnlyGraphAttributes as _ReadOnlyGraphAttributes,
+from neurospatial.environment._rebin import _rebin, warn_rebin_losses
+from neurospatial.environment._regions import (
+    _bins_in_region,
+    _owned_regions,
+    _region_membership,
 )
-from neurospatial.environment._publication import (
-    _ReadOnlyGraphMetadata as _ReadOnlyGraphMetadata,
+from neurospatial.environment._subset import _subset
+from neurospatial.environment._summary import _info, _repr, _repr_html
+from neurospatial.environment._targets import (
+    REGION_TARGET_WHY,
+    TARGET_WHY,
+    former_targets,
+    resolve_targets,
 )
-from neurospatial.environment._rebin import _rebin_factor, _rebin_resolution
-from neurospatial.environment.cartesian import (
-    CARTESIAN_GRID_OPERATIONS,
-    CARTESIAN_OPERATIONS,
-)
-from neurospatial.environment.decorators import check_fitted
-from neurospatial.environment.fields import _interpolate
-from neurospatial.environment.metrics import (
-    _cartesian_boundary_bins,
-)
-from neurospatial.environment.trajectory import (
+from neurospatial.environment._track_width import _with_track_width
+from neurospatial.environment._trajectory import (
     BinSequenceWithRuns,
     _bin_sequence,
     _occupancy,
+    _transitions,
 )
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._coordinates import (
+from neurospatial.environment._visualization import (
+    PlotLabels,
+    _plot,
+    _plot_1d,
+    _plot_field,
+)
+from neurospatial.geometry import (
+    Binning,
     CartesianSystem,
     EgocentricPolarSystem,
-    polar_circularity,
+    boundary_bins,
+    composition_bin_sources,
+    composition_component_keys,
+    locate,
+    own_binning,
 )
-from neurospatial.layout.base import LayoutEngine
-from neurospatial.layout.factories import LayoutType
-from neurospatial.layout.validation import (
-    GraphValidationError,
-    validate_connectivity_graph,
-)
-from neurospatial.ops.binning import TieBreakStrategy
-from neurospatial.ops.calculus import (
+from neurospatial.layout import LayoutType
+from neurospatial.ops import (
     _compute_differential_operator,
     _compute_divergence_operator,
+    _diffusion_apply_rtol,
+    _regions_mask,
 )
+from neurospatial.ops.distance import geodesic_distance_between_points
+from neurospatial.ops.mapping import TieBreakStrategy
 from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
@@ -94,18 +148,11 @@ if TYPE_CHECKING:
     from matplotlib.colors import Colormap
     from scipy.spatial import cKDTree
 
-    from neurospatial.animation.config import ScaleBarConfig
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.environment._protocols import CartesianLookupConsumer
-    from neurospatial.environment.factories import PolygonType
-    from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
-    from neurospatial.geometry._polygon import ClipMapping
-    from neurospatial.ops._types import (
-        DiffusionEigenbasisCache,
-        KernelMode,
-        MRFEigenbasisCache,
-    )
+    from neurospatial.geometry import Arena, ClipMapping, DiffusionGeometry
+    from neurospatial.layout import ScaleBarConfig
+    from neurospatial.layout.base import LayoutEngine
+    from neurospatial.ops import KernelMode
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.ops.transforms import Affine2D, AffineND
 
@@ -121,15 +168,56 @@ else:
     _C = TypeVar("_C", bound=CartesianSystem | EgocentricPolarSystem)
 
 
-@dataclass
+_METADATA_FIELDS = frozenset({"name", "units", "frame"})
+
+
+def _read_only(cls: type, name: str) -> AttributeError:
+    """The error for assigning or deleting a public Environment attribute."""
+    if not hasattr(cls, name):
+        return AttributeError(
+            _format_error(
+                f"Environment has no attribute {name!r} and does not accept new ones.",
+                why="Why: an environment never changes after it is built.",
+                fix=(
+                    "keep your own labels next to it, e.g. in a dict keyed by "
+                    "env.name, or rename it with env.with_metadata(name=...)"
+                ),
+            )
+        )
+    if name in _METADATA_FIELDS:
+        return AttributeError(
+            f"Environment.{name} is read-only; use env.with_metadata({name}=...)."
+        )
+    if name == "regions":
+        return AttributeError(
+            "Environment.regions is read-only; use env.with_regions(regions)."
+        )
+    return AttributeError(
+        _format_error(
+            f"Environment.{name} is read-only.",
+            why=(
+                "Why: cached kernels, operators and lookups belong to the "
+                "geometry the environment was built with, so replacing part "
+                "of it would leave them stale."
+            ),
+            fix=(
+                "build a new environment instead, e.g. with a factory, "
+                "subset, rebin or apply_transform"
+            ),
+        )
+    )
+
+
 class Environment(Generic[_C]):
     """A discretized environment with owned coordinate meaning and connectivity.
 
     ``Environment`` is the central user-facing spatial type. Each instance
     declares whether ``bin_centers`` hold Cartesian ``(x, y[, z])`` positions
-    or egocentric ``(distance, angle)`` coordinates. Methods such as ``bin_at``,
-    ``contains``, ``distance_between`` and ``apply_transform`` require Cartesian
-    positions. The shared ``distance_to`` method guards its Euclidean mode.
+    or egocentric ``(distance, angle)`` coordinates. Methods such as
+    ``apply_transform``, ``rebin`` and ``interpolate`` require Cartesian
+    positions; ``bin_at``, ``contains``, ``occupancy`` and the bin-sequence
+    methods read ``(distance, angle)`` rows on a polar environment. The
+    shared ``distance_to`` method guards its Euclidean mode.
 
     Instances are created via factory classmethods on ``Environment``
     (``from_samples``, ``from_polygon``, ``from_grid_mask``,
@@ -139,6 +227,26 @@ class Environment(Generic[_C]):
     from_polar_egocentric factory returns the same runtime class with radius in
     length units and angle in radians. Cartesian-only methods refuse polar
     instances before interpreting those coordinates.
+
+    Notes
+    -----
+    **Missing data.** NaN marks a missing value, never zero.
+
+    - Per-sample inputs (``bin_at``, ``contains``, ``nearest_bin``,
+      ``interpolate``, and the positions given to ``occupancy``,
+      ``bin_sequence`` and ``transitions``): a sample with a NaN coordinate
+      is missing. It gets bin ``-1``, ``False`` or a NaN value, and adds no
+      occupancy time and no transition. ``-1`` also marks samples outside the
+      environment.
+    - Explicit targets (``points=`` in ``distance_between``, ``distance_to``,
+      ``neighbors`` and the other target queries) refuse NaN with an error,
+      because a missing target has no answer. ``inf`` from
+      ``distance_between`` only ever means "unreachable".
+    - Fields (``smooth``, ``diffuse``, ``interpolate``): a NaN bin has no
+      value. Average-mode smoothing averages over the observed bins and fills
+      holes from them; a bin stays NaN only when almost none of its smoothing
+      weight falls on observed bins. The mass-conserving modes refuse NaN
+      (see Missing bins in ``smooth``).
 
     Examples
     --------
@@ -154,64 +262,88 @@ class Environment(Generic[_C]):
 
     _metadata: _Metadata
     _regions: Regions
-    _layout_category: str
+    _provenance: _Provenance
+    _geometry: _PublishedGeometry[_C]
+    _cache: AnalysisCache
 
-    name = _MetadataView[str]()
+    def __setattr__(self, name: str, value: object) -> None:
+        """Refuse public attribute assignment: an environment never changes."""
+        if not name.startswith("_"):
+            raise _read_only(type(self), name)
+        object.__setattr__(self, name, value)
 
-    _geometry: _PublishedGeometry = field(init=False, repr=False)
+    def __delattr__(self, name: str) -> None:
+        """Refuse public attribute deletion: an environment never changes."""
+        if not name.startswith("_"):
+            raise _read_only(type(self), name)
+        object.__delattr__(self, name)
 
-    bin_centers = _GeometryView[NDArray[np.float64]]()
+    @property
+    def name(self) -> str:
+        """Environment name; change it with ``env.with_metadata(name=...)``."""
+        return self._metadata.name
 
-    connectivity = _GeometryView[nx.Graph]()
+    @property
+    def units(self) -> str | None:
+        """Length units of the coordinates, such as ``"cm"``, or None."""
+        return self._metadata.units
 
-    dimension_ranges = _GeometryView["Sequence[tuple[float, float]] | None"]()
+    @property
+    def frame(self) -> str | None:
+        """Coordinate frame label, such as ``"room"``, or None."""
+        return self._metadata.frame
 
-    grid_edges = _GeometryView["tuple[NDArray[np.float64], ...] | None"]()
+    @property
+    def bin_centers(self) -> NDArray[np.float64]:
+        """Bin centers, shape ``(n_bins, n_dims)``, as a read-only array."""
+        centers: NDArray[np.float64] = self._binning.bins.centers.view()
+        return centers
 
-    grid_shape = _GeometryView["tuple[int, ...] | None"]()
+    @property
+    def connectivity(self) -> nx.Graph:
+        """Frozen navigation graph over bin IDs; ``to_networkx()`` copies it."""
+        return self._geometry.graph
 
-    active_mask = _GeometryView["NDArray[np.bool_] | None"]()
+    @property
+    def dimension_ranges(self) -> tuple[tuple[float, float], ...] | None:
+        """``(low, high)`` per coordinate axis covered by the bins' cells, or None.
+
+        Every layout reports the extent of its cells: a grid its active
+        cells (``grid_edges`` keeps the full lattice, inactive cells
+        included); hexagons their corners; a mesh its boundary, or the
+        triangles a subset keeps; a
+        track the stretch of centerline its bins cover (the centerline
+        alone, not the track's width). A subset therefore never reports a
+        larger range than its parent. None only for bins without cells or
+        declared ranges, such as explicit point bins.
+        """
+        return self._binning.dimension_ranges
+
+    @property
+    def grid_edges(self) -> tuple[NDArray[np.float64], ...]:
+        """Cell edges per axis of the full grid; empty for bins without a grid."""
+        return tuple(edge.view() for edge in self._geometry.grid.edges)
+
+    @property
+    def grid_shape(self) -> tuple[int, ...]:
+        """Shape of the full logical grid, inactive cells included."""
+        return self._geometry.grid.shape
+
+    @property
+    def active_mask(self) -> NDArray[np.bool_]:
+        """Read-only mask of the active cells of the full grid, shape ``grid_shape``."""
+        mask: NDArray[np.bool_] = self._geometry.grid.active_mask.view()
+        return mask
 
     @property
     def regions(self) -> Regions:
         """Owned immutable named regions; edit a standalone Regions builder."""
         return self._regions
 
-    @regions.setter
-    def regions(self, value: Regions) -> NoReturn:
-        raise AttributeError(
-            "Environment.regions is read-only; use env.with_regions(regions)."
-        )
-
-    @regions.deleter
-    def regions(self) -> NoReturn:
-        raise AttributeError(
-            "Environment.regions is read-only; use env.with_regions(regions)."
-        )
-
-    units = _MetadataView[str | None]()
-
-    frame = _MetadataView[str | None]()
-
     @property
     def _is_polar(self) -> bool:
         """Coordinate kind from the owned per-instance descriptor."""
         return isinstance(self._geometry.coordinates, EgocentricPolarSystem)
-
-    _is_linearized_track_env: bool = field(init=False)
-
-    _is_fitted: bool = field(init=False, default=False)
-
-    _kdtree_cache: cKDTree | None = field(init=False, default=None, repr=False)
-
-    _kernel_cache: dict[
-        tuple[float, KernelMode],
-        NDArray[np.float64],
-    ] = field(init=False, default_factory=dict, repr=False)
-
-    _layout_type_used: str | None = field(init=False, default=None)
-
-    _layout_params_used: dict[str, Any] = field(init=False, default_factory=dict)
 
     def __init__(self) -> None:
         """Use an Environment factory to build owned geometry and metadata."""
@@ -223,58 +355,26 @@ class Environment(Generic[_C]):
             )
         )
 
-    def __getstate__(self) -> dict[str, Any]:
-        """Export owned state without copying or serializing transient analyses."""
-        state = self.__dict__.copy()
-        for name in ("_kernel_cache", "_kdtree_cache", "_state_version"):
-            state.pop(name, None)
-        # Older builder-free values may carry caches for retired analyses.
-        for name in tuple(state):
-            if name.startswith("_versioned_cache__"):
-                state.pop(name)
-        for cls in type(self).__mro__:
-            for name, descriptor in vars(cls).items():
-                if isinstance(descriptor, cached_property):
-                    state.pop(name, None)
-        return state
+    def __setstate__(self, state: object) -> None:
+        """Restore owned state; the analysis cache unpickles empty.
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore owned state and reset transient caches without a builder."""
-        self.__dict__.update(state)
-        if "_layout" in state or "layout" in state:
-            raise ValueError(
-                "Legacy layout-bearing pickles are not supported; load a dictionary, file or NWB export to migrate."
-            )
-        if self._is_fitted and getattr(self._geometry, "binning", None) is None:
-            raise ValueError(
-                "Environment pickle is missing owned binning data; load a dictionary, file or NWB export instead."
-            )
-        if self._is_fitted:
-            from neurospatial.geometry._ownership import own_arena
+        The geometry records mark their arrays read-only again as they are
+        unpickled.
 
-            assert self._geometry.arena is not None
-            self._geometry = replace(
-                self._geometry,
-                arena=own_arena(self._geometry.arena),
-            )
-            _freeze_graph_attributes(self._geometry.connectivity)
-            self._regions = self._validate_regions(self._regions)
-            self._reset_analysis_caches()
-        self._freeze_geometry_arrays()
-
-    def _freeze_geometry_arrays(self) -> None:
-        """Own immutable buffers; public descriptors expose separate array headers."""
-        self._geometry = _freeze_geometry_arrays(self._geometry)
+        Raises
+        ------
+        TypeError
+            If ``state`` is not the state of an Environment pickled by this
+            version of neurospatial.
+        """
+        self.__dict__.update(_restored_state(state))
 
     @property
     def _binning(self) -> Binning:
         """The binning snapshot published with the current geometry."""
-        binning = self._geometry.binning
-        assert binning is not None
-        return binning
+        return self._geometry.binning
 
     @property
-    @check_fitted
     def binning(self) -> Binning:
         """Return a detached snapshot of bins, lookup and geometry components.
 
@@ -285,8 +385,10 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        The returned records and NumPy array headers are independently owned.
-        Editing their shapes or writable flags cannot change this environment.
+        The returned records are a copy that shares no array with this
+        environment. Their arrays are read-only, so an accidental write
+        raises, and reshaping one in place (``array.shape = ...``), which a
+        read-only array allows, cannot change this environment.
         Native face recipes remain lazy; reading this property does not build
         numerical geometry. To pass a native Cartesian snapshot to from_bins(),
         explicitly replace its faces with KnownFaces(snapshot.faces.build()).
@@ -296,119 +398,98 @@ class Environment(Generic[_C]):
         the Cartesian from_bins() factory. Use environment storage to restore
         an unchanged polar environment.
         """
-        from neurospatial.geometry._ownership import own_binning
-
         return own_binning(self._binning)
 
     @property
-    @check_fitted
     def arena(self) -> Arena:
-        """Continuous domain, distinguished from the active analysis bins."""
-        arena = self._geometry.arena
-        assert arena is not None
-        return copy_module.deepcopy(arena)
+        """Continuous domain, distinguished from the active analysis bins.
+
+        The owned, immutable record is returned without copying.
+        """
+        return self._geometry.arena
 
     @property
-    @check_fitted
     def clip_mapping(self) -> ClipMapping | None:
-        """Most recent clip's source-bin mapping, or None before clipping."""
-        return copy_module.deepcopy(self._geometry.clip_mapping)
+        """Most recent clip's source-bin mapping, or None before clipping.
+
+        The owned, immutable record is returned without copying.
+        """
+        return self._binning.clip_mapping
 
     @property
-    @check_fitted
     def edge_pairs(self) -> NDArray[np.intp]:
         """Oriented neighbor pairs in gradient and flux order, shape (n_edges, 2).
 
         This order preserves explicit bin input, and can differ from NetworkX
-        edge iteration. The returned array is independent and read-only.
+        edge iteration. The returned array is read-only.
         """
-        pairs: NDArray[np.intp] = self._binning.bins.pairs.copy()
-        pairs.setflags(write=False)
+        pairs: NDArray[np.intp] = self._binning.bins.pairs.view()
         return pairs
 
-    @check_fitted
     def to_networkx(self) -> nx.Graph:
         """Return a detached editable graph with bin IDs and weighted edges.
 
-        Nested graph, node and edge attributes are independently owned. Node
-        identities are the bin IDs; ``edge_pairs`` defines numerical edge order.
-        Standard NetworkX drawing, editing and JSON conversion can use this graph.
+        ``env.connectivity`` is rebuilt from the bins and holds only the
+        standard node and edge attributes, as numbers and tuples, and refuses
+        every edit. This export is an ordinary graph with editable attribute
+        dicts and graph metadata; tuple values stay tuples. Node identities
+        are the bin IDs; ``edge_pairs`` defines numerical edge order. Standard
+        NetworkX drawing, editing and JSON conversion can use this graph.
 
         Returns
         -------
         networkx.Graph
             Editable navigation graph, independent of the environment.
         """
-        return nx.Graph(self.connectivity)
+        return editable_graph(self.connectivity)
+
+    @property
+    def _arena(self) -> Arena:
+        """The published arena, shared rather than copied for internal reads."""
+        return self._geometry.arena
 
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
-        arena = self._geometry.arena
-        assert arena is not None
-        if not arena.domain_known:
-            return self._binning.locator.locate(positions).astype(np.intp, copy=False)
-        positions = np.atleast_2d(np.asarray(positions, dtype=np.float64))
-        if positions.ndim != 2 or positions.shape[1] != self.n_dims:
-            raise ValueError(
-                f"Dimensionality mismatch: expected positions with shape "
-                f"(n_positions, {self.n_dims}), got {positions.shape}."
-            )
-        inside = arena.contains(positions)
-        indices = np.full(len(positions), -1, dtype=np.intp)
-        if np.any(inside):
-            indices[inside] = self._binning.locator.locate(positions[inside])
-        return indices
+        return locate(self._binning, self._arena, positions, self._cache)
 
-    _UNITS_REGISTRY: ClassVar[frozenset[str]] = frozenset(
-        {"cm", "m", "mm", "px", "pixels"}
-    )
-
-    @classmethod
-    def _validate_units(cls, value: object) -> None:
-        """Warn if ``value`` is not in :attr:`_UNITS_REGISTRY`.
-
-        Called when constructing or replacing the units declaration. The
-        registry is intentionally small and advisory; the goal is to
-        catch typos (``"centimeters"``, ``"px "``) without preventing
-        legitimate free-form values.
-        """
-        if value is None:
-            return
-        if not isinstance(value, str):
-            raise TypeError(
-                f"Environment.units must be a str or None, got {type(value).__name__}."
-            )
-        if value not in cls._UNITS_REGISTRY:
-            warnings.warn(
-                f"Environment.units={value!r} is not in the standard "
-                f"registry {sorted(cls._UNITS_REGISTRY)}. Free-form strings "
-                "are allowed but may not be interpreted by tools that consume "
-                "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
-                category=UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-
-    def _reset_analysis_caches(self) -> None:
-        """Discard this instance's memoized analyses without clearing shared values."""
-        self.__dict__.pop("_state_version", None)
-        for legacy_name in ("bin_sizes", "boundary_bins", "linearization_properties"):
-            self.__dict__.pop(legacy_name, None)
-        if self._is_fitted:
-            self.clear_cache(kdtree=False, kernels=False, cached_properties=True)
-        self._kernel_cache = {}
-        self._kdtree_cache = None
+    def _target_bins(
+        self,
+        operation: str,
+        bins: object,
+        points: ArrayLike | None,
+        *,
+        region: str | None = None,
+        takes_region: bool = False,
+        count: int | None = None,
+    ) -> NDArray[np.intp]:
+        """Resolve a query's one explicit target to active-bin indices."""
+        return resolve_targets(
+            operation,
+            bins=bins,
+            points=points,
+            region=region,
+            binning=self._binning,
+            arena=self._arena,
+            indexes=self._cache,
+            coordinates=self._coordinate_system,
+            regions=self.regions if takes_region else None,
+            count=count,
+        )
 
     def _replace_value(self) -> Self:
-        """Share published values while giving the new environment fresh caches."""
+        """Share published geometry and its analysis cache with a new instance."""
         result = type(self).__new__(type(self))
         result.__dict__.update(self.__dict__)
-        result._reset_analysis_caches()
         return result
 
     def __copy__(self) -> Self:
-        return self._replace_value()
+        """Return ``self``: an Environment is immutable, so no copy is needed."""
+        return self
 
-    @check_fitted
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        """Return ``self``: an Environment is immutable, so no copy is needed."""
+        return self
+
     def with_metadata(
         self,
         *,
@@ -429,28 +510,15 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Same concrete type and geometry, with fresh analysis caches.
+            Same concrete type and geometry. It shares this environment's
+            analysis cache, so analyses computed on either are reused by both.
         """
-        metadata = _Metadata(
-            self.name if isinstance(name, _Unset) else name,
-            self.units if isinstance(units, _Unset) else units,
-            self.frame if isinstance(frame, _Unset) else frame,
-        )
-        if not isinstance(units, _Unset):
-            type(self)._validate_units(metadata.units)
         result = self._replace_value()
-        result._metadata = metadata
+        result._metadata = _replace_metadata(
+            self._metadata, name=name, units=units, frame=frame
+        )
         return result
 
-    def _validate_regions(self, regions: Regions) -> Regions:
-        if not isinstance(regions, Regions):
-            raise TypeError("regions must be a Regions instance.")
-        n_dims = self._geometry.bin_centers.shape[1]
-        if any(region.n_dims != n_dims for region in regions.values()):
-            raise ValueError("Region coordinate dimensions must match the environment.")
-        return regions._snapshot()
-
-    @check_fitted
     def with_regions(self, regions: Regions) -> Self:
         """Return a new environment owning a snapshot of a region collection.
 
@@ -464,40 +532,67 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Same concrete type and geometry, with fresh analysis caches.
+            Same concrete type and geometry. It shares this environment's
+            analysis cache, so analyses computed on either are reused by both.
         """
-        snapshot = self._validate_regions(regions)
+        snapshot = _owned_regions(regions, self.n_dims)
         result = self._replace_value()
         result._regions = snapshot
         return result
 
-    def __eq__(self, other: object) -> bool:
-        """Check equality with another Environment or string.
+    @cartesian_only(
+        why="A track width is a distance from a Cartesian centerline, and a "
+        "polar environment is not a track.",
+        fix="build the track with Environment.linear_track, Environment.maze or "
+        "Environment.from_graph and call with_track_width() on that environment",
+    )
+    def with_track_width(
+        self: Environment[CartesianSystem], width: float
+    ) -> Environment[CartesianSystem]:
+        """Return the same track with a known full width.
+
+        A track built without ``track_width``, including every track saved by
+        an earlier version of neurospatial, does not know how far from its
+        centerline a position is still on the track, so it refuses to look up
+        2-D positions. This gives it that width while keeping its bins,
+        linearization, name, units, frame and regions. It works on a subset
+        or a transformed track too. A track that already has a width gets the
+        new one.
 
         Parameters
         ----------
-        other : object
-            Object to compare with. If string, compares with environment name.
+        width : float
+            Full width of the track, in the same units as ``bin_centers``. A
+            position is on the track when it is within ``width / 2`` of the
+            centerline; round caps extend each end by the same distance.
 
         Returns
         -------
-        bool
-            True if names match (when comparing with string), NotImplemented otherwise.
+        Environment
+            Same concrete type and bins, with ``"with_track_width"`` added to
+            ``derivations``. Positions off the track map to ``-1``.
+
+        Raises
+        ------
+        TypeError
+            If this environment is not a linearized track.
+        ValueError
+            If ``width`` is not a finite positive number.
 
         Examples
         --------
-        >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2)
-        >>> env = Environment.from_samples(data, bin_size=2.0, name="test")
-        >>> env == "test"
-        True
-        >>> env == "other"
-        False
+        >>> track = Environment.linear_track(
+        ...     endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, units="cm"
+        ... )
+        >>> track = track.with_track_width(8.0)
+        >>> track.bin_at(np.array([[51.0, 3.0], [51.0, 30.0]])).tolist()
+        [25, -1]
+        >>> track.derivations
+        ('with_track_width',)
         """
-        if isinstance(other, str):
-            return self.name == other
-        return NotImplemented
+        derivation = _with_track_width(self._binning, self._arena, width)
+        return publish_derived(self, derivation)
 
     def __repr__(self) -> str:
         """Generate an informative single-line string representation.
@@ -524,15 +619,20 @@ class Environment(Generic[_C]):
         Examples
         --------
         >>> import numpy as np
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0, name="MyEnv")
-        >>> repr(env)  # doctest: +SKIP
-        "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=2.0, name="MyEnv")
+        >>> env
+        Environment(name='MyEnv', 2D, 36 bins, RegularGrid)
 
         """
-        from neurospatial.environment._summary import _repr
-
-        return _repr(self)
+        return _repr(
+            class_name=type(self).__name__,
+            name=self.name,
+            n_dims=self.n_dims,
+            n_bins=self.n_bins,
+            layout_type=self.layout_type,
+        )
 
     def __str__(self) -> str:
         """Human-readable summary, equivalent to :meth:`info`.
@@ -542,9 +642,7 @@ class Environment(Generic[_C]):
         ``Environment(name=..., 2D, 100 bins, RegularGrid)`` shape for
         interactive debugging and logs.
         """
-        from neurospatial.environment._summary import _str
-
-        return _str(self)
+        return self.info()
 
     def _repr_html_(self) -> str:
         """Generate rich HTML representation for Jupyter notebooks.
@@ -579,21 +677,30 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        In a Jupyter notebook, simply evaluate an Environment object:
+        In a Jupyter notebook, evaluating an Environment in a cell displays
+        this table automatically. Calling the method returns the HTML string:
 
         >>> import numpy as np
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0, name="MyEnv")
-        >>> env  # In Jupyter, displays rich HTML table automatically  # doctest: +SKIP
-
-        This will display a formatted table with environment details.
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=2.0, name="MyEnv")
+        >>> html = env._repr_html_()
+        >>> html.startswith("<div")
+        True
+        >>> "MyEnv" in html
+        True
 
         """
-        from neurospatial.environment._summary import _repr_html
+        return _repr_html(
+            name=self.name,
+            layout_type=self.layout_type,
+            n_dims=self.n_dims,
+            n_bins=self.n_bins,
+            dimension_ranges=self.dimension_ranges,
+            n_regions=len(self.regions),
+            is_linearized_track=self.is_linearized_track,
+        )
 
-        return _repr_html(self)
-
-    @check_fitted
     def info(self) -> str:
         """Return a detailed multi-line diagnostic summary of the environment.
 
@@ -634,15 +741,18 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(500, 2) * 100  # 2D data in cm
-        >>> env = Environment.from_samples(data, bin_size=5.0, name="OpenField")
-        >>> print(env.info())  # doctest: +SKIP
+        >>> # Positions sampled every 2.5 cm over a 100 x 100 cm arena
+        >>> x, y = np.meshgrid(np.linspace(0, 100, 41), np.linspace(0, 100, 41))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=5.0, name="OpenField")
+        >>> print(env.info())
         Environment Information
         =======================
+        <BLANKLINE>
         Name: OpenField
-        Layout Type: RegularGridLayout
+        Layout Type: RegularGrid
         Dimensions: 2
-        Number of Bins: 400
+        Number of Bins: 441
         <BLANKLINE>
         Spatial Extent:
           Dimension 0: [-2.50, 102.50] (range: 105.00)
@@ -652,63 +762,36 @@ class Environment(Generic[_C]):
           Dimension 0: 5.00
           Dimension 1: 5.00
         <BLANKLINE>
-        Regions: 0
+        Regions: None
+        <BLANKLINE>
 
         """
-        from neurospatial.environment._summary import _info
-
-        return _info(self)
-
-    @cached_property
-    @check_fitted
-    def _source_flat_to_active_node_id_map(self) -> dict[int, int]:
-        """Get or create the mapping from original full grid flat indices
-        to active bin IDs (0 to n_active_bins - 1).
-
-        The map is cached on the instance for subsequent calls. This method
-        is intended for internal use by other Environment or related manager methods.
-
-        Returns
-        -------
-        Dict[int, int]
-            A dictionary mapping `source_grid_flat_index` from graph nodes
-            to the `active_bin_id` (which is the graph node ID).
-
-        Raises
-        ------
-        RuntimeError
-            If the connectivity graph is not available, or if all nodes are
-            missing the 'source_grid_flat_index' attribute required for the map.
-
-        Notes
-        -----
-        **Decorator order**: @check_fitted is placed BELOW @cached_property.
-        This ensures the cached_property descriptor is outermost and the
-        check_fitted validation happens during the initial computation.
-
-        """
-        return {
-            data["source_grid_flat_index"]: node_id
-            for node_id, data in self.connectivity.nodes(data=True)
-            if "source_grid_flat_index" in data
-        }
+        return _info(
+            name=self.name,
+            layout_type=self.layout_type,
+            n_dims=self.n_dims,
+            bin_sizes=self._binning.bins.sizes,
+            dimension_ranges=self.dimension_ranges,
+            grid_edges=self.grid_edges,
+            region_names=list(self.regions),
+            is_linearized_track=self.is_linearized_track,
+        )
 
     @property
     def is_linearized_track(self) -> bool:
-        """Indicate if the environment's layout is primarily 1-dimensional.
+        """Whether the bins lie along a linearized track.
 
         Returns
         -------
         bool
-            True if the underlying `LayoutEngine` (`self.layout`) reports
-            itself as 1-dimensional (e.g., `GraphLayout`), False otherwise.
-            This is determined by `self.layout.is_linearized_track`.
+            True when the binning carries a track linearization, as
+            ``from_graph`` and ``linear_track`` build, so ``to_linear`` and
+            ``linear_to_nd`` apply; False otherwise.
 
         """
-        return self._is_linearized_track_env
+        return self._binning.linearization is not None
 
     @property
-    @check_fitted
     def n_dims(self) -> int:
         """Return the number of spatial dimensions of the active bin centers.
 
@@ -718,54 +801,96 @@ class Environment(Generic[_C]):
             The number of dimensions (e.g., 1 for a line, 2 for a plane).
             Derived from the shape of `self.bin_centers`.
 
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted or if `bin_centers`
-            is not available.
-
         """
-        return int(self.bin_centers.shape[1])
+        return self._binning.bins.n_dims
 
     @property
-    @check_fitted
     def layout_parameters(self) -> dict[str, Any]:
-        """Return the parameters used to build the layout engine.
+        """Return the scalar choices used to build the bins.
 
-        This includes all parameters that were passed to the `build` method
-        of the underlying `LayoutEngine`.
+        These are the settings passed to the layout engine, such as
+        ``bin_size`` or ``connect_diagonal_neighbors``. Input data
+        (positions, masks, images, polygons and track graphs) is not kept
+        here; the geometry built from it is in ``env.binning``, for example
+        ``env.binning.linearization.graph`` for a track. The values describe
+        how the environment was built and do not affect any analysis.
+        An option the bins did not use is recorded at the value that does
+        nothing, so ``open_field(..., infer_active_bins=False)`` records
+        ``fill_holes=False``: no bin was filled.
+
+        ``subset``, ``clip`` and ``apply_transform`` keep the bins they were
+        given, so they keep these choices. ``rebin`` builds new bins and
+        records their ``bin_size`` and ``connect_diagonal_neighbors``.
+        ``combine`` records none. :attr:`derivations` lists what was applied.
 
         Returns
         -------
-        Dict[str, Any]
-            A dictionary of parameters used to create the layout.
-            Useful for introspection and serialization.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-
+        dict of str to object
+            A new dict of scalars and tuples of scalars.
         """
-        return copy_module.deepcopy(self._layout_params_used)
+        return self._provenance.build_params
 
     @property
-    @check_fitted
     def layout_type(self) -> str:
-        """Return the type of layout used in the environment.
+        """Return the label of the layout the bins were built with.
+
+        Built-in layouts report a :class:`~neurospatial.layout.LayoutType`
+        value, such as ``"RegularGrid"``, ``"Hexagonal"`` or ``"Polar"``; the
+        label is the same as the layout engine's ``layout_type`` and
+        ``env.binning.kind``. A derived environment (``subset``, ``clip``,
+        ``rebin``, ``apply_transform``) keeps its parent's label, and
+        :meth:`combine` reports ``"Combined"``; :attr:`derivations` records
+        what was applied. The label is descriptive: analyses read the bins,
+        never this label.
 
         Returns
         -------
         str
-            The layout type (e.g., "RegularGrid", "Hexagonal").
+            The layout label.
 
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> positions = np.random.default_rng(0).uniform(0, 20, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> env.layout_type
+        'RegularGrid'
+        >>> env.subset(mask=np.arange(env.n_bins) < 4).layout_type
+        'RegularGrid'
         """
-        return (
-            self._layout_type_used if self._layout_type_used is not None else "Unknown"
-        )
+        return self._binning.kind
 
     @property
-    @check_fitted
+    def derivations(self) -> tuple[str, ...]:
+        """Return the derivations applied since the bins were built, oldest first.
+
+        Each entry names the method that made a new environment from an
+        existing one: ``"subset"``, ``"clip"``, ``"rebin"``,
+        ``"apply_transform"`` or ``"combine"``. A factory-built environment
+        has none, and ``combine`` starts a new history because the result
+        has no single parent. Relabelling with ``with_metadata`` or
+        ``with_regions`` is not a derivation.
+
+        Returns
+        -------
+        tuple of str
+            Derivation names, oldest first.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> grid_edges = (np.arange(5) * 5.0,) * 2  # a 20 x 20 cm grid of 5 cm cells
+        >>> env = Environment.from_grid_mask(np.ones((4, 4), dtype=bool), grid_edges)
+        >>> env.derivations
+        ()
+        >>> env.subset(mask=np.arange(env.n_bins) < 8).rebin(2).derivations
+        ('subset', 'rebin')
+        """
+        return self._provenance.derivations
+
+    @property
     def n_bins(self) -> int:
         """Return the number of active bins in the environment.
 
@@ -774,17 +899,11 @@ class Environment(Generic[_C]):
         Returns
         -------
         int
-            The number of active bins (0 if not fitted).
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
+            The number of active bins.
 
         """
-        return int(self.bin_centers.shape[0])
+        return self._binning.bins.n_bins
 
-    @check_fitted
     def get_differential_operator(self) -> sparse.csc_matrix:
         """Compute and cache the inverse-distance edge differential operator.
 
@@ -801,8 +920,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         NotImplementedError
             If the layout has no finite-volume geometry builder.
 
@@ -816,7 +933,7 @@ class Environment(Generic[_C]):
         of the generator used by ``env.smooth``.
 
         Both matrices are cached privately for this immutable geometry.
-        ``clear_cache(cached_properties=True)`` discards them when needed.
+        ``clear_cache()`` discards them when needed.
 
         Examples
         --------
@@ -836,7 +953,7 @@ class Environment(Generic[_C]):
 
         See Also
         --------
-        neurospatial.ops.calculus.compute_differential_operator : Underlying computation
+        neurospatial.ops.calculus.gradient : Apply it to a scalar field.
 
         References
         ----------
@@ -847,7 +964,6 @@ class Environment(Generic[_C]):
         """
         return self._differential_operator_cached.copy()
 
-    @check_fitted
     def get_divergence_operator(self) -> sparse.csc_matrix:
         """Return the cached finite-volume divergence operator.
 
@@ -861,12 +977,10 @@ class Environment(Generic[_C]):
         -------
         scipy.sparse.csc_matrix
             Sparse operator of shape (n_bins, n_edges). The private cache is
-            reused until clear_cache(cached_properties=True).
+            reused until clear_cache().
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         NotImplementedError
             If the layout has no finite-volume cell geometry.
 
@@ -887,214 +1001,67 @@ class Environment(Generic[_C]):
         """
         return self._divergence_operator_cached.copy()
 
-    @cached_property
+    @property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        faces = self._require_face_geometry("gradient/divergence")
-        return _compute_differential_operator(faces, self.n_bins)
+        def build() -> sparse.csc_matrix:
+            faces = require_face_geometry(
+                self._cache, self._binning, "gradient/divergence"
+            )
+            return _compute_differential_operator(faces, self.n_bins)
 
-    @cached_property
-    def _divergence_operator_cached(self) -> sparse.csc_matrix:
-        faces = self._require_face_geometry("gradient/divergence")
-        return _compute_divergence_operator(faces, self._differential_operator_cached)
-
-    @check_fitted
-    def copy(self, *, deep: bool = True) -> Self:
-        """Create a copy of the environment.
-
-        Parameters
-        ----------
-        deep : bool, default=True
-            If True, create a deep copy where modifying the copy will not
-            affect the original. Arrays and the connectivity graph are copied.
-            If False, create a shallow copy that shares underlying data with
-            the original.
-
-        Returns
-        -------
-        env_copy : Environment
-            New environment instance. Transient caches (KDTree, kernels) are
-            always cleared regardless of `deep` parameter.
-
-        See Also
-        --------
-        Environment.subset : Create new environment from bin selection.
-
-        Notes
-        -----
-        **Deep copy (deep=True, default)**:
-
-        - All numpy arrays are copied (bin_centers, dimension_ranges, etc.)
-        - Connectivity graph is deep copied
-        - Regions are deep copied
-        - Layout object is deep copied
-
-        Adding regions to the copy does not affect the original.
-
-        **Shallow copy (deep=False)**:
-
-        - Arrays, graph and regions are shared with the original
-
-        In both cases the geometry arrays are read-only and the graph is
-        frozen, as on every environment.
-
-        **Cache invalidation**:
-
-        Both deep and shallow copies always clear transient caches to ensure
-        consistency. Caches are rebuilt on-demand when needed:
-
-        - KDTree cache (used by spatial query methods)
-        - Kernel cache (used by smooth() and occupancy())
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> # Create environment
-        >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
-        >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> env = env.with_metadata(units="cm")
-        >>>
-        >>> # Deep copy (default): separate, equal geometry
-        >>> env_copy = env.copy()
-        >>> bool(np.shares_memory(env_copy.bin_centers, env.bin_centers))
-        False
-        >>>
-        >>> # Shallow copy: the same geometry objects
-        >>> env_shallow = env.copy(deep=False)
-        >>> bool(np.shares_memory(env_shallow.bin_centers, env.bin_centers))
-        True
-        """
-        if deep:
-            return copy_module.deepcopy(self)
-        return self._replace_value()
-
-    def _clear_explicit_caches(
-        self, *, kdtree: bool = True, kernels: bool = True
-    ) -> None:
-        """Internal method to clear explicit caches (KDTree, kernels).
-
-        This is called by clear_cache().
-
-        Parameters
-        ----------
-        kdtree : bool, default=True
-            Whether to clear the KDTree cache.
-        kernels : bool, default=True
-            Whether to clear the cached smoothing kernels.
-        """
-        if kdtree:
-            self._kdtree_cache = None
-        if kernels:
-            self._kernel_cache = {}
-            self._gaussian_kernels.clear()
-
-    @check_fitted
-    def clear_cache(
-        self,
-        *,
-        kdtree: bool = True,
-        kernels: bool = True,
-        cached_properties: bool = True,
-    ) -> None:
-        """Clear caches with optional selective clearing.
-
-        This method clears explicit caches (KDTree, kernels) and/or
-        @cached_property values. By default, all caches are cleared.
-
-        Parameters
-        ----------
-        kdtree : bool, default=True
-            Whether to clear the KDTree cache used by map_points_to_bins().
-        kernels : bool, default=True
-            Whether to clear the cached smoothing kernels: diffusion kernels
-            used by compute_kernel(), smooth() and occupancy(), and the
-            Gaussian-KDE kernels of rate-map smoothing.
-        cached_properties : bool, default=True
-            Whether to clear all @cached_property values.
-
-        Caches available for clearing
-        ------------------------------
-        **Explicit caches** (kdtree, kernels):
-            - KDTree cache (_kdtree_cache): Used by map_points_to_bins()
-            - Kernel caches (_kernel_cache, _gaussian_kernels): diffusion
-              kernels used by smooth() and occupancy(), and Gaussian-KDE
-              kernels; each keeps its most recently used kernels
-
-        **Cached properties** (cached_properties):
-            - differential_operator: Graph differential operator matrix
-            - boundary_bins: Bins on environment boundary
-            - bin_sizes: Area/volume of each bin
-            - bin_attributes: DataFrame with bin properties (position, degree, etc.)
-            - edge_attributes: DataFrame with edge properties (distance, angle, etc.)
-            - linearization_properties: 1D linearization metadata
-            - _source_flat_to_active_node_id_map: Grid index mapping
-
-        Notes
-        -----
-        This method is useful when:
-
-        - **Memory management**: Free memory after intensive computations
-        - **Testing**: Ensure clean state between test runs
-        - **Profiling**: Measure cache rebuild performance
-        - **Selective clearing**: Clear only specific cache types
-        - **Manual modifications**: Clear stale caches if environment was
-          modified (not recommended - create new Environment instead)
-
-        Cached properties are automatically recomputed on next access.
-
-        **Performance impact**: Clearing caches has minimal overhead, but
-        recomputing cached properties (especially differential_operator) can
-        be expensive for large environments (>100,000 bins).
-
-        See Also
-        --------
-        copy : Create environment copy (also clears caches)
-
-        Examples
-        --------
-        Clear all caches (default behavior):
-
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(1000, 2) * 100
-        >>> env = Environment.from_samples(data, bin_size=5.0)
-        >>>
-        >>> # Access some cached properties
-        >>> _ = env.get_differential_operator()
-        >>> _ = env.boundary_bins
-        >>>
-        >>> # Clear all caches
-        >>> env.clear_cache()
-        >>>
-        >>> # Properties will be recomputed on next access
-        >>> _ = env.get_differential_operator()  # Triggers recomputation
-
-        Clear only specific cache types:
-
-        >>> # Clear only KDTree cache (keep kernels and cached properties)
-        >>> env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
-        >>>
-        >>> # Clear only cached properties (keep KDTree and kernels)
-        >>> env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
-        >>>
-        >>> # Clear KDTree and kernels, keep cached properties
-        >>> env.clear_cache(kdtree=True, kernels=True, cached_properties=False)
-        """
-        # Clear explicit caches (KDTree, kernels) selectively
-        self._clear_explicit_caches(kdtree=kdtree, kernels=kernels)
-
-        # Geometry is immutable; cached analyses last until explicitly cleared.
-        if cached_properties:
-            for name in tuple(self.__dict__):
-                if name.startswith("_versioned_cache__"):
-                    self.__dict__.pop(name)
-            for cls in type(self).__mro__:
-                for name, attr in vars(cls).items():
-                    if isinstance(attr, cached_property):
-                        self.__dict__.pop(name, None)
+        return self._cache.get(DIFFERENTIAL_OPERATOR, build)
 
     @property
-    @check_fitted
+    def _divergence_operator_cached(self) -> sparse.csc_matrix:
+        def build() -> sparse.csc_matrix:
+            faces = require_face_geometry(
+                self._cache, self._binning, "gradient/divergence"
+            )
+            return _compute_divergence_operator(
+                faces, self._differential_operator_cached
+            )
+
+        return self._cache.get(DIVERGENCE_OPERATOR, build)
+
+    def clear_cache(self) -> None:
+        """Release every cached analysis of this environment's geometry.
+
+        An environment computes some analyses once and keeps them: the
+        KD-tree used by nearest-bin lookup, diffusion and Gaussian smoothing
+        kernels, the eigenbasis used by ``diffuse``, ``smooth`` and the MRF
+        basis, cell faces and diffusion geometry, the gradient and divergence
+        operators, boundary bins and the bin and edge attribute tables. They
+        depend only on the geometry, which never changes, so keeping them is
+        always correct. Clearing them only frees memory; the next analysis
+        computes what it needs again and returns the same results.
+
+        Notes
+        -----
+        ``with_metadata`` and ``with_regions`` return environments with the
+        same geometry, and they share this environment's cache. Clearing it on
+        any of them clears it for all of them. Environments derived with
+        ``subset``, ``clip``, ``rebin``, ``apply_transform`` or ``combine``,
+        and environments loaded from a file, a dict, NWB or a pickle, have
+        their own caches.
+
+        Pickling never includes cached analyses, so clearing is not needed
+        before sending an environment to worker processes.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> data = np.random.default_rng(0).uniform(0, 100, size=(1000, 2))
+        >>> env = Environment.from_samples(data, bin_size=5.0)
+        >>> kernel = env.compute_kernel(bandwidth=10.0)
+        >>> renamed = env.with_metadata(name="session 2")
+        >>> env.clear_cache()  # also clears the cache that ``renamed`` uses
+        >>> np.allclose(renamed.compute_kernel(bandwidth=10.0), kernel)
+        True
+        """
+        self._cache.clear()
+
+    @property
     def coordinate_kind(self) -> Literal["cartesian", "polar"]:
         """Coordinate meaning: Cartesian positions or egocentric radius/angle.
 
@@ -1106,10 +1073,9 @@ class Environment(Generic[_C]):
     @property
     def _coordinate_system(self) -> _C:
         """Owned coordinate semantics, inferred from the construction factory."""
-        return cast("_C", self._geometry.coordinates)
+        return self._geometry.coordinates
 
     @property
-    @check_fitted
     def coordinate_system(self) -> _C:
         """Return this environment's immutable coordinate descriptor.
 
@@ -1120,73 +1086,36 @@ class Environment(Generic[_C]):
         """
         return copy_module.copy(self._coordinate_system)
 
-    def _require_cartesian(self, operation: str) -> CartesianLookupConsumer:
-        """Refuse Cartesian coordinate math for polar radius/angle bins."""
-        if self._is_polar:
-            from neurospatial._exceptions import CartesianOnlyError
-            from neurospatial.environment.polar import _POLAR_EXPLANATION
-
-            raise CartesianOnlyError(
-                type(self).__name__,
-                operation,
-                reason="Cartesian-grid operation"
-                if operation.partition("(")[0] in CARTESIAN_GRID_OPERATIONS
-                else "Cartesian-coordinate operation",
-                explanation=_POLAR_EXPLANATION,
-            )
-        return cast("CartesianLookupConsumer", self)
-
-    # Runtime capability filtering must not make unknown attributes appear as
-    # Any to type checkers, which would also admit missing protocol members.
-    if not TYPE_CHECKING:
-
-        def __getattribute__(self, name: str) -> Any:
-            if name in CARTESIAN_OPERATIONS:
-                geometry = object.__getattribute__(self, "__dict__").get("_geometry")
-                if geometry is not None and isinstance(
-                    geometry.coordinates, EgocentricPolarSystem
-                ):
-                    from neurospatial._exceptions import CartesianOnlyError
-                    from neurospatial.environment.polar import _POLAR_EXPLANATION
-
-                    raise CartesianOnlyError(
-                        type(self).__name__,
-                        f"{name}()",
-                        reason="Cartesian-grid operation"
-                        if name in CARTESIAN_GRID_OPERATIONS
-                        else "Cartesian-coordinate operation",
-                        explanation=_POLAR_EXPLANATION,
-                    )
-            return super().__getattribute__(name)
-
     @property
     def _angular_is_circular(self) -> bool:
         """Normalized polar circularity, retained through copies and storage."""
         coordinates = self._geometry.coordinates
         return isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
 
-    @cached_property
-    @check_fitted
+    @property
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
-        if not self._is_polar:
-            return _cartesian_boundary_bins(self)
-        from neurospatial.layout.helpers.utils import find_boundary_nodes
+        def build() -> NDArray[np.intp]:
+            return boundary_bins(
+                self._binning,
+                self.connectivity,
+                self.grid_shape,
+                self.active_mask,
+                periodic_axes=(1,) if self._angular_is_circular else (),
+            )
 
-        return find_boundary_nodes(
-            graph=self.connectivity,
-            grid_shape=self.grid_shape,
-            active_mask=self.active_mask,
-            periodic_axes=(1,) if self._angular_is_circular else (),
-        ).astype(np.intp, copy=False)
+        return self._cache.get(BOUNDARY_BINS, build)
 
     @classmethod
+    @keyword_hint(
+        "distance_range", "angle_range", "distance_bin_size", "angle_bin_size"
+    )
     def from_polar_egocentric(
         cls,
+        *,
         distance_range: tuple[float, float],
         angle_range: tuple[float, float],
         distance_bin_size: float,
         angle_bin_size: float,
-        *,
         circular_angle: bool | None = None,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
@@ -1221,11 +1150,16 @@ class Environment(Generic[_C]):
             Whether to connect diagonally adjacent (distance, angle) bins.
         name : str, default=""
             Optional name for the environment.
+        units : str or None, default=None
+            Length unit of the distance axis (e.g. ``"cm"``); angles are
+            always radians.
+        frame : str or None, default=None
+            Coordinate frame label.
 
         Returns
         -------
         Environment
-            A fitted polar environment. Column 0 is distance in physical units;
+            A polar environment. Column 0 is distance in physical units;
             column 1 is angle in radians (zero ahead, positive to the left).
 
         Examples
@@ -1249,10 +1183,8 @@ class Environment(Generic[_C]):
         --------
         Environment.from_samples : Build Cartesian position bins.
         """
-
-        from neurospatial.environment.polar import _create_polar_environment
-
         return _create_polar_environment(
+            cls,
             distance_range=distance_range,
             angle_range=angle_range,
             distance_bin_size=distance_bin_size,
@@ -1265,45 +1197,28 @@ class Environment(Generic[_C]):
         )
 
     @property
-    @check_fitted
-    def component_keys(self: Environment[CartesianSystem]) -> tuple[str, ...]:
+    def component_keys(self) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
-        self._require_cartesian("component_keys()")
-        from neurospatial.geometry._composition import _component_keys
-
-        return _component_keys(self._binning)
+        return composition_component_keys(self._binning)
 
     @property
-    @check_fitted
-    def bin_sources(
-        self: Environment[CartesianSystem],
-    ) -> tuple[tuple[str, int], ...] | None:
+    def bin_sources(self) -> tuple[tuple[str, int], ...] | None:
         """Original component key and local bin ID for each bin, or None when native.
 
         Subsets and clips retain original source IDs; split cells may repeat an ID.
         """
-        self._require_cartesian("bin_sources()")
-        from neurospatial.geometry._composition import _bin_sources
+        return composition_bin_sources(self._binning)
 
-        return _bin_sources(self._binning)
-
-    @check_fitted
-    def get_bridge_attributes(self: Environment[CartesianSystem]) -> pd.DataFrame:
+    def get_bridge_attributes(self) -> pd.DataFrame:
         """Return an independent table of retained automatic navigation bridges.
 
         Rows identify component/local endpoints, current bin IDs, path length
         and geometric conductance. Native environments return an empty table.
         Conductance units are length ** (measure_dim - 2).
         """
-        self._require_cartesian("get_bridge_attributes()")
-        from neurospatial.environment.metrics import _get_bridge_attributes
-
         return _get_bridge_attributes(self._binning)
 
-    @check_fitted
-    def bin_at(
-        self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
-    ) -> NDArray[np.intp]:
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-dimensional points to bins using geometric containment.
 
         This method uses the layout-specific geometric logic to determine which
@@ -1311,31 +1226,37 @@ class Environment(Generic[_C]):
         and respects the actual geometry of the bins (grid cells, hexagons, etc.).
 
         For nearest-neighbor mapping with caching and tie-breaking, see
-        `neurospatial.ops.map_points_to_bins()`.
+        :meth:`nearest_bin`.
 
         Parameters
         ----------
-        points_nd : NDArray[np.float64], shape (n_points, n_dims)
-            An array of N-dimensional points to map.
+        positions : NDArray[np.float64], shape (n_points, n_dims)
+            Points to map, such as the animal's positions, in the
+            environment's coordinates. On an egocentric polar environment
+            each row is ``(distance, angle)``, the angle in radians; an angle
+            a whole number of turns outside the angle range names the same
+            direction and finds the same bin.
 
         Returns
         -------
         NDArray[np.intp], shape (n_points,)
             An array of active bin indices (0 to `n_active_bins - 1`).
             A value of -1 indicates that the corresponding point did not map
-            to any active bin (e.g., it's outside the environment).
+            to any active bin: it is outside the environment, or a coordinate
+            is NaN (a missing sample; see Missing data in the class Notes).
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
-            If ``points_nd`` has a different dimensionality than the
+            If ``positions`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
+        NotImplementedError
+            On a track built without ``track_width``: its centerline does not
+            say how far from the track a position is still on it.
 
         See Also
         --------
-        neurospatial.ops.map_points_to_bins : Nearest-neighbor mapping with KDTree caching
+        nearest_bin : Nearest-neighbor mapping with KDTree caching
 
         Notes
         -----
@@ -1346,7 +1267,7 @@ class Environment(Generic[_C]):
           checks which grid cell the point falls into. For hexagons, which
           hexagon contains it. This is exact but may be slower for large batches.
 
-        - `map_points_to_bins()`: Uses KDTree to find the bin whose center is
+        - `nearest_bin()`: Uses KDTree to find the bin whose center is
           closest to the point. This is fast (O(log N)) with caching, supports
           tie-breaking on boundaries, and allows distance thresholds. Best for
           large batches, trajectory processing, and when approximate assignment
@@ -1366,33 +1287,35 @@ class Environment(Generic[_C]):
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        self._require_cartesian("bin_at()")
-        return self._locate(points_nd)
+        return self._locate(positions)
 
-    @check_fitted
     def nearest_bin(
         self,
-        points: NDArray[np.float64],
+        positions: NDArray[np.float64],
         *,
         tie_break: TieBreakStrategy
         | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
         return_dist: bool = False,
         max_distance: float | None = None,
         max_distance_factor: float | None = None,
-    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
-        """Find the nearest bin center for every point in stored coordinates.
+    ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]:
+        """Find the nearest bin center for every point, by physical distance.
 
         Parameters
         ----------
-        points : ndarray, shape (n_points, n_dims)
-            Coordinates to compare with bin centers.
+        positions : ndarray, shape (n_points, n_dims)
+            Coordinates to compare with bin centers, such as the animal's
+            positions, in the environment's stored coordinates:
+            ``(distance, angle)`` rows on an egocentric polar environment.
         tie_break : TieBreakStrategy or str, default=TieBreakStrategy.LOWEST_INDEX
             Select the lowest bin ID among ties, or use "closest_center" for
             the tree's nearest candidate.
         return_dist : bool, default=False
-            Also return Euclidean distances to the selected centers.
+            Also return the distances to the selected centers, in the
+            environment's length units.
         max_distance : float or None, optional
-            Maximum Euclidean distance; rejected points return bin ID -1.
+            Maximum distance, in length units; rejected points return bin
+            ID -1.
         max_distance_factor : float or None, optional
             Maximum distance as a multiple of typical center spacing. Cannot
             be combined with max_distance. Without either limit, the existing
@@ -1402,79 +1325,129 @@ class Environment(Generic[_C]):
         -------
         ndarray or tuple of ndarray
             Bin IDs, shape (n_points,). When return_dist=True, also return
-            distances with infinity for rejected points.
+            distances with infinity for rejected points. A point with a NaN
+            coordinate is a missing sample: bin -1 and distance NaN. A point
+            with an infinite coordinate is rejected: bin -1 and distance
+            infinity. See Missing data in the class Notes.
 
         Raises
         ------
-        RuntimeError
-            If the environment is not fitted.
         ValueError
             If distance limits or tie-breaking settings are invalid, or query
-            points have the wrong coordinate width or nonfinite values.
+            points have the wrong coordinate width.
 
         Notes
         -----
-        This compares Euclidean distance in stored coordinate columns and
-        reuses an environment-owned KD-tree. It does not test containment;
-        use bin_at() for Cartesian occupancy and trajectory assignment.
-        On polar environments, radius and angle are compared as raw columns
-        with mixed coordinate units. That preserves map_points_to_bins()
-        behavior and is neither physical polar distance nor containment.
+        This compares Euclidean distance and reuses an environment-owned
+        KD-tree. It does not test containment; use bin_at() for occupancy and
+        trajectory assignment. On an egocentric polar environment the bin
+        centers and the points are first placed in the animal's Cartesian
+        plane, ``(distance * cos(angle), distance * sin(angle))`` (x ahead,
+        y to the left), so the distance is the physical distance between the
+        two places, angles a whole turn apart coincide, and a point near the
+        animal can be nearest to any bin of the innermost ring.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> surround = Environment.from_polar_egocentric(
+        ...     distance_range=(0.0, 40.0),
+        ...     angle_range=(-np.pi, np.pi),
+        ...     distance_bin_size=10.0,
+        ...     angle_bin_size=np.pi / 4,
+        ... )
+        >>> bins, dist = surround.nearest_bin(
+        ...     np.array([[15.0, 0.4], [15.0, 0.4 + 2 * np.pi]]), return_dist=True
+        ... )
+        >>> bool(bins[0] == bins[1])
+        True
+        >>> center_distance, center_angle = surround.bin_centers[bins[0]]
+        >>> expected = np.hypot(
+        ...     15 * np.cos(0.4) - center_distance * np.cos(center_angle),
+        ...     15 * np.sin(0.4) - center_distance * np.sin(center_angle),
+        ... )
+        >>> bool(np.isclose(dist[0], expected))
+        True
         """
-        from scipy.spatial import cKDTree
-
-        from neurospatial.ops.binning import (
-            _nearest_bin_query,
-            _validate_nearest_options,
-        )
-
-        resolved = _validate_nearest_options(
-            tie_break, max_distance, max_distance_factor
-        )
-        centers = self._binning.bins.centers
-        if self._kdtree_cache is None:
-            self._kdtree_cache = cKDTree(centers)
-        return _nearest_bin_query(
-            centers,
-            self._kdtree_cache,
-            points,
-            tie_break=resolved,
+        return nearest_bin(
+            self._cache,
+            self._binning,
+            positions,
+            coordinates=self._coordinate_system,
+            tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
             max_distance_factor=max_distance_factor,
         )
 
-    @check_fitted
-    def contains(
-        self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
-    ) -> NDArray[np.bool_]:
+    def bin_center_tree(self) -> cKDTree:
+        """Return the KD-tree over ``bin_centers``.
+
+        On Cartesian environments it is the tree ``nearest_bin`` searches. On
+        an egocentric polar environment it is over the stored
+        ``(distance, angle)`` columns, while ``nearest_bin`` searches the
+        centers' Cartesian embedding.
+
+        The tree is built on first use and kept in the analysis cache: it is
+        shared with relabelled copies and released by ``clear_cache()``. Use
+        it for queries that ``nearest_bin`` does not answer, such as the
+        ``k`` nearest bin centers with their distances. Tree indices are bin
+        indices. Query it, but do not modify it.
+
+        Returns
+        -------
+        scipy.spatial.cKDTree
+            Tree over ``bin_centers``, shape ``(n_bins, n_dims)``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> env = Environment.from_samples(
+        ...     np.array([[0.0, 0.0], [3.0, 0.0]]), bin_size=1.0
+        ... )
+        >>> distances, bins = env.bin_center_tree().query([[0.4, 0.5]], k=2)
+        >>> bins.tolist()
+        [[0, 1]]
+        >>> env.bin_center_tree() is env.bin_center_tree()
+        True
+        """
+        return center_tree(self._cache, self._binning)
+
+    def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Check if N-dimensional continuous points fall within any active bin.
 
         Parameters
         ----------
-        points_nd : NDArray[np.float64], shape (n_points, n_dims)
-            An array of N-dimensional points to check.
+        positions : NDArray[np.float64], shape (n_points, n_dims)
+            Points to check, such as the animal's positions, in the
+            environment's coordinates: ``(distance, angle)`` rows on an
+            egocentric polar environment, as for :meth:`bin_at`.
 
         Returns
         -------
         NDArray[np.bool_], shape (n_points,)
             A boolean array where `True` indicates the corresponding point
-            maps to an active bin, and `False` indicates it does not.
+            maps to an active bin, and `False` indicates it does not. A point
+            with a NaN coordinate is a missing sample and reads `False` (see
+            Missing data in the class Notes).
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
-            If ``points_nd`` has a different dimensionality than the
+            If ``positions`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
+        NotImplementedError
+            On a track built without ``track_width``.
 
         Notes
         -----
-        Tracks require a declared width: a centerline and topology alone do
-        not establish which off-track points are inside. Unknown width raises
-        NotImplementedError with guidance; bin_at() still projects to the track.
-        Other layouts reuse bin lookup and check for the -1 sentinel.
+        Tracks require a declared width (``track_width=``): a centerline and
+        topology alone do not establish which off-track points are inside.
+        Without one, ``contains``, ``bin_at`` and every other position lookup
+        raise NotImplementedError with the code to rebuild the track. Every
+        layout reuses bin lookup and checks for the -1 sentinel.
 
         Examples
         --------
@@ -1483,102 +1456,89 @@ class Environment(Generic[_C]):
         >>> data = np.random.rand(100, 2) * 10
         >>> env = Environment.from_samples(data, bin_size=2.0)
         >>> points = np.array([[5.0, 5.0], [15.0, 15.0]])
-        >>> mask = env.contains(points)
-        >>> print(mask)  # doctest: +SKIP
-        [ True False]  # First point in environment, second outside
+        >>> env.contains(points)  # the second point is outside the arena
+        array([ True, False])
 
         """
-        self._require_cartesian("contains()")
-        if self.is_linearized_track and not self.arena.domain_known:
-            raise NotImplementedError(
-                _format_error(
-                    "contains() requires a known track footprint.",
-                    why="A centerline and bin size do not determine the physical track width.",
-                    fix="supply track_width when constructing the track, or use bin_at() for nearest-track projection",
-                )
-            )
-        indices = self._locate(points_nd)
+        indices = self._locate(positions)
         return np.asarray(indices != -1, dtype=np.bool_)
 
-    @check_fitted
+    @keyword_hint(
+        former=("point1", "point2", "edge_weight"),
+        translate=former_targets(2),
+        why=TARGET_WHY,
+    )
     def distance_between(
-        self: Environment[CartesianSystem],
-        point1: NDArray[np.float64],
-        point2: NDArray[np.float64],
-        edge_weight: str = "distance",
+        self,
+        *,
+        bins: Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
+        edge_weight: str | None = "distance",
     ) -> float:
-        """Calculate the geodesic distance between two points in the environment.
+        """Geodesic distance between two bins or two points.
 
-        Points are first mapped to their nearest active bins using `self.bin_at()`.
-        The geodesic distance (distance along the shortest path through the space)
-        is then the shortest path length in the `connectivity` graph between these
-        bins, using the specified `edge_weight`.
+        The distance is the length of the shortest path through the
+        connectivity graph, so it goes around walls and between maze arms the
+        way the animal can. Give the two ends either as bin indices or as
+        coordinates; points are first mapped to the bins that contain them.
 
         Parameters
         ----------
-        point1 : NDArray[np.float64], shape (n_dims,) or (1, n_dims)
-            The first N-dimensional point.
-        point2 : NDArray[np.float64], shape (n_dims,) or (1, n_dims)
-            The second N-dimensional point.
-        edge_weight : str, optional
-            The edge attribute to use as weight for path calculation,
-            by default "distance". If None, the graph is treated as unweighted.
+        bins : sequence of int, shape (2,), optional
+            Start and end bin indices, ``[start, end]``.
+        points : array-like, shape (2, n_dims), optional
+            Start and end coordinates, one row each, in the same coordinates
+            and units as ``bin_centers``: (distance, angle) on an egocentric
+            polar environment.
+        edge_weight : str or None, default="distance"
+            Edge attribute summed along the path. ``"distance"`` gives the
+            path length in the environment's units; None counts edges (hops).
 
         Returns
         -------
         float
-            The geodesic distance. Returns `np.inf` if points do not map to
-            valid active bins, if bins are disconnected, or if the connectivity
-            graph is not available.
+            The path length, or ``np.inf`` when the two bins are in
+            disconnected parts of the graph.
+
+        Raises
+        ------
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
+        ValueError
+            If there are not exactly two targets, or a point is outside the
+            environment or has NaN coordinates.
+        BinIndexOutOfRangeError
+            If a bin index is outside ``[0, n_bins)``.
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> p1 = np.array([1.0, 1.0])
-        >>> p2 = np.array([9.0, 9.0])
-        >>> dist = env.distance_between(p1, p2)
-        >>> print(dist > 0)
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> path_cm = env.distance_between(points=[[1.0, 1.0], [9.0, 1.0]])
+        >>> bool(path_cm > 0)
+        True
+        >>> start, end = env.bin_at(np.array([[1.0, 1.0], [9.0, 1.0]]))
+        >>> env.distance_between(bins=[start, end]) == path_cm
         True
 
         """
-        self._require_cartesian("distance_between()")
-        source_bin = self.bin_at(np.atleast_2d(point1))[0]
-        target_bin = self.bin_at(np.atleast_2d(point2))[0]
+        start, end = self._target_bins("distance_between()", bins, points, count=2)
+        return geodesic_distance_between_points(
+            self.connectivity, int(start), int(end), weight=edge_weight
+        )
 
-        if source_bin == -1 or target_bin == -1:
-            # One or both points didn't map to a valid active bin. Returning
-            # np.inf silently can mask a coordinate-frame or units mistake, so
-            # warn when neither point lands in the environment.
-            if source_bin == -1 and target_bin == -1:
-                warnings.warn(
-                    "distance_between() returning np.inf: neither point mapped "
-                    "to an active bin (both bin_at() lookups returned -1). "
-                    "Check that the points are inside the environment and in "
-                    "the same coordinate frame/units as bin_centers.",
-                    category=UserWarning,
-                    stacklevel=2,
-                )
-            return np.inf
-
-        try:
-            return float(
-                nx.shortest_path_length(
-                    self.connectivity,
-                    source=source_bin,
-                    target=target_bin,
-                    weight=edge_weight,
-                )
-            )
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            return np.inf
-
-    @check_fitted
+    @cartesian_only(
+        why="It projects Cartesian positions onto a track that "
+        "Environment.from_graph built, and a polar environment is not a track.",
+        fix="build the track with Environment.from_graph(...) and call "
+        "to_linear() on that environment",
+    )
     def to_linear(
         self: Environment[CartesianSystem],
-        nd_position: NDArray[np.float64],
+        positions: NDArray[np.float64],
     ) -> NDArray[np.float64]:
         """
         Convert N-D positions to 1D linear coordinates.
@@ -1589,7 +1549,7 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        nd_position : NDArray[np.floating], shape (n_samples, n_dims)
+        positions : NDArray[np.floating], shape (n_samples, n_dims)
             N-D position array in the original coordinate space.
             For 2D environments, shape is (n_samples, 2).
 
@@ -1600,15 +1560,20 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        AttributeError
-            If this environment is not 1D (does not support linearization).
-            Check `env.is_linearized_track` before calling this method.
+        TypeError
+            If this environment is not a linearized track
+            (``env.is_linearized_track`` is False).
 
         Notes
         -----
-        - **Only works for 1D environments** created with `Environment.from_graph()`
+        - **Only works for track environments** built with `Environment.from_graph()`,
+          `Environment.linear_track()` or `Environment.maze()`
         - For N-D environments, use `bin_at()` to map positions to bins instead
         - Linear coordinates start at 0 and increase monotonically along the track
+        - Every position is projected onto the nearest point of the centerline,
+          however far off the track it is, with or without ``track_width``.
+          To exclude reflections and tracking jumps, build the track with
+          ``track_width`` and keep the samples with ``bin_at(positions) >= 0``.
 
         See Also
         --------
@@ -1619,49 +1584,24 @@ class Environment(Generic[_C]):
         Examples
         --------
         >>> import numpy as np
-        >>> import networkx as nx
         >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> # Convert 2D position to 1D linear coordinate
-        >>> position_2d = np.array(
-        ...     [[5.0, 0.0]]
-        ... )  # Halfway along track  # doctest: +SKIP
-        >>> position_1d = env.to_linear(position_2d)  # doctest: +SKIP
-        >>> print(f"Linear position: {position_1d[0]:.1f}")  # doctest: +SKIP
-        Linear position: 5.0
+        >>> # A 100 cm linear track along the x axis
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> # Halfway along the track, 3 cm off the centerline
+        >>> env.to_linear(np.array([[50.0, 3.0]]))
+        array([50.])
 
         """
-        self._require_cartesian("to_linear()")
-        if not self._is_linearized_track_env:
-            msg = (
-                "to_linear() is only available for 1D environments (GraphLayout). "
-                f"This environment is {self.n_dims}D. "
-                "Use bin_at() to map positions to bins for N-D environments."
-            )
-            raise AttributeError(msg)
+        return _to_linear(self._binning, positions)
 
-        linearization = self._binning.linearization
-        if linearization is None:
-            raise AttributeError(
-                _format_error(
-                    "to_linear() needs the track graph that defines the linearization, and "
-                    f"this environment's {self._binning.kind} layout does not keep it.",
-                    why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
-                    fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
-                )
-            )
-        return linearization.to_linear(nd_position)
-
-    @check_fitted
+    @cartesian_only(
+        why="It maps positions along a track that Environment.from_graph built "
+        "back to Cartesian positions, and a polar environment is not a track.",
+        fix="build the track with Environment.from_graph(...) and call "
+        "linear_to_nd() on that environment",
+    )
     def linear_to_nd(
         self: Environment[CartesianSystem],
         linear_position: NDArray[np.float64],
@@ -1686,13 +1626,14 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        AttributeError
-            If this environment is not 1D (does not support linearization).
-            Check `env.is_linearized_track` before calling this method.
+        TypeError
+            If this environment is not a linearized track
+            (``env.is_linearized_track`` is False).
 
         Notes
         -----
-        - **Only works for 1D environments** created with `Environment.from_graph()`
+        - **Only works for track environments** built with `Environment.from_graph()`,
+          `Environment.linear_track()` or `Environment.maze()`
         - Inverse operation of `to_linear()`
         - Useful for plotting 1D data in the original 2D space
 
@@ -1705,49 +1646,20 @@ class Environment(Generic[_C]):
         Examples
         --------
         >>> import numpy as np
-        >>> import networkx as nx
         >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> # Convert 1D linear coordinate to 2D position
-        >>> linear_pos = np.array([5.0])  # Halfway along track  # doctest: +SKIP
-        >>> position_2d = env.linear_to_nd(linear_pos)  # doctest: +SKIP
-        >>> print(f"2D position: {position_2d[0]}")  # doctest: +SKIP
-        2D position: [5. 0.]
+        >>> # A 100 cm linear track along the x axis
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> # 50 cm along the track is the middle of the centerline
+        >>> env.linear_to_nd(np.array([50.0]))
+        array([[50.,  0.]])
 
         """
-        self._require_cartesian("linear_to_nd()")
-        if not self._is_linearized_track_env:
-            msg = (
-                "linear_to_nd() is only available for 1D environments (GraphLayout). "
-                f"This environment is {self.n_dims}D. "
-                "Use bin_center_of() to get bin centers for N-D environments."
-            )
-            raise AttributeError(msg)
+        return _linear_to_nd(self._binning, linear_position)
 
-        linearization = self._binning.linearization
-        if linearization is None:
-            raise AttributeError(
-                _format_error(
-                    "linear_to_nd() needs the track graph that defines the linearization, and "
-                    f"this environment's {self._binning.kind} layout does not keep it.",
-                    why="Why: track environments read from NWB restore bins and connectivity, but not the track graph.",
-                    fix="rebuild the environment with Environment.from_graph or Environment.linear_track from the same track",
-                )
-            )
-        return linearization.linear_to_nd(linear_position)
-
-    @check_fitted
     def occupancy(
-        self: Environment[CartesianSystem],
+        self,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -1769,7 +1681,16 @@ class Environment(Generic[_C]):
         times : NDArray[np.float64], shape (n_samples,)
             Timestamps in seconds. Must be monotonically increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions.
+            Position coordinates matching environment dimensions, located as
+            :meth:`bin_at` does: on an egocentric polar environment, each
+            sample's ``(distance, angle)`` of the object or place the bins
+            describe, relative to the animal. An interval
+            that starts at a sample outside the environment, or at a sample
+            with a NaN coordinate (missing; see Missing data in the class
+            Notes), adds no occupancy. With ``time_allocation='linear'`` an
+            interval with a NaN at either end adds none, and an interval with
+            an end outside the environment adds only the time its straight
+            path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
             Instantaneous speed at each sample. If provided with min_speed,
             samples below threshold are excluded from occupancy calculation.
@@ -1781,6 +1702,9 @@ class Environment(Generic[_C]):
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from occupancy and their spikes are not counted. ``None`` disables the
             gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -1794,7 +1718,9 @@ class Environment(Generic[_C]):
 
             - 'start': Assign entire Δt to starting bin (fast, works on all layouts).
             - 'linear': Split Δt proportionally across bins traversed by
-              straight-line path (grid layouts with rectangular cells).
+              straight-line path (grid layouts with rectangular cells; not
+              polar environments, where a straight path is not straight in
+              ``(distance, angle)``).
         return_seconds : bool, default=True
             If True, return time in seconds (time-weighted occupancy).
             If False, return sample counts (unweighted, counts number of
@@ -1812,8 +1738,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If times and positions have different lengths, if arrays are
             inconsistent, or if min_speed is provided without speed.
@@ -1825,7 +1749,10 @@ class Environment(Generic[_C]):
             If ``times`` contains non-finite values (NaN or Inf). The error
             names ``times`` and the first offending index.
         NotImplementedError
-            If linear allocation lacks exact supported cell geometry.
+            If linear allocation lacks exact supported cell geometry, or the
+            environment is a track built without ``track_width``.
+        CartesianOnlyError
+            If ``time_allocation='linear'`` on a polar environment.
 
         See Also
         --------
@@ -1898,11 +1825,14 @@ class Environment(Generic[_C]):
         ... )
 
         """
-        self._require_cartesian("occupancy()")
         return _occupancy(
-            self,
             times,
             positions,
+            binning=self._binning,
+            arena=self._arena,
+            coordinates=self._coordinate_system,
+            dimension_ranges=self.dimension_ranges,
+            cache=self._cache,
             speed=speed,
             min_speed=min_speed,
             max_gap=max_gap,
@@ -1913,7 +1843,7 @@ class Environment(Generic[_C]):
         )
 
     def bin_sequence(
-        self: Environment[CartesianSystem],
+        self,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -1921,7 +1851,7 @@ class Environment(Generic[_C]):
         outside_value: int | None = -1,
         max_gap: float | None = 0.5,
         epochs: Any = None,
-    ) -> NDArray[np.int32]:
+    ) -> NDArray[np.intp]:
         """Map trajectory to sequence of bin indices.
 
         Converts a continuous trajectory (times and positions) into a discrete
@@ -1934,18 +1864,24 @@ class Environment(Generic[_C]):
         times : NDArray[np.float64], shape (n_samples,)
             Timestamps in seconds. Should be monotonically increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions.
+            Position coordinates matching environment dimensions, located as
+            :meth:`bin_at` does: ``(distance, angle)`` rows on an egocentric
+            polar environment.
         dedup : bool, default=True
             If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
             If False, return a bin index for every retained sample.
         outside_value : int or None, default=-1
-            Bin index for samples outside environment bounds.
+            Bin index for samples outside environment bounds or with a NaN
+            coordinate (missing; see Missing data in the class Notes).
             - If -1 (default), outside samples are marked with -1.
             - If None, outside samples are dropped from the sequence entirely.
         max_gap : float or None, default=0.5
             Longest sampling interval (seconds) treated as continuous recording.
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from the analysis. ``None`` disables the gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -1953,7 +1889,7 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        bins : NDArray[np.int32], shape (n_sequences,)
+        bins : NDArray[np.intp], shape (n_sequences,)
             Bin index at each retained time point (or deduplicated sequence).
             Values are in range [0, n_bins-1] for valid bins, or -1 for
             outside samples (when outside_value=-1).
@@ -1985,18 +1921,29 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> bins = env.bin_sequence(times, positions)  # doctest: +SKIP
-        >>> bins = env.bin_sequence(times, positions, dedup=False)  # doctest: +SKIP
-        >>> bins = env.bin_sequence(
-        ...     times, positions, outside_value=None
-        ... )  # doctest: +SKIP
+        A 10 x 10 cm arena with 2 cm bins. The animal runs along y = 1 and
+        one tracking sample jumps outside the arena:
+
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> times = np.arange(6) * 0.1  # seconds
+        >>> x_cm = np.array([1.0, 1.5, 3.0, 3.5, 20.0, 5.0])  # 20 cm is outside
+        >>> positions = np.c_[x_cm, np.ones(6)]
+        >>> env.bin_sequence(times, positions)  # repeated bins collapse
+        array([ 7, 13, -1, 19])
+        >>> env.bin_sequence(times, positions, dedup=False)  # one bin per sample
+        array([ 7,  7, 13, 13, -1, 19])
+        >>> env.bin_sequence(times, positions, outside_value=None)  # drop outside
+        array([ 7, 13, 19])
 
         """
-        self._require_cartesian("bin_sequence()")
         result = _bin_sequence(
-            self,
             times,
             positions,
+            binning=self._binning,
+            arena=self._arena,
+            cache=self._cache,
             dedup=dedup,
             outside_value=outside_value,
             gap_splits_runs=False,
@@ -2006,7 +1953,7 @@ class Environment(Generic[_C]):
         return result.bins
 
     def bin_sequence_with_runs(
-        self: Environment[CartesianSystem],
+        self,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -2038,6 +1985,9 @@ class Environment(Generic[_C]):
             Longest sampling interval (seconds) treated as continuous recording.
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from the analysis. ``None`` disables the gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -2066,16 +2016,28 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> result = env.bin_sequence_with_runs(times, positions)  # doctest: +SKIP
-        >>> # Duration of run i in seconds:
-        >>> # times[result.run_starts[i] + result.run_lengths[i] - 1]
-        >>> #   - times[result.run_starts[i]]
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> times = np.arange(6) * 0.1  # seconds
+        >>> x_cm = np.array([1.0, 1.5, 3.0, 3.5, 20.0, 5.0])  # 20 cm is outside
+        >>> positions = np.c_[x_cm, np.ones(6)]
+        >>> result = env.bin_sequence_with_runs(times, positions)
+        >>> result.bins
+        array([ 7, 13, -1, 19])
+        >>> result.run_lengths  # samples in each run
+        array([2, 2, 1, 1])
+        >>> # Time from the first to the last sample of each run, in seconds
+        >>> last = result.run_starts + result.run_lengths - 1
+        >>> np.round(times[last] - times[result.run_starts], 2)
+        array([0.1, 0.1, 0. , 0. ])
         """
-        self._require_cartesian("bin_sequence_with_runs()")
         return _bin_sequence(
-            self,
             times,
             positions,
+            binning=self._binning,
+            arena=self._arena,
+            cache=self._cache,
             dedup=True,
             outside_value=outside_value,
             gap_splits_runs=True,
@@ -2083,10 +2045,19 @@ class Environment(Generic[_C]):
             epochs=epochs,
         )
 
+    @cartesian_only(
+        why="Its nearest mode reads the nearest bin center and its linear mode "
+        "interpolates along Cartesian grid axes; neither is the cell that "
+        "contains a (distance, angle) row.",
+        fix="read the field in the bin that contains each row with env.bin_at; "
+        "a row with bin -1 is outside and gets NaN, not field[-1]",
+        example="bins = env.bin_at(positions); "
+        "np.where(bins >= 0, field[bins], np.nan)",
+    )
     def interpolate(
         self: Environment[CartesianSystem],
         field: NDArray[np.float64],
-        points: NDArray[np.float64],
+        positions: NDArray[np.float64],
         *,
         mode: Literal["nearest", "linear"] = "nearest",
     ) -> NDArray[np.float64]:
@@ -2100,10 +2071,12 @@ class Environment(Generic[_C]):
         ----------
         field : NDArray[np.float64], shape (n_bins,)
             Field values per bin. Must be a 1-D array with length equal to n_bins.
-            Must not contain NaN or Inf values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
+            NaN marks a bin with no value (for example an unvisited bin of a
+            rate map). Must not contain Inf values.
+        positions : NDArray[np.float64], shape (n_points, n_dims)
             Query points in environment coordinates. Must be a 2-D array where
             each row is a point with dimensionality matching the environment.
+            A point with a NaN coordinate is a missing sample and reads NaN.
         mode : {'nearest', 'linear'}, default='nearest'
             Interpolation mode:
 
@@ -2114,21 +2087,21 @@ class Environment(Generic[_C]):
               ``from_pixel_mask``, ``from_polygon``, and grids read from NWB.
               Rotated, reflected and sheared 2-D/3-D grids use their source axes;
               queries remain in world coordinates.
-              Inactive cells return NaN.
+              Inactive cells and NaN field values return NaN.
               Points outside grid bounds return NaN.
 
         Returns
         -------
         values : NDArray[np.float64], shape (n_points,)
-            Interpolated field values. Points outside environment → NaN.
+            Interpolated field values. Points outside the environment, points
+            with NaN coordinates and points that need a NaN field value read
+            NaN (see Missing data in the class Notes).
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
-            If field has wrong shape, wrong dimensionality, contains NaN/Inf,
-            points have wrong dimensionality, mode is invalid, or dimensions
+            If field has wrong shape, wrong dimensionality, contains Inf,
+            positions have wrong dimensionality, mode is invalid, or dimensions
             don't match, or affine projection cannot resolve source cell widths.
         NotImplementedError
             If mode='linear' is requested for non-grid layout.
@@ -2149,44 +2122,61 @@ class Environment(Generic[_C]):
         f(x,y) = ax + by + c, interpolation is exact up to numerical precision.
         Retained grids recover source center planes only within a bounded
         projection error below one quarter of the smallest source cell width.
-        Positive interpolation weight on a resolved inactive corner returns NaN.
+        Positive interpolation weight on a resolved inactive corner, or on a
+        bin whose field value is NaN, returns NaN.
 
         **Outside handling**: Points outside the environment bounds return NaN
         in both modes. This prevents extrapolation errors.
 
         Examples
         --------
-        >>> # Nearest-neighbor interpolation (all layouts)
-        >>> field = np.random.rand(env.n_bins)  # doctest: +SKIP
-        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2]])  # doctest: +SKIP
-        >>> values = env.interpolate(
-        ...     field, query_points, mode="nearest"
-        ... )  # doctest: +SKIP
+        A field that rises linearly across the arena, f(x, y) = 2x + 3y,
+        read at two points inside the arena and one outside it:
 
-        >>> # Linear interpolation (grids only)
-        >>> # For plane f(x,y) = 2x + 3y, interpolation is exact
-        >>> plane_field = (
-        ...     2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
-        ... )  # doctest: +SKIP
-        >>> values = env.interpolate(
-        ...     plane_field, query_points, mode="linear"
-        ... )  # doctest: +SKIP
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> plane_field = 2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
+        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2], [50.0, 5.0]])
 
-        >>> # Evaluate rate map at trajectory positions
-        >>> rates_at_trajectory = env.interpolate(
-        ...     rate_map, positions, mode="linear"
-        ... )  # doctest: +SKIP
+        Linear interpolation (grids only) recovers the plane exactly:
+
+        >>> env.interpolate(plane_field, query_points, mode="linear")
+        array([25. , 24.6,  nan])
+
+        Nearest-neighbor interpolation (all layouts) returns the value of the
+        closest bin center:
+
+        >>> env.interpolate(plane_field, query_points, mode="nearest").round(2)
+        array([27.08, 25.25,   nan])
+
+        To read a rate map at every tracked position, pass the positions
+        array, ``env.interpolate(rate_map, positions, mode="linear")``.
 
         """
-        self._require_cartesian("interpolate()")
-        return _interpolate(self, field, points, mode=mode)
+        return _interpolate(
+            field,
+            positions,
+            binning=self._binning,
+            arena=self._arena,
+            cache=self._cache,
+            mode=mode,
+        )
 
-    @check_fitted
+    @cartesian_only(
+        why="It merges blocks of cells on a Cartesian grid.",
+        fix="build a coarser polar environment over the same ranges with larger "
+        "distance_bin_size or angle_bin_size",
+        example="Environment.from_polar_egocentric(distance_range=env.dimension_ranges[0], "
+        "angle_range=env.dimension_ranges[1], distance_bin_size=20.0, "
+        "angle_bin_size=np.pi / 2)",
+    )
     def rebin(
         self: Environment[CartesianSystem],
         factor: int | tuple[int, ...] | None = None,
         *,
         bin_size: float | tuple[float, ...] | None = None,
+        name: str | None = None,
     ) -> Environment[CartesianSystem]:
         """Re-bin an arena at a new size, or coarsen a grid by integer factor.
 
@@ -2212,6 +2202,8 @@ class Environment(Generic[_C]):
             Needs a known arena and a supported stored GridBinningSpec.
             Center selection can leave portions of the arena without a bin;
             use ``clip`` separately when exact clipped cells are needed.
+        name : str, optional
+            Name of the new environment; defaults to this environment's name.
 
         Returns
         -------
@@ -2222,8 +2214,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         NotImplementedError
             If cells are not a uniform rectangular grid, or factor rebinning
             would replace custom navigation distances or connections.
@@ -2241,16 +2231,8 @@ class Environment(Generic[_C]):
         -----
         **Geometry only**: This method only coarsens the grid structure. To
         aggregate field values (occupancy, spike counts, etc.) from the original
-        grid to the coarsened grid, map the original bin centers and aggregate:
-
-            >>> coarse = env.rebin(factor=2)  # doctest: +SKIP
-            >>> coarse_indices = coarse.bin_at(env.bin_centers)  # doctest: +SKIP
-            >>> retained = coarse_indices >= 0  # doctest: +SKIP
-            >>> coarse_field = np.bincount(  # doctest: +SKIP
-            ...     coarse_indices[retained],
-            ...     weights=field[retained],
-            ...     minlength=coarse.n_bins,
-            ... )
+        grid to the coarsened grid, map the original bin centers to coarse
+        bins and sum within each one, as the last example below shows.
 
         **Factor mode**: Integer coarsening requires uniform rectangular cells
         with native grid connections and straight center-to-center navigation
@@ -2284,9 +2266,10 @@ class Environment(Generic[_C]):
         truncated extent) are left without a new bin, a ``UserWarning`` gives
         their count and share of the area, since positions in them map to -1.
 
-        **Metadata preservation**: The arena, units, frame and named regions
-        are preserved. Region coordinates and metadata remain intact even when
-        truncation removes the bins near a region. New-size re-binning It supports rectangular
+        **Metadata preservation**: The name, arena, units, frame and named
+        regions are preserved. Region coordinates and metadata remain intact
+        even when truncation removes the bins near a region. New-size
+        re-binning supports rectangular
         grids from samples, masks, images and polygon grids, including their
         derived grid frames. Other families and older records without a stored
         specification refuse this mode. It never transfers fields or models.
@@ -2295,25 +2278,36 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> # Create 10x10 grid (deterministic)
-        >>> rng = np.random.RandomState(42)
-        >>> data = rng.rand(1000, 2) * 100
-        >>> env = Environment.from_samples(data, bin_size=10.0)
-        >>> env.grid_shape  # May vary with random data
-        (11, 11)
+        >>> # A 100 x 100 cm arena of 10 cm cells
+        >>> grid_edges = (np.arange(11) * 10.0,) * 2
+        >>> env = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), grid_edges)
+        >>> env.grid_shape
+        (10, 10)
         >>>
-        >>> # Coarsen by factor 2 → ~5x5 grid (11 // 2 = 5)
+        >>> # Coarsen by factor 2: 20 cm cells
         >>> coarse = env.rebin(factor=2)
         >>> coarse.grid_shape
         (5, 5)
         >>>
-        >>> # Anisotropic coarsening with tuple (11 // 2 = 5, 11 // 5 = 2)
+        >>> # Anisotropic coarsening with tuple (10 // 2 = 5, 10 // 5 = 2)
         >>> coarse_aniso = env.rebin(factor=(2, 5))
         >>> coarse_aniso.grid_shape
         (5, 2)
-        >>>
-        >>> # Aggregate a field to the coarsened grid
-        >>> occupancy = np.random.rand(env.n_bins) * 100
+
+        A factor that does not divide the grid shape truncates the grid and warns:
+
+        >>> import warnings
+        >>> with warnings.catch_warnings(record=True) as caught:
+        ...     warnings.simplefilter("always")
+        ...     coarse_3 = env.rebin(factor=3)
+        >>> coarse_3.grid_shape
+        (3, 3)
+        >>> print(caught[0].message)
+        Grid shape (10, 10) is not evenly divisible by factor (3, 3). Grid will be truncated to (9, 9) before coarsening.
+
+        Aggregate a field to the coarsened grid:
+
+        >>> occupancy = np.random.default_rng(0).random(env.n_bins) * 100
         >>> coarse_indices = coarse.bin_at(env.bin_centers)
         >>> retained = coarse_indices >= 0
         >>> coarse_occupancy = np.bincount(
@@ -2326,52 +2320,80 @@ class Environment(Generic[_C]):
         True
 
         """
-        self._require_cartesian("rebin()")
-        if (factor is None) == (bin_size is None):
-            raise ValueError("Pass exactly one of factor or bin_size to rebin().")
-        if bin_size is not None:
-            return _rebin_resolution(self, bin_size)
-        assert factor is not None
-        return _rebin_factor(self, factor)
+        derivation, check = _rebin(
+            self._binning,
+            self._arena,
+            self.connectivity,
+            self._provenance.build_params,
+            factor=factor,
+            bin_size=bin_size,
+        )
+        rebinned = publish_derived(self, derivation, name=name)
+        warn_rebin_losses(self._binning, self._arena, rebinned, check)
+        return rebinned
 
-    @check_fitted
+    @cartesian_only(
+        why="It rebuilds the kept cells, their regions and their boundary in "
+        "Cartesian coordinates.",
+        fix="keep the full polar environment and select bins with a boolean mask",
+        example="near = env.bin_centers[:, 0] < 20.0; field[near]",
+    )
+    @keyword_hint(
+        former=("bins",),
+        translate=lambda values: (
+            "pass the boolean array of bins to keep as mask=",
+            {"mask": values["bins"]},
+        ),
+        why="Why: the boolean array of bins to keep is passed by keyword as mask=.",
+    )
     def subset(
         self: Environment[CartesianSystem],
         *,
-        bins: NDArray[np.bool_] | None = None,
+        mask: NDArray[np.bool_] | None = None,
         region_names: Sequence[str] | None = None,
         polygon: shapely.Polygon | None = None,
+        include_boundary: bool = True,
         invert: bool = False,
+        name: str | None = None,
     ) -> Environment[CartesianSystem]:
         """Create new environment containing subset of bins.
 
         Extracts a subgraph from the environment containing only the selected
-        bins. Node indices are renumbered to be contiguous [0, n'-1]. This
-        operation drops all regions; users can re-add regions to the subset
-        environment if needed. Bin sizes, retained faces, cell shapes and track
-        coordinates are preserved. Points in discarded bins are outside the
-        subset and map to ``-1``.
+        bins. Node indices are renumbered to be contiguous [0, n'-1]. Bin
+        sizes, retained faces, cell shapes and track coordinates are
+        preserved, and so are the name, units, frame, arena and named regions.
+        Regions may extend beyond the retained bins. Points in discarded bins
+        are outside the subset and map to ``-1``.
 
         Parameters
         ----------
-        bins : NDArray[np.bool_], shape (n_bins,), optional
+        mask : NDArray[np.bool_], shape (n_bins,), optional
             Boolean mask of bins to keep. True = keep, False = discard.
         region_names : Sequence[str], optional
-            Keep bins whose centers lie inside these named regions.
-            Regions must exist in self.regions. Only polygon-type regions
-            are supported (point-type regions will raise ValueError).
+            Keep the bins these named regions cover, by the rule of
+            :meth:`bins_in_region`: the bin containing a point region, and
+            the bins whose centers lie inside (or on the edge of) a polygon
+            region. Regions must exist in self.regions.
         polygon : shapely.Polygon, optional
-            Keep bins whose centers lie inside this polygon. Only works
-            for 2D environments.
+            Keep bins whose centers lie inside this polygon or on its edge.
+            Only works for 2D environments.
+        include_boundary : bool, default=True
+            For ``region_names=`` polygons and ``polygon=``, keep a bin whose
+            center lies exactly on the polygon's edge; with False keep only
+            centers strictly inside. This is the rule of
+            :meth:`bins_in_region`. Point regions ignore it, and it cannot be
+            changed with ``mask=``, which already lists the bins to keep.
         invert : bool, default=False
             If True, invert the selection mask (select complement).
+        name : str, optional
+            Name of the new environment; defaults to this environment's name.
 
         Returns
         -------
         sub_env : Environment
             New environment with selected bins renumbered to [0, n'-1].
-            Connectivity is the induced subgraph. All regions are dropped.
-            Metadata (units, frame) is preserved.
+            Connectivity is the induced subgraph. Name, units, frame, arena
+            and regions are preserved.
 
         Raises
         ------
@@ -2381,7 +2403,7 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Exactly one of {bins, region_names, polygon} must be provided.
+        Exactly one of {mask, region_names, polygon} must be provided.
 
         The connectivity graph is the induced subgraph: only edges where both
         endpoints are in the selection are kept. This may create disconnected
@@ -2406,31 +2428,56 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> # Extract bins inside 'goal' region
-        >>> goal_env = env.subset(region_names=["goal"])  # doctest: +SKIP
-        >>>
-        >>> # Crop to polygon
-        >>> from shapely.geometry import box  # doctest: +SKIP
-        >>> cropped = env.subset(polygon=box(0, 0, 50, 50))  # doctest: +SKIP
-        >>>
-        >>> # Select bins by boolean mask
-        >>> mask = env.bin_centers[:, 0] < 50  # Left half  # doctest: +SKIP
-        >>> left_env = env.subset(bins=mask)  # doctest: +SKIP
-        >>>
-        >>> # Inverted selection (everything except region)
-        >>> outside = env.subset(
-        ...     region_names=["obstacle"], invert=True
-        ... )  # doctest: +SKIP
+        A 100 x 100 cm arena with 10 cm bins and a goal zone in one corner:
+
+        >>> import numpy as np
+        >>> from shapely.geometry import box
+        >>> from neurospatial import Environment
+        >>> from neurospatial.regions import Regions
+        >>> x, y = np.meshgrid(np.linspace(0, 100, 41), np.linspace(0, 100, 41))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=10.0, units="cm"
+        ... )
+        >>> regions = Regions()
+        >>> _ = regions.add("goal", polygon=box(70, 70, 100, 100))
+        >>> env = env.with_regions(regions)
+        >>> env.n_bins
+        121
+
+        Keep the bins inside the goal zone, or everything except it:
+
+        >>> env.subset(region_names=["goal"]).n_bins
+        16
+        >>> env.subset(region_names=["goal"], invert=True).n_bins
+        105
+
+        Crop to a polygon, or select bins with a boolean mask:
+
+        >>> env.subset(polygon=box(0, 0, 50, 50)).n_bins
+        36
+        >>> left_half = env.bin_centers[:, 0] < 50
+        >>> env.subset(mask=left_half).n_bins
+        55
 
         """
-        self._require_cartesian("subset()")
-        from neurospatial.environment._subset import _subset
-
-        return _subset(
-            self, bins=bins, region_names=region_names, polygon=polygon, invert=invert
+        derivation = _subset(
+            self._binning,
+            self._arena,
+            self.regions,
+            self._cache,
+            mask=mask,
+            region_names=region_names,
+            polygon=polygon,
+            include_boundary=include_boundary,
+            invert=invert,
         )
+        return publish_derived(self, derivation, name=name)
 
-    @check_fitted
+    @cartesian_only(
+        why="It intersects the cells with a polygon in Cartesian coordinates.",
+        fix="keep the full polar environment and select bins with a boolean mask",
+        example="ahead = np.abs(env.bin_centers[:, 1]) < np.pi / 2; field[ahead]",
+    )
     def clip(
         self: Environment[CartesianSystem],
         polygon: shapely.Polygon | shapely.MultiPolygon,
@@ -2449,7 +2496,8 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Exact positive-area cells. Disconnected pieces get separate bins;
+            Exact positive-area cells, with the parent's units, frame, arena
+            and named regions. Disconnected pieces get separate bins;
             ``clip_mapping.parent_bin_indices`` identifies their input bins.
             Rates, counts and fitted models are not transferred. Numerical
             operations require certified finite-volume geometry. The analysis
@@ -2462,17 +2510,26 @@ class Environment(Generic[_C]):
             positive-area intersection. Track, polar and 3-D cells are not
             Cartesian planar area cells.
         """
-        self._require_cartesian("clip()")
-        from neurospatial.environment._clipping import _clip
+        return publish_derived(
+            self, _clip(self._binning, self._arena, polygon), name=name
+        )
 
-        return _clip(self, polygon, name=name)
-
-    @check_fitted
+    @cartesian_only(
+        why="An affine map moves Cartesian positions; it has no meaning for "
+        "(distance, angle) pairs.",
+        fix="transform the allocentric positions, then compute egocentric "
+        "distance and angle from them",
+        example="shifted = positions + np.array([10.0, 0.0]); np.stack("
+        "[neurospatial.ops.compute_egocentric_distance(shifted, headings, "
+        "object_positions), neurospatial.ops.compute_egocentric_bearing(shifted, "
+        "headings, object_positions)], axis=-1)",
+    )
     def apply_transform(
         self: Environment[CartesianSystem],
         transform: AffineND | Affine2D,
         *,
         name: str | None = None,
+        frame: str | None = None,
     ) -> Environment[CartesianSystem]:
         """Apply affine transformation to environment, returning a new instance.
 
@@ -2506,8 +2563,13 @@ class Environment(Generic[_C]):
             Create transforms using factory functions like `translate()`,
             `scale_2d()`, `from_rotation_matrix()`, or compose using `@` operator.
         name : str, optional
-            Name for the transformed environment. If None, appends "_transformed"
-            to the original name.
+            Name for the transformed environment; defaults to this
+            environment's name.
+        frame : str, optional
+            Coordinate frame label of the transformed positions, for example
+            ``"session2"``. The default ``None`` leaves the frame unlabeled,
+            because the transformed coordinates are no longer in this
+            environment's frame.
 
         Returns
         -------
@@ -2518,7 +2580,7 @@ class Environment(Generic[_C]):
             - `bin_centers`: All bin positions are transformed
             - `connectivity`: Node 'pos' attributes updated, edge distances/vectors recomputed
             - `regions`: Point and polygon regions are transformed
-            - `metadata`: Units preserved, frame updated with "_transformed" suffix
+            - `metadata`: Name and units preserved; frame set from ``frame``
 
             Bin IDs and edge ordering are retained. Cell/face measures and
             available numerical capabilities follow the transformed geometry.
@@ -2526,9 +2588,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If environment is not fitted (use factory methods like
-            `Environment.from_samples()`).
         ValueError
             If transform dimensionality doesn't match environment dimensionality,
             the transform is not invertible, or a track receives a non-similarity
@@ -2550,12 +2609,9 @@ class Environment(Generic[_C]):
         it returns a new Environment instance.
 
         **Transformation order**: When composing transforms, use the `@` operator.
-        `T1 @ T2` applies T2 first, then T1:
-
-            >>> composed = (
-            ...     rotation @ translation
-            ... )  # translation first, then rotation  # doctest: +SKIP
-            >>> transformed = env.apply_transform(composed)  # doctest: +SKIP
+        ``T1 @ T2`` applies ``T2`` first, then ``T1``, so
+        ``rotation @ translation`` translates first and then rotates (see the
+        composed-transform example below).
 
         **Edge attributes**: After transformation:
 
@@ -2574,7 +2630,8 @@ class Environment(Generic[_C]):
         >>> from neurospatial.ops.transforms import translate
         >>> import numpy as np
         >>> # Create 2D environment
-        >>> data = np.random.rand(200, 2) * 100
+        >>> rng = np.random.default_rng(0)
+        >>> data = rng.random((200, 2)) * 100
         >>> env = Environment.from_samples(data, bin_size=5.0, name="session1")
         >>> # Translate by (10, 20) cm
         >>> transform = translate(10, 20)
@@ -2597,77 +2654,90 @@ class Environment(Generic[_C]):
         ... )
         >>> transform = Affine2D(R)
         >>> env_rotated = env.apply_transform(transform)
-        >>> # Distances preserved under rotation
-        >>> assert env_rotated.n_bins == env.n_bins
+        >>> # Distances between bin centers are preserved under rotation
+        >>> def steps(centers):
+        ...     return np.linalg.norm(np.diff(centers, axis=0), axis=1)
+        >>> np.allclose(steps(env_rotated.bin_centers), steps(env.bin_centers))
+        True
 
-        Composed transforms (scale → rotate → translate):
+        Composed transforms (scale, then rotate, then translate):
 
-        >>> from neurospatial.ops.transforms import (
-        ...     scale_2d,
-        ...     translate,
-        ... )  # doctest: +SKIP
-        >>> # Build transformation pipeline
-        >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)  # doctest: +SKIP
-        >>> env_aligned = env.apply_transform(T, name="aligned")  # doctest: +SKIP
+        >>> from neurospatial.ops.transforms import scale_2d
+        >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)
+        >>> env_aligned = env.apply_transform(T, name="aligned")
+        >>> np.allclose(env_aligned.bin_centers, T(env.bin_centers))
+        True
+        >>> # Areas scale by the square of the 1.2 scale factor
+        >>> np.allclose(env_aligned.bin_sizes, env.bin_sizes * 1.2**2)
+        True
 
         Cross-session alignment using landmarks:
 
-        >>> from neurospatial.ops.transforms import estimate_transform  # doctest: +SKIP
+        >>> from neurospatial.ops.transforms import estimate_transform
         >>> # Session 1 landmarks (e.g., arena corners)
-        >>> landmarks_s1 = np.array(
-        ...     [[0, 0], [100, 0], [100, 100], [0, 100]]
-        ... )  # doctest: +SKIP
+        >>> landmarks_s1 = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], float)
         >>> # Session 2 landmarks (same physical locations, different coordinates)
-        >>> landmarks_s2 = np.array(
-        ...     [[5, 10], [95, 15], [90, 105], [0, 100]]
-        ... )  # doctest: +SKIP
+        >>> landmarks_s2 = np.array([[5, 10], [95, 15], [90, 105], [0, 100]], float)
         >>> # Estimate rigid transform (rotation + translation)
-        >>> T = estimate_transform(
-        ...     landmarks_s1, landmarks_s2, kind="rigid"
-        ... )  # doctest: +SKIP
-        >>> # Transform session 1 environment to session 2 coordinates
-        >>> env_s1_aligned = env_s1.apply_transform(
-        ...     T, name="session1_in_s2_coords"
-        ... )  # doctest: +SKIP
+        >>> T = estimate_transform(landmarks_s1, landmarks_s2, kind="rigid")
+        >>> # A rigid fit cannot absorb the stretch between sessions; check the
+        >>> # landmark residuals (cm) before trusting the alignment
+        >>> np.linalg.norm(T(landmarks_s1) - landmarks_s2, axis=1).round(1)
+        array([7., 7., 7., 7.])
+        >>> # Transform the session 1 environment to session 2 coordinates
+        >>> env_s1_aligned = env.apply_transform(
+        ...     T, name="session1_in_s2_coords", frame="session2"
+        ... )
+        >>> env_s1_aligned.frame
+        'session2'
 
         3D transformation:
 
-        >>> from scipy.spatial.transform import Rotation  # doctest: +SKIP
+        >>> from scipy.spatial.transform import Rotation
         >>> from neurospatial.ops.transforms import (
         ...     from_rotation_matrix,
         ...     translate_3d,
-        ... )  # doctest: +SKIP
+        ... )
         >>> # Create 3D environment
-        >>> data_3d = np.random.randn(500, 3) * 20  # doctest: +SKIP
-        >>> env_3d = Environment.from_samples(data_3d, bin_size=3.0)  # doctest: +SKIP
+        >>> data_3d = rng.random((500, 3)) * 20
+        >>> env_3d = Environment.from_samples(data_3d, bin_size=5.0)
         >>> # Rotate 45 degrees around z-axis and translate
-        >>> R_3d = Rotation.from_euler(
-        ...     "z", 45, degrees=True
-        ... ).as_matrix()  # doctest: +SKIP
-        >>> rotation = from_rotation_matrix(R_3d)  # doctest: +SKIP
-        >>> translation = translate_3d(10, 20, 30)  # doctest: +SKIP
-        >>> T_3d = translation @ rotation  # doctest: +SKIP
-        >>> env_3d_transformed = env_3d.apply_transform(T_3d)  # doctest: +SKIP
+        >>> R_3d = Rotation.from_euler("z", 45, degrees=True).as_matrix()
+        >>> rotation = from_rotation_matrix(R_3d)
+        >>> translation = translate_3d(10, 20, 30)
+        >>> T_3d = translation @ rotation
+        >>> env_3d_transformed = env_3d.apply_transform(T_3d)
+        >>> # A rotation and translation preserve distances between bins
+        >>> def steps_3d(centers):
+        ...     return np.linalg.norm(np.diff(centers, axis=0), axis=1)
+        >>> np.allclose(
+        ...     steps_3d(env_3d_transformed.bin_centers), steps_3d(env_3d.bin_centers)
+        ... )
+        True
 
         With regions (regions are automatically transformed):
 
         >>> from neurospatial.regions import Regions
         >>> regions = Regions(env.regions.values())
-        >>> regions.add("goal", point=[80, 90])  # doctest: +SKIP
+        >>> _ = regions.add("goal", point=[80, 90])
         >>> env = env.with_regions(regions)
-        >>> env_transformed = env.apply_transform(translate(10, 10))  # doctest: +SKIP
+        >>> env_transformed = env.apply_transform(translate(10, 10))
         >>> # Region is transformed along with environment
-        >>> goal_region = env_transformed.regions["goal"]  # doctest: +SKIP
-        >>> np.allclose(goal_region.data, [90, 100])  # doctest: +SKIP
+        >>> goal_region = env_transformed.regions["goal"]
+        >>> np.allclose(goal_region.data, [90, 100])
         True
 
         """
-        self._require_cartesian("apply_transform()")
-        from neurospatial.environment._affine import _apply_transform_to_environment
-
-        return _apply_transform_to_environment(self, transform, name=name)
+        derivation = _apply_transform(
+            transform,
+            binning=self._binning,
+            regions=self.regions,
+            arena=self._arena,
+        )
+        return publish_derived(self, derivation, name=name, frame=frame)
 
     @classmethod
+    @keyword_hint()
     def combine(
         cls,
         components: Mapping[str, Environment],
@@ -2706,10 +2776,8 @@ class Environment(Generic[_C]):
         ValueError
             If coordinates disagree, components overlap, or support cannot be certified.
         """
-        from neurospatial.environment.factories import _combine
-
         return _combine(
-            cls,
+            Environment,
             components,
             auto_bridge=auto_bridge,
             max_mnn_distance=max_mnn_distance,
@@ -2718,9 +2786,10 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint()
     def from_bins(
         cls,
-        binning: object,
+        binning: Binning,
         *,
         name: str = "",
         units: str | None = None,
@@ -2732,11 +2801,13 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        binning : neurospatial.binning.Binning or registered provider
+        binning : neurospatial.binning.Binning
             Bin centers, measures and ordered neighbor pairs, with an explicit
             supported locator. KnownFaces enables finite-volume operations;
             MissingFaces explicitly refuses them. Shapes are required for exact
             clipping. Centers and sizes alone cannot establish these capabilities.
+            An object from another package with an installed snapshot adapter
+            is converted to a Binning first.
         name : str, default=""
             Environment name.
         units, frame : str or None, optional
@@ -2754,8 +2825,6 @@ class Environment(Generic[_C]):
             ``edge_pairs`` defines gradient and flux order; NetworkX iteration
             may use a different order.
         """
-        from neurospatial.environment.factories import _from_bins
-
         return _from_bins(
             cls,
             binning,
@@ -2767,16 +2836,19 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
+    @keyword_hint("bin_size")
     def from_samples(
         cls,
         positions: NDArray[np.float64],
-        bin_size: float | Sequence[float],
         *,
+        bin_size: float | Sequence[float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
         regions: Regions | None = None,
+        arena: Arena | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
+        dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
         dilate: bool = False,
@@ -2784,8 +2856,6 @@ class Environment(Generic[_C]):
         close_gaps: bool = False,
         add_boundary_bins: bool = False,
         connect_diagonal_neighbors: bool = True,
-        arena: Arena | None = None,
-        **layout_specific_kwargs: Any,
     ) -> Environment[CartesianSystem]:
         """Create an Environment by binning (discretizing) `positions` into a layout grid.
 
@@ -2794,10 +2864,22 @@ class Environment(Generic[_C]):
         ``dilate``, ``fill_holes``, ``close_gaps``) only when sparse or noisy
         sampling leaves holes, gaps, or a ragged boundary in the active-bin mask.
 
+        For common apparatus, start from a preset instead:
+
+        - :meth:`open_field` -- an open arena from tracked positions; the same
+          binning with interior holes filled, so a briefly unvisited patch in
+          the middle of the arena stays in the analysis.
+        - :meth:`linear_track` -- a straight or piecewise-linear track from its
+          endpoints, linearized for 1-D place fields.
+        - :meth:`maze` -- a plus, T or W maze from the positions of its
+          junctions and arm ends.
+
         Parameters
         ----------
         positions : array, shape (n_samples, n_dims)
             Coordinates of sample points used to infer which bins are "active."
+            A row with a NaN or infinite coordinate is a missing sample and is
+            left out.
         bin_size : float or sequence of floats
             Size of each bin in the same units as `positions` coordinates.
             For RegularGrid: length of each square bin side (or per-dimension if sequence).
@@ -2814,58 +2896,74 @@ class Environment(Generic[_C]):
             label). If provided, sets ``env.frame`` on the returned Environment.
         regions : Regions, optional
             Named regions to snapshot with the constructed environment.
-        layout : LayoutType | str, default LayoutType.REGULAR_GRID
-            Layout engine type to use. Can be a LayoutType enum member (recommended
-            for IDE autocomplete) or a case-insensitive string. For RegularGrid and
-            Hexagonal layouts, `bin_size` is supported. For "Hexagonal", `bin_size`
-            is interpreted as `hexagon_width`. See `list_available_layouts()` for
-            all options and `get_layout_parameters()` for layout-specific parameters.
-        infer_active_bins : bool, default True
-            If True, only bins containing ≥ `bin_count_threshold` samples are "active."
-        connect_diagonal_neighbors : bool, default True
-            If True, connect grid bins diagonally when building connectivity.
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
             from the active cells; an unvisited patch is not a declared wall.
+        layout : LayoutType | str, default LayoutType.REGULAR_GRID
+            ``"RegularGrid"`` or ``"Hexagonal"``, as a LayoutType member or a
+            case-insensitive string. For "Hexagonal", `bin_size` is the
+            hexagon width. Other layouts are built with
+            :func:`neurospatial.layout.create_layout` and
+            :meth:`from_layout`.
+        dimension_ranges : sequence of (float, float), optional
+            ``[(min, max), ...]`` extent to tile on each axis, in the units of
+            `positions`. By default the extent of the samples plus half a bin
+            on each side.
+        infer_active_bins : bool, default True
+            If True, only bins containing ≥ `bin_count_threshold` samples are
+            "active." If False, every bin in the extent is active, and the
+            mask options (`bin_count_threshold`, `dilate`, `fill_holes`,
+            `close_gaps`) must keep their defaults.
+        connect_diagonal_neighbors : bool, default True
+            Regular grid only. If True, connect grid bins diagonally when
+            building connectivity. A hexagonal layout accepts only the
+            default.
 
         Other Parameters
         ----------------
         bin_count_threshold : int, default 0
-            Minimum number of data points required for a bin to be considered "active."
+            Minimum number of data points required for a bin to be considered
+            "active." Only with ``infer_active_bins=True``.
         dilate : bool, default False
-            If True, apply morphological dilation to the active-bin mask.
+            Regular grid only, with ``infer_active_bins=True``. If True, apply
+            morphological dilation to the active-bin mask.
         fill_holes : bool, default False
-            If True, fill holes in the active-bin mask.
+            Regular grid only, with ``infer_active_bins=True``. If True, fill
+            holes in the active-bin mask.
         close_gaps : bool, default False
-            If True, close small gaps between active bins.
+            Regular grid only, with ``infer_active_bins=True``. If True, close
+            small gaps between active bins.
         add_boundary_bins : bool, default False
-            If True, add peripheral bins around the bounding region of samples.
-
-        **layout_specific_kwargs : Any
-            Additional options passed to the selected layout engine; see
-            ``get_layout_parameters(layout)`` for supported names.
+            Regular grid only. If True, add peripheral bins around the
+            bounding region of samples.
 
         Returns
         -------
         env : Environment
-            A newly created Environment, fitted to the discretized samples.
+            A new Environment binned from the samples.
 
         Raises
         ------
         ValueError
-            If `positions` is not 2D or contains invalid coordinates.
-        NotImplementedError
-            If `layout` is neither "RegularGrid" nor "Hexagonal".
+            If `positions` is not 2D or contains invalid coordinates; if
+            `layout` is neither "RegularGrid" nor "Hexagonal"; if a
+            regular-grid-only option (`dilate`, `fill_holes`, `close_gaps`,
+            `add_boundary_bins`, `connect_diagonal_neighbors`) differs from
+            its default with ``layout="Hexagonal"``; or if a mask option
+            differs from its default with ``infer_active_bins=False``. The
+            default values themselves are accepted, so a parameter set can
+            switch layouts without editing these options.
 
         See Also
         --------
+        open_field : Open-arena preset of this factory (fills interior holes).
+        linear_track : Linear or piecewise-linear track preset.
+        maze : Plus, T or W maze preset.
         from_polygon : Create environment with polygon-defined boundary.
         from_grid_mask : Create environment from pre-defined boolean mask.
         from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
-        from_layout : Create environment with custom LayoutEngine.
-        neurospatial.layout.factories.list_available_layouts : Get all available layout types.
-        neurospatial.layout.factories.get_layout_parameters : Get parameters for a layout type.
+        from_layout : Create environment from a built layout engine.
 
         Examples
         --------
@@ -2892,13 +2990,14 @@ class Environment(Generic[_C]):
         >>> env = Environment.from_samples(
         ...     positions=positions,
         ...     bin_size=5.0,  # 5cm bins
-        ...     bin_count_threshold=5,  # Require 5 samples per bin (lowered from 10)
+        ...     bin_count_threshold=5,  # Require 5 samples per bin
         ...     dilate=True,  # Expand active region
         ...     fill_holes=True,  # Fill interior holes
         ... )
 
         Create a hexagonal grid environment:
 
+        >>> from neurospatial.layout import LayoutType
         >>> env = Environment.from_samples(
         ...     positions=positions,
         ...     layout=LayoutType.HEXAGONAL,  # or layout="Hexagonal"
@@ -2934,18 +3033,17 @@ class Environment(Generic[_C]):
            filling small unvisited areas within explored regions.
 
         """
-        # Convert and validate positions array with helpful error messages
-        from neurospatial.environment.factories import _from_samples
-
         return _from_samples(
             cls,
             positions,
-            bin_size,
+            bin_size=bin_size,
             name=name,
             units=units,
             frame=frame,
             regions=regions,
+            arena=arena,
             layout=layout,
+            dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
             bin_count_threshold=bin_count_threshold,
             dilate=dilate,
@@ -2953,84 +3051,105 @@ class Environment(Generic[_C]):
             close_gaps=close_gaps,
             add_boundary_bins=add_boundary_bins,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
-            arena=arena,
-            **layout_specific_kwargs,
         )
 
     @classmethod
+    @keyword_hint("bin_size")
     def open_field(
         cls,
         positions: NDArray[np.float64],
-        bin_size: float | Sequence[float],
         *,
+        bin_size: float | Sequence[float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
+        arena: Arena | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
+        dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
         dilate: bool = False,
+        fill_holes: bool = True,
         close_gaps: bool = False,
         add_boundary_bins: bool = False,
         connect_diagonal_neighbors: bool = True,
-        **layout_specific_kwargs: Any,
     ) -> Environment[CartesianSystem]:
         """Create an open-arena Environment from sampled positions.
 
-        This is the only positions-based preset. It delegates to
-        :meth:`from_samples` and flips ``fill_holes=True`` -- a sensible
-        open-arena default that fills interior gaps left by uneven sampling,
-        so a freely explored 2D arena reads as one filled region rather than
-        a speckled mask. All other :meth:`from_samples` options pass through
-        unchanged.
+        This is the only positions-based preset. It is :meth:`from_samples`
+        with ``fill_holes=True`` by default on a regular grid: interior gaps
+        left by uneven sampling are filled, so a freely explored 2D arena
+        reads as one filled region rather than a speckled mask. Every other
+        option means the same as in :meth:`from_samples`.
 
         Parameters
         ----------
         positions : array, shape (n_samples, n_dims)
             Coordinates of sample points used to infer which bins are "active."
+            A row with a NaN or infinite coordinate is a missing sample and is
+            left out.
         bin_size : float or sequence of floats
             Size of each bin in the same units as `positions` coordinates.
         name : str, default ""
             Optional name for the resulting Environment.
         units : str or None, default None
             Spatial units for the environment coordinates (e.g. ``"cm"``).
-            Forwarded to :meth:`from_samples`, which sets ``env.units``.
         frame : str or None, default None
-            Coordinate frame identifier. Forwarded to :meth:`from_samples`,
-            which sets ``env.frame``.
+            Coordinate frame identifier.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
+        arena : Arena, optional
+            Explicit continuous domain. Without one, infer an estimated domain
+            from the active cells.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
-            Layout engine type to use. See :meth:`from_samples`.
+            ``"RegularGrid"`` or ``"Hexagonal"``. See :meth:`from_samples`.
+        dimension_ranges : sequence of (float, float), optional
+            ``[(min, max), ...]`` extent to tile on each axis. See
+            :meth:`from_samples`.
         infer_active_bins : bool, default True
-            If True, only bins containing ≥ `bin_count_threshold` samples are "active."
+            If True, only bins containing ≥ `bin_count_threshold` samples are
+            "active." If False, every bin in the extent is active, and the
+            mask options must keep their defaults. See :meth:`from_samples`.
         bin_count_threshold : int, default 0
             Minimum number of data points required for a bin to be "active."
+            Only with ``infer_active_bins=True``.
         dilate : bool, default False
-            If True, apply morphological dilation to the active-bin mask.
+            Regular grid only, with ``infer_active_bins=True``. If True, apply
+            morphological dilation to the active-bin mask.
+        fill_holes : bool, default True
+            Regular grid only, with ``infer_active_bins=True``. If True, fill
+            holes in the active-bin mask. Pass False to keep the unvisited
+            interior bins out.
         close_gaps : bool, default False
-            If True, close small gaps between active bins.
+            Regular grid only, with ``infer_active_bins=True``. If True, close
+            small gaps between active bins.
         add_boundary_bins : bool, default False
-            If True, add peripheral bins around the bounding region of samples.
+            Regular grid only. If True, add peripheral bins around the
+            bounding region of samples.
         connect_diagonal_neighbors : bool, default True
-            If True, connect grid bins diagonally when building connectivity.
-        **layout_specific_kwargs
-            Additional keyword arguments forwarded to :meth:`from_samples`.
+            Regular grid only. If True, connect grid bins diagonally when
+            building connectivity.
 
         Returns
         -------
         env : Environment
-            A newly created open-arena Environment, fitted to the samples.
+            A new open-arena Environment binned from the samples.
+
+        Raises
+        ------
+        ValueError
+            If `layout` is neither "RegularGrid" nor "Hexagonal", if a
+            regular-grid-only option differs from its default with
+            ``layout="Hexagonal"``, or if a mask option differs from its
+            default with ``infer_active_bins=False``. Those layouts never
+            fill holes, so ``fill_holes=False`` is accepted with them too.
 
         See Also
         --------
         from_samples : The general factory this preset delegates to.
         linear_track : Linear / piecewise-linear track preset (explicit topology).
         maze : W / plus / T maze preset (explicit topology).
-
-        Notes
-        -----
-        ``fill_holes`` is forced to ``True`` and is therefore not exposed as a
-        parameter here. If you need the un-filled active mask, call
-        :meth:`from_samples` directly with ``fill_holes=False``.
 
         Examples
         --------
@@ -3042,26 +3161,28 @@ class Environment(Generic[_C]):
         >>> env.is_linearized_track
         False
         """
-        from neurospatial.environment.factories import _open_field
-
         return _open_field(
             cls,
             positions,
-            bin_size,
+            bin_size=bin_size,
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
+            arena=arena,
             layout=layout,
+            dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
             bin_count_threshold=bin_count_threshold,
             dilate=dilate,
+            fill_holes=fill_holes,
             close_gaps=close_gaps,
             add_boundary_bins=add_boundary_bins,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
-            **layout_specific_kwargs,
         )
 
     @classmethod
+    @keyword_hint()
     def linear_track(
         cls,
         *,
@@ -3073,6 +3194,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
     ) -> Environment[CartesianSystem]:
         """Create a 1D linearized track Environment from an explicit topology.
 
@@ -3110,6 +3232,8 @@ class Environment(Generic[_C]):
         frame : str or None, default None
             Coordinate frame identifier. If provided, sets ``env.frame`` on the
             returned Environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
 
         Returns
         -------
@@ -3148,8 +3272,6 @@ class Environment(Generic[_C]):
         >>> env.is_linearized_track
         True
         """
-        from neurospatial.environment.factories import _linear_track
-
         return _linear_track(
             cls,
             endpoints=endpoints,
@@ -3160,13 +3282,15 @@ class Environment(Generic[_C]):
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
         )
 
     @classmethod
+    @keyword_hint("kind")
     def maze(
         cls,
-        kind: str,
         *,
+        kind: str,
         track_graph: nx.Graph | None = None,
         node_positions: dict[Any, Sequence[float]] | None = None,
         bin_size: float,
@@ -3175,6 +3299,7 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
     ) -> Environment[CartesianSystem]:
         """Create a 1D linearized W / plus / T maze Environment.
 
@@ -3258,6 +3383,8 @@ class Environment(Generic[_C]):
         frame : str or None, default None
             Coordinate frame identifier. If provided, sets ``env.frame`` on the
             returned Environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
 
         Returns
         -------
@@ -3290,15 +3417,13 @@ class Environment(Generic[_C]):
         ...     "east": (50, 0),
         ...     "west": (-50, 0),
         ... }
-        >>> env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
+        >>> env = Environment.maze(kind="plus", node_positions=nodes, bin_size=5.0)
         >>> env.is_linearized_track
         True
         """
-        from neurospatial.environment.factories import _maze
-
         return _maze(
             cls,
-            kind,
+            kind=kind,
             track_graph=track_graph,
             node_positions=node_positions,
             bin_size=bin_size,
@@ -3307,19 +3432,22 @@ class Environment(Generic[_C]):
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
         )
 
     @classmethod
+    @keyword_hint("edge_spacing", "bin_size")
     def from_graph(
         cls,
         graph: nx.Graph,
         edge_order: list[tuple[Any, Any]],
-        edge_spacing: float | Sequence[float],
-        bin_size: float,
         *,
+        bin_size: float,
+        edge_spacing: float | Sequence[float] = 0.0,
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
         track_width: float | None = None,
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a user-defined graph structure.
@@ -3334,25 +3462,33 @@ class Environment(Generic[_C]):
             The NetworkX graph defining the track segments. Nodes are expected
             to have a 'pos' attribute for their N-D coordinates.
             ``GraphLayout.build`` numbers ``edge_id`` by ``graph.edges()``
-            order; any ``edge_id`` on the input graph is ignored.
+            order; any ``edge_id`` on the input graph is ignored. The
+            environment keeps the graph's attributes, so each must be a
+            value pickle can store (an attribute holding a function or a lock
+            raises ``TypeError``); ``to_file``, ``to_dict`` and NWB export
+            also need JSON values: finite numbers, strings, booleans, None
+            and lists or dicts of them.
         edge_order : List[Tuple[Any, Any]]
             An ordered list of edge tuples (node1, node2) from `graph` that
             defines the 1D bin ordering.
-        edge_spacing : Union[float, Sequence[float]]
-            The spacing to insert between consecutive edges in `edge_order`
-            during linearization, in the same units as the graph node coordinates.
-            If a float, applies to all gaps. If a sequence, specifies spacing for
-            each gap.
         bin_size : float
             The length of each bin along the linearized track, in the same units
             as the graph node coordinates. For example, if node positions are in
             centimeters, bin_size=2.0 creates 2cm bins along the track.
+        edge_spacing : float or sequence of floats, default 0.0
+            The spacing to insert between consecutive edges in `edge_order`
+            during linearization, in the same units as the graph node coordinates.
+            If a float, applies to all gaps. If a sequence, specifies spacing for
+            each gap. The default 0.0 places consecutive edges end to end, as in
+            :meth:`linear_track` and :meth:`maze`.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         track_width : float, optional
             Physical full width of the track in coordinate units. A positive
             width limits containment to the union of round-ended segment
@@ -3367,7 +3503,7 @@ class Environment(Generic[_C]):
         See Also
         --------
         from_samples : Create environment by binning position data.
-        from_layout : Create environment with custom LayoutEngine.
+        from_layout : Create environment from a built layout engine.
 
         Examples
         --------
@@ -3452,31 +3588,32 @@ class Environment(Generic[_C]):
         ...     bin_size=2.0,
         ... )
         """
-        from neurospatial.environment.factories import _from_graph
-
         return _from_graph(
             cls,
             graph,
             edge_order,
-            edge_spacing,
-            bin_size,
+            bin_size=bin_size,
+            edge_spacing=edge_spacing,
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
             track_width=track_width,
         )
 
     @classmethod
+    @keyword_hint("bin_size")
     def from_polygon(
         cls,
-        polygon: PolygonType,
-        bin_size: float | Sequence[float],
+        polygon: shapely.Polygon,
         *,
+        bin_size: float | Sequence[float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        connect_diagonal_neighbors: bool = True,
+        regions: Regions | None = None,
         arena: Arena | None = None,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D grid Environment masked by a Shapely Polygon.
 
@@ -3498,6 +3635,8 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -3511,11 +3650,6 @@ class Environment(Generic[_C]):
         -------
         Environment
             A new Environment instance with a `ShapelyPolygonLayout`.
-
-        Raises
-        ------
-        RuntimeError
-            If the 'shapely' package is not installed.
 
         See Also
         --------
@@ -3550,20 +3684,20 @@ class Environment(Generic[_C]):
         ... )
 
         """
-        from neurospatial.environment.factories import _from_polygon
-
         return _from_polygon(
             cls,
             polygon,
-            bin_size,
+            bin_size=bin_size,
             name=name,
             units=units,
             frame=frame,
-            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            regions=regions,
             arena=arena,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
     @classmethod
+    @keyword_hint()
     def from_grid_mask(
         cls,
         active_mask: NDArray[np.bool_],
@@ -3572,8 +3706,9 @@ class Environment(Generic[_C]):
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
-        connect_diagonal_neighbors: bool = True,
+        regions: Regions | None = None,
         arena: Arena | None = None,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
 
@@ -3600,6 +3735,8 @@ class Environment(Generic[_C]):
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active grid cells.
             Defaults to True.
@@ -3641,8 +3778,6 @@ class Environment(Generic[_C]):
         16
 
         """
-        from neurospatial.environment.factories import _from_grid_mask
-
         return _from_grid_mask(
             cls,
             active_mask,
@@ -3650,21 +3785,24 @@ class Environment(Generic[_C]):
             name=name,
             units=units,
             frame=frame,
-            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            regions=regions,
             arena=arena,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
     @classmethod
+    @keyword_hint("pixel_size")
     def from_pixel_mask(
         cls,
         image_mask: NDArray[np.bool_],
-        pixel_size: float | tuple[float, float],
         *,
-        connect_diagonal_neighbors: bool = True,
+        pixel_size: float | tuple[float, float],
         name: str = "",
         units: str | None = None,
         frame: str | None = None,
+        regions: Regions | None = None,
         arena: Arena | None = None,
+        connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D Environment from a binary image / pixel mask.
 
@@ -3682,15 +3820,17 @@ class Environment(Generic[_C]):
             ``(width, height)``, specifies pixel dimensions. For example,
             if your camera captures images where each pixel represents
             0.5 cm, pass ``pixel_size=0.5``.
-        connect_diagonal_neighbors : bool, optional
-            Whether to connect diagonally adjacent active pixel-bins.
-            Defaults to True.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
+        connect_diagonal_neighbors : bool, optional
+            Whether to connect diagonally adjacent active pixel-bins.
+            Defaults to True.
         arena : Arena, optional
             Continuous domain and asserted physical walls. Polygonal domains
             retain whole pixels by strict center inclusion. When omitted, the
@@ -3716,37 +3856,44 @@ class Environment(Generic[_C]):
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> # Create a simple binary image (e.g., from thresholding camera frame)
-        >>> image_height, image_width = 480, 640
+        >>> image_height, image_width = 48, 64
         >>> mask = np.zeros((image_height, image_width), dtype=bool)
         >>> # Mark a rectangular region as active
-        >>> mask[100:400, 150:500] = True
+        >>> mask[10:40, 15:50] = True
         >>> env = Environment.from_pixel_mask(
         ...     image_mask=mask,
-        ...     pixel_size=0.5,  # Each pixel = 0.5cm
+        ...     pixel_size=5.0,  # Each pixel = 5 cm
         ...     name="arena_from_image",
         ... )
-        >>> env.n_dims
-        2
+        >>> env.n_bins  # one bin per active pixel
+        1050
 
         """
-        from neurospatial.environment.factories import _from_pixel_mask
-
         return _from_pixel_mask(
             cls,
             image_mask,
-            pixel_size,
-            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            pixel_size=pixel_size,
             name=name,
             units=units,
             frame=frame,
+            regions=regions,
             arena=arena,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
     @classmethod
+    @keyword_hint(
+        fix=(
+            "build the engine first and pass it alone, e.g. "
+            "Environment.from_layout(create_layout('TriangularMesh', "
+            "boundary_polygon=polygon, point_spacing=2.0)), with create_layout "
+            "from neurospatial.layout; pass name=, units=, frame=, regions= "
+            "and arena= by keyword"
+        )
+    )
     def from_layout(
         cls,
-        kind: LayoutType | str,
-        layout_params: dict[str, Any],
+        layout: LayoutEngine,
         *,
         name: str = "",
         units: str | None = None,
@@ -3754,51 +3901,81 @@ class Environment(Generic[_C]):
         regions: Regions | None = None,
         arena: Arena | None = None,
     ) -> Environment[CartesianSystem]:
-        """Create an Environment with a specified layout type and its build parameters.
+        """Create an Environment from a built layout engine.
+
+        Use this for a layout that has no dedicated factory: a triangular
+        mesh, a grid tiled over explicit ranges without samples, or your own
+        layout engine. Build the engine first, with
+        :func:`neurospatial.layout.create_layout` or the engine's own
+        ``build(...)``, then pass it here. The environment copies what the
+        engine's ``binning()`` returns and keeps no reference to the engine.
 
         Parameters
         ----------
-        kind : LayoutType | str
-            The layout engine type to use. Can be a LayoutType enum member (recommended
-            for IDE autocomplete) or a case-insensitive string name
-            (e.g., "RegularGrid", "Hexagonal").
-        layout_params : Dict[str, Any]
-            A dictionary of parameters that will be passed to the `build`
-            method of the chosen `LayoutEngine`.
+        layout : LayoutEngine
+            A built layout engine: a built-in engine or any object that
+            implements the ``LayoutEngine`` protocol, including ``binning()``.
         name : str, optional
             A name for the created environment. Defaults to "".
         units : str, optional
             Unit label for the supplied coordinates; does not scale them.
         frame : str, optional
             Coordinate frame label for the supplied coordinates.
-        regions : Optional[Regions], optional
-            A Regions instance to manage symbolic spatial regions within the environment.
+        regions : Regions, optional
+            Named regions to snapshot with the constructed environment.
         arena : Arena, optional
-            Continuous domain. Otherwise inferred from the supplied layout.
+            Continuous domain. Bins whose centers fall outside a known arena
+            are left out. Otherwise the domain is inferred from the layout.
 
         Returns
         -------
         Environment
-            A new Environment instance.
+            A new Environment instance. ``layout_type`` is the engine's
+            ``layout_type`` label, or its binning's ``kind`` when it has
+            none, and ``layout_parameters`` are its recorded build choices.
+
+        Raises
+        ------
+        TypeError
+            If `layout` is a layout name or class instead of a built engine.
+        LayoutNotBuiltError
+            If the engine has not been built.
 
         See Also
         --------
+        neurospatial.layout.create_layout : Build a built-in layout engine.
         from_samples : Create environment by binning position data.
         from_polygon : Create environment with polygon-defined boundary.
         from_grid_mask : Create environment from pre-defined boolean mask.
         from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
+        from_bins : Create environment from explicit binning records.
 
+        Examples
+        --------
+        A triangular mesh over a square arena, in cm:
+
+        >>> from shapely.geometry import box
+        >>> from neurospatial import Environment
+        >>> from neurospatial.layout import create_layout
+        >>> mesh = create_layout(
+        ...     "TriangularMesh", boundary_polygon=box(0, 0, 30, 30), point_spacing=4.0
+        ... )
+        >>> env = Environment.from_layout(mesh, name="arena", units="cm")
+        >>> env.layout_type
+        'TriangularMesh'
+
+        A hexagonal tiling of explicit ranges, without position samples:
+
+        >>> hexagons = create_layout(
+        ...     "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 30), (0, 30)]
+        ... )
+        >>> Environment.from_layout(hexagons).n_bins > 0
+        True
         """
-        # The environment owns its inputs: it later publishes geometry read-only,
-        # and the saved layout parameters must not change if the caller edits
-        # their arrays (or the base of a view) afterwards.
-        from neurospatial.environment.factories import _from_layout
-
         return _from_layout(
             cls,
-            kind,
-            layout_params,
+            layout,
             name=name,
             units=units,
             frame=frame,
@@ -3807,103 +3984,79 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    def _create_layout(
-        cls, kind: LayoutType | str, layout_params: dict[str, Any]
-    ) -> LayoutEngine:
-        """Build the layout engine ``from_layout`` wraps; subclasses may substitute."""
-        from neurospatial.environment.factories import _create_layout
-
-        return _create_layout(cls, kind, layout_params)
-
-    @classmethod
+    @keyword_hint(redirect="neurospatial.io.nwb.environment_from_position")
     def from_nwb(
         cls,
         nwbfile: Any,
         *,
-        scratch_name: str | None = None,
-        bin_size: float | None = None,
-        **kwargs: Any,
+        name: str = "spatial_environment",
     ) -> Environment[Any]:
-        """Create Environment from NWB file.
+        """Load an Environment saved in an NWB file's scratch space.
 
-        This classmethod provides two modes of operation:
-
-        1. **Load from scratch**: If `scratch_name` is provided, loads a previously
-           stored Environment from the NWB file's scratch space. Schema 2.0
-           restores the complete binning without a layout builder. Older records
-           must be recreated with a factory and saved again.
-
-        2. **Create from position**: If `bin_size` is provided (and `scratch_name`
-           is not), creates a new Environment by discretizing position data found
-           in the NWB file's behavior processing module.
+        Reads a record written by :meth:`to_nwb` (or
+        :func:`neurospatial.io.nwb.write_environment`). Schema 3.0 restores the
+        complete binning, arena and regions without a layout builder. To
+        build a new environment from the file's Position data, use
+        :func:`neurospatial.io.nwb.environment_from_position`.
 
         Parameters
         ----------
         nwbfile : NWBFile
             The NWB file to read from. Must be a pynwb.NWBFile instance.
-        scratch_name : str, optional
-            Name of the stored environment in scratch/. If provided, loads
-            the Environment from NWB scratch space (takes precedence over bin_size).
-        bin_size : float, optional
-            Bin size for environment discretization when creating from Position data.
-            Required if scratch_name is not provided.
-        **kwargs
-            Additional keyword arguments forwarded to environment_from_position()
-            when creating from position data. Common kwargs include:
-            - units : str - Spatial units for the environment
-            - frame : str - Coordinate frame identifier
-            - infer_active_bins : bool - Whether to only include visited bins
-            - bin_count_threshold : int - Minimum samples per bin
+        name : str, default "spatial_environment"
+            Name of the stored record in scratch/, as passed to
+            :meth:`to_nwb`. The restored environment keeps its own saved
+            ``env.name``.
 
         Returns
         -------
         Environment
-            The loaded or newly created Environment.
+            The stored Environment, in its original coordinate system.
+            Static type checkers see ``Environment[Any]``: whether the
+            stored environment is Cartesian or egocentric polar is read from
+            the NWB record, so it is not known from the call. Check
+            ``env.coordinate_kind`` before calling Cartesian-only methods.
 
         Raises
         ------
-        ValueError
-            If neither scratch_name nor bin_size is provided.
         KeyError
-            If scratch_name is provided but not found in NWB scratch space,
-            or if bin_size is provided but no Position data is found.
+            If no record called `name` is in the NWB scratch space. The
+            message lists the saved environments and points to
+            :func:`neurospatial.io.nwb.environment_from_position`.
+        TypeError
+            If a building option such as ``bin_size`` is passed; the message
+            shows the ``environment_from_position`` call that takes it.
+        ValueError
+            If the stored record uses an unsupported schema or is inconsistent.
         ImportError
             If pynwb is not installed.
 
         See Also
         --------
         to_nwb : Write Environment to NWB file.
-        neurospatial.io.nwb.read_environment : Low-level NWB reading function.
-        neurospatial.io.nwb.environment_from_position : Create from Position data.
+        neurospatial.io.nwb.read_environment : The NWB reader this method calls.
+        neurospatial.io.nwb.environment_from_position : Bin NWB Position data.
 
         Examples
         --------
-        Load a previously stored environment from scratch:
-
-        >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-        >>> from neurospatial import Environment  # doctest: +SKIP
-        >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-        ...     nwbfile = io.read()
-        ...     env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
-
-        Create environment from Position data:
-
-        >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
-        ...     nwbfile = io.read()
-        ...     env = Environment.from_nwb(nwbfile, bin_size=5.0, units="cm")
-
+        >>> from datetime import datetime, timezone
+        >>> from pynwb import NWBFile
+        >>> from neurospatial import Environment
+        >>> env = Environment.linear_track(
+        ...     endpoints=[(0, 0), (6, 0)], bin_size=2.0, units="cm"
+        ... )
+        >>> nwbfile = NWBFile(
+        ...     "example", "example", datetime(2025, 1, 1, tzinfo=timezone.utc)
+        ... )
+        >>> env.to_nwb(nwbfile, name="linear_track")
+        >>> Environment.from_nwb(nwbfile, name="linear_track").n_bins
+        3
         """
-        # Validate arguments
-        from neurospatial.environment.factories import _from_nwb
+        return _from_nwb(cls, nwbfile, name=name)
 
-        return _from_nwb(
-            cls, nwbfile, scratch_name=scratch_name, bin_size=bin_size, **kwargs
-        )
-
-    @check_fitted
     def bin_center_of(
         self,
-        bin_indices: int | Sequence[int] | NDArray[np.int_],
+        bin_indices: int | Sequence[int] | NDArray[np.integer],
     ) -> NDArray[np.float64]:
         """Given one or more active-bin indices, return their N-D center coordinates.
 
@@ -3921,8 +4074,9 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If the environment is not fitted.
+        TypeError
+            If the indices are floats or booleans; use :meth:`bin_at` to find
+            the bin that contains a coordinate.
         BinIndexOutOfRangeError
             If any bin index is outside ``[0, n_bins)``, including negative
             indices (a ``ValueError`` subclass).
@@ -3937,43 +4091,45 @@ class Environment(Generic[_C]):
         >>> print(center.shape)
         (2,)
         >>> centers = env.bin_center_of([0, 1, 2])
-        >>> print(centers.shape)  # doctest: +SKIP
+        >>> print(centers.shape)
         (3, 2)
 
         """
-        from neurospatial.environment.queries import _bin_center_of
+        return _bin_center_of(self.bin_centers, bin_indices, self._coordinate_system)
 
-        return _bin_center_of(self, bin_indices)
-
-    @check_fitted
-    def neighbors(self, bin_index: int | ArrayLike) -> list[int]:
-        """Find indices of neighboring active bins for a bin or point.
-
-        This method delegates to the `neighbors` method of the
-        underlying `LayoutEngine`, which typically uses the `connectivity`.
+    @keyword_hint(former=("bin_index",), translate=former_targets(1), why=TARGET_WHY)
+    def neighbors(
+        self,
+        *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
+    ) -> list[int]:
+        """Return the bins connected to one bin in the connectivity graph.
 
         Parameters
         ----------
-        bin_index : int or array-like
-            An active bin index (``0`` to ``n_active_bins - 1``), OR a
-            coordinate point (array-like of length ``n_dims``), which is mapped
-            to its active bin via :meth:`bin_at`. Integers are treated as
-            indices; coordinate arrays/floats are treated as points.
+        bins : int, optional
+            The bin index, ``0 <= bins < n_bins``.
+        points : array-like, shape (1, n_dims), optional
+            A coordinate, mapped to the bin that contains it, in the same
+            coordinates and units as ``bin_centers``.
 
         Returns
         -------
         list[int]
-            A list of active bin indices that are neighbors to `bin_index`.
-            Can be used directly for array indexing.
+            Indices of the neighboring bins. Can be used directly for array
+            indexing.
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
-        BinIndexOutOfRangeError
-            If bin_index is an integer index outside [0, n_bins).
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
         ValueError
-            If bin_index is a coordinate point outside every active bin.
+            If more than one bin or point is given, or the point is outside
+            the environment or has NaN coordinates.
+        BinIndexOutOfRangeError
+            If the bin index is outside ``[0, n_bins)``.
 
         Examples
         --------
@@ -3981,17 +4137,18 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
-        >>> neighbors = env.neighbors(0)
-        >>> len(neighbors)  # Corner bin, including diagonal connectivity
+        >>> len(env.neighbors(bins=0))  # corner bin, with diagonal connectivity
         3
+        >>> sorted(env.neighbors(points=[[2.0, 2.0]])) == sorted(
+        ...     env.neighbors(bins=int(env.bin_at(np.array([[2.0, 2.0]]))[0]))
+        ... )
+        True
 
         """
-        from neurospatial.environment.queries import _neighbors
-
-        return _neighbors(self, bin_index)
+        (start,) = self._target_bins("neighbors()", bins, points, count=1)
+        return list(self.connectivity.neighbors(int(start)))
 
     @property
-    @check_fitted
     def bin_sizes(self) -> NDArray[np.float64]:
         """Calculate the area (for 2D) or volume (for 3D+) of each active bin.
 
@@ -4006,11 +4163,6 @@ class Environment(Generic[_C]):
         -------
         NDArray[np.float64], shape (n_active_bins,)
             An array containing the area/volume/length of each active bin.
-
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
 
         Notes
         -----
@@ -4030,178 +4182,181 @@ class Environment(Generic[_C]):
         True
 
         """
-        from neurospatial.environment.queries import _bin_sizes
+        sizes: NDArray[np.float64] = self._binning.bins.sizes.copy()
+        sizes.setflags(write=False)
+        return sizes
 
-        return _bin_sizes(self)
-
-    @cached_property
-    def _bin_sizes_cached(self) -> NDArray[np.float64]:
-        from neurospatial.environment.queries import _bin_sizes_cached
-
-        return _bin_sizes_cached(self)
-
-    @check_fitted
+    @keyword_hint(
+        former=("source_active_bin_idx", "target_active_bin_idx"),
+        translate=former_targets(2),
+        why=TARGET_WHY,
+    )
     def path_between(
         self,
-        source_active_bin_idx: int | ArrayLike,
-        target_active_bin_idx: int | ArrayLike,
+        *,
+        bins: Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
     ) -> list[int]:
-        """Find the shortest path between two active bins (or points).
+        """Find the shortest path between two bins or two points.
 
-        The path is a sequence of active bin indices (0 to n_active_bins - 1)
-        connecting the source to the target. Path calculation uses the
-        'distance' attribute on the edges of the `connectivity`
-        as weights.
+        The path is the sequence of bin indices along the shortest route
+        through the connectivity graph, weighted by the ``"distance"`` of each
+        edge.
 
         Parameters
         ----------
-        source_active_bin_idx : int or array-like
-            The active bin index (0 to n_active_bins - 1) for the start of the
-            path, OR a coordinate point (mapped to its bin via :meth:`bin_at`).
-        target_active_bin_idx : int or array-like
-            The active bin index (0 to n_active_bins - 1) for the end of the
-            path, OR a coordinate point (mapped to its bin via :meth:`bin_at`).
+        bins : sequence of int, shape (2,), optional
+            Start and end bin indices, ``[start, end]``.
+        points : array-like, shape (2, n_dims), optional
+            Start and end coordinates, one row each, mapped to the bins that
+            contain them.
 
         Returns
         -------
         list[int]
-            A list of active bin indices representing the shortest path from
-            source to target. The list includes both the source and target
-            indices. Returns a single-element list ``[source]`` when source and
-            target resolve to the same bin, and an empty list when no path
-            exists (disconnected components).
+            Bin indices from start to end, both included. A single-element
+            list when both ends are the same bin, and an empty list (with a
+            warning) when no path exists.
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
-        BinIndexOutOfRangeError
-            If source/target is an integer index outside [0, n_bins).
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
         ValueError
-            If source/target is a coordinate point outside every active bin.
+            If there are not exactly two targets, or a point is outside the
+            environment or has NaN coordinates.
+        BinIndexOutOfRangeError
+            If a bin index is outside ``[0, n_bins)``.
 
         Examples
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> path = env.path_between(0, 5)
-        >>> print(len(path) > 0)  # doctest: +SKIP
-        True
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> path = env.path_between(bins=[0, env.n_bins - 1])
+        >>> path[0], path[-1] == env.n_bins - 1
+        (0, True)
+        >>> center = env.bin_centers[3]
+        >>> env.path_between(points=[center, center + 0.1])  # both in bin 3
+        [3]
 
         """
-        from neurospatial.environment.queries import _path_between
+        start, end = self._target_bins("path_between()", bins, points, count=2)
+        return _path_between(self.connectivity, int(start), int(end))
 
-        return _path_between(self, source_active_bin_idx, target_active_bin_idx)
-
-    @check_fitted
+    @keyword_hint(
+        former=("targets",),
+        translate=former_targets(1, region=True),
+        why=REGION_TARGET_WHY,
+    )
     def distance_to(
         self,
-        targets: Sequence[int] | str,
         *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
+        region: str | None = None,
         metric: Literal["euclidean", "geodesic"] = "geodesic",
     ) -> NDArray[np.float64]:
-        """Compute distance from each bin to target set.
+        """Distance from every bin to the nearest target.
 
-        This method computes the distance from every bin in the environment to
-        the nearest target bin. Useful for:
-        - Navigation and path planning
-        - Computing distance-based features
-        - Analyzing spatial distributions relative to landmarks
-        - Creating distance fields for visualization
+        Give the target as bin indices, as coordinates or as a region name,
+        for example the distance from every bin to a reward port for a goal
+        or approach analysis. With several targets, each bin gets the distance
+        to the nearest one.
 
         Parameters
         ----------
-        targets : Sequence[int] or str
-            Target bin indices, or a region name. If a region name is provided,
-            all bins inside that region are used as targets (multi-source).
+        bins : int or sequence of int, optional
+            Target bin indices.
+        points : array-like, shape (n_points, n_dims), optional
+            Target coordinates, one row each, mapped to the bins that contain
+            them. Use the same coordinates and units as ``bin_centers``.
+        region : str, optional
+            Name of a region in ``self.regions``. Its targets are the bins it
+            covers, by the rule of :meth:`bins_in_region`: the bin that
+            contains a point region, or the bins whose centers lie inside a
+            polygon region or on its edge.
         metric : {'euclidean', 'geodesic'}, default='geodesic'
-            Distance metric to use:
-            - 'euclidean': Straight-line distance in physical coordinates (same units as bin_centers).
-            - 'geodesic': Graph distance respecting connectivity (shortest path, in physical units).
+            ``'geodesic'`` follows the connectivity graph, so it goes around
+            walls; ``'euclidean'`` is the straight-line distance between bin
+            centers. Both are in the units of ``bin_centers``.
 
         Returns
         -------
         distances : NDArray[np.float64], shape (n_bins,)
-            Distance from each bin to the nearest target, in the same units as
-            bin_centers (e.g., cm, meters, pixels). For bins unreachable
-            from all targets (disconnected graph components), returns np.inf.
+            Distance from each bin to the nearest target, ``0`` at the
+            targets. Bins in a part of the graph with no target are
+            ``np.inf`` for the geodesic metric.
 
         Raises
         ------
-        ValueError
-            If targets is empty, or if target bin indices are out of range,
-            or if metric is invalid.
-        CartesianOnlyError
-            A NotImplementedError for metric="euclidean" on environments without
-            Cartesian bin centers, such as polar environments.
-        KeyError
-            If targets is a string (region name) that doesn't exist in self.regions.
         TypeError
-            If targets is neither a sequence of integers nor a string.
+            If not exactly one of ``bins``, ``points`` and ``region`` is
+            given, or ``bins`` holds non-integers.
+        ValueError
+            If a target is empty, a point is outside the environment or has
+            NaN coordinates, the region covers no bin, or ``metric`` is
+            invalid.
+        BinIndexOutOfRangeError
+            If a bin index is outside ``[0, n_bins)``.
+        RegionNotFoundError
+            If ``region`` is not in ``self.regions`` (a ``KeyError``).
+        CartesianOnlyError
+            For ``metric="euclidean"`` on a polar environment.
 
         See Also
         --------
-        rings : Compute k-hop neighborhoods (BFS layers).
-        reachable_from : Find bins reachable from a source within a radius.
-        distance_field : Low-level function for computing geodesic distances.
+        rings : Bins grouped by hop distance from one bin.
+        reachable_from : Bins reachable from one bin within a radius.
+        neurospatial.ops.distance.distance_field : Graph distances from bins.
 
         Notes
         -----
-        **Geodesic Distance**:
-        Uses Dijkstra's algorithm to compute shortest paths on the connectivity
-        graph. Edge weights are the 'distance' attribute (physical distance between
-        bin centers). For disconnected graphs, unreachable bins have distance np.inf.
+        The geodesic metric runs Dijkstra's algorithm on the connectivity
+        graph, with each edge's ``"distance"`` (the physical distance between
+        bin centers) as its length.
 
-        **Euclidean Distance**:
-        Computes straight-line distance in the coordinate space, ignoring graph
-        connectivity. This is faster but doesn't respect physical barriers.
-
-        **Multi-Source Distances**:
-        When multiple targets are provided (or a region containing multiple bins),
-        each bin's distance is the minimum distance to any target.
-
-        **Region-Based Targets**:
-        If targets is a string, it must be a valid region name in self.regions.
-        All bins inside that region (as determined by region_membership) become
-        target bins.
+        A point target is the bin that contains it, so the distance to a point
+        equals the distance to its bin.
 
         Examples
         --------
         >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from shapely.geometry import box
+        >>> from neurospatial import Environment, Regions
         >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
         >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> from neurospatial import Regions
         >>> regions = Regions()
-        >>> _ = regions.add("goal", polygon=box(8.0, 8.0, 10.0, 10.0))
+        >>> _ = regions.add("reward", point=(8.2, 8.7))
         >>> env = env.with_regions(regions)
-        >>> dist = env.distance_to("goal", metric="geodesic")
-        >>> dist.shape
+        >>> to_reward = env.distance_to(region="reward")
+        >>> to_reward.shape
         (100,)
-        >>> bool(np.all(dist >= 0.0))
+        >>> bool(np.array_equal(to_reward, env.distance_to(points=[[8.2, 8.7]])))
         True
-
-        >>> targets = [0, env.n_bins - 1]  # doctest: +SKIP
-        >>> dist = env.distance_to(targets, metric="euclidean")  # doctest: +SKIP
-        >>> float(dist[targets[0]])  # doctest: +SKIP
-        0.0  # doctest: +SKIP
-        >>> float(dist[targets[1]])  # doctest: +SKIP
-        0.0  # doctest: +SKIP
+        >>> corners = env.distance_to(bins=[0, env.n_bins - 1], metric="euclidean")
+        >>> float(corners[0]), float(corners[-1])
+        (0.0, 0.0)
 
         """
-        # Validate metric
-        from neurospatial.environment.queries import _distance_to
+        targets = self._target_bins(
+            "distance_to()", bins, points, region=region, takes_region=True
+        )
+        return _distance_to(
+            targets,
+            metric=metric,
+            bin_centers=self.bin_centers,
+            graph=self.connectivity,
+            coordinates=self._coordinate_system,
+        )
 
-        return _distance_to(self, targets, metric=metric)
-
-    @check_fitted
+    @keyword_hint(former=("source_bin",), translate=former_targets(1), why=TARGET_WHY)
     def reachable_from(
         self,
-        source_bin: int | ArrayLike,
         *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
         radius: int | float | None = None,
         metric: Literal["hops", "geodesic"] = "hops",
     ) -> NDArray[np.bool_]:
@@ -4216,10 +4371,11 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        source_bin : int or array-like
-            An active bin index (0 to n_bins - 1), OR a coordinate point
-            (mapped to its bin via :meth:`bin_at`). Integers are treated as
-            indices; coordinate arrays/floats are treated as points.
+        bins : int, optional
+            The start bin index, ``0 <= bins < n_bins``.
+        points : array-like, shape (1, n_dims), optional
+            The start coordinate, mapped to the bin that contains it, in the
+            same coordinates and units as ``bin_centers``.
         radius : int, float, or None, optional
             Maximum distance/hops. If None, find all reachable bins in the
             same connected component.
@@ -4239,12 +4395,15 @@ class Environment(Generic[_C]):
 
         Raises
         ------
+        TypeError
+            If neither or both of ``bins`` and ``points`` are given, or
+            ``bins`` holds non-integers.
         BinIndexOutOfRangeError
-            If source_bin is an integer index outside [0, n_bins).
+            If the bin index is outside ``[0, n_bins)``.
         ValueError
-            If source_bin is a coordinate point outside every active bin.
-            If radius is negative.
-            If metric is not 'hops' or 'geodesic'.
+            If more than one bin or point is given, the point is outside the
+            environment or has NaN coordinates, ``radius`` is negative, or
+            ``metric`` is not ``'hops'`` or ``'geodesic'``.
 
         See Also
         --------
@@ -4266,40 +4425,35 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> mask = env.reachable_from(10, radius=3, metric="hops")  # doctest: +SKIP
-        >>> neighbor_bins = np.where(mask)[0]  # doctest: +SKIP
-        >>> print(
-        ...     f"Found {len(neighbor_bins)} neighbors within 3 hops"
-        ... )  # doctest: +SKIP
-        Found 37 neighbors within 3 hops  # doctest: +SKIP
-
-        >>> goal_bin = env.bins_in_region("goal")[0]  # doctest: +SKIP
-        >>> mask = env.reachable_from(
-        ...     goal_bin, radius=50.0, metric="geodesic"
-        ... )  # doctest: +SKIP
-        >>> print(f"Bins within 50 units: {mask.sum()}")  # doctest: +SKIP
-        Bins within 50 units: 125  # doctest: +SKIP
-
-        >>> mask = env.reachable_from(source_bin=0, radius=None)  # doctest: +SKIP
-        >>> print(f"Component size: {mask.sum()} bins")  # doctest: +SKIP
-        Component size: 1000 bins  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
+        >>> env = Environment.from_samples(data, bin_size=1.0)
+        >>> within_one_hop = env.reachable_from(bins=55, radius=1, metric="hops")
+        >>> int(within_one_hop.sum())  # the bin and its 8 neighbors
+        9
+        >>> within_2cm = env.reachable_from(
+        ...     points=[[5.0, 5.0]], radius=2.0, metric="geodesic"
+        ... )
+        >>> bool(within_2cm[55])
+        True
 
         """
-        # Resolve a bin index or a coordinate point to an active-bin index.
-        from neurospatial.environment.queries import _reachable_from
+        (start,) = self._target_bins("reachable_from()", bins, points, count=1)
+        return _reachable_from(
+            self.connectivity, int(start), radius=radius, metric=metric
+        )
 
-        return _reachable_from(self, source_bin, radius=radius, metric=metric)
-
-    @check_fitted
     def components(
         self,
         *,
         largest_only: bool = False,
-    ) -> list[NDArray[np.int32]]:
+    ) -> list[NDArray[np.intp]]:
         """Find connected components of the environment graph.
 
         A connected component is a maximal subset of bins where every pair
         of bins is connected by a path through the graph. This is useful for:
+
         - Identifying disconnected regions in masked environments
         - Finding traversable subregions
         - Detecting isolated islands in the environment
@@ -4312,7 +4466,7 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        components : list[NDArray[np.int32]]
+        components : list[NDArray[np.intp]]
             List of bin index arrays, one per component.
             Components are sorted by size (largest first).
             Each array contains the bin indices in that component.
@@ -4331,30 +4485,35 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> comps = env.components()  # doctest: +SKIP
-        >>> print(f"Found {len(comps)} components")  # doctest: +SKIP
-        Found 2 components  # doctest: +SKIP
-        >>> print(f"Largest component has {len(comps[0])} bins")  # doctest: +SKIP
-        Largest component has 150 bins  # doctest: +SKIP
+        Two chambers of a 100 x 40 cm grid separated by a wall one bin wide:
 
-        >>> largest = env.components(largest_only=True)[0]  # doctest: +SKIP
-        >>> print(
-        ...     f"Largest component: {len(largest)} of {env.n_bins} bins"
-        ... )  # doctest: +SKIP
-        Largest component: 150 of 200 bins  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> mask = np.ones((10, 4), dtype=bool)
+        >>> mask[4, :] = False  # the wall
+        >>> grid_edges = (np.arange(11) * 10.0, np.arange(5) * 10.0)
+        >>> env = Environment.from_grid_mask(mask, grid_edges)
+        >>> comps = env.components()
+        >>> print(f"Found {len(comps)} components")
+        Found 2 components
+        >>> [len(component) for component in comps]
+        [20, 16]
+
+        >>> largest = env.components(largest_only=True)[0]
+        >>> print(f"Largest component: {len(largest)} of {env.n_bins} bins")
+        Largest component: 20 of 36 bins
 
         """
-        # Find connected components using NetworkX
-        from neurospatial.environment.queries import _components
+        return _components(self.connectivity, largest_only=largest_only)
 
-        return _components(self, largest_only=largest_only)
-
+    @keyword_hint(former=("center_bin",), translate=former_targets(1), why=TARGET_WHY)
     def rings(
         self,
-        center_bin: int,
         *,
+        bins: int | Sequence[int] | NDArray[np.integer] | None = None,
+        points: ArrayLike | None = None,
         hops: int,
-    ) -> list[NDArray[np.int32]]:
+    ) -> list[NDArray[np.intp]]:
         """Compute k-hop neighborhoods (BFS layers).
 
         This method performs breadth-first search (BFS) from the center bin,
@@ -4367,26 +4526,33 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        center_bin : int
-            Starting bin index.
+        bins : int, optional
+            The center bin index, ``0 <= bins < n_bins``.
+        points : array-like, shape (1, n_dims), optional
+            The center coordinate, mapped to the bin that contains it, in the
+            same coordinates and units as ``bin_centers``.
         hops : int
             Number of hop layers to compute (non-negative).
 
         Returns
         -------
-        rings : list[NDArray[np.int32]], length hops+1
+        rings : list[NDArray[np.intp]], length hops+1
             List of bin index arrays, one per hop distance.
             rings[k] contains all bins exactly k hops from center.
-            rings[0] = [center_bin] (the center itself).
+            rings[0] is the center bin itself.
             If fewer than hops layers exist (small or disconnected graph),
             later rings will be empty arrays.
 
         Raises
         ------
-        ValueError
-            If center_bin is out of range [0, n_bins), or if hops is negative.
         TypeError
-            If center_bin is not an integer type, or if hops is not an integer.
+            If neither or both of ``bins`` and ``points`` are given, ``bins``
+            holds non-integers, or ``hops`` is not an integer.
+        ValueError
+            If more than one bin or point is given, the point is outside the
+            environment or has NaN coordinates, or ``hops`` is negative.
+        BinIndexOutOfRangeError
+            If the bin index is outside ``[0, n_bins)``.
 
         See Also
         --------
@@ -4420,23 +4586,16 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> data = np.array([[i, j] for i in range(10) for j in range(10)])
         >>> env = Environment.from_samples(data, bin_size=1.0)
-        >>> rings_result = env.rings(center_bin=50, hops=2)  # doctest: +SKIP
-        >>> len(rings_result)  # doctest: +SKIP
-        3  # doctest: +SKIP
-        >>> len(rings_result[0])  # doctest: +SKIP
-        1  # doctest: +SKIP
-        >>> len(rings_result[1]) > 0  # doctest: +SKIP
-        True  # doctest: +SKIP
-
-        >>> all_bins = np.concatenate(rings_result)  # doctest: +SKIP
-        >>> len(all_bins) == len(np.unique(all_bins))  # doctest: +SKIP
-        True  # doctest: +SKIP
+        >>> rings_result = env.rings(bins=55, hops=2)
+        >>> [len(ring) for ring in rings_result]  # 1 center, 8 around it, then 16
+        [1, 8, 16]
+        >>> same = env.rings(points=[[5.0, 5.0]], hops=2)
+        >>> all(np.array_equal(a, b) for a, b in zip(same, rings_result))
+        True
 
         """
-        # Type validation for center_bin
-        from neurospatial.environment.queries import _rings
-
-        return _rings(self, center_bin, hops=hops)
+        (center,) = self._target_bins("rings()", bins, points, count=1)
+        return _rings(self.connectivity, int(center), hops=hops)
 
     def to_file(self, path: str | Path, *, overwrite: bool = False) -> None:
         """Save Environment-v3 binning and Arena data to JSON and NPZ files.
@@ -4482,9 +4641,9 @@ class Environment(Generic[_C]):
         form. No arbitrary code is executed at load time.
 
         """
-        from neurospatial.environment.serialization import _to_file
+        from neurospatial.io import to_file
 
-        return _to_file(self, path, overwrite=overwrite)
+        to_file(self, path, overwrite=overwrite)
 
     @classmethod
     def from_file(cls, path: str | Path) -> Environment[Any]:
@@ -4499,7 +4658,11 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Reconstructed Environment instance.
+            Reconstructed Environment instance, in its saved coordinate system.
+            Static type checkers see ``Environment[Any]``: whether the
+            stored environment is Cartesian or egocentric polar is read from
+            the file, so it is not known from the call. Check
+            ``env.coordinate_kind`` before calling Cartesian-only methods.
 
         Raises
         ------
@@ -4514,7 +4677,7 @@ class Environment(Generic[_C]):
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> env.to_file("my_environment")
         >>> loaded = Environment.from_file("my_environment")
-        >>> loaded.n_bins == env.n_bins
+        >>> np.array_equal(loaded.bin_centers, env.bin_centers)
         True
 
         See Also
@@ -4531,9 +4694,9 @@ class Environment(Generic[_C]):
         with a factory and save them again.
 
         """
-        from neurospatial.environment.serialization import _from_file
+        from neurospatial.io import from_file
 
-        return _from_file(cls, path)
+        return from_file(path)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert Environment to dictionary for in-memory handoff.
@@ -4550,11 +4713,14 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-        >>> env_dict = env.to_dict()  # doctest: +SKIP
-        >>> # Dictionary can be converted to JSON
-        >>> import json  # doctest: +SKIP
-        >>> json_str = json.dumps(env_dict)  # doctest: +SKIP
+        >>> import json
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> env_dict = env.to_dict()
+        >>> # The dictionary holds only JSON types, so it can be written as JSON
+        >>> json_str = json.dumps(env_dict)
 
         See Also
         --------
@@ -4568,9 +4734,9 @@ class Environment(Generic[_C]):
         format (npz) rather than converting to lists.
 
         """
-        from neurospatial.environment.serialization import _to_dict
+        from neurospatial.io import to_dict
 
-        return _to_dict(self)
+        return to_dict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Environment[Any]:
@@ -4587,14 +4753,27 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Reconstructed instance.
+            Reconstructed instance, in its saved coordinate system.
+            Static type checkers see ``Environment[Any]``: whether the
+            stored environment is Cartesian or egocentric polar is read from
+            the dictionary, so it is not known from the call. Check
+            ``env.coordinate_kind`` before calling Cartesian-only methods.
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-        >>> env_dict = env.to_dict()  # doctest: +SKIP
-        >>> reconstructed = Environment.from_dict(env_dict)  # doctest: +SKIP
-        >>> assert env == reconstructed  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> reconstructed = Environment.from_dict(env.to_dict())
+
+        The reconstruction is a new object, so ``env == reconstructed`` is
+        False (environments compare by identity). Compare their contents:
+
+        >>> np.array_equal(env.bin_centers, reconstructed.bin_centers)
+        True
+        >>> np.array_equal(env.edge_pairs, reconstructed.edge_pairs)
+        True
 
         See Also
         --------
@@ -4602,15 +4781,16 @@ class Environment(Generic[_C]):
         from_file : Load from disk files
 
         """
-        from neurospatial.environment.serialization import _from_dict
+        from neurospatial.io import from_dict
 
-        return _from_dict(cls, data)
+        return from_dict(data)
 
+    @keyword_hint("name")
     def to_nwb(
         self,
         nwbfile: Any,
-        name: str = "spatial_environment",
         *,
+        name: str = "spatial_environment",
         overwrite: bool = False,
     ) -> None:
         """Write Environment to NWB file scratch space.
@@ -4631,7 +4811,7 @@ class Environment(Generic[_C]):
             The NWB file to write to. Must be a pynwb.NWBFile instance.
         name : str, default "spatial_environment"
             Name for the environment in scratch/. Use this name when loading
-            with ``Environment.from_nwb(nwbfile, scratch_name=name)``.
+            with ``Environment.from_nwb(nwbfile, name=name)``.
         overwrite : bool, default False
             If True, replace existing environment with the same name.
             If False, raise ValueError on duplicate name.
@@ -4640,8 +4820,6 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If environment with same name exists and overwrite=False.
-        RuntimeError
-            If Environment is not fitted (must be created with factory methods).
         ImportError
             If pynwb is not installed.
 
@@ -4654,120 +4832,114 @@ class Environment(Generic[_C]):
         --------
         Save environment to NWB file:
 
-        >>> from pynwb import NWBHDF5IO, NWBFile  # doctest: +SKIP
-        >>> from datetime import datetime  # doctest: +SKIP
-        >>> from neurospatial import Environment  # doctest: +SKIP
-        >>> import numpy as np  # doctest: +SKIP
-        >>> import tempfile  # doctest: +SKIP
-        >>> from pathlib import Path  # doctest: +SKIP
+        >>> import tempfile
+        >>> from datetime import datetime, timezone
+        >>> from pathlib import Path
+        >>> import numpy as np
+        >>> from pynwb import NWBHDF5IO, NWBFile
+        >>> from neurospatial import Environment
         >>>
         >>> # Create environment
-        >>> positions = np.random.rand(1000, 2) * 100  # doctest: +SKIP
-        >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-        >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.random((1000, 2)) * 100
+        >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
         >>>
         >>> # Save to NWB
-        >>> nwbfile = NWBFile(  # doctest: +SKIP
+        >>> nwbfile = NWBFile(
         ...     session_description="Test session",
         ...     identifier="test_001",
-        ...     session_start_time=datetime.now().astimezone(),
+        ...     session_start_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
         ... )
-        >>> env.to_nwb(nwbfile, name="linear_track")  # doctest: +SKIP
+        >>> env.to_nwb(nwbfile, name="open_field")
         >>>
-        >>> # Write to disk (use a temp directory, not the CWD)
-        >>> path = Path(tempfile.mkdtemp()) / "session.nwb"  # doctest: +SKIP
-        >>> with NWBHDF5IO(path, "w") as io:  # doctest: +SKIP
+        >>> # Write to disk (use a temporary directory, not the working directory)
+        >>> path = Path(tempfile.mkdtemp()) / "session.nwb"
+        >>> with NWBHDF5IO(path, "w") as io:
         ...     io.write(nwbfile)
 
         Load environment back:
 
-        >>> with NWBHDF5IO(path, "r") as io:  # doctest: +SKIP
-        ...     nwbfile = io.read()
-        ...     loaded_env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
+        >>> with NWBHDF5IO(path, "r") as io:
+        ...     loaded_env = Environment.from_nwb(io.read(), name="open_field")
+        >>> np.array_equal(loaded_env.bin_centers, env.bin_centers)
+        True
+        >>> loaded_env.units
+        'cm'
 
         """
-        # Lazy import to keep pynwb optional
-        from neurospatial.environment.serialization import _to_nwb
+        from neurospatial.io.nwb import write_environment
 
-        return _to_nwb(self, nwbfile, name, overwrite=overwrite)
+        write_environment(nwbfile, self, name=name, overwrite=overwrite)
 
-    @check_fitted
-    def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
-        """Get active bin indices that fall within a specified named region.
+    def bins_in_region(
+        self, region_name: str, *, include_boundary: bool = True
+    ) -> NDArray[np.intp]:
+        """Return the indices of the bins a named region covers.
 
-        This method identifies all active bins whose centers fall within the
-        geometric bounds of a named region. For point regions, returns the
-        bin containing that point. For polygon regions (2D only), returns all
-        bins whose centers are contained by the polygon.
+        A point region covers the one bin that contains the point. A polygon
+        region covers the bins whose centers lie inside it. This is the same
+        rule as :meth:`region_mask`, :meth:`region_membership`,
+        ``distance_to(region=...)`` and ``subset(region_names=...)``.
 
         Parameters
         ----------
         region_name : str
-            The name of a defined region in `self.regions`.
+            The name of a region in ``self.regions``.
+        include_boundary : bool, default=True
+            For a polygon region, count a bin whose center lies exactly on the
+            polygon's edge as inside. Point regions ignore it.
 
         Returns
         -------
         NDArray[np.intp]
-            Array of active bin indices (0 to n_active_bins - 1)
-            that are part of the region. Returns empty array if no bins
-            fall within the region.
+            Sorted active-bin indices in the region. Empty when the region
+            covers no bin, for example a point outside the environment.
 
         Raises
         ------
         KeyError
-            If `region_name` is not found in `self.regions`.
+            If ``region_name`` is not found in ``self.regions``.
         ValueError
-            If region point dimension does not match environment dimension,
-            if polygon regions are used in non-2D environments, or if
-            region kind is unsupported.
-        RuntimeError
-            If polygon region is requested but shapely is not installed.
-
-        Notes
-        -----
-        - Point regions return at most one bin (the bin containing the point,
-          or empty array if point is outside environment)
-        - Polygon regions require shapely library and 2D environments
-        - Bin membership is determined by whether the bin center falls within
-          the region geometry
+            If a point region has a different number of coordinates than the
+            bins, or a polygon region is used in an environment that is not
+            2-D.
 
         Examples
         --------
         >>> import numpy as np
+        >>> from shapely.geometry import box
         >>> from neurospatial import Environment
-        >>> data = np.array([[0.0, 0.0], [10.0, 10.0]])
-        >>> env = Environment.from_samples(data, bin_size=2.0, infer_active_bins=False)
         >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
-        >>> _ = regions.add("center", point=(5.0, 5.0))
+        >>> edges = np.arange(0.0, 11.0, 2.0)  # bin centers 1, 3, 5, 7, 9
+        >>> env = Environment.from_grid_mask(
+        ...     np.ones((5, 5), dtype=bool), (edges, edges)
+        ... )
+        >>> regions = Regions()
+        >>> _ = regions.add("reward", point=(5.2, 4.9))
+        >>> _ = regions.add("roi", polygon=box(3, 3, 7, 7))
         >>> env = env.with_regions(regions)
-        >>> bins = env.bins_in_region("center")
-        >>> bins.shape
-        (1,)
-
-        For polygon regions (requires shapely):
-
-        >>> from shapely.geometry import box  # doctest: +SKIP
-        >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
-        >>> regions.add("roi", polygon=box(2, 2, 8, 8))  # doctest: +SKIP
-        >>> env = env.with_regions(regions)
-        >>> bins = env.bins_in_region("roi")  # doctest: +SKIP
-        >>> len(bins)  # Number of bins in the 6x6 square  # doctest: +SKIP
-        9  # doctest: +SKIP
+        >>> env.bin_centers[env.bins_in_region("reward")]
+        array([[5., 5.]])
+        >>> len(env.bins_in_region("roi"))  # centers 3, 5 and 7 in x and y
+        9
+        >>> len(env.bins_in_region("roi", include_boundary=False))  # only (5, 5)
+        1
 
         See Also
         --------
-        region_mask : Get boolean mask for one or more regions (canonical
-            method form for "is this bin in this region?").
-        neurospatial.regions.Region : Region data structure
+        region_mask : Boolean mask over bins for one or more regions.
+        region_membership : Bins-by-regions membership table.
 
         """
-        from neurospatial.environment.regions import _bins_in_region
+        return _bins_in_region(
+            region_name,
+            self.regions,
+            binning=self._binning,
+            arena=self._arena,
+            cache=self._cache,
+            include_boundary=include_boundary,
+        )
 
-        return _bins_in_region(self, region_name)
-
-    @check_fitted
     def region_membership(
         self,
         regions: Regions | None = None,
@@ -4790,9 +4962,10 @@ class Environment(Generic[_C]):
             Allows testing against external region sets without modifying
             the environment.
         include_boundary : bool, default=True
-            How to handle bins on region boundaries:
+            How to handle bins whose centers lie on a polygon's edge:
             - True: Bins on boundary count as inside (shapely.covers).
             - False: Only bins strictly inside count (shapely.contains).
+            Point regions ignore it.
 
         Returns
         -------
@@ -4815,8 +4988,11 @@ class Environment(Generic[_C]):
         Notes
         -----
         **Region Types**:
-        - Polygon regions: Uses Shapely containment (covers/contains).
-        - Point regions: Always return False (points have no area).
+        - Polygon regions: bins whose centers lie inside (covers/contains).
+        - Point regions: the one bin that contains the point.
+
+        This is the same rule as :meth:`bins_in_region`, :meth:`region_mask`
+        and ``distance_to(region=...)``.
 
         **Performance**:
         This method uses vectorized Shapely operations for efficiency.
@@ -4855,183 +5031,130 @@ class Environment(Generic[_C]):
         >>> membership.dtype
         dtype('bool')
 
-        >>> left_bins = np.where(membership[:, 0])[0]  # doctest: +SKIP
-        >>> len(left_bins) > 0  # doctest: +SKIP
-        True  # doctest: +SKIP
+        Each column counts the bins of one region; no bin is in both halves:
 
-        >>> both = np.all(membership, axis=1)  # doctest: +SKIP
-        >>> overlapping_bins = np.where(both)[0]  # doctest: +SKIP
-        >>> len(overlapping_bins) >= 0  # doctest: +SKIP
-        True  # doctest: +SKIP
+        >>> membership.sum(axis=0)
+        array([18, 18])
+        >>> int(np.all(membership, axis=1).sum())
+        0
 
-        >>> from neurospatial.regions import Regions  # doctest: +SKIP
-        >>> external = Regions()  # doctest: +SKIP
-        >>> _ = external.add("test", polygon=box(2, 2, 8, 8))  # doctest: +SKIP
-        >>> test_membership = env.region_membership(regions=external)  # doctest: +SKIP
-        >>> test_membership.shape[1]  # doctest: +SKIP
-        1  # doctest: +SKIP
+        Regions that are not attached to the environment can be tested too:
 
-        >>> interior = env.region_membership(include_boundary=False)  # doctest: +SKIP
-        >>> bool(interior.sum() <= membership.sum())  # doctest: +SKIP
-        True  # doctest: +SKIP
+        >>> external = Regions()
+        >>> _ = external.add("test", polygon=box(2, 2, 8, 8))
+        >>> env.region_membership(regions=external).shape
+        (36, 1)
+
+        Excluding bins whose centers lie on a region's edge keeps fewer bins:
+
+        >>> env.region_membership(include_boundary=False).sum(axis=0)
+        array([8, 8])
 
         """
-        # Import here to avoid circular dependency
-        from neurospatial.environment.regions import _region_membership
+        return _region_membership(
+            self.regions if regions is None else regions,
+            binning=self._binning,
+            arena=self._arena,
+            cache=self._cache,
+            include_boundary=include_boundary,
+        )
 
-        return _region_membership(self, regions, include_boundary=include_boundary)
-
-    @check_fitted
     def region_mask(
         self,
-        regions: str | list[str] | Region | Regions,
+        regions: str | list[str | Region] | Region | Regions,
         *,
         include_boundary: bool = True,
     ) -> NDArray[np.bool_]:
-        """Get boolean mask over bins for one or more regions.
+        """Boolean mask over bins for one or more regions.
 
-        This method provides a convenient interface to rasterize continuous regions
-        onto discrete environment bins. It accepts multiple input types and returns
-        a boolean mask indicating which bins fall within the region(s).
-
-        This is the method-based interface to the `regions_to_mask()` free function,
-        providing better discoverability and ergonomics when working with a single
-        environment.
+        A point region covers the one bin that contains the point. A polygon
+        region covers the bins whose centers lie inside it. This is the same
+        rule as :meth:`bins_in_region`, :meth:`region_membership`,
+        ``distance_to(region=...)`` and
+        :func:`neurospatial.ops.mapping.regions_to_mask`.
 
         Parameters
         ----------
-        regions : str, list[str], Region, or Regions
-            Region(s) to rasterize. Can be:
-            - A single region name (str) from self.regions
-            - A list of region names (list[str]) from self.regions
-            - A single Region object
-            - A Regions collection
+        regions : str, list of str or Region, Region, or Regions
+            Region(s) to select. A name refers to an entry in ``self.regions``;
+            Region objects are used directly.
         include_boundary : bool, default=True
-            Whether to include bins whose centers lie on region boundaries:
-            - True: Include boundary bins (uses shapely.covers)
-            - False: Exclude boundary bins (uses shapely.contains)
+            For polygon regions, count a bin whose center lies exactly on the
+            polygon's edge as inside (``shapely.covers``); with False only
+            centers strictly inside count (``shapely.contains``). Point
+            regions ignore it.
 
         Returns
         -------
         mask : NDArray[np.bool_], shape (n_bins,)
-            Boolean mask where True indicates bin center is inside region(s).
-            For multiple regions, returns the union (logical OR).
-            Point regions always return all False (points have no area).
+            True for each bin covered by any of the regions (their union).
 
         Raises
         ------
-        KeyError
-            If a region name is not found in self.regions.
+        RegionNotFoundError
+            If a region name is not in ``self.regions`` (a ``KeyError``).
         TypeError
-            If regions parameter has invalid type or include_boundary is not bool.
+            If ``regions`` has an invalid type or ``include_boundary`` is not
+            a bool.
 
         Notes
         -----
-        **Region Types**:
-        - Polygon regions: Rasterized using Shapely containment checks
-        - Point regions: Always return all False (points have no area)
-
-        **Multiple Regions**:
-
-        When multiple regions are provided, the result is their **union** (logical OR).
-        Bins are included if they fall inside ANY of the regions. Overlapping
-        regions are counted only once.
-
-        For intersection or difference, use boolean operations on separate masks:
-
-        >>> left_mask = env.region_mask("left")  # doctest: +SKIP
-        >>> right_mask = env.region_mask("right")  # doctest: +SKIP
-        >>> intersection = left_mask & right_mask  # doctest: +SKIP
-        >>> difference = left_mask & ~right_mask  # doctest: +SKIP
-
-        **Boundary Semantics**:
-
-        - include_boundary=True: Uses shapely.covers (includes boundary)
-        - include_boundary=False: Uses shapely.contains (excludes boundary)
+        A list of regions gives their union. For an intersection or a
+        difference, combine separate masks with ``&`` and ``~`` (see the last
+        example).
 
         Examples
         --------
         >>> import numpy as np
         >>> from shapely.geometry import box
         >>> from neurospatial import Environment
-
-        Create environment with regions:
-
+        >>> from neurospatial.regions import Regions
         >>> data = np.array([[i, j] for i in range(11) for j in range(11)])
         >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> from neurospatial.regions import Regions
-        >>> regions = Regions(env.regions.values())
+        >>> regions = Regions()
         >>> _ = regions.add("center", polygon=box(3, 3, 7, 7))
-        >>> _ = regions.add("left", polygon=box(0, 0, 4, 10))
-        >>> _ = regions.add("right", polygon=box(6, 0, 10, 10))
+        >>> _ = regions.add("reward", point=(9.0, 9.0))
         >>> env = env.with_regions(regions)
-
-        Single region by name:
-
-        >>> mask = env.region_mask("center")
-        >>> mask.shape  # doctest: +ELLIPSIS
-        (...,)
-        >>> mask.dtype
-        dtype('bool')
-
-        Multiple regions (union):
-
-        >>> mask = env.region_mask(["left", "right"])  # doctest: +SKIP
-        >>> np.any(mask)  # doctest: +SKIP
-        True  # doctest: +SKIP
-
-        All regions in environment:
-
-        >>> mask = env.region_mask(env.regions)  # doctest: +SKIP
-        >>> mask.shape  # doctest: +SKIP
-        (36,)  # doctest: +SKIP
-
-        Exclude boundary bins:
-
-        >>> mask_no_boundary = env.region_mask(
-        ...     "center", include_boundary=False
-        ... )  # doctest: +SKIP
-        >>> mask_with_boundary = env.region_mask(
-        ...     "center", include_boundary=True
-        ... )  # doctest: +SKIP
-        >>> bool(mask_no_boundary.sum() <= mask_with_boundary.sum())  # doctest: +SKIP
-        True  # doctest: +SKIP
-
-        Use with external Region object:
-
-        >>> from neurospatial.regions import Region  # doctest: +SKIP
-        >>> external_region = Region(
-        ...     name="ext", kind="polygon", data=box(4, 4, 6, 6)
-        ... )  # doctest: +SKIP
-        >>> mask = env.region_mask(external_region)  # doctest: +SKIP
-        >>> mask.shape  # doctest: +SKIP
-        (36,)  # doctest: +SKIP
+        >>> int(env.region_mask("center").sum())
+        4
+        >>> int(env.region_mask("reward").sum())  # the bin containing the point
+        1
+        >>> int(env.region_mask(["center", "reward"]).sum())
+        5
+        >>> center, reward = env.region_mask("center"), env.region_mask("reward")
+        >>> int((center & reward).sum()), int((center & ~reward).sum())
+        (0, 4)
 
         See Also
         --------
-        region_membership : 2D membership array for all regions
-        bins_in_region : Get bin indices for a specific region
-        neurospatial.spatial.regions_to_mask : Free function version
-
-        Notes
-        -----
-        **Point regions**: ``region_mask`` reports the single bin
-        whose center is closest to the point (via :meth:`bins_in_region`,
-        which uses :meth:`bin_at`). The free-function
-        :func:`regions_to_mask` returns an empty mask for points
-        because points have no area; the method-form here special-cases
-        them so ``env.region_mask("goal")`` matches what users mean
-        when they write that.
+        region_membership : Bins-by-regions membership table.
+        bins_in_region : Bin indices for one named region.
+        neurospatial.ops.mapping.regions_to_mask : Free-function form.
         """
-        # Import here to avoid circular dependency
-        from neurospatial.environment.regions import _region_mask
+        return _regions_mask(
+            regions,
+            named_regions=self.regions,
+            binning=self._binning,
+            arena=self._arena,
+            include_boundary=include_boundary,
+        )
 
-        return _region_mask(self, regions, include_boundary=include_boundary)
+    def _plot_labels(self) -> PlotLabels:
+        """Names the plots show, which the binning does not carry."""
+        return PlotLabels(
+            name=self.name,
+            layout_type=self.layout_type,
+            units=self.units,
+            coordinates=self._coordinate_system,
+        )
 
-    @check_fitted
+    @keyword_hint(
+        "show_regions", "layout_plot_kwargs", "regions_plot_kwargs", "scale_bar"
+    )
     def plot(
         self,
         ax: matplotlib.axes.Axes | None = None,
+        *,
         show_regions: bool = False,
         layout_plot_kwargs: dict[str, Any] | None = None,
         regions_plot_kwargs: dict[str, Any] | None = None,
@@ -5071,32 +5194,35 @@ class Environment(Generic[_C]):
         matplotlib.axes.Axes
             The axes on which the environment was plotted.
 
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-
         Examples
         --------
+        >>> import matplotlib.pyplot as plt
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> ax = env.plot()  # doctest: +SKIP
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=2.0, units="cm")
+        >>> ax = env.plot()
+        >>> ax.get_xlabel()
+        'X Position (cm)'
 
         Plot with regions:
 
         >>> from neurospatial.regions import Regions
         >>> regions = Regions(env.regions.values())
-        >>> regions.add("goal", point=[5.0, 5.0])  # doctest: +SKIP
+        >>> _ = regions.add("goal", point=[5.0, 5.0])
         >>> env = env.with_regions(regions)
-        >>> ax = env.plot(show_regions=True)  # doctest: +SKIP
+        >>> ax = env.plot(show_regions=True)
+        >>> ax.get_legend_handles_labels()[1]
+        ['goal']
+        >>> plt.close("all")
 
         """
-        from neurospatial.environment.visualization import _plot
-
         return _plot(
-            self,
+            self._binning,
+            self.connectivity,
+            self.regions,
+            self._plot_labels(),
             ax,
             show_regions,
             layout_plot_kwargs,
@@ -5105,18 +5231,19 @@ class Environment(Generic[_C]):
             **kwargs,
         )
 
-    @check_fitted
+    @keyword_hint("layout_plot_kwargs")
     def plot_1d(
         self,
         ax: matplotlib.axes.Axes | None = None,
+        *,
         layout_plot_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> matplotlib.axes.Axes | None:
         """Plot a 1D representation of the environment, if applicable.
 
-        This method is primarily for environments where `is_linearized_track` is True
-        (e.g., using `GraphLayout`). It calls the `plot_linear_layout`
-        method of the underlying layout if it exists and the layout is 1D.
+        For track environments (``is_linearized_track`` is True, as built by
+        ``from_graph``, ``linear_track`` and ``maze``), this draws the bins
+        along the linearized track coordinate.
 
         Parameters
         ----------
@@ -5134,37 +5261,44 @@ class Environment(Generic[_C]):
             The axes on which the 1D layout was plotted, or the original `ax`
             (which may be None) if plotting was not applicable.
 
-        Raises
-        ------
-        RuntimeError
-            If called before the environment is fitted.
-        AttributeError
-            If `self.layout.is_linearized_track` is True but the layout does not have a
-            `plot_linear_layout` method.
+        Warns
+        -----
+        UserWarning
+            If the environment is not a track (``is_linearized_track`` is
+            False); nothing is drawn and ``ax`` is returned unchanged.
 
         Examples
         --------
-        >>> import numpy as np
+        >>> import matplotlib.pyplot as plt
         >>> from neurospatial import Environment
-        >>> from track_linearization import make_track_graph  # doctest: +SKIP
-        >>> position = np.random.rand(100, 2) * 10  # doctest: +SKIP
-        >>> track_graph = make_track_graph(position, use_HMM=False)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     track_graph, track_graph_name="test_track"
-        ... )  # doctest: +SKIP
-        >>> if env.is_linearized_track:  # doctest: +SKIP
-        ...     ax = env.plot_1d()  # doctest: +SKIP
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> ax = env.plot_1d()
+        >>> ax.get_xlabel()
+        'Linearized Position'
+        >>> plt.close("all")
 
         """
-        from neurospatial.environment.visualization import _plot_1d
+        return _plot_1d(
+            self._binning, self.layout_type, ax, layout_plot_kwargs, **kwargs
+        )
 
-        return _plot_1d(self, ax, layout_plot_kwargs, **kwargs)
-
-    @check_fitted
+    @keyword_hint(
+        "cmap",
+        "vmin",
+        "vmax",
+        "colorbar",
+        "colorbar_label",
+        "nan_color",
+        "rasterized",
+        "scale_bar",
+    )
     def plot_field(
         self,
         field: NDArray[np.float64],
         ax: matplotlib.axes.Axes | None = None,
+        *,
         cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -5278,25 +5412,22 @@ class Environment(Generic[_C]):
         >>> fig.savefig("field.png")
 
         """
-        # Validate field shape
-        from neurospatial.environment.visualization import _plot_field
-
         return _plot_field(
-            self,
+            self._binning,
+            self._plot_labels(),
             field,
-            ax,
-            cmap,
-            vmin,
-            vmax,
-            colorbar,
-            colorbar_label,
-            nan_color,
-            rasterized,
-            scale_bar,
+            ax=ax,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            colorbar=colorbar,
+            colorbar_label=colorbar_label,
+            nan_color=nan_color,
+            rasterized=rasterized,
+            scale_bar=scale_bar,
             **kwargs,
         )
 
-    @check_fitted
     def animate_fields(
         self,
         fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
@@ -5304,28 +5435,24 @@ class Environment(Generic[_C]):
         frame_times: NDArray[np.float64],
         backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
         save_path: str | None = None,
-        overwrite: bool = False,
+        overwrite: bool | None = None,
         speed: float = 1.0,
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
         frame_labels: Sequence[str] | None = None,
-        overlay_trajectory: NDArray[np.float64] | None = None,
-        title: str = "Spatial Field Animation",
-        dpi: int = 100,
-        codec: str = "h264",
-        bitrate: int = 5000,
+        title: str | None = None,
+        dpi: int | None = None,
+        codec: str | None = None,
+        bitrate: int | None = None,
         n_workers: int | None = None,
         dry_run: bool = False,
-        image_format: Literal["png", "jpeg"] = "png",
-        max_html_frames: int = 500,
-        contrast_limits: tuple[float, float] | None = None,
-        show_colorbar: bool = False,
-        colorbar_label: str = "",
+        image_format: Literal["png", "jpeg"] | None = None,
+        max_html_frames: int | None = None,
         overlays: list[OverlayProtocol] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
-        scale_bar: bool | ScaleBarConfig = False,
+        scale_bar: bool | ScaleBarConfig | None = None,
         **kwargs: Any,
     ) -> Any:
         """Animate spatial fields over time with multiple backend options.
@@ -5354,9 +5481,10 @@ class Environment(Generic[_C]):
             - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
             - .html: standalone HTML player (no dependencies)
             - None: display interactively (napari or widget depending on context)
-        overwrite : bool, default=False
-            Allow replacing existing video/HTML files and nonempty HTML frames
-            directories. By default, an existing target raises before rendering.
+        overwrite : bool, optional
+            Video and HTML backends: allow replacing existing files and
+            nonempty HTML frames directories. By default (False), an existing
+            target raises before rendering.
         speed : float, default=1.0
             Playback speed relative to real-time:
 
@@ -5378,42 +5506,37 @@ class Environment(Generic[_C]):
         frame_labels : Sequence[str], optional
             Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
             auto-generated as "Frame 1", "Frame 2", etc.
-        overlay_trajectory : NDArray[np.float64], optional
-            Trajectory to overlay on animation. Shape: (n_timepoints, n_dims).
-            For 2D environments: rendered as track line. For higher dimensions:
-            rendered as point cloud. Only supported by napari backend.
-        title : str, default="Spatial Field Animation"
-            Animation title shown in player controls or window title
-        dpi : int, default=100
-            Resolution for rendering frames (video and HTML backends). Higher values
-            produce sharper images but larger file sizes.
-        codec : str, default="h264"
-            Video codec for MP4 export. Options: "h264", "h265", "vp9", "mpeg4".
-            Only used with video backend.
-        bitrate : int, default=5000
-            Video bitrate in kbps. Higher values produce better quality but larger
-            files. Only used with video backend.
+        title : str, optional
+            Napari and HTML backends: title of the window or the page (default
+            "Spatial Field Animation"). Video frames and the widget have no
+            title; use ``frame_labels`` there.
+        dpi : int, optional
+            Video, HTML and widget backends: resolution for rendering frames
+            (default 100). Higher values produce sharper images but larger
+            files.
+        codec : str, optional
+            Video backend: codec, "h264" (default), "h265", "vp9" or "mpeg4".
+        bitrate : int, optional
+            Video backend: constant bitrate in kbps. By default the encoder
+            uses constant quality (``crf=18``, visually near-lossless), which
+            adapts the bitrate to the content; passing ``bitrate`` replaces it.
         n_workers : int, optional
-            Number of parallel workers for video rendering. If None, uses
-            CPU count / 2. Set to 1 for serial rendering. Requires environment
-            to be pickle-able (call `env.clear_cache()` if pickle errors occur).
-            Only used with video backend.
+            Number of parallel workers for video rendering, and for HTML
+            rendering with ``embed=False``. If None, uses CPU count / 2. Set
+            to 1 for serial rendering. Workers receive a pickled copy of the
+            environment, which never includes cached analyses.
         dry_run : bool, default=False
-            If True, estimate rendering time and file size without actually rendering.
-            Only used with video backend.
-        image_format : {"png", "jpeg"}, default="png"
-            Image format for frame embedding in HTML. JPEG produces smaller files
-            but with lossy compression. Only used with HTML backend.
-        max_html_frames : int, default=500
-            Maximum number of frames allowed for HTML export. Prevents creating
-            huge files that crash browsers. Only used with HTML backend.
-        contrast_limits : tuple[float, float], optional
-            Napari contrast limits (min, max). If provided, overrides vmin/vmax.
-            Only used with napari backend.
-        show_colorbar : bool, default=False
-            Whether to include colorbar in rendered frames (not yet implemented)
-        colorbar_label : str, default=""
-            Label for colorbar axis (not yet implemented)
+            If True, check the inputs and report what would be rendered (frame
+            count, and for video and HTML the estimated time or file size),
+            then return None without writing a file, opening a viewer or
+            displaying a widget. Works with every backend.
+        image_format : {"png", "jpeg"}, optional
+            HTML and widget backends: image format of the frames, "png"
+            (default) or "jpeg". JPEG produces smaller files but with lossy
+            compression.
+        max_html_frames : int, optional
+            HTML backend: maximum number of frames (default 500). Prevents
+            creating huge files that crash browsers.
         overlays : list of overlay objects, optional
             List of overlay objects to render on top of the spatial field animation.
             Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay, VideoOverlay.
@@ -5435,17 +5558,23 @@ class Environment(Generic[_C]):
             Alpha transparency for region overlays. Range: [0.0, 1.0] where
             0.0 is fully transparent and 1.0 is fully opaque. Only used when
             show_regions is True or a list. Default: 0.3.
-        scale_bar : bool or ScaleBarConfig, default=False
+        scale_bar : bool or ScaleBarConfig, optional
             Whether to add a scale bar to rendered frames. If True, uses default
             ScaleBarConfig with auto-calculated length. If ScaleBarConfig instance,
             uses provided configuration.
 
             - **napari backend**: Configures napari's native scale bar
-            - **video/html/widget backends**: Adds scale bar to each rendered frame
+            - **video and html backends**: Adds scale bar to each rendered frame
+            - **widget backend**: not supported; it is ignored with a warning
 
             Default: False (no scale bar).
         **kwargs : dict
-            Backend-specific parameters. Common backend-specific options:
+            Backend-specific parameters, listed below. A name that no backend
+            accepts raises ``TypeError`` with the closest option. An option
+            that another backend uses (``crf`` with ``backend="html"``, say)
+            is ignored with one ``UserWarning`` that names the backend using
+            it; with ``backend="auto"`` the warning also says which backend
+            was chosen and why. Options left out use each backend's default.
 
             **Napari backend:**
             - ``layout`` : {"horizontal", "vertical", "grid"}, optional
@@ -5464,6 +5593,12 @@ class Environment(Generic[_C]):
               Constant rate factor for quality (0=lossless, 51=worst)
             - ``preset`` : str, default="medium"
               Encoding speed preset (ultrafast, fast, medium, slow, veryslow)
+
+            **HTML backend:**
+            - ``embed`` : bool, default=True
+              Embed frames in the HTML file; False writes them to a folder
+            - ``frames_dir`` : str or Path, optional
+              Folder for the frames when ``embed=False``
 
             **Widget backend:**
             - ``initial_cache_size`` : int, optional
@@ -5484,9 +5619,6 @@ class Environment(Generic[_C]):
         ------
         FileExistsError
             If an output already exists and overwrite is False.
-        RuntimeError
-            If environment is not fitted (use factory methods like
-            Environment.from_samples())
         ValueError
             If field shapes don't match environment n_bins
         ImportError
@@ -5539,16 +5671,17 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> x, y = np.meshgrid(np.arange(0.0, 24.0, 4.0), np.arange(0.0, 24.0, 4.0))
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
-        >>> distances = env.distance_to([env.n_bins // 2])
+        >>> distances = env.distance_to(bins=env.n_bins // 2)
         >>> fields = [np.exp(-distances / (4.0 + frame)) for frame in range(8)]
         >>> frame_times = np.arange(len(fields)) / 30.0
 
-        Interactive exploration requires a display; video export requires ffmpeg:
+        Interactive exploration in napari and video export. These two examples
+        are skipped in the documentation tests because napari needs a display
+        and video export needs the ffmpeg program:
 
         >>> viewer = env.animate_fields(
         ...     fields, frame_times=frame_times, backend="napari"
         ... )  # doctest: +SKIP
-        >>> env.clear_cache()  # Clear caches before using parallel video workers
         >>> env.animate_fields(  # doctest: +SKIP
         ...     fields,
         ...     frame_times=frame_times,
@@ -5656,11 +5789,11 @@ class Environment(Generic[_C]):
         ... )
 
         """
-        from neurospatial.environment.visualization import _animate_fields
+        from neurospatial.animation.core import animate_fields
 
-        return _animate_fields(
-            self,
-            fields,
+        return animate_fields(
+            env=self,
+            fields=fields,
             frame_times=frame_times,
             backend=backend,
             save_path=save_path,
@@ -5670,7 +5803,6 @@ class Environment(Generic[_C]):
             vmin=vmin,
             vmax=vmax,
             frame_labels=frame_labels,
-            overlay_trajectory=overlay_trajectory,
             title=title,
             dpi=dpi,
             codec=codec,
@@ -5679,9 +5811,6 @@ class Environment(Generic[_C]):
             dry_run=dry_run,
             image_format=image_format,
             max_html_frames=max_html_frames,
-            contrast_limits=contrast_limits,
-            show_colorbar=show_colorbar,
-            colorbar_label=colorbar_label,
             overlays=overlays,
             show_regions=show_regions,
             region_alpha=region_alpha,
@@ -5690,7 +5819,6 @@ class Environment(Generic[_C]):
         )
 
     @property
-    @check_fitted
     def boundary_bins(self) -> NDArray[np.intp]:
         """
         Identify boundary bins (bins on the edge of the active region).
@@ -5708,7 +5836,10 @@ class Environment(Generic[_C]):
         -----
         - Detection is cached; each access returns an independent array.
         - For large environments (>100,000 bins), initial computation may take a few seconds
-        - Uses graph-based boundary detection (checks node degrees and connectivity)
+        - Grid and hexagonal bins use their cell lattice: a bin is on the
+          boundary when an orthogonal grid neighbor, or any of a hexagon's six
+          neighbors, is inactive or outside the lattice. Exact polygon cells
+          use the outline of their union; other layouts use node degrees.
 
         See Also
         --------
@@ -5718,42 +5849,38 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.array([[1, 1], [1, 2], [2, 1], [2, 2], [1, 3], [2, 3]])
-        >>> env = Environment.from_samples(data, bin_size=1.0)
+
+        A 50 x 50 cm arena of 10 cm bins: the outer ring of 16 bins is the
+        boundary and the 9 bins inside it are not.
+
+        >>> mask = np.ones((5, 5), dtype=bool)
+        >>> grid_edges = (np.arange(6) * 10.0, np.arange(6) * 10.0)
+        >>> env = Environment.from_grid_mask(mask, grid_edges)
         >>> boundary = env.boundary_bins
-        >>> print(f"Found {len(boundary)} boundary bins")  # doctest: +SKIP
-        Found 6 boundary bins
+        >>> print(f"Found {len(boundary)} boundary bins of {env.n_bins}")
+        Found 16 boundary bins of 25
+        >>> center_bin = env.bin_at(np.array([[25.0, 25.0]]))[0]
+        >>> bool(np.isin(center_bin, boundary))
+        False
 
         """
-        from neurospatial.environment.metrics import _boundary_bins
-
-        return _boundary_bins(self)
+        boundary: NDArray[np.intp] = self._boundary_bins_cached.copy()
+        return boundary
 
     @property
-    @check_fitted
     def linearization_properties(
         self,
     ) -> dict[str, Any]:
         """
-        Get linearization metadata for 1D environments.
-
-        Returns a dictionary with linearization information, including:
-        - `is_linearized_track`: Whether this is a 1D linearized environment
-        - `linear_bin_edges`: Bin edges in linear coordinates (1D only)
-        - `linear_bin_centers_1d`: Bin centers in linear coordinates (1D only)
-        - `track_graph`: The underlying track graph (1D only)
+        Get linearization metadata for track environments.
 
         Returns
         -------
         dict[str, Any]
-            Dictionary with linearization metadata. For non-1D environments,
-            only contains `{'is_linearized_track': False}`.
-
-        Notes
-        -----
-        - Metadata is cached; each access returns an independent dictionary.
-        - Only 1D environments (created with `from_graph()`) have full linearization info
-        - For N-D environments, returns `{'is_linearized_track': False}`
+            ``{"is_linearized_track": bool}``: True for a track built with
+            ``from_graph``, ``linear_track`` or ``maze``. Each access returns
+            an independent dictionary. The track geometry itself (graph, edge
+            order, linear bin edges) is in ``env.binning.linearization``.
 
         See Also
         --------
@@ -5763,35 +5890,16 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> import numpy as np
-        >>> import networkx as nx
         >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> props = env.linearization_properties  # doctest: +SKIP
-        >>> print(props["is_linearized_track"])  # doctest: +SKIP
-        True
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> env.linearization_properties
+        {'is_linearized_track': True}
 
         """
-        from neurospatial.environment.metrics import _linearization_properties
+        return {"is_linearized_track": self._binning.linearization is not None}
 
-        return _linearization_properties(self)
-
-    @cached_property
-    def _linearization_properties_cached(self) -> dict[str, Any]:
-        from neurospatial.environment.metrics import _linearization_properties_cached
-
-        return _linearization_properties_cached(self)
-
-    @check_fitted
     def get_bin_attributes(self) -> pd.DataFrame:
         """
         Extract bin (node) attributes as a pandas DataFrame.
@@ -5803,6 +5911,7 @@ class Environment(Generic[_C]):
         -------
         pd.DataFrame, shape (n_bins, n_attributes)
             DataFrame with bin attributes. Always includes:
+
             - `'source_grid_flat_index'`: Flat index in original grid
             - `'original_grid_nd_index'`: N-D grid index tuple
             - `'pos_dim0'`, `'pos_dim1'`, ...: Position coordinates
@@ -5826,28 +5935,23 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(50, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>>
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> df = env.get_bin_attributes()
-        >>> print(df.columns.tolist())  # doctest: +SKIP
+        >>> print(df.columns.tolist())
         ['source_grid_flat_index', 'original_grid_nd_index', 'pos_dim0', 'pos_dim1']
-        >>> print(df.shape)  # doctest: +SKIP
-        (30, 4)
+        >>> print(df.shape)  # one row per bin
+        (36, 4)
 
         """
-        from neurospatial.environment.metrics import _get_bin_attributes
+        return _copy_attributes(self._bin_attributes_cached)
 
-        return _get_bin_attributes(self)
-
-    @cached_property
+    @property
     def _bin_attributes_cached(self) -> pd.DataFrame:
-        # Extract node attributes from connectivity graph
-        from neurospatial.environment.metrics import _bin_attributes_cached
+        return self._cache.get(
+            BIN_ATTRIBUTES, lambda: _bin_attributes(self.connectivity)
+        )
 
-        return _bin_attributes_cached(self)
-
-    @check_fitted
     def get_edge_attributes(self) -> pd.DataFrame:
         """
         Extract edge attributes as a pandas DataFrame.
@@ -5860,10 +5964,12 @@ class Environment(Generic[_C]):
         -------
         pd.DataFrame, shape (n_edges, n_attributes)
             DataFrame with edge attributes. Always includes:
+
             - `'source'`: Source bin ID
             - `'target'`: Target bin ID
             - `'distance'`: Stored navigation distance between bins
             - `'vector'`: Displacement vector tuple
+            - `'vector_dim0'`, `'vector_dim1'`, ...: Displacement components
             - `'edge_id'`: Unique edge ID
             - `'angle_2d'`: Angle for 2D layouts (optional)
 
@@ -5886,32 +5992,29 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(50, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>>
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> df = env.get_edge_attributes()
-        >>> print(df.columns.tolist())  # doctest: +SKIP
-        ['source', 'target', 'distance', 'vector', 'edge_id', 'angle_2d']
-        >>> print(df.shape)  # doctest: +SKIP
-        (100, 6)
+        >>> print(df.columns.tolist())
+        ['distance', 'vector', 'edge_id', 'angle_2d', 'source', 'target', 'vector_dim0', 'vector_dim1']
+        >>> print(df.shape)  # one row per edge
+        (110, 8)
 
         """
-        from neurospatial.environment.metrics import _get_edge_attributes
+        return _copy_attributes(self._edge_attributes_cached)
 
-        return _get_edge_attributes(self)
-
-    @cached_property
+    @property
     def _edge_attributes_cached(self) -> pd.DataFrame:
-        # Extract edge attributes from connectivity graph
-        from neurospatial.environment.metrics import _edge_attributes_cached
+        return self._cache.get(
+            EDGE_ATTRIBUTES,
+            lambda: _edge_attributes(self.connectivity, self._binning),
+        )
 
-        return _edge_attributes_cached(self)
-
-    @check_fitted
+    @keyword_hint("bandwidth")
     def compute_kernel(
         self,
-        bandwidth: float,
         *,
+        bandwidth: float,
         mode: KernelMode = "density",
         cache: bool = True,
     ) -> NDArray[np.float64]:
@@ -5949,7 +6052,7 @@ class Environment(Generic[_C]):
             with the same (bandwidth, mode) reuse the computation and return
             independent copies of the cached result.
             The environment keeps the most recently used kernels (eight by
-            default); ``clear_cache(kernels=True)`` releases them.
+            default); ``clear_cache()`` releases them.
 
         Returns
         -------
@@ -5958,8 +6061,6 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
         ValueError
             If bandwidth is not positive, or ``mode`` is not one of
             ``{'transition', 'density', 'average'}``.
@@ -6006,19 +6107,29 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-        >>> # Compute kernel for smoothing
-        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")  # doctest: +SKIP
-        >>> # Apply to field
-        >>> smoothed_field = kernel @ field  # doctest: +SKIP
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.linspace(0, 50, 26), np.linspace(0, 50, 26))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
+        ... )
+        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")
+        >>> kernel.shape  # (n_bins, n_bins)
+        (121, 121)
+        >>> # Spread one spike in the center bin into a density (spikes / cm²)
+        >>> spikes = np.zeros(env.n_bins)
+        >>> spikes[env.n_bins // 2] = 1.0
+        >>> density = kernel @ spikes
+        >>> # Integrating the density over the bin areas recovers the spike
+        >>> round(float((density * env.bin_sizes).sum()), 6)
+        1.0
 
         """
-        from neurospatial.environment.fields import _compute_kernel
+        return _compute_kernel(
+            self._cache, self._binning, bandwidth, mode=mode, use_cache=cache
+        )
 
-        return _compute_kernel(self, bandwidth, mode=mode, cache=cache)
-
-    @check_fitted
-    def compute_gaussian_kernel(self, bandwidth: float) -> NDArray[np.float64]:
+    @keyword_hint("bandwidth")
+    def compute_gaussian_kernel(self, *, bandwidth: float) -> NDArray[np.float64]:
         """Return Gaussian weights between bin centers, ignoring walls.
 
         Parameters
@@ -6042,13 +6153,12 @@ class Environment(Generic[_C]):
         The dense matrix costs O(n_bins**2) memory. Repeated calls reuse an
         environment-owned bounded cache and return independent array headers
         without copying the matrix. Use .copy() for an editable matrix.
-        clear_cache(kernels=True) releases the cached weights.
+        clear_cache() releases the cached weights.
         """
-        from neurospatial.environment.fields import _compute_gaussian_kernel
+        return _compute_gaussian_kernel(
+            self._cache, self.bin_centers, self._coordinate_system, bandwidth
+        )
 
-        return _compute_gaussian_kernel(self, bandwidth)
-
-    @check_fitted
     def get_diffusion_geometry(self) -> DiffusionGeometry:
         """Return read-only conductances, cell measures and diffusion components.
 
@@ -6062,22 +6172,21 @@ class Environment(Generic[_C]):
         Notes
         -----
         The environment builds this geometry once and owns its private cache.
-        Every export has independent sparse and NumPy headers over immutable
-        buffers. Replacing an exported matrix's buffers or changing an array's
-        shape cannot change the environment. Reading the export does not copy
-        O(n_edges) data. clear_cache(cached_properties=True) rebuilds on demand.
+        Every export is a new sparse matrix and tuple over read-only views of
+        the cached arrays, so writing to them raises, and replacing an
+        exported matrix's arrays or changing an array's shape cannot change
+        the environment. Reading the export does not copy O(n_edges) data.
+        After clear_cache() it is rebuilt on demand.
 
         Raises
         ------
         NotImplementedError
             If the stored binning cannot supply numerical diffusion geometry.
         """
-        from neurospatial.environment._publication import _diffusion_geometry_header
+        return _diffusion_geometry_view(self._diffusion_geometry)
 
-        return _diffusion_geometry_header(self._diffusion_geometry)
-
-    @check_fitted
-    def diffusion_accuracy(self, bandwidth: float) -> float:
+    @keyword_hint("bandwidth")
+    def diffusion_accuracy(self, *, bandwidth: float) -> float:
         """Return the relative numerical noise floor of diffuse() at a bandwidth.
 
         Parameters
@@ -6093,15 +6202,16 @@ class Environment(Generic[_C]):
             the more conservative truncation tolerance. This query does not
             build an eigenbasis.
         """
-        from neurospatial.ops.diffusion import _diffusion_apply_rtol
+        return _diffusion_apply_rtol(
+            diffusion_eigenbasis(self._cache), self.n_bins, bandwidth
+        )
 
-        return _diffusion_apply_rtol(self._diffusion_eigenbasis, self.n_bins, bandwidth)
-
+    @keyword_hint("bandwidth")
     def smooth(
         self,
         field: NDArray[np.float64],
-        bandwidth: float,
         *,
+        bandwidth: float,
         mode: KernelMode = "average",
     ) -> NDArray[np.float64]:
         """Apply diffusion kernel smoothing to a field.
@@ -6112,9 +6222,15 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values per bin to smooth. Must be a 1-D array with length
-            equal to n_bins.
+        field : NDArray[np.float64], shape (n_bins,) or (n_bins, n_fields)
+            Field values per bin to smooth, bins first as in :meth:`diffuse`;
+            a 2-D batch smooths each column as one field. Population rate
+            arrays are stored ``(n_units, n_bins)``, so pass
+            ``rates.firing_rates.T`` and transpose the result back; an array
+            with bins on the second axis is refused with that fix, and so is
+            a rate result itself. NaN marks a missing bin, such as an
+            unvisited bin of a rate map, and is accepted with
+            ``mode='average'``; see Missing bins below. Must not contain Inf.
         bandwidth : float
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
@@ -6144,16 +6260,18 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        smoothed : NDArray[np.float64], shape (n_bins,)
-            Smoothed field values.
+        smoothed : NDArray[np.float64], shape matching ``field``
+            Smoothed field values. NaN where too little of a bin's smoothing
+            weight falls on observed bins (see Missing bins below).
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
+        TypeError
+            If field is a rate result rather than its array of rates.
         ValueError
-            If field has wrong shape, wrong dimensionality, bandwidth is not
-            positive, or mode is invalid.
+            If field has wrong shape, wrong dimensionality, contains Inf,
+            contains NaN with ``mode='transition'`` or ``'density'``,
+            bandwidth is not positive, or mode is invalid.
 
         See Also
         --------
@@ -6211,42 +6329,75 @@ class Environment(Generic[_C]):
         not leak between disconnected components (even under truncation, because
         the eigenbasis modes are component-local).
 
+        **Missing bins.** NaN bins are missing observations, not zeros (see
+        Missing data in the class Notes). In ``mode='average'``, with ``A`` the
+        row-stochastic operator and ``m`` the observed mask, the result is
+        ``A(field * m) / s``, with NaN read as 0 in the product, where
+        ``s = A(m)`` is the share of each bin's smoothing weight that falls on
+        observed bins. Holes are filled from their observed neighbors, and a
+        constant field with holes stays constant. A bin, observed or not,
+        stays NaN when its ``s`` is at most 0.1% of the largest ``s`` in its
+        connected part of the environment, which includes every bin of a part
+        with no observed bin. The floor is 1000 times the operator's relative
+        truncation error (``1e-6``). That error scales with the field's largest
+        magnitude in the connected part, not with each value: a kept value is
+        accurate to about 0.1% of that magnitude or better. For a field
+        spanning 1000:1 (1000 Hz next to 1 Hz) a kept bin near 1 Hz can be off
+        by about 1% of its own value, roughly 1e-5 of the 1000 Hz peak.
+        ``mode='transition'`` and ``mode='density'`` refuse NaN:
+        missing bins have no defensible mass under a conserving operator, so
+        fill them explicitly or use ``mode='average'`` for an intensive field.
+        A field without NaN gets the plain ``K · field``.
+
         Examples
         --------
-        >>> # Smooth an intensive rate map without changing its units or level
-        >>> smoothed_rate = env.smooth(firing_rate, bandwidth=5.0)  # doctest: +SKIP
+        A 50 x 50 cm arena with 5 cm bins:
 
-        >>> # Smooth spike counts (mass-conserving)
-        >>> smoothed_counts = env.smooth(
-        ...     spike_counts, bandwidth=5.0, mode="transition"
-        ... )  # doctest: +SKIP
-        >>> # Total spikes preserved
-        >>> assert np.isclose(
-        ...     smoothed_counts.sum(), spike_counts.sum()
-        ... )  # doctest: +SKIP
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.linspace(0, 50, 26), np.linspace(0, 50, 26))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
+        ... )
 
-        >>> # Turn spike counts into a smoothed density (KDE)
-        >>> spike_density = env.smooth(
-        ...     spike_counts, bandwidth=3.0, mode="density"
-        ... )  # doctest: +SKIP
+        Smoothing an intensive rate map keeps its units and level, so a flat
+        4 Hz map stays 4 Hz:
 
-        >>> # Smooth a discrete probability distribution (mass, sums to 1)
-        >>> smoothed_prob = env.smooth(
-        ...     posterior, bandwidth=2.0, mode="transition"
-        ... )  # doctest: +SKIP
+        >>> firing_rate = np.full(env.n_bins, 4.0)
+        >>> bool(np.allclose(env.smooth(firing_rate, bandwidth=5.0), 4.0))
+        True
+
+        Smoothing spike counts with ``mode="transition"`` conserves the total:
+
+        >>> spike_counts = np.zeros(env.n_bins)
+        >>> spike_counts[[10, 60, 61]] = [3, 5, 2]
+        >>> smoothed_counts = env.smooth(spike_counts, bandwidth=5.0, mode="transition")
+        >>> bool(np.isclose(smoothed_counts.sum(), spike_counts.sum()))
+        True
+
+        ``mode="density"`` turns counts into spikes per cm²; integrating over
+        the bin areas gives the total back:
+
+        >>> spike_density = env.smooth(spike_counts, bandwidth=3.0, mode="density")
+        >>> round(float((spike_density * env.bin_sizes).sum()), 6)
+        10.0
+
+        A discrete probability distribution is mass, so it also uses
+        ``mode="transition"`` and still sums to 1:
+
+        >>> posterior = np.full(env.n_bins, 1.0 / env.n_bins)
+        >>> smoothed_prob = env.smooth(posterior, bandwidth=2.0, mode="transition")
+        >>> round(float(smoothed_prob.sum()), 6)
+        1.0
 
         """
-        # Input validation
-        from neurospatial.environment.fields import _smooth
+        return _smooth(self._cache, self._binning, field, bandwidth, mode=mode)
 
-        return _smooth(self, field, bandwidth, mode=mode)
-
-    @check_fitted
+    @keyword_hint("bandwidth")
     def diffuse(
         self,
         fields: Any,
-        bandwidth: float,
         *,
+        bandwidth: float,
         mode: KernelMode = "density",
         backend: Literal["numpy", "jax"] = "numpy",
     ) -> NDArray[np.float64]:
@@ -6262,8 +6413,8 @@ class Environment(Generic[_C]):
         every bandwidth, mode, and neuron (auto-invalidated when the environment
         is mutated).
 
-        ``diffuse`` is a **pure linear operator**: it applies **no output clip
-        and no renormalization**. The always-retained per-component null mode
+        On fields without NaN, ``diffuse`` is a **pure linear operator**: it
+        applies **no output clip and no renormalization**. The always-retained per-component null mode
         makes mass conservation exact under truncation (``mode="transition"``
         preserves ``sum``; a constant field is preserved by ``mode="average"``),
         so smoothing a **signed** field is preserved. Where the result must be
@@ -6273,10 +6424,19 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         fields : NDArray[np.float64], shape (n_bins,) or (n_bins, n_fields)
-            Field(s) to smooth, indexed by bin. A 1-D field is smoothed and
-            returned 1-D; a 2-D batch smooths every column in one pass. NaN/Inf
-            are not validated (``diffuse`` is a raw linear operator: NaN in →
-            NaN out); callers needing validation use :meth:`smooth`.
+            Field(s) to smooth, indexed by bin first, as in :meth:`smooth`. A
+            1-D field is smoothed and returned 1-D; a 2-D batch smooths every
+            column in one pass. An array with bins on the second axis, such
+            as population rates ``(n_units, n_bins)``, is refused with the
+            fix ``fields.T``, and a rate result is refused with the array to
+            pass. NaN
+            marks a missing bin: in ``mode='average'`` each column is averaged
+            over its own observed bins, as described under Missing bins in
+            :meth:`smooth`, and columns without NaN are unchanged; the other
+            modes refuse NaN. ``backend='jax'`` refuses a concrete input with
+            NaN (use ``backend='numpy'``); a traced input cannot be inspected,
+            so NaN in it reaches every bin. Inf is not validated;
+            :meth:`smooth` refuses it.
         bandwidth : float
             Physical smoothing standard deviation σ (> 0), independent of bin
             size on any supported layout.
@@ -6299,15 +6459,18 @@ class Environment(Generic[_C]):
 
         Raises
         ------
-        RuntimeError
-            If called before the environment is fitted.
+        TypeError
+            If ``fields`` is a rate result rather than its array of rates.
         ValueError
             If ``bandwidth`` is not positive, ``mode`` is invalid, ``backend`` is
-            invalid, or ``fields`` is not 1-D/2-D with leading dim ``n_bins``.
+            invalid, or ``fields`` is not 1-D/2-D with leading dim ``n_bins``;
+            or if ``fields`` holds NaN with ``mode='transition'`` or
+            ``'density'``, or as a concrete input with ``backend='jax'``.
 
         See Also
         --------
-        smooth : 1-D smoothing with input validation (delegates here).
+        smooth : Smoothing with input validation, default ``mode='average'``
+            (delegates here).
         compute_kernel : Build the DENSE kernel matrix (kept for callers that
             genuinely need the ``(n, n)`` matrix; uses the dense ``expm`` path).
 
@@ -6327,99 +6490,19 @@ class Environment(Generic[_C]):
         basis (applied then dropped, never cached) with the same large-matrix
         ``UserWarning`` as :meth:`compute_kernel`.
         """
-        from neurospatial.environment.fields import _diffuse
+        return _diffuse(
+            self._cache, self._binning, fields, bandwidth, mode=mode, backend=backend
+        )
 
-        return _diffuse(self, fields, bandwidth, mode=mode, backend=backend)
-
-    @cached_property
-    def _face_geometry(self) -> FaceGeometry:
-        """Validated cell faces, cached for this immutable geometry.
-
-        Shared by the diffusion snapshot and the gradient and divergence
-        operators. Read it through :meth:`_require_face_geometry`, which names
-        the analysis when the layout has no cell faces.
-        """
-        from neurospatial.environment.fields import _face_geometry
-
-        return _face_geometry(self)
-
-    def _require_face_geometry(self, operation: str) -> FaceGeometry:
-        """Cached cell faces, or an actionable error naming ``operation``.
-
-        Parameters
-        ----------
-        operation : str
-            Analysis named in the error when the layout has no cell faces.
-
-        Returns
-        -------
-        FaceGeometry
-            Validated faces and cell measures in authoritative bin-pair order.
-        """
-        from neurospatial.environment.fields import _require_face_geometry
-
-        return _require_face_geometry(self, operation)
-
-    @cached_property
-    def _diffusion_geometry(
-        self,
-    ) -> DiffusionGeometry:
+    @property
+    def _diffusion_geometry(self) -> DiffusionGeometry:
         """Cached diffusion geometry ``(W, volumes, n_components, labels)``.
 
-        Geometry-only, so it is built once and discarded by
-        ``clear_cache(cached_properties=True)``. Shared by dense kernels,
-        :meth:`diffuse`, smoothness bases, and the W-component support gates.
+        Shared by dense kernels, :meth:`diffuse`, smoothness bases, and the
+        W-component support gates.
         """
-        from neurospatial.environment.fields import _diffusion_geometry
+        return diffusion_geometry(self._cache, self._binning)
 
-        return _diffusion_geometry(self)
-
-    @cached_property
-    def _diffusion_eigenbasis(self) -> DiffusionEigenbasisCache:
-        """Growable single-entry truncated-eigenbasis cache for :meth:`diffuse`.
-
-        Returns a small mutable holder (the max-rank truncated basis, grown by
-        replace, plus a per-``(sigma, tol)`` resolved-rank memo) that
-        :func:`neurospatial.ops.diffusion.diffusion_apply` mutates in place. The
-        private cached property owns it, so clearing cached properties drops it
-        wholesale. It holds a single basis strictly below ``dense_fraction·n``
-        — never a persistent ``(n, n)``.
-        """
-        from neurospatial.environment.fields import _diffusion_eigenbasis
-
-        return _diffusion_eigenbasis(self)
-
-    @cached_property
-    def _gaussian_kernels(self) -> dict[float, NDArray[np.float64]]:
-        """Dense Gaussian-KDE weight matrices for this geometry, by bandwidth.
-
-        The smoothing adapter fills this holder with the most recently used
-        kernels (``_constants.MAX_CACHED_KERNELS``). It is emptied by
-        ``clear_cache(kernels=True)`` and freed with the environment.
-        """
-        from neurospatial.environment.fields import _gaussian_kernels
-
-        return _gaussian_kernels(self)
-
-    @cached_property
-    def _mrf_eigenbasis(self) -> MRFEigenbasisCache:
-        """Growable global eigenbasis holder for the MRF penalty-basis resolver.
-
-        A mutable ``{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}``
-        holding the ``G`` globally-smallest modes of the symmetric conjugate
-        ``S`` and each mode's source W-component, grown by replace by
-        :func:`neurospatial.ops.diffusion._ensure_global_modes`. Geometry-only
-        (no ``(sigma, tol)`` key — the MRF penalty basis is bandwidth-independent)
-        and dropped wholesale by ``clear_cache(cached_properties=True)``.
-        Starts empty (``G == 0``) and never stores a dense ``(n, n)`` basis
-        (dense solves stay call-local). Distinct from
-        :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
-        """
-        from neurospatial.environment.fields import _mrf_eigenbasis
-
-        return _mrf_eigenbasis(self)
-
-    @check_fitted
     def get_mrf_basis(
         self,
         occupancy: NDArray[np.float64],
@@ -6454,13 +6537,11 @@ class Environment(Generic[_C]):
         contribute no basis rows; every occupied component has one unpenalized
         constant mode, followed by modes with positive smoothness penalties.
         """
-        from neurospatial.environment.fields import _mrf_basis
-
-        return _mrf_basis(self, occupancy, rank=rank)
+        return _mrf_basis(self._cache, self._binning, occupancy, rank=rank)
 
     def transitions(
         self,
-        bins: NDArray[np.int32] | None = None,
+        bins: NDArray[np.intp] | None = None,
         *,
         times: NDArray[np.float64] | None = None,
         positions: NDArray[np.float64] | None = None,
@@ -6487,7 +6568,7 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        bins : NDArray[np.int32], shape (n_samples,), optional
+        bins : NDArray[np.intp], shape (n_samples,), optional
             [Empirical mode] Precomputed bin sequence. If None, computed from
             times/positions. Must contain valid bin indices in range [0, n_bins).
             Outside values (-1) are not allowed.
@@ -6496,7 +6577,9 @@ class Environment(Generic[_C]):
             with positions.
         positions : NDArray[np.float64], shape (n_samples, n_dims), optional
             [Empirical mode] Position coordinates matching environment dimensions.
-            Must be provided together with times.
+            Must be provided together with times. A sample outside the
+            environment or with a NaN coordinate (missing; see Missing data in
+            the class Notes) adds no transition to or from it.
         lag : int, default=1
             [Empirical mode] Temporal lag for transitions: count bins[t] → bins[t+lag].
             Must be positive. lag=1 counts consecutive transitions, lag=2 skips one bin.
@@ -6523,6 +6606,9 @@ class Environment(Generic[_C]):
             Longest sampling interval (seconds) treated as continuous recording.
             Longer intervals (dropped frames, pauses between sessions) are excluded
             from the analysis. ``None`` disables the gap check.
+            A ``UserWarning`` names the cause when every interval is excluded,
+            or when the median sampling interval exceeds ``max_gap`` (usually
+            ``times`` that are not in seconds).
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
@@ -6562,14 +6648,16 @@ class Environment(Generic[_C]):
         is analyzed as a separate recording; no segment spans a pause.
 
         When times are supplied, a pair (k, k + lag) counts only if every
-        interval from k through k + lag - 1 is valid. Raw bin-only inputs
-        and model-based transitions have no time gate.
+        interval from k through k + lag - 1 is valid and samples k and
+        k + lag are both inside the environment. Raw bin-only inputs and
+        model-based transitions have no time gate.
 
         **Empirical mode**: Counts observed transitions from trajectory data.
         When allow_teleports=False, filters out non-adjacent transitions using
         the connectivity graph. Useful for removing tracking errors.
 
         **Model mode**: Generates theoretical transition probabilities:
+
         - 'random_walk': Each bin transitions uniformly to all graph neighbors.
           Equivalent to normalized adjacency matrix.
         - 'diffusion': Transitions weighted by spatial proximity using heat kernel.
@@ -6580,24 +6668,53 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> T_empirical = env.transitions(
-        ...     times=times, positions=positions
-        ... )  # doctest: +SKIP
+        A 50 x 50 cm arena with 5 cm bins and a 10 s run along its middle:
+
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.linspace(0, 50, 26), np.linspace(0, 50, 26))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
+        ... )
+        >>> times = np.arange(0.0, 10.0, 0.1)  # seconds
+        >>> positions = np.c_[np.linspace(1.0, 49.0, 100), np.full(100, 25.0)]
+
+        Empirical transitions counted from the trajectory, one row per bin:
+
+        >>> T_empirical = env.transitions(times=times, positions=positions)
+        >>> T_empirical.shape
+        (121, 121)
+
+        Transitions two samples apart, from an existing bin sequence:
+
+        >>> bin_sequence = env.bin_sequence(times, positions)
         >>> T_lag2 = env.transitions(
-        ...     bins=bin_sequence, lag=2, allow_teleports=True
-        ... )  # doctest: +SKIP
-        >>> T_random = env.transitions(method="random_walk")  # doctest: +SKIP
-        >>> T_diffusion = env.transitions(
-        ...     method="diffusion", bandwidth=5.0
-        ... )  # doctest: +SKIP
-        >>> diff = (T_empirical - T_diffusion).toarray()  # doctest: +SKIP
+        ...     bins=bin_sequence, lag=2, allow_teleports=True, normalize=False
+        ... )
+        >>> # One count per pair of visits two steps apart
+        >>> int(T_lag2.sum()) == len(bin_sequence) - 2
+        True
+
+        Model transitions need no trajectory. Each row is a probability
+        distribution over the next bin:
+
+        >>> T_random = env.transitions(method="random_walk")
+        >>> T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
+        >>> bool(np.allclose(T_random.sum(axis=1), 1.0))
+        True
+        >>> bool(np.allclose(T_diffusion.sum(axis=1), 1.0))
+        True
+        >>> # Compare the observed movement with the diffusion model
+        >>> difference = (T_empirical - T_diffusion).toarray()
+        >>> difference.shape  # (from bin, to bin)
+        (121, 121)
 
         """
-        from neurospatial.environment.trajectory import _transitions
-
         return _transitions(
-            self,
             bins,
+            graph=self.connectivity,
+            binning=self._binning,
+            arena=self._arena,
+            cache=self._cache,
             times=times,
             positions=positions,
             lag=lag,
@@ -6609,177 +6726,6 @@ class Environment(Generic[_C]):
             epochs=epochs,
         )
 
-    @classmethod
-    def _from_built_layout(
-        cls,
-        layout: LayoutEngine,
-        *,
-        name: str = "",
-        layout_type_used: str | None = None,
-        layout_params_used: dict[str, Any] | None = None,
-        regions: Regions | None = None,
-        units: str | None = None,
-        frame: str | None = None,
-        arena: Arena | None = None,
-        _coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
-    ) -> Environment[Any]:
-        """Consume a built layout once and publish only its owned data."""
-        from neurospatial.layout._construction import built_layout_data
 
-        binning, graph, ranges, tag, category, resolved, index = built_layout_data(
-            layout
-        )
-        if isinstance(_coordinates, EgocentricPolarSystem) and arena is None:
-            from neurospatial.environment._arena import infer_arena
-
-            arena = infer_arena(binning, polar=True, circular=_coordinates.circular)
-        return cls._from_binning(
-            binning,
-            connectivity=graph,
-            dimension_ranges=ranges,
-            layout_type_tag=layout_type_used or tag,
-            layout_type=category,
-            build_params=layout_params_used
-            if layout_params_used is not None
-            else dict(resolved),
-            is_linearized_track=binning.linearization is not None,
-            coordinate_kind="polar"
-            if isinstance(_coordinates, EgocentricPolarSystem)
-            else "cartesian",
-            name=name,
-            regions=regions,
-            units=units,
-            frame=frame,
-            arena=arena,
-            _grid_index=index,
-            _check_center_lookup=index is None,
-        )
-
-    @classmethod
-    def _from_binning(
-        cls,
-        binning: Binning,
-        *,
-        connectivity: nx.Graph,
-        dimension_ranges: Sequence[tuple[float, float]] | None,
-        layout_type_tag: str,
-        layout_type: str,
-        build_params: dict[str, Any],
-        is_linearized_track: bool,
-        coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
-        name: str = "",
-        regions: Regions | None = None,
-        units: str | None = None,
-        frame: str | None = None,
-        arena: Arena | None = None,
-        clip_mapping: ClipMapping | None = None,
-        restored_from: str | None = None,
-        _grid_index: object = None,
-        _check_center_lookup: bool = True,
-    ) -> Environment[Any]:
-        """Publish validated owned data atomically, without a layout facade."""
-        from neurospatial.environment._arena import (
-            apply_walls,
-            infer_arena,
-            validate_arena,
-        )
-        from neurospatial.geometry._context import GridIndex, grid_index
-        from neurospatial.geometry._ownership import own_arena, own_binning
-        from neurospatial.geometry._validation import (
-            _validate_clip_mapping,
-            _validate_components,
-            _validate_graph,
-        )
-
-        if coordinate_kind not in ("cartesian", "polar"):
-            raise ValueError("coordinate_kind must be 'cartesian' or 'polar'.")
-        cls._validate_units(units)
-        binning = own_binning(binning)
-        graph = copy_module.deepcopy(connectivity)
-        _validate_graph(binning, graph)
-        _validate_components(
-            binning,
-            is_linearized_track,
-            coordinate_kind,
-            check_center_lookup=_check_center_lookup,
-        )
-        if clip_mapping is not None:
-            binning = replace(binning, clip_mapping=copy_module.deepcopy(clip_mapping))
-            _validate_clip_mapping(binning)
-        polar = coordinate_kind == "polar"
-        index = (
-            _grid_index if isinstance(_grid_index, GridIndex) else grid_index(binning)
-        )
-        from neurospatial.arena import EgocentricSurround
-
-        coordinates = (
-            EgocentricPolarSystem(
-                arena.circular
-                if isinstance(arena, EgocentricSurround)
-                else polar_circularity(index.shape, graph, build_params)
-            )
-            if polar
-            else CartesianSystem()
-        )
-        if arena is None:
-            arena = infer_arena(
-                binning,
-                polar=polar,
-                circular=isinstance(coordinates, EgocentricPolarSystem)
-                and coordinates.circular,
-            )
-        arena = own_arena(arena)
-        validate_arena(arena, binning, polar=polar)
-        binning, graph = apply_walls(binning, graph, arena)
-        try:
-            validate_connectivity_graph(
-                graph,
-                n_dims=binning.bins.n_dims,
-                check_node_attrs=True,
-                check_edge_attrs=True,
-            )
-        except GraphValidationError as error:
-            if restored_from is not None:
-                defect = str(error).split("This is a layout engine bug")[0].strip()
-                raise ValueError(
-                    _format_error(
-                        f"The connectivity graph in {restored_from} is invalid: {defect}",
-                        why="Why: a read-back environment uses its stored graph, whose nodes and edges must carry the attributes neurospatial writes.",
-                        fix="re-save the environment from a factory-built Environment with to_file, to_dict or write_environment",
-                    )
-                ) from error
-            raise ValueError(
-                f"Invalid connectivity graph from layout engine '{layout_type_tag}': {error}"
-            ) from error
-        _freeze_graph_attributes(graph)
-        env = cls.__new__(cls)
-        env._metadata = _Metadata(name, units, frame)
-        env._layout_type_used = layout_type_tag
-        env._layout_category = layout_type
-        env._layout_params_used = copy_module.deepcopy(build_params)
-        env._is_linearized_track_env = is_linearized_track
-        env._is_fitted = True
-        env._geometry = _PublishedGeometry(
-            binning=binning,
-            bin_centers=binning.bins.centers,
-            connectivity=graph,
-            dimension_ranges=None
-            if dimension_ranges is None
-            else tuple((float(low), float(high)) for low, high in dimension_ranges),
-            grid_edges=index.edges,
-            grid_shape=index.shape,
-            active_mask=index.active_mask,
-            arena=arena,
-            clip_mapping=binning.clip_mapping,
-            coordinates=coordinates,
-        )
-        env._freeze_geometry_arrays()
-        env._regions = env._validate_regions(Regions() if regions is None else regions)
-        env._reset_analysis_caches()
-        log_environment_created(
-            env_type=layout_type_tag,
-            n_bins=env.n_bins,
-            n_dims=env.n_dims,
-            env_name=name,
-        )
-        return env
+# Each Cartesian-only member, collected from the @cartesian_only decorators.
+CARTESIAN_OPERATIONS: frozenset[str] = cartesian_only_members(Environment)

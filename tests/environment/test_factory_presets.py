@@ -14,6 +14,7 @@ from __future__ import annotations
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import built_from, native_layout
 
 from neurospatial import Environment
 
@@ -89,7 +90,7 @@ class TestLinearTrack:
         env = Environment.linear_track(
             node_positions=[(0, 0), (50, 0), (50, 50)], bin_size=5.0
         )
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         assert graph.number_of_nodes() == 3
         assert graph.number_of_edges() == 2
 
@@ -130,17 +131,17 @@ class TestMaze:
         }
 
     def test_w_from_node_positions(self):
-        env = Environment.maze("w", node_positions=self._w_nodes(), bin_size=5.0)
+        env = Environment.maze(kind="w", node_positions=self._w_nodes(), bin_size=5.0)
         assert env.is_linearized_track is True
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         # 6 nodes; base has 2 connector edges + 3 vertical arm edges = 5 edges.
         assert graph.number_of_nodes() == 6
         assert graph.number_of_edges() == 5
 
     def test_w_edge_topology_and_to_linear(self):
         """W graph edges match the order-based contract and to_linear() works."""
-        env = Environment.maze("w", node_positions=self._w_nodes(), bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        env = Environment.maze(kind="w", node_positions=self._w_nodes(), bin_size=5.0)
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             # Horizontal connector: base_left -- base_mid -- base_right.
@@ -173,8 +174,8 @@ class TestMaze:
             "arm_mid": (50, 50),
             "arm_right": (100, 50),
         }
-        env = Environment.maze("w", node_positions=arms_down, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        env = Environment.maze(kind="w", node_positions=arms_down, bin_size=5.0)
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"base_left", "base_mid"}),
@@ -195,8 +196,8 @@ class TestMaze:
             "east": (50, 0),
             "west": (-50, 0),
         }
-        env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        env = Environment.maze(kind="plus", node_positions=nodes, bin_size=5.0)
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"center", "north"}),
@@ -219,8 +220,8 @@ class TestMaze:
             "c": (-50, 0),
             "d": (-100, 0),
         }
-        env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        env = Environment.maze(kind="plus", node_positions=nodes, bin_size=5.0)
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"center", "a"}),
@@ -238,8 +239,8 @@ class TestMaze:
             "left": (-50, 50),
             "right": (50, 50),
         }
-        env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        env = Environment.maze(kind="t", node_positions=nodes, bin_size=5.0)
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"start", "junction"}),
@@ -264,8 +265,8 @@ class TestMaze:
             "arm_left": (-50, 0),
             "arm_right": (50, 0),
         }
-        env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
-        graph = env.layout_parameters["graph_definition"]
+        env = Environment.maze(kind="t", node_positions=nodes, bin_size=5.0)
+        graph = env.binning.linearization.graph
         edges = {frozenset(e) for e in graph.edges()}
         expected = {
             frozenset({"stem_end", "junction"}),
@@ -282,9 +283,9 @@ class TestMaze:
             "east": (50, 0),
             "west": (-50, 0),
         }
-        env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
+        env = Environment.maze(kind="plus", node_positions=nodes, bin_size=5.0)
         assert env.is_linearized_track is True
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         assert graph.number_of_nodes() == 5
         assert graph.number_of_edges() == 4
 
@@ -295,9 +296,9 @@ class TestMaze:
             "left": (-50, 50),
             "right": (50, 50),
         }
-        env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
+        env = Environment.maze(kind="t", node_positions=nodes, bin_size=5.0)
         assert env.is_linearized_track is True
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         assert graph.number_of_nodes() == 4
         # stem + crossbar (2 arms) = 3 edges.
         assert graph.number_of_edges() == 3
@@ -310,7 +311,7 @@ class TestMaze:
         g.add_edge("a", "b")
         g.add_edge("b", "c")
         with pytest.warns(UserWarning, match="not consulted"):
-            env = Environment.maze("w", track_graph=g, bin_size=5.0)
+            env = Environment.maze(kind="w", track_graph=g, bin_size=5.0)
         assert env.is_linearized_track is True
         assert env.n_bins == 20
 
@@ -324,7 +325,7 @@ class TestMaze:
         g.add_edge("b", "c")
 
         with pytest.warns(UserWarning, match="not consulted"):
-            env = Environment.maze("w", track_graph=g, bin_size=5.0)
+            env = Environment.maze(kind="w", track_graph=g, bin_size=5.0)
 
         # The caller's graph must be untouched: no `distance`/`edge_id` written.
         for u, v in g.edges():
@@ -343,7 +344,7 @@ class TestMaze:
         g.add_edge("a", "b", distance=50.0)
         g.add_edge("b", "c", distance=50.0)
         with pytest.warns(UserWarning, match="not consulted"):
-            env = Environment.maze("w", track_graph=g, bin_size=5.0)
+            env = Environment.maze(kind="w", track_graph=g, bin_size=5.0)
         linear = env.to_linear(np.array([[50.0, 0.0]]))
         assert linear.shape[0] == 1
         assert np.isfinite(linear[0])
@@ -358,23 +359,23 @@ class TestMaze:
     )
     def test_wrong_node_count_raises(self, kind, nodes):
         with pytest.raises(ValueError, match="needs exactly"):
-            Environment.maze(kind, node_positions=nodes, bin_size=5.0)
+            Environment.maze(kind=kind, node_positions=nodes, bin_size=5.0)
 
-    def test_assemble_maze_graph_unknown_kind_raises(self):
+    def test_maze_track_graph_unknown_kind_raises(self):
         """Direct call with a bad kind raises instead of returning empty graph."""
-        from neurospatial.environment.factories import _assemble_maze_graph
+        from neurospatial.layout.helpers.track_graphs import maze_track_graph
 
         with pytest.raises(ValueError, match="Unknown maze kind"):
-            _assemble_maze_graph("circle", {"a": (0, 0)})
+            maze_track_graph("circle", {"a": (0, 0)})
 
     def test_no_topology_raises(self):
         with pytest.raises(ValueError, match="topology"):
-            Environment.maze("w", bin_size=5.0)
+            Environment.maze(kind="w", bin_size=5.0)
 
     def test_bad_kind_raises(self):
         nodes = {"center": (0, 0), "north": (0, 50)}
         with pytest.raises(ValueError, match="kind"):
-            Environment.maze("circle", node_positions=nodes, bin_size=5.0)
+            Environment.maze(kind="circle", node_positions=nodes, bin_size=5.0)
 
     def test_all_identical_node_positions_raise(self):
         # All-identical waypoints -> zero total track length -> must raise,
@@ -386,7 +387,7 @@ class TestMaze:
             "right": (1, 1),
         }
         with pytest.raises(ValueError, match="coincident"):
-            Environment.maze("t", node_positions=nodes, bin_size=5.0)
+            Environment.maze(kind="t", node_positions=nodes, bin_size=5.0)
 
     def test_kind_ignored_warning_with_track_graph(self):
         # When both kind and track_graph are supplied, kind is not consulted:
@@ -398,7 +399,7 @@ class TestMaze:
         g.add_edge("a", "b")
         g.add_edge("b", "c")
         with pytest.warns(UserWarning, match="kind.*not consulted"):
-            Environment.maze("t", track_graph=g, bin_size=5.0)
+            Environment.maze(kind="t", track_graph=g, bin_size=5.0)
 
 
 class TestFactoryMetadataKwargs:
@@ -440,15 +441,20 @@ _W_QUERY = np.array([(25, 0), (75, 0), (0, 40), (50, 25), (100, 25), (100, 45)],
 _W_EXPECTED = np.array([25.0, 75.0, 140.0, 175.0, 225.0, 245.0])
 
 
-def _w_maze(labels):
+def _w_maze(labels, track_width=None):
     return Environment.maze(
-        "w", node_positions=dict(zip(labels, _W_COORDS, strict=True)), bin_size=5.0
+        kind="w",
+        node_positions=dict(zip(labels, _W_COORDS, strict=True)),
+        bin_size=5.0,
+        track_width=track_width,
     )
 
 
 @pytest.fixture(scope="module")
 def w_maze_env():
-    return _w_maze(["bl", "bm", "br", "al", "am", "ar"])
+    return built_from(
+        lambda: _w_maze(["bl", "bm", "br", "al", "am", "ar"], track_width=5.0)
+    )
 
 
 class TestGraphLinearization:
@@ -463,7 +469,7 @@ class TestGraphLinearization:
 
     def test_w_maze_to_linear_agrees_with_bin_at(self, w_maze_env):
         env = w_maze_env
-        graph = env.layout_parameters["graph_definition"]
+        graph = env.binning.linearization.graph
         rng = np.random.default_rng(0)
         edges = list(graph.edges())
         edge_index = rng.integers(0, len(edges), 2000)
@@ -472,7 +478,7 @@ class TestGraphLinearization:
         stops = np.array([graph.nodes[edges[i][1]]["pos"] for i in edge_index], float)
         samples = starts * (1 - t) + stops * t
 
-        layout = _native_oracle(env)
+        layout = native_layout(env)
         via_linear = layout.linear_point_to_bin_ind(env.to_linear(samples))
         assert np.mean(via_linear != env.bin_at(samples)) == 0.0
 
@@ -522,19 +528,7 @@ class TestGraphLinearization:
     )
     def test_plus_and_t_maze_to_linear_unchanged(self, kind, nodes, query, expected):
         """Mazes whose edge_order already matches graph.edges() order."""
-        env = Environment.maze(kind, node_positions=nodes, bin_size=5.0)
+        env = Environment.maze(kind=kind, node_positions=nodes, bin_size=5.0)
         np.testing.assert_allclose(
             env.to_linear(np.asarray(query, float)), expected, atol=1e-9
         )
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

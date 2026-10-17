@@ -19,18 +19,19 @@ from neurospatial.geometry._arena import (
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    Locator,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
 )
 from neurospatial.geometry._capabilities import RectilinearGrid
+from neurospatial.geometry._codecs import snapshot_provider
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._locators import (
     HexLocator,
+    Locator,
     MeshLocator,
     NearestBinLocator,
     RectilinearLocator,
@@ -38,7 +39,11 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
 )
 from neurospatial.geometry._native_faces import NativeFaces
-from neurospatial.geometry._polygon import ClipMapping, ClippedLocator, PolygonCells
+from neurospatial.geometry._polygon_cells import (
+    ClipMapping,
+    ClippedLocator,
+    PolygonCells,
+)
 from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 
@@ -122,9 +127,8 @@ def _snapshot_locator(locator: Locator) -> Locator:
         NearestBinLocator,
     ):
         return locator
-    from neurospatial.extensions import _snapshot_provider
 
-    return cast("Locator", _snapshot_provider(locator, "locator"))
+    return cast("Locator", snapshot_provider(locator, "locator"))
 
 
 def _snapshot_binning(binning: Binning) -> Binning:
@@ -132,9 +136,7 @@ def _snapshot_binning(binning: Binning) -> Binning:
     locator = _snapshot_locator(binning.locator)
     track = binning.linearization
     if track is not None and type(track) is not TrackLinearization:
-        from neurospatial.extensions import _snapshot_provider
-
-        track = cast("TrackLinearization", _snapshot_provider(track, "track"))
+        track = cast("TrackLinearization", snapshot_provider(track, "track"))
     if locator is binning.locator and track is binning.linearization:
         return binning
     return replace(binning, locator=locator, linearization=track)
@@ -167,9 +169,7 @@ def own_arena(arena: Arena) -> Arena:
             TrackArena,
             EgocentricSurround,
         ):
-            from neurospatial.extensions import _snapshot_provider
-
-            return cast("Arena", _snapshot_provider(value, "arena"))
+            return cast("Arena", snapshot_provider(value, "arena"))
         return value
 
     return copy.deepcopy(snapshot(arena))

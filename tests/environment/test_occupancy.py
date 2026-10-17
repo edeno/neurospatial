@@ -142,12 +142,14 @@ class TestOccupancyGapHandling:
             ]
         )
 
-        # With default max_gap=0.5, should only count 5s + 5s = 10s
-        # The 100s gap should be excluded
-        occ = env.occupancy(times, positions, max_gap=0.5)
+        # Sampled every 5 s, so max_gap must exceed 5 s; the 100 s gap is
+        # still excluded and only 5 s + 5 s = 10 s count.
+        occ = env.occupancy(times, positions, max_gap=10.0)
 
-        # Should exclude the 100-second gap
-        assert occ.sum() < 15.0  # Much less than total span
+        first, second = env.bin_at(positions[[0, 2]])
+        assert occ[first] == pytest.approx(5.0)
+        assert occ[second] == pytest.approx(5.0)
+        assert occ.sum() == pytest.approx(10.0)
 
     def test_occupancy_max_gap_none(self, minimal_20x20_grid_env):
         """Test that max_gap=None includes all intervals."""
@@ -279,7 +281,7 @@ class TestOccupancyOutsideBehavior:
         env = minimal_2d_grid_env
 
         # All positions outside [0, 10] range
-        times = np.array([0.0, 5.0, 10.0])
+        times = np.array([0.0, 0.1, 0.2])
         positions = np.array(
             [
                 [20.0, 20.0],
@@ -288,7 +290,8 @@ class TestOccupancyOutsideBehavior:
             ]
         )
 
-        occ = env.occupancy(times, positions)
+        with pytest.warns(UserWarning, match="excluded ALL.*out of bounds"):
+            occ = env.occupancy(times, positions)
 
         # All bins should have zero occupancy
         assert_allclose(occ.sum(), 0.0)
@@ -364,13 +367,13 @@ class TestOccupancyValidation:
         their (fine) timestamps instead of the real argument-order mistake.
         """
         env = minimal_2d_grid_env
-        times = np.array([0.0, 1.0, 2.0])
+        times = np.array([0.0, 0.1, 0.2])
         # Columns chosen so np.diff (within-row) is negative -> on the old code
         # the monotonicity check on the 2-D array fired before the shape check.
-        positions = np.array([[5.0, 1.0], [6.0, 2.0], [7.0, 3.0]])
+        positions = np.array([[0.5, 0.0], [0.6, 0.1], [0.7, 0.2]])
 
         # The correct order works.
-        env.occupancy(times, positions)
+        assert env.occupancy(times, positions).sum() == pytest.approx(0.2)
 
         # Swapped: positions passed as `times` -> must be a 1-D shape error, and
         # must NOT be the monotonicity message.
@@ -657,7 +660,7 @@ class TestOccupancyReturnSeconds:
 class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
     """Regression: trajectory functions must agree on out-of-env samples.
 
-    Previously ``Environment.occupancy`` used ``map_points_to_bins`` which
+    Previously ``Environment.occupancy`` used ``nearest_bin`` which
     returns the nearest in-env bin index regardless of how far the input
     point is. ``Environment.bin_sequence`` used ``bin_at`` which returns
     -1 for points outside any active bin. The same trajectory passed
@@ -686,7 +689,7 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
 
         A tracking error at (13, 5) -- inside the env's bounding box but
         outside the 10x10 active mask -- was silently mapped by
-        ``map_points_to_bins`` to the nearest in-env edge bin
+        ``nearest_bin`` to the nearest in-env edge bin
         (the implicit "10x typical bin spacing" threshold doesn't catch
         2 cm of overshoot on a 2 cm-bin env). ``bin_sequence`` already
         used ``bin_at`` and correctly reported -1 for this sample.

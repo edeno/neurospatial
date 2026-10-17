@@ -13,9 +13,9 @@ Design rules:
   arrays; a plain-array caller is unchanged byte-for-byte.
 - **Duck-typing, never ``isinstance`` on third-party types.** The adapters
   test for attributes (``.t`` / ``.values`` / ``.index``), not concrete types.
-- **Import-light.** This module imports only ``typing`` + ``numpy`` and the
-  first-party narrow environment consumer protocols; it never imports pynapple, pynwb,
-  xarray, or any other optional/heavy dependency.
+- **Import-light.** This module imports only ``typing`` + ``numpy`` at runtime;
+  it never imports pynapple, pynwb, xarray, or any other optional/heavy
+  dependency.
 
 Types
 -----
@@ -79,7 +79,7 @@ class SpikeGroupLike(Protocol):
     attribute. :class:`~neurospatial.encoding.SpikeTrains` exposes the same
     ``.index`` but indexes by position and is read by iteration. The
     id-surfacing adapter
-    :func:`neurospatial.encoding.as_spike_trains_with_ids` extracts trains by
+    :func:`neurospatial.encoding._as_spike_trains_with_ids` extracts trains by
     **indexing each id** (``obj[uid].t``); for a ``TsGroup`` it must NOT iterate
     the object, because iterating a ``UserDict`` yields its keys, not its trains.
 
@@ -138,7 +138,7 @@ class EnvironmentLike(Protocol):
         ...
 
 
-# Keep the duck check small and avoid fitted-only n_bins/n_dims properties.
+# Keep the duck check small; it does not need the n_bins/n_dims properties.
 # Compatible providers need not inherit the public Environment runtime class.
 _ENVIRONMENT_LIKE_ATTRS: tuple[str, ...] = (
     "bin_centers",

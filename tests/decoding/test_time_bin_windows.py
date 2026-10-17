@@ -7,12 +7,12 @@ from neurospatial.decoding import bin_spikes_in_time
 
 
 def helpers():
-    from neurospatial.decoding._binning import (
-        count_spikes_in_time_bins,
-        time_bins_in_windows,
+    from neurospatial.decoding._time_bins import (
+        _count_spikes_in_time_bins,
+        _time_bins_in_windows,
     )
 
-    return time_bins_in_windows, count_spikes_in_time_bins
+    return _time_bins_in_windows, _count_spikes_in_time_bins
 
 
 def test_epochs_tile_each_window():

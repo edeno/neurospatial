@@ -19,63 +19,13 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._diffusion import FaceGeometry
+    from neurospatial.geometry import FaceGeometry
     from neurospatial.ops._protocols import (
         DivergenceConsumer,
-        FaceGeometryConsumer,
         GradientConsumer,
     )
 
-__all__ = ["compute_differential_operator", "divergence", "gradient"]
-
-
-def compute_differential_operator(env: FaceGeometryConsumer) -> sparse.csc_matrix:
-    """Build the inverse-distance oriented edge operator.
-
-    For edge e = (i -> j), ``D[i, e] = -1/d_e`` and ``D[j, e] = 1/d_e``.
-    ``D.T @ f`` is the gradient in field units per environment length unit.
-
-    Parameters
-    ----------
-    env : Environment
-        Fitted environment with finite-volume cell geometry. Edge distances
-        use the same geometry as ``env.smooth``, including track junctions.
-
-    Returns
-    -------
-    D : scipy.sparse.csc_matrix, shape (n_bins, n_edges)
-        Sparse operator, with columns in ``env.edge_pairs`` order.
-
-    Raises
-    ------
-    NotImplementedError
-        If the layout has no finite-volume geometry builder.
-
-    Notes
-    -----
-    Divergence is a separate operator: ``-M**-1 D diag(A*d)``. Thus
-    ``div(grad(f)) = -M**-1 (Deg - W) f``, with ``W = A/d``. It is
-    negative semidefinite in the volume-weighted node inner product.
-    ``D @ D.T`` alone is not the physical Laplacian.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> env = Environment.from_samples(np.arange(4.0)[:, None], bin_size=1.0)
-    >>> D = compute_differential_operator(env)
-    >>> D.shape
-    (4, 3)
-    >>> np.allclose(D.T @ env.bin_centers[:, 0], 1.0)
-    True
-
-    See Also
-    --------
-    gradient : Compute the directional derivative along each edge.
-    divergence : Compute the net outward flux per cell volume.
-    Environment.get_differential_operator : Cached access to this matrix.
-    """
-    return env.get_differential_operator()
+__all__ = ["divergence", "gradient"]
 
 
 def _compute_differential_operator(
@@ -114,7 +64,7 @@ def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.fl
     Parameters
     ----------
     env : Environment
-        Fitted environment with finite-volume cell geometry.
+        Environment with finite-volume cell geometry.
     field : NDArray[np.float64], shape (n_bins,)
         Scalar value at each bin center.
 
@@ -150,7 +100,7 @@ def gradient(env: GradientConsumer, field: NDArray[np.float64]) -> NDArray[np.fl
     See Also
     --------
     divergence : Compute outward flux per cell volume.
-    compute_differential_operator : Build the inverse-distance edge operator.
+    Environment.get_differential_operator : The inverse-distance edge operator.
     """
     if field.shape != (env.n_bins,):
         raise ValueError(
@@ -171,7 +121,7 @@ def divergence(
     Parameters
     ----------
     env : Environment
-        Fitted environment with finite-volume cell geometry.
+        Environment with finite-volume cell geometry.
     edge_field : NDArray[np.float64], shape (n_edges,)
         Flux density along each oriented edge in ``env.edge_pairs``
         order. Positive values flow from the first endpoint to the second.

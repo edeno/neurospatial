@@ -25,7 +25,9 @@ from neurospatial.binning import (
     RectilinearLocator,
     SpatialBins,
 )
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._components import Outline
+from neurospatial.layout import create_layout
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.regions import Regions
 
@@ -72,10 +74,10 @@ def test_nearest_only_bins_keep_explicit_lookup_and_refuse_cell_capabilities():
     )
     assert not env.arena.domain_known
     with pytest.raises(NotImplementedError, match=r"faces|finite-volume"):
-        env.compute_kernel(1.0)
+        env.compute_kernel(bandwidth=1.0)
     with pytest.raises(ValueError, match=r"cell|polygon|clip"):
         env.clip(box(-1, -1, 3, 4))
-    with pytest.raises(ValueError, match=r"cell|linear"):
+    with pytest.raises(NotImplementedError, match=r"time_allocation='start'"):
         env.occupancy(
             np.array([0.0, 1.0]),
             np.array([[0.0, 0.0], [2.0, 3.0]]),
@@ -410,7 +412,7 @@ def test_shared_geometry_mismatch_is_not_hidden_by_public_ingress():
 
 def test_descriptive_kind_cannot_grant_regular_grid_rebinning():
     env = Environment.from_bins(_nearest(kind="RegularGrid"))
-    with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+    with pytest.raises(NotImplementedError, match="have no grid edges"):
         env.rebin(1)
 
 
@@ -429,7 +431,7 @@ def test_nonuniform_cells_are_supported_without_regular_grid_rebinning():
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, [1, 2])
     np.testing.assert_array_equal(env.bin_at([[0.5, 0.5], [2.5, 0.5]]), [0, 1])
-    with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+    with pytest.raises(NotImplementedError, match="not all the same size"):
         env.rebin(1)
 
 
@@ -449,18 +451,18 @@ def test_nearly_uniform_variable_measures_are_not_reinterpreted_as_native_cells(
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, np.diff(edges[0]))
-    with pytest.raises(NotImplementedError, match=r"uniform|measure"):
+    with pytest.raises(NotImplementedError, match="not all the same size"):
         env.rebin(1)
 
 
 def test_rebin_uniformity_guard_preserves_native_large_offset_rounding():
     source = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 0.1,
-            "dimension_ranges": [(1e9, 1e9 + 1.0), (0.0, 1.0)],
-            "infer_active_bins": False,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=0.1,
+            dimension_ranges=[(1e9, 1e9 + 1.0), (0.0, 1.0)],
+            infer_active_bins=False,
+        )
     )
     restored = source.rebin(1)
     np.testing.assert_array_equal(restored.bin_centers, source.bin_centers)
@@ -588,16 +590,16 @@ def test_networkx_export_is_editable_and_nested_attributes_are_independent():
 
 
 @pytest.mark.parametrize("transport", ["dict", "file", "from_bins"])
-def test_hex_data_roundtrip_preserves_fft_autocorrelation(transport, tmp_path):
-    from neurospatial.encoding.grid import spatial_autocorrelation
+def test_hex_data_roundtrip_preserves_lattice_and_autocorrelation(transport, tmp_path):
+    from neurospatial.encoding.grid import spatial_autocorrelation_radial
 
     source = Environment.from_layout(
-        "Hexagonal",
-        {
-            "hexagon_width": 2.0,
-            "dimension_ranges": [(0.0, 10.0)] * 2,
-            "infer_active_bins": False,
-        },
+        create_layout(
+            "Hexagonal",
+            hexagon_width=2.0,
+            dimension_ranges=[(0.0, 10.0)] * 2,
+            infer_active_bins=False,
+        )
     )
     if transport == "dict":
         restored = Environment.from_dict(source.to_dict())
@@ -613,7 +615,8 @@ def test_hex_data_roundtrip_preserves_fft_autocorrelation(transport, tmp_path):
     assert source.grid_shape == restored.grid_shape == (7, 6)
     np.testing.assert_array_equal(restored.active_mask, source.active_mask)
     np.testing.assert_array_equal(
-        spatial_autocorrelation(restored, rates), spatial_autocorrelation(source, rates)
+        spatial_autocorrelation_radial(restored, rates),
+        spatial_autocorrelation_radial(source, rates),
     )
 
 
@@ -627,7 +630,7 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
     keep = np.ones(parent.n_bins, dtype=bool)
     keep[4] = False
     if derivation == "subset":
-        source = parent.subset(bins=keep)
+        source = parent.subset(mask=keep)
     elif derivation == "transform":
         cosine, sine = np.cos(0.2), np.sin(0.2)
         source = parent.apply_transform(
@@ -636,7 +639,7 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
     elif derivation == "clip":
         source = parent.clip(box(0.2, 0.2, 2.8, 2.8))
     else:
-        source = parent.subset(bins=keep).apply_transform(translate(1.0, 2.0))
+        source = parent.subset(mask=keep).apply_transform(translate(1.0, 2.0))
     exported = source._binning
     explicit = replace(exported, faces=KnownFaces(exported.faces.build()))
     env = Environment.from_bins(explicit, arena=source.arena)
@@ -726,11 +729,13 @@ def test_variable_grid_physical_faces_are_separate_from_navigation_weights(
     source = _variable_grid_faces(n_dims)
     env = Environment.from_bins(source)
     if history == "subset":
-        env = env.subset(bins=np.arange(env.n_bins) != env.n_bins - 1)
+        env = env.subset(mask=np.arange(env.n_bins) != env.n_bins - 1)
     elif history == "load":
         env = Environment.from_dict(env.to_dict())
     exported = env._binning
-    np.testing.assert_allclose(env.diffuse(np.ones(env.n_bins), 0.5, mode="average"), 1)
+    np.testing.assert_allclose(
+        env.diffuse(np.ones(env.n_bins), bandwidth=0.5, mode="average"), 1
+    )
     assert np.all(exported.bins.pair_distances > exported.faces.build().distance)
 
 
@@ -786,7 +791,7 @@ def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(histo
             ]
         )
     if history == "subset_similarity":
-        env = env.subset(bins=np.arange(env.n_bins) != 3)
+        env = env.subset(mask=np.arange(env.n_bins) != 3)
     derived = env.apply_transform(Affine2D(matrix))
     source = derived._binning
     Environment.from_bins(source)
@@ -834,9 +839,13 @@ def test_native_quantized_grid_faces_remain_valid_at_large_coordinate_offsets(n_
     explicit = Environment.from_bins(
         replace(source, faces=KnownFaces(source.faces.build()))
     )
-    np.testing.assert_array_equal(explicit._face_geometry.A, env._face_geometry.A)
     np.testing.assert_array_equal(
-        explicit._face_geometry.distance, env._face_geometry.distance
+        face_geometry(explicit._cache, explicit._binning).A,
+        face_geometry(env._cache, env._binning).A,
+    )
+    np.testing.assert_array_equal(
+        face_geometry(explicit._cache, explicit._binning).distance,
+        face_geometry(env._cache, env._binning).distance,
     )
 
 
@@ -874,7 +883,9 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
         rectilinear=None,
     )
     env = Environment.from_bins(transformed)
-    np.testing.assert_allclose(env.diffuse(np.ones(env.n_bins), 0.5, mode="average"), 1)
+    np.testing.assert_allclose(
+        env.diffuse(np.ones(env.n_bins), bandwidth=0.5, mode="average"), 1
+    )
     with pytest.raises(ValueError, match=r"grid faces"):
         Environment.from_bins(
             replace(transformed, faces=KnownFaces(faces._replace(A=faces.A * 7)))
@@ -896,7 +907,9 @@ def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
         rectilinear=RectilinearGrid(edges, (2,), mask),
     )
     env = Environment.from_bins(source)
-    np.testing.assert_array_equal(env._face_geometry.distance, [scale])
+    np.testing.assert_array_equal(
+        face_geometry(env._cache, env._binning).distance, [scale]
+    )
     np.testing.assert_array_equal(env.bin_at(centers), [0, 1])
 
 
@@ -908,22 +921,24 @@ def _cell_face_source(kind, history):
 
     if kind == "hex":
         env = Environment.from_layout(
-            "Hexagonal",
-            {"hexagon_width": 4.0, "dimension_ranges": [(1e6, 1e6 + 12)] * 2}
-            if history == "large_offset"
-            else {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+            create_layout(
+                "Hexagonal",
+                **{"hexagon_width": 4.0, "dimension_ranges": [(1e6, 1e6 + 12)] * 2}
+                if history == "large_offset"
+                else {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+            )
         )
     else:
         origin = 1e6 if history == "large_offset" else 0.0
         env = Environment.from_layout(
-            "TriangularMesh",
-            {
-                "boundary_polygon": box(origin, origin, origin + 12, origin + 12),
-                "point_spacing": 4.0,
-            },
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=box(origin, origin, origin + 12, origin + 12),
+                point_spacing=4.0,
+            )
         )
     if history == "subset":
-        env = env.subset(bins=np.arange(env.n_bins) % 3 != 0)
+        env = env.subset(mask=np.arange(env.n_bins) % 3 != 0)
     elif history in {"similarity", "reflection"}:
         angle, scale = 0.3, 2.5
         rotation = np.array(
@@ -950,9 +965,13 @@ def _cell_face_source(kind, history):
 def test_explicit_cell_faces_from_native_layouts_round_trip(kind, history):
     env, source = _cell_face_source(kind, history)
     restored = Environment.from_bins(source)
-    np.testing.assert_array_equal(restored._face_geometry.A, env._face_geometry.A)
     np.testing.assert_array_equal(
-        restored._face_geometry.distance, env._face_geometry.distance
+        face_geometry(restored._cache, restored._binning).A,
+        face_geometry(env._cache, env._binning).A,
+    )
+    np.testing.assert_array_equal(
+        face_geometry(restored._cache, restored._binning).distance,
+        face_geometry(env._cache, env._binning).distance,
     )
 
 
@@ -1030,7 +1049,7 @@ def test_explicit_cell_faces_cannot_omit_or_invent_shared_faces(kind, change):
 
 
 def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
-    from neurospatial.layout._locators import TransformedLocator
+    from neurospatial.geometry._locators import TransformedLocator
 
     _, source = _cell_face_source("hex", "native")
     matrix = np.array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]])
@@ -1068,3 +1087,27 @@ def test_stored_cell_faces_cannot_bypass_publication_geometry_checks(kind):
     payload["arrays"][key] = (np.asarray(payload["arrays"][key]) * 7.0).tolist()
     with pytest.raises(ValueError, match=rf"{_CELL_FACE_LABELS[kind]}\.A"):
         Environment.from_dict(payload)
+
+
+def _grid_binning(kind):
+    positions = np.random.default_rng(0).uniform(0, 10, (300, 2))
+    binning = Environment.from_samples(positions, bin_size=2.0).binning
+    return replace(binning, kind=kind, faces=KnownFaces(binning.faces.build()))
+
+
+@pytest.mark.parametrize(
+    ("kind", "factory"),
+    [("polar", "from_polar_egocentric"), ("Combined", "Environment.combine")],
+)
+def test_reserved_layout_labels_are_refused(kind, factory):
+    with pytest.raises(ValueError, match="reserved") as error:
+        Environment.from_bins(_grid_binning(kind))
+    assert factory in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("kind", "label"),
+    [("regular-grid", "RegularGrid"), ("grid", "RegularGrid"), ("MyBins", "MyBins")],
+)
+def test_bin_labels_are_spelled_canonically_or_kept(kind, label):
+    assert Environment.from_bins(_grid_binning(kind)).layout_type == label

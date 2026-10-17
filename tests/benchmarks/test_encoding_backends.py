@@ -2,8 +2,6 @@
 
 This module validates that the benchmark script runs correctly and produces
 expected output format.
-
-TDD approach: Test first, then implement the benchmark script.
 """
 
 from __future__ import annotations

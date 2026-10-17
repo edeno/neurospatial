@@ -1,7 +1,4 @@
-"""Tests for path efficiency metrics module.
-
-Following TDD: Tests written FIRST, then implementation.
-"""
+"""Tests for path efficiency metrics module."""
 
 import numpy as np
 import pytest

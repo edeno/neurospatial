@@ -1,7 +1,4 @@
-"""Tests for region-based trajectory segmentation.
-
-Following TDD: Tests written FIRST, then implementation.
-"""
+"""Tests for region-based trajectory segmentation."""
 
 import numpy as np
 from shapely.geometry import Point

@@ -4,7 +4,7 @@ Use graph operations to describe a spatial field's neighborhood or build a custo
 
 | Operation | Use | Scope |
 |---|---|---|
-| `env.smooth(field, bandwidth, mode="average")` | Smooth an intensive field, such as Hz | Finite-volume heat diffusion |
+| `env.smooth(field, bandwidth=..., mode="average")` | Smooth an intensive field, such as Hz | Finite-volume heat diffusion |
 | `neighbor_reduce(env, field, op="mean")` | Aggregate immediate graph neighbors | One graph step |
 | `graph_convolve(env, field, kernel, normalize=True)` | Apply custom distance weights | Graph shortest-path distances |
 

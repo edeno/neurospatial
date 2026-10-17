@@ -7,6 +7,7 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment, Regions
+from neurospatial.layout import create_layout
 
 
 @pytest.mark.parametrize("masked", [False, True])
@@ -23,16 +24,16 @@ def test_factor_rebin_preserves_owned_region_coordinates_and_metadata(
         [(x + 0.5, y + 0.5) for x in range(5) for y in range(5) if (x, y) != (2, 2)]
     )
     env = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": [(0, 5), (0, 5)],
-            "positions": positions,
-            "infer_active_bins": masked,
-            "dilate": False,
-            "fill_holes": False,
-            "close_gaps": False,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(0, 5), (0, 5)],
+            positions=positions,
+            infer_active_bins=masked,
+            dilate=False,
+            fill_holes=False,
+            close_gaps=False,
+        ),
         regions=regions,
     )
     if factor == 1:
@@ -52,7 +53,7 @@ def test_factor_rebin_preserves_owned_region_coordinates_and_metadata(
         name: region.to_dict() for name, region in coarse.regions.items()
     } == expected
     assert coarse.regions is not env.regions
-    assert not np.shares_memory(coarse.regions["goal"].data, env.regions["goal"].data)
+    assert not coarse.regions["goal"].data.flags.writeable
     assert (coarse.units, coarse.frame) == (env.units, env.frame)
     # The goal remains an annotation even when truncation removes its bins.
     np.testing.assert_array_equal(coarse.regions["goal"].data, [4.5, 4.5])

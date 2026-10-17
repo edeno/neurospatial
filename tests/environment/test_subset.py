@@ -27,7 +27,7 @@ class TestSubsetBasic:
         mask[: n_bins // 2] = True
 
         # Create subset
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Verify bin count
         assert sub_env.n_bins == np.sum(mask)
@@ -91,7 +91,7 @@ class TestSubsetBasic:
         centers = env.bin_centers
         mask = centers[:, 0] < 50
 
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Check that connectivity graph has correct structure
         assert sub_env.connectivity.number_of_nodes() == sub_env.n_bins
@@ -115,7 +115,7 @@ class TestSubsetNodeRenumbering:
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[::3] = True  # Every third bin
 
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Node IDs should be contiguous [0, 1, 2, ..., n'-1]
         node_ids = sorted(sub_env.connectivity.nodes())
@@ -131,7 +131,7 @@ class TestSubsetNodeRenumbering:
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[:10] = True
 
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Check required node attributes exist
         for node in sub_env.connectivity.nodes():
@@ -153,7 +153,7 @@ class TestSubsetEdgeCases:
         mask = np.zeros(env.n_bins, dtype=bool)
 
         with pytest.raises(ValueError, match="No bins selected"):
-            env.subset(bins=mask)
+            env.subset(mask=mask)
 
     def test_subset_all_bins_returns_equivalent_environment(self):
         """Selecting all bins returns equivalent environment."""
@@ -162,7 +162,7 @@ class TestSubsetEdgeCases:
 
         # Select all bins
         mask = np.ones(env.n_bins, dtype=bool)
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Should have same number of bins
         assert sub_env.n_bins == env.n_bins
@@ -179,7 +179,7 @@ class TestSubsetEdgeCases:
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[5] = True
 
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Should have exactly one bin
         assert sub_env.n_bins == 1
@@ -198,7 +198,7 @@ class TestSubsetEdgeCases:
         )
 
         if np.sum(mask) > 1:  # Only test if we have multiple bins
-            sub_env = env.subset(bins=mask)
+            sub_env = env.subset(mask=mask)
 
             # Should succeed even if disconnected
             assert sub_env.n_bins == np.sum(mask)
@@ -221,7 +221,7 @@ class TestSubsetValidation:
         mask = np.ones(env.n_bins, dtype=bool)
         poly = box(0, 0, 50, 50)
         with pytest.raises(ValueError, match="Exactly one of"):
-            env.subset(bins=mask, polygon=poly)
+            env.subset(mask=mask, polygon=poly)
 
     def test_subset_mask_wrong_shape_raises_error(self):
         """Mask with wrong shape raises ValueError."""
@@ -231,8 +231,8 @@ class TestSubsetValidation:
         # Wrong length
         mask = np.ones(env.n_bins + 10, dtype=bool)
 
-        with pytest.raises(ValueError, match=r"bins.*shape.*n_bins"):
-            env.subset(bins=mask)
+        with pytest.raises(ValueError, match=r"mask.*shape.*n_bins"):
+            env.subset(mask=mask)
 
     def test_subset_mask_wrong_dtype_raises_error(self):
         """Mask with wrong dtype raises ValueError."""
@@ -242,8 +242,8 @@ class TestSubsetValidation:
         # Integer mask instead of boolean
         mask = np.arange(env.n_bins)
 
-        with pytest.raises(ValueError, match=r"bins.*must be.*bool"):
-            env.subset(bins=mask)
+        with pytest.raises(ValueError, match=r"mask= is a boolean array[\s\S]*Fix:"):
+            env.subset(mask=mask)
 
     def test_subset_invalid_region_name_raises_error(self):
         """Non-existent region name raises ValueError."""
@@ -261,19 +261,19 @@ class TestSubsetValidation:
         with pytest.raises(ValueError, match=r"region_names.*empty"):
             env.subset(region_names=[])
 
-    def test_subset_point_region_raises_error(self):
-        """Point-type regions raise ValueError with helpful message."""
+    def test_subset_point_region_keeps_the_bin_containing_it(self):
+        """A point region selects the bin that contains the point."""
         rng = np.random.default_rng(42)
         env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
-
-        # Add a point region
         region_builder = Regions(env.regions.values())
         region_builder.add("goal", point=[50, 50])
         env = env.with_regions(region_builder)
 
-        # Should raise error with clear message
-        with pytest.raises(ValueError, match=r"point-type region"):
-            env.subset(region_names=["goal"])
+        sub = env.subset(region_names=["goal"])
+
+        (goal_bin,) = env.bins_in_region("goal")
+        assert sub.n_bins == 1
+        np.testing.assert_array_equal(sub.bin_centers, env.bin_centers[[goal_bin]])
 
 
 class TestSubsetInvert:
@@ -288,9 +288,9 @@ class TestSubsetInvert:
         mask = env.bin_centers[:, 0] < 50
 
         # Normal subset
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
         # Inverted subset
-        inv_env = env.subset(bins=mask, invert=True)
+        inv_env = env.subset(mask=mask, invert=True)
 
         # Should be complementary
         assert sub_env.n_bins + inv_env.n_bins == env.n_bins
@@ -326,27 +326,11 @@ class TestSubsetMetadataHandling:
         # Subset
         mask = np.ones(env.n_bins // 2, dtype=bool)
         mask = np.pad(mask, (0, env.n_bins - len(mask)), constant_values=False)
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Metadata preserved
         assert sub_env.units == "cm"
         assert sub_env.frame == "session1"
-
-    def test_subset_drops_regions(self):
-        """Subset drops all regions."""
-        rng = np.random.default_rng(42)
-        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=10.0)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("goal", point=[50, 50])
-        region_builder.add("start", point=[10, 10])
-        env = env.with_regions(region_builder)
-
-        # Subset
-        mask = env.bin_centers[:, 0] < 50
-        sub_env = env.subset(bins=mask)
-
-        # Regions should be dropped
-        assert len(sub_env.regions) == 0
 
 
 class TestSubsetIntegration:
@@ -361,7 +345,7 @@ class TestSubsetIntegration:
 
         # Subset to left half
         mask = env.bin_centers[:, 0] < 50
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Generate trajectory in left half
         times = np.linspace(0, 10, 100)
@@ -380,7 +364,7 @@ class TestSubsetIntegration:
 
         # Subset
         mask = env.bin_centers[:, 0] < 50
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Create field and smooth
         field = rng.random(sub_env.n_bins)
@@ -408,7 +392,7 @@ class TestSubsetIntegration:
         # Add a few more to make it interesting
         mask[:10] = True
 
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Check that edge distances are preserved
         # (node IDs will be different, but distances should match)
@@ -439,7 +423,7 @@ class TestSubsetCropExample:
         # Crop to left half
         mask = env.bin_centers[:, 0] < 50
 
-        sub_env = env.subset(bins=mask)
+        sub_env = env.subset(mask=mask)
 
         # Should have roughly half the bins
         assert sub_env.n_bins < original_n_bins
@@ -455,18 +439,10 @@ class TestSubsetCropExample:
 
 
 class TestSubsetRoundTripsThroughToFileFromFile:
-    """Regression: subset envs must serialize round-trip cleanly.
+    """A subset environment survives the to_file/from_file round trip.
 
-    Pre-fix subset() returned an Environment whose layout_type_used was
-    "subset" -- a string the layout factory didn't recognize, so
-    Environment.from_file raised
-    ``ValueError: Unknown layout kind 'subset'`` while to_file silently
-    succeeded. The audit flagged this as a HIGH-severity silent
-    persistence loss: a user could subset(), save, restart, and lose
-    the env entirely.
-
-    Subset is rewritten to return a real ``MaskedGrid`` for grid-based
-    envs so the env survives the canonical to_file/from_file path.
+    Saved files store the bins directly, so a subset loads without
+    rebuilding a layout, and keeps its parent's layout label.
     """
 
     def _build_grid_env(self):
@@ -485,7 +461,7 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         # Boolean-mask subset selecting three specific active bins.
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[[0, 5, 10]] = True
-        env_sub = env.subset(bins=mask)
+        env_sub = env.subset(mask=mask)
 
         path = tmp_path / "sub"
         to_file(env_sub, path)
@@ -525,7 +501,7 @@ class TestSubsetRoundTripsThroughToFileFromFile:
 
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[[0, 5, 10]] = True
-        env_sub = env.subset(bins=mask)
+        env_sub = env.subset(mask=mask)
         # Subset preserves units/frame on the env it returns.
         assert env_sub.units == "cm"
         assert env_sub.frame == "session1"
@@ -536,19 +512,14 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         assert loaded.units == "cm"
         assert loaded.frame == "session1"
 
-    def test_subset_layout_type_is_maskedgrid_for_grid_parent(self):
-        """Grid-parent subset envs report MaskedGrid as their layout, not 'subset'.
-
-        The 'subset' layout kind was not registered with the layout
-        factory, which is why the round-trip was broken. The fix builds
-        the env via Environment.from_grid_mask, so its
-        layout_type_used is the canonical 'MaskedGrid'.
-        """
+    def test_subset_keeps_the_grid_parent_layout_label(self):
+        """A grid subset reports its parent's label and records the subset."""
         env = self._build_grid_env()
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[[0, 5, 10]] = True
-        env_sub = env.subset(bins=mask)
-        assert env_sub._layout_type_used == "MaskedGrid"
+        env_sub = env.subset(mask=mask)
+        assert env_sub.layout_type == env.layout_type == "RegularGrid"
+        assert env_sub.derivations == ("subset",)
 
 
 class TestSubsetKeepsParentConnectivity:
@@ -562,7 +533,7 @@ class TestSubsetKeepsParentConnectivity:
             bin_size=3.0,
             connect_diagonal_neighbors=connect_diagonal,
         )
-        sub = env.subset(bins=np.arange(env.n_bins) % 3 != 0)
+        sub = env.subset(mask=np.arange(env.n_bins) % 3 != 0)
         fresh = Environment.from_grid_mask(
             sub.active_mask,
             grid_edges=sub.grid_edges,
@@ -594,11 +565,13 @@ class TestSubsetKeepsParentConnectivity:
         walled = from_dict(to_dict(walled))
         assert not any(crosses_wall(u, v) for u, v in walled.connectivity.edges())
 
-        sub = walled.subset(bins=np.ones(walled.n_bins, dtype=bool))
+        sub = walled.subset(mask=np.ones(walled.n_bins, dtype=bool))
         reloaded = from_dict(to_dict(sub))
 
         for result in (sub, reloaded):
             assert sorted(result.connectivity.edges()) == sorted(
                 walled.connectivity.edges()
             )
-            np.testing.assert_allclose(result.distance_to([0]), walled.distance_to([0]))
+            np.testing.assert_allclose(
+                result.distance_to(bins=[0]), walled.distance_to(bins=[0])
+            )

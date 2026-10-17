@@ -117,7 +117,7 @@ def test_validate_dt_direct() -> None:
     ints to a plain Python ``float`` (its docstring's promise) and reject
     bool / numeric-string / non-finite values with a ``"dt must"`` ValueError.
     """
-    from neurospatial.decoding._binning import validate_dt
+    from neurospatial.decoding._time_bins import validate_dt
 
     # Valid inputs return a plain Python float (not a NumPy scalar).
     out32 = validate_dt(np.float32(0.025))

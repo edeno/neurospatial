@@ -50,7 +50,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._diffusion import DiffusionGeometry
+from neurospatial.geometry import DiffusionGeometry
 from neurospatial.ops._types import KernelMode
 from neurospatial.ops.diffusion import heat_kernel_from_W
 
@@ -60,7 +60,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._coordinates import CoordinateSystem
+    from neurospatial.geometry import CoordinateSystem
 
 
 def _gaussian_kernel(

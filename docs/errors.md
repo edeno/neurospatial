@@ -12,12 +12,12 @@ Import `NeurospatialError` from the package root to catch library-specific excep
 from neurospatial import NeurospatialError
 
 try:
-    distances = env.distance_to("hom")
+    distances = env.distance_to(region="hom")
 except NeurospatialError as exc:
     print(exc)
 ```
 
-If the environment contains a region named `home`, the error suggests `Fix: pass targets='home'`. If the region is missing, build a replacement collection:
+If the environment contains a region named `home`, the error suggests `Fix: pass region='home'`. If the region is missing, build a replacement collection:
 
 ```python
 from neurospatial import Regions
@@ -31,12 +31,17 @@ Concrete exceptions inherit their standard Python type first, followed by `Neuro
 
 | Exception | Standard Python bases | Use |
 |-----------|-----------------------|-----|
-| `RegionNotFoundError` | `KeyError`, `ValueError` | Unknown region in a lookup, segmentation call or regressor |
+| `RegionNotFoundError` | `KeyError`, `ValueError` | Unknown region name anywhere a region is looked up by name, including `env.regions[name]`; suggests the closest existing name |
 | `BinIndexOutOfRangeError` | `ValueError` | Graph-query bin index outside `[0, env.n_bins)` |
 | `IncompatibleEnvironmentError` | `ValueError` | Incompatible dimensions or decoding model bins |
 | `GraphValidationError` | `ValueError` | Invalid layout connectivity metadata |
 | `LayoutNotBuiltError` | `RuntimeError` | Access to layout geometry before `build()` |
-| `EnvironmentNotFittedError` | `RuntimeError` | Analysis with an environment that is not fitted |
+| `CartesianOnlyError` | `TypeError` | An operation that reads positions as Cartesian `(x, y)` called on a polar environment |
+
+Two kinds of environment cannot run some analyses, and each kind has one error type:
+
+- A **polar** environment (`from_polar_egocentric`) raises `CartesianOnlyError` for every operation that reads its `(distance, angle)` bins as Cartesian positions, for example `subset`, `interpolate`, wall-based border scores or `time_allocation="linear"`. Containment lookups such as `bin_at` and `contains` read `(distance, angle)` rows and work on polar environments.
+- An environment whose **geometry lacks what the computation needs** raises `NotImplementedError`: for example the FFT `spatial_autocorrelation` on a hexagonal, mesh, track or 3-D environment, wall geometry outside 2-D, `bin_at()`, `contains()` and the other position lookups on a track built without `track_width`, or `rebin` on bins that are not a rectangular grid. The message names an alternative that works on that environment.
 
 Graph-query indices previously raised `IndexError`; catch `BinIndexOutOfRangeError` or `ValueError` for those calls. Ordinary input validation can also raise standard `TypeError` or `ValueError` directly.
 
@@ -53,7 +58,6 @@ Warnings also use concrete fixes. A `bin_size` that covers every data axis warns
 | [E1001](#e1001-no-active-bins-found) | No active bins found | Critical | [Environment Creation](#environment-creation-errors) |
 | [E1002](#e1002-invalid-bin_size) | Invalid bin_size | Critical | [Environment Creation](#environment-creation-errors) |
 | [E1003](#e1003-dimension-mismatch) | Dimension mismatch | Critical | [Environment Compatibility](#environment-compatibility-errors) |
-| [E1004](#e1004-environment-not-fitted) | Environment not fitted | Critical | [Usage Errors](#usage-errors) |
 | [E1005](#e1005-path-traversal-detected) | Path traversal detected | Security | [I/O Errors](#io-errors) |
 | [E1006](#e1006-environment-constructed-directly) | Environment constructed directly | Critical | [Environment Creation](#environment-creation-errors) |
 
@@ -319,110 +323,6 @@ composite_3d = Environment.combine({str(i): env for i, env in enumerate(envs_3d)
 **See Also:**
 - [Combining environments](user-guide/composite-environments.md)
 - [3D Environment Support](dimensionality_support.md)
-
----
-
-## Usage Errors
-
-<a id="e1004"></a>
-
-### E1004: Environment not fitted
-
-This is a legacy initialization guard for partially constructed internal
-objects. Normal factory calls return complete environments; they do not require
-a separate fit step. Calling `Environment()` directly raises
-[E1006](#e1006-environment-constructed-directly) immediately, before any query.
-
-**Error Message Example:**
-```
-EnvironmentNotFittedError: [E1004] Environment.bin_at() requires the environment to be fully initialized.
-Ensure it was created with a factory method.
-
-Example (correct usage):
-    env = Environment.from_samples(data, bin_size=2.0)
-    result = env.bin_at(points)
-
-Avoid:
-    env = Environment()  # This will not work!
-
-For more information, see: https://edeno.github.io/neurospatial/errors/#e1004
-Fix: env = Environment.from_samples(positions, bin_size=2.0)
-```
-
-**What This Means:**
-
-You're calling a method on an Environment that hasn't been properly initialized. The Environment class requires initialization through a **factory method** (like `from_samples()`), not through direct instantiation.
-
-**Why This Happens:**
-
-The Environment uses a fitted state to indicate that its geometry and connectivity are ready. E1004 signals a partially initialized environment; calling `Environment()` directly raises E1006 instead. Factory methods return fitted environments.
-
-For encoding and decoding entry points, forgetting the environment produces a `TypeError` that names the corrected call, for example `compute_spatial_rate(env, spike_times, times, positions)`. E1004 remains the error for an actual environment whose fitted state is false.
-
-**Solutions:**
-
-#### Solution 1: Use factory methods (Recommended)
-
-```python
-import numpy as np
-
-# Direct instantiation raises E1006 before any spatial query can run.
-
-# ✓ Use factory method
-env = Environment.from_samples(positions, bin_size=5.0)
-env = env.with_metadata(units='cm')
-bin_indices = env.bin_at(positions[:1])
-```
-
-#### Solution 2: Use the right factory for your data
-
-```python
-# For sample data
-env = Environment.from_samples(positions, bin_size=5.0)
-env = env.with_metadata(units='cm')
-
-# For 1D track graphs
-env = Environment.from_graph(
-    graph=graph,
-    edge_order=edge_order,
-    edge_spacing=0.0,
-    bin_size=1.0,
-)
-env = env.with_metadata(units='cm')
-
-# For polygon boundaries
-env = Environment.from_polygon(polygon, bin_size=5.0)
-env = env.with_metadata(units='cm')
-
-# For pre-built N-D boolean masks (use grid_edges to describe geometry)
-env = Environment.from_grid_mask(active_mask, grid_edges=grid_edges)
-env = env.with_metadata(units='cm')
-
-# For 2-D pixel / image masks (boolean array)
-env = Environment.from_pixel_mask(image_mask, pixel_size=1.0)
-env = env.with_metadata(units='pixels')
-```
-
-#### Solution 3: Load from file
-
-```python
-# ✓ Loading from file is also a factory method
-env = Environment.from_file("my_environment")
-env.bin_at([10.0, 20.0])  # Works!
-```
-
-**Factory Methods Available:**
-- `Environment.from_samples()` - Most common, discretizes sample data
-- `Environment.from_graph()` - For 1D track linearization
-- `Environment.from_polygon()` - For polygon-bounded regions
-- `Environment.from_grid_mask()` - For pre-defined N-D boolean masks with explicit grid edges
-- `Environment.from_pixel_mask()` - For 2-D boolean / image pixel masks
-- `Environment.from_layout()` - For custom layout engines
-- `Environment.from_file()` - Load from saved file
-
-**See Also:**
-- [Environment factory methods](api/neurospatial/environment/factories.md)
-- [Quickstart Guide](getting-started/quickstart.md)
 
 ---
 

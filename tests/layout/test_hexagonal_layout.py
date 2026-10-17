@@ -47,7 +47,7 @@ def test_point_to_bin_round_trip():
     layout = _build_hex_layout()
     n = layout.bin_centers.shape[0]
 
-    result = layout.point_to_bin_index(layout.bin_centers)
+    result = layout.binning().locator.locate(layout.bin_centers)
     np.testing.assert_array_equal(result, np.arange(n))
 
 

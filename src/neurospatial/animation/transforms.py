@@ -53,61 +53,86 @@ _TRANSFORM_FALLBACK_WARNED: bool = False
 """Flag to ensure transform fallback warning is shown only once per session."""
 
 
-class EnvScale:
-    """Cached scale factors for coordinate transformation.
+def _is_framed_grid(env: Any) -> bool:
+    """Whether ``env`` is an Environment whose rectangular grid has a world frame."""
+    # Imported here so that importing the animation package does not load the
+    # environment package.
+    from neurospatial.environment import Environment
 
-    Pre-computes scale factors from environment dimensions for efficient
-    repeated coordinate transformation. This avoids re-computing bounds and
-    scales on every transformation call.
+    return isinstance(env, Environment) and env.binning.grid_frame is not None
+
+
+class EnvScale:
+    """The napari field image's pixel grid, in environment coordinates.
+
+    Napari draws a field as a raster over the environment's full rectangular
+    grid: one pixel per grid cell (``grid_shape``), inactive cells included,
+    spanning ``grid_edges``. This records that grid, so environment
+    coordinates can be mapped to the image's pixels. It is independent of
+    ``dimension_ranges``, which is the extent of the active cells only.
 
     Attributes
     ----------
     x_min, x_max : float
-        X-axis bounds in environment coordinates.
+        First and last grid edges along x (environment units).
     y_min, y_max : float
-        Y-axis bounds in environment coordinates.
+        First and last grid edges along y.
     n_x, n_y : int
-        Grid dimensions (columns, rows).
+        Grid cells along x (image columns) and y (image rows).
     x_scale, y_scale : float
-        Pre-computed scale factors for coordinate conversion.
+        Pixels per environment unit along x and y.
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.animation.transforms import EnvScale
-    >>> scale = EnvScale.from_env(env)  # doctest: +SKIP
-    >>> if scale is not None:  # doctest: +SKIP
-    ...     print(f"Grid shape: {scale.n_x}x{scale.n_y}")  # doctest: +SKIP
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((4, 2), dtype=bool), grid_edges=(np.arange(5.0), np.arange(3.0))
+    ... )
+    >>> scale = EnvScale.from_env(env)
+    >>> (scale.n_x, scale.n_y, scale.x_scale)
+    (4, 2, 1.0)
     """
 
     __slots__ = ("n_x", "n_y", "x_max", "x_min", "x_scale", "y_max", "y_min", "y_scale")
 
     def __init__(self, env: Any) -> None:
-        """Initialize scale factors from environment.
+        """Initialize the pixel grid from the environment's rectangular grid.
 
         Parameters
         ----------
         env : Environment
-            Environment with dimension_ranges and grid_shape.
+            Environment with two ``grid_edges`` axes and ``grid_shape``.
         """
-        if getattr(getattr(env, "_binning", None), "grid_frame", None) is not None:
+        if _is_framed_grid(env):
             raise NotImplementedError(
                 "Napari raster coordinates do not support framed grids; use Matplotlib, video or HTML rendering."
             )
-        (self.x_min, self.x_max), (self.y_min, self.y_max) = env.dimension_ranges
+        x_edges, y_edges = env.grid_edges
+        self.x_min, self.x_max = float(x_edges[0]), float(x_edges[-1])
+        self.y_min, self.y_max = float(y_edges[0]), float(y_edges[-1])
         self.n_x, self.n_y = env.grid_shape
 
-        # Pre-compute scale factors (avoid division by zero)
+        # Pixels per environment unit (avoid division by zero)
         x_range = self.x_max - self.x_min
         y_range = self.y_max - self.y_min
-        self.x_scale = (self.n_x - 1) / x_range if x_range > 0 else 1.0
-        self.y_scale = (self.n_y - 1) / y_range if y_range > 0 else 1.0
+        self.x_scale = self.n_x / x_range if x_range > 0 else 1.0
+        self.y_scale = self.n_y / y_range if y_range > 0 else 1.0
+
+    @property
+    def pixel_size(self) -> tuple[float, float]:
+        """Size of one image pixel as ``(height, width)`` in environment units."""
+        return 1.0 / self.y_scale, 1.0 / self.x_scale
 
     @classmethod
     def from_env(cls, env: Any) -> EnvScale | None:
         """Create EnvScale from environment, or None if not applicable.
 
-        Returns None if environment lacks required attributes (dimension_ranges,
-        grid_shape), allowing fallback to simple axis swap.
+        Returns None when the environment has no 2-D rectangular grid, which
+        is the only layout napari draws as a raster image (hexagonal, mesh
+        and track environments have none), allowing fallback to simple axis
+        swap.
 
         Parameters
         ----------
@@ -117,7 +142,7 @@ class EnvScale:
         Returns
         -------
         EnvScale or None
-            Scale factors, or None if environment lacks required attributes.
+            Scale factors, or None if environment lacks a 2-D grid.
 
         Examples
         --------
@@ -125,10 +150,12 @@ class EnvScale:
         >>> if scale is None:  # doctest: +SKIP
         ...     print("Using fallback transform")  # doctest: +SKIP
         """
+        if _is_framed_grid(env):
+            return cls(env)  # refuses framed grids with the fix
         if (
             env is None
-            or not hasattr(env, "dimension_ranges")
-            or not hasattr(env, "grid_shape")
+            or len(getattr(env, "grid_edges", ())) != 2
+            or len(getattr(env, "grid_shape", ())) != 2
         ):
             return None
         return cls(env)
@@ -167,9 +194,9 @@ def build_env_to_napari_matrix(scale: EnvScale) -> NDArray[np.float64]:
     but in matrix form for use with napari's affine parameter.
 
     The transformation maps environment coordinates (x, y) to napari pixel
-    coordinates (row, col):
-    - col = (x - x_min) * x_scale
-    - row = (n_y - 1) - (y - y_min) * y_scale
+    coordinates (row, col), with pixel ``i`` centered on grid cell ``i``:
+    - col = (x - x_min) * x_scale - 0.5
+    - row = (n_y - 0.5) - (y - y_min) * y_scale
 
     Parameters
     ----------
@@ -188,16 +215,15 @@ def build_env_to_napari_matrix(scale: EnvScale) -> NDArray[np.float64]:
 
     .. code-block:: text
 
-        [row]   [0,       -y_scale, (n_y-1) + y_min*y_scale] [x]
-        [col] = [x_scale,  0,       -x_min*x_scale         ] [y]
-        [1  ]   [0,        0,        1                     ] [1]
+        [row]   [0,       -y_scale, (n_y-0.5) + y_min*y_scale] [x]
+        [col] = [x_scale,  0,       -x_min*x_scale - 0.5     ] [y]
+        [1  ]   [0,        0,        1                       ] [1]
 
     This is derived from the transformation equations:
-    - row = (n_y - 1) - (y - y_min) * y_scale
-          = (n_y - 1) - y*y_scale + y_min*y_scale
-          = -y_scale * y + ((n_y - 1) + y_min*y_scale)
-    - col = (x - x_min) * x_scale
-          = x_scale * x - x_min*x_scale
+    - row = (n_y - 0.5) - (y - y_min) * y_scale
+          = -y_scale * y + ((n_y - 0.5) + y_min*y_scale)
+    - col = (x - x_min) * x_scale - 0.5
+          = x_scale * x - (x_min*x_scale + 0.5)
 
     Examples
     --------
@@ -218,8 +244,8 @@ def build_env_to_napari_matrix(scale: EnvScale) -> NDArray[np.float64]:
     """
     return np.array(
         [
-            [0.0, -scale.y_scale, (scale.n_y - 1) + scale.y_min * scale.y_scale],
-            [scale.x_scale, 0.0, -scale.x_min * scale.x_scale],
+            [0.0, -scale.y_scale, (scale.n_y - 0.5) + scale.y_min * scale.y_scale],
+            [scale.x_scale, 0.0, -scale.x_min * scale.x_scale - 0.5],
             [0.0, 0.0, 1.0],
         ],
         dtype=np.float64,
@@ -243,13 +269,12 @@ def _warn_fallback(suppress: bool = False) -> None:
         warnings.warn(
             "WHAT: Napari coordinate transform falling back to simple axis swap.\n"
             "  This may cause misalignment between overlays and the field image.\n\n"
-            "WHY: Environment lacks required attributes for proper scaling:\n"
-            "  - dimension_ranges: needed to compute spatial bounds\n"
-            "  - grid_shape: needed to compute pixel scaling\n\n"
-            "Fix: Ensure your environment has proper dimension ranges:\n"
-            "  - Use Environment.from_samples() which computes ranges automatically\n"
-            "  - Or set env.dimension_ranges manually after creation\n"
-            "  - For custom layouts, ensure grid_shape is defined",
+            "WHY: Napari draws a field as a raster over a 2-D rectangular grid\n"
+            "  (grid_edges and grid_shape), and this environment has none:\n"
+            "  hexagonal, mesh and track layouts are not rasters.\n\n"
+            "Fix: Use a grid environment (Environment.from_samples, from_polygon,\n"
+            "  from_grid_mask or from_pixel_mask) for napari, or render this\n"
+            "  layout with the video or HTML backend",
             UserWarning,
             stacklevel=4,
         )
@@ -268,9 +293,10 @@ def transform_coords_for_napari(
     row 0 contains data from max Y. This function maps environment coordinates to
     pixel/row indices that match the flipped image.
 
-    Transformation:
-    1. Map X to column index: col = (x - x_min) / (x_max - x_min) * (n_x - 1)
-    2. Map Y to flipped row index: row = (n_y - 1) * (y_max - y) / (y_max - y_min)
+    Transformation, with pixel ``i`` centered on grid cell ``i`` of the full
+    grid (``grid_edges``, inactive cells included):
+    1. Map X to column index: col = (x - x_min) / (x_max - x_min) * n_x - 0.5
+    2. Map Y to flipped row index: row = (y_max - y) / (y_max - y_min) * n_y - 0.5
 
     Parameters
     ----------
@@ -314,10 +340,10 @@ def transform_coords_for_napari(
 
         # Map to pixel indices using cached scale factors
         # X -> column (no flip)
-        col = (x_coords - scale.x_min) * scale.x_scale
+        col = (x_coords - scale.x_min) * scale.x_scale - 0.5
 
         # Y -> row (with flip: high Y -> low row)
-        row = (scale.n_y - 1) - (y_coords - scale.y_min) * scale.y_scale
+        row = (scale.n_y - 0.5) - (y_coords - scale.y_min) * scale.y_scale
 
         # Return in napari (row, col) order. Allocate float64 explicitly:
         # np.empty_like would inherit an integer dtype from integer-typed input

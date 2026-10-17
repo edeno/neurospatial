@@ -77,8 +77,10 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
+from neurospatial.geometry import CallIndexes, locate, require_cartesian
+
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.ops._protocols import GraphLookupConsumer
 
 __all__ = [
     "EgocentricFrame",
@@ -470,12 +472,12 @@ def compute_egocentric_bearing(
     bearing = np.arctan2(ego[..., 1], ego[..., 0])
 
     # Wrap to (-pi, pi]
-    bearing = _wrap_angle(bearing)
+    bearing = _wrap_bearing(bearing)
 
     return bearing
 
 
-def _wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
+def _wrap_bearing(angle: NDArray[np.float64]) -> NDArray[np.float64]:
     """Wrap angles to (-pi, pi].
 
     Parameters
@@ -501,7 +503,7 @@ def compute_egocentric_distance(
     targets: NDArray[np.float64],
     *,
     metric: str = "euclidean",
-    env: Environment | None = None,
+    env: GraphLookupConsumer | None = None,
 ) -> NDArray[np.float64]:
     """Compute distance to targets from animal position.
 
@@ -536,6 +538,8 @@ def compute_egocentric_distance(
     ------
     ValueError
         If metric is invalid or metric="geodesic" without an environment.
+    CartesianOnlyError
+        If metric="geodesic" and ``env`` is a polar environment.
 
     Examples
     --------
@@ -618,17 +622,30 @@ def compute_egocentric_distance(
         # env is guaranteed non-None here (validated above)
         assert env is not None
 
+        require_cartesian(
+            env.coordinate_system,
+            "compute_egocentric_distance(metric='geodesic')",
+            why="positions and targets are allocentric Cartesian positions, located "
+            "in the environment's bins.",
+            fix="use an allocentric environment, or metric='euclidean' for "
+            "straight-line distances",
+        )
+        binning, arena, graph = env.binning, env.arena, env.connectivity
+
         # Use geodesic distance field for graph-based distances
         distances = np.full((n_time, n_targets), np.nan, dtype=np.float64)
 
         # Vectorized: get bin indices for all positions at once
-        pos_bins = env.bin_at(positions)
+        indexes = CallIndexes()
+        pos_bins = locate(binning, arena, positions, indexes)
 
         # Hoist target-bin computation out of the per-target inner loop: map
         # every target to its bin in a single batched ``bin_at`` call. For
         # static targets (broadcast from 2D) this collapses ``n_time * n_targets``
         # redundant lookups into one. Shape: (n_time, n_targets).
-        target_bins = env.bin_at(targets_3d.reshape(-1, 2)).reshape(n_time, n_targets)
+        target_bins = locate(
+            binning, arena, targets_3d.reshape(-1, 2), indexes
+        ).reshape(n_time, n_targets)
 
         # Cache distance fields by target bin: static targets recompute once;
         # time-varying targets pay only for unique target bins.
@@ -646,7 +663,7 @@ def compute_egocentric_distance(
                     continue
                 if target_bin not in distance_field_cache:
                     distance_field_cache[target_bin] = compute_distance_field(
-                        env.connectivity, sources=[target_bin]
+                        graph, sources=[target_bin]
                     )
                 distances[t, i] = distance_field_cache[target_bin][pos_bin]
 

@@ -1,4 +1,4 @@
-"""Tests for speed filtering in the batch/single encode path (Task 2.6).
+"""Tests for speed filtering in the batch/single encode path.
 
 A firing rate map is spike_counts (numerator) / occupancy (denominator) per
 bin. A ``min_speed`` filter MUST apply ONE shared per-interval speed gate to
@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding._binning import (
+from neurospatial.encoding._spatial_counts import (
     bin_spike_train,
     compute_occupancy,
     resolve_speed,

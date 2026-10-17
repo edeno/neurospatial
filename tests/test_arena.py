@@ -16,9 +16,8 @@ from neurospatial.arena import (
     OpenArena,
     TrackArena,
     UnknownArena,
-    decode_arena,
-    encode_arena,
 )
+from neurospatial.geometry._codecs import decode_arena, encode_arena
 
 
 def arenas():
@@ -419,3 +418,52 @@ def test_codec_rejects_unknown_versions_missing_arrays_and_wrong_dtypes():
             polygon_meta,
             {**polygon_arrays, "polygon_wkb": np.array([1, 2, 3], np.uint8)},
         )
+
+
+@pytest.mark.parametrize(
+    ("arena", "expected"),
+    [
+        (OpenArena(box(1, 2, 4, 3)), [[1, 2], [4, 3]]),
+        (
+            MaskArena(
+                (np.arange(4.0), np.arange(3.0), np.array([0.0, 0.5, 2.0])),
+                np.pad(np.ones((1, 1, 1), bool), ((1, 1), (0, 1), (1, 0))),
+            ),
+            [[1, 0, 0.5], [2, 1, 2]],
+        ),
+        (
+            TrackArena(np.array([[[0.0, 0.0], [4.0, 1.0]]]), width=2.0),
+            [[-1, -1], [5, 2]],
+        ),
+        (TrackArena(np.array([[[0.0, 0.0], [4.0, 0.0]]]), width=None), None),
+        (UnknownArena(2), None),
+        (EgocentricSurround((0.0, 5.0), (-np.pi, np.pi), circular=True), None),
+    ],
+)
+def test_domain_bounds_enclose_known_cartesian_domain(arena, expected):
+    bounds = arena.domain_bounds()
+    if expected is None:
+        assert bounds is None
+    else:
+        np.testing.assert_array_equal(bounds, expected)
+
+
+def test_transformed_domain_bounds_enclose_mapped_box():
+    angle = np.pi / 4
+    rotation = np.array(
+        [
+            [np.cos(angle), -np.sin(angle), 10.0],
+            [np.sin(angle), np.cos(angle), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    mask = MaskArena((np.array([0.0, 2.0]),) * 2, np.ones((1, 1), bool))
+    bounds = mask.transformed(rotation).domain_bounds()
+    half_diagonal = np.sqrt(2.0)
+    np.testing.assert_allclose(
+        bounds, [[10 - half_diagonal, 0.0], [10 + half_diagonal, 2 * half_diagonal]]
+    )
+    # Every point of the mapped domain lies inside the box.
+    corners = np.array([[0, 0], [2, 0], [0, 2], [2, 2]], float)
+    mapped = corners @ rotation[:2, :2].T + rotation[:2, 2]
+    assert np.all((mapped >= bounds[0] - 1e-12) & (mapped <= bounds[1] + 1e-12))

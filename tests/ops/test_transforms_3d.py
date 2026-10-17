@@ -7,7 +7,6 @@ from scipy.spatial.transform import Rotation
 from neurospatial import Environment, Regions
 from neurospatial.ops.transforms import (
     AffineND,
-    apply_transform_to_environment,
     estimate_transform,
     from_rotation_matrix,
     identity_nd,
@@ -310,7 +309,7 @@ class TestEstimateTransform3D:
 
 
 class TestApplyTransformToEnvironment3D:
-    """Test apply_transform_to_environment with 3D environments.
+    """Test apply_transform with 3D environments.
 
     Uses session-scoped `simple_3d_env` fixture from conftest.py for most tests.
     Tests that modify environment state create their own inline environments.
@@ -319,7 +318,7 @@ class TestApplyTransformToEnvironment3D:
     def test_apply_3d_identity_transform(self, simple_3d_env):
         """Test applying 3D identity transform."""
         transform = identity_nd(n_dims=3)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         assert np.allclose(transformed_env.bin_centers, simple_3d_env.bin_centers)
         assert transformed_env.n_bins == simple_3d_env.n_bins
@@ -327,7 +326,7 @@ class TestApplyTransformToEnvironment3D:
     def test_apply_3d_translation(self, simple_3d_env):
         """Test applying 3D translation."""
         transform = translate_3d(10, 20, 30)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         # Centers should be translated
         expected = simple_3d_env.bin_centers + np.array([10, 20, 30])
@@ -336,7 +335,7 @@ class TestApplyTransformToEnvironment3D:
     def test_apply_3d_scaling(self, simple_3d_env):
         """Test applying 3D scaling."""
         transform = scale_3d(2.0)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         # Centers should be scaled
         expected = simple_3d_env.bin_centers * 2.0
@@ -346,7 +345,7 @@ class TestApplyTransformToEnvironment3D:
         """Test applying 3D rotation."""
         R = Rotation.from_euler("z", 45, degrees=True).as_matrix()
         transform = from_rotation_matrix(R)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         # Centers should be rotated
         expected = simple_3d_env.bin_centers @ R.T
@@ -355,14 +354,14 @@ class TestApplyTransformToEnvironment3D:
     def test_3d_transform_preserves_n_bins(self, simple_3d_env):
         """Test that 3D transformation preserves number of bins."""
         transform = translate_3d(5, 5, 5)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         assert transformed_env.n_bins == simple_3d_env.n_bins
 
     def test_3d_transform_preserves_connectivity(self, simple_3d_env):
         """Test that 3D transformation preserves connectivity structure."""
         transform = translate_3d(5, 5, 5)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         assert (
             transformed_env.connectivity.number_of_edges()
@@ -375,7 +374,7 @@ class TestApplyTransformToEnvironment3D:
         R = Rotation.from_euler("xyz", [30, 45, 60], degrees=True).as_matrix()
         transform = from_rotation_matrix(R)
 
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         # Get edge distances from original
         orig_dists = [
@@ -393,7 +392,7 @@ class TestApplyTransformToEnvironment3D:
     def test_3d_transform_no_angle_2d_attribute(self, simple_3d_env):
         """Test that 3D transforms don't have angle_2d edge attribute."""
         transform = translate_3d(5, 5, 5)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         # Check that angle_2d is not in any edge
         for u, v in transformed_env.connectivity.edges:
@@ -404,23 +403,23 @@ class TestApplyTransformToEnvironment3D:
     def test_3d_transform_copies_units(self, simple_3d_env):
         """Test that units are preserved."""
         transform = translate_3d(5, 5, 5)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         assert transformed_env.units == simple_3d_env.units
 
-    def test_3d_transform_updates_frame(self, simple_3d_env):
-        """Test that frame name is updated."""
+    def test_3d_transform_frame_comes_from_the_caller(self, simple_3d_env):
+        """The transformed frame is unlabeled unless the caller names it."""
         transform = translate_3d(5, 5, 5)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        unlabeled = simple_3d_env.apply_transform(transform)
+        labeled = simple_3d_env.apply_transform(transform, frame="session2")
 
-        assert "transformed" in transformed_env.frame
+        assert unlabeled.frame is None
+        assert labeled.frame == "session2"
 
     def test_3d_transform_with_custom_name(self, simple_3d_env):
         """Test custom name for 3D transformed environment."""
         transform = translate_3d(5, 5, 5)
-        transformed_env = apply_transform_to_environment(
-            simple_3d_env, transform, name="aligned_3d"
-        )
+        transformed_env = simple_3d_env.apply_transform(transform, name="aligned_3d")
 
         assert transformed_env.name == "aligned_3d"
 
@@ -445,7 +444,7 @@ class TestApplyTransformToEnvironment3D:
         env = env.with_regions(region_builder)
 
         transform = translate_3d(10, 20, 30)
-        transformed_env = apply_transform_to_environment(env, transform)
+        transformed_env = env.apply_transform(transform)
 
         assert "goal" in transformed_env.regions
         expected_point = np.array([15.0, 25.0, 35.0])
@@ -454,7 +453,7 @@ class TestApplyTransformToEnvironment3D:
     def test_3d_dimension_ranges_transformed(self, simple_3d_env):
         """Test that dimension_ranges are correctly transformed."""
         transform = translate_3d(100, 200, 300)
-        transformed_env = apply_transform_to_environment(simple_3d_env, transform)
+        transformed_env = simple_3d_env.apply_transform(transform)
 
         # Original ranges
         orig_ranges = simple_3d_env.dimension_ranges

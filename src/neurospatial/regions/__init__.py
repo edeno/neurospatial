@@ -14,8 +14,11 @@ This sub-package offers:
 
 from __future__ import annotations
 
+from neurospatial.regions.io import _SCHEMA_TAG as _SCHEMA_TAG
+
 # --- core value objects ---------------------------------
 from .core import Region, Regions
+from .core import _snapshot_regions as _snapshot_regions
 
 # --- thin adapters --------------------------------------
 from .io import (
@@ -28,6 +31,8 @@ from .io import (
 from .ops import points_in_any_region, regions_containing_points
 from .plot import plot_regions
 
+# The ``_`` names imported here are internal helpers shared with other
+# neurospatial packages; they are not public API.
 __all__ = [
     "Region",
     "Regions",

@@ -1,10 +1,10 @@
-"""Tests for edge order editing functionality (Task 4.1)."""
+"""Tests for edge order editing functionality."""
 
 import numpy as np
 import pytest
 
 # =============================================================================
-# Task 4.1 Tests: TrackBuilderState Edge Order Fields
+# TrackBuilderState Edge Order Fields
 # =============================================================================
 
 
@@ -199,7 +199,7 @@ class TestTrackBuilderStateComputeEdgeOrder:
 
 
 # =============================================================================
-# Task 4.1 Tests: Build Result with Manual Overrides
+# Build Result with Manual Overrides
 # =============================================================================
 
 
@@ -263,7 +263,7 @@ class TestBuildTrackGraphResultWithOverrides:
 
 
 # =============================================================================
-# Task 4.1 Tests: Widget Edge Order UI
+# Widget Edge Order UI
 # =============================================================================
 
 

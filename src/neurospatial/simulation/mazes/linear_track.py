@@ -23,7 +23,8 @@ from dataclasses import dataclass
 
 import networkx as nx
 
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_corridor_polygon
 
@@ -198,6 +199,7 @@ def _create_linear_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges (just one edge)
         bin_size=bin_size,
+        track_width=dims.width,
         name="linear_track_1d",
     )
     env_track = env_track.with_metadata(units="cm")

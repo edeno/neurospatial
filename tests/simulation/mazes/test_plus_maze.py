@@ -23,7 +23,6 @@ class TestMakePlusMaze:
         maze = make_plus_maze()
         # Should have n_bins > 0 if fitted
         assert maze.env_2d.n_bins > 0
-        assert maze.env_2d._is_fitted
 
     def test_env_2d_has_correct_units(self):
         """env_2d should have units set to 'cm'."""
@@ -275,6 +274,23 @@ class TestPlusMazeTrackGraph:
         y_extent = positions[:, 1].max() - positions[:, 1].min()
         expected_y = 2 * dims.arm_length  # south to north arm
         assert y_extent >= expected_y * 0.8  # At least 80%
+
+    def test_track_segments_follow_linear_order(self):
+        """Arm ids number the arms in linear order, clockwise from north."""
+        from neurospatial.simulation.mazes.plus_maze import make_plus_maze
+
+        track = make_plus_maze(include_track=True).env_track
+        assert track is not None
+        graph = track.connectivity
+        order = np.argsort([graph.nodes[n]["pos_1D"] for n in graph.nodes()])
+        segments = np.array([graph.nodes[n]["source_edge_id"] for n in graph.nodes()])
+        assert np.all(np.diff(segments[order]) >= 0)
+        # Each arm's bins point from the center toward that arm's end.
+        centers = track.bin_centers
+        directions = {0: (0, 1), 1: (1, 0), 2: (0, -1), 3: (-1, 0)}
+        for segment, direction in directions.items():
+            arm = centers[segments == segment]
+            assert np.all(arm @ np.asarray(direction, dtype=float) > 0)
 
 
 class TestPlusMazeModuleExports:

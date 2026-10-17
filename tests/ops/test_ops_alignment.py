@@ -7,8 +7,10 @@ spatial environments.
 
 import numpy as np
 import pytest
+from scipy.spatial import cKDTree
 
 # Test imports from the new location
+from neurospatial.environment import CartesianSystem
 from neurospatial.ops.alignment import (
     IDW_MIN_DISTANCE,
     ProbabilityMappingParams,
@@ -22,11 +24,15 @@ from neurospatial.ops.alignment import (
 class MockEnvironment:
     """Mock Environment class for testing alignment functions."""
 
-    def __init__(self, bin_centers, n_dims, is_fitted=True):
+    coordinate_system = CartesianSystem()
+
+    def __init__(self, bin_centers, n_dims):
         self.bin_centers = bin_centers
         self.n_dims = n_dims
-        self._is_fitted = is_fitted
         self.n_bins = len(bin_centers)
+
+    def bin_center_tree(self):
+        return cKDTree(self.bin_centers)
 
 
 class TestGet2dRotationMatrix:
@@ -163,18 +169,6 @@ class TestMapProbabilities:
         tgt_env = MockEnvironment(tgt_bins, 2)
         tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
         assert tgt_probs.size == 0
-
-    def test_source_not_fitted(self):
-        """Test error when source environment is not fitted."""
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        src_bins = np.array([[0, 0]])
-        tgt_bins = np.array([[0, 0]])
-        src_probs = np.array([1.0])
-        src_env = MockEnvironment(src_bins, 2, is_fitted=False)
-        tgt_env = MockEnvironment(tgt_bins, 2)
-        with pytest.raises(EnvironmentNotFittedError, match="map_probabilities"):
-            map_probabilities(src_env, tgt_env, src_probs)
 
     def test_shape_mismatch(self):
         """Test error when probability shape doesn't match."""

@@ -35,14 +35,16 @@ def test_metadata_rejects_assignment_and_deletion(name, value):
 
 def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch):
     env = _environment()
-    env.compute_kernel(0.5)
-    env.get_differential_operator()
-    source_cache = env._kernel_cache.copy()
+    kernel = env.compute_kernel(bandwidth=0.5)
+    operator = env._differential_operator_cached
+    n_cached = len(env._cache)
 
     def fail(*args, **kwargs):
         raise AssertionError("metadata replacement must not publish geometry again")
 
-    monkeypatch.setattr(Environment, "_from_binning", fail)
+    from neurospatial.environment import _publication
+
+    monkeypatch.setattr(_publication, "_publish", fail)
     updated = env.with_metadata(name="comparison", units="m", frame=None)
     assert type(updated) is type(env)
     assert updated is not env
@@ -51,10 +53,10 @@ def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch)
     assert updated.units == "m"
     assert updated.frame is None
     assert (env.name, env.units, env.frame) == ("training", "cm", "world")
-    assert not updated._kernel_cache
-    assert env._kernel_cache.keys() == source_cache.keys()
-    assert all(env._kernel_cache[key] is value for key, value in source_cache.items())
-    assert "_differential_operator_cached" not in vars(updated)
+    assert updated._cache is env._cache
+    assert len(env._cache) == n_cached
+    assert updated._differential_operator_cached is operator
+    np.testing.assert_array_equal(updated.compute_kernel(bandwidth=0.5), kernel)
     np.testing.assert_array_equal(updated.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(updated.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(
@@ -115,10 +117,10 @@ def test_restoration_preserves_readonly_metadata_and_geometry(restore):
 
 def test_polar_replacement_preserves_concrete_type_and_circularity():
     env = Environment.from_polar_egocentric(
-        (1.0, 3.0),
-        (-np.pi, np.pi),
-        1.0,
-        np.pi,
+        distance_range=(1.0, 3.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=np.pi,
         circular_angle=True,
         units="cm",
         frame="animal",
@@ -134,24 +136,19 @@ def test_layout_parameters_are_independently_owned_exports():
     env = _environment()
     original = env.layout_parameters
     exported = env.layout_parameters
-    exported["positions"][:] = -1000
+    exported["bin_size"] = -1000
     exported["custom"] = "changed"
-    assert "custom" not in env.layout_parameters
-    np.testing.assert_array_equal(
-        env.layout_parameters["positions"], original["positions"]
-    )
+    assert env.layout_parameters == original
 
 
 @pytest.mark.parametrize(
     "restore", [copy.copy, copy.deepcopy, lambda x: pickle.loads(pickle.dumps(x))]
 )
-def test_unfitted_environment_views_and_copies_remain_available(restore):
-    env = _environment().with_metadata(name="unfitted")
-    env._is_fitted = False
+def test_copies_and_pickles_keep_name_and_bins(restore):
+    env = _environment().with_metadata(name="session")
     expected = env.bin_centers.copy()
     clone = restore(env)
-    assert clone.name == "unfitted"
-    assert not clone._is_fitted
+    assert clone.name == "session"
     np.testing.assert_array_equal(clone.bin_centers, expected)
 
 
@@ -183,5 +180,5 @@ def test_restoration_refuses_custom_arenas_requiring_snapshot_migration():
     state = vars(env).copy()
     state["_geometry"] = replace(env._geometry, arena=CustomArena(box(-1, -1, 4, 4)))
     restored = Environment.__new__(Environment)
-    with pytest.raises(TypeError, match="snapshot"):
+    with pytest.raises(TypeError, match="arena= takes an arena"):
         restored.__setstate__(state)

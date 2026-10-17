@@ -8,14 +8,18 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from neurospatial.environment.decorators import EnvironmentNotFittedError
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import position_units_from_series
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pynwb import NWBFile
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
+    from neurospatial.geometry import Arena
+    from neurospatial.layout import LayoutType
     from neurospatial.regions import Regions
 
 ENVIRONMENT_SCHEMA_VERSION: str = "3.0"
@@ -44,7 +48,7 @@ def write_environment(
     nwbfile : NWBFile
         NWB file receiving the scratch record.
     env : Environment
-        Fitted environment to store.
+        Environment to store.
     name : str, default "spatial_environment"
         Scratch record name.
     overwrite : bool, default False
@@ -54,8 +58,6 @@ def write_environment(
     ------
     ValueError
         If the name exists and overwrite is false, or a component has no codec.
-    EnvironmentNotFittedError
-        If the environment has not been fitted.
     ImportError
         If pynwb is unavailable.
 
@@ -83,8 +85,6 @@ def write_environment(
 
     from neurospatial.io.files import _environment_payload
 
-    if not env._is_fitted:
-        raise EnvironmentNotFittedError("write_environment", is_function=True)
     if name in nwbfile.scratch and not overwrite:
         raise ValueError(
             f"Environment '{name}' already exists in scratch. Use overwrite=True to replace."
@@ -118,10 +118,47 @@ def write_environment(
     nwbfile.add_scratch(record)
 
 
+class _MissingEnvironmentError(KeyError):
+    """No saved environment of the requested name; prints its message as written."""
+
+    def __str__(self) -> str:
+        return str(self.args[0])
+
+
+def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
+    """Say which environments the file stores and how to build one instead."""
+    from pynwb.behavior import Position
+
+    from neurospatial._exceptions import _format_error
+    from neurospatial.io.nwb._core import _find_containers_by_type
+
+    stored = sorted(nwbfile.scratch) if nwbfile.scratch else []
+    positions = [path for path, _ in _find_containers_by_type(nwbfile, Position)]
+    build = "neurospatial.io.nwb.environment_from_position(nwbfile, bin_size=...)"
+    if positions:
+        build_fix = (
+            f"to bin the Position data at {positions[0]} into a new environment, "
+            f"call {build}"
+        )
+    else:
+        build_fix = f"to bin a Position container into a new environment, call {build}"
+    fix = f"pass name= one of {stored}, or {build_fix}" if stored else build_fix
+    return _format_error(
+        f"No environment named {name!r} is saved in this NWB file "
+        f"(saved environments: {stored or 'none'}).",
+        why=(
+            "Why: read_environment and Environment.from_nwb load an environment "
+            "saved with env.to_nwb or write_environment; they do not bin "
+            "position data."
+        ),
+        fix=fix,
+    )
+
+
 def read_environment(
     nwbfile: NWBFile,
     name: str = DEFAULT_ENVIRONMENT_NAME,
-) -> Environment:
+) -> Environment[Any]:
     """Decode a saved NWB binning and Arena record without a layout builder.
 
     Every stored binning capability is retained, including geometric lookup,
@@ -140,11 +177,16 @@ def read_environment(
     -------
     Environment
         Restored environment, including its original coordinate system.
+        Cartesian or egocentric polar, as stored; static type checkers see
+        ``Environment[Any]`` because the stored record decides. Check
+        ``env.coordinate_kind`` before calling Cartesian-only methods.
 
     Raises
     ------
     KeyError
-        If the scratch record does not exist.
+        If no environment of that name is saved in the file. The message
+        lists the saved environments and, for building one from position
+        data, :func:`environment_from_position`.
     ValueError
         If the schema is unsupported or the saved data is inconsistent.
     ImportError
@@ -170,10 +212,7 @@ def read_environment(
     from neurospatial.io.files import _restore_environment
 
     if name not in nwbfile.scratch:
-        available = list(nwbfile.scratch) if nwbfile.scratch else []
-        raise KeyError(
-            f"Environment '{name}' not found in scratch/. Available: {available}"
-        )
+        raise _MissingEnvironmentError(_missing_environment_message(nwbfile, name))
     record = nwbfile.scratch[name]
     source = f"NWB scratch/{name}"
     try:
@@ -246,7 +285,7 @@ def _regions_to_json(regions) -> str:
     if regions is None or len(regions) == 0:
         return "{}"
 
-    from neurospatial.regions.io import _SCHEMA_TAG
+    from neurospatial.regions import _SCHEMA_TAG
 
     payload = {
         "format": _SCHEMA_TAG,
@@ -356,32 +395,48 @@ def _legacy_json_to_regions(regions_dict: dict[str, Any]) -> Regions:
     return Regions(regions_list)
 
 
+@keyword_hint("bin_size")
 def environment_from_position(
     nwbfile: NWBFile,
-    bin_size: float,
     *,
+    bin_size: float | Sequence[float],
     processing_module: str | None = None,
     position_name: str | None = None,
+    name: str = "",
     units: str | None = None,
     frame: str | None = None,
-    **kwargs: Any,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+    layout: LayoutType | str = "RegularGrid",
+    dimension_ranges: Sequence[tuple[float, float]] | None = None,
+    infer_active_bins: bool = True,
+    bin_count_threshold: int = 0,
+    dilate: bool = False,
+    fill_holes: bool = False,
+    close_gaps: bool = False,
+    add_boundary_bins: bool = False,
+    connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """
-    Create Environment from NWB Position data.
+    Create an Environment by binning the positions in an NWB Position container.
 
-    Convenience function that reads position data and creates an Environment
-    using Environment.from_samples().
+    Reads the positions with :func:`read_position` and bins them with
+    :meth:`Environment.from_samples`. Every binning option means the same as
+    in ``from_samples``. To load an environment that was saved in the file,
+    use :func:`read_environment` or ``Environment.from_nwb`` instead.
 
     Parameters
     ----------
     nwbfile : NWBFile
         The NWB file to read from.
-    bin_size : float
-        Bin size for environment discretization.
+    bin_size : float or sequence of floats
+        Bin size, in the environment's spatial units (see `units`).
     processing_module : str, optional
         Name of processing module containing Position.
     position_name : str, optional
         Name of specific SpatialSeries within Position.
+    name : str, default ""
+        Name of the environment.
     units : str, optional
         Spatial units for the environment. If None, auto-detected from the
         series ``unit``, with NWB long names mapped to ``m`` / ``cm`` / ``mm``
@@ -391,13 +446,27 @@ def environment_from_position(
         ``units=`` to state the real unit.
     frame : str, optional
         Coordinate frame identifier for the environment.
-    **kwargs
-        Additional arguments passed to Environment.from_samples().
-        Common kwargs include:
-        - infer_active_bins : bool
-            Whether to only include bins visited by the animal.
-        - bin_count_threshold : int
-            Minimum samples per bin when infer_active_bins=True.
+    regions : Regions, optional
+        Named regions to snapshot with the environment.
+    arena : Arena, optional
+        Explicit continuous domain. See :meth:`Environment.from_samples`.
+    layout : LayoutType or str, default "RegularGrid"
+        ``"RegularGrid"`` or ``"Hexagonal"``.
+    dimension_ranges : sequence of (float, float), optional
+        ``[(min, max), ...]`` extent to tile on each axis.
+    infer_active_bins : bool, default True
+        Whether to only include bins visited by the animal.
+    bin_count_threshold : int, default 0
+        Minimum samples per bin. Only with ``infer_active_bins=True``.
+    dilate, fill_holes, close_gaps, add_boundary_bins : bool, default False
+        Regular grid only; see :meth:`Environment.from_samples`.
+    connect_diagonal_neighbors : bool, default True
+        Regular grid only; see :meth:`Environment.from_samples`.
+
+        Changing any regular-grid-only option from its default with
+        ``layout="Hexagonal"`` raises ``ValueError``, and so does changing
+        `bin_count_threshold`, `dilate`, `fill_holes` or `close_gaps` with
+        ``infer_active_bins=False``. The defaults are always accepted.
 
     Returns
     -------
@@ -408,6 +477,10 @@ def environment_from_position(
     ------
     KeyError
         If no Position container found, or if specified position_name not found.
+    ValueError
+        If `layout` is neither "RegularGrid" nor "Hexagonal", or an option
+        that the chosen layout or ``infer_active_bins=False`` ignores differs
+        from its default. The message names ``environment_from_position``.
     ImportError
         If pynwb is not installed.
 
@@ -432,7 +505,7 @@ def environment_from_position(
 
     _require_pynwb()
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment, _from_samples
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
@@ -451,9 +524,27 @@ def environment_from_position(
             position_name=position_name,
         )
 
-    # Create Environment from position samples
-    return Environment.from_samples(
-        positions, bin_size=bin_size, units=units, frame=frame, **kwargs
+    # Bin the samples exactly as Environment.from_samples does, naming this
+    # function in any error about the options.
+    return _from_samples(
+        Environment,
+        positions,
+        bin_size=bin_size,
+        name=name,
+        units=units,
+        frame=frame,
+        regions=regions,
+        arena=arena,
+        layout=layout,
+        dimension_ranges=dimension_ranges,
+        infer_active_bins=infer_active_bins,
+        bin_count_threshold=bin_count_threshold,
+        dilate=dilate,
+        fill_holes=fill_holes,
+        close_gaps=close_gaps,
+        add_boundary_bins=add_boundary_bins,
+        connect_diagonal_neighbors=connect_diagonal_neighbors,
+        factory="environment_from_position",
     )
 
 

@@ -46,7 +46,8 @@ env.animate_fields(
 HTML's default `animation.html` is protected too. With `embed=False`, a
 nonempty `frames_dir` is also protected; an empty frames directory is usable.
 A refused call creates no new frames directory. The option applies to video
-and HTML exports; interactive napari/widget viewing does not write these files.
+and HTML exports; interactive napari/widget viewing writes no files, so those
+backends ignore `overwrite=` with a warning.
 Environment saves use the same rule for their paired `.json` and `.npz` files.
 
 ## Overview
@@ -124,26 +125,20 @@ env.animate_fields(
 
 ### Trajectory Overlays
 
-Overlay animal trajectory on spatial fields:
+Draw the animal's path with a `PositionOverlay`; it works on every backend
+(see [Animation overlays](../animation_overlays.md)):
 
 ```python
-# 2D trajectory (displays as napari "tracks" layer)
-trajectory_2d = np.array([[x1, y1], [x2, y2], ...])  # shape: (n_timepoints, 2)
+from neurospatial.animation import PositionOverlay
+
+# positions: (n_timepoints, n_dims) in the environment's units; times in seconds
+path = PositionOverlay(positions=positions, times=times, trail_length=30)
 
 env.animate_fields(
     fields,
     frame_times=frame_times,
     backend="napari",
-    overlay_trajectory=trajectory_2d
-)
-
-# Higher-dimensional positions (displays as napari "points" layer)
-trajectory_nd = np.array([[x, y, z], ...])  # shape: (n_timepoints, n_dims)
-env.animate_fields(
-    fields,
-    frame_times=frame_times,
-    backend="napari",
-    overlay_trajectory=trajectory_nd,
+    overlays=[path],
 )
 ```
 
@@ -174,19 +169,21 @@ env.animate_fields(
     backend="video",
     save_path="animation.mp4",
     codec="h264",  # or "h265", "vp9", "mpeg4"
-    bitrate=5000,  # kbps
+    crf=18,  # constant quality: lower is better, 18 is the default
     dpi=100,
 )
 ```
+
+By default the video encoder uses constant quality (`crf=18`), which keeps the
+image visually near-lossless and lets the bitrate follow the content. Pass
+`bitrate=` (kbps) only when you need a fixed bitrate; it replaces `crf`, and
+passing both warns that `crf` is ignored.
 
 ### Parallel Rendering
 
 Speed up rendering using multiple CPU cores:
 
 ```python
-# IMPORTANT: Clear caches before parallel rendering
-env.clear_cache()  # Makes environment pickle-able
-
 env.animate_fields(
     fields,
     frame_times=frame_times,
@@ -196,7 +193,9 @@ env.animate_fields(
 )
 ```
 
-**Why clear caches?** Parallel rendering uses Python's `multiprocessing`, which requires pickle-able objects. Cached properties (KDTrees, kernels) contain non-pickle-able objects.
+Parallel rendering uses Python's `multiprocessing`, which pickles the
+environment and overlays to send them to worker processes. The environment's
+cached analyses are never pickled, so there is no need to clear them first.
 
 ### Dry Run Mode
 
@@ -210,11 +209,20 @@ env.animate_fields(
     save_path="output.mp4",
     dry_run=True,  # Just estimate, don't render
 )
-# Output:
-# Dry run: Rendering 1 test frame...
-# Estimated time: 2.5 minutes (30 frames, 5s per frame)
-# Estimated file size: 15.2 MB
+# Printed to stderr, for example:
+# Video Export Dry Run Estimate:
+#   Frames:          30
+#   Workers:         4
+#   Frame time:      17.3 ms
+#   Est. total time: 0.0 minutes
+#   Est. file size:  1 MB
+#   Output path:     output.mp4
 ```
+
+`dry_run=True` works with every backend and returns `None`. It checks the
+inputs and the output path, then reports what it would do without writing a
+file: HTML reports the frame count and estimated file size, napari opens no
+viewer and the widget displays nothing.
 
 ### Codec Selection
 
@@ -304,9 +312,9 @@ Works in all modern browsers (Chrome, Firefox, Safari, Edge). No server required
 
 ### Numeric scales and timestamp labels
 
-HTML currently does not display a numeric colorbar through `show_colorbar` or
-`colorbar_label`. Share a labeled static plot with the same colormap and fixed
-limits to communicate the values, and supply real timestamp frame labels.
+HTML frames do not include a colorbar. Share a labeled static plot with the
+same colormap and fixed limits to communicate the values, and supply real
+timestamp frame labels.
 This complete example uses synthetic rate values in Hz:
 
 <!-- docs-test: run -->
@@ -364,22 +372,47 @@ jupyter labextension install @jupyter-widgets/jupyterlab-manager
 
 ## Common Parameters
 
-All backends accept these common parameters:
+Every backend uses these parameters:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `fields` | list/ndarray | Required | Sequence of spatial fields |
 | `frame_times` | ndarray | Required | Timestamp for each frame, in seconds |
 | `backend` | str | `"auto"` | Backend selection |
-| `save_path` | str/Path | None | Output file path |
 | `speed` | float | 1.0 | Playback speed relative to real time |
 | `max_playback_fps` | int | 60 | Upper bound for displayed playback frame rate |
 | `cmap` | str | `"viridis"` | Matplotlib colormap |
 | `vmin` | float | None | Minimum value for colormap (auto if None) |
 | `vmax` | float | None | Maximum value for colormap (auto if None) |
-| `overwrite` | bool | False | Explicitly allow replacing video/HTML targets |
 | `frame_labels` | list[str] | None | Custom labels for each frame |
-| `dpi` | int | 100 | Resolution (dots per inch) |
+| `overlays` | list | None | Position, pose, heading and other overlays |
+| `show_regions` | bool/list[str] | False | Draw all regions, or the named ones |
+| `dry_run` | bool | False | Report what would be rendered without rendering |
+
+Some parameters apply only to some backends:
+
+| Parameter | Default | Backends |
+|-----------|---------|----------|
+| `save_path`, `overwrite` | None, False | video, html |
+| `dpi` | 100 | video, html, widget |
+| `scale_bar` | False | napari, video, html |
+| `title` | "Spatial Field Animation" | napari, html |
+| `n_workers` | None | video, html (`embed=False`) |
+| `codec`, `crf`, `preset`, `bitrate` | "h264", 18, "medium", None | video |
+| `image_format` | "png" | html, widget |
+| `max_html_frames`, `embed`, `frames_dir` | see HTML backend | html |
+| `cache_size`, `chunk_size`, `max_chunks`, `layout`, `layer_names` | see napari backend | napari |
+| `initial_cache_size`, `cache_limit` | see widget backend | widget |
+
+A misspelled name that no backend accepts raises `TypeError` with the closest
+option (`frame_label=` suggests `frame_labels=`), so a typo cannot silently
+change nothing. An option that another backend uses is ignored with one
+`UserWarning`, for example `crf=15` with `backend="html"`: "crf is used by the
+video backend; the html backend ignores it", followed by the call that would
+use it. With `backend="auto"` the warning also says which backend was chosen
+and why, for example that there is no video or `.html` `save_path` and this is
+not a Jupyter session. Options you leave out use each backend's default, so
+one set of settings works when you switch `backend=`.
 
 ## Working with Large-Scale Data
 
@@ -416,7 +449,6 @@ env.animate_fields(fields, frame_times=frame_times, backend="napari")
 # Option 2: Subsample for video (250 Hz → 30 fps)
 subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
 subsampled_times = subsample_frames(frame_times, source_fps=250, target_fps=30)
-env.clear_cache()
 env.animate_fields(
     subsampled,
     frame_times=subsampled_times,
@@ -467,7 +499,6 @@ interesting_subset = large_fields[1000:2000]
 subset_times = large_frame_times[1000:2000]
 
 # 3. Export subset as video
-env.clear_cache()
 env.animate_fields(
     interesting_subset,
     frame_times=subset_times,
@@ -606,7 +637,6 @@ Render video on server, download and view locally:
 
 ```python
 # On remote server (requires ffmpeg)
-env.clear_cache()
 env.animate_fields(
     fields,
     frame_times=frame_times,
@@ -672,18 +702,17 @@ from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 check_ffmpeg_available()
 ```
 
-### "Environment must be fitted"
+### "Environment cannot be constructed directly"
 
-**Error**: `RuntimeError: Environment must be fitted before calling this method`
+**Error**: `ValueError: [E1006] Environment cannot be constructed directly — use a factory method.`
 
-**Solution**: Use factory methods to create environments:
+**Solution**: Build the environment with a factory method:
 
 ```python
-# Wrong - bare constructor doesn't fit environment
-env = Environment()
-env.animate_fields(fields, frame_times=frame_times)  # Error!
+# Wrong - the bare constructor has no bins to animate
+env = Environment()  # Error!
 
-# Correct - factory methods automatically fit
+# Correct - a factory builds the bins from your data
 env = Environment.from_samples(positions, bin_size=2.5)
 env.animate_fields(fields, frame_times=frame_times)  # Works!
 ```
@@ -708,22 +737,32 @@ env.animate_fields(fields, frame_times=frame_times)
 
 ### "Pickle error during parallel rendering"
 
-**Error**: `RuntimeError: Environment must be pickle-able for parallel rendering`
+**Error**: a `ValueError` saying that the environment, or the overlay data, is
+not pickle-able, so frames cannot be rendered in parallel.
 
-**Solution**: Clear caches before parallel video export:
+**Why?** Parallel rendering uses `multiprocessing`, which pickles the
+environment and overlays to send them to worker processes. Something you
+supplied cannot be pickled: a lambda or local function, an open file or video
+reader, or a lock, stored in region metadata, graph attributes, an attribute
+you set on the environment, or an overlay. The environment's cached analyses
+are never pickled, so clearing them does not help.
+
+**Solution**: Find the object, then replace it with plain data (arrays,
+numbers, strings), or render serially:
 
 ```python
-env.clear_cache()  # Remove non-pickle-able cached properties
+import pickle
+
+pickle.dumps(env)  # the traceback names the object that cannot be pickled
+
 env.animate_fields(
     fields,
     frame_times=frame_times,
     backend="video",
-    n_workers=4,
+    n_workers=1,  # serial rendering pickles nothing
     save_path="output.mp4",
 )
 ```
-
-**Why?** Parallel rendering uses `multiprocessing`, which requires pickle-able objects. Cached KDTrees and kernels are not pickle-able.
 
 ### "HTML file too large"
 
@@ -748,9 +787,10 @@ env.animate_fields(
 
 ### Napari viewer shows blank/incorrect colors
 
-**Cause**: Previously, `contrast_limits` parameter caused issues (fixed in v0.3.0)
+**Cause**: The color limits do not match the field values, or the fields are
+all NaN.
 
-**Solution**: Update to neurospatial v0.3.0+. If issues persist:
+**Solution**:
 
 1. Check `vmin/vmax` parameters are reasonable
 2. Verify fields contain valid data (not all NaN)

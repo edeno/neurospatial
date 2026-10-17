@@ -6,13 +6,30 @@ components to ensure consistent behavior and messaging.
 
 from __future__ import annotations
 
+import logging
+import sys
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from matplotlib.figure import Figure
+
+
+logger = logging.getLogger(__name__)
+
+
+def _emit_status(message: str) -> None:
+    """Emit a user-facing status/progress message.
+
+    Written to ``stderr`` so it is visible by default -- ``logger.info`` output
+    is silent unless the application configured logging, which silently hid the
+    dry-run estimate and render/encode progress in a plain notebook or script.
+    Also logged at INFO for callers that consume the module logger.
+    """
+    print(message, file=sys.stderr, flush=True)
+    logger.info(message)
 
 
 @contextmanager
@@ -56,53 +73,54 @@ def managed_figure(fig: Figure) -> Iterator[Figure]:
         plt.close(fig)
 
 
-def _pickling_guidance(n_workers: int | None = None) -> str:
-    """Generate consistent HOW guidance for pickle-related errors.
+def _pickling_guidance(subject: Literal["environment", "overlays"]) -> str:
+    """Return the HOW part of an error raised when parallel rendering cannot pickle.
 
-    This helper centralizes the guidance text for pickle validation errors,
-    ensuring both `_validate_pickle_ability()` and `_validate_env_pickleable()`
-    provide identical solutions to users.
+    Parallel video rendering sends the environment and the overlay data to
+    worker processes, which requires pickling them. Only objects the user
+    supplied can make that fail: functions defined inline (lambdas, local
+    functions), open files or readers, locks and threads. An environment's
+    cached analyses are never pickled, so they are never the cause.
 
     Parameters
     ----------
-    n_workers : int | None, optional
-        Number of parallel workers being used. If provided, included in
-        example code snippets. If None, uses placeholder.
+    subject : {"environment", "overlays"}
+        What failed to pickle. It selects where to look for the object.
 
     Returns
     -------
     str
-        Formatted guidance text with numbered options for resolving
-        pickle-ability issues.
+        Numbered fixes: replace the object with plain data, render serially,
+        or use a backend that does not pickle.
 
     Examples
     --------
-    >>> guidance = _pickling_guidance(n_workers=4)
-    >>> print(guidance)  # doctest: +ELLIPSIS
-    Fix: Fix the issue using one of these approaches:
-    ...
-
-    Notes
-    -----
-    The guidance includes three main options:
-    1. Clear caches before rendering (most common fix)
-    2. Use serial rendering with n_workers=1 (slower but always works)
-    3. Use a backend that doesn't require pickling (html)
-
-    This function is internal and should not be used outside the animation
-    module.
+    >>> print(_pickling_guidance("overlays"))  # doctest: +ELLIPSIS
+    Fix: use one of these approaches:
+      1. Keep only plain data in the overlays...
     """
-    n_workers_str = str(n_workers) if n_workers is not None else "N"
-
+    if subject == "environment":
+        replace = (
+            "  1. Replace what you attached to the environment that cannot be\n"
+            "     pickled (a lambda or local function, an open file, a lock) with\n"
+            "     plain data such as numbers, strings and NumPy arrays. Look in\n"
+            "     region metadata, graph node and edge attributes, and attributes\n"
+            "     you set on the environment. Check with: pickle.dumps(env)\n\n"
+        )
+    else:
+        replace = (
+            "  1. Keep only plain data in the overlays: NumPy arrays, numbers and\n"
+            "     strings. Define functions at module level instead of lambdas or\n"
+            "     local functions, and pass file paths instead of open readers.\n"
+            "     Check with: pickle.dumps(overlay)\n\n"
+        )
     return (
-        "Fix: Fix the issue using one of these approaches:\n"
-        "  1. Clear caches before rendering (most common fix):\n"
-        "     env.clear_cache()  # Remove cached unpickleable objects\n"
-        f"     env.animate_fields(..., n_workers={n_workers_str})\n\n"
-        "  2. Use serial/single-threaded rendering (slower but always works):\n"
+        "Fix: use one of these approaches:\n"
+        f"{replace}"
+        "  2. Render serially (slower; nothing is pickled):\n"
         "     env.animate_fields(..., n_workers=1)\n\n"
-        "  3. Use a backend that doesn't require pickling:\n"
-        "     env.animate_fields(..., backend='html')  # HTML doesn't pickle"
+        "  3. Use a backend that does not pickle:\n"
+        "     env.animate_fields(..., backend='html')"
     )
 
 

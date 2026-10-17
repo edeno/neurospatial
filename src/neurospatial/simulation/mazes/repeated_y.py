@@ -34,7 +34,8 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_buffered_line, union_polygons
 
@@ -408,6 +409,7 @@ def _create_repeated_y_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
+        track_width=dims.width,
         name="repeated_y_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

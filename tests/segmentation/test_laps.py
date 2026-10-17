@@ -1,7 +1,4 @@
-"""Tests for lap detection functions.
-
-Following TDD: Tests written FIRST, then implementation.
-"""
+"""Tests for lap detection functions."""
 
 import numpy as np
 import pytest

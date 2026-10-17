@@ -43,10 +43,8 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-def _is_polar(env: object) -> bool:
-    from neurospatial.geometry._coordinates import EgocentricPolarSystem
-
-    return isinstance(getattr(env, "_coordinate_system", None), EgocentricPolarSystem)
+def _is_polar(env: Environment) -> bool:
+    return env.coordinate_kind == "polar"
 
 
 def _posterior_mean_basis(env: Environment) -> NDArray[np.float64]:

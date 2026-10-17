@@ -23,6 +23,8 @@ OPT_IN = (
     "docs/getting-started/core-concepts.md",
     "docs/user-guide/composite-environments.md",
     "docs/user-guide/environments.md",
+    "docs/user-guide/layout-engines.md",
+    "docs/user-guide/spatial-analysis.md",
     "docs/user-guide/alignment.md",
     "docs/user-guide/animation.md",
     "docs/user-guide/interoperability.md",
@@ -35,6 +37,7 @@ OPT_IN = (
     "docs/migration/v0.6.md",
     "docs/migration/environment-unified.md",
     "docs/migration/environment-geometry.md",
+    "docs/migration/environment-architecture.md",
 )
 SETUPS = {
     "docs_animation_quick_start": """import os
@@ -65,7 +68,7 @@ positions = np.array(
     [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
     dtype=float,
 )
-times = np.arange(len(positions), dtype=float)
+times = np.arange(len(positions), dtype=float) / 30.0  # 30 Hz tracking
 env = Environment.from_samples(positions, bin_size=1.0)
 result = SimpleNamespace(environment=env, regions={})
 """,

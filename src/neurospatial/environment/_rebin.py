@@ -3,85 +3,106 @@
 Factor mode retains integer truncation, native lazy faces and legacy construction
 metadata. Resolution mode rebuilds over the retained arena in its owned affine
 frame and materializes faces before transforming them. These construction paths
-remain distinct; both publish through Environment._from_binning, which validates
-and owns geometry, applies physical walls and creates fresh analysis caches.
+remain distinct. Both return a derivation, which Environment.rebin publishes
+(validating and owning geometry, applying physical walls and creating a fresh
+analysis cache), and a :class:`RebinCheck` that ``warn_rebin_losses`` applies to
+the published result to report source bins and barriers the new bins lose.
 """
 
 from __future__ import annotations
 
 import warnings
-from copy import deepcopy
-from dataclasses import replace
-from itertools import product
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
+import networkx as nx
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.geometry._arena import (
+from neurospatial.environment._publication import _Derivation
+from neurospatial.geometry import (
     Arena,
-    MaskArena,
-    TrackArena,
-    _CombinedArena,
-    _TransformedArena,
+    Binning,
+    KnownFaces,
+    NativeFaces,
+    SpatialBins,
+    apply_walls,
+    materialize_cells,
+    prepare_bins,
+    transform_binning,
 )
+from neurospatial.layout import _built_layout_data
+from neurospatial.layout.base import LayoutEngine
+from neurospatial.layout.engines.masked_grid import MaskedGridLayout
+from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
+from neurospatial.layout.helpers.utils import check_grid_size_safety
 
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import RebinConsumer
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry import CartesianSystem
 
 
-def _arena_bounds(arena: Arena) -> NDArray[np.float64]:
-    """Enclose a known domain in its coordinate frame, without inventing walls."""
-    if not arena.domain_known:
-        raise NotImplementedError(
-            "rebin(bin_size=...) requires a known arena domain; supply a mask or explicit arena."
-        )
-    if isinstance(arena, _TransformedArena):
-        limits = _arena_bounds(arena.base)
-        corners = np.array(list(product(*limits.T)))
-        mapped = corners @ arena.forward[:-1, :-1].T + arena.forward[:-1, -1]
-        return np.array([mapped.min(axis=0), mapped.max(axis=0)])
-    polygon = arena.polygonal_domain()
-    if polygon is not None:
-        return np.array([polygon.bounds[:2], polygon.bounds[2:]])
-    if isinstance(arena, MaskArena):
-        cells = np.argwhere(arena.active_mask)
-        return np.array(
-            [
-                [
-                    edge[int(low)]
-                    for edge, low in zip(arena.edges, cells.min(axis=0), strict=True)
-                ],
-                [
-                    edge[int(high) + 1]
-                    for edge, high in zip(arena.edges, cells.max(axis=0), strict=True)
-                ],
-            ]
-        )
-    if isinstance(arena, TrackArena) and arena.width is not None:
-        return np.array(
-            [
-                arena.segments.min(axis=(0, 1)) - arena.width / 2,
-                arena.segments.max(axis=(0, 1)) + arena.width / 2,
-            ]
-        )
-    if isinstance(arena, _CombinedArena):
-        children = np.array([_arena_bounds(child) for child in arena.children])
-        return np.array([children[:, 0].min(axis=0), children[:, 1].max(axis=0)])
-    raise NotImplementedError(
-        "rebin(bin_size=...) cannot bound this arena; supply supported Cartesian domain geometry."
-    )
+@dataclass(frozen=True)
+class RebinCheck:
+    """How to check rebinned bins against the source bins after publication.
+
+    Parameters
+    ----------
+    considered : ndarray of bool, shape (n_source_bins,) or None
+        Source bins whose loss is reported by this check; ``None`` checks all.
+    lost_remedy : str
+        Mode-specific advice for covering source bins without a new bin.
+    crossing_remedy : str
+        Mode-specific advice for connections that cross an arena barrier.
+    """
+
+    considered: NDArray[np.bool_] | None
+    lost_remedy: str
+    crossing_remedy: str
 
 
-def _warn_unbinned(env: RebinConsumer, lost: NDArray[np.bool_], remedy: str) -> None:
+def warn_rebin_losses(
+    binning: Binning,
+    arena: Arena,
+    rebinned: Environment[CartesianSystem],
+    check: RebinCheck,
+) -> None:
+    """Warn about source bins and arena barriers the published new bins lose.
+
+    Parameters
+    ----------
+    binning : Binning
+        The source bins.
+    arena : Arena
+        The source arena, kept by the new bins.
+    rebinned : Environment
+        The published rebinned environment.
+    check : RebinCheck
+        Which source bins to check and the advice to give.
+    """
+    lost = rebinned.bin_at(binning.bins.centers) < 0
+    if check.considered is not None:
+        lost = check.considered & lost
+    _warn_unbinned(binning, arena, lost, check.lost_remedy)
+    _warn_outline_crossings(arena, rebinned, check.crossing_remedy)
+
+
+def _warn_unbinned(
+    binning: Binning, arena: Arena, lost: NDArray[np.bool_], remedy: str
+) -> None:
     """Warn that original bins have no new bin, with their count and share.
 
     Parameters
     ----------
+    binning : Binning
+        The original bins.
+    arena : Arena
+        The original arena, kept by the new bins.
     lost : ndarray of bool, shape (n_bins,)
         Original bins whose centers map to no bin after rebinning.
     remedy : str
@@ -89,10 +110,10 @@ def _warn_unbinned(env: RebinConsumer, lost: NDArray[np.bool_], remedy: str) -> 
     """
     if not np.any(lost):
         return
-    sizes = env._binning.bins.sizes
-    n_dims = env.bin_centers.shape[1]
+    sizes = binning.bins.sizes
+    n_dims = binning.bins.n_dims
     measure = {1: "length", 2: "area"}.get(n_dims, "volume")
-    if env.arena.polygonal_domain() is not None:
+    if arena.polygonal_domain() is not None:
         remedy += (
             " For exact cells along the arena boundary, build a grid that "
             "covers the arena at the new size and clip it: "
@@ -110,7 +131,7 @@ def _warn_unbinned(env: RebinConsumer, lost: NDArray[np.bool_], remedy: str) -> 
 
 
 def _warn_outline_crossings(
-    env: RebinConsumer, rebinned: Environment, remedy: str
+    arena: Arena, rebinned: Environment[CartesianSystem], remedy: str
 ) -> None:
     """Warn when new connections join cells that touch only outside the arena.
 
@@ -123,19 +144,17 @@ def _warn_outline_crossings(
 
     Parameters
     ----------
+    arena : Arena
+        The original arena, kept by the new bins.
     rebinned : Environment
         The new environment, published with the original arena.
     remedy : str
         Mode-specific advice for resolving the barrier.
     """
-    domain = env.arena.polygonal_domain()
+    domain = arena.polygonal_domain()
     pairs = rebinned._binning.bins.pairs
     if domain is None or len(pairs) == 0:
         return
-    import shapely
-
-    from neurospatial.geometry._polygon import materialize_cells
-
     centers = rebinned.bin_centers
     shapely.prepare(domain)
     # A center link inside the arena already meets the shared face there.
@@ -179,24 +198,167 @@ def _warn_outline_crossings(
     )
 
 
-def _rebin_resolution(
-    env: RebinConsumer, bin_size: float | tuple[float, ...]
-) -> Environment:
-    """Construct new bins over the retained arena, preserving lattice frame."""
-    from neurospatial.environment.core import Environment
-    from neurospatial.geometry._binning import KnownFaces
-    from neurospatial.geometry._derive import transform_binning
-    from neurospatial.geometry._explicit import prepare_bins
-    from neurospatial.layout._construction import binning_from_layout
-    from neurospatial.layout.base import LayoutEngine
-    from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-    from neurospatial.layout.helpers.utils import check_grid_size_safety
+def _rebin(
+    binning: Binning,
+    arena: Arena,
+    connectivity: nx.Graph,
+    layout_parameters: Mapping[str, Any],
+    *,
+    factor: int | tuple[int, ...] | None,
+    bin_size: float | tuple[float, ...] | None,
+) -> tuple[_Derivation, RebinCheck]:
+    """Build the new bins for ``Environment.rebin`` and the check to run on them.
 
-    spec = env._binning.grid_spec
-    if spec is None:
+    Exactly one of ``factor`` (integer coarsening of a rectangular grid) and
+    ``bin_size`` (a new physical bin size over the retained arena) is given.
+    Unsupported bins are refused before any bins are built.
+
+    Returns
+    -------
+    derivation : _Derivation
+        The new bins, to publish as a derivation of the source environment.
+    check : RebinCheck
+        Which source bins to check for loss once the new bins are published.
+    """
+    if (factor is None) == (bin_size is None):
+        raise ValueError("Pass exactly one of factor or bin_size to rebin().")
+    refuse_unsupported_rebin(
+        binning, arena, layout_parameters, factor=factor, bin_size=bin_size
+    )
+    if bin_size is not None:
+        return _rebin_resolution(binning, arena, bin_size)
+    assert factor is not None
+    return _rebin_factor(binning, connectivity, arena, factor)
+
+
+def refuse_unsupported_rebin(
+    binning: Binning,
+    arena: Arena,
+    layout_parameters: Mapping[str, Any],
+    *,
+    factor: object,
+    bin_size: object,
+) -> None:
+    """Refuse a rebin these bins cannot take, with a call that works on them.
+
+    Factor rebinning merges whole cells of a rectangular grid; size rebinning
+    redraws a grid from its recorded lattice. Bins without either get advice
+    for their own kind: the factory that rebuilds them at the new size, or
+    ``env.smooth`` for a coarser scale.
+    """
+    call = "rebin(bin_size=...)" if bin_size is not None else "rebin(factor)"
+    needs_lattice = bin_size is not None
+    if (binning.grid_spec if needs_lattice else binning.rectilinear) is not None:
+        return
+    size = _requested_size(layout_parameters, binning, factor, bin_size)
+    if not needs_lattice and binning.grid_spec is not None:
+        # A clipped grid keeps its lattice but not whole rectangular cells.
+        target = f"env.rebin(bin_size={size:g})" if size else "env.rebin(bin_size=...)"
         raise NotImplementedError(
-            "rebin(bin_size=...) needs a supported stored binning specification. Recreate a rectangular grid with a factory or supply GridBinningSpec in from_bins; a layout name or provenance is insufficient."
+            _format_error(
+                "rebin(factor) merges blocks of whole grid cells, and clipping "
+                "cut these cells to the arena outline.",
+                why="Why: a cut cell cannot be merged with its neighbors into "
+                "a larger rectangle.",
+                fix=f"give the new cell size instead, which redraws the grid "
+                f"and cuts it to the same outline: {target}",
+            )
         )
+    if needs_lattice and binning.rectilinear is not None:
+        raise NotImplementedError(
+            _format_error(
+                "rebin(bin_size=...) redraws a grid from its origin and cell "
+                "size, which these rectangular bins do not record.",
+                why="Why: bins built with from_bins without a grid "
+                "specification carry their cells but not the lattice they "
+                "came from, so a new lattice cannot be aligned to it.",
+                fix="merge whole cells with a factor instead: env.rebin(2)",
+            )
+        )
+    rebuild = _rebuild_call(binning, arena, size)
+    smooth = (
+        f"; or smooth fields at that scale instead: env.smooth(field, "
+        f"bandwidth={size:g})"
+        if size
+        else ""
+    )
+    raise NotImplementedError(
+        _format_error(
+            f"{call} works on rectangular grids, and these {binning.kind!r} bins "
+            "have no grid edges.",
+            why="Why: rebinning merges or redraws the cells of a rectangular "
+            "grid. Hexagons, track segments and mesh triangles do not tile "
+            "into larger cells of the same shape.",
+            fix=f"{rebuild}{smooth}",
+        )
+    )
+
+
+# The recorded build option that sets the cell size of each native kind.
+_SIZE_OPTION = {
+    "Hexagonal": "hexagon_width",
+    "Graph": "bin_size",
+    "TriangularMesh": "point_spacing",
+}
+
+
+def _requested_size(
+    layout_parameters: Mapping[str, Any],
+    binning: Binning,
+    factor: object,
+    bin_size: object,
+) -> float | None:
+    """The new cell size the call asks for, when it is one known number."""
+    if bin_size is not None:
+        sizes = np.ravel(np.asarray(bin_size, dtype=float))
+        return float(sizes[0]) if sizes.size and np.all(sizes == sizes[0]) else None
+    factors = np.ravel(np.asarray(factor, dtype=float))
+    current = layout_parameters.get(_SIZE_OPTION.get(str(binning.kind), "bin_size"))
+    if (
+        isinstance(current, (int, float))
+        and factors.size
+        and np.all(factors == factors[0])
+    ):
+        return float(current) * float(factors[0])
+    return None
+
+
+def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
+    """Advice that rebuilds bins of this kind at ``size``, as code when known."""
+    new = f"{size:g}" if size else "..."
+    linearization = binning.linearization
+    if linearization is not None:
+        width = getattr(arena, "width", None)
+        track_width = "" if width is None else f", track_width={float(width):g}"
+        spacing = linearization.edge_spacing
+        return (
+            "build the track again at the new bin size: "
+            "Environment.from_graph(env.binning.linearization.graph, "
+            "list(env.binning.linearization.edge_order), "
+            f"bin_size={new}, edge_spacing={spacing!r}{track_width})"
+        )
+    if binning.kind == "Hexagonal":
+        return (
+            "build the hexagons again from the positions you built them from: "
+            f"Environment.from_samples(positions, bin_size={new}, "
+            "layout='Hexagonal')"
+        )
+    if binning.kind == "TriangularMesh" and arena.polygonal_domain() is not None:
+        return (
+            "build the mesh again at the new spacing: from neurospatial.layout "
+            "import create_layout; Environment.from_layout(create_layout("
+            "'TriangularMesh', boundary_polygon=env.arena.polygonal_domain(), "
+            f"point_spacing={new}))"
+        )
+    return "build the bins again at the new size with the factory or layout engine that made them"
+
+
+def _rebin_resolution(
+    binning: Binning, arena: Arena, bin_size: float | tuple[float, ...]
+) -> tuple[_Derivation, RebinCheck]:
+    """Construct new bins over the retained arena, preserving lattice frame."""
+    spec = binning.grid_spec
+    assert spec is not None  # refuse_unsupported_rebin refuses bins without one
     dims = len(spec.origin)
     raw = np.asarray(bin_size)
     if raw.dtype.kind not in "iuf" or raw.ndim > 1:
@@ -217,10 +379,18 @@ def _rebin_resolution(
         )
     # Bound the domain in lattice coordinates. A conservative box is sufficient:
     # every candidate center is subsequently checked against the actual arena.
-    local_arena = env.arena.transformed(
+    local_arena = arena.transformed(
         np.asarray(np.linalg.inv(spec.forward), dtype=np.float64)
     )
-    limits = _arena_bounds(local_arena)
+    if not local_arena.domain_known:
+        raise NotImplementedError(
+            "rebin(bin_size=...) requires a known arena domain; supply a mask or explicit arena."
+        )
+    limits = local_arena.domain_bounds()
+    if limits is None:
+        raise NotImplementedError(
+            "rebin(bin_size=...) cannot bound this arena; supply supported Cartesian domain geometry."
+        )
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         low = np.floor((limits[0] - spec.origin) / spacing)
         high = np.ceil((limits[1] - spec.origin) / spacing)
@@ -252,13 +422,11 @@ def _rebin_resolution(
         [axis.ravel() for axis in np.meshgrid(*axes, indexing="ij")]
     )
     mapped = centers @ spec.forward[:-1, :-1].T + spec.forward[:-1, -1]
-    domain = env.arena.polygonal_domain()
+    domain = arena.polygonal_domain()
     if domain is not None:
-        from shapely import contains_xy
-
-        keep = contains_xy(domain, mapped[:, 0], mapped[:, 1])
+        keep = shapely.contains_xy(domain, mapped[:, 0], mapped[:, 1])
     else:
-        keep = env.arena.contains(mapped)
+        keep = arena.contains(mapped)
     if not np.any(keep):
         raise ValueError(
             "Rebinning retains no bin center inside the original arena; use a smaller bin_size."
@@ -269,59 +437,36 @@ def _rebin_resolution(
         grid_edges=edges,
         connect_diagonal_neighbors=spec.connect_diagonal,
     )
-    assert layout.connectivity is not None
-    binning = binning_from_layout(cast("LayoutEngine", layout), layout.connectivity)
-    binning = replace(
-        binning,
-        kind="RegularGrid",
-        faces=KnownFaces(binning.faces.build()),
+    grid = layout.binning()
+    # The new bins keep the source's layout label.
+    grid = replace(
+        grid,
+        kind=binning.kind,
+        faces=KnownFaces(grid.faces.build()),
         grid_spec=None,
     )
     if not np.array_equal(spec.forward, np.eye(dims + 1)):
-        binning = transform_binning(binning, SimpleNamespace(A=spec.forward))
-    binning = replace(binning, grid_spec=spec)
+        grid = transform_binning(grid, SimpleNamespace(A=spec.forward))
+    grid = replace(grid, grid_spec=spec)
     # This native construction deliberately lets the arena remove new wall-
     # crossing connections. Public from_bins must preserve supplied topology.
-    snapshot, graph, ranges, category = prepare_bins(binning)
-    rebinned = Environment._from_binning(
-        snapshot,
-        connectivity=graph,
-        dimension_ranges=ranges,
-        layout_type_tag=snapshot.kind,
-        layout_type=category,
-        build_params={},
-        is_linearized_track=snapshot.linearization is not None,
-        name=f"{env.name}_rebinned" if env.name else "",
-        units=env.units,
-        frame=env.frame,
-        regions=env.regions,
-        arena=env.arena,
-    )
-    _warn_unbinned(
-        env,
-        rebinned.bin_at(env.bin_centers) < 0,
+    choices = {
+        "bin_size": tuple(float(size) for size in sizes),
+        "connect_diagonal_neighbors": spec.connect_diagonal,
+    }
+    derivation = _Derivation(prepare_bins(grid), "rebin", build_params=choices)
+    return derivation, RebinCheck(
+        None,
         "Use a smaller bin_size, or one that puts cell edges on the arena "
         "boundary, such as a divisor of a rectangular arena's side lengths.",
+        "Use a bin_size smaller than the barrier's width.",
     )
-    _warn_outline_crossings(
-        env, rebinned, "Use a bin_size smaller than the barrier's width."
-    )
-    return rebinned
 
 
 def _require_native_grid_navigation(
     binning: Binning, arena: Arena, *, connect_diagonal: bool
 ) -> None:
     """Require the native grid paths that factor rebinning knows how to rebuild."""
-    from dataclasses import replace
-
-    from neurospatial.environment._arena import apply_walls
-    from neurospatial.geometry._binning import SpatialBins
-    from neurospatial.geometry._native_faces import NativeFaces
-    from neurospatial.layout.helpers.regular_grid import (
-        _create_regular_grid_connectivity_graph,
-    )
-
     bins = binning.bins
     direct_distances = np.hypot.reduce(
         bins.centers[bins.pairs[:, 1]] - bins.centers[bins.pairs[:, 0]], axis=1
@@ -341,17 +486,21 @@ def _require_native_grid_navigation(
 
     grid = binning.rectilinear
     assert grid is not None
-    # Only adjacency is needed from this builder. Grid indices avoid computing
-    # unused physical edge lengths at potentially extreme coordinate scales.
-    indices = np.column_stack(
-        np.unravel_index(np.arange(grid.active_mask.size), grid.shape)
-    ).astype(np.float64)
-    graph = _create_regular_grid_connectivity_graph(
-        indices,
-        grid.active_mask,
-        grid.shape,
-        connect_diagonal=connect_diagonal,
+    # Only adjacency is needed from this grid. Unit cells in index coordinates
+    # avoid computing unused physical edge lengths at extreme coordinate scales.
+    index_centers = (
+        np.column_stack(
+            np.unravel_index(np.arange(grid.active_mask.size), grid.shape)
+        ).astype(np.float64)
+        + 0.5
     )
+    graph = regular_grid_from_cells(
+        tuple(np.arange(n + 1, dtype=np.float64) for n in grid.shape),
+        grid.active_mask,
+        index_centers,
+        connect_diagonal_neighbors=connect_diagonal,
+    ).connectivity
+    assert graph is not None
     pairs = np.asarray(list(graph.edges()), dtype=np.intp).reshape(-1, 2)
     candidate_bins = SpatialBins(
         bins.centers,
@@ -372,22 +521,22 @@ def _require_native_grid_navigation(
         ),
         face_normals=None,
     )
-    candidate, _ = apply_walls(candidate, graph, arena)
+    candidate = apply_walls(candidate, arena)
     expected_pairs = {frozenset(pair) for pair in candidate.bins.pairs}
     if expected_pairs != {frozenset(pair) for pair in bins.pairs}:
         raise NotImplementedError(message)
 
 
 def _rebin_factor(
-    env: RebinConsumer,
+    binning: Binning,
+    connectivity: nx.Graph,
+    arena: Arena,
     factor: int | tuple[int, ...],
-) -> Environment:
+) -> tuple[_Derivation, RebinCheck]:
     """Coarsen a regular grid by an integer factor."""
-    from neurospatial.layout.engines.regular_grid import RegularGridLayout
-
     # --- Input validation ---
 
-    grid = env._binning.rectilinear
+    grid = binning.rectilinear
     if (
         grid is None
         or any(
@@ -396,77 +545,106 @@ def _rebin_factor(
             for edge in grid.edges
         )
         or not np.allclose(
-            env._binning.bins.sizes,
+            binning.bins.sizes,
             np.prod([edge[1] - edge[0] for edge in grid.edges]),
             rtol=64 * np.finfo(np.float64).eps,
             atol=0.0,
         )
     ):
+        assert grid is not None  # refuse_unsupported_rebin refuses bins without one
         raise NotImplementedError(
-            "rebin() requires a uniform rectilinear grid; descriptive layout "
-            "names cannot establish cell geometry. Supply uniform grid data "
-            "or use subset() for spatial cropping."
+            _format_error(
+                "rebin(factor) merges blocks of equal cells, but this grid's "
+                "cells are not all the same size.",
+                why="Why: merging unequal cells would give coarse bins of "
+                "different sizes, so occupancy and rates per bin would not be "
+                "comparable.",
+                fix="build the grid again with even cells at the coarser size, "
+                "for example with Environment.from_grid_mask and its "
+                "grid_edges",
+            )
         )
 
     # Parse factor
-    # Cast to RegularGridLayout to access grid-specific attributes
     grid_shape = grid.shape
     grid_edges = grid.edges
-
-    # Validate grid attributes (RegularGridLayout always has these)
-    if grid_shape is None:
-        raise RuntimeError(
-            "RegularGridLayout missing grid_shape. "
-            "This is an internal error - please report this bug."
-        )
-    if grid_edges is None:
-        raise RuntimeError(
-            "RegularGridLayout missing grid_edges. "
-            "This is an internal error - please report this bug."
-        )
-
     n_dims = len(grid_shape)
 
-    factor_tuple = (factor,) * n_dims if isinstance(factor, int) else tuple(factor)
+    requested: tuple[object, ...] = (
+        (factor,) * n_dims if np.ndim(factor) == 0 else tuple(cast("Any", factor))
+    )
 
     # Validate factor dimensions
-    if len(factor_tuple) != n_dims:
+    if len(requested) != n_dims:
         raise ValueError(
-            f"factor has {len(factor_tuple)} elements but environment has "
-            f"{n_dims} dimensions. factor must be int or tuple matching "
-            "environment dimensionality."
+            _format_error(
+                f"rebin(factor={factor!r}) gives {len(requested)} factors for a "
+                f"{n_dims}-D grid.",
+                why="Why: a tuple gives one merge factor per grid axis.",
+                fix=f"pass one integer for every axis, such as env.rebin(2), or "
+                f"{n_dims} integers, such as env.rebin({(2,) * n_dims})",
+            )
         )
 
-    # Validate factor values
+    # A factor merges blocks of whole cells, so it must be an integer.
+    if any(
+        isinstance(f, (bool, np.bool_)) or not isinstance(f, (int, np.integer))
+        for f in requested
+    ):
+        try:
+            values = [float(cast("Any", f)) for f in requested]
+        except (TypeError, ValueError):
+            values = []
+        widths = [float(edges[1] - edges[0]) for edges in grid_edges]
+        sizes = [f"{w * v:.3g}" for w, v in zip(widths, values, strict=False)]
+        target = (
+            "..."
+            if len(sizes) != n_dims
+            else sizes[0]
+            if len(set(sizes)) == 1
+            else f"({', '.join(sizes)})"
+        )
+        merged = [max(1, round(v)) for v in values] or [2]
+        whole = merged[0] if len(set(merged)) == 1 else tuple(merged)
+        integral = bool(values) and all(v == round(v) for v in values)
+        raise ValueError(
+            _format_error(
+                f"rebin(factor={factor!r}) takes integer factors, the number of "
+                "cells to merge along each axis"
+                + (", got a float." if integral else "."),
+                why="Why: factor coarsens the grid by merging blocks of whole "
+                "cells, so a fractional factor would split cells.",
+                fix=f"pass an integer, such as env.rebin({whole}), or give the "
+                f"new cell size in physical units, such as "
+                f"env.rebin(bin_size={target})",
+            )
+        )
+    factor_tuple = tuple(int(cast("int", f)) for f in requested)
     for i, f in enumerate(factor_tuple):
-        if not isinstance(f, (int, np.integer)):
+        if f <= 0 or f > grid_shape[i]:
             raise ValueError(
-                f"factor[{i}] = {f} must be an integer, got {type(f).__name__}"
-            )
-        if f <= 0:
-            raise ValueError(
-                f"factor[{i}] = {f} must be positive. "
-                "Coarsening factor must be at least 1."
-            )
-        if f > grid_shape[i]:
-            raise ValueError(
-                f"factor[{i}] = {f} is too large for grid shape {grid_shape}. "
-                f"Dimension {i} has only {grid_shape[i]} bins."
+                _format_error(
+                    f"rebin(factor={factor!r}) asks to merge {f} cells along "
+                    f"axis {i}, which has {grid_shape[i]}.",
+                    why="Why: a factor is the number of cells merged into one, "
+                    "so it is at least 1 and at most the cells along that axis.",
+                    fix=f"pass a factor from 1 to {grid_shape[i]}, such as "
+                    f"env.rebin({min(2, min(grid_shape))})",
+                )
             )
 
     # The stored choice governs future bins even if a sparse source currently
     # contains no diagonal edges. Legacy grids infer it from their actual edges.
+    source_centers = binning.bins.centers
     connect_diagonal = (
-        env._binning.grid_spec.connect_diagonal
-        if env._binning.grid_spec is not None
+        binning.grid_spec.connect_diagonal
+        if binning.grid_spec is not None
         else any(
-            np.count_nonzero(env.bin_centers[u] != env.bin_centers[v]) > 1
-            for u, v in env.connectivity.edges()
+            np.count_nonzero(source_centers[u] != source_centers[v]) > 1
+            for u, v in connectivity.edges()
         )
     )
-    _require_native_grid_navigation(
-        env._binning, env.arena, connect_diagonal=connect_diagonal
-    )
+    _require_native_grid_navigation(binning, arena, connect_diagonal=connect_diagonal)
 
     # Check for non-divisible dimensions
     truncated_shape = tuple(
@@ -484,8 +662,6 @@ def _rebin_factor(
     # --- Compute new grid parameters ---
 
     # Truncate grid edges if needed
-    # grid_edges was already asserted non-None above but mypy needs reminder
-    assert grid_edges is not None
     truncated_edges = []
     for edges, trunc_size in zip(grid_edges, truncated_shape, strict=True):
         # Keep edges up to truncated_size + 1 (edges define bins)
@@ -526,76 +702,44 @@ def _rebin_factor(
     # closed containment keeps a coarse cell centered on the domain boundary,
     # such as the corner beside a missing fine cell, in every dimension.
     keep = np.ones(len(coarse_bin_centers), dtype=bool)
-    if env.arena.domain_known:
-        keep = env.arena.contains(coarse_bin_centers)
+    if arena.domain_known:
+        keep = arena.contains(coarse_bin_centers)
         if not np.any(keep):
             raise ValueError(
                 "Rebinning retains no coarse bin center inside the original arena. "
                 "Use a smaller factor or rebuild a grid with centers in the domain."
             )
 
-    # --- Build new connectivity graph ---
+    # --- Build the coarse grid and publish it ---
 
-    # Create new layout
-    from neurospatial.layout.helpers.regular_grid import (
-        _create_regular_grid_connectivity_graph,
+    # Connect only eligible coarse cells. The coarse grid keeps the source's
+    # binning specification, when it has one, for later re-binning.
+    layout = regular_grid_from_cells(
+        coarse_edges,
+        keep.reshape(coarse_shape),
+        coarse_bin_centers,
+        connect_diagonal_neighbors=connect_diagonal,
+        grid_spec=binning.grid_spec,
     )
-
-    # Build connectivity only between eligible coarse cells.
-    active_mask_coarse = keep.reshape(coarse_shape)
-
-    coarse_connectivity = _create_regular_grid_connectivity_graph(
-        full_grid_bin_centers=coarse_bin_centers,
-        active_mask_nd=active_mask_coarse,
-        grid_shape=coarse_shape,
-        connect_diagonal=connect_diagonal,
-    )
-
-    # --- Create new Environment ---
-
-    # Create new layout instance
-    new_layout = RegularGridLayout()
-    new_layout._grid_spec = env._binning.grid_spec
-    new_layout.bin_centers = coarse_bin_centers[keep]
-    new_layout.connectivity = coarse_connectivity
-    new_layout.dimension_ranges = tuple((edges[0], edges[-1]) for edges in coarse_edges)
-    new_layout.grid_edges = coarse_edges
-    new_layout.grid_shape = coarse_shape
-    new_layout.active_mask = active_mask_coarse
-    new_layout._layout_type_tag = "RegularGrid"
-    new_layout._build_params_used = {
-        "bin_size": tuple(
-            (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
-        ),
-        "dimension_ranges": new_layout.dimension_ranges,
-        "connect_diagonal_neighbors": connect_diagonal,
-    }
-
-    # Create new environment - cast to Environment class for proper type checking
-    from neurospatial.layout.base import LayoutEngine
-
-    env_cls = cast("type[Environment]", env.__class__)
-    coarse_env = env_cls._from_built_layout(
-        cast("LayoutEngine", new_layout),
-        name=f"{env.name}_rebinned" if env.name else "",
-        layout_type_used="RegularGrid",
-        layout_params_used=new_layout._build_params_used,
-        regions=deepcopy(env.regions),
-        arena=env.arena,
-        units=env.units,
-        frame=env.frame,
+    coarse, _ = _built_layout_data(cast("LayoutEngine", layout))
+    derivation = _Derivation(
+        # The coarse bins keep the source's layout label.
+        replace(coarse, kind=binning.kind),
+        "rebin",
+        build_params={
+            "bin_size": tuple(
+                (edges[-1] - edges[0]) / (len(edges) - 1) for edges in coarse_edges
+            ),
+            "connect_diagonal_neighbors": connect_diagonal,
+        },
     )
 
     # Bins beyond the truncated extent are already reported above.
     within = np.all(
-        env.bin_centers < np.array([edges[-1] for edges in coarse_edges]), axis=1
+        source_centers < np.array([edges[-1] for edges in coarse_edges]), axis=1
     )
-    _warn_unbinned(
-        env,
-        within & (coarse_env.bin_at(env.bin_centers) < 0),
+    return derivation, RebinCheck(
+        within,
         "Use a smaller factor.",
+        "Use a factor whose bins are narrower than the barrier.",
     )
-    _warn_outline_crossings(
-        env, coarse_env, "Use a factor whose bins are narrower than the barrier."
-    )
-    return coarse_env

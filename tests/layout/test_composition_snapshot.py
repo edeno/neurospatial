@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import KnownFaces
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._composition import CombinedLocator
@@ -24,7 +25,9 @@ def snapshot():
     return CombinedLocator(
         ("left", "right"),
         tuple(
-            replace(env._binning, faces=KnownFaces(env._face_geometry))
+            replace(
+                env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
+            )
             for env in children
         ),
         tuple(env.arena for env in children),
@@ -74,9 +77,10 @@ def test_malformed_composition_refuses(change):
 
 
 def test_combined_snapshot_publishes_and_round_trips(tmp_path):
-    from neurospatial.arena import _CombinedArena
     from neurospatial.binning import Binning, MissingFaces
-    from neurospatial.geometry._polygon import PolygonCells, cells_from_locator
+    from neurospatial.geometry._arena import _CombinedArena
+    from neurospatial.geometry._polygon import cells_from_locator
+    from neurospatial.geometry._polygon_cells import PolygonCells
     from neurospatial.testing import assert_environment_contract
 
     source = snapshot()
@@ -132,7 +136,7 @@ def test_nested_child_faces_cannot_disagree_with_child_measures():
 
 
 def test_nested_arena_depth_is_bounded():
-    from neurospatial.arena import decode_arena
+    from neurospatial.geometry._codecs import decode_arena
 
     meta = {
         "codec": "UnknownArena",
@@ -153,7 +157,9 @@ def test_mutated_nested_face_array_is_revalidated():
         np.ones((2, 1, 1), dtype=bool),
         grid_edges=(np.arange(3.0), np.arange(2.0), np.arange(2.0)),
     )
-    child = replace(env._binning, faces=KnownFaces(env._face_geometry))
+    child = replace(
+        env._binning, faces=KnownFaces(face_geometry(env._cache, env._binning))
+    )
     child.faces.faces.A.setflags(write=True)
     child.faces.faces.A[:] = -1
     combined = CombinedLocator(

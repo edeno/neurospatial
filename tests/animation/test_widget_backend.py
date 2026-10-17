@@ -453,45 +453,6 @@ def test_render_widget_jslink_called(sample_env, sample_fields):
     mock_jslink.assert_called_once()
 
 
-def test_render_widget_graceful_extra_parameters(sample_env, sample_fields):
-    """Test widget accepts extra parameters gracefully (backend compatibility)."""
-    from neurospatial.animation.backends.widget_backend import render_widget
-
-    # Mock dependencies
-    mock_ipywidgets = MagicMock()
-    mock_ipywidgets.IntSlider = MockIntSlider
-    mock_ipywidgets.Play = MockPlay
-    mock_ipywidgets.HBox = MockHBox
-    mock_ipywidgets.VBox = MockVBox
-    mock_ipywidgets.interactive_output = Mock(return_value="output")
-    mock_ipywidgets.jslink = Mock()
-
-    mock_display = Mock()
-
-    with (
-        patch(
-            "neurospatial.animation.backends.widget_backend.IPYWIDGETS_AVAILABLE", True
-        ),
-        patch(
-            "neurospatial.animation.backends.widget_backend.ipywidgets", mock_ipywidgets
-        ),
-        patch("neurospatial.animation.backends.widget_backend.display", mock_display),
-        patch("builtins.print"),
-    ):
-        # Pass parameters meant for other backends
-        result = render_widget(
-            sample_env,
-            sample_fields,
-            title="Test Title",  # Used by napari
-            codec="h264",  # Used by video backend
-            n_workers=4,  # Used by video backend
-            max_html_frames=100,  # Used by HTML backend
-        )
-
-    # Should not raise error
-    assert result is None
-
-
 # ============================================================================
 # Test Frame Caching Logic
 # ============================================================================

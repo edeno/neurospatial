@@ -10,12 +10,16 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from shapely import Polygon
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._components import TriangleShapes
+from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.io import from_dict, to_dict
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, estimate_transform
 
 _CARTESIAN_CASES = [
@@ -64,13 +68,13 @@ class TestCartesianDerivedGeometry:
     def test_subset_keeps_sizes_and_faces(self, built_environment):
         parent = built_environment
         keep = _keep_bins(parent)
-        child = parent.subset(bins=keep)
+        child = parent.subset(mask=keep)
         np.testing.assert_array_equal(child.bin_sizes, parent.bin_sizes[keep])
         child_of = np.full(parent.n_bins, -1, dtype=np.intp)
         child_of[keep] = np.arange(keep.sum())
-        faces = parent._face_geometry
+        faces = face_geometry(parent._cache, parent._binning)
         selected = keep[faces.edges].all(axis=1)
-        actual = child._face_geometry
+        actual = face_geometry(child._cache, child._binning)
         np.testing.assert_array_equal(actual.edges, child_of[faces.edges[selected]])
         np.testing.assert_array_equal(actual.A, faces.A[selected])
         np.testing.assert_array_equal(actual.distance, faces.distance[selected])
@@ -82,7 +86,7 @@ class TestCartesianDerivedGeometry:
     def test_subset_lookup_uses_parent_bin_ownership(self, built_environment):
         parent = built_environment
         keep = _keep_bins(parent)
-        child = parent.subset(bins=keep)
+        child = parent.subset(mask=keep)
         points = np.vstack((_queries(parent), [[np.nan, 0.0], [np.inf, 0.0]]))
         child_of = np.full(parent.n_bins, -1, dtype=np.intp)
         child_of[keep] = np.arange(keep.sum())
@@ -106,8 +110,8 @@ class TestCartesianDerivedGeometry:
         field = np.sin(np.arange(parent.n_bins))
         for mode in ("average", "transition", "density"):
             np.testing.assert_allclose(
-                child.smooth(field, 2.0, mode=mode),
-                parent.smooth(field, 2.0, mode=mode),
+                child.smooth(field, bandwidth=2.0, mode=mode),
+                parent.smooth(field, bandwidth=2.0, mode=mode),
                 rtol=1e-12,
                 atol=1e-12,
             )
@@ -140,16 +144,16 @@ class TestCartesianDerivedGeometry:
         keep = _keep_bins(parent)
         actual = (
             parent.apply_transform(transform)
-            .subset(bins=keep)
+            .subset(mask=keep)
             .apply_transform(transform.inverse())
         )
-        expected = parent.subset(bins=keep)
+        expected = parent.subset(mask=keep)
         points = parent.bin_centers
         np.testing.assert_array_equal(actual.bin_at(points), expected.bin_at(points))
         field = np.sin(np.arange(expected.n_bins))
         np.testing.assert_allclose(
-            actual.smooth(field, 2.0),
-            expected.smooth(field, 2.0),
+            actual.smooth(field, bandwidth=2.0),
+            expected.smooth(field, bandwidth=2.0),
             rtol=1e-10,
             atol=1e-12,
         )
@@ -158,7 +162,7 @@ class TestCartesianDerivedGeometry:
 @pytest.mark.parametrize("built_environment", ["grid8", "grid4"], indirect=True)
 def test_grid_subset_equals_mask_build(built_environment):
     parent = built_environment
-    child = parent.subset(bins=_keep_bins(parent))
+    child = parent.subset(mask=_keep_bins(parent))
     diagonal = any(
         np.count_nonzero(parent.bin_centers[u] != parent.bin_centers[v]) > 1
         for u, v in parent.connectivity.edges
@@ -169,9 +173,11 @@ def test_grid_subset_equals_mask_build(built_environment):
         connect_diagonal_neighbors=diagonal,
     )
     field = np.sin(np.arange(child.n_bins))
-    np.testing.assert_array_equal(child.smooth(field, 2.0), expected.smooth(field, 2.0))
     np.testing.assert_array_equal(
-        child.compute_kernel(2.0), expected.compute_kernel(2.0)
+        child.smooth(field, bandwidth=2.0), expected.smooth(field, bandwidth=2.0)
+    )
+    np.testing.assert_array_equal(
+        child.compute_kernel(bandwidth=2.0), expected.compute_kernel(bandwidth=2.0)
     )
     points = _queries(parent)
     np.testing.assert_array_equal(
@@ -240,11 +246,11 @@ def test_similarity_scales_smoothing(built_environment, angle, scale, offset):
     child = parent.apply_transform(transform)
     field = np.sin(np.arange(parent.n_bins)) + 2.0
     for mode in ("average", "transition", "density"):
-        expected = parent.smooth(field, 2.0, mode=mode)
+        expected = parent.smooth(field, bandwidth=2.0, mode=mode)
         if mode == "density":
             expected = expected / scale**parent._binning.bins.measure_dim
         np.testing.assert_allclose(
-            child.smooth(field, scale * 2.0, mode=mode),
+            child.smooth(field, bandwidth=scale * 2.0, mode=mode),
             expected,
             rtol=1e-10,
             atol=1e-11,
@@ -271,7 +277,10 @@ def test_axis_scaling_grid_equals_scaled_build(built_environment):
     )
     field = np.sin(np.arange(parent.n_bins))
     np.testing.assert_allclose(
-        child.smooth(field, 2.0), expected.smooth(field, 2.0), rtol=1e-12, atol=1e-12
+        child.smooth(field, bandwidth=2.0),
+        expected.smooth(field, bandwidth=2.0),
+        rtol=1e-12,
+        atol=1e-12,
     )
 
 
@@ -281,7 +290,7 @@ def test_axis_scaling_non_grid_refuses_smoothing(built_environment):
     transform = _affine(np.diag([2.0, 0.5]))
     child = parent.apply_transform(transform)
     with pytest.raises(NotImplementedError) as caught:
-        child.smooth(np.ones(child.n_bins), 2.0)
+        child.smooth(np.ones(child.n_bins), bandwidth=2.0)
     text = str(caught.value).lower()
     assert "axis" in text
     assert "right angle" in text
@@ -298,7 +307,7 @@ def test_shear_refuses_smoothing_and_scales_measures(built_environment):
     child = parent.apply_transform(transform)
     np.testing.assert_allclose(child.bin_sizes, parent.bin_sizes * 2.0)
     with pytest.raises(NotImplementedError) as caught:
-        child.smooth(np.ones(child.n_bins), 2.0)
+        child.smooth(np.ones(child.n_bins), bandwidth=2.0)
     text = str(caught.value).lower()
     assert "shear" in text or "affine" in text
     assert "right angle" in text
@@ -366,7 +375,9 @@ def test_noisy_landmark_similarity_fit_smooths_like_source(built_environment):
     field = np.sin(np.arange(parent.n_bins)) + 2.0
     # The same physical bandwidth, expressed in room units, smooths identically.
     np.testing.assert_allclose(
-        child.smooth(field, 2.0 * scale), parent.smooth(field, 2.0), rtol=1e-10
+        child.smooth(field, bandwidth=2.0 * scale),
+        parent.smooth(field, bandwidth=2.0),
+        rtol=1e-10,
     )
 
 
@@ -381,7 +392,7 @@ def test_noisy_landmark_affine_fit_refusal_reports_distortion_and_fix(
     singular = np.linalg.svd(transform.A[:2, :2], compute_uv=False)
     child = built_environment.apply_transform(transform)
     with pytest.raises(NotImplementedError) as caught:
-        child.smooth(np.ones(child.n_bins), 2.0)
+        child.smooth(np.ones(child.n_bins), bandwidth=2.0)
     message = str(caught.value)
     assert f"{100 * (singular[0] / singular[-1] - 1):.3g}%" in message
     assert "bandwidth" in message
@@ -394,15 +405,17 @@ def test_noisy_landmark_affine_fit_refusal_reports_distortion_and_fix(
 def test_hexagonal_subset_boundary_matches_native_support(built_environment):
     parent = built_environment
     keep = _keep_bins(parent)
-    child = parent.subset(bins=keep)
+    child = parent.subset(mask=keep)
     expected = Environment.from_layout(
-        "Hexagonal",
-        {
-            **parent.layout_parameters,
-            "positions": parent.bin_centers[keep],
-            "infer_active_bins": True,
-            "bin_count_threshold": 0,
-        },
+        create_layout(
+            "Hexagonal",
+            **{
+                **parent.layout_parameters,
+                "positions": parent.bin_centers[keep],
+                "infer_active_bins": True,
+                "bin_count_threshold": 0,
+            },
+        )
     )
     np.testing.assert_array_equal(expected.bin_centers, child.bin_centers)
     np.testing.assert_array_equal(child.boundary_bins, expected.boundary_bins)
@@ -410,9 +423,103 @@ def test_hexagonal_subset_boundary_matches_native_support(built_environment):
     np.testing.assert_array_equal(translated.boundary_bins, expected.boundary_bins)
 
 
+def _small_cell_environment(kind):
+    hexagonal = Environment.from_samples(
+        np.array([[0.0, 0.0], [4.0, 4.0]]),
+        bin_size=1.0,
+        layout="hexagonal",
+        infer_active_bins=False,
+    )
+    if kind == "hex":
+        return hexagonal
+    if kind == "hex_clipped":
+        return hexagonal.clip(Polygon([(0.3, 0.2), (3.7, 0.2), (3.7, 3.1), (0.3, 3.1)]))
+    if kind == "grid_clipped":
+        grid = Environment.from_grid_mask(
+            np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+        )
+        return grid.clip(Polygon([(0.2, 0.1), (2.9, 0.3), (1.4, 2.8)]))
+    if kind == "polygon":
+        return Environment.from_polygon(
+            Polygon([(0, 0), (6, 0), (6, 4), (3, 6), (0, 4)]), bin_size=1.0
+        )
+    return Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon([(0, 0), (6, 0), (6, 6), (0, 6)]),
+            point_spacing=1.5,
+        )
+    )
+
+
+# Each chain once failed the cell check of exact polygon cells (clipped cells
+# and reflected hexagons) by floating-point roundoff far below a cell's size.
+@pytest.mark.parametrize(
+    "angle,scale,reflect",
+    [
+        (-2.0965322377907283, 0.25, True),
+        (0.8605556614246863, 0.5, False),
+        (2.245637299378165, 4.0, True),
+        (-0.08899906526957396, 0.25, True),
+    ],
+)
+@pytest.mark.parametrize(
+    "kind", ["hex", "hex_clipped", "grid_clipped", "polygon", "mesh"]
+)
+def test_cells_survive_a_similarity_and_its_inverse(kind, angle, scale, reflect):
+    env = _small_cell_environment(kind)
+    linear = scale * np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    if reflect:
+        linear[:, 0] *= -1
+    transform = _affine(linear, (10.0, -7.0))
+    moved = env.apply_transform(transform).apply_transform(_affine(offset=(3.0, 2.0)))
+    restored = moved.apply_transform(_affine(offset=(-3.0, -2.0))).apply_transform(
+        transform.inverse()
+    )
+    np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
+    np.testing.assert_allclose(restored.bin_sizes, env.bin_sizes, rtol=1e-12)
+    np.testing.assert_array_equal(
+        restored.bin_at(env.bin_centers), env.bin_at(env.bin_centers)
+    )
+
+
+@pytest.mark.parametrize("kind", ["hex", "hex_clipped", "grid_clipped"])
+def test_rounding_allowance_still_rejects_a_moved_cell_vertex(kind):
+    env = _small_cell_environment(kind)
+    angle, scale = -2.0965322377907283, 0.25
+    linear = scale * np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    linear[:, 0] *= -1
+    transform = _affine(linear, (10.0, -7.0))
+    restored = (
+        env.apply_transform(transform)
+        .apply_transform(_affine(offset=(3.0, 2.0)))
+        .apply_transform(_affine(offset=(-3.0, -2.0)))
+        .apply_transform(transform.inverse())
+    )
+    binning = restored._binning
+    assert isinstance(binning.shapes, PolygonCells)
+    centers = restored.bin_centers
+    spacing = np.min(np.linalg.norm(centers[1:] - centers[0], axis=1))
+    cell = binning.shapes.polygons[0]
+    ring = np.asarray(cell.exterior.coords)
+    # Pull one vertex toward the cell's center so cells still do not overlap.
+    inward = np.asarray(cell.centroid.coords[0]) - ring[0]
+    ring[0] += 1e-6 * spacing * inward / np.linalg.norm(inward)
+    ring[-1] = ring[0]
+    moved = (Polygon(ring), *binning.shapes.polygons[1:])
+    with pytest.raises(ValueError, match="polygon cell 0 disagrees with its locator"):
+        Environment.from_bins(
+            replace(binning, shapes=PolygonCells(moved)), arena=restored.arena
+        )
+
+
 def _derive_environment(parent, derivation):
     if derivation == "subset":
-        return parent.subset(bins=_keep_bins(parent))
+        return parent.subset(mask=_keep_bins(parent))
     if derivation == "translation":
         return parent.apply_transform(_affine(offset=(1.25, -2.5)))
     if derivation == "uniform_scaling":
@@ -429,7 +536,7 @@ def _derive_environment(parent, derivation):
     )
     child = parent.apply_transform(_affine(rotation, (2.0, -3.0)))
     if derivation == "nested":
-        return child.subset(bins=_keep_bins(parent)).apply_transform(
+        return child.subset(mask=_keep_bins(parent)).apply_transform(
             _affine(offset=(-0.5, 1.5))
         )
     return child
@@ -474,21 +581,24 @@ def test_derived_round_trip(
         field = np.sin(np.arange(child.n_bins))
         for mode in ("average", "transition", "density"):
             np.testing.assert_array_equal(
-                loaded.smooth(field, 2.0, mode=mode),
-                child.smooth(field, 2.0, mode=mode),
+                loaded.smooth(field, bandwidth=2.0, mode=mode),
+                child.smooth(field, bandwidth=2.0, mode=mode),
             )
     else:
         assert loaded._binning.faces.reason == child._binning.faces.reason
         with pytest.raises(NotImplementedError):
-            loaded.smooth(np.ones(loaded.n_bins), 2.0)
-    copied = loaded.copy()
+            loaded.smooth(np.ones(loaded.n_bins), bandwidth=2.0)
+    copied = loaded.with_metadata()
     np.testing.assert_array_equal(copied.bin_at(points), child.bin_at(points))
     assert not copied.bin_centers.flags.writeable
     assert not copied.bin_sizes.flags.writeable
 
 
 @pytest.mark.parametrize("origin", [0.0, 1e9])
-def test_mapped_center_roundoff_survives_save_load(origin, round_trip_environment):
+def test_scaled_grid_centers_are_the_mapped_edge_midpoints(
+    origin, round_trip_environment
+):
+    """A scaled grid stores its centers once, as midpoints of its mapped edges."""
     parent = Environment.from_grid_mask(
         np.ones((3, 2), dtype=bool),
         grid_edges=(origin + np.arange(4) * 0.1, origin + np.arange(3) * 0.2),
@@ -496,13 +606,19 @@ def test_mapped_center_roundoff_survives_save_load(origin, round_trip_environmen
     transform = _affine(np.diag([1.3, 0.7]), (0.1, 0.2))
     child = parent.apply_transform(transform)
     grid = child._binning.rectilinear
-    axes = [(edges[:-1] + edges[1:]) / 2 for edges in grid.edges]
+    axes = [edges[:-1] + np.diff(edges) / 2 for edges in grid.edges]
     midpoints = np.stack(
         [axis.ravel() for axis in np.meshgrid(*axes, indexing="ij")], axis=1
     )
-    assert not np.array_equal(child.bin_centers, midpoints)
+    np.testing.assert_array_equal(child.bin_centers, midpoints)
+    # The mapped parent centers agree to rounding: one unit in the last place
+    # of the coordinates, which includes the 1e9 origin.
+    mapped = transform(parent.bin_centers)
+    np.testing.assert_allclose(
+        child.bin_centers, mapped, rtol=0, atol=4 * np.spacing(origin + 1.0)
+    )
     loaded = round_trip_environment(child)
-    np.testing.assert_array_equal(loaded.bin_centers, transform(parent.bin_centers))
+    np.testing.assert_array_equal(loaded.bin_centers, child.bin_centers)
     np.testing.assert_array_equal(
         loaded.bin_at(transform(parent.bin_centers)), np.arange(parent.n_bins)
     )
@@ -556,9 +672,9 @@ def test_affine_triangle_shapes_survive_nested_subset_and_round_trip(
     assert isinstance(mapped._binning.shapes, TriangleShapes)
     keep = _keep_bins(mapped)
     offset = _affine(offset=(-0.5, 1.5))
-    child = mapped.subset(bins=keep).apply_transform(offset)
+    child = mapped.subset(mask=keep).apply_transform(offset)
     second_keep = _keep_bins(child)
-    child = child.subset(bins=second_keep)
+    child = child.subset(mask=second_keep)
     expected_points = offset(mapped._binning.shapes.points)
     expected_triangles = parent._binning.shapes.triangles[keep][second_keep]
     loaded = round_trip_environment(child)
@@ -592,12 +708,12 @@ def test_affine_triangle_shapes_survive_nested_subset_and_round_trip(
         if derivation == "reflection":
             assert current._binning.faces.available
             np.testing.assert_array_equal(
-                current.smooth(field, 2.0), child.smooth(field, 2.0)
+                current.smooth(field, bandwidth=2.0), child.smooth(field, bandwidth=2.0)
             )
         else:
             assert not current._binning.faces.available
             with pytest.raises(NotImplementedError, match="right angle"):
-                current.smooth(field, 2.0)
+                current.smooth(field, bandwidth=2.0)
 
 
 @pytest.mark.parametrize("built_environment", ["mesh", "mesh_boundary"], indirect=True)
@@ -606,7 +722,7 @@ def test_retained_affine_triangle_corruption_is_rejected(
     built_environment, corruption, corrupted_environment_round_trip
 ):
     child = _derive_environment(built_environment, "shear")
-    child = child.subset(bins=_keep_bins(child))
+    child = child.subset(mask=_keep_bins(child))
     assert isinstance(child._binning.shapes, TriangleShapes)
 
     def corrupt(metadata, arrays):

@@ -3,8 +3,6 @@
 Tests for coordinate transformations between allocentric and egocentric
 reference frames, heading computation utilities, and egocentric polar
 environment creation.
-
-TDD: These tests are written BEFORE implementation to define expected behavior.
 """
 
 import numpy as np
@@ -29,10 +27,10 @@ def test_heading_from_velocity_isolated_sample_nan(two_epoch_recording):
     from neurospatial.ops.egocentric import heading_from_velocity
 
     r = two_epoch_recording
-    selected = [0, 1, 4999, 5000, 5001]
+    selected = [0, 1, 2, 4999, 5000, 5001, 5002]  # 4999 sits alone
     headings = heading_from_velocity(r.times[selected], r.positions[selected])
-    assert np.isnan(headings[2])
-    assert np.isfinite(headings[[0, 1, 3, 4]]).all()
+    assert np.isnan(headings[3])
+    assert np.isfinite(headings[[0, 1, 2, 4, 5, 6]]).all()
 
 
 def test_heading_interpolation_stays_in_run(two_epoch_recording):
@@ -87,7 +85,7 @@ def test_heading_from_velocity_rejects_bad_times(times):
 
 
 def test_velocity_heading_uses_actual_intervals():
-    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial._intervals import observed_interval_mask
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     times = np.array([0.0, 0.1, 0.3])
@@ -104,7 +102,7 @@ def test_velocity_heading_uses_actual_intervals():
 def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
     from scipy.ndimage import gaussian_filter1d
 
-    from neurospatial.environment.trajectory import observed_interval_mask
+    from neurospatial._intervals import observed_interval_mask
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
     r = two_epoch_recording
@@ -1063,17 +1061,17 @@ class TestEgocentricDistance3DTargets:
 
 
 class TestWrapAngleAntipode:
-    """_wrap_angle keeps the antipode at +pi per the documented (-pi, pi]."""
+    """_wrap_bearing keeps the antipode at +pi per the documented (-pi, pi]."""
 
     def test_wrap_angle_antipode_is_plus_pi(self):
         """+/- pi and odd multiples wrap to +pi; interior values are unchanged."""
-        from neurospatial.ops.egocentric import _wrap_angle
+        from neurospatial.ops.egocentric import _wrap_bearing
 
-        antipodes = _wrap_angle(np.array([np.pi, -np.pi, 3 * np.pi, -3 * np.pi]))
+        antipodes = _wrap_bearing(np.array([np.pi, -np.pi, 3 * np.pi, -3 * np.pi]))
         assert_allclose(antipodes, np.pi)
 
         interior = np.array([0.3, -1.2, 0.0, 2.0])
-        assert_allclose(_wrap_angle(interior), interior)
+        assert_allclose(_wrap_bearing(interior), interior)
 
     def test_egocentric_bearing_directly_behind_is_plus_pi(self):
         """A target directly behind the animal returns bearing +pi, not -pi."""

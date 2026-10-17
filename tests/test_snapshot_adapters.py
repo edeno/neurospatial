@@ -15,26 +15,29 @@ from environment_helpers import publish_environment
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.arena import OpenArena, decode_arena
-from neurospatial.extensions import (
-    SnapshotAdapter,
-    _decode_snapshot,
-    _snapshot_adapters,
-    _snapshot_provider,
-)
+from neurospatial.arena import OpenArena
+from neurospatial.extensions import SnapshotAdapter
 from neurospatial.geometry._binning import (
     Binning,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
 )
-from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._codecs import (
+    _decode_snapshot,
+    _snapshot_adapters,
+    decode,
+    decode_arena,
+    encode,
+    snapshot_provider,
+)
 from neurospatial.geometry._locators import (
     NearestBinLocator,
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._polygon import ClippedLocator
+from neurospatial.geometry._polygon_cells import ClippedLocator
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import translate
 
 
@@ -70,17 +73,17 @@ def _adapter(**overrides):
 
 @pytest.fixture(autouse=True)
 def _registry(monkeypatch):
-    from neurospatial import extensions
+    from neurospatial.geometry import _codecs
 
     entries = []
-    original_entry_points = extensions.metadata.entry_points
+    original_entry_points = _codecs.metadata.entry_points
 
     def installed(*, group):
         if group == "neurospatial.snapshot_adapters.v1":
             return entries
         return original_entry_points(group=group)
 
-    monkeypatch.setattr(extensions.metadata, "entry_points", installed)
+    monkeypatch.setattr(_codecs.metadata, "entry_points", installed)
     _snapshot_adapters.cache_clear()
     yield entries
     _snapshot_adapters.cache_clear()
@@ -89,7 +92,7 @@ def _registry(monkeypatch):
 def test_locator_snapshot_owns_data_and_saves_as_a_builtin(_registry):
     _registry.append(_EntryPoint("lookup", _adapter()))
     provider = _ExternalLocator()
-    snapshot = _snapshot_provider(provider, "locator")
+    snapshot = snapshot_provider(provider, "locator")
     assert type(snapshot) is NearestBinLocator
     provider.centers[:] = 999
     np.testing.assert_array_equal(snapshot.centers, [[0, 0], [2, 0]])
@@ -139,7 +142,7 @@ def test_published_snapshot_does_not_retain_provider_or_returned_array_headers(
     _registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: value)))
     provider = _ExternalLocator()
     reference = weakref.ref(provider)
-    snapshot = _snapshot_provider(provider, "locator")
+    snapshot = snapshot_provider(provider, "locator")
     del provider
     assert reference() is None
     assert not np.shares_memory(snapshot.centers, value.centers)
@@ -187,12 +190,12 @@ def test_wrong_custom_role_cannot_fill_a_builtin_locator_field(_registry):
 
 
 def test_builtin_decode_does_not_discover_or_import_extensions(monkeypatch):
-    from neurospatial import extensions
+    from neurospatial.geometry import _codecs
 
     def fail(**kwargs):
         pytest.fail("built-in records must not load installed adapters")
 
-    monkeypatch.setattr(extensions.metadata, "entry_points", fail)
+    monkeypatch.setattr(_codecs.metadata, "entry_points", fail)
     meta, arrays = encode(NearestBinLocator(np.array([[0.0, 0.0]])), "builtin")
     assert type(decode(meta, arrays, "builtin")) is NearestBinLocator
 
@@ -215,7 +218,7 @@ def test_missing_installed_adapter_explains_package_requirement():
     with pytest.raises(ValueError, match=r"install.*package"):
         decode({"codec": "laboratory.lookup", "codec_version": 1}, {}, "old")
     with pytest.raises(TypeError, match="snapshot adapter"):
-        _snapshot_provider(_ExternalLocator(), "locator")
+        snapshot_provider(_ExternalLocator(), "locator")
 
 
 @pytest.mark.parametrize("duplicate", ["name", "provider_role"])
@@ -256,7 +259,7 @@ def test_each_supported_role_normalizes_a_builtin_record(_registry, role):
     _registry.append(
         _EntryPoint("adapter", _adapter(role=role, snapshot=lambda p: value))
     )
-    snapshot = _snapshot_provider(_ExternalLocator(), role)
+    snapshot = snapshot_provider(_ExternalLocator(), role)
     assert type(snapshot) is type(value)
     assert snapshot is not value
 
@@ -265,13 +268,13 @@ def test_each_supported_role_normalizes_a_builtin_record(_registry, role):
 def test_adapter_cannot_preserve_a_custom_runtime_object(_registry, result):
     _registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: result)))
     with pytest.raises(ValueError, match=r"built-in.*locator"):
-        _snapshot_provider(_ExternalLocator(), "locator")
+        snapshot_provider(_ExternalLocator(), "locator")
 
 
 def test_wrong_declared_role_is_not_accepted(_registry):
     _registry.append(_EntryPoint("lookup", _adapter(role="arena")))
     with pytest.raises(ValueError, match=r"built-in.*arena"):
-        _snapshot_provider(_ExternalLocator(), "arena")
+        snapshot_provider(_ExternalLocator(), "arena")
 
 
 @pytest.mark.parametrize(
@@ -307,7 +310,6 @@ class _ExternalBinning:
 
 class _ExternalLayout(_ExternalBinning):
     is_linearized_track = False
-    _layout_type_tag = "external"
 
     def __init__(self, data):
         super().__init__(data)
@@ -369,17 +371,21 @@ def _explicit_binning(env):
 def test_public_binning_adapter_owns_data_and_drops_provider_provenance(
     _registry, ingress
 ):
-    original = Environment.linear_track(endpoints=[(0, 0), (4, 0)], bin_size=1)
+    original = Environment.linear_track(
+        endpoints=[(0, 0), (4, 0)], bin_size=1, track_width=1.0
+    )
     data = _explicit_binning(original)
     provider_type = _ExternalLayout if ingress == "constructor" else _ExternalBinning
     _registry.append(_EntryPoint("binning", _data_adapter(provider_type, "binning")))
     provider = provider_type(data)
     reference = weakref.ref(provider)
     if ingress == "constructor":
-        env = publish_environment("adapted", provider, "external")
+        env = publish_environment("adapted", provider, "external", arena=original.arena)
         assert env.layout_parameters == {}
     else:
-        env = Environment.from_bins(provider, name="adapted", units="cm", frame="lab")
+        env = Environment.from_bins(
+            provider, name="adapted", units="cm", frame="lab", arena=original.arena
+        )
         assert (env.units, env.frame) == ("cm", "lab")
     assert env.is_linearized_track == env.is_linearized_track
     assert env.is_linearized_track
@@ -459,7 +465,7 @@ def test_public_ingress_adapts_nested_locators_without_changing_maps(
         np.ones((3, 2), dtype=bool), (np.arange(4.0), np.arange(3.0))
     ).clip(box(0.2, 0.2, 2.8, 1.8))
     if operation in ("subset", "nested"):
-        env = env.subset(bins=np.array([True, False, True, True, False, True]))
+        env = env.subset(mask=np.array([True, False, True, True, False, True]))
     if operation in ("transform", "nested"):
         env = env.apply_transform(translate(10, -3))
     original = _explicit_binning(env)
@@ -486,7 +492,9 @@ def test_public_ingress_adapts_nested_locators_without_changing_maps(
 
 
 def test_public_track_adapter_drops_delegated_conversions(_registry):
-    original = Environment.linear_track(endpoints=[(0, 0), (4, 0)], bin_size=1)
+    original = Environment.linear_track(
+        endpoints=[(0, 0), (4, 0)], bin_size=1, track_width=1.0
+    )
     data = _explicit_binning(original)
     provider = _ExternalTrack(data.linearization)
     source = replace(data, linearization=provider)
@@ -528,7 +536,13 @@ def test_public_arena_adapter_normalizes_before_lookup_and_selection(
     )
     if ingress == "layout_factory":
         env = Environment.from_layout(
-            "MaskedGrid", native.layout_parameters, name="adapted", arena=provider
+            create_layout(
+                "MaskedGrid",
+                active_mask=native.active_mask,
+                grid_edges=native.grid_edges,
+            ),
+            name="adapted",
+            arena=provider,
         )
     elif ingress == "from_bins":
         env = Environment.from_bins(_explicit_binning(native), arena=provider)
@@ -667,3 +681,37 @@ def test_public_contract_kit_accepts_an_adapter_published_environment(_registry)
     _registry.append(_EntryPoint("binning", _data_adapter(_ExternalBinning, "binning")))
     env = Environment.from_bins(_ExternalBinning(data))
     assert_environment_contract(env, [[0, 0], [2, 0], [10, 0]], [0, 1, -1])
+
+
+@pytest.mark.parametrize("adapted", [True, False])
+def test_from_layout_checks_center_lookup_of_every_layout(
+    _registry, monkeypatch, adapted
+):
+    """Built engines and adapted objects both have each bin center located."""
+    from neurospatial.geometry._locators import RectilinearLocator
+
+    layout = create_layout(
+        "MaskedGrid",
+        active_mask=np.ones((2, 2), dtype=bool),
+        grid_edges=(np.arange(3.0),) * 2,
+    )
+    centers = layout.bin_centers.copy()
+    if adapted:
+        _registry.append(
+            _EntryPoint("binning", _data_adapter(_ExternalBinning, "binning"))
+        )
+        layout = _ExternalBinning(_explicit_binning(Environment.from_layout(layout)))
+    located = []
+    locate = RectilinearLocator.locate
+
+    def recording(self, points, indexes=None):
+        result = locate(self, points, indexes)
+        if np.array_equal(points, centers):
+            located.append(result)
+        return result
+
+    monkeypatch.setattr(RectilinearLocator, "locate", recording)
+    env = Environment.from_layout(layout)
+    assert located
+    np.testing.assert_array_equal(located[0], np.arange(4))
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), np.arange(4))

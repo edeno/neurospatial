@@ -2,7 +2,9 @@
 
 Polar bin centers are ``(distance, angle)``. Averaging, differencing or
 clustering them as ``(x, y)`` returns plausible but wrong numbers, so these
-functions raise :class:`CartesianOnlyError` instead. Graph-based modes of the
+functions raise :class:`CartesianOnlyError` instead. So do the functions that
+read positions as the animal's allocentric positions, although
+``env.bin_at`` itself locates ``(distance, angle)`` rows. Graph-based modes of the
 same functions use physical edge distances and keep working.
 """
 
@@ -12,32 +14,51 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, compute_spatial_rate
 from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.behavior import (
+    Trial,
+    compute_decision_analysis,
+    compute_step_lengths,
+    compute_vte_session,
     detect_laps,
     detect_runs_between_regions,
     distance_to_region,
     graph_turn_sequence,
+    mean_square_displacement,
     path_progress,
     trajectory_similarity,
 )
+from neurospatial.decoding import decoding_error
 from neurospatial.encoding import (
+    border_score,
+    compute_directional_place_fields,
     compute_field_emd,
+    compute_spatial_rates,
+    compute_view_rate,
     field_shape_metrics,
     field_shift_distance,
+    place_cell_significance,
     rate_map_centroid,
     spatial_autocorrelation,
 )
+from neurospatial.events import distance_to_boundary, distance_to_reward
 from neurospatial.ops import (
+    compute_egocentric_distance,
     geodesic_rbf_basis,
-    map_points_to_bins,
     map_probabilities,
     resample_field,
     select_basis_centers,
     spatial_basis,
 )
 from neurospatial.regions import Regions
+from neurospatial.simulation import (
+    BoundaryCellModel,
+    ObjectVectorCellModel,
+    PlaceCellModel,
+    SpatialViewCellModel,
+    simulate_trajectory_ou,
+)
 
 
 @pytest.fixture(scope="module")
@@ -49,6 +70,17 @@ def polar() -> Environment:
         distance_bin_size=15.0,
         angle_bin_size=np.pi / 4,
     )
+
+
+def _room() -> Environment:
+    """Allocentric 2-D environment paired with the polar one."""
+    x, y = np.meshgrid(np.arange(0.0, 20.0, 2.0), np.arange(0.0, 20.0, 2.0))
+    return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
+
+
+# Six (distance, angle) samples inside the 30 cm polar surround.
+_TIMES = np.arange(0.0, 3.0, 0.5)
+_POLAR_POSITIONS = np.column_stack((np.full(6, 10.0), np.linspace(-1.0, 1.0, 6)))
 
 
 def _rates(env: Environment) -> np.ndarray:
@@ -73,29 +105,51 @@ def _polar_regions_env(env: Environment) -> Environment:
             lambda env: field_shift_distance(
                 env, _rates(env), np.arange(4), env, _rates(env), np.arange(4)
             ),
-            "field_shift_distance()",
+            "field_shift_distance(env_1=...)",
+        ),
+        (
+            lambda env: field_shift_distance(
+                _room(), _rates(_room()), np.arange(4), env, _rates(env), np.arange(4)
+            ),
+            "field_shift_distance(env_2=...)",
         ),
         (
             lambda env: spatial_autocorrelation(env, _rates(env)),
             "spatial_autocorrelation()",
         ),
         (
-            lambda env: map_points_to_bins(env, np.array([[10.0, 0.0]])),
-            "map_points_to_bins()",
+            lambda env: resample_field(_rates(env), env, _room()),
+            "resample_field(src_env=...)",
         ),
         (
-            lambda env: resample_field(_rates(env), env, env),
-            "resample_field()",
+            lambda env: resample_field(_rates(_room()), _room(), env),
+            "resample_field(dst_env=...)",
+        ),
+        (
+            lambda env: compute_egocentric_distance(
+                np.array([[10.0, 0.0]]),
+                np.array([0.0]),
+                np.array([[20.0, 0.0]]),
+                metric="geodesic",
+                env=env,
+            ),
+            "compute_egocentric_distance(metric='geodesic')",
         ),
         (
             lambda env: map_probabilities(
-                env, env, np.full(env.n_bins, 1.0 / env.n_bins)
+                env, _room(), np.full(env.n_bins, 1.0 / env.n_bins)
             ),
-            "map_probabilities()",
+            "map_probabilities(source_env=...)",
+        ),
+        (
+            lambda env: map_probabilities(
+                _room(), env, np.full(_room().n_bins, 1.0 / _room().n_bins)
+            ),
+            "map_probabilities(target_env=...)",
         ),
         (lambda env: spatial_basis(env, n_features=6, rng=0), "spatial_basis()"),
         (
-            lambda env: graph_turn_sequence(env, np.array([0, 1, 9, 8]), 0, 8),
+            lambda env: graph_turn_sequence(env, np.array([0, 1, 9, 8])),
             "graph_turn_sequence()",
         ),
         (
@@ -160,13 +214,151 @@ def _polar_regions_env(env: Environment) -> Environment:
             ),
             "detect_runs_between_regions(min_speed=...)",
         ),
+        (
+            lambda env: border_score(env, _rates(env)),
+            "Wall geometry (boundary_source='physical')",
+        ),
+        (
+            lambda env: compute_spatial_rate(
+                env,
+                np.array([0.5, 1.5]),
+                np.arange(0.0, 3.0, 0.5),
+                np.column_stack((np.full(6, 10.0), np.linspace(-1.0, 1.0, 6))),
+                time_allocation="linear",
+            ),
+            "time_allocation='linear'",
+        ),
+        (
+            lambda env: compute_spatial_rate(
+                env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS
+            ),
+            "compute_spatial_rate()",
+        ),
+        (
+            lambda env: compute_spatial_rates(
+                env, [np.array([0.5, 1.5])], _TIMES, _POLAR_POSITIONS
+            ),
+            "compute_spatial_rates()",
+        ),
+        (
+            lambda env: compute_directional_place_fields(
+                env,
+                np.array([0.5, 1.5]),
+                _TIMES,
+                _POLAR_POSITIONS,
+                np.array(["out"] * _TIMES.size, dtype=object),
+            ),
+            "compute_directional_place_fields()",
+        ),
+        (
+            lambda env: compute_view_rate(
+                env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS, np.zeros(6)
+            ),
+            "compute_view_rate()",
+        ),
+        (
+            lambda env: compute_decision_analysis(
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                decision_region="near",
+                goal_regions=["far"],
+            ),
+            "compute_decision_analysis()",
+        ),
+        (
+            lambda env: compute_vte_session(
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                decision_region="near",
+                trials=[Trial(0.0, 2.5, "near", "far", True)],
+            ),
+            "compute_vte_session()",
+        ),
+        (
+            lambda env: compute_step_lengths(
+                _POLAR_POSITIONS, metric="geodesic", env=env
+            ),
+            "compute_step_lengths(metric='geodesic')",
+        ),
+        (
+            lambda env: mean_square_displacement(
+                _TIMES, _POLAR_POSITIONS, metric="geodesic", env=env
+            ),
+            "mean_square_displacement(metric='geodesic')",
+        ),
+        (
+            lambda env: decoding_error(
+                _POLAR_POSITIONS, _POLAR_POSITIONS, env=env, metric="geodesic"
+            ),
+            "decoding_error(metric='geodesic')",
+        ),
+        (
+            lambda env: simulate_trajectory_ou(
+                env.with_metadata(units="cm"), 1.0, speed_units="cm", seed=0
+            ),
+            "simulate_trajectory_ou()",
+        ),
+        (lambda env: BoundaryCellModel(env), "BoundaryCellModel()"),
+        (
+            lambda env: ObjectVectorCellModel(
+                env,
+                object_positions=np.array([[10.0, 0.0]]),
+                preferred_distance=5.0,
+                distance_width=2.0,
+            ),
+            "ObjectVectorCellModel()",
+        ),
+        (
+            lambda env: SpatialViewCellModel(
+                env, preferred_view_location=np.array([10.0, 0.0])
+            ),
+            "SpatialViewCellModel()",
+        ),
+        (
+            lambda env: PlaceCellModel(
+                env, center=np.array([10.0, 0.0]), width=5.0, metric="geodesic"
+            ),
+            "PlaceCellModel(metric='geodesic')",
+        ),
+        (
+            lambda env: distance_to_reward(
+                env, _TIMES, _POLAR_POSITIONS, np.array([1.0]), _POLAR_POSITIONS[:1]
+            ),
+            "distance_to_reward()",
+        ),
+        (
+            lambda env: distance_to_boundary(env, _POLAR_POSITIONS),
+            "distance_to_boundary()",
+        ),
+        (
+            lambda env: compute_vte_session(
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                decision_region="near",
+                trials=[],
+            ),
+            "compute_vte_session()",
+        ),
+        (
+            lambda env: place_cell_significance(
+                env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS
+            ),
+            "place_cell_significance()",
+        ),
     ],
 )
 def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
     with pytest.raises(CartesianOnlyError) as info:
         call(polar)
     assert info.value.operation == operation
-    assert "polar environment" in str(info.value)
+    assert isinstance(info.value, TypeError)
+    what, why, fix = str(info.value).split("\n")
+    assert what == f"{operation} does not work on a polar environment."
+    assert why.startswith("Why: ") and "(distance, angle)" in why
+    assert fix.startswith("Fix: ")
 
 
 @pytest.mark.parametrize(

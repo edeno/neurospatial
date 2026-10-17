@@ -6,7 +6,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import vonmises
 
-from neurospatial import Environment
+from neurospatial.environment import Environment
+from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 
 
@@ -157,6 +158,15 @@ class BoundaryCellModel:
         baseline_rate: float = 0.01,
         metric: Literal["geodesic", "euclidean"] = "geodesic",
     ) -> None:
+        require_cartesian(
+            env.coordinate_system,
+            "BoundaryCellModel()",
+            why=(
+                "It models firing from the distance and direction to walls, "
+                "from the animal's allocentric Cartesian position."
+            ),
+            fix="simulate on the allocentric environment the animal moves in",
+        )
         # Validate parameters
         if preferred_distance < 0:
             msg = f"preferred_distance must be non-negative (got {preferred_distance})"

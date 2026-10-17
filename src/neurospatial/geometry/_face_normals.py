@@ -3,18 +3,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
+from shapely.ops import linemerge
 
-if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Binning, Locator
+from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._locators import (
+    HexLocator,
+    Locator,
+    MeshLocator,
+    RectilinearLocator,
+    SubsetLocator,
+    TransformedLocator,
+)
+from neurospatial.geometry._polygon_cells import ClippedLocator
 
 
 @dataclass(frozen=True, eq=False)
-class FaceNormals:
+class FaceNormals(ReadOnlyState):
     """Physical face normals in ``Binning.bins.pairs`` order.
 
     Parameters
@@ -44,12 +52,6 @@ class FaceNormals:
         values.setflags(write=False)
         object.__setattr__(self, "values", values)
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore write protection after pickle or deepcopy."""
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        self.values.setflags(write=False)
-
 
 def _unit_rows(values: NDArray[np.float64]) -> NDArray[np.float64]:
     lengths = np.hypot.reduce(values, axis=1)
@@ -68,17 +70,6 @@ def geometric_normals(
     Returns zero for a geometrically zero-area contact, or None when no exact
     face directions are available. Never infer normals for nearest-only bins.
     """
-    from shapely.ops import linemerge
-
-    from neurospatial.geometry._locators import (
-        HexLocator,
-        MeshLocator,
-        RectilinearLocator,
-        SubsetLocator,
-        TransformedLocator,
-    )
-    from neurospatial.geometry._polygon import ClippedLocator
-
     delta = centers[pairs[:, 1]] - centers[pairs[:, 0]]
     if isinstance(locator, SubsetLocator):
         return geometric_normals(locator.base, centers, pairs)
@@ -154,48 +145,3 @@ def geometric_normals(
     normals = _unit_rows(normals)
     normals[np.sum(normals * delta, axis=1) < 0] *= -1
     return normals
-
-
-def validate_normals(binning: Binning) -> None:
-    """Check shape, known face activity, orientation and geometric direction.
-
-    MissingFaces does not retain areas: a zero row may intentionally suppress
-    a geometric contact as a navigation-only edge. In that case only nonzero
-    directions can be cross-checked. Such data never enables numerical faces.
-    """
-    from neurospatial.geometry._binning import KnownFaces
-
-    component = binning.face_normals
-    if component is None:
-        return
-    FaceNormals(component.values)  # Revalidate mutable ndarray headers at ingress.
-    bins = binning.bins
-    values = component.values
-    if bins.measure_dim != bins.n_dims or values.shape != (
-        len(bins.pairs),
-        bins.n_dims,
-    ):
-        raise ValueError(
-            "face normals must match full-dimensional bins and pair order."
-        )
-    active = np.any(values != 0, axis=1)
-    # A native face recipe is deliberately lazy, including its mesh
-    # warning. Explicit/saved records always supply KnownFaces or MissingFaces.
-    if isinstance(binning.faces, KnownFaces):
-        areas = binning.faces.faces.A
-        if not np.array_equal(active, areas > 0):
-            raise ValueError(
-                "face normals must be unit on positive faces and zero on zero-area edges."
-            )
-    delta = bins.centers[bins.pairs[:, 1]] - bins.centers[bins.pairs[:, 0]]
-    if np.any(np.sum(values[active] * _unit_rows(delta[active]), axis=1) <= 0):
-        raise ValueError(
-            "face normals must point from each pair's first bin toward its second."
-        )
-    expected = geometric_normals(binning.locator, bins.centers, bins.pairs)
-    if expected is not None and not np.allclose(
-        values[active], expected[active], rtol=0, atol=1e-12
-    ):
-        raise ValueError(
-            "face normals disagree with the locator's physical face directions."
-        )

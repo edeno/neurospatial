@@ -18,12 +18,14 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import RegionNotFoundError
+
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import BorderConsumer
+    from neurospatial.environment import Environment
 
 
 def border_score(
-    env: BorderConsumer,
+    env: Environment,
     firing_rate: NDArray[np.float64],
     *,
     threshold: float = 0.3,
@@ -42,7 +44,7 @@ def border_score(
 
     Parameters
     ----------
-    env : BorderConsumer
+    env : Environment
         Spatial environment containing bin centers and connectivity.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
@@ -242,12 +244,14 @@ def border_score(
     if metric not in ("geodesic", "euclidean"):
         raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
-    from neurospatial.ops._boundaries import boundary_geometry
+    from neurospatial.geometry import boundary_geometry
 
     if boundary_source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
     walls = (
-        boundary_geometry(env, "physical") if boundary_source == "physical" else None
+        boundary_geometry(env.binning, env.arena, "physical")
+        if boundary_source == "physical"
+        else None
     )
     physical_contact = None
     if walls is not None:
@@ -386,7 +390,7 @@ def border_score(
 
 
 def compute_region_coverage(
-    env: BorderConsumer,
+    env: Environment,
     field_bins: NDArray[np.int64],
     *,
     regions: list[str] | None = None,
@@ -471,9 +475,11 @@ def compute_region_coverage(
     # Validate regions exist
     for region_name in regions:
         if region_name not in env.regions:
-            raise ValueError(
-                f"Region '{region_name}' not found. "
-                f"Available regions: {list(env.regions.keys())}"
+            raise RegionNotFoundError(
+                region_name,
+                available=list(env.regions),
+                argument="regions",
+                in_list=True,
             )
 
     # Compute coverage for each region
