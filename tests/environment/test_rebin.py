@@ -410,10 +410,10 @@ class TestRebinValidation:
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Factor must be positive
-        with pytest.raises(ValueError, match=r"positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             env.rebin(factor=0)
 
-        with pytest.raises(ValueError, match=r"positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             env.rebin(factor=-2)
 
     def test_rebin_factor_too_large_raises(self):
@@ -424,7 +424,7 @@ class TestRebinValidation:
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Factor 10 is too large for 4x4 grid
-        with pytest.raises(ValueError, match=r"too large.*grid shape"):
+        with pytest.raises(ValueError, match="asks to merge"):
             env.rebin(factor=10)
 
     def test_rebin_non_divisible_warns(self):

@@ -449,46 +449,60 @@ def _rebin_factor(
     # Validate factor dimensions
     if len(requested) != n_dims:
         raise ValueError(
-            f"factor has {len(requested)} elements but environment has "
-            f"{n_dims} dimensions. factor must be int or tuple matching "
-            "environment dimensionality."
+            _format_error(
+                f"rebin(factor={factor!r}) gives {len(requested)} factors for a "
+                f"{n_dims}-D grid.",
+                why="Why: a tuple gives one merge factor per grid axis.",
+                fix=f"pass one integer for every axis, such as env.rebin(2), or "
+                f"{n_dims} integers, such as env.rebin({(2,) * n_dims})",
+            )
         )
 
-    # A factor merges blocks of whole cells, so it must be a whole number.
+    # A factor merges blocks of whole cells, so it must be an integer.
     if any(
         isinstance(f, (bool, np.bool_)) or not isinstance(f, (int, np.integer))
         for f in requested
     ):
-        widths = [float(edges[1] - edges[0]) for edges in grid_edges]
         try:
-            sizes = [
-                f"{w * float(cast('Any', f)):.3g}"
-                for w, f in zip(widths, requested, strict=True)
-            ]
-            target = sizes[0] if len(set(sizes)) == 1 else f"({', '.join(sizes)})"
+            values = [float(cast("Any", f)) for f in requested]
         except (TypeError, ValueError):
-            target = "..."
+            values = []
+        widths = [float(edges[1] - edges[0]) for edges in grid_edges]
+        sizes = [f"{w * v:.3g}" for w, v in zip(widths, values, strict=False)]
+        target = (
+            "..."
+            if len(sizes) != n_dims
+            else sizes[0]
+            if len(set(sizes)) == 1
+            else f"({', '.join(sizes)})"
+        )
+        merged = [max(1, round(v)) for v in values] or [2]
+        whole = merged[0] if len(set(merged)) == 1 else tuple(merged)
+        integral = bool(values) and all(v == round(v) for v in values)
         raise ValueError(
             _format_error(
-                f"rebin(factor={factor!r}) needs a whole number of cells to merge "
-                "along each axis.",
+                f"rebin(factor={factor!r}) takes integer factors, the number of "
+                "cells to merge along each axis"
+                + (", got a float." if integral else "."),
                 why="Why: factor coarsens the grid by merging blocks of whole "
                 "cells, so a fractional factor would split cells.",
-                fix="pass an integer, such as rebin(2), or give the new cell size "
-                f"in physical units, such as rebin(bin_size={target})",
+                fix=f"pass an integer, such as env.rebin({whole}), or give the "
+                f"new cell size in physical units, such as "
+                f"env.rebin(bin_size={target})",
             )
         )
     factor_tuple = tuple(int(cast("int", f)) for f in requested)
     for i, f in enumerate(factor_tuple):
-        if f <= 0:
+        if f <= 0 or f > grid_shape[i]:
             raise ValueError(
-                f"factor[{i}] = {f} must be positive. "
-                "Coarsening factor must be at least 1."
-            )
-        if f > grid_shape[i]:
-            raise ValueError(
-                f"factor[{i}] = {f} is too large for grid shape {grid_shape}. "
-                f"Dimension {i} has only {grid_shape[i]} bins."
+                _format_error(
+                    f"rebin(factor={factor!r}) asks to merge {f} cells along "
+                    f"axis {i}, which has {grid_shape[i]}.",
+                    why="Why: a factor is the number of cells merged into one, "
+                    "so it is at least 1 and at most the cells along that axis.",
+                    fix=f"pass a factor from 1 to {grid_shape[i]}, such as "
+                    f"env.rebin({min(2, min(grid_shape))})",
+                )
             )
 
     # The stored choice governs future bins even if a sparse source currently

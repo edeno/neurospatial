@@ -330,11 +330,18 @@ def _from_samples(
         )
 
     # Validate bin_size early to provide helpful error messages
-    if not isinstance(bin_size, (int, float, list, tuple, np.ndarray)):
-        actual_type = type(bin_size).__name__
+    if not isinstance(bin_size, (int, float, np.number, list, tuple, np.ndarray)):
+        try:
+            size_text = f"{float(cast('Any', bin_size)):g}"
+        except (TypeError, ValueError):
+            size_text = "2.0"
         raise TypeError(
-            f"bin_size must be a numeric value or sequence of numeric values. "
-            f"Got {actual_type}: {bin_size!r}"
+            _format_error(
+                f"{factory}() takes bin_size as a number, got "
+                f"{type(bin_size).__name__} {bin_size!r}.",
+                why="Why: bin_size is a length in the units of positions.",
+                fix=f"pass a number, such as bin_size={size_text}",
+            )
         )
 
     layout_str = layout.value if isinstance(layout, LayoutType) else layout
@@ -531,8 +538,17 @@ def _open_field(
     )
 
 
-def _track_points(values: Any, argument: str) -> list[tuple[float, ...]]:
-    """Read track waypoints as coordinate tuples, refusing bare numbers."""
+def _track_points(
+    values: Any,
+    argument: str,
+    factory: str = "linear_track",
+    labels: Sequence[Any] | None = None,
+) -> list[tuple[float, ...]]:
+    """Read track waypoints as coordinate tuples, refusing bare numbers.
+
+    ``labels`` names the points of a mapping (``maze(node_positions=...)``),
+    so the suggested value is a mapping too.
+    """
     try:
         array = np.asarray(values, dtype=float)
     except (TypeError, ValueError):
@@ -540,14 +556,22 @@ def _track_points(values: Any, argument: str) -> list[tuple[float, ...]]:
     if array is not None and array.ndim == 2 and array.shape[1] >= 2:
         return [tuple(float(c) for c in row) for row in array]
     flat = np.ravel(array) if array is not None and array.ndim == 1 else None
-    example = (
-        "[" + ", ".join(f"({float(v):g}, 0.0)" for v in flat) + "]"
-        if flat is not None and flat.size
-        else "[(0.0, 0.0), (200.0, 0.0)]"
-    )
+    if flat is not None and flat.size and labels is not None:
+        example = (
+            "{"
+            + ", ".join(
+                f"{label!r}: ({float(v):g}, 0.0)"
+                for label, v in zip(labels, flat, strict=True)
+            )
+            + "}"
+        )
+    elif flat is not None and flat.size:
+        example = "[" + ", ".join(f"({float(v):g}, 0.0)" for v in flat) + "]"
+    else:
+        example = "[(0.0, 0.0), (200.0, 0.0)]"
     raise ValueError(
         _format_error(
-            f"linear_track({argument}=...) takes (x, y) points, got {values!r}.",
+            f"{factory}({argument}=...) takes (x, y) points, got {values!r}.",
             why="Why: the track is drawn through these positions in the arena, "
             "so each point needs a coordinate for every axis, in the units of "
             "your positions.",
@@ -597,8 +621,19 @@ def _linear_track(
         points = _track_points(endpoints, "endpoints")
         if len(points) != 2:
             raise ValueError(
-                "`endpoints` must contain exactly two (x, y) points defining "
-                f"the ends of a straight track. Got {len(points)} point(s)."
+                _format_error(
+                    f"linear_track(endpoints=...) takes the two ends of a "
+                    f"straight track, got {len(points)} point(s).",
+                    why="Why: endpoints draws one straight segment; a track "
+                    "with corners is given by its waypoints.",
+                    fix=(
+                        f"pass node_positions={endpoints!r} for a track through "
+                        "every point, in order"
+                        if len(points) > 2
+                        else "pass both ends, such as endpoints=[(0.0, 0.0), "
+                        "(200.0, 0.0)]"
+                    ),
+                )
             )
     elif node_positions is not None:
         points = _track_points(node_positions, "node_positions")
@@ -702,6 +737,13 @@ def _maze(
                 p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
                 graph.edges[u, v]["distance"] = float(np.linalg.norm(p2 - p1))
     elif node_positions is not None:
+        coordinates = _track_points(
+            list(node_positions.values()),
+            "node_positions",
+            factory="maze",
+            labels=list(node_positions),
+        )
+        node_positions = dict(zip(node_positions, coordinates, strict=True))
         graph, edge_order = maze_track_graph(kind_normalized, node_positions)
     else:
         raise ValueError(
@@ -753,19 +795,26 @@ def _from_graph(
     """Implement Environment.from_graph using explicit construction inputs."""
     _require_node_positions(graph)
     # A gap sits between consecutive edges, so a one-edge track has none.
-    if (
-        len(edge_order) == 1
-        and isinstance(edge_spacing, (int, float, np.number))
-        and edge_spacing != 0
+    n_gaps = max(0, len(edge_order) - 1)
+    scalar = isinstance(edge_spacing, (int, float, np.number))
+    if (scalar and n_gaps == 0 and edge_spacing != 0) or (
+        not scalar and np.size(cast("Any", edge_spacing)) != n_gaps
     ):
         raise ValueError(
             _format_error(
-                f"edge_spacing={edge_spacing!r} has no gap to fill on a track "
-                "with one edge.",
+                f"edge_spacing={edge_spacing!r} does not fit a track with "
+                f"{len(edge_order)} edge(s), which has {n_gaps} gap(s) between "
+                "consecutive edges.",
                 why="Why: edge_spacing is the linear distance inserted between "
-                "consecutive edges of edge_order, so the value would be ignored.",
-                fix="remove edge_spacing from the call (0.0 is accepted); a gap "
-                "applies only to a track of two or more edges",
+                "consecutive edges of edge_order: one number for every gap, or "
+                "one value per gap.",
+                fix=(
+                    "remove edge_spacing from the call (0.0 is accepted); a gap "
+                    "applies only to a track of two or more edges"
+                    if n_gaps == 0
+                    else f"pass one number, such as edge_spacing=5.0, or {n_gaps} "
+                    f"values, such as edge_spacing={[5.0] * n_gaps}"
+                ),
             )
         )
     layout_params = {
@@ -804,6 +853,19 @@ def _from_polygon(
     connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_polygon using explicit construction inputs."""
+    if not isinstance(polygon, shapely.geometry.Polygon):
+        raise TypeError(
+            _format_error(
+                f"from_polygon() takes a shapely Polygon, got "
+                f"{type(polygon).__name__}.",
+                why="Why: the polygon is the arena outline the grid is clipped "
+                "to, with its holes, so it must be a geometry, not a list of "
+                "points.",
+                fix="wrap the corner points: from shapely.geometry import "
+                f"Polygon; Environment.from_polygon(Polygon(polygon), "
+                f"bin_size={bin_size!r})",
+            )
+        )
     layout_params = {
         "polygon": polygon,
         "bin_size": bin_size,
@@ -834,6 +896,20 @@ def _from_grid_mask(
     connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_grid_mask using explicit construction inputs."""
+    cells = tuple(len(edges) - 1 for edges in grid_edges)
+    if np.shape(active_mask) != cells:
+        raise ValueError(
+            _format_error(
+                f"from_grid_mask() got an active_mask of shape "
+                f"{np.shape(active_mask)}, but grid_edges describe "
+                f"{cells} cells.",
+                why="Why: grid_edges holds the cell boundaries along each axis, "
+                "so each axis needs one more edge than the mask has cells.",
+                fix="give each axis one more edge than cells, for example "
+                "grid_edges=tuple(np.linspace(edges[0], edges[-1], n + 1) for "
+                "edges, n in zip(grid_edges, active_mask.shape))",
+            )
+        )
     layout_params = {
         "active_mask": active_mask,
         "grid_edges": grid_edges,

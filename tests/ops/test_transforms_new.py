@@ -405,5 +405,5 @@ class TestApplyTransformToEnvironment:
 
         # 2D transform on 3D environment should raise error
         transform = translate(5, 5)
-        with pytest.raises(ValueError, match="dimensionality"):
+        with pytest.raises(ValueError, match="-D transform for"):
             env_3d.apply_transform(transform)

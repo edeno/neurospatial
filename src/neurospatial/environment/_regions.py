@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._region_bins import region_bin_mask
 from neurospatial.regions import Regions
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 
 def _region_membership(
-    regions: Regions,
+    regions: object,
     *,
     binning: Binning,
     arena: Arena,
@@ -31,8 +32,18 @@ def _region_membership(
 ) -> NDArray[np.bool_]:
     """Membership of every bin in every region, ``(n_bins, n_regions)``."""
     if not isinstance(regions, Regions):
+        names = list(regions) if isinstance(regions, (list, tuple)) else ["goal"]
         raise TypeError(
-            f"regions must be a Regions instance or None, got {type(regions).__name__}"
+            _format_error(
+                f"region_membership() takes a Regions collection or None, got "
+                f"{type(regions).__name__}.",
+                why="Why: it returns one column per region in the collection; "
+                "a list of names says which regions but not their shapes.",
+                fix="select the regions from env.regions: from neurospatial "
+                "import Regions; env.region_membership(Regions(env.regions[name] "
+                f"for name in {names!r})), or env.region_mask({names!r}) for one "
+                "mask over all of them",
+            )
         )
     if not isinstance(include_boundary, bool):
         raise TypeError(

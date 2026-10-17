@@ -99,12 +99,12 @@ class TestRebin:
 
     def test_rebin_invalid_bin_size_negative(self, medium_2d_env: Environment) -> None:
         """Test that negative factor raises ValueError."""
-        with pytest.raises(ValueError, match="must be positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             medium_2d_env.rebin(factor=-1)
 
     def test_rebin_invalid_bin_size_zero(self, medium_2d_env: Environment) -> None:
         """Test that zero factor raises ValueError."""
-        with pytest.raises(ValueError, match="must be positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             medium_2d_env.rebin(factor=0)
 
     def test_rebin_invalid_bin_size_too_large(self, small_2d_env: Environment) -> None:
@@ -114,7 +114,7 @@ class TestRebin:
         # Factor larger than smallest dimension
         too_large_factor = max(grid_shape) + 10
 
-        with pytest.raises(ValueError, match="too large for grid shape"):
+        with pytest.raises(ValueError, match="asks to merge"):
             small_2d_env.rebin(factor=too_large_factor)
 
     @pytest.mark.parametrize("factor", [1, 2, 3, 5])
@@ -209,9 +209,7 @@ class TestRebin:
     def test_rebin_factor_wrong_dimensions(self, medium_2d_env: Environment) -> None:
         """Test that factor tuple with wrong number of dimensions raises error."""
         # 2D environment, but provide 3D factor
-        with pytest.raises(
-            ValueError, match=r"factor has .* elements but environment has"
-        ):
+        with pytest.raises(ValueError, match=r"gives 3 factors for a 2-D grid"):
             medium_2d_env.rebin(factor=(2, 2, 2))
 
     def test_rebin_factor_non_integer(self, medium_2d_env: Environment) -> None:
@@ -738,7 +736,7 @@ class TestApplyTransform:
         # Can't use 3D transform on 2D environment
         transform_3d = translate_3d(10, 20, 30)
 
-        with pytest.raises(ValueError, match=r"dimensionality.*does not match"):
+        with pytest.raises(ValueError, match=r"got a 3-D transform for 2-D bins"):
             medium_2d_env.apply_transform(transform_3d)
 
     def test_apply_transform_affine_nd_3d(self, simple_3d_env: Environment) -> None:
@@ -948,5 +946,5 @@ class TestApplyTransform:
         # Try to apply 3D transform to 2D environment
         transform_3d = translate_3d(10, 20, 30)
 
-        with pytest.raises(ValueError, match=r"dimensionality.*does not match"):
+        with pytest.raises(ValueError, match=r"-D transform for .-D bins"):
             medium_2d_env.apply_transform(transform_3d)

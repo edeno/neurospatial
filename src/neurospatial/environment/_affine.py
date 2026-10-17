@@ -52,8 +52,16 @@ def _apply_transform(
     transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2
     if n_dims != transform_dims:
         raise ValueError(
-            f"Transform dimensionality ({transform_dims}D) does not match "
-            f"environment dimensionality ({n_dims}D)."
+            _format_error(
+                f"apply_transform() got a {transform_dims}-D transform for "
+                f"{n_dims}-D bins.",
+                why="Why: a transform maps points of its own dimension, so it "
+                "cannot move bins with another number of coordinates.",
+                fix=f"build a {n_dims}-D transform from a ({n_dims + 1}, "
+                f"{n_dims + 1}) homogeneous matrix, such as the identity: from "
+                "neurospatial.ops import AffineND; "
+                f"env.apply_transform(AffineND(np.eye({n_dims + 1})))",
+            )
         )
 
     # Containment is evaluated in the original layout's coordinate frame.

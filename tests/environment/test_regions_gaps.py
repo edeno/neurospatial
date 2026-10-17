@@ -227,10 +227,10 @@ class TestRegionMembership:
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        with pytest.raises(TypeError, match="regions must be a Regions instance"):
+        with pytest.raises(TypeError, match="takes a Regions collection or None"):
             env.region_membership(regions={})
 
-        with pytest.raises(TypeError, match="regions must be a Regions instance"):
+        with pytest.raises(TypeError, match="takes a Regions collection or None"):
             env.region_membership(regions=[])
 
     def test_region_membership_invalid_include_boundary_type(self):

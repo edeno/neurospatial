@@ -52,7 +52,7 @@ def test_invalid_transforms_raise_actionable_errors(invalid):
         transform = translate_3d(1, 2, 3)
         error_type, message = (
             ValueError,
-            "Transform dimensionality (3D) does not match environment dimensionality (2D).",
+            "apply_transform() got a 3-D transform for 2-D bins.",
         )
     elif invalid == "none":
         transform = None
@@ -72,8 +72,12 @@ def test_invalid_transforms_raise_actionable_errors(invalid):
         )
     with pytest.raises(error_type) as error:
         env.apply_transform(transform)
-    # The type refusal goes on to say why and how to wrap a matrix.
-    shown = str(error.value).splitlines()[0] if invalid == "none" else str(error.value)
+    # The type and dimension refusals go on to say why and how to fix it.
+    shown = (
+        str(error.value).splitlines()[0]
+        if invalid in ("none", "dimension")
+        else str(error.value)
+    )
     assert shown == message
 
 

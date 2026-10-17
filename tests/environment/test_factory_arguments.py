@@ -289,7 +289,7 @@ def test_track_factories_share_the_edge_spacing_default():
 
 def test_edge_spacing_on_a_one_edge_track_is_refused():
     """A gap sits between two edges, so a straight track has nowhere to put it."""
-    with pytest.raises(ValueError, match="no gap to fill") as caught:
+    with pytest.raises(ValueError, match="does not fit a track with 1 edge") as caught:
         Environment.linear_track(
             endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, edge_spacing=5.0
         )
@@ -498,7 +498,7 @@ def test_other_argument_errors_keep_their_python_message(positions):
     with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
         Environment.from_samples(positions)
     # A TypeError raised while the factory runs is not rewritten.
-    with pytest.raises(TypeError, match="bin_size must be a numeric value"):
+    with pytest.raises(TypeError, match="takes bin_size as a number"):
         Environment.from_samples(positions, bin_size="four")
 
 
