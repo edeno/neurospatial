@@ -208,9 +208,10 @@ def spatial_autocorrelation(
         If ``firing_rate.shape != (env.n_bins,)``.
         If all firing rates are NaN or constant.
     NotImplementedError
-        If ``env`` is not a regular 2D grid of rectangular cells with at
-        least half of them active, for example a hexagonal, mesh, track or
-        3D environment (use :func:`spatial_autocorrelation_radial` instead).
+        If ``env`` is not a regular 2D grid of square cells of one width with
+        at least half of them active, for example a hexagonal, mesh, track or
+        3D environment, or a grid with uneven or non-square cells (use
+        :func:`spatial_autocorrelation_radial` instead).
     CartesianOnlyError
         If ``env`` is polar: a ``(distance, angle)`` grid is not a Cartesian
         lattice, so its 2D autocorrelogram and grid score are meaningless.
@@ -294,17 +295,25 @@ def spatial_autocorrelation(
                 f"this environment's {env.layout_type} layout has no 2D grid of "
                 "rectangular cells"
             )
+        elif not _uniform_spacing(env.grid_edges):
+            widths = np.concatenate([np.diff(edge) for edge in env.grid_edges])
+            found = (
+                "its cells are not all one width: widths range from "
+                f"{widths.min():.6g} to {widths.max():.6g}"
+            )
         else:
             found = (
                 f"only {env.n_bins} of its {env.active_mask.size} grid cells are active"
             )
         raise NotImplementedError(
             _format_error(
-                "spatial_autocorrelation() needs a regular 2D grid of rectangular "
-                f"cells with at least half of them active; {found}.",
+                "spatial_autocorrelation() needs a regular 2D grid of square "
+                "cells of one width, with at least half of them active; "
+                f"{found}.",
                 why=(
-                    "Why: the FFT shifts the rate map along the grid's rows and "
-                    "columns, which measure distance only on a rectangular lattice."
+                    "Why: the FFT shifts the rate map one cell at a time along "
+                    "rows and columns, and grid scores read those shifts as equal "
+                    "distances in every direction."
                 ),
                 fix=(
                     "use spatial_autocorrelation_radial(env, firing_rate), which "
@@ -415,6 +424,9 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
     # edges: their rows are offset, so an FFT over them is not a 2D lag map.
     if len(env.grid_edges) != 2:
         return "graph"
+    # A lag of k cells is a distance only when every cell has the same width.
+    if not _uniform_spacing(env.grid_edges):
+        return "graph"
 
     # Check if grid is reasonably regular (not too sparse): if less than 50%
     # of bins are active, treat it as irregular.
@@ -423,6 +435,26 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
         return "graph"
 
     return "fft"
+
+
+# Cell widths may differ by this fraction of the median width and still count
+# as one width. Edges computed as origin + i * width carry rounding errors of a
+# few ulp of the coordinates, far below this; a relative width error of 1e-6
+# shifts the farthest lag of a 10,000-cell axis by at most 0.01 cell.
+_SPACING_RTOL = 1e-6
+
+
+def _uniform_spacing(edges: tuple[NDArray[np.float64], ...]) -> bool:
+    """Whether every cell along every axis has the same width.
+
+    Parameters
+    ----------
+    edges : tuple of ndarray
+        Cell edges along each axis, ``env.grid_edges``.
+    """
+    widths = np.concatenate([np.diff(edge) for edge in edges])
+    reference = float(np.median(widths))
+    return bool(np.max(np.abs(widths - reference)) <= _SPACING_RTOL * reference)
 
 
 def _spatial_autocorrelation_fft(

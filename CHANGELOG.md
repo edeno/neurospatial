@@ -621,6 +621,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   meshes and sparse grids raised `ValueError` before. Rate-map
   `summary_table()` reports a NaN `grid_score` on hexagonal environments.
 
+- `spatial_autocorrelation` also accepted rectangular grids whose cells do not
+  all have one width: uneven edges along an axis (possible through
+  `Environment.from_bins`) or cells that are wider than they are tall. The
+  FFT shifts the map one cell at a time, so its lags, and the grid score and
+  grid scale read from them, were in cell counts instead of distances. Such
+  grids now raise the same `NotImplementedError`, naming
+  `spatial_autocorrelation_radial`; widths may differ by rounding (one part
+  in a million of the cell width).
+
 - A position sample with a NaN coordinate is a missing sample in every
   per-sample query. `env.nearest_bin` gives it bin
   `-1` and distance NaN, and `env.interpolate` gives it NaN; both used to

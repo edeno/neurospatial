@@ -288,3 +288,78 @@ class TestFFTAutocorrelationNeedsRectangularCells:
 
         with pytest.raises(NotImplementedError, match="only 30 of its 100"):
             spatial_autocorrelation(env, rate)
+
+
+class TestFFTAutocorrelationNeedsOneCellWidth:
+    """FFT lags are cell counts, so they are distances only for one cell width."""
+
+    @staticmethod
+    def _grid(x_edges, y_edges):
+        """Fully active rectangular cells on the given edges, from explicit bins."""
+        from neurospatial.binning import (
+            Binning,
+            MissingFaces,
+            RectilinearGrid,
+            RectilinearLocator,
+            SpatialBins,
+        )
+
+        shape = (len(x_edges) - 1, len(y_edges) - 1)
+        x_mid, y_mid = (
+            (x_edges[:-1] + x_edges[1:]) / 2,
+            (y_edges[:-1] + y_edges[1:]) / 2,
+        )
+        centers = np.stack(np.meshgrid(x_mid, y_mid, indexing="ij"), -1).reshape(-1, 2)
+        areas = np.outer(np.diff(x_edges), np.diff(y_edges)).ravel()
+        index = np.arange(centers.shape[0]).reshape(shape)
+        pairs = np.vstack(
+            [
+                np.column_stack((index[:-1].ravel(), index[1:].ravel())),
+                np.column_stack((index[:, :-1].ravel(), index[:, 1:].ravel())),
+            ]
+        )
+        distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
+        mask = np.ones(shape, dtype=bool)
+        edges = (x_edges, y_edges)
+        return Environment.from_bins(
+            Binning(
+                "RegularGrid",
+                SpatialBins.from_arrays(centers, areas, 2, pairs, distances),
+                RectilinearLocator(edges, shape, mask, None),
+                MissingFaces("No finite-volume faces supplied."),
+                rectilinear=RectilinearGrid(edges, shape, mask),
+            )
+        )
+
+    @pytest.mark.parametrize(
+        "x_edges",
+        [
+            np.concatenate([np.arange(0.0, 20.0, 2.0), np.arange(20.0, 41.0, 4.0)]),
+            np.arange(0.0, 61.0, 3.0),
+        ],
+        ids=["uneven", "non-square"],
+    )
+    def test_cells_of_different_widths_are_refused(self, x_edges) -> None:
+        from neurospatial.encoding.grid import spatial_autocorrelation
+
+        env = self._grid(x_edges, np.arange(0.0, 41.0, 2.0))
+        rate = np.random.default_rng(5).random(env.n_bins)
+
+        with pytest.raises(NotImplementedError, match="not all one width") as error:
+            spatial_autocorrelation(env, rate)
+
+        assert "spatial_autocorrelation_radial" in str(error.value)
+
+    def test_rounding_in_far_from_origin_edges_is_one_width(self) -> None:
+        from neurospatial.encoding.grid import spatial_autocorrelation
+
+        # Edges computed in floating point far from the origin: the widths
+        # differ from 0.7 cm only by rounding, about 3e-12 of a cell.
+        edges = 1.0e4 + 0.1 + 0.7 * np.arange(21)
+        assert len(np.unique(np.diff(edges))) > 1
+        env = self._grid(edges, 1.0e4 + 0.1 + 0.7 * np.arange(21))
+        rate = np.random.default_rng(6).random(env.n_bins)
+
+        autocorr = spatial_autocorrelation(env, rate)
+
+        assert autocorr.shape == env.grid_shape
