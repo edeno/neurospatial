@@ -29,7 +29,7 @@ _BUILD_A_TRACK = (
 
 
 def _track_linearization(
-    binning: Binning, operation: str, alternative: str
+    binning: Binning, operation: str, why: str, alternative: str
 ) -> TrackLinearization:
     """Return the track linearization, or refuse ``operation`` off a track."""
     linearization = binning.linearization
@@ -39,8 +39,8 @@ def _track_linearization(
                 f"{operation} needs a linearized track "
                 "(env.is_linearized_track is True), but this is a "
                 f"{binning.kind} environment, which has no track.",
-                why="Why: it measures positions along a track's centerline, "
-                "and only environments built from a track have one.",
+                why=f"Why: {why}, and only environments built from a track "
+                "have a centerline.",
                 fix=f"build the track, for example {_BUILD_A_TRACK}, or "
                 "Environment.maze(...) or Environment.from_graph(...) for "
                 f"other tracks; {alternative}",
@@ -54,6 +54,7 @@ def _to_linear(binning: Binning, positions: NDArray[np.float64]) -> NDArray[np.f
     linearization = _track_linearization(
         binning,
         "to_linear()",
+        "it measures how far along a track's centerline each position lies",
         "on this environment, map positions to bins with env.bin_at(positions)",
     )
     return linearization.to_linear(positions)
@@ -66,6 +67,8 @@ def _linear_to_nd(
     linearization = _track_linearization(
         binning,
         "linear_to_nd()",
+        "it maps distances along a track's centerline back to positions on "
+        "that centerline",
         "on this environment, get bin centers with env.bin_center_of(bins)",
     )
     return linearization.linear_to_nd(linear_position)
