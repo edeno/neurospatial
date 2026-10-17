@@ -862,6 +862,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The `Environment` docstring examples run in the documentation tests. The
+  skipped ones now execute on fixed example data, so they show real output:
+  `from_dict` compares the round trip with `np.array_equal(env.bin_centers,
+  reconstructed.bin_centers)` (it asserted `env == reconstructed`, which is
+  False now that environments compare by identity), and `to_linear`,
+  `subset`, `interpolate`, `smooth`, `transitions` and `to_nwb` show their
+  results. `n_dims`, `from_polygon`, `plot_1d` and
+  `linearization_properties` no longer document errors or keys that do not
+  exist. Only the napari and video examples of `animate_fields` stay
+  skipped, because they need a display and ffmpeg.
+
 - `simulate_trajectory_sinusoidal` runs over the whole length of the track,
   in linear position. It used the x range of the track's coordinates, so a
   bent track was shortened to its horizontal extent: an L-shaped 120 + 80 cm

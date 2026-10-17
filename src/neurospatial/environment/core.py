@@ -629,10 +629,11 @@ class Environment(Generic[_C]):
         Examples
         --------
         >>> import numpy as np
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0, name="MyEnv")
-        >>> repr(env)  # doctest: +SKIP
-        "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=2.0, name="MyEnv")
+        >>> env
+        Environment(name='MyEnv', 2D, 36 bins, RegularGrid)
 
         """
         return _repr(
@@ -686,14 +687,18 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        In a Jupyter notebook, simply evaluate an Environment object:
+        In a Jupyter notebook, evaluating an Environment in a cell displays
+        this table automatically. Calling the method returns the HTML string:
 
         >>> import numpy as np
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0, name="MyEnv")
-        >>> env  # In Jupyter, displays rich HTML table automatically  # doctest: +SKIP
-
-        This will display a formatted table with environment details.
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=2.0, name="MyEnv")
+        >>> html = env._repr_html_()
+        >>> html.startswith("<div")
+        True
+        >>> "MyEnv" in html
+        True
 
         """
         return _repr_html(
@@ -746,15 +751,18 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(500, 2) * 100  # 2D data in cm
-        >>> env = Environment.from_samples(data, bin_size=5.0, name="OpenField")
-        >>> print(env.info())  # doctest: +SKIP
+        >>> # Positions sampled every 2.5 cm over a 100 x 100 cm arena
+        >>> x, y = np.meshgrid(np.linspace(0, 100, 41), np.linspace(0, 100, 41))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=5.0, name="OpenField")
+        >>> print(env.info())
         Environment Information
         =======================
+        <BLANKLINE>
         Name: OpenField
-        Layout Type: RegularGridLayout
+        Layout Type: RegularGrid
         Dimensions: 2
-        Number of Bins: 400
+        Number of Bins: 441
         <BLANKLINE>
         Spatial Extent:
           Dimension 0: [-2.50, 102.50] (range: 105.00)
@@ -764,7 +772,8 @@ class Environment(Generic[_C]):
           Dimension 0: 5.00
           Dimension 1: 5.00
         <BLANKLINE>
-        Regions: 0
+        Regions: None
+        <BLANKLINE>
 
         """
         return _info(
@@ -801,11 +810,6 @@ class Environment(Generic[_C]):
         int
             The number of dimensions (e.g., 1 for a line, 2 for a plane).
             Derived from the shape of `self.bin_centers`.
-
-        Raises
-        ------
-        RuntimeError
-            If `bin_centers` is not available.
 
         """
         return self._binning.bins.n_dims
@@ -1462,9 +1466,8 @@ class Environment(Generic[_C]):
         >>> data = np.random.rand(100, 2) * 10
         >>> env = Environment.from_samples(data, bin_size=2.0)
         >>> points = np.array([[5.0, 5.0], [15.0, 15.0]])
-        >>> mask = env.contains(points)
-        >>> print(mask)  # doctest: +SKIP
-        [ True False]  # First point in environment, second outside
+        >>> env.contains(points)  # the second point is outside the arena
+        array([ True, False])
 
         """
         indices = self._locate(positions)
@@ -1568,7 +1571,8 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        - **Only works for 1D environments** created with `Environment.from_graph()`
+        - **Only works for track environments** built with `Environment.from_graph()`,
+          `Environment.linear_track()` or `Environment.maze()`
         - For N-D environments, use `bin_at()` to map positions to bins instead
         - Linear coordinates start at 0 and increase monotonically along the track
         - Every position is projected onto the nearest point of the centerline,
@@ -1585,25 +1589,14 @@ class Environment(Generic[_C]):
         Examples
         --------
         >>> import numpy as np
-        >>> import networkx as nx
         >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> # Convert 2D position to 1D linear coordinate
-        >>> position_2d = np.array(
-        ...     [[5.0, 0.0]]
-        ... )  # Halfway along track  # doctest: +SKIP
-        >>> position_1d = env.to_linear(position_2d)  # doctest: +SKIP
-        >>> print(f"Linear position: {position_1d[0]:.1f}")  # doctest: +SKIP
-        Linear position: 5.0
+        >>> # A 100 cm linear track along the x axis
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> # Halfway along the track, 3 cm off the centerline
+        >>> env.to_linear(np.array([[50.0, 3.0]]))
+        array([50.])
 
         """
         linearization = self._binning.linearization
@@ -1652,7 +1645,8 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        - **Only works for 1D environments** created with `Environment.from_graph()`
+        - **Only works for track environments** built with `Environment.from_graph()`,
+          `Environment.linear_track()` or `Environment.maze()`
         - Inverse operation of `to_linear()`
         - Useful for plotting 1D data in the original 2D space
 
@@ -1665,23 +1659,14 @@ class Environment(Generic[_C]):
         Examples
         --------
         >>> import numpy as np
-        >>> import networkx as nx
         >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> # Convert 1D linear coordinate to 2D position
-        >>> linear_pos = np.array([5.0])  # Halfway along track  # doctest: +SKIP
-        >>> position_2d = env.linear_to_nd(linear_pos)  # doctest: +SKIP
-        >>> print(f"2D position: {position_2d[0]}")  # doctest: +SKIP
-        2D position: [5. 0.]
+        >>> # A 100 cm linear track along the x axis
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> # 50 cm along the track is the middle of the centerline
+        >>> env.linear_to_nd(np.array([50.0]))
+        array([[50.,  0.]])
 
         """
         linearization = self._binning.linearization
@@ -1957,11 +1942,21 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> bins = env.bin_sequence(times, positions)  # doctest: +SKIP
-        >>> bins = env.bin_sequence(times, positions, dedup=False)  # doctest: +SKIP
-        >>> bins = env.bin_sequence(
-        ...     times, positions, outside_value=None
-        ... )  # doctest: +SKIP
+        A 10 x 10 cm arena with 2 cm bins. The animal runs along y = 1 and
+        one tracking sample jumps outside the arena:
+
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> times = np.arange(6) * 0.1  # seconds
+        >>> x_cm = np.array([1.0, 1.5, 3.0, 3.5, 20.0, 5.0])  # 20 cm is outside
+        >>> positions = np.c_[x_cm, np.ones(6)]
+        >>> env.bin_sequence(times, positions)  # repeated bins collapse
+        array([ 7, 13, -1, 19])
+        >>> env.bin_sequence(times, positions, dedup=False)  # one bin per sample
+        array([ 7,  7, 13, 13, -1, 19])
+        >>> env.bin_sequence(times, positions, outside_value=None)  # drop outside
+        array([ 7, 13, 19])
 
         """
         result = _bin_sequence(
@@ -2042,10 +2037,21 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> result = env.bin_sequence_with_runs(times, positions)  # doctest: +SKIP
-        >>> # Duration of run i in seconds:
-        >>> # times[result.run_starts[i] + result.run_lengths[i] - 1]
-        >>> #   - times[result.run_starts[i]]
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> times = np.arange(6) * 0.1  # seconds
+        >>> x_cm = np.array([1.0, 1.5, 3.0, 3.5, 20.0, 5.0])  # 20 cm is outside
+        >>> positions = np.c_[x_cm, np.ones(6)]
+        >>> result = env.bin_sequence_with_runs(times, positions)
+        >>> result.bins
+        array([ 7, 13, -1, 19])
+        >>> result.run_lengths  # samples in each run
+        array([2, 2, 1, 1])
+        >>> # Time from the first to the last sample of each run, in seconds
+        >>> last = result.run_starts + result.run_lengths - 1
+        >>> np.round(times[last] - times[result.run_starts], 2)
+        array([0.1, 0.1, 0. , 0. ])
         """
         return _bin_sequence(
             times,
@@ -2145,26 +2151,28 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> # Nearest-neighbor interpolation (all layouts)
-        >>> field = np.random.rand(env.n_bins)  # doctest: +SKIP
-        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2]])  # doctest: +SKIP
-        >>> values = env.interpolate(
-        ...     field, query_points, mode="nearest"
-        ... )  # doctest: +SKIP
+        A field that rises linearly across the arena, f(x, y) = 2x + 3y,
+        read at two points inside the arena and one outside it:
 
-        >>> # Linear interpolation (grids only)
-        >>> # For plane f(x,y) = 2x + 3y, interpolation is exact
-        >>> plane_field = (
-        ...     2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
-        ... )  # doctest: +SKIP
-        >>> values = env.interpolate(
-        ...     plane_field, query_points, mode="linear"
-        ... )  # doctest: +SKIP
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> plane_field = 2 * env.bin_centers[:, 0] + 3 * env.bin_centers[:, 1]
+        >>> query_points = np.array([[5.0, 5.0], [7.5, 3.2], [50.0, 5.0]])
 
-        >>> # Evaluate rate map at trajectory positions
-        >>> rates_at_trajectory = env.interpolate(
-        ...     rate_map, positions, mode="linear"
-        ... )  # doctest: +SKIP
+        Linear interpolation (grids only) recovers the plane exactly:
+
+        >>> env.interpolate(plane_field, query_points, mode="linear")
+        array([25. , 24.6,  nan])
+
+        Nearest-neighbor interpolation (all layouts) returns the value of the
+        closest bin center:
+
+        >>> env.interpolate(plane_field, query_points, mode="nearest").round(2)
+        array([27.08, 25.25,   nan])
+
+        To read a rate map at every tracked position, pass the positions
+        array, ``env.interpolate(rate_map, positions, mode="linear")``.
 
         """
         return _interpolate(
@@ -2244,16 +2252,8 @@ class Environment(Generic[_C]):
         -----
         **Geometry only**: This method only coarsens the grid structure. To
         aggregate field values (occupancy, spike counts, etc.) from the original
-        grid to the coarsened grid, map the original bin centers and aggregate:
-
-            >>> coarse = env.rebin(factor=2)  # doctest: +SKIP
-            >>> coarse_indices = coarse.bin_at(env.bin_centers)  # doctest: +SKIP
-            >>> retained = coarse_indices >= 0  # doctest: +SKIP
-            >>> coarse_field = np.bincount(  # doctest: +SKIP
-            ...     coarse_indices[retained],
-            ...     weights=field[retained],
-            ...     minlength=coarse.n_bins,
-            ... )
+        grid to the coarsened grid, map the original bin centers to coarse
+        bins and sum within each one, as the last example below shows.
 
         **Factor mode**: Integer coarsening requires uniform rectangular cells
         with native grid connections and straight center-to-center navigation
@@ -2439,21 +2439,36 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> # Extract bins inside 'goal' region
-        >>> goal_env = env.subset(region_names=["goal"])  # doctest: +SKIP
-        >>>
-        >>> # Crop to polygon
-        >>> from shapely.geometry import box  # doctest: +SKIP
-        >>> cropped = env.subset(polygon=box(0, 0, 50, 50))  # doctest: +SKIP
-        >>>
-        >>> # Select bins by boolean mask
-        >>> mask = env.bin_centers[:, 0] < 50  # Left half  # doctest: +SKIP
-        >>> left_env = env.subset(mask=mask)  # doctest: +SKIP
-        >>>
-        >>> # Inverted selection (everything except region)
-        >>> outside = env.subset(
-        ...     region_names=["obstacle"], invert=True
-        ... )  # doctest: +SKIP
+        A 100 x 100 cm arena with 10 cm bins and a goal zone in one corner:
+
+        >>> import numpy as np
+        >>> from shapely.geometry import box
+        >>> from neurospatial import Environment
+        >>> from neurospatial.regions import Regions
+        >>> x, y = np.meshgrid(np.linspace(0, 100, 41), np.linspace(0, 100, 41))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=10.0, units="cm"
+        ... )
+        >>> regions = Regions()
+        >>> _ = regions.add("goal", polygon=box(70, 70, 100, 100))
+        >>> env = env.with_regions(regions)
+        >>> env.n_bins
+        121
+
+        Keep the bins inside the goal zone, or everything except it:
+
+        >>> env.subset(region_names=["goal"]).n_bins
+        16
+        >>> env.subset(region_names=["goal"], invert=True).n_bins
+        105
+
+        Crop to a polygon, or select bins with a boolean mask:
+
+        >>> env.subset(polygon=box(0, 0, 50, 50)).n_bins
+        36
+        >>> left_half = env.bin_centers[:, 0] < 50
+        >>> env.subset(mask=left_half).n_bins
+        55
 
         """
         derivation = _subset(
@@ -2605,12 +2620,9 @@ class Environment(Generic[_C]):
         it returns a new Environment instance.
 
         **Transformation order**: When composing transforms, use the `@` operator.
-        `T1 @ T2` applies T2 first, then T1:
-
-            >>> composed = (
-            ...     rotation @ translation
-            ... )  # translation first, then rotation  # doctest: +SKIP
-            >>> transformed = env.apply_transform(composed)  # doctest: +SKIP
+        ``T1 @ T2`` applies ``T2`` first, then ``T1``, so
+        ``rotation @ translation`` translates first and then rotates (see the
+        composed-transform example below).
 
         **Edge attributes**: After transformation:
 
@@ -2629,7 +2641,8 @@ class Environment(Generic[_C]):
         >>> from neurospatial.ops.transforms import translate
         >>> import numpy as np
         >>> # Create 2D environment
-        >>> data = np.random.rand(200, 2) * 100
+        >>> rng = np.random.default_rng(0)
+        >>> data = rng.random((200, 2)) * 100
         >>> env = Environment.from_samples(data, bin_size=5.0, name="session1")
         >>> # Translate by (10, 20) cm
         >>> transform = translate(10, 20)
@@ -2652,68 +2665,65 @@ class Environment(Generic[_C]):
         ... )
         >>> transform = Affine2D(R)
         >>> env_rotated = env.apply_transform(transform)
-        >>> # Distances preserved under rotation
-        >>> assert env_rotated.n_bins == env.n_bins
+        >>> # Distances between bin centers are preserved under rotation
+        >>> def steps(centers):
+        ...     return np.linalg.norm(np.diff(centers, axis=0), axis=1)
+        >>> np.allclose(steps(env_rotated.bin_centers), steps(env.bin_centers))
+        True
 
-        Composed transforms (scale → rotate → translate):
+        Composed transforms (scale, then rotate, then translate):
 
-        >>> from neurospatial.ops.transforms import (
-        ...     scale_2d,
-        ...     translate,
-        ... )  # doctest: +SKIP
-        >>> # Build transformation pipeline
-        >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)  # doctest: +SKIP
-        >>> env_aligned = env.apply_transform(T, name="aligned")  # doctest: +SKIP
+        >>> from neurospatial.ops.transforms import scale_2d
+        >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)
+        >>> env_aligned = env.apply_transform(T, name="aligned")
+        >>> env_aligned.n_bins == env.n_bins
+        True
 
         Cross-session alignment using landmarks:
 
-        >>> from neurospatial.ops.transforms import estimate_transform  # doctest: +SKIP
+        >>> from neurospatial.ops.transforms import estimate_transform
         >>> # Session 1 landmarks (e.g., arena corners)
-        >>> landmarks_s1 = np.array(
-        ...     [[0, 0], [100, 0], [100, 100], [0, 100]]
-        ... )  # doctest: +SKIP
+        >>> landmarks_s1 = np.array([[0, 0], [100, 0], [100, 100], [0, 100]], float)
         >>> # Session 2 landmarks (same physical locations, different coordinates)
-        >>> landmarks_s2 = np.array(
-        ...     [[5, 10], [95, 15], [90, 105], [0, 100]]
-        ... )  # doctest: +SKIP
+        >>> landmarks_s2 = np.array([[5, 10], [95, 15], [90, 105], [0, 100]], float)
         >>> # Estimate rigid transform (rotation + translation)
-        >>> T = estimate_transform(
-        ...     landmarks_s1, landmarks_s2, kind="rigid"
-        ... )  # doctest: +SKIP
-        >>> # Transform session 1 environment to session 2 coordinates
-        >>> env_s1_aligned = env_s1.apply_transform(
-        ...     T, name="session1_in_s2_coords"
-        ... )  # doctest: +SKIP
+        >>> T = estimate_transform(landmarks_s1, landmarks_s2, kind="rigid")
+        >>> # Transform the session 1 environment to session 2 coordinates
+        >>> env_s1_aligned = env.apply_transform(
+        ...     T, name="session1_in_s2_coords", frame="session2"
+        ... )
+        >>> env_s1_aligned.frame
+        'session2'
 
         3D transformation:
 
-        >>> from scipy.spatial.transform import Rotation  # doctest: +SKIP
+        >>> from scipy.spatial.transform import Rotation
         >>> from neurospatial.ops.transforms import (
         ...     from_rotation_matrix,
         ...     translate_3d,
-        ... )  # doctest: +SKIP
+        ... )
         >>> # Create 3D environment
-        >>> data_3d = np.random.randn(500, 3) * 20  # doctest: +SKIP
-        >>> env_3d = Environment.from_samples(data_3d, bin_size=3.0)  # doctest: +SKIP
+        >>> data_3d = rng.random((500, 3)) * 20
+        >>> env_3d = Environment.from_samples(data_3d, bin_size=5.0)
         >>> # Rotate 45 degrees around z-axis and translate
-        >>> R_3d = Rotation.from_euler(
-        ...     "z", 45, degrees=True
-        ... ).as_matrix()  # doctest: +SKIP
-        >>> rotation = from_rotation_matrix(R_3d)  # doctest: +SKIP
-        >>> translation = translate_3d(10, 20, 30)  # doctest: +SKIP
-        >>> T_3d = translation @ rotation  # doctest: +SKIP
-        >>> env_3d_transformed = env_3d.apply_transform(T_3d)  # doctest: +SKIP
+        >>> R_3d = Rotation.from_euler("z", 45, degrees=True).as_matrix()
+        >>> rotation = from_rotation_matrix(R_3d)
+        >>> translation = translate_3d(10, 20, 30)
+        >>> T_3d = translation @ rotation
+        >>> env_3d_transformed = env_3d.apply_transform(T_3d)
+        >>> env_3d_transformed.n_dims
+        3
 
         With regions (regions are automatically transformed):
 
         >>> from neurospatial.regions import Regions
         >>> regions = Regions(env.regions.values())
-        >>> regions.add("goal", point=[80, 90])  # doctest: +SKIP
+        >>> _ = regions.add("goal", point=[80, 90])
         >>> env = env.with_regions(regions)
-        >>> env_transformed = env.apply_transform(translate(10, 10))  # doctest: +SKIP
+        >>> env_transformed = env.apply_transform(translate(10, 10))
         >>> # Region is transformed along with environment
-        >>> goal_region = env_transformed.regions["goal"]  # doctest: +SKIP
-        >>> np.allclose(goal_region.data, [90, 100])  # doctest: +SKIP
+        >>> goal_region = env_transformed.regions["goal"]
+        >>> np.allclose(goal_region.data, [90, 100])
         True
 
         """
@@ -3627,11 +3637,6 @@ class Environment(Generic[_C]):
         Environment
             A new Environment instance with a `ShapelyPolygonLayout`.
 
-        Raises
-        ------
-        RuntimeError
-            If the 'shapely' package is not installed.
-
         See Also
         --------
         from_samples : Create environment by binning position data.
@@ -4068,7 +4073,7 @@ class Environment(Generic[_C]):
         >>> print(center.shape)
         (2,)
         >>> centers = env.bin_center_of([0, 1, 2])
-        >>> print(centers.shape)  # doctest: +SKIP
+        >>> print(centers.shape)
         (3, 2)
 
         """
@@ -4418,6 +4423,7 @@ class Environment(Generic[_C]):
 
         A connected component is a maximal subset of bins where every pair
         of bins is connected by a path through the graph. This is useful for:
+
         - Identifying disconnected regions in masked environments
         - Finding traversable subregions
         - Detecting isolated islands in the environment
@@ -4449,17 +4455,23 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> comps = env.components()  # doctest: +SKIP
-        >>> print(f"Found {len(comps)} components")  # doctest: +SKIP
-        Found 2 components  # doctest: +SKIP
-        >>> print(f"Largest component has {len(comps[0])} bins")  # doctest: +SKIP
-        Largest component has 150 bins  # doctest: +SKIP
+        Two chambers of a 100 x 40 cm grid separated by a wall one bin wide:
 
-        >>> largest = env.components(largest_only=True)[0]  # doctest: +SKIP
-        >>> print(
-        ...     f"Largest component: {len(largest)} of {env.n_bins} bins"
-        ... )  # doctest: +SKIP
-        Largest component: 150 of 200 bins  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> mask = np.ones((10, 4), dtype=bool)
+        >>> mask[4, :] = False  # the wall
+        >>> grid_edges = (np.arange(11) * 10.0, np.arange(5) * 10.0)
+        >>> env = Environment.from_grid_mask(mask, grid_edges)
+        >>> comps = env.components()
+        >>> print(f"Found {len(comps)} components")
+        Found 2 components
+        >>> [len(component) for component in comps]
+        [20, 16]
+
+        >>> largest = env.components(largest_only=True)[0]
+        >>> print(f"Largest component: {len(largest)} of {env.n_bins} bins")
+        Largest component: 20 of 36 bins
 
         """
         return _components(self.connectivity, largest_only=largest_only)
@@ -4630,7 +4642,7 @@ class Environment(Generic[_C]):
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> env.to_file("my_environment")
         >>> loaded = Environment.from_file("my_environment")
-        >>> loaded.n_bins == env.n_bins
+        >>> np.array_equal(loaded.bin_centers, env.bin_centers)
         True
 
         See Also
@@ -4666,11 +4678,14 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-        >>> env_dict = env.to_dict()  # doctest: +SKIP
-        >>> # Dictionary can be converted to JSON
-        >>> import json  # doctest: +SKIP
-        >>> json_str = json.dumps(env_dict)  # doctest: +SKIP
+        >>> import json
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> env_dict = env.to_dict()
+        >>> # The dictionary holds only JSON types, so it can be written as JSON
+        >>> json_str = json.dumps(env_dict)
 
         See Also
         --------
@@ -4707,10 +4722,19 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-        >>> env_dict = env.to_dict()  # doctest: +SKIP
-        >>> reconstructed = Environment.from_dict(env_dict)  # doctest: +SKIP
-        >>> assert env == reconstructed  # doctest: +SKIP
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> reconstructed = Environment.from_dict(env.to_dict())
+
+        The reconstruction is a new object, so ``env == reconstructed`` is
+        False (environments compare by identity). Compare their contents:
+
+        >>> np.array_equal(env.bin_centers, reconstructed.bin_centers)
+        True
+        >>> np.array_equal(env.edge_pairs, reconstructed.edge_pairs)
+        True
 
         See Also
         --------
@@ -4768,36 +4792,39 @@ class Environment(Generic[_C]):
         --------
         Save environment to NWB file:
 
-        >>> from pynwb import NWBHDF5IO, NWBFile  # doctest: +SKIP
-        >>> from datetime import datetime  # doctest: +SKIP
-        >>> from neurospatial import Environment  # doctest: +SKIP
-        >>> import numpy as np  # doctest: +SKIP
-        >>> import tempfile  # doctest: +SKIP
-        >>> from pathlib import Path  # doctest: +SKIP
+        >>> import tempfile
+        >>> from datetime import datetime, timezone
+        >>> from pathlib import Path
+        >>> import numpy as np
+        >>> from pynwb import NWBHDF5IO, NWBFile
+        >>> from neurospatial import Environment
         >>>
         >>> # Create environment
-        >>> positions = np.random.rand(1000, 2) * 100  # doctest: +SKIP
-        >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-        >>> env = env.with_metadata(units="cm")  # doctest: +SKIP
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.random((1000, 2)) * 100
+        >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
         >>>
         >>> # Save to NWB
-        >>> nwbfile = NWBFile(  # doctest: +SKIP
+        >>> nwbfile = NWBFile(
         ...     session_description="Test session",
         ...     identifier="test_001",
-        ...     session_start_time=datetime.now().astimezone(),
+        ...     session_start_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
         ... )
-        >>> env.to_nwb(nwbfile, name="linear_track")  # doctest: +SKIP
+        >>> env.to_nwb(nwbfile, name="open_field")
         >>>
-        >>> # Write to disk (use a temp directory, not the CWD)
-        >>> path = Path(tempfile.mkdtemp()) / "session.nwb"  # doctest: +SKIP
-        >>> with NWBHDF5IO(path, "w") as io:  # doctest: +SKIP
+        >>> # Write to disk (use a temporary directory, not the working directory)
+        >>> path = Path(tempfile.mkdtemp()) / "session.nwb"
+        >>> with NWBHDF5IO(path, "w") as io:
         ...     io.write(nwbfile)
 
         Load environment back:
 
-        >>> with NWBHDF5IO(path, "r") as io:  # doctest: +SKIP
-        ...     nwbfile = io.read()
-        ...     loaded_env = Environment.from_nwb(nwbfile, name="linear_track")
+        >>> with NWBHDF5IO(path, "r") as io:
+        ...     loaded_env = Environment.from_nwb(io.read(), name="open_field")
+        >>> np.array_equal(loaded_env.bin_centers, env.bin_centers)
+        True
+        >>> loaded_env.units
+        'cm'
 
         """
         from neurospatial.io.nwb import write_environment
@@ -4968,25 +4995,24 @@ class Environment(Generic[_C]):
         >>> membership.dtype
         dtype('bool')
 
-        >>> left_bins = np.where(membership[:, 0])[0]  # doctest: +SKIP
-        >>> len(left_bins) > 0  # doctest: +SKIP
-        True  # doctest: +SKIP
+        Each column counts the bins of one region; no bin is in both halves:
 
-        >>> both = np.all(membership, axis=1)  # doctest: +SKIP
-        >>> overlapping_bins = np.where(both)[0]  # doctest: +SKIP
-        >>> len(overlapping_bins) >= 0  # doctest: +SKIP
-        True  # doctest: +SKIP
+        >>> membership.sum(axis=0)
+        array([18, 18])
+        >>> int(np.all(membership, axis=1).sum())
+        0
 
-        >>> from neurospatial.regions import Regions  # doctest: +SKIP
-        >>> external = Regions()  # doctest: +SKIP
-        >>> _ = external.add("test", polygon=box(2, 2, 8, 8))  # doctest: +SKIP
-        >>> test_membership = env.region_membership(regions=external)  # doctest: +SKIP
-        >>> test_membership.shape[1]  # doctest: +SKIP
-        1  # doctest: +SKIP
+        Regions that are not attached to the environment can be tested too:
 
-        >>> interior = env.region_membership(include_boundary=False)  # doctest: +SKIP
-        >>> bool(interior.sum() <= membership.sum())  # doctest: +SKIP
-        True  # doctest: +SKIP
+        >>> external = Regions()
+        >>> _ = external.add("test", polygon=box(2, 2, 8, 8))
+        >>> env.region_membership(regions=external).shape
+        (36, 1)
+
+        Excluding bins whose centers lie on a region's edge keeps fewer bins:
+
+        >>> env.region_membership(include_boundary=False).sum(axis=0)
+        array([8, 8])
 
         """
         return _region_membership(
@@ -5037,12 +5063,9 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        For intersection or difference, combine separate masks:
-
-        >>> left_mask = env.region_mask("left")  # doctest: +SKIP
-        >>> right_mask = env.region_mask("right")  # doctest: +SKIP
-        >>> intersection = left_mask & right_mask  # doctest: +SKIP
-        >>> difference = left_mask & ~right_mask  # doctest: +SKIP
+        A list of regions gives their union. For an intersection or a
+        difference, combine separate masks with ``&`` and ``~`` (see the last
+        example).
 
         Examples
         --------
@@ -5062,6 +5085,9 @@ class Environment(Generic[_C]):
         1
         >>> int(env.region_mask(["center", "reward"]).sum())
         5
+        >>> center, reward = env.region_mask("center"), env.region_mask("reward")
+        >>> int((center & reward).sum()), int((center & ~reward).sum())
+        (0, 4)
 
         See Also
         --------
@@ -5131,19 +5157,26 @@ class Environment(Generic[_C]):
 
         Examples
         --------
+        >>> import matplotlib.pyplot as plt
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> ax = env.plot()  # doctest: +SKIP
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> samples = np.c_[x.ravel(), y.ravel()]
+        >>> env = Environment.from_samples(samples, bin_size=2.0, units="cm")
+        >>> ax = env.plot()
+        >>> ax.get_xlabel()
+        'X Position (cm)'
 
         Plot with regions:
 
         >>> from neurospatial.regions import Regions
         >>> regions = Regions(env.regions.values())
-        >>> regions.add("goal", point=[5.0, 5.0])  # doctest: +SKIP
+        >>> _ = regions.add("goal", point=[5.0, 5.0])
         >>> env = env.with_regions(regions)
-        >>> ax = env.plot(show_regions=True)  # doctest: +SKIP
+        >>> ax = env.plot(show_regions=True)
+        >>> ax.get_legend_handles_labels()[1]
+        ['goal']
+        >>> plt.close("all")
 
         """
         return _plot(
@@ -5168,9 +5201,9 @@ class Environment(Generic[_C]):
     ) -> matplotlib.axes.Axes | None:
         """Plot a 1D representation of the environment, if applicable.
 
-        This method is primarily for environments where `is_linearized_track` is True
-        (e.g., using `GraphLayout`). It calls the `plot_linear_layout`
-        method of the underlying layout if it exists and the layout is 1D.
+        For track environments (``is_linearized_track`` is True, as built by
+        ``from_graph``, ``linear_track`` and ``maze``), this draws the bins
+        along the linearized track coordinate.
 
         Parameters
         ----------
@@ -5188,24 +5221,23 @@ class Environment(Generic[_C]):
             The axes on which the 1D layout was plotted, or the original `ax`
             (which may be None) if plotting was not applicable.
 
-        Raises
-        ------
-        AttributeError
-            If `self.layout.is_linearized_track` is True but the layout does not have a
-            `plot_linear_layout` method.
+        Warns
+        -----
+        UserWarning
+            If the environment is not a track (``is_linearized_track`` is
+            False); nothing is drawn and ``ax`` is returned unchanged.
 
         Examples
         --------
-        >>> import numpy as np
+        >>> import matplotlib.pyplot as plt
         >>> from neurospatial import Environment
-        >>> from track_linearization import make_track_graph  # doctest: +SKIP
-        >>> position = np.random.rand(100, 2) * 10  # doctest: +SKIP
-        >>> track_graph = make_track_graph(position, use_HMM=False)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     track_graph, track_graph_name="test_track"
-        ... )  # doctest: +SKIP
-        >>> if env.is_linearized_track:  # doctest: +SKIP
-        ...     ax = env.plot_1d()  # doctest: +SKIP
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> ax = env.plot_1d()
+        >>> ax.get_xlabel()
+        'Linearized Position'
+        >>> plt.close("all")
 
         """
         return _plot_1d(
@@ -5584,7 +5616,9 @@ class Environment(Generic[_C]):
         >>> fields = [np.exp(-distances / (4.0 + frame)) for frame in range(8)]
         >>> frame_times = np.arange(len(fields)) / 30.0
 
-        Interactive exploration requires a display; video export requires ffmpeg:
+        Interactive exploration in napari and video export. These two examples
+        are skipped in the documentation tests because napari needs a display
+        and video export needs the ffmpeg program:
 
         >>> viewer = env.animate_fields(
         ...     fields, frame_times=frame_times, backend="napari"
@@ -5759,11 +5793,19 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.array([[1, 1], [1, 2], [2, 1], [2, 2], [1, 3], [2, 3]])
-        >>> env = Environment.from_samples(data, bin_size=1.0)
+
+        A 50 x 50 cm arena of 10 cm bins: the outer ring of 16 bins is the
+        boundary and the 9 bins inside it are not.
+
+        >>> mask = np.ones((5, 5), dtype=bool)
+        >>> grid_edges = (np.arange(6) * 10.0, np.arange(6) * 10.0)
+        >>> env = Environment.from_grid_mask(mask, grid_edges)
         >>> boundary = env.boundary_bins
-        >>> print(f"Found {len(boundary)} boundary bins")  # doctest: +SKIP
-        Found 6 boundary bins
+        >>> print(f"Found {len(boundary)} boundary bins of {env.n_bins}")
+        Found 16 boundary bins of 25
+        >>> center_bin = env.bin_at(np.array([[25.0, 25.0]]))[0]
+        >>> bool(np.isin(center_bin, boundary))
+        False
 
         """
         boundary: NDArray[np.intp] = self._boundary_bins_cached.copy()
@@ -5774,25 +5816,15 @@ class Environment(Generic[_C]):
         self,
     ) -> dict[str, Any]:
         """
-        Get linearization metadata for 1D environments.
-
-        Returns a dictionary with linearization information, including:
-        - `is_linearized_track`: Whether this is a 1D linearized environment
-        - `linear_bin_edges`: Bin edges in linear coordinates (1D only)
-        - `linear_bin_centers_1d`: Bin centers in linear coordinates (1D only)
-        - `track_graph`: The underlying track graph (1D only)
+        Get linearization metadata for track environments.
 
         Returns
         -------
         dict[str, Any]
-            Dictionary with linearization metadata. For non-1D environments,
-            only contains `{'is_linearized_track': False}`.
-
-        Notes
-        -----
-        - Metadata is cached; each access returns an independent dictionary.
-        - Only 1D environments (created with `from_graph()`) have full linearization info
-        - For N-D environments, returns `{'is_linearized_track': False}`
+            ``{"is_linearized_track": bool}``: True for a track built with
+            ``from_graph``, ``linear_track`` or ``maze``. Each access returns
+            an independent dictionary. The track geometry itself (graph, edge
+            order, linear bin edges) is in ``env.binning.linearization``.
 
         See Also
         --------
@@ -5802,22 +5834,12 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> import numpy as np
-        >>> import networkx as nx
         >>> from neurospatial import Environment
-        >>>
-        >>> # Create a simple 1D track
-        >>> G = nx.Graph()  # doctest: +SKIP
-        >>> G.add_node(0, pos=(0.0, 0.0))  # doctest: +SKIP
-        >>> G.add_node(1, pos=(10.0, 0.0))  # doctest: +SKIP
-        >>> G.add_edge(0, 1, edge_id=0, distance=10.0)  # doctest: +SKIP
-        >>> env = Environment.from_graph(
-        ...     G, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-        ... )  # doctest: +SKIP
-        >>>
-        >>> props = env.linearization_properties  # doctest: +SKIP
-        >>> print(props["is_linearized_track"])  # doctest: +SKIP
-        True
+        >>> env = Environment.linear_track(
+        ...     endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=5.0, units="cm"
+        ... )
+        >>> env.linearization_properties
+        {'is_linearized_track': True}
 
         """
         return {"is_linearized_track": self._binning.linearization is not None}
@@ -5833,6 +5855,7 @@ class Environment(Generic[_C]):
         -------
         pd.DataFrame, shape (n_bins, n_attributes)
             DataFrame with bin attributes. Always includes:
+
             - `'source_grid_flat_index'`: Flat index in original grid
             - `'original_grid_nd_index'`: N-D grid index tuple
             - `'pos_dim0'`, `'pos_dim1'`, ...: Position coordinates
@@ -5856,14 +5879,13 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(50, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>>
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> df = env.get_bin_attributes()
-        >>> print(df.columns.tolist())  # doctest: +SKIP
+        >>> print(df.columns.tolist())
         ['source_grid_flat_index', 'original_grid_nd_index', 'pos_dim0', 'pos_dim1']
-        >>> print(df.shape)  # doctest: +SKIP
-        (30, 4)
+        >>> print(df.shape)  # one row per bin
+        (36, 4)
 
         """
         return _copy_attributes(self._bin_attributes_cached)
@@ -5886,10 +5908,12 @@ class Environment(Generic[_C]):
         -------
         pd.DataFrame, shape (n_edges, n_attributes)
             DataFrame with edge attributes. Always includes:
+
             - `'source'`: Source bin ID
             - `'target'`: Target bin ID
             - `'distance'`: Stored navigation distance between bins
             - `'vector'`: Displacement vector tuple
+            - `'vector_dim0'`, `'vector_dim1'`, ...: Displacement components
             - `'edge_id'`: Unique edge ID
             - `'angle_2d'`: Angle for 2D layouts (optional)
 
@@ -5912,14 +5936,13 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(50, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>>
+        >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> df = env.get_edge_attributes()
-        >>> print(df.columns.tolist())  # doctest: +SKIP
-        ['source', 'target', 'distance', 'vector', 'edge_id', 'angle_2d']
-        >>> print(df.shape)  # doctest: +SKIP
-        (100, 6)
+        >>> print(df.columns.tolist())
+        ['distance', 'vector', 'edge_id', 'angle_2d', 'source', 'target', 'vector_dim0', 'vector_dim1']
+        >>> print(df.shape)  # one row per edge
+        (110, 8)
 
         """
         return _copy_attributes(self._edge_attributes_cached)
@@ -6027,11 +6050,21 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-        >>> # Compute kernel for smoothing
-        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")  # doctest: +SKIP
-        >>> # Apply to field
-        >>> smoothed_field = kernel @ field  # doctest: +SKIP
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.linspace(0, 50, 26), np.linspace(0, 50, 26))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
+        ... )
+        >>> kernel = env.compute_kernel(bandwidth=5.0, mode="density")
+        >>> kernel.shape  # (n_bins, n_bins)
+        (121, 121)
+        >>> # Spread one spike in the center bin into a density (spikes / cm²)
+        >>> spikes = np.zeros(env.n_bins)
+        >>> spikes[env.n_bins // 2] = 1.0
+        >>> density = kernel @ spikes
+        >>> # Integrating the density over the bin areas recovers the spike
+        >>> round(float((density * env.bin_sizes).sum()), 6)
+        1.0
 
         """
         return _compute_kernel(
@@ -6258,27 +6291,43 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> # Smooth an intensive rate map without changing its units or level
-        >>> smoothed_rate = env.smooth(firing_rate, bandwidth=5.0)  # doctest: +SKIP
+        A 50 x 50 cm arena with 5 cm bins:
 
-        >>> # Smooth spike counts (mass-conserving)
-        >>> smoothed_counts = env.smooth(
-        ...     spike_counts, bandwidth=5.0, mode="transition"
-        ... )  # doctest: +SKIP
-        >>> # Total spikes preserved
-        >>> assert np.isclose(
-        ...     smoothed_counts.sum(), spike_counts.sum()
-        ... )  # doctest: +SKIP
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.linspace(0, 50, 26), np.linspace(0, 50, 26))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
+        ... )
 
-        >>> # Turn spike counts into a smoothed density (KDE)
-        >>> spike_density = env.smooth(
-        ...     spike_counts, bandwidth=3.0, mode="density"
-        ... )  # doctest: +SKIP
+        Smoothing an intensive rate map keeps its units and level, so a flat
+        4 Hz map stays 4 Hz:
 
-        >>> # Smooth a discrete probability distribution (mass, sums to 1)
-        >>> smoothed_prob = env.smooth(
-        ...     posterior, bandwidth=2.0, mode="transition"
-        ... )  # doctest: +SKIP
+        >>> firing_rate = np.full(env.n_bins, 4.0)
+        >>> bool(np.allclose(env.smooth(firing_rate, bandwidth=5.0), 4.0))
+        True
+
+        Smoothing spike counts with ``mode="transition"`` conserves the total:
+
+        >>> spike_counts = np.zeros(env.n_bins)
+        >>> spike_counts[[10, 60, 61]] = [3, 5, 2]
+        >>> smoothed_counts = env.smooth(spike_counts, bandwidth=5.0, mode="transition")
+        >>> bool(np.isclose(smoothed_counts.sum(), spike_counts.sum()))
+        True
+
+        ``mode="density"`` turns counts into spikes per cm²; integrating over
+        the bin areas gives the total back:
+
+        >>> spike_density = env.smooth(spike_counts, bandwidth=3.0, mode="density")
+        >>> round(float((spike_density * env.bin_sizes).sum()), 6)
+        10.0
+
+        A discrete probability distribution is mass, so it also uses
+        ``mode="transition"`` and still sums to 1:
+
+        >>> posterior = np.full(env.n_bins, 1.0 / env.n_bins)
+        >>> smoothed_prob = env.smooth(posterior, bandwidth=2.0, mode="transition")
+        >>> round(float(smoothed_prob.sum()), 6)
+        1.0
 
         """
         return _smooth(self._cache, self._binning, field, bandwidth, mode=mode)
@@ -6547,6 +6596,7 @@ class Environment(Generic[_C]):
         the connectivity graph. Useful for removing tracking errors.
 
         **Model mode**: Generates theoretical transition probabilities:
+
         - 'random_walk': Each bin transitions uniformly to all graph neighbors.
           Equivalent to normalized adjacency matrix.
         - 'diffusion': Transitions weighted by spatial proximity using heat kernel.
@@ -6557,17 +6607,36 @@ class Environment(Generic[_C]):
 
         Examples
         --------
-        >>> T_empirical = env.transitions(
-        ...     times=times, positions=positions
-        ... )  # doctest: +SKIP
-        >>> T_lag2 = env.transitions(
-        ...     bins=bin_sequence, lag=2, allow_teleports=True
-        ... )  # doctest: +SKIP
-        >>> T_random = env.transitions(method="random_walk")  # doctest: +SKIP
-        >>> T_diffusion = env.transitions(
-        ...     method="diffusion", bandwidth=5.0
-        ... )  # doctest: +SKIP
-        >>> diff = (T_empirical - T_diffusion).toarray()  # doctest: +SKIP
+        A 50 x 50 cm arena with 5 cm bins and a 10 s run along its middle:
+
+        >>> import numpy as np
+        >>> x, y = np.meshgrid(np.linspace(0, 50, 26), np.linspace(0, 50, 26))
+        >>> env = Environment.from_samples(
+        ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
+        ... )
+        >>> times = np.arange(0.0, 10.0, 0.1)  # seconds
+        >>> positions = np.c_[np.linspace(1.0, 49.0, 100), np.full(100, 25.0)]
+
+        Empirical transitions counted from the trajectory, one row per bin:
+
+        >>> T_empirical = env.transitions(times=times, positions=positions)
+        >>> T_empirical.shape
+        (121, 121)
+
+        Transitions two samples apart, from an existing bin sequence:
+
+        >>> bin_sequence = env.bin_sequence(times, positions)
+        >>> T_lag2 = env.transitions(bins=bin_sequence, lag=2, allow_teleports=True)
+
+        Model transitions need no trajectory. Each row is a probability
+        distribution over the next bin:
+
+        >>> T_random = env.transitions(method="random_walk")
+        >>> T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
+        >>> bool(np.allclose(T_diffusion.sum(axis=1), 1.0))
+        True
+        >>> # Compare the observed movement with the diffusion model
+        >>> difference = (T_empirical - T_diffusion).toarray()
 
         """
         return _transitions(

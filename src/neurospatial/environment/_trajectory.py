@@ -593,18 +593,8 @@ def _empirical_transitions(
     Self-transitions (staying in the same bin) are always counted.
 
     The sparse CSR format is memory-efficient for large environments
-    where most bin pairs have no observed transitions.
-
-    Examples
-    --------
-    >>> T = env.transitions(times=times, positions=positions)  # doctest: +SKIP
-    >>> T[10, :].toarray()  # doctest: +SKIP
-    >>> T_counts = env.transitions(  # doctest: +SKIP
-    ...     bins=bin_sequence,
-    ...     normalize=False,
-    ...     allow_teleports=False,  # doctest: +SKIP
-    ... )  # doctest: +SKIP
-    >>> T_2step = env.transitions(bins=bin_sequence, lag=2)  # doctest: +SKIP
+    where most bin pairs have no observed transitions. Executed examples
+    are in :meth:`Environment.transitions`.
 
     """
     n_bins = binning.bins.n_bins
