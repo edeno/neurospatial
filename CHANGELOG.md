@@ -660,7 +660,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   pixel. Hexagonal maps score higher, mostly on even-sized grids (median
   +0.09 over 30 random `from_samples` arenas; a perfect synthetic
   autocorrelogram scores 1.52 instead of 1.40); noise and shuffled maps
-  change by a median of about 0.01-0.02 either way.
+  change by a median of about 0.01-0.02 either way. Grid-cell labels from
+  threshold screens can change for borderline cells whose score was near the
+  threshold.
 
 - Grid orientation values change. `grid_properties().orientation` (and
   `SpatialRateResult.grid_properties()`) read the autocorrelogram as an
