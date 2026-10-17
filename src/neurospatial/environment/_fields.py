@@ -34,9 +34,11 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     FaceGeometry,
     combined_diffusion,
+    get_centers,
     locate,
     require_grid_context,
 )
+from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.ops import (
     _HEAT_KERNEL_RANK_TOL,
     _RESOLUTION_MARGIN,
@@ -261,16 +263,13 @@ def _interpolate_linear(
     )
 
     grid_shape = grid.shape
-    grid_edges = grid.edges
-    n_dims = len(grid_shape)
 
-    # Scatter active-bin values into a full-grid array before reshaping.
-    # `field` is indexed by active-bin id (length n_bins); `grid_shape`
-    # is the FULL grid. On a holed/masked grid n_bins < prod(grid_shape),
-    # so a direct reshape would raise. Use finite placeholders for inactive
-    # cells and mask their positive-weight contributions separately below:
-    # 0 * NaN would otherwise erase even exact active-bin center values.
-    # NaN (missing) field values are handled the same way as inactive cells.
+    # Scatter active-bin values into the full grid. `field` is indexed by
+    # active-bin id; on a holed/masked grid n_bins < prod(grid_shape). Use
+    # finite placeholders for inactive cells and mask their positive-weight
+    # contributions separately below: 0 * NaN would otherwise erase even exact
+    # active-bin center values. NaN (missing) field values are handled the
+    # same way as inactive cells.
     n_full = int(np.prod(grid_shape))
     active_mask = grid.active_mask
     missing_values = np.isnan(field)
@@ -279,20 +278,14 @@ def _interpolate_linear(
         # Fully-active grid: field already covers every cell.
         field_grid = field.reshape(grid_shape)
     else:
-        active_cells = np.flatnonzero(active_mask.ravel())
-        full_field = np.zeros(n_full, dtype=np.float64)
-        full_field[active_cells] = np.where(missing_values, 0.0, field)
-        field_grid = full_field.reshape(grid_shape)
-        missing_cells = ~active_mask.ravel()
-        missing_cells[active_cells[missing_values]] = True
+        field_grid = map_active_data_to_grid(
+            grid_shape, active_mask, np.where(missing_values, 0.0, field), 0.0
+        )
+        missing_cells = np.isnan(
+            map_active_data_to_grid(grid_shape, active_mask, field, np.nan)
+        )
 
-    # Create grid points for each dimension (bin centers)
-    grid_points: list[NDArray[np.float64]] = []
-    for dim in range(n_dims):
-        edges = grid_edges[dim]
-        # Bin centers are midpoints between edges
-        centers = (edges[:-1] + edges[1:]) / 2
-        grid_points.append(centers)
+    grid_points = [get_centers(edges) for edges in grid.edges]
 
     if frame is not None:
         points = frame._project_to_planes(
@@ -314,7 +307,7 @@ def _interpolate_linear(
     if has_missing:
         missing_weight = RegularGridInterpolator(
             grid_points,
-            missing_cells.reshape(grid_shape).astype(np.float64),
+            missing_cells.astype(np.float64),
             method="linear",
             bounds_error=False,
             fill_value=1.0,
