@@ -1231,6 +1231,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   trajectory sampled at 5 Hz on a 21 × 21 × 21 grid takes 0.07 s instead of
   1.2 s. Occupancy values are unchanged.
 
+- `Environment.distance_to(metric="euclidean")` and
+  `neurospatial.ops.distance_field(metric="euclidean")` find the nearest
+  target with a KD-tree instead of a bins × targets distance array: on a
+  90,000-bin grid with 22,500 target bins the call takes 0.03 s instead of
+  56 s and about 32 GB of temporary memory. Distances can differ from before
+  only in the last digit of floating-point rounding.
+
 ### Fixed
 
 - `apply_transform` accepts a rotation by an angle so small that its sine is

@@ -303,9 +303,8 @@ def distance_field(
     of edges. The ``cutoff`` parameter is passed directly to Dijkstra
     for efficiency.
 
-    **Euclidean mode**: Computes L2 distances from node coordinates.
-    For small numbers of sources (< sqrt(n_nodes)), uses KD-tree query.
-    For many sources, uses broadcasted pairwise distance computation.
+    **Euclidean mode**: Computes L2 distances from node coordinates with a
+    KD-tree query over the source positions.
 
     For large graphs or repeated queries, consider caching the result.
 
@@ -362,23 +361,10 @@ def distance_field(
         # Validate sources exist in graph (use consistent validation)
         valid_sources = _validate_source_nodes(sources_array, G)
 
-        # Compute Euclidean distances
-        src_centers = bin_centers[valid_sources]
-
-        # Choose strategy based on number of sources
-        if len(valid_sources) < max(32, int(np.sqrt(n_nodes))):
-            # KD-tree for few sources (O(N log M) where M = num sources)
-            tree = cKDTree(src_centers)
-            distances, _ = tree.query(bin_centers, k=1)
-        else:
-            # Use scipy.spatial.distance.cdist for memory-efficient pairwise distances
-            # More efficient than broadcasting: avoids creating (N, M, D) intermediate
-            from scipy.spatial.distance import cdist
-
-            # Shape: (n_nodes, n_sources) - computes without large intermediate
-            dists_to_all = cdist(bin_centers, src_centers, metric="euclidean")
-            # Shape: (n_nodes,)
-            distances = np.min(dists_to_all, axis=1)
+        # A KD-tree over the sources is O(N log M) time and O(N + M) memory,
+        # however many sources there are.
+        tree = cKDTree(bin_centers[valid_sources])
+        distances, _ = tree.query(bin_centers, k=1)
 
         # Apply cutoff
         if cutoff is not None:

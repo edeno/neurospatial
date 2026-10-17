@@ -110,12 +110,6 @@ def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int
             stacklevel=_external_stacklevel(),
         )
         return []
-    except nx.NodeNotFound as e:
-        # Re-raise if the user provides an invalid node index for active bins
-        raise nx.NodeNotFound(
-            f"Node not found in connectivity graph: {e}. "
-            "Ensure source/target indices are valid active bin indices.",
-        ) from e
 
 
 def _distance_to(
@@ -129,7 +123,6 @@ def _distance_to(
     """Distance from every bin to the nearest of the resolved target bins."""
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
-    # Compute distances based on metric
     if metric == "euclidean":
         require_cartesian(
             coordinates,
@@ -140,25 +133,9 @@ def _distance_to(
             "its physical edge lengths",
             example="env.distance_to(bins=[0], metric='geodesic')",
         )
-        # Euclidean distance: straight-line distance to nearest target
-        # Vectorized implementation using broadcasting for performance
-        target_positions = bin_centers[targets]  # (n_targets, n_dims)
-
-        # Broadcasting: (n_bins, 1, n_dims) - (1, n_targets, n_dims) -> (n_bins, n_targets)
-        diffs = bin_centers[:, np.newaxis, :] - target_positions[np.newaxis, :, :]
-        dists_to_targets = np.linalg.norm(diffs, axis=2)  # (n_bins, n_targets)
-        distances_result: NDArray[np.float64] = np.min(
-            dists_to_targets, axis=1
-        )  # (n_bins,)
-
-    else:  # metric == "geodesic"
-        # Geodesic distance: graph-based shortest path
-        distances_result = np.asarray(
-            distance_field(graph, sources=targets.tolist()),
-            dtype=np.float64,
-        )
-
-    return distances_result
+    return distance_field(
+        graph, sources=targets, metric=metric, bin_centers=bin_centers
+    )
 
 
 def _reachable_from(
@@ -178,44 +155,19 @@ def _reachable_from(
     # Initialize result mask
     reachable = np.zeros(graph.number_of_nodes(), dtype=bool)
 
-    # Case 1: No radius limit - find entire connected component
+    # An isolated bin is its own component and lies within any radius of
+    # itself, so none of these searches needs a special case for it.
     if radius is None:
-        # Directly fetch the component containing source_bin instead of
-        # scanning every component in Python.
-        try:
-            component_nodes = nx.node_connected_component(graph, source_bin)
-        except KeyError:
-            # source_bin is isolated / not in the graph: only itself.
-            reachable[source_bin] = True
-            return reachable
-        reachable[list(component_nodes)] = True
-        return reachable
-
-    # Case 2: Radius-limited search
-    if metric == "hops":
-        # Breadth-first search to specified depth
-        # Use NetworkX's single_source_shortest_path_length with cutoff
-        distances = nx.single_source_shortest_path_length(
+        reached = nx.node_connected_component(graph, source_bin)
+    elif metric == "hops":
+        reached = nx.single_source_shortest_path_length(
             graph, source_bin, cutoff=int(radius)
         )
-        # Mark all nodes within radius as reachable
-        for node in distances:
-            reachable[node] = True
-
-    else:  # metric == 'geodesic'
-        # Dijkstra's algorithm with distance cutoff
-        # Use NetworkX's single_source_dijkstra_path_length
-        try:
-            distances = nx.single_source_dijkstra_path_length(
-                graph, source_bin, cutoff=radius, weight="distance"
-            )
-            # Mark all nodes within radius as reachable
-            for node in distances:
-                reachable[node] = True
-        except nx.NetworkXError:
-            # If source_bin has no edges, only mark itself as reachable
-            reachable[source_bin] = True
-
+    else:
+        reached = nx.single_source_dijkstra_path_length(
+            graph, source_bin, cutoff=radius, weight="distance"
+        )
+    reachable[list(reached)] = True
     return reachable
 
 
@@ -244,15 +196,8 @@ def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.in
     if hops < 0:
         raise ValueError(f"hops must be non-negative (>= 0), got {hops}")
 
-    # Perform BFS to get shortest path lengths
-    try:
-        # nx.single_source_shortest_path_length returns dict: {node: distance}
-        distances = nx.single_source_shortest_path_length(
-            graph, center_bin, cutoff=hops
-        )
-    except nx.NetworkXError:
-        # If center_bin has no edges (isolated), only ring 0 exists
-        distances = {center_bin: 0}
+    # {node: hop distance}; an isolated center yields only ring 0.
+    distances = nx.single_source_shortest_path_length(graph, center_bin, cutoff=hops)
 
     # Organize bins into rings by hop distance
     # Note: cutoff parameter already ensures dist <= hops, so all nodes are valid
