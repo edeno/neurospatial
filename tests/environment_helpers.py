@@ -148,8 +148,15 @@ def layout_of(build):
 
     with mock.patch.object(_publication, "publish_layout", recording):
         build()
-    (layout,) = captured
-    return layout
+    if len(captured) != 1:
+        raise AssertionError(
+            f"layout_of() needs build() to publish exactly one layout engine, "
+            f"but it published {len(captured)}. Pass a callable that runs one "
+            "layout-based factory, such as "
+            "lambda: Environment.from_samples(positions, bin_size=2.0); "
+            "from_bins, from_file and combine publish no layout engine."
+        )
+    return captured[0]
 
 
 def face_graph(binning):

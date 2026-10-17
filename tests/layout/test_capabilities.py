@@ -85,3 +85,23 @@ def test_saved_layout_facade_keeps_capabilities_in_the_binning():
     assert loaded._binning.linearization is not None
     points = np.array([[0.5, 0.0], [1.5, 0.0]])
     np.testing.assert_array_equal(loaded.to_linear(points), original.to_linear(points))
+
+
+def test_layout_of_says_how_many_layouts_a_build_published():
+    """The test helper names the count instead of failing to unpack."""
+    positions = np.array([[0.0, 0.0], [4.0, 4.0]])
+
+    def nothing():
+        return None
+
+    def two_layouts():
+        Environment.from_samples(positions, bin_size=2.0)
+        Environment.from_samples(positions, bin_size=1.0)
+
+    for build, count in ((nothing, 0), (two_layouts, 2)):
+        with pytest.raises(AssertionError, match=f"but it published {count}"):
+            layout_of(build)
+    # The suggested call publishes exactly one.
+    assert (
+        layout_of(lambda: Environment.from_samples(positions, bin_size=2.0)) is not None
+    )
