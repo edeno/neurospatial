@@ -19,7 +19,6 @@ from neurospatial.geometry._arena import (
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    Locator,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
@@ -31,6 +30,7 @@ from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._locators import (
     HexLocator,
+    Locator,
     MeshLocator,
     NearestBinLocator,
     RectilinearLocator,

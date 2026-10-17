@@ -13,7 +13,8 @@ from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals, _unit_rows
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Binning, Locator
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import Locator
 
 # A dimensionless tangential residual. This does not relax native mesh skew.
 ORTHOGONALITY_TOLERANCE = 1e-12

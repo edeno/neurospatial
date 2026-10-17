@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.geometry._arrays import ReadOnlyState
-from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
+from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
@@ -20,7 +20,7 @@ from neurospatial.geometry._locators import (
 )
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Binning, Locator
+    from neurospatial.geometry._locators import Locator
 
 
 @dataclass(frozen=True, eq=False)
@@ -191,15 +191,6 @@ class FramedGrid(ReadOnlyState):
                 list(product(*[(edge[0], edge[-1]) for edge in self.source.edges]))
             )
         )
-
-
-def require_grid_context(
-    binning: Binning, operation: str, *, fix: str
-) -> tuple[RectilinearGrid, FramedGrid | None]:
-    """Read source axes and their optional world frame without copying grids."""
-    if binning.grid_frame is not None:
-        return binning.grid_frame.source, binning.grid_frame
-    return require_rectilinear(binning, operation, fix=fix), None
 
 
 def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64]]:

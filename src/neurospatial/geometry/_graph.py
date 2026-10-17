@@ -7,9 +7,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.geometry._arrays import get_centers
-from neurospatial.geometry._binning import Binning, Locator, TrackLinearization
+from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._locators import (
     HexLocator,
+    Locator,
     MeshLocator,
     RectilinearLocator,
     SubsetLocator,

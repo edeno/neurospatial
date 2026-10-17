@@ -15,9 +15,9 @@ from neurospatial.geometry._binning import Binning, SpatialBins
 from neurospatial.geometry._locators import LookupIndexes
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Locator
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.geometry._face_normals import FaceNormals
+    from neurospatial.geometry._locators import Locator
 
 
 @dataclass(frozen=True, eq=False)

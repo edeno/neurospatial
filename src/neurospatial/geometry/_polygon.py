@@ -19,7 +19,6 @@ from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    Locator,
     MissingFaces,
     SpatialBins,
 )
@@ -27,6 +26,7 @@ from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._locators import (
     HexLocator,
+    Locator,
     LookupIndexes,
     MeshLocator,
     RectilinearLocator,

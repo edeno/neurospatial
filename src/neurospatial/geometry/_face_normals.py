@@ -12,7 +12,8 @@ from scipy.spatial import cKDTree
 from neurospatial.geometry._arrays import ReadOnlyState
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Binning, Locator
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import Locator
 
 
 @dataclass(frozen=True, eq=False)

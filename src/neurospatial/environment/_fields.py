@@ -27,14 +27,13 @@ from neurospatial.environment._cache import (
 )
 from neurospatial.environment._lookup import nearest_bin
 from neurospatial.environment._publication import _freeze_diffusion_geometry
-from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._binning import Binning, require_grid_context
 from neurospatial.geometry._composition import combined_diffusion
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
 )
-from neurospatial.geometry._grid_frame import require_grid_context
 from neurospatial.geometry._lookup import locate
 from neurospatial.ops.diffusion import (
     _HEAT_KERNEL_RANK_TOL,

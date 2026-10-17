@@ -14,7 +14,6 @@ from neurospatial.geometry._binning import (
     Binning,
     FacesSource,
     KnownFaces,
-    Locator,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
@@ -33,6 +32,7 @@ from neurospatial.geometry._face_transform import (
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._locators import (
     AffineMatrix,
+    Locator,
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,

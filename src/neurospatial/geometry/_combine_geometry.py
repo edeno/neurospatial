@@ -28,7 +28,6 @@ from neurospatial.geometry._arena import (
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    Locator,
     MissingFaces,
     TrackLinearization,
 )
@@ -37,6 +36,7 @@ from neurospatial.geometry._composition import CombinedLocator, combined_normals
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._explicit import prepare_bins
 from neurospatial.geometry._locators import (
+    Locator,
     NearestBinLocator,
     RectilinearLocator,
     SubsetLocator,

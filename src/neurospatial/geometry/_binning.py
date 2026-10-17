@@ -14,19 +14,17 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import ReadOnlyState
-from neurospatial.geometry._capabilities import (
-    RectilinearGrid,
-)
+from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid
+from neurospatial.geometry._locators import Locator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._locators import LookupIndexes
     from neurospatial.geometry._polygon import ClipMapping, PolygonCells
 
 
@@ -186,22 +184,6 @@ class SpatialBins(ReadOnlyState):
     def n_dims(self) -> int:
         """Number of coordinate columns."""
         return int(self.centers.shape[1])
-
-
-class Locator(Protocol):
-    """Find the bin that contains each query point."""
-
-    def locate(
-        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
-    ) -> NDArray[np.intp]:
-        """Return bin indices for ``(n_points, n_dims)`` coordinates, or -1.
-
-        Non-finite rows return -1; a wrong number of columns raises ValueError.
-        The input is not modified. ``indexes`` keeps the search structures a
-        locator builds (an environment passes its analysis cache); without
-        it they are built for this call only.
-        """
-        ...
 
 
 class FacesSource(Protocol):
@@ -510,3 +492,38 @@ class Binning:
                 f"have {self.bins.n_dims}; give one (low, high) pair per axis."
             )
         object.__setattr__(self, "dimension_ranges", ranges)
+
+
+def require_rectilinear(
+    binning: Binning, operation: str, *, fix: str
+) -> RectilinearGrid:
+    """Return the published rectangular cells, or raise naming ``operation``.
+
+    Raises
+    ------
+    NotImplementedError
+        If the binning has no axis-aligned rectangular cells.
+    """
+    if binning.rectilinear is not None:
+        return binning.rectilinear
+    raise NotImplementedError(
+        _format_error(
+            f"{operation} needs a grid of axis-aligned rectangular cells; this "
+            f"environment's {binning.kind} layout does not have one.",
+            why=(
+                "Why: it reads the cell edges along each axis, which grids built "
+                "by from_samples, from_grid_mask, from_pixel_mask and "
+                "from_polygon provide."
+            ),
+            fix=fix,
+        )
+    )
+
+
+def require_grid_context(
+    binning: Binning, operation: str, *, fix: str
+) -> tuple[RectilinearGrid, FramedGrid | None]:
+    """Read source axes and their optional world frame without copying grids."""
+    if binning.grid_frame is not None:
+        return binning.grid_frame.source, binning.grid_frame
+    return require_rectilinear(binning, operation, fix=fix), None

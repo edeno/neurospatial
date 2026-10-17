@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar, cast
+from typing import Any, NamedTuple, Protocol, TypeVar, cast
 
 import numpy as np
 import shapely
@@ -17,9 +17,6 @@ from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._hex_lookup import _points_to_hex_bin_ind
 from neurospatial.geometry._regular_lookup import _points_to_regular_grid_bin_ind
-
-if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Locator
 
 _T = TypeVar("_T")
 
@@ -35,6 +32,22 @@ class LookupIndexes(Protocol):
 
     def lookup_index(self, locator: object, build: Callable[[], _T]) -> _T:
         """Return the structure ``build`` makes for ``locator``, building it once."""
+        ...
+
+
+class Locator(Protocol):
+    """Find the bin that contains each query point."""
+
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
+        """Return bin indices for ``(n_points, n_dims)`` coordinates, or -1.
+
+        Non-finite rows return -1; a wrong number of columns raises ValueError.
+        The input is not modified. ``indexes`` keeps the search structures a
+        locator builds (an environment passes its analysis cache); without
+        it they are built for this call only.
+        """
         ...
 
 

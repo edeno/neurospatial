@@ -16,8 +16,8 @@ from neurospatial.geometry._lookup import locate
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena, _TransformedArena
-    from neurospatial.geometry._binning import Binning, Locator
-    from neurospatial.geometry._locators import LookupIndexes
+    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import Locator, LookupIndexes
 
 BoundarySource = Literal["physical", "analysis"]
 Interior = Callable[[NDArray[np.float64]], NDArray[np.bool_]]

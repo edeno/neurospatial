@@ -19,7 +19,6 @@ from neurospatial.geometry._arrays import get_centers
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
-    Locator,
     SpatialBins,
     TrackLinearization,
 )
@@ -27,6 +26,7 @@ from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._locators import (
     HexLocator,
+    Locator,
     MeshLocator,
     NearestBinLocator,
     RectilinearLocator,

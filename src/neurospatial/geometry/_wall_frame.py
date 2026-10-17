@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from shapely.geometry import LineString, MultiPolygon, Polygon
 
     from neurospatial.geometry._arena import Arena, _TransformedArena
-    from neurospatial.geometry._binning import Locator
+    from neurospatial.geometry._locators import Locator
 
 
 def _wall_source_frame(

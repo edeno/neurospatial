@@ -32,8 +32,7 @@ from neurospatial._intervals import (
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._fields import _compute_kernel
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._capabilities import require_rectilinear
+from neurospatial.geometry._binning import Binning, require_rectilinear
 from neurospatial.geometry._coordinates import (
     CartesianSystem,
     EgocentricPolarSystem,
