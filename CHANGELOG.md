@@ -359,6 +359,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `compute_directional_place_fields`, the view-rate functions,
   `compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
   `compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
+  the `distance_to_reward` and `distance_to_boundary` event regressors,
   `simulate_trajectory_ou` (and so `simulate_session`), and the boundary,
   object-vector, spatial-view and geodesic place-cell models.
 

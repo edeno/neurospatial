@@ -41,6 +41,7 @@ from neurospatial.encoding import (
     rate_map_centroid,
     spatial_autocorrelation,
 )
+from neurospatial.events import distance_to_boundary, distance_to_reward
 from neurospatial.ops import (
     compute_egocentric_distance,
     geodesic_rbf_basis,
@@ -320,6 +321,16 @@ def _polar_regions_env(env: Environment) -> Environment:
                 env, center=np.array([10.0, 0.0]), width=5.0, metric="geodesic"
             ),
             "PlaceCellModel(metric='geodesic')",
+        ),
+        (
+            lambda env: distance_to_reward(
+                env, _TIMES, _POLAR_POSITIONS, np.array([1.0]), _POLAR_POSITIONS[:1]
+            ),
+            "distance_to_reward()",
+        ),
+        (
+            lambda env: distance_to_boundary(env, _POLAR_POSITIONS),
+            "distance_to_boundary()",
         ),
     ],
 )

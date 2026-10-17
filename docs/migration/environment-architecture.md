@@ -1099,6 +1099,7 @@ message: `compute_spatial_rate`, `compute_spatial_rates`,
 `compute_directional_place_fields`, the view-rate functions,
 `compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
 `compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
+the `distance_to_reward` and `distance_to_boundary` event regressors,
 `simulate_trajectory_ou`, and the boundary, object-vector, spatial-view and
 geodesic place-cell models. For egocentric rate maps use
 `neurospatial.encoding.compute_egocentric_rate`.

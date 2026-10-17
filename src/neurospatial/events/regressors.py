@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError
+from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -641,6 +642,14 @@ def distance_to_reward(
     from neurospatial._validation import validate_finite
     from neurospatial.ops.distance import distance_field
 
+    require_cartesian(
+        env.coordinate_system,
+        "distance_to_reward()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
+
     # Input validation: reject NaN/Inf in the spatial + temporal inputs.
     # A non-finite time or position silently corrupts interpolation,
     # searchsorted ordering, and the resulting distance-to-reward regressor.
@@ -932,6 +941,14 @@ def distance_to_boundary(
     time_to_nearest_event : Temporal distance to events
     """
     from neurospatial.ops.distance import distance_field
+
+    require_cartesian(
+        env.coordinate_system,
+        "distance_to_boundary()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
 
     # Input validation
     positions = np.asarray(positions, dtype=np.float64)
