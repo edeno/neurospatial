@@ -18,6 +18,8 @@ import matplotlib.axes
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import RegionNotFoundError
+
 from .core import Region, Regions
 
 if TYPE_CHECKING:
@@ -46,7 +48,9 @@ def plot_regions(
     ax : matplotlib.axes.Axes, optional
         Destination Axes. If None, uses the current Axes (``plt.gca()``).
     region_names : optional list or tuple
-        If given, plot only these names; otherwise plot *all*.
+        If given, plot only these names; otherwise plot *all*. A name not in
+        ``regions`` raises :class:`~neurospatial.RegionNotFoundError` with the
+        closest name.
     default_kwargs : dict, optional
         Plot kwargs applied to every region (unless overridden).
     world_to_pixel : SpatialTransform, optional
@@ -87,13 +91,11 @@ def plot_regions(
 
     for name in region_names:
         if name not in regions:
-            warnings.warn(
-                f"plot_regions: '{name}' not in collection; skipping.",
-                category=UserWarning,
-                stacklevel=2,
+            raise RegionNotFoundError(
+                name, available=list(regions), argument="region_names", in_list=True
             )
-            continue
 
+    for name in region_names:
         reg: Region = regions[name]
 
         # base → per-region kw → metadata → kwargs passed in call

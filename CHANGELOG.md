@@ -502,7 +502,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`remove`, `update_region`, `region_center`), `region_reward_field`,
   `compute_region_coverage`, `decision_region_entry_time` and
   `compute_decision_analysis`, which used to raise a bare `KeyError` or a
-  `ValueError` without a suggestion. `RegionNotFoundError` is both a
+  `ValueError` without a suggestion. A misspelled name in
+  `animate_fields(show_regions=[...])` (every backend),
+  `regions_containing_points(region_names=...)` and
+  `plot_regions(region_names=...)` used to be skipped, so a region silently
+  went missing from the animation, the table or the plot; it now raises the
+  same error before anything is drawn. `RegionNotFoundError` is both a
   `KeyError` and a `ValueError`, so existing `except` blocks still catch it.
 
 - `spatial_autocorrelation` raises `NotImplementedError` instead of

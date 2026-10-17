@@ -60,6 +60,8 @@ from numpy.typing import NDArray
 from shapely import points
 from shapely.geometry import Polygon
 
+from neurospatial._exceptions import RegionNotFoundError
+
 from .._constants import POINT_REGION_TOLERANCE
 from .core import Region, Regions
 
@@ -306,10 +308,17 @@ def regions_containing_points(
 
     Notes
     -----
-    - If `region_names` contains names not found in `regions`, they are silently ignored.
+    - A name in `region_names` that is not in `regions` raises
+      :class:`~neurospatial.RegionNotFoundError` with the closest name.
 
     """
     import pandas as pd
+
+    for name in region_names or ():
+        if name not in regions:
+            raise RegionNotFoundError(
+                name, available=list(regions), argument="region_names", in_list=True
+            )
 
     transformed_pts = _prepare_points(pts, transform)
     n_points = transformed_pts.shape[0]

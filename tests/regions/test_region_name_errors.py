@@ -12,6 +12,7 @@ from neurospatial.behavior import (
     region_reward_field,
 )
 from neurospatial.encoding import compute_region_coverage
+from neurospatial.regions import regions_containing_points
 
 
 @pytest.fixture(scope="module")
@@ -66,6 +67,21 @@ def _lookups(env: Environment) -> dict[str, object]:
             lambda: decision_region_entry_time(bins, times, env, region="rewrd"),
             "pass region='reward'",
         ),
+        "regions_containing_points": (
+            lambda: regions_containing_points(
+                positions, env.regions, region_names=["rewrd"]
+            ),
+            "pass region_names=['reward']",
+        ),
+        "animate_fields(show_regions=)": (
+            lambda: env.animate_fields(
+                np.zeros((2, env.n_bins)),
+                frame_times=np.array([0.0, 0.1]),
+                backend="html",
+                show_regions=["rewrd"],
+            ),
+            "pass show_regions=['reward']",
+        ),
         "compute_decision_analysis": (
             lambda: compute_decision_analysis(
                 env, times, positions, decision_region="home", goal_regions=["rewrd"]
@@ -88,6 +104,8 @@ _CALLS = [
     "compute_region_coverage",
     "decision_region_entry_time",
     "compute_decision_analysis",
+    "regions_containing_points",
+    "animate_fields(show_regions=)",
 ]
 
 
@@ -106,6 +124,34 @@ def test_misspelled_region_name_suggests_the_closest_name(env, call):
     # Callers that catch either built-in type keep working.
     assert isinstance(caught.value, KeyError)
     assert isinstance(caught.value, ValueError)
+
+
+@pytest.mark.parametrize("render", ["html", "napari", "parallel"])
+def test_each_renderer_refuses_a_misspelled_shown_region(env, render):
+    """Renderers called directly refuse the name too; none skips it silently."""
+    if render == "html":
+        from neurospatial.animation.backends.html_backend import (
+            _estimate_overlay_json_size,
+        )
+
+        call = lambda: _estimate_overlay_json_size(None, env, ["rewrd"])  # noqa: E731
+    elif render == "napari":
+        pytest.importorskip("napari")
+        from neurospatial.animation.backends.napari_backend import _render_regions
+
+        call = lambda: _render_regions(None, env, ["rewrd"], 0.3)  # noqa: E731
+    else:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import _render_regions_matplotlib
+
+        _, ax = plt.subplots()
+        call = lambda: _render_regions_matplotlib(ax, env, ["rewrd"], 0.3)  # noqa: E731
+    with pytest.raises(RegionNotFoundError, match=r"show_regions=\['reward'\]"):
+        call()
 
 
 def test_membership_and_get_do_not_raise(env):

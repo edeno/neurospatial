@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, Regions
 from neurospatial.animation.overlays import PositionOverlay
 
 
@@ -879,6 +879,10 @@ class TestDispatcherOverlayIntegration:
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
+        regions = Regions()
+        regions.add("region1", point=(0.0, 0.0))
+        regions.add("region2", point=(10.0, 10.0))
+        env = env.with_regions(regions)
         fields = [rng.random(env.n_bins) for _ in range(10)]
         frame_times = np.linspace(0, 10, 10)
 

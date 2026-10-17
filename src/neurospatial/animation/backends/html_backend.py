@@ -89,6 +89,8 @@ import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
 
+from neurospatial.animation._region_names import shown_region_names
+
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
     from neurospatial.environment.core import Environment
@@ -308,14 +310,10 @@ def _estimate_overlay_json_size(
     if overlay_data is not None and overlay_data.regions is not None:
         region_names = overlay_data.regions.get(0, [])
     elif show_regions:
-        region_names = (
-            show_regions if isinstance(show_regions, list) else list(env.regions.keys())
-        )
+        region_names = shown_region_names(env, show_regions)
 
     if region_names:
         for name in region_names:
-            if name not in env.regions:
-                continue
             region = env.regions[name]
 
             if region.kind == "point":
@@ -417,14 +415,10 @@ def _serialize_overlay_data(
         region_names = overlay_data.regions.get(0, [])
     elif show_regions:
         # Fall back to show_regions parameter
-        region_names = (
-            show_regions if isinstance(show_regions, list) else list(env.regions.keys())
-        )
+        region_names = shown_region_names(env, show_regions)
 
     if region_names:
         for name in region_names:
-            if name not in env.regions:
-                continue
             region = env.regions[name]
 
             if region.kind == "point":

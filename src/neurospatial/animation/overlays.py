@@ -36,6 +36,8 @@ from matplotlib import colormaps
 from matplotlib.colors import to_hex
 from numpy.typing import NDArray
 
+from neurospatial.animation._region_names import shown_region_names
+
 if TYPE_CHECKING:
     from neurospatial.animation._video_io import VideoReaderProtocol
     from neurospatial.animation.skeleton import Skeleton
@@ -4227,12 +4229,7 @@ def _convert_overlays_to_data(
     # Key 0 means "apply to all frames"
     normalized_regions: dict[int, list[str]] | None = None
     if show_regions:
-        if isinstance(show_regions, bool):
-            # True → all region names from env.regions
-            normalized_regions = {0: list(env.regions.keys())}
-        else:
-            # list[str] → wrap in dict
-            normalized_regions = {0: show_regions}
+        normalized_regions = {0: shown_region_names(env, show_regions)}
 
     # Aggregate all overlay data
     overlay_data = OverlayData(

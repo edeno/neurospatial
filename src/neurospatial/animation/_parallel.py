@@ -37,6 +37,8 @@ from matplotlib.quiver import Quiver
 from numpy.typing import NDArray
 from tqdm import tqdm
 
+from neurospatial.animation._region_names import shown_region_names
+
 if TYPE_CHECKING:
     from matplotlib.artist import Artist
 
@@ -702,20 +704,8 @@ def _render_regions_matplotlib(
     -----
     Uses PathPatch for polygon regions and circles for point regions.
     """
-    if not show_regions or len(env.regions) == 0:
-        return
-
-    # Determine which regions to show
-    if isinstance(show_regions, bool):
-        region_names = list(env.regions.keys())
-    else:
-        region_names = show_regions
-
     # Render each region
-    for region_name in region_names:
-        if region_name not in env.regions:
-            continue
-
+    for region_name in shown_region_names(env, show_regions):
         region = env.regions[region_name]
 
         if region.kind == "point":
@@ -902,19 +892,7 @@ class OverlayArtistManager:
 
     def _initialize_regions(self) -> None:
         """Create region patches (static, not updated per frame)."""
-        if not self.show_regions or len(self.env.regions) == 0:
-            return
-
-        region_names: list[str]
-        if isinstance(self.show_regions, bool):
-            region_names = list(self.env.regions.keys())
-        else:
-            region_names = self.show_regions
-
-        for region_name in region_names:
-            if region_name not in self.env.regions:
-                continue
-
+        for region_name in shown_region_names(self.env, self.show_regions):
             region = self.env.regions[region_name]
 
             if region.kind == "point":

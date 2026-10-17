@@ -2114,17 +2114,15 @@ class TestRegionsNormalization:
                 self.name = name
                 self.kind = "point"
 
-        class MockRegions(dict):
-            def keys(self):
-                return ["goal", "start", "reward"]
-
         class MockEnv:
             n_dims: ClassVar[int] = 2
             dimension_ranges: ClassVar[list[tuple[float, float]]] = [
                 (0.0, 100.0),
                 (0.0, 100.0),
             ]
-            regions = MockRegions()
+            regions: ClassVar[dict[str, MockRegion]] = {
+                name: MockRegion(name) for name in ("goal", "start", "reward")
+            }
 
         return MockEnv()
 

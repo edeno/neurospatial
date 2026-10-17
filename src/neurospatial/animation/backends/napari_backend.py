@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.animation._region_names import shown_region_names
+
 # Import shared coordinate transforms
 from neurospatial.animation.core import MAX_PLAYBACK_FPS
 from neurospatial.animation.transforms import EnvScale as _EnvScale
@@ -2186,23 +2188,15 @@ def _render_regions(
     """
     layers: list[Layer] = []
 
-    if not show_regions or len(env.regions) == 0:
+    region_names = shown_region_names(env, show_regions)
+    if not region_names:
         return layers
-
-    # Determine which regions to show
-    if isinstance(show_regions, bool):
-        region_names = list(env.regions.keys())
-    else:
-        region_names = show_regions
 
     # Collect region shapes
     region_shapes: list[NDArray[np.float64]] = []
     region_properties: dict[str, list[str]] = {"name": []}
 
     for region_name in region_names:
-        if region_name not in env.regions:
-            continue
-
         region = env.regions[region_name]
 
         # Convert region to napari shape

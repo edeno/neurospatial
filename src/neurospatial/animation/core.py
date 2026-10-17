@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.animation._region_names import shown_region_names
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
@@ -225,8 +226,9 @@ def animate_fields(
         Use higher values (e.g., 120) for high-refresh displays.
     show_regions : bool or list of str, default=False
         Whether to render region overlays. If True, all regions defined in env.regions
-        are rendered. If list of strings, only those region names are rendered.
-        Regions rendered as semi-transparent polygons. Default is False.
+        are rendered. If list of strings, only those region names are rendered;
+        a name not in env.regions raises RegionNotFoundError with the closest
+        name. Regions rendered as semi-transparent polygons. Default is False.
     region_alpha : float, default=0.3
         Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque. Only used when show_regions
@@ -321,6 +323,9 @@ def animate_fields(
     the call raises ``ValueError`` before rendering; use ``n_workers=1`` or
     replace that object with plain data.
     """
+    # A misspelled region name fails here, before any frame is rendered.
+    shown_region_names(env, show_regions)
+
     # Detect if input is a 2D+ numpy array (potential memmap)
     # This must happen before any conversion to preserve array format for napari
     fields_is_array = isinstance(fields, np.ndarray) and fields.ndim >= 2

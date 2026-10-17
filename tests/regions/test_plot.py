@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
+from neurospatial import RegionNotFoundError
 from neurospatial.ops.transforms import scale_2d, translate
 from neurospatial.regions import Region, Regions
 from neurospatial.regions.plot import plot_regions
@@ -124,19 +125,14 @@ class TestPlotRegionsFiltering:
         plt.close(fig)
 
     def test_nonexistent_region_name_error(self):
-        """Test error when region name doesn't exist (plt.warning doesn't exist)."""
+        """A misspelled name is refused before anything is drawn."""
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         regions = Regions([Region(name="box", data=poly, kind="polygon")])
 
         fig, ax = plt.subplots()
-        # Test that nonexistent region names generate a warning but don't crash
-        with pytest.warns(
-            UserWarning,
-            match=r"'nonexistent' not in collection; skipping",
-        ):
-            plot_regions(
-                regions, ax=ax, region_names=["box", "nonexistent"], add_legend=False
-            )
+        with pytest.raises(RegionNotFoundError, match="Region 'bx' not found"):
+            plot_regions(regions, ax=ax, region_names=["box", "bx"], add_legend=False)
+        assert not ax.patches  # nothing is drawn before the refusal
         plt.close(fig)
 
 
