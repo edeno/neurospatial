@@ -454,6 +454,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   recorded in `layout_parameters` and ignored. Remove it, or use
   `node_positions` with more than two points for a track with segments.
 
+- A misspelled region name in `animate_fields(show_regions=[...])` (every
+  backend), `regions_containing_points(region_names=...)` or
+  `plot_regions(region_names=...)` raises `RegionNotFoundError` with the
+  closest name, before anything is drawn. These names used to be skipped,
+  `plot_regions` with a warning, so a region silently went missing from the
+  animation, the table or the plot. Fix the name. A single string, such as
+  `show_regions="goal"`, now means that one region; it used to be read
+  letter by letter.
+
 - `graph_turn_sequence(env, position_bins)` no longer takes `start_bin` and
   `end_bin`. They were documented as orienting the path but were never used:
   the order of `position_bins` already sets the direction of travel, and the
@@ -502,11 +511,26 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
     columns, or any sequence with `layout="Hexagonal"`, names the expected
     length instead of an internal argument;
   - `dimension_ranges` that is not one finite `(min, max)` pair per position
-    column raises `ValueError` showing the pairs for your positions. A
-    reversed pair such as `(100, 0)` used to build a grid silently;
-  - `rebin` on bins that are not a rectangular grid (hexagons, tracks,
-    meshes) or on a grid with unequal cells says why and how to rebuild at
-    the new size, without the old "descriptive layout names" wording.
+    column raises `ValueError` naming the rule it breaks (the number of
+    pairs, a value that is not finite, or a minimum that is not below its
+    maximum) and showing the pairs for your positions. A reversed pair such
+    as `(100, 0)`, a zero-width pair such as `(50, 50)` or a non-finite pair
+    used to build a grid silently;
+  - `rebin` on bins that are not a rectangular grid gives a call that
+    rebuilds those bins at the new size: `from_samples(..., layout="Hexagonal")`
+    for hexagons, `from_graph(env.binning.linearization.graph, ...)` for a
+    track, `from_layout(create_layout("TriangularMesh", ...))` for a mesh,
+    `env.rebin(bin_size=...)` for a clipped grid, or `env.smooth(field,
+    bandwidth=...)` for a coarser scale. A grid with unequal cells says so;
+  - `rebin` factors that are not integers (including `2.0`), are 0 or larger
+    than the grid, or have the wrong length; a 3-D transform passed to
+    `apply_transform` on 2-D bins; three `endpoints` for `linear_track`
+    (use `node_positions`); bare numbers in `maze(node_positions=...)`;
+    an `edge_spacing` sequence with the wrong number of gaps; `bin_size` as
+    text; a list of points passed to `from_polygon`; `grid_edges` that do not
+    fit the `from_grid_mask` mask; and a list of names passed to
+    `region_membership` all name the call that works. The suggested code in
+    every refusal is run by the test suite on the input that was refused.
 
 - An infinite coordinate in the positions given to `from_samples`,
   `open_field` or `environment_from_position` is treated as a missing sample,
@@ -520,12 +544,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`remove`, `update_region`, `region_center`), `region_reward_field`,
   `compute_region_coverage`, `decision_region_entry_time` and
   `compute_decision_analysis`, which used to raise a bare `KeyError` or a
-  `ValueError` without a suggestion. A misspelled name in
-  `animate_fields(show_regions=[...])` (every backend),
-  `regions_containing_points(region_names=...)` and
-  `plot_regions(region_names=...)` used to be skipped, so a region silently
-  went missing from the animation, the table or the plot; it now raises the
-  same error before anything is drawn. `RegionNotFoundError` is both a
+  `ValueError` without a suggestion. `RegionNotFoundError` is both a
   `KeyError` and a `ValueError`, so existing `except` blocks still catch it.
 
 - `spatial_autocorrelation` raises `NotImplementedError` instead of

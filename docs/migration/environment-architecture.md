@@ -1282,3 +1282,56 @@ from neurospatial.animation import PositionOverlay
 path = PositionOverlay(positions=positions, times=times, trail_length=30)
 # env.animate_fields(fields, frame_times=frame_times, overlays=[path])
 ```
+
+## Misspelled region names raise
+
+A region name that is not in `env.regions` used to be skipped by
+`animate_fields(show_regions=[...])`, `regions_containing_points(region_names=...)`
+and `plot_regions(region_names=...)`, so the region was silently missing. Each
+now raises `RegionNotFoundError` naming the closest region; fix the name:
+
+<!-- docs-test: run -->
+```python
+from neurospatial import RegionNotFoundError, Regions
+from neurospatial.regions import regions_containing_points
+
+regions = Regions()
+regions.add("reward", point=(50.0, 50.0))
+# Before: regions_containing_points(positions, regions, region_names=["rewrd"])
+# returned a table without the column
+try:
+    regions_containing_points(positions, regions, region_names=["rewrd"])
+except RegionNotFoundError as error:
+    print(str(error).splitlines()[-1])  # Fix: pass region_names=['reward']
+table = regions_containing_points(positions, regions, region_names=["reward"])
+```
+
+## Bin indices are `np.intp`
+
+`bin_sequence`, `bin_sequence_with_runs(...).bins`, `components` and `rings`
+return `np.intp` arrays (64-bit on 64-bit systems) instead of `int32`, like
+`bin_at` and `nearest_bin`. The values are the same. Code that compares the
+dtype or stores the arrays in an `int32` file column should cast explicitly:
+
+<!-- docs-test: run -->
+```python
+sequence = env.bin_sequence(times, positions)
+assert sequence.dtype == np.intp
+# Before: sequence was int32; keep that layout with an explicit cast
+compact = sequence.astype(np.int32)
+```
+
+## Infinite positions are missing samples
+
+`from_samples`, `open_field` and `environment_from_position` treat a row with
+an infinite coordinate like a row with NaN: as a missing sample that does not
+shape the bins. Such a row used to raise an overflow error, so a recording
+with one bad sample can now be used without cleaning it first:
+
+<!-- docs-test: run -->
+```python
+glitched = positions.copy()
+glitched[10] = [np.inf, 50.0]  # a tracking glitch
+# Before: Environment.from_samples(glitched, bin_size=4.0) raised "Requested binning overflows"
+arena = Environment.from_samples(glitched, bin_size=4.0, units="cm")
+```
