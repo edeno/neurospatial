@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import numpy as np
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry import (
     Arena,
     Binning,
-    PolygonCells,
     bridge_values,
     clip_binning,
 )
@@ -42,13 +40,5 @@ def _clip(
         domain=domain,
         walls=arena.walls,
     )
-    shapes = clipped.shapes
-    assert isinstance(shapes, PolygonCells)
-    bounds = np.array([cell.bounds for cell in shapes.polygons])
-    ranges = tuple(
-        (float(bounds[:, axis].min()), float(bounds[:, axis + 2].max()))
-        for axis in range(2)
-    )
-    return _Derivation(
-        replace(clipped, clip_mapping=mapping, dimension_ranges=ranges), "clip"
-    )
+    # Publication records the clipped cells' extent as the ranges.
+    return _Derivation(replace(clipped, clip_mapping=mapping), "clip")
