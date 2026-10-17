@@ -607,8 +607,11 @@ class EgocentricSurround:
     angle_range : tuple of float
         Finite increasing angular limits in radians.
     circular : bool
-        Normalize equivalent angles modulo two pi before testing the window.
-        Partial windows retain their configured angular exclusions.
+        Whether the angular axis wraps across the seam, so the bins at the
+        two ends of the angle range are neighbors. Containment does not
+        depend on it: an angle names a direction, so every window compares
+        angles modulo two pi (see :meth:`wrap_angles`), and a partial window
+        keeps its configured angular exclusions.
     """
 
     distance_range: tuple[float, float]
@@ -636,15 +639,36 @@ class EgocentricSurround:
             object.__setattr__(self, name, (float(values[0]), float(values[1])))
         object.__setattr__(self, "circular", _boolean(self.circular, "circular"))
 
+    def wrap_angles(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Express each angle in ``[low, low + 2π)`` of the angle range.
+
+        An angle and the same angle plus a whole number of turns name one
+        direction. Distances are unchanged, and a NaN or infinite angle stays
+        NaN.
+
+        Parameters
+        ----------
+        positions : ndarray, shape (n_positions, 2)
+            ``(distance, angle)`` rows, angles in radians.
+
+        Returns
+        -------
+        ndarray, shape (n_positions, 2)
+            A copy with each angle wrapped to start at the range's low limit.
+            On a full circle that is the angle range itself; on a partial
+            window, an angle inside the window is unchanged.
+        """
+        query = np.array(np.atleast_2d(positions), dtype=np.float64, copy=True)
+        low = self.angle_range[0]
+        with np.errstate(invalid="ignore"):
+            query[:, 1] = low + np.remainder(query[:, 1] - low, 2 * np.pi)
+        return query
+
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test native ``(distance, angle)`` positions, including window edges."""
         query, finite = _query(positions, 2)
-        selected = query[finite]
+        selected = self.wrap_angles(query[finite])
         angles = selected[:, 1]
-        if self.circular:
-            angles = self.angle_range[0] + np.remainder(
-                angles - self.angle_range[0], 2 * np.pi
-            )
         inside = np.zeros(len(query), dtype=np.bool_)
         inside[finite] = (
             (selected[:, 0] >= self.distance_range[0])

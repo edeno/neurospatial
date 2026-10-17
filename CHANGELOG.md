@@ -786,6 +786,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- On egocentric polar environments, a `(distance, angle)` row whose angle is a
+  whole turn outside the angle range finds the bin of that direction. Before,
+  `points=` queries, point regions and the polar lookups refused or skipped
+  it as outside the environment, and on a full circle the angle `π` itself,
+  the same direction as `-π`, was outside. A partial angle range still
+  excludes the directions it leaves out.
+
 - `graph_turn_sequence` labelled every turn backwards. In the package's y-up
   frame (x East, y North), heading North and then turning West is a left turn,
   but it was reported as `"right"`; every `"left"` and `"right"` in its output

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._arena import EgocentricSurround
+
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
@@ -28,7 +30,9 @@ def locate(
     arena : Arena
         Continuous domain; positions outside a known domain map to ``-1``.
     positions : ndarray of float64, shape (n_positions, n_dims)
-        Query positions in the environment's coordinates.
+        Query positions in the environment's coordinates. Egocentric polar
+        angles are first wrapped into the angle range, so ``angle + 2π``
+        finds the same bin as ``angle``.
     indexes : LookupIndexes, optional
         Keeps the locator's search structures, usually the environment's
         analysis cache. None builds them for this call only.
@@ -47,6 +51,9 @@ def locate(
             f"Dimensionality mismatch: expected positions with shape "
             f"(n_positions, {n_dims}), got {positions.shape}."
         )
+    if isinstance(arena, EgocentricSurround):
+        # An angle a whole turn outside the range names a direction inside it.
+        positions = arena.wrap_angles(positions)
     inside = arena.contains(positions)
     indices = np.full(len(positions), -1, dtype=np.intp)
     if np.any(inside):
