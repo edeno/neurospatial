@@ -373,8 +373,8 @@ def autocorrelation_pixel_size(env: Environment) -> float:
 
 # Below this many pixels of accumulated lag error, treating the two cell widths
 # as one changes no lag by more than 1/100 of a cell, so the autocorrelogram is
-# used as computed. Grids fitted to a recorded range (from_samples) differ
-# between axes only by about 1e-5 to 1e-3 of a cell.
+# used as computed. Grids fitted to a recorded range (from_samples) can differ
+# between axes by a few percent and are then resampled.
 _SQUARE_LAG_TOLERANCE = 0.01
 
 
@@ -405,18 +405,18 @@ def _square_lags(
     if error <= _SQUARE_LAG_TOLERANCE:
         return autocorr
     centers = [n // 2 for n in shape]
-    # Whole pixels of `side` that stay inside the map on both sides of zero lag.
-    reach = [
-        int(np.floor(min(c, n - 1 - c) * width / side + 1e-9))
-        for n, c, width in zip(shape, centers, widths, strict=True)
-    ]
-    coordinates = np.meshgrid(
-        *[
-            c + np.arange(-k, k + 1) * side / width
-            for c, k, width in zip(centers, reach, widths, strict=True)
-        ],
-        indexing="ij",
-    )
+    axes = []
+    for n, c, width in zip(shape, centers, widths, strict=True):
+        below = int(np.floor(c * width / side + 1e-9))
+        above = int(np.floor((n - 1 - c) * width / side + 1e-9))
+        # Keep the parity of the computed map, so zero lag sits where
+        # fftshift put it: index size // 2, with one more lag below zero
+        # than above it on an even axis.
+        odd = n % 2
+        reach = min(below, above + 1 - odd)
+        lags = np.arange(-reach, reach + odd)
+        axes.append(c + lags * side / width)
+    coordinates = np.meshgrid(*axes, indexing="ij")
     squared = ndimage.map_coordinates(autocorr, coordinates, order=1, mode="nearest")
     return np.asarray(squared, dtype=np.float64)
 

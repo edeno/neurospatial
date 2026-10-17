@@ -640,10 +640,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   distorted. The autocorrelogram now has square pixels: lags along the wider
   axis are interpolated onto the finer width whenever the two widths differ
   by more than 1/100 of a cell across the grid. Grids fitted with
-  `from_samples`, whose widths differ by about 1e-4 of a cell, give the same
-  scores as before. On a 120 cm arena with 2 × 3 cm cells, a hexagonal
-  rate map with 30 cm spacing now scores 1.08 with scale 30.1 cm (it scored
-  -0.13 with scale 26.1 cm). A grid with uneven edges along one axis
+  `from_samples` differ by up to a few percent between axes, and their grid
+  scores move by about 0.004 (at most 0.04 in a sweep of 30 arenas). On a
+  120 cm arena with 2 × 3 cm cells, a hexagonal rate map with 30 cm spacing
+  now scores 0.99 with scale 29.7 cm, as on 2 × 2 cm cells (1.03, 29.7 cm);
+  it scored -0.13 with scale 26.1 cm. A grid with uneven edges along one axis
   (possible through `Environment.from_bins`) has no single lag per step and
   raises the same `NotImplementedError`, naming
   `spatial_autocorrelation_radial`.
