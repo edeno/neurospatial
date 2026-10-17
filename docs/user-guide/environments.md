@@ -362,8 +362,9 @@ full width in the graph's coordinate units. Containment uses distance to the
 actual centerline segments, with round end caps: a position farther than half
 the width from every segment gets bin `-1`. A track built without a width has
 no footprint, so `bin_at`, `contains`, `occupancy`, the bin sequences,
-`points=` queries and point regions refuse with `NotImplementedError` and the
-code to rebuild it with a width; `to_linear`, `linear_to_nd` and the graph
+`points=` queries and point regions refuse with `NotImplementedError`.
+`env.with_track_width(width)` gives such a track, including one saved by an
+earlier version, its measured width and keeps its bins; `to_linear`, `linear_to_nd` and the graph
 queries on bin indices still work. `to_linear` projects every position onto
 the centerline, however far off the track, so check `bin_at(positions) >= 0`
 on a track with a width before trusting linear positions.

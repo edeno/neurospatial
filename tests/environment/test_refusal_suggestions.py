@@ -123,16 +123,7 @@ def _widthless_track() -> dict[str, Any]:
     return {"env": env, "positions": positions, "width": 10.0}
 
 
-_TRACK_WIDTH_CODE = (
-    "from dataclasses import replace; "
-    "from neurospatial.arena import TrackArena; "
-    "from neurospatial.binning import KnownFaces; "
-    "g = env.binning.linearization.graph; "
-    "centerline = np.array([[g.nodes[u]['pos'], g.nodes[v]['pos']] for u, v in g.edges]); "
-    "binning = replace(env.binning, faces=KnownFaces(env.binning.faces.build())); "
-    "Environment.from_bins(binning, arena=TrackArena(centerline, width=width), "
-    "name=env.name, units=env.units, frame=env.frame, regions=env.regions)"
-)
+_TRACK_WIDTH_CODE = "env.with_track_width(width)"
 
 
 def _widthless_track_subset() -> dict[str, Any]:

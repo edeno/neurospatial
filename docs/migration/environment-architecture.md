@@ -529,8 +529,8 @@ positions farther than half the width from every centerline segment get bin
 `-1` and add no occupancy, like positions outside an open-field arena.
 
 Pass the measured full width of the corridor, in the units of your positions,
-to `linear_track`, `maze` or `from_graph`. The error message shows the call
-that rebuilds an existing track with a width.
+to `linear_track`, `maze` or `from_graph`. The error message shows how to give
+an existing track a width (see the next section).
 
 <!-- docs-test: run -->
 ```python
@@ -553,6 +553,34 @@ their corridor width to their track. The Sungod, honeycomb and small hex
 mazes, whose corridors differ in width, pass the widest one: a sample within
 half of it from the centerline counts as on the track, so a narrow corridor
 can admit a few samples just outside its walls.
+
+### Tracks saved by earlier versions
+
+A track saved by an earlier version has no width, and neither does a track
+you no longer have the build script for. Read it as before and give it its
+measured full width with `env.with_track_width(width)`. It keeps the bins,
+the linear coordinates, the name, units, frame and regions, so rate maps and
+decoders keep their bin order. It also works on a subset or a transformed
+track; give the width in the transformed coordinates.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+# A track saved without a width, as earlier versions wrote it
+saved = Environment.linear_track(
+    endpoints=[(0, 0), (200, 0)], bin_size=2.0, units="cm"
+).to_dict()
+
+track = Environment.from_dict(saved)  # or from_file(path), from_nwb(nwbfile)
+# Before: track.bin_at(positions) put every position in its nearest bin
+track = track.with_track_width(10.0)  # the corridor is 10 cm wide
+positions = np.array([[101.0, 2.0], [101.0, 500.0]])  # on the track; 5 m away
+assert track.bin_at(positions).tolist() == [50, -1]
+# Save it again so the width is stored with it
+saved = track.to_dict()
+```
 
 ## `dimension_ranges` is the extent of the bins' cells
 

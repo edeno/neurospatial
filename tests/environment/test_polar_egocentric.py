@@ -1468,6 +1468,7 @@ def test_cartesian_operations_are_the_capability_methods():
         "rebin",
         "subset",
         "to_linear",
+        "with_track_width",
     } == CARTESIAN_OPERATIONS
     assert set(dir(Environment)) >= CARTESIAN_OPERATIONS
 

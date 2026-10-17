@@ -72,21 +72,10 @@ def locate(
 
 
 TRACK_WIDTH_FIX = (
-    "build the track with its measured full width, in the units of the "
-    "positions, by passing track_width= to Environment.linear_track, "
-    "Environment.maze or Environment.from_graph. To give this environment, "
-    "including a subset or a transformed track, a width while keeping its "
-    "bins, with width its full width: "
-)
-TRACK_WIDTH_EXAMPLE = (
-    "from dataclasses import replace; "
-    "from neurospatial.arena import TrackArena; "
-    "from neurospatial.binning import KnownFaces; "
-    "g = env.binning.linearization.graph; "
-    "centerline = np.array([[g.nodes[u]['pos'], g.nodes[v]['pos']] for u, v in g.edges]); "
-    "binning = replace(env.binning, faces=KnownFaces(env.binning.faces.build())); "
-    "Environment.from_bins(binning, arena=TrackArena(centerline, width=width), "
-    "name=env.name, units=env.units, frame=env.frame, regions=env.regions)"
+    "give the track its measured full width, in the units of the positions, "
+    "with env.with_track_width(width); it keeps the bins and works on a saved, "
+    "subset or transformed track too. A new track takes track_width= in "
+    "Environment.linear_track, Environment.maze or Environment.from_graph"
 )
 
 
@@ -125,6 +114,6 @@ def require_track_width(binning: Binning, arena: Arena) -> None:
                 "centerline a position is still on the track, so a position "
                 "far off the track (a reflection or a tracking jump) would be "
                 "put in its nearest bin.",
-                fix=TRACK_WIDTH_FIX + TRACK_WIDTH_EXAMPLE,
+                fix=TRACK_WIDTH_FIX,
             )
         )

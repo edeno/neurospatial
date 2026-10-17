@@ -31,8 +31,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   measured full width when you build the track, for example
   `Environment.linear_track(endpoints=[(0, 0), (200, 0)], bin_size=2.0,
   track_width=10.0)`; positions farther than half the width from the
-  centerline then get bin `-1` and add no occupancy. The error message shows
-  the call that rebuilds the refused track with a width. `linear_to_nd` and
+  centerline then get bin `-1` and add no occupancy. A track you already
+  have, including one saved by an earlier version and read with
+  `Environment.from_file`, `from_dict` or `from_nwb`, takes its width with the
+  new `env.with_track_width(10.0)`, which keeps its bins; the error message
+  shows that call. `linear_to_nd` and
   graph queries on bin indices do not need the width. `to_linear` does not
   either, because it projects every position onto the nearest point of the
   centerline, however far off the track: drop off-track samples (bin `-1`
@@ -790,6 +793,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Derived environments no longer repeat the warning about unrecognized units.
 
 ### Added
+
+- `Environment.with_track_width(width)` gives a track its measured full width
+  and keeps its bins, linear coordinates, name, units, frame and regions. Use
+  it on a track built without `track_width`, such as one saved by an earlier
+  version, which refuses to look up 2-D positions: after
+  `Environment.from_file(path).with_track_width(10.0)`, positions more than
+  5 cm from the centerline get bin `-1` and rate maps, occupancy and decoding
+  work again. It adds `"with_track_width"` to `env.derivations` and refuses an
+  environment that is not a track.
 
 - `neurospatial.ops.KernelMode` names the values `mode=` accepts in
   `Environment.compute_kernel`, `smooth` and `diffuse`

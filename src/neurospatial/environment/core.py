@@ -104,6 +104,7 @@ from neurospatial.environment._targets import (
     former_targets,
     resolve_targets,
 )
+from neurospatial.environment._track_width import _with_track_width
 from neurospatial.environment._trajectory import (
     BinSequenceWithRuns,
     _bin_sequence,
@@ -532,6 +533,60 @@ class Environment(Generic[_C]):
         result = self._replace_value()
         result._regions = snapshot
         return result
+
+    @cartesian_only(
+        why="A track width is a distance from a Cartesian centerline, and a "
+        "polar environment is not a track.",
+        fix="build the track with Environment.linear_track, Environment.maze or "
+        "Environment.from_graph and call with_track_width() on that environment",
+    )
+    def with_track_width(
+        self: Environment[CartesianSystem], width: float
+    ) -> Environment[CartesianSystem]:
+        """Return the same track with a known full width.
+
+        A track built without ``track_width``, including every track saved by
+        an earlier version of neurospatial, does not know how far from its
+        centerline a position is still on the track, so it refuses to look up
+        2-D positions. This gives it that width while keeping its bins,
+        linearization, name, units, frame and regions. It works on a subset
+        or a transformed track too. A track that already has a width gets the
+        new one.
+
+        Parameters
+        ----------
+        width : float
+            Full width of the track, in the same units as ``bin_centers``. A
+            position is on the track when it is within ``width / 2`` of the
+            centerline; round caps extend each end by the same distance.
+
+        Returns
+        -------
+        Environment
+            Same concrete type and bins, with ``"with_track_width"`` added to
+            ``derivations``. Positions off the track map to ``-1``.
+
+        Raises
+        ------
+        TypeError
+            If this environment is not a linearized track.
+        ValueError
+            If ``width`` is not a finite positive number.
+
+        Examples
+        --------
+        >>> from neurospatial import Environment
+        >>> track = Environment.linear_track(
+        ...     endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, units="cm"
+        ... )
+        >>> track = track.with_track_width(8.0)
+        >>> track.bin_at(np.array([[51.0, 3.0], [51.0, 30.0]])).tolist()
+        [25, -1]
+        >>> track.derivations
+        ('with_track_width',)
+        """
+        derivation = _with_track_width(self._binning, self._arena, width)
+        return publish_derived(self, derivation)
 
     def __repr__(self) -> str:
         """Generate an informative single-line string representation.

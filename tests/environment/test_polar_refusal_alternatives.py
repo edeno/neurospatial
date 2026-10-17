@@ -21,7 +21,7 @@ from neurospatial.environment.core import CARTESIAN_OPERATIONS
 from neurospatial.geometry._lookup import locate
 
 # Members with no polar equivalent: a polar environment is never a track.
-NO_POLAR_EQUIVALENT = {"to_linear", "linear_to_nd"}
+NO_POLAR_EQUIVALENT = {"to_linear", "linear_to_nd", "with_track_width"}
 
 # (distance cm, angle rad); the second angle is a whole turn past the range,
 # and the last row lies beyond the 40 cm surround.
