@@ -202,7 +202,7 @@ class TestSpatialAutocorrelation:
         )
         firing_rate = np.linspace(0.0, 1.0, env.n_bins)
 
-        with pytest.raises(ValueError, match="spatial_autocorrelation_radial"):
+        with pytest.raises(NotImplementedError, match="spatial_autocorrelation_radial"):
             spatial_autocorrelation(env, firing_rate)
 
     def test_fft_autocorr_returns_finite_values(self):

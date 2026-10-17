@@ -74,6 +74,7 @@ from numpy.typing import NDArray
 from scipy import fft, ndimage, stats
 from scipy.signal import find_peaks
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
 from neurospatial.geometry._coordinates import require_cartesian
 
@@ -205,9 +206,11 @@ def spatial_autocorrelation(
     ------
     ValueError
         If ``firing_rate.shape != (env.n_bins,)``.
-        If ``env`` is not a regular 2D grid (use
-        :func:`spatial_autocorrelation_radial` instead).
         If all firing rates are NaN or constant.
+    NotImplementedError
+        If ``env`` is not a regular 2D grid of rectangular cells with at
+        least half of them active, for example a hexagonal, mesh, track or
+        3D environment (use :func:`spatial_autocorrelation_radial` instead).
     CartesianOnlyError
         If ``env`` is polar: a ``(distance, angle)`` grid is not a Cartesian
         lattice, so its 2D autocorrelogram and grid score are meaningless.
@@ -286,11 +289,28 @@ def spatial_autocorrelation(
     _validate_autocorr_input(env, firing_rate)
 
     if _detect_grid_method(env) != "fft":
-        raise ValueError(
-            "spatial_autocorrelation requires a regular 2D grid environment "
-            "(grid_shape attribute on layout, with >=50% of bins active). "
-            "For irregular environments, use spatial_autocorrelation_radial "
-            "to obtain a 1D distance-correlation profile."
+        if len(env.grid_edges) != 2:
+            found = (
+                f"this environment's {env.layout_type} layout has no 2D grid of "
+                "rectangular cells"
+            )
+        else:
+            found = (
+                f"only {env.n_bins} of its {env.active_mask.size} grid cells are active"
+            )
+        raise NotImplementedError(
+            _format_error(
+                "spatial_autocorrelation() needs a regular 2D grid of rectangular "
+                f"cells with at least half of them active; {found}.",
+                why=(
+                    "Why: the FFT shifts the rate map along the grid's rows and "
+                    "columns, which measure distance only on a rectangular lattice."
+                ),
+                fix=(
+                    "use spatial_autocorrelation_radial(env, firing_rate), which "
+                    "works on every layout, with periodicity_score"
+                ),
+            )
         )
 
     return _spatial_autocorrelation_fft(env, firing_rate)
@@ -388,11 +408,12 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
     Returns
     -------
     method : {'fft', 'graph'}
-        'fft' if environment is a regular 2D grid, 'graph' otherwise.
+        'fft' if environment is a regular 2D grid of rectangular cells,
+        'graph' otherwise.
     """
-    grid_shape = env.grid_shape
-
-    if len(grid_shape) != 2:
+    # Hexagonal lattices also have a 2D grid shape, but no rectangular cell
+    # edges: their rows are offset, so an FFT over them is not a 2D lag map.
+    if len(env.grid_edges) != 2:
         return "graph"
 
     # Check if grid is reasonably regular (not too sparse): if less than 50%

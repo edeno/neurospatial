@@ -576,6 +576,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `spatial_autocorrelation` accepted hexagonal environments and treated the
+  hexagon lattice as a rectangular grid. Its rows are offset, so the
+  autocorrelogram and the grid score computed from it were wrong. It now
+  raises `NotImplementedError` on every environment without a regular 2-D
+  grid of rectangular cells (hexagonal, mesh, track, 3-D, or a grid with
+  fewer than half of its cells active), and names
+  `spatial_autocorrelation_radial`, which works on every layout. Tracks,
+  meshes and sparse grids raised `ValueError` before. Rate-map
+  `summary_table()` reports a NaN `grid_score` on hexagonal environments.
+
 - A position sample with a NaN coordinate is a missing sample in every
   per-sample query. `env.nearest_bin` gives it bin
   `-1` and distance NaN, and `env.interpolate` gives it NaN; both used to

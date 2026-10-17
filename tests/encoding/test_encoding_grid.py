@@ -229,3 +229,62 @@ class TestEncodingGridFunctionality:
 
         # Hexagonal pattern should have score > 0.3
         assert score > 0.3
+
+
+class TestFFTAutocorrelationNeedsRectangularCells:
+    """The FFT autocorrelogram is defined only on a rectangular lattice."""
+
+    @pytest.fixture
+    def hexagonal_env_and_rate(self):
+        x = np.linspace(-20, 20, 41)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=4.0, layout="Hexagonal")
+        rate = np.random.default_rng(1).random(env.n_bins) * 5.0
+        return env, rate
+
+    def test_hexagonal_layout_is_refused_with_the_radial_alternative(
+        self, hexagonal_env_and_rate
+    ) -> None:
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+            spatial_autocorrelation_radial,
+        )
+
+        env, rate = hexagonal_env_and_rate
+        # The hexagonal lattice has a 2D shape, which the FFT path used to
+        # accept although its offset rows are not a rectangular lag grid.
+        assert len(env.grid_shape) == 2
+
+        with pytest.raises(NotImplementedError, match="Hexagonal") as error:
+            spatial_autocorrelation(env, rate)
+
+        assert "spatial_autocorrelation_radial" in str(error.value)
+        distances, correlations = spatial_autocorrelation_radial(env, rate)
+        assert distances.shape == correlations.shape
+
+    def test_summary_table_reports_no_grid_score_on_a_hexagonal_layout(
+        self, hexagonal_env_and_rate
+    ) -> None:
+        from neurospatial import compute_spatial_rate
+
+        env, _ = hexagonal_env_and_rate
+        stimulus = np.random.default_rng(3)
+        times = np.arange(6000) / 30.0
+        positions = stimulus.uniform(-20, 20, size=(len(times), 2))
+        spike_times = np.sort(np.random.default_rng(4).uniform(0, times[-1], 400))
+
+        table = compute_spatial_rate(env, spike_times, times, positions).summary_table()
+
+        assert np.isnan(table["grid_score"]).all()
+
+    def test_sparse_grid_is_refused_with_the_same_error(self) -> None:
+        from neurospatial.encoding.grid import spatial_autocorrelation
+
+        mask = np.zeros((10, 10), dtype=bool)
+        mask[:3, :] = True
+        env = Environment.from_grid_mask(mask, grid_edges=(np.arange(11.0),) * 2)
+        rate = np.random.default_rng(2).random(env.n_bins)
+
+        with pytest.raises(NotImplementedError, match="only 30 of its 100"):
+            spatial_autocorrelation(env, rate)

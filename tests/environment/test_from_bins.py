@@ -590,8 +590,8 @@ def test_networkx_export_is_editable_and_nested_attributes_are_independent():
 
 
 @pytest.mark.parametrize("transport", ["dict", "file", "from_bins"])
-def test_hex_data_roundtrip_preserves_fft_autocorrelation(transport, tmp_path):
-    from neurospatial.encoding.grid import spatial_autocorrelation
+def test_hex_data_roundtrip_preserves_lattice_and_autocorrelation(transport, tmp_path):
+    from neurospatial.encoding.grid import spatial_autocorrelation_radial
 
     source = Environment.from_layout(
         create_layout(
@@ -615,7 +615,8 @@ def test_hex_data_roundtrip_preserves_fft_autocorrelation(transport, tmp_path):
     assert source.grid_shape == restored.grid_shape == (7, 6)
     np.testing.assert_array_equal(restored.active_mask, source.active_mask)
     np.testing.assert_array_equal(
-        spatial_autocorrelation(restored, rates), spatial_autocorrelation(source, rates)
+        spatial_autocorrelation_radial(restored, rates),
+        spatial_autocorrelation_radial(source, rates),
     )
 
 
