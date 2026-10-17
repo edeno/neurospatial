@@ -90,7 +90,9 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     operation, has_linear_grid
 ):
     """A custom track migrates to explicit owned data before derivation."""
-    native = Environment.linear_track(endpoints=[[0.0, 0.0], [10.0, 0.0]], bin_size=2.0)
+    native = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [10.0, 0.0]], bin_size=2.0, track_width=1.0
+    )
     layout = _ExternalTrackLayout(native)
     if not has_linear_grid:
         layout.grid_edges = ()
@@ -100,7 +102,11 @@ def test_custom_track_derivations_preserve_absolute_linear_coordinates(
     ):
         publish_environment("external_track", layout, "ExternalTrack", {})
     parent = publish_environment(
-        "external_track", _owned_layout(native, "ExternalTrack"), "ExternalTrack", {}
+        "external_track",
+        _owned_layout(native, "ExternalTrack"),
+        "ExternalTrack",
+        {},
+        arena=native.arena,
     )
     source_writeability = tuple(
         array.flags.writeable for array in (*layout.grid_edges, layout.active_mask)

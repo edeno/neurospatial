@@ -8,6 +8,28 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- A track built without `track_width` (`Environment.linear_track`,
+  `Environment.maze`, `Environment.from_graph`) no longer assigns 2-D positions
+  to bins. `bin_at`, `contains`, `occupancy`, `bin_sequence`,
+  `bin_sequence_with_runs`, `transitions(times=..., positions=...)`, `points=`
+  queries, point regions, and every analysis that maps positions with them
+  (rate maps, decoding, behavior metrics) raise `NotImplementedError`.
+  Before, a position any distance from the track, such as a reflection 5 m
+  away, was put in its nearest bin and counted as occupancy and spikes there;
+  `distance_to(points=[[500, 500]])` measured from the nearest bin. Pass the
+  measured full width when you build the track, for example
+  `Environment.linear_track(endpoints=[(0, 0), (200, 0)], bin_size=2.0,
+  track_width=10.0)`; positions farther than half the width from the
+  centerline then get bin `-1` and add no occupancy. The error message shows
+  the call that rebuilds the refused track with a width. `to_linear`,
+  `linear_to_nd` and graph queries on bin indices do not need the width. The
+  simulated mazes in `neurospatial.simulation.mazes` with a corridor width
+  (linear track, T, Y, W, plus, radial arm, repeated T and Y, crossword,
+  Hamlet, Hampton Court and rat hexmaze) now pass it to their track, and
+  `tmaze_alternation_session` builds 10 cm corridors. The Sungod, honeycomb
+  and small hex mazes have no single corridor width, so their tracks refuse
+  position lookups.
+
 - Pickle files of an `Environment` written by an earlier version can no longer
   be loaded. Pickle still works for passing an environment between processes
   of the same version (for example with `multiprocessing`), but it is not a
@@ -1099,8 +1121,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   and physical walls after derivation and storage. Polygon clipping now retains
   per-parent ownership at floating-point precision and exposes analysis boundary
   bins. Wall-crossing checks also handle exact on-wall trajectory samples.
-- Require declared track width for containment; nearest-track projection stays
-  available through `bin_at`. Track and maze presets accept `track_width`.
+- Require declared track width for containment. Track and maze presets accept
+  `track_width`.
 - Reject cyclic environment metadata before recursive decoding, avoiding a
   Windows/Python 3.10 stack crash while retaining shared acyclic records.
 

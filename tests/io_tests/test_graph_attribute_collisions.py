@@ -26,7 +26,7 @@ def _environment():
     graph.add_edge(0, 1, distance=10.0)
     _annotate(graph)
     return Environment.from_graph(
-        graph, list(graph.edges), edge_spacing=0.0, bin_size=2.0
+        graph, list(graph.edges), edge_spacing=0.0, bin_size=2.0, track_width=2.0
     )
 
 

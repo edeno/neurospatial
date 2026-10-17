@@ -515,6 +515,41 @@ of the bins they were cut from (a grid subset or clip reads as
 parameters (positions, masks, polygons) is dropped when such a file is read;
 the bins themselves are stored in the file.
 
+## Tracks need `track_width` to look up positions
+
+A track's centerline and bin size do not say how far from the centerline a
+position is still on the track. Without a width, every position, however far
+off the track (a reflection, a tracking jump to the other side of the room),
+used to be put in its nearest bin, and its time and spikes were counted there.
+A track built without `track_width` now refuses to assign 2-D positions to
+bins: `bin_at`, `contains`, `occupancy`, the bin sequences,
+`transitions(times=..., positions=...)`, `points=` queries, point regions and
+the analyses built on them raise `NotImplementedError`. With a width,
+positions farther than half the width from every centerline segment get bin
+`-1` and add no occupancy, like positions outside an open-field arena.
+
+Pass the measured full width of the corridor, in the units of your positions,
+to `linear_track`, `maze` or `from_graph`. The error message shows the call
+that rebuilds an existing track with a width.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+# Before: Environment.linear_track(endpoints=[(0, 0), (200, 0)], bin_size=2.0)
+track = Environment.linear_track(
+    endpoints=[(0, 0), (200, 0)], bin_size=2.0, track_width=10.0, units="cm"
+)
+positions = np.array([[100.0, 2.0], [100.0, 500.0]])  # on the track; 5 m away
+assert track.bin_at(positions)[1] == -1  # before: the bin at x = 100
+```
+
+`to_linear`, `linear_to_nd` and graph queries on bin indices (`bins=`) do not
+need the width. Simulated mazes from `neurospatial.simulation.mazes` pass
+their corridor width to their track, except the Sungod, honeycomb and small
+hex mazes, which have no single corridor width.
+
 ## `dimension_ranges` is the extent of the bins' cells
 
 `env.dimension_ranges` is the extent of the cells the bins cover, for every

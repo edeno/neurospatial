@@ -47,7 +47,11 @@ def _track() -> Environment:
     graph.add_edge(0, 1, distance=20.0)
     graph.add_edge(1, 2, distance=20.0)
     return Environment.from_graph(
-        graph, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.0
+        graph,
+        edge_order=[(0, 1), (1, 2)],
+        edge_spacing=0.0,
+        bin_size=2.0,
+        track_width=4.0,
     )
 
 
@@ -111,11 +115,6 @@ def test_bin_at_gives_missing_samples_minus_one(cartesian_env):
 
 def test_contains_gives_missing_samples_false(cartesian_env):
     points, finite = _with_missing_rows(cartesian_env)
-    if cartesian_env.is_linearized_track:
-        # A track without a declared width has no footprint to test against.
-        with pytest.raises(NotImplementedError, match="track footprint"):
-            cartesian_env.contains(points)
-        return
     inside = cartesian_env.contains(points)
     assert not inside[_MISSING_ROWS].any()
     np.testing.assert_array_equal(inside[_FINITE_ROWS], cartesian_env.contains(finite))
@@ -404,16 +403,14 @@ def _polygon() -> Environment:
 
 _OCCUPANCY_ENVS = {**_CARTESIAN, "polygon": _polygon}
 
-# A track without a declared width maps every finite point to its nearest
-# bin, so it has no "outside" case. Start allocation keeps intervals that
-# start inside, so only linear allocation has the inside-then-NaN case.
+# Start allocation keeps intervals that start inside, so only linear
+# allocation has the inside-then-NaN case.
 _NO_USABLE_SAMPLE_CASES = [
     (name, samples, allocation)
     for name in sorted(_OCCUPANCY_ENVS)
     for samples in ("all_nan", "all_outside", "inside_then_nan")
     for allocation in ("start", "linear")
-    if not (name == "track" and samples == "all_outside")
-    and not (samples == "inside_then_nan" and allocation == "start")
+    if not (samples == "inside_then_nan" and allocation == "start")
 ]
 
 
@@ -432,9 +429,12 @@ def test_occupancy_with_no_usable_sample_warns(
     try:
         env.occupancy(times, inside, time_allocation=allocation)
     except NotImplementedError as error:
-        # Linear allocation needs rectangular or exact polygon cells.
+        # Linear allocation needs rectangular or exact polygon cells; a track
+        # with a width has a known footprint but no polygon cells.
         assert allocation == "linear"
-        assert "time_allocation='linear'" in str(error)
+        assert "time_allocation='linear'" in str(error) or (
+            "Linear occupancy" in str(error)
+        )
         return
 
     if samples == "all_nan":

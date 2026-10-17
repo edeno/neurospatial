@@ -112,6 +112,26 @@ def _track() -> dict[str, Any]:
     return {"env": env, "field": np.ones(env.n_bins)}
 
 
+def _widthless_track() -> dict[str, Any]:
+    env = Environment.linear_track(
+        node_positions=[(0.0, 0.0), (100.0, 0.0), (100.0, 50.0)],
+        bin_size=2.0,
+        edge_spacing=5.0,
+        units="cm",
+    )
+    positions = np.array([[10.0, 1.0], [100.0, 30.0], [50.0, 400.0]])
+    return {"env": env, "positions": positions, "width": 10.0}
+
+
+_TRACK_WIDTH_CODE = (
+    "Environment.from_graph(env.binning.linearization.graph, "
+    "list(env.binning.linearization.edge_order), "
+    "bin_size=env.layout_parameters['bin_size'], "
+    "edge_spacing=env.binning.linearization.edge_spacing, track_width=width, "
+    "name=env.name, units=env.units, frame=env.frame, regions=env.regions)"
+)
+
+
 def _mesh() -> dict[str, Any]:
     env = Environment.from_layout(
         create_layout(
@@ -378,6 +398,21 @@ CASES: dict[str, Case] = {
         "from neurospatial import Regions; env.region_membership(Regions("
         "env.regions[name] for name in ['reward']))",
     ),
+    "bin_at on a track without track_width": Case(
+        _widthless_track,
+        lambda n: n["env"].bin_at(n["positions"]),
+        _TRACK_WIDTH_CODE,
+    ),
+    "occupancy on a track without track_width": Case(
+        _widthless_track,
+        lambda n: n["env"].occupancy(np.arange(3) * 0.1, n["positions"]),
+        _TRACK_WIDTH_CODE,
+    ),
+    "points= on a track without track_width": Case(
+        _widthless_track,
+        lambda n: n["env"].distance_to(points=n["positions"][:1]),
+        _TRACK_WIDTH_CODE,
+    ),
     "region_membership(list of names), one mask instead": Case(
         _with_regions,
         lambda n: n["env"].region_membership(["reward"]),
@@ -417,3 +452,18 @@ def test_suggested_coarser_bins_are_coarser():
         rebuilt = _run(code, names)
         assert rebuilt.n_bins < names["env"].n_bins
         assert rebuilt.layout_type == names["env"].layout_type
+
+
+def test_suggested_track_rebuild_keeps_the_bins_and_drops_off_track_positions():
+    names = _widthless_track()
+    env = names["env"]
+    rebuilt = _run(_TRACK_WIDTH_CODE, names)
+    np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
+    assert (rebuilt.name, rebuilt.units, rebuilt.frame) == (
+        env.name,
+        env.units,
+        env.frame,
+    )
+    bins = rebuilt.bin_at(names["positions"])
+    # Within 5 cm of the centerline: a bin; 350 cm off the track: none.
+    assert (bins[:2] >= 0).all() and bins[2] == -1

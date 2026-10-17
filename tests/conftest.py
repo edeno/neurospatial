@@ -118,7 +118,9 @@ def pytest_configure(config: pytest.Config) -> None:
 def analysis_invariant_env(request):
     """Small environments for testing scientific meaning across API boundaries."""
     if request.param == "graph":
-        env = Environment.linear_track(endpoints=[[0.0, 0.0], [6.0, 0.0]], bin_size=1.0)
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [6.0, 0.0]], bin_size=1.0, track_width=1.0
+        )
     elif request.param == "hexagonal":
         points = np.array([[0.0, 0.0], [4.0, 4.0]])
         env = Environment.from_samples(
@@ -306,26 +308,18 @@ def plus_maze_positions() -> NDArray[np.float64]:
 def graph_env(
     plus_maze_graph: nx.Graph, plus_maze_edge_order: list[tuple[int, int]]
 ) -> Environment:
-    """Environment created from the plus maze graph.
+    """Environment created from the plus maze graph, 0.5 units wide.
 
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    # Capture parameters explicitly to pass to Environment constructor
-    # for correct serialization testing.
-    layout_build_params = {
-        "graph_definition": plus_maze_graph,
-        "edge_order": plus_maze_edge_order,
-        "edge_spacing": 0.0,
-        "bin_size": 0.5,
-    }
-    layout_instance = GraphLayout()
-    layout_instance.build(**layout_build_params)
-
-    return publish_environment(
+    return Environment.from_graph(
+        plus_maze_graph,
+        plus_maze_edge_order,
+        edge_spacing=0.0,
+        bin_size=0.5,
+        track_width=0.5,
         name="PlusMazeGraph",
-        layout=layout_instance,
-        layout_type_used="Graph",
     )
 
 
@@ -1045,7 +1039,11 @@ def _build_environment(kind: str) -> Environment:
         for u, v in edge_order:
             graph.add_edge(u, v, distance=6.0)
         return Environment.from_graph(
-            graph, edge_order=edge_order, edge_spacing=0.0, bin_size=2.0
+            graph,
+            edge_order=edge_order,
+            edge_spacing=0.0,
+            bin_size=2.0,
+            track_width=2.0,
         )
     if kind == "mesh":
         return Environment.from_layout(

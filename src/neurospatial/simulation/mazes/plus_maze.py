@@ -261,6 +261,7 @@ def _create_plus_maze_track_graph(
             "west_end": (-dims.arm_length, 0.0),
         },
         bin_size=bin_size,
+        track_width=dims.width,
         edge_spacing=0.0,
         name="plus_maze_1d",
         units="cm",

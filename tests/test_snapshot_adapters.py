@@ -370,17 +370,21 @@ def _explicit_binning(env):
 def test_public_binning_adapter_owns_data_and_drops_provider_provenance(
     _registry, ingress
 ):
-    original = Environment.linear_track(endpoints=[(0, 0), (4, 0)], bin_size=1)
+    original = Environment.linear_track(
+        endpoints=[(0, 0), (4, 0)], bin_size=1, track_width=1.0
+    )
     data = _explicit_binning(original)
     provider_type = _ExternalLayout if ingress == "constructor" else _ExternalBinning
     _registry.append(_EntryPoint("binning", _data_adapter(provider_type, "binning")))
     provider = provider_type(data)
     reference = weakref.ref(provider)
     if ingress == "constructor":
-        env = publish_environment("adapted", provider, "external")
+        env = publish_environment("adapted", provider, "external", arena=original.arena)
         assert env.layout_parameters == {}
     else:
-        env = Environment.from_bins(provider, name="adapted", units="cm", frame="lab")
+        env = Environment.from_bins(
+            provider, name="adapted", units="cm", frame="lab", arena=original.arena
+        )
         assert (env.units, env.frame) == ("cm", "lab")
     assert env.is_linearized_track == env.is_linearized_track
     assert env.is_linearized_track
@@ -487,7 +491,9 @@ def test_public_ingress_adapts_nested_locators_without_changing_maps(
 
 
 def test_public_track_adapter_drops_delegated_conversions(_registry):
-    original = Environment.linear_track(endpoints=[(0, 0), (4, 0)], bin_size=1)
+    original = Environment.linear_track(
+        endpoints=[(0, 0), (4, 0)], bin_size=1, track_width=1.0
+    )
     data = _explicit_binning(original)
     provider = _ExternalTrack(data.linearization)
     source = replace(data, linearization=provider)

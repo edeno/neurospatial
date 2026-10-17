@@ -25,13 +25,14 @@ def _create(kind, **metadata):
         )
     if kind == "linear_track":
         return Environment.linear_track(
-            endpoints=[(0, 0), (4, 0)], bin_size=1, **metadata
+            endpoints=[(0, 0), (4, 0)], bin_size=1, track_width=1.0, **metadata
         )
     if kind == "maze":
         return Environment.maze(
             kind="T",
             node_positions={"c": (0, 0), "s": (0, -2), "l": (-2, 0), "r": (2, 0)},
             bin_size=1,
+            track_width=1.0,
             **metadata,
         )
     if kind == "graph":
@@ -42,7 +43,12 @@ def _create(kind, **metadata):
         graph.add_node(1, pos=(4, 0))
         graph.add_edge(0, 1, distance=4.0)
         return Environment.from_graph(
-            graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, **metadata
+            graph,
+            [(0, 1)],
+            edge_spacing=0.0,
+            bin_size=1.0,
+            track_width=1.0,
+            **metadata,
         )
     if kind == "polygon":
         return Environment.from_polygon(box(0, 0, 3, 3), bin_size=1.0, **metadata)

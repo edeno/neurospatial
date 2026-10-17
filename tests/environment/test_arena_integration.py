@@ -78,10 +78,11 @@ def test_known_track_width_rejects_distant_points():
     abstract = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
     probes = np.array([[50.0, 2.0], [50.0, 2.1], [1000.0, 1000.0]])
     np.testing.assert_array_equal(known.contains(probes), [True, False, False])
+    np.testing.assert_array_equal(known.bin_at(probes) >= 0, [True, False, False])
     assert not abstract.arena.domain_known
-    assert (abstract.bin_at(probes) >= 0).all()
-    with pytest.raises(NotImplementedError, match="track_width"):
-        abstract.contains(probes)
+    for lookup in (abstract.bin_at, abstract.contains):
+        with pytest.raises(NotImplementedError, match="track_width"):
+            lookup(probes)
 
 
 def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():

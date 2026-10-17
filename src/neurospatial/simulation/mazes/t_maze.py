@@ -244,6 +244,7 @@ def _create_t_maze_track_graph(
             "right_end": (dims.arm_length, half_stem),
         },
         bin_size=bin_size,
+        track_width=dims.width,
         edge_spacing=0.0,
         name="t_maze_1d",
         units="cm",

@@ -297,7 +297,9 @@ def test_loaded_regular_grid_still_rebins(environment_round_trip):
 )
 def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_path):
     """Data-backed tracks preserve node identities in their stored geometry."""
-    native = Environment.linear_track(endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0)
+    native = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0, track_width=1.0
+    )
     component = native._binning.linearization
     old_nodes = list(component.graph)
     graph = nx.relabel_nodes(
@@ -315,8 +317,11 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
         dimension_ranges=native.dimension_ranges,
         layout_type="Graph",
         build_params=parameters,
+        arena=native.arena,
     )
-    original = publish_environment(layout=facade, layout_type_used="Graph")
+    original = publish_environment(
+        layout=facade, layout_type_used="Graph", arena=native.arena
+    )
     if transport == "dict":
         loaded = from_dict(json.loads(json.dumps(to_dict(original))))
     else:

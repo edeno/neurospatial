@@ -116,9 +116,13 @@ print(f"Tracking gaps > {max_gap:g} s: {np.count_nonzero(np.diff(times) > max_ga
 #
 # Mark an 8 cm zone around each arm end to define entries consistently. These
 # are analysis regions that we choose, not measured reward-well boundaries.
-# The archived tracking has already been assigned to the track. For your own
-# data, remove tracking outliers before assigning positions to the nearest
-# track bin; nearest-bin assignment alone does not detect those errors.
+#
+# `track_width` is the full width of the track around its centerline. A
+# position farther than half of it from every segment is off the track and gets
+# no bin. This archive does not record the maze's width, and the head position
+# sits up to about 20 cm from the centerline, so we pass 41 cm, which keeps
+# every tracked sample. For your own maze, pass the measured corridor width so
+# that reflections and tracking jumps off the track are excluded.
 
 # %%
 graph = recording["track_graph"]
@@ -127,6 +131,7 @@ env = Environment.from_graph(
     edge_order=recording["linear_edge_order"],
     edge_spacing=recording["linear_edge_spacing"],
     bin_size=2.0,
+    track_width=41.0,  # cm; keeps every head position in this archive
     name="J16 maze",
 )
 env = env.with_metadata(units="cm")

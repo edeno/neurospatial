@@ -152,6 +152,7 @@ env_1d = Environment.from_graph(
     edge_order=edge_order,
     edge_spacing=0.0,
     bin_size=2.0,
+    track_width=10.0,  # full corridor width; needed to assign positions to bins
 )
 ```
 
@@ -205,7 +206,8 @@ env_1d = Environment.from_graph(
     graph=graph,
     edge_order=[(0, 1), (1, 2)],
     edge_spacing=0.0,
-    bin_size=2.0
+    bin_size=2.0,
+    track_width=10.0,  # full corridor width; needed to assign positions to bins
 )
 
 print(f"Is 1D: {env_1d.is_linearized_track}")  # True

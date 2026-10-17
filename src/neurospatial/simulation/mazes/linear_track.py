@@ -199,6 +199,7 @@ def _create_linear_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges (just one edge)
         bin_size=bin_size,
+        track_width=dims.width,
         name="linear_track_1d",
     )
     env_track = env_track.with_metadata(units="cm")

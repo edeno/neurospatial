@@ -336,7 +336,7 @@ class TestBinAtErrorPaths:
         like the grid path, and point at the real fix.
         """
         env = Environment.linear_track(
-            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0
+            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0, track_width=5.0
         )
         assert env.is_linearized_track and env.n_dims == 2
 

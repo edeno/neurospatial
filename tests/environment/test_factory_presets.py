@@ -441,15 +441,20 @@ _W_QUERY = np.array([(25, 0), (75, 0), (0, 40), (50, 25), (100, 25), (100, 45)],
 _W_EXPECTED = np.array([25.0, 75.0, 140.0, 175.0, 225.0, 245.0])
 
 
-def _w_maze(labels):
+def _w_maze(labels, track_width=None):
     return Environment.maze(
-        kind="w", node_positions=dict(zip(labels, _W_COORDS, strict=True)), bin_size=5.0
+        kind="w",
+        node_positions=dict(zip(labels, _W_COORDS, strict=True)),
+        bin_size=5.0,
+        track_width=track_width,
     )
 
 
 @pytest.fixture(scope="module")
 def w_maze_env():
-    return built_from(lambda: _w_maze(["bl", "bm", "br", "al", "am", "ar"]))
+    return built_from(
+        lambda: _w_maze(["bl", "bm", "br", "al", "am", "ar"], track_width=5.0)
+    )
 
 
 class TestGraphLinearization:

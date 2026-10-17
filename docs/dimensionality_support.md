@@ -30,6 +30,7 @@ env = Environment.from_graph(
     edge_order=[(0, 1)],
     edge_spacing=0.0,
     bin_size=2.0,
+    track_width=10.0,  # full corridor width; needed to assign positions to bins
 )
 ```
 

@@ -23,7 +23,11 @@ def _track() -> Environment:
     graph.add_edge(0, 1, distance=20.0)
     graph.add_edge(1, 2, distance=20.0)
     return Environment.from_graph(
-        graph, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.0
+        graph,
+        edge_order=[(0, 1), (1, 2)],
+        edge_spacing=0.0,
+        bin_size=2.0,
+        track_width=4.0,
     )
 
 

@@ -291,9 +291,12 @@ assert all(left[u] == left[v] for u, v in env.connectivity.edges)
 
 For a linearized track, `from_graph(..., track_width=...)` supplies a measured
 full width in the graph's coordinate units. Containment uses distance to the
-actual centerline segments, with round end caps. Omit the width for an abstract
-graph whose physical footprint is unknown; its existing graph lookup remains
-available, but `env.arena.contains(...)` cannot establish physical containment.
+actual centerline segments, with round end caps: a position farther than half
+the width from every segment gets bin `-1`. A track built without a width has
+no footprint, so `bin_at`, `contains`, `occupancy`, the bin sequences,
+`points=` queries and point regions refuse with `NotImplementedError` and the
+code to rebuild it with a width; `to_linear`, `linear_to_nd` and the graph
+queries on bin indices still work.
 Egocentric polar environments similarly record their radial and angular
 analysis support without inferring physical walls.
 

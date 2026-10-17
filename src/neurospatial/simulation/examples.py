@@ -451,6 +451,7 @@ def tmaze_alternation_session(
     - Central stem (100 cm)
     - Left arm (50 cm)
     - Right arm (50 cm)
+    - Corridors 10 cm wide
     Total track length: approximately 150 cm
 
     **Trajectory**:
@@ -530,6 +531,7 @@ def tmaze_alternation_session(
         edge_order=edge_order,
         edge_spacing=edge_spacing,
         bin_size=2.0,
+        track_width=10.0,  # 10 cm corridors
     )
     env = env.with_metadata(units="cm")
 

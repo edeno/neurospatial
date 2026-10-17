@@ -1442,13 +1442,16 @@ class Environment(Generic[_C]):
         ValueError
             If ``positions`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
+        NotImplementedError
+            On a track built without ``track_width``.
 
         Notes
         -----
-        Tracks require a declared width: a centerline and topology alone do
-        not establish which off-track points are inside. Unknown width raises
-        NotImplementedError with guidance; bin_at() still projects to the track.
-        Other layouts reuse bin lookup and check for the -1 sentinel.
+        Tracks require a declared width (``track_width=``): a centerline and
+        topology alone do not establish which off-track points are inside.
+        Without one, ``contains``, ``bin_at`` and every other position lookup
+        raise NotImplementedError with the code to rebuild the track. Every
+        layout reuses bin lookup and checks for the -1 sentinel.
 
         Examples
         --------
@@ -1462,14 +1465,6 @@ class Environment(Generic[_C]):
         [ True False]  # First point in environment, second outside
 
         """
-        if self.is_linearized_track and not self.arena.domain_known:
-            raise NotImplementedError(
-                _format_error(
-                    "contains() requires a known track footprint.",
-                    why="A centerline and bin size do not determine the physical track width.",
-                    fix="supply track_width when constructing the track, or use bin_at() for nearest-track projection",
-                )
-            )
         indices = self._locate(positions)
         return np.asarray(indices != -1, dtype=np.bool_)
 

@@ -1594,7 +1594,7 @@ def _create_graph_env():
 
     edge_order = [(i, i + 1) for i in range(4)]
     env = Environment.from_graph(
-        graph, edge_order=edge_order, edge_spacing=20.0, bin_size=5.0
+        graph, edge_order=edge_order, edge_spacing=20.0, bin_size=5.0, track_width=5.0
     )
     return env
 

@@ -73,23 +73,39 @@ class TestEnvironmentFromGraph:
         bin_idx_center = graph_env.bin_at(point_center)
         assert bin_idx_center[0] != -1
 
+        # Beyond the track's 0.5-unit width there is no bin.
         point_off_track = np.array([[10.0, 10.0]])
         bin_idx_off = graph_env.bin_at(point_off_track)
-        assert bin_idx_off[0] != -1
+        assert bin_idx_off[0] == -1
 
         points = np.array([[-1.0, 0.0], [0.0, 1.0], [10.0, 10.0]])
         bin_indices = graph_env.bin_at(points)
         assert len(bin_indices) == 3
         assert bin_indices[0] != -1
         assert bin_indices[1] != -1
-        assert bin_indices[2] != -1
+        assert bin_indices[2] == -1
 
     def test_contains(self, graph_env: Environment):
-        """A centerline alone supports projection but cannot assert containment."""
+        """A track with a width contains the points within half a width."""
+        points = np.array([[-1.0, 0.0], [-1.0, 0.24], [-1.0, 0.26], [10.0, 10.0]])
+        np.testing.assert_array_equal(
+            graph_env.contains(points), [True, True, False, False]
+        )
+        np.testing.assert_array_equal(
+            graph_env.bin_at(points) >= 0, [True, True, False, False]
+        )
+
+    def test_a_track_without_width_refuses_position_lookups(
+        self, plus_maze_graph, plus_maze_edge_order
+    ):
+        """A centerline alone cannot say whether a point is on the track."""
+        env = Environment.from_graph(
+            plus_maze_graph, plus_maze_edge_order, edge_spacing=0.0, bin_size=0.5
+        )
         points = np.array([[-1.0, 0.0], [10.0, 10.0]])
-        assert (graph_env.bin_at(points) >= 0).all()
-        with pytest.raises(NotImplementedError, match="track_width"):
-            graph_env.contains(points)
+        for lookup in (env.bin_at, env.contains):
+            with pytest.raises(NotImplementedError, match="track_width"):
+                lookup(points)
 
     def test_neighbors(self, graph_env: Environment):
         """Test getting neighbors of a bin."""

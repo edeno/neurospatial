@@ -306,6 +306,7 @@ def _create_w_maze_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
+        track_width=dims.corridor_width,
         name="w_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

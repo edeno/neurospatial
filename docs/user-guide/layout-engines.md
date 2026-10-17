@@ -62,10 +62,14 @@ env = Environment.from_graph(
     edge_order=[(0, 1)],
     edge_spacing=0.0,
     bin_size=2.0,
+    track_width=10.0,  # full corridor width
 )
 ```
 
-**Key feature**: Converts 2D positions to 1D linear coordinates with `env.to_linear()`
+**Key feature**: Converts 2D positions to 1D linear coordinates with `env.to_linear()`.
+Pass the corridor's measured `track_width` so that `bin_at`, `occupancy` and the
+rate maps can tell positions on the track from positions off it (bin `-1`);
+without it they refuse.
 
 ### MaskedGridLayout
 **Grid with active/inactive regions** - automatically used when `infer_active_bins=True`.

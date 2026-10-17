@@ -415,6 +415,7 @@ env = Environment.from_graph(
     edge_order=[(4, 0), (0, 1), (0, 2), (0, 3)],  # traversal order
     edge_spacing=0.0,  # no gaps between edges
     bin_size=2.0,  # cm
+    track_width=10.0,  # measured corridor width, cm; positions farther out get bin -1
     name="PlusMaze"
 )
 

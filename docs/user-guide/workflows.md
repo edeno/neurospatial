@@ -687,7 +687,9 @@ graph = nx.Graph()
 graph.add_node(0, pos=(0.0, 0.0))
 graph.add_node(1, pos=(100.0, 0.0))
 graph.add_edge(0, 1, distance=100.0)
-env = Environment.from_graph(graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=5.0)
+env = Environment.from_graph(
+    graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=5.0, track_width=10.0
+)
 env = env.with_metadata(units="cm")
 repeated = np.array([[25.0, 0.0], [50.0, 0.0], [75.0, 0.0], [50.0, 0.0], [25.0, 0.0]])
 np.testing.assert_allclose(env.to_linear(repeated), repeated[:, 0])

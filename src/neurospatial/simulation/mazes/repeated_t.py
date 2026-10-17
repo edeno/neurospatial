@@ -462,6 +462,7 @@ def _create_repeated_t_maze_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
+        track_width=dims.width,
         name="repeated_t_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

@@ -430,7 +430,7 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
 
 def _track() -> Environment:
     return Environment.linear_track(
-        endpoints=[(0.0, 0.0), (20.0, 0.0)], bin_size=1.0, units="cm"
+        endpoints=[(0.0, 0.0), (20.0, 0.0)], bin_size=1.0, track_width=1.0, units="cm"
     )
 
 
@@ -530,13 +530,18 @@ def test_track_lookups_resolve_equidistant_points_alike():
     for u, v in [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)]:
         length = float(np.hypot(*np.subtract(corners[u], corners[v])))
         graph.add_edge(u, v, distance=length)
-    env = Environment.from_graph(graph, edge_order=list(graph.edges), bin_size=1.0)
+    env = Environment.from_graph(
+        graph, edge_order=list(graph.edges), bin_size=1.0, track_width=8.0
+    )
     # Points on a half-unit lattice are often equidistant from several centers.
     points = np.round(np.random.default_rng(0).uniform(0, 40, (5000, 2)) * 2) / 2
 
     nearest = env.nearest_bin(points, tie_break="closest_center", max_distance=np.inf)
 
-    np.testing.assert_array_equal(env.bin_at(points), nearest)
+    bins = env.bin_at(points)
+    on_track = bins >= 0
+    assert on_track.mean() > 0.5
+    np.testing.assert_array_equal(bins[on_track], nearest[on_track])
 
 
 def test_analyses_reuse_the_environment_kdtree(env, monkeypatch):

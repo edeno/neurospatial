@@ -409,6 +409,7 @@ def _create_repeated_y_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
+        track_width=dims.width,
         name="repeated_y_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

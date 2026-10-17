@@ -380,6 +380,7 @@ def _create_hampton_court_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
+        track_width=dims.corridor_width,
         name="hampton_court_1d",
     )
     env_track = env_track.with_metadata(units="cm")
