@@ -173,7 +173,7 @@ def main():
         _ = env.animate_fields(
             fields,
             backend="napari",
-            fps=args.fps,
+            frame_times=np.arange(len(fields)) / args.fps,
             cache_size=args.cache_size,
             title="Basic Animation Test",
         )
@@ -186,7 +186,7 @@ def main():
         _ = env.animate_fields(
             fields,
             backend="napari",
-            fps=args.fps,
+            frame_times=np.arange(len(fields)) / args.fps,
             cache_size=args.cache_size,
             title=f"Long Series: {len(fields)} frames @ {args.fps} FPS",
         )
@@ -208,7 +208,7 @@ def main():
             backend="napari",
             layout="horizontal",
             layer_names=["Field A", "Field B", "Field C"],
-            fps=args.fps,
+            frame_times=np.arange(len(fields)) / args.fps,
             title="Multi-Field: 3 sequences side-by-side",
         )
 
@@ -276,7 +276,7 @@ def main():
             fields,
             overlays=[position_overlay, bodypart_overlay, head_direction_overlay],
             backend="napari",
-            fps=args.fps,
+            frame_times=np.arange(len(fields)) / args.fps,
             title="Overlays: Position + Pose + HeadDirection",
         )
 
@@ -318,7 +318,7 @@ def main():
             backend="napari",
             layout="horizontal",
             layer_names=["Field A", "Field B"],
-            fps=args.fps,
+            frame_times=np.arange(len(fields)) / args.fps,
             title="Combined: Multi-field + Overlay",
         )
 
