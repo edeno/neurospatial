@@ -357,12 +357,46 @@ class Environment(Generic[_C]):
             )
         )
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
+    def __setstate__(self, state: object) -> None:
         """Restore owned state; the analysis cache unpickles empty.
 
         The geometry records mark their arrays read-only again as they are
         unpickled.
+
+        Raises
+        ------
+        TypeError
+            If ``state`` is not the state of an Environment pickled by this
+            version of neurospatial.
         """
+        expected = {
+            "_metadata": _Metadata,
+            "_regions": Regions,
+            "_provenance": _Provenance,
+            "_geometry": _PublishedGeometry,
+            "_cache": AnalysisCache,
+        }
+        if (
+            not isinstance(state, dict)
+            or state.keys() != expected.keys()
+            or not all(isinstance(state[key], kind) for key, kind in expected.items())
+        ):
+            found = sorted(state) if isinstance(state, dict) else type(state).__name__
+            raise TypeError(
+                _format_error(
+                    "This pickle does not hold an Environment saved by this "
+                    f"version of neurospatial (its state is {found}).",
+                    why=(
+                        "Why: pickle stores the class's private layout, which "
+                        "changes between versions; it only moves environments "
+                        "between processes running the same version."
+                    ),
+                    fix=(
+                        "save with env.to_file(path) and read with "
+                        "Environment.from_file(path), which work across versions"
+                    ),
+                )
+            )
         self.__dict__.update(state)
         self._geometry = replace(self._geometry, arena=own_arena(self._geometry.arena))
         self._regions = self._validate_regions(self._regions)

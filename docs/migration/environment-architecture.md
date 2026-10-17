@@ -20,7 +20,9 @@ env = Environment.from_samples(positions, bin_size=4.0, units="cm")
 ## Saving environments: use files, not pickles from older versions
 
 Pickle files of an `Environment` written by an earlier version of neurospatial
-cannot be loaded. Pickle still works for sending an environment to worker
+cannot be loaded. An environment state from another version raises a
+`TypeError` that says to use files instead.
+Pickle still works for sending an environment to worker
 processes of the same version (for example with `multiprocessing`), but it is
 not meant for storing data.
 

@@ -115,3 +115,31 @@ def test_pickle_round_trip_keeps_published_values_immutable():
         restored.connectivity.nodes[0]["pos"] = (99.0, 99.0)
     with pytest.raises(TypeError, match="read-only"):
         restored.connectivity.graph["caller"] = 1
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda state: state.pop("_provenance"),
+        lambda state: state.update(_extra=1),
+        lambda state: state.update(_geometry=None),
+    ],
+    ids=["missing-field", "unknown-field", "wrong-type"],
+)
+def test_unpickling_a_foreign_state_says_to_use_environment_files(edit):
+    env = _environment()
+    state = dict(env.__dict__)
+    edit(state)
+    blank = Environment.__new__(Environment)
+
+    with pytest.raises(TypeError, match="not hold an Environment") as error:
+        blank.__setstate__(state)
+
+    assert "Environment.from_file(path)" in str(error.value)
+
+
+def test_unpickling_a_non_mapping_state_is_refused():
+    blank = Environment.__new__(Environment)
+
+    with pytest.raises(TypeError, match=r"its state is tuple"):
+        blank.__setstate__((None, {}))

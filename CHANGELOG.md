@@ -11,7 +11,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Pickle files of an `Environment` written by an earlier version can no longer
   be loaded. Pickle still works for passing an environment between processes
   of the same version (for example with `multiprocessing`), but it is not a
-  storage format. Save with `env.to_file(...)` or NWB export and reload with
+  storage format. An environment state from another version raises a
+  `TypeError` that says to use files instead.
+  Save with `env.to_file(...)` or NWB export and reload with
   `Environment.from_file(...)`.
 
 - Old import paths are removed. The compatibility modules
