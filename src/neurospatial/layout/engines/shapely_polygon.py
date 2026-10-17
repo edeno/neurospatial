@@ -1,8 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import matplotlib
 import networkx as nx
 import numpy as np
 import shapely
@@ -17,6 +16,9 @@ from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import _create_regular_grid
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 
 class ShapelyPolygonLayout(_GridMixin):
@@ -126,14 +128,14 @@ class ShapelyPolygonLayout(_GridMixin):
 
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
+        ax: "matplotlib.axes.Axes | None" = None,
         figsize=(7, 7),
         cmap: str = "bone_r",
         alpha: float = 0.7,
         show_connectivity: bool = True,
         node_size: float = 20,
         node_color: str = "blue",
-    ) -> matplotlib.axes.Axes:
+    ) -> "matplotlib.axes.Axes":
         """Plot the ShapelyPolygon layout.
 
         Displays the active grid cells and overlays the defining polygon.

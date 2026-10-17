@@ -11,18 +11,18 @@ from __future__ import annotations
 import contextlib
 import warnings
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import matplotlib
 import networkx as nx
 import numpy as np
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry import get_centers as get_centers
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 
 def get_n_bins(
@@ -402,6 +402,8 @@ def _generic_graph_plot(
 
     """
     import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
     if graph is None or graph.number_of_nodes() == 0:
         raise ValueError("Graph is empty or None. Cannot plot an empty graph.")

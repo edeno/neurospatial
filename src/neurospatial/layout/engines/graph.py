@@ -1,8 +1,6 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import matplotlib
-import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
@@ -26,6 +24,9 @@ from neurospatial.layout.helpers.graph import (
 )
 from neurospatial.layout.mixins import _KDTreeMixin
 from neurospatial.layout.validation import validate_connectivity_graph
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 
 class GraphLayout(_KDTreeMixin):
@@ -167,9 +168,9 @@ class GraphLayout(_KDTreeMixin):
 
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
+        ax: "matplotlib.axes.Axes | None" = None,
         **kwargs,
-    ) -> matplotlib.axes.Axes:
+    ) -> "matplotlib.axes.Axes":
         """Plot the N-D embedding of the graph-based layout.
 
         Displays the original graph used for definition, the N-D positions of
@@ -207,9 +208,9 @@ class GraphLayout(_KDTreeMixin):
 
     def plot_linear_layout(
         self,
-        ax: matplotlib.axes.Axes | None = None,
+        ax: "matplotlib.axes.Axes | None" = None,
         **kwargs,
-    ) -> matplotlib.axes.Axes:
+    ) -> "matplotlib.axes.Axes":
         """Plot the 1D linearized representation of the graph layout.
 
         Uses `track_linearization.plot_graph_as_1D` to display the track

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
@@ -31,6 +30,9 @@ from neurospatial.layout.helpers.triangular_mesh import (
     _triangulate_points,
 )
 from neurospatial.layout.validation import validate_connectivity_graph
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 _MESH_SKEW_ANGLE_DEG = 30.0
 _MESH_SKEW_FRACTION = 0.05

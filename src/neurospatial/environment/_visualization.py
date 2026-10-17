@@ -7,8 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import matplotlib
-import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
@@ -36,6 +34,7 @@ from neurospatial.regions import Regions
 from neurospatial.regions.plot import plot_regions
 
 if TYPE_CHECKING:
+    import matplotlib.axes
     from matplotlib.colors import Colormap
 
     from neurospatial.layout import ScaleBarConfig

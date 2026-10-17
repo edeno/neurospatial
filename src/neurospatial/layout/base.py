@@ -1,15 +1,24 @@
 import inspect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
-from typing import Any, Protocol, TypeVar, overload, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Protocol,
+    TypeVar,
+    overload,
+    runtime_checkable,
+)
 
-import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry import Binning
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 T = TypeVar("T")
 
@@ -376,9 +385,9 @@ class LayoutEngine(Protocol):
 
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
+        ax: "matplotlib.axes.Axes | None" = None,
         **kwargs,
-    ) -> matplotlib.axes.Axes:
+    ) -> "matplotlib.axes.Axes":
         """Plot the layout's geometry.
 
         Parameters

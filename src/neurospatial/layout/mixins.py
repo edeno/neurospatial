@@ -1,6 +1,6 @@
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
-import matplotlib
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
@@ -19,6 +19,9 @@ from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid_connectivity_graph,
 )
 from neurospatial.layout.validation import validate_connectivity_graph
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 
 # ---------------------------------------------------------------------------
@@ -223,14 +226,14 @@ class _GridMixin:
 
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
+        ax: "matplotlib.axes.Axes | None" = None,
         figsize=(7, 7),
         cmap: str = "bone_r",
         alpha: float = 0.7,
         show_connectivity: bool = True,
         node_size: float = 20,
         node_color: str = "blue",
-    ) -> matplotlib.axes.Axes:
+    ) -> "matplotlib.axes.Axes":
         """Plot the grid-based layout.
 
         For 2D grids, displays the `active_mask` using `pcolormesh` and

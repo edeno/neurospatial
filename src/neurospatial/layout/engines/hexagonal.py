@@ -1,8 +1,6 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import matplotlib
-import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
@@ -22,6 +20,9 @@ from neurospatial.layout.helpers.utils import (
     check_grid_size_safety,
 )
 from neurospatial.layout.validation import validate_connectivity_graph
+
+if TYPE_CHECKING:
+    import matplotlib.axes
 
 
 class HexagonalLayout:
@@ -240,9 +241,9 @@ class HexagonalLayout:
 
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
+        ax: "matplotlib.axes.Axes | None" = None,
         **kwargs,
-    ) -> matplotlib.axes.Axes:
+    ) -> "matplotlib.axes.Axes":
         """Plot the hexagonal layout.
 
         Displays active hexagons and their connectivity graph.
