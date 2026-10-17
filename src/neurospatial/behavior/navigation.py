@@ -977,6 +977,14 @@ def graph_turn_sequence(
     Analyzes which bins were traversed and classifies turns based on
     changes in movement direction. Works for any Cartesian layout type.
 
+    Left and right are the animal's own (egocentric) sides: a turn is "left"
+    when the new direction is counterclockwise from the old one, so heading
+    North and then West is a left turn. This assumes the environment's
+    coordinates are y-up (x East, y North), the package convention. Positions
+    in image pixels, where y points down, mirror every turn; flip y first,
+    for example ``positions[:, 1] = height - positions[:, 1]``, before
+    building the environment.
+
     Parameters
     ----------
     env : Environment
@@ -991,7 +999,8 @@ def graph_turn_sequence(
     -------
     str
         Turn sequence like "left-right-left", or empty string "" if no
-        turns detected. Each turn is separated by "-".
+        turns detected. Each turn is separated by "-". Only the first two
+        coordinates set the turn direction.
 
     Raises
     ------
@@ -1098,7 +1107,8 @@ def graph_turn_sequence(
     # Build turns list
     turns = []
     for i in np.where(significant_mask)[0]:
-        if cross[i] < 0:
+        # Counterclockwise (cross > 0) in a y-up frame is the animal's left.
+        if cross[i] > 0:
             turns.append("left")
         else:
             turns.append("right")

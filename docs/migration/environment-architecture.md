@@ -1203,7 +1203,9 @@ cell = GridCellModel(env, grid_spacing=30.0, grid_orientation=earlier_grid_orien
 ## `graph_turn_sequence` takes the bins only
 
 `start_bin` and `end_bin` were never used: the order of the samples already
-sets the direction of travel. Drop them from the call:
+sets the direction of travel. Drop them from the call. The labels are now the
+animal's own left and right in the y-up frame (heading North and then West
+is `"left"`); earlier versions swapped them, so recompute saved sequences:
 
 <!-- docs-test: run -->
 ```python

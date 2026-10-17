@@ -1413,15 +1413,13 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
 # =============================================================================
 
 
-def test_graph_turn_sequence_ymaze_left(ymaze_env):
-    """Test turn sequence for Y-maze left choice."""
+def test_graph_turn_sequence_ymaze_north_arm_into_west_arm_is_right(ymaze_env):
+    """Walking South down the North arm, the Northwest arm is on the right."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
 
     # Y-maze has bins along edges, not just at nodes
-    # Create a realistic trajectory that traverses from straight arm to center to left arm
-    # This creates a clear left turn at the center junction
 
     bin_centers = env.bin_centers
     node_positions = {
@@ -1434,7 +1432,8 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
         distances = np.linalg.norm(bin_centers - pos, axis=1)
         return np.argmin(distances)
 
-    # Find bins along the path: straight → center → left (makes a left turn)
+    # Find bins along the path: straight → center → left arm. Heading South,
+    # the West side is the animal's right, so this is a right turn.
     straight_bin = find_closest_bin(node_positions[1])
     center_bin = find_closest_bin(node_positions[0])
     left_bin = find_closest_bin(node_positions[2])
@@ -1456,19 +1455,14 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
         min_samples_per_edge=10,
     )
 
-    # Should detect a left turn
-    assert isinstance(turn_seq, str)
-    assert "left" in turn_seq.lower()
+    assert turn_seq == "right"
 
 
-def test_graph_turn_sequence_ymaze_right(ymaze_env):
-    """Test turn sequence for Y-maze right choice."""
+def test_graph_turn_sequence_ymaze_north_arm_into_east_arm_is_left(ymaze_env):
+    """Walking South down the North arm, the Northeast arm is on the left."""
     from neurospatial.behavior.navigation import graph_turn_sequence
 
     env = ymaze_env
-
-    # Create a realistic trajectory that traverses from straight arm to center to right arm
-    # This creates a clear right turn at the center junction
 
     bin_centers = env.bin_centers
     node_positions = {
@@ -1481,7 +1475,8 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
         distances = np.linalg.norm(bin_centers - pos, axis=1)
         return np.argmin(distances)
 
-    # Find bins along the path: straight → center → right (makes a right turn)
+    # Find bins along the path: straight → center → right arm. Heading South,
+    # the East side is the animal's left, so this is a left turn.
     straight_bin = find_closest_bin(node_positions[1])
     center_bin = find_closest_bin(node_positions[0])
     right_bin = find_closest_bin(node_positions[3])
@@ -1503,9 +1498,7 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
         min_samples_per_edge=10,
     )
 
-    # Should detect a right turn
-    assert isinstance(turn_seq, str)
-    assert "right" in turn_seq.lower()
+    assert turn_seq == "left"
 
 
 def test_graph_turn_sequence_grid_multiple(small_2d_env):
@@ -1555,6 +1548,44 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
     assert isinstance(turn_seq, str)
     # If there are turns, sequence should contain "-"
     # May be empty if path is too simple or bins don't form clear turns
+
+
+def _turns_along(env, corners, samples_per_bin=60):
+    """Turn labels for a walk that dwells in the bin at each corner, in order."""
+    from neurospatial.behavior.navigation import graph_turn_sequence
+
+    bins = env.bin_at(np.asarray(corners, dtype=float))
+    assert np.all(bins >= 0)
+    return graph_turn_sequence(
+        env, np.repeat(bins, samples_per_bin), min_samples_per_edge=20
+    )
+
+
+@pytest.fixture(scope="module")
+def turn_grid():
+    """A 30 x 30 cm open field with 3 cm bins, x East and y North (y-up)."""
+    x, y = np.meshgrid(np.arange(0.0, 30.0), np.arange(0.0, 30.0))
+    return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=3.0)
+
+
+@pytest.mark.parametrize(
+    ("corners", "expected"),
+    [
+        # Heading North, then West: counterclockwise, the animal's left.
+        ([(16.5, 1.5), (16.5, 16.5), (1.5, 16.5)], "left"),
+        # Heading North, then East: clockwise, the animal's right.
+        ([(1.5, 1.5), (1.5, 16.5), (16.5, 16.5)], "right"),
+        # Heading East, then North (left), then West (left).
+        ([(1.5, 1.5), (16.5, 1.5), (16.5, 16.5), (1.5, 16.5)], "left-left"),
+        # Heading East, then North (left), then East (right).
+        ([(1.5, 1.5), (13.5, 1.5), (13.5, 13.5), (28.5, 13.5)], "left-right"),
+    ],
+)
+def test_graph_turn_sequence_labels_turns_in_the_animal_frame(
+    turn_grid, corners, expected
+):
+    """Left and right are egocentric: +pi/2 from the heading is left (y-up)."""
+    assert _turns_along(turn_grid, corners) == expected
 
 
 def test_graph_turn_sequence_straight(ymaze_env):

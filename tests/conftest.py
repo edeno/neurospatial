@@ -450,10 +450,9 @@ def ymaze_graph() -> nx.Graph:
         Node 2 (left/Northwest arm): (-7, 7)
         Node 3 (right/Northeast arm): (7, 7)
 
-    The animal starts at center (0) and can choose between:
-    - Straight ahead (0→1): No turn
-    - Left (0→2): Left turn (~45 degrees)
-    - Right (0→3): Right turn (~45 degrees)
+    Arm names are map sides (x < 0 is "left"), not the animal's turn: an
+    animal walking South from the North arm into the Northwest arm turns to
+    its right.
     """
     graph = nx.Graph()
     graph.add_node(0, pos=(0.0, 0.0))  # Center/junction

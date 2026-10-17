@@ -722,6 +722,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `graph_turn_sequence` labelled every turn backwards. In the package's y-up
+  frame (x East, y North), heading North and then turning West is a left turn,
+  but it was reported as `"right"`; every `"left"` and `"right"` in its output
+  is now swapped back to the animal's own side. Recompute saved turn
+  sequences. Positions in image pixels, where y points down, must be flipped
+  to y-up first, as the docstring now says.
+
 - `env.layout_parameters` reports only options that shaped the bins.
   `Environment.open_field(..., infer_active_bins=False)` recorded
   `fill_holes=True`, its default, although every bin is active and nothing was
