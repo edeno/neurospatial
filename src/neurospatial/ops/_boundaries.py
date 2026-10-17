@@ -343,10 +343,15 @@ def physical_footprint_interior(arena: Arena) -> Interior | None:
     )
 
 
-def analysis_interior(binning: Binning, arena: Arena) -> Interior:
-    """Retained analysis support, matching analysis-mode observer validity."""
+def analysis_interior(
+    binning: Binning, arena: Arena, indexes: LookupIndexes | None = None
+) -> Interior:
+    """Retained analysis support, matching analysis-mode observer validity.
+
+    ``indexes`` keeps the locator's search structures across calls.
+    """
     return lambda points: np.asarray(
-        locate(binning, arena, points) >= 0, dtype=np.bool_
+        locate(binning, arena, points, indexes) >= 0, dtype=np.bool_
     )
 
 
@@ -370,11 +375,15 @@ def valid_observers(
     arena: Arena,
     positions: NDArray[np.float64],
     source: BoundarySource,
+    indexes: LookupIndexes | None = None,
 ) -> NDArray[np.bool_]:
-    """Require finite observers inside the domain justified by the chosen source."""
+    """Require finite observers inside the domain justified by the chosen source.
+
+    ``indexes`` keeps the locator's search structures across calls.
+    """
     valid = np.asarray(np.all(np.isfinite(positions), axis=1), dtype=np.bool_)
     if source == "analysis":
-        valid[valid] = locate(binning, arena, positions[valid]) >= 0
+        valid[valid] = locate(binning, arena, positions[valid], indexes) >= 0
     elif arena.physical_footprint_known:
         valid[valid] = arena.contains(positions[valid])
     return valid

@@ -87,11 +87,13 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._locators import CallIndexes
 from neurospatial.geometry._lookup import locate
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import LookupIndexes
     from neurospatial.ops._protocols import BinCentersConsumer, BinningConsumer
 
 __all__ = [
@@ -589,9 +591,12 @@ def compute_viewed_location(
         )
 
         binning, arena = env.binning, env.arena
+        indexes = CallIndexes()
         walls = boundary_geometry(binning, arena, boundary_source)
         origins = positions.copy()
-        origins[~valid_observers(binning, arena, positions, boundary_source)] = np.nan
+        origins[
+            ~valid_observers(binning, arena, positions, boundary_source, indexes)
+        ] = np.nan
         viewed = (
             physical_ray_hits(arena, origins, gaze_direction, max_distance)
             if boundary_source == "physical"
@@ -600,7 +605,7 @@ def compute_viewed_location(
                 origins,
                 gaze_direction,
                 max_distance,
-                analysis_interior(binning, arena),
+                analysis_interior(binning, arena, indexes),
             )
         )
 
@@ -708,6 +713,7 @@ def _batch_line_of_sight_clear(
     n_samples: int = 20,
     *,
     boundary_source: Literal["physical", "analysis"] = "physical",
+    indexes: LookupIndexes | None = None,
 ) -> NDArray[np.bool_]:
     """Check line of sight between observer and multiple targets (vectorized).
 
@@ -728,6 +734,9 @@ def _batch_line_of_sight_clear(
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
         bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+    indexes : LookupIndexes, optional
+        Search structures shared by the calls of one computation; None keeps
+        them for this call only.
 
     Returns
     -------
@@ -749,12 +758,17 @@ def _batch_line_of_sight_clear(
         raise ValueError(
             "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
         )
-    if not valid_observers(binning, arena, observer.reshape(1, 2), boundary_source)[0]:
+    indexes = CallIndexes() if indexes is None else indexes
+    if not valid_observers(
+        binning, arena, observer.reshape(1, 2), boundary_source, indexes
+    )[0]:
         return np.zeros(len(targets), dtype=bool)
     return (
         physical_clear_segments(arena, observer, targets)
         if boundary_source == "physical"
-        else clear_segments(walls, observer, targets, analysis_interior(binning, arena))
+        else clear_segments(
+            walls, observer, targets, analysis_interior(binning, arena, indexes)
+        )
     )
 
 
@@ -836,12 +850,18 @@ def _viewshed(
     n_rays: int,
     cue_positions: NDArray[np.float64] | None,
     boundary_source: Literal["physical", "analysis"],
+    indexes: LookupIndexes | None = None,
 ) -> ViewshedResult:
-    """Compute a viewshed from the bins and domain; see :func:`compute_viewshed`."""
+    """Compute a viewshed from the bins and domain; see :func:`compute_viewshed`.
+
+    ``indexes`` keeps the locator's search structures across the frames of
+    one trajectory; None keeps them for this viewshed only.
+    """
     from neurospatial.ops.egocentric import compute_egocentric_bearing
 
     position = np.asarray(position, dtype=np.float64)
     n_bins = binning.bins.n_bins
+    indexes = CallIndexes() if indexes is None else indexes
 
     # Determine angular range
     full_circle = False
@@ -888,9 +908,9 @@ def _viewshed(
         raise ValueError("n_rays must be a positive integer.")
     if (
         not np.isfinite(heading)
-        or not valid_observers(binning, arena, position.reshape(1, 2), boundary_source)[
-            0
-        ]
+        or not valid_observers(
+            binning, arena, position.reshape(1, 2), boundary_source, indexes
+        )[0]
     ):
         return ViewshedResult(
             np.empty(0, dtype=np.intp),
@@ -917,7 +937,7 @@ def _viewshed(
             origins,
             ray_angles_allo,
             max_distance,
-            analysis_interior(binning, arena),
+            analysis_interior(binning, arena, indexes),
         )
     )
     hit_distance = np.hypot.reduce(hits - position, axis=1)
@@ -944,7 +964,7 @@ def _viewshed(
 
     # Reshape for batch bin_at query: (n_rays * n_steps, 2)
     flat_ray_points = ray_points_all.reshape(-1, 2)
-    flat_bin_indices = locate(binning, arena, flat_ray_points)
+    flat_bin_indices = locate(binning, arena, flat_ray_points, indexes)
 
     # Reshape back: (n_rays, n_steps)
     bin_indices_2d = flat_bin_indices.reshape(n_rays, n_steps)
@@ -1000,6 +1020,7 @@ def _viewshed(
                     position,
                     cue_positions[fov_indices],
                     boundary_source=boundary_source,
+                    indexes=indexes,
                 )
                 # Build visibility mask
                 visible_mask = np.zeros(n_cues, dtype=bool)
@@ -1240,6 +1261,7 @@ def compute_viewshed_trajectory(
     headings = np.asarray(headings, dtype=np.float64)
 
     binning, arena = env.binning, env.arena
+    indexes = CallIndexes()
     return [
         _viewshed(
             binning,
@@ -1250,6 +1272,7 @@ def compute_viewshed_trajectory(
             n_rays=n_rays,
             cue_positions=cue_positions,
             boundary_source=boundary_source,
+            indexes=indexes,
         )
         for i in range(len(positions))
     ]
@@ -1301,6 +1324,7 @@ def visibility_occupancy(
 
     n_time = len(times)
     binning, arena = env.binning, env.arena
+    indexes = CallIndexes()
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
 
     # Compute dt for each frame
@@ -1319,6 +1343,7 @@ def visibility_occupancy(
             n_rays=n_rays,
             cue_positions=None,
             boundary_source=boundary_source,
+            indexes=indexes,
         )
         np.add.at(occupancy, result.visible_bins, dt[i])
 
