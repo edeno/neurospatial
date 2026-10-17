@@ -138,8 +138,7 @@ projected = centerline_only.linear_to_nd(centerline_only.to_linear(positions))
 off_centerline = np.linalg.norm(positions - projected, axis=1)
 arm_end_xy = np.array([graph.nodes[node]["pos"] for node in endpoint_nodes])
 near_arm_end = (
-    np.min(np.linalg.norm(positions[:, None] - arm_end_xy[None], axis=2), axis=1)
-    < 20.0
+    np.min(np.linalg.norm(positions[:, None] - arm_end_xy[None], axis=2), axis=1) < 20.0
 )
 beyond_corridor = off_centerline > 7.5  # outside a 15 cm corridor
 print(
