@@ -358,7 +358,7 @@ def _environment_payload(
         "grid_shape": env.grid_shape,
         "graph": graph_to_node_link(env.connectivity),
         "regions": [region.to_dict() for region in env.regions.values()],
-        "coordinate_kind": "polar" if env._is_polar else "cartesian",
+        "coordinate_kind": env.coordinate_kind,
     }
     for attribute in ("units", "frame"):
         value = getattr(env, attribute)

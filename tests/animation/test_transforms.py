@@ -81,6 +81,20 @@ class TestEnvScale:
         assert scale.x_max - scale.x_min == pytest.approx(20.0, rel=0.1)
         assert scale.y_max - scale.y_min == pytest.approx(10.0, rel=0.1)
 
+    def test_env_scale_refuses_rotated_grid(self, simple_env: Environment) -> None:
+        """A grid carried into a rotated world frame has no napari raster scale."""
+        from neurospatial.animation.transforms import EnvScale
+        from neurospatial.ops import AffineND
+
+        quarter_turn = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+        rotated = simple_env.apply_transform(AffineND(quarter_turn))
+        assert rotated.binning.grid_frame is not None
+
+        with pytest.raises(NotImplementedError, match="framed grids"):
+            EnvScale.from_env(rotated)
+        with pytest.raises(NotImplementedError, match="framed grids"):
+            EnvScale(rotated)
+
 
 class TestTransformCoordsForNapari:
     """Tests for transform_coords_for_napari function."""

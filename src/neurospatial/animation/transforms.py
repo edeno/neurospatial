@@ -53,6 +53,15 @@ _TRANSFORM_FALLBACK_WARNED: bool = False
 """Flag to ensure transform fallback warning is shown only once per session."""
 
 
+def _is_framed_grid(env: Any) -> bool:
+    """Whether ``env`` is an Environment whose rectangular grid has a world frame."""
+    # Imported here so that importing the animation package does not load the
+    # environment package.
+    from neurospatial.environment import Environment
+
+    return isinstance(env, Environment) and env.binning.grid_frame is not None
+
+
 class EnvScale:
     """The napari field image's pixel grid, in environment coordinates.
 
@@ -96,7 +105,7 @@ class EnvScale:
         env : Environment
             Environment with two ``grid_edges`` axes and ``grid_shape``.
         """
-        if getattr(getattr(env, "_binning", None), "grid_frame", None) is not None:
+        if _is_framed_grid(env):
             raise NotImplementedError(
                 "Napari raster coordinates do not support framed grids; use Matplotlib, video or HTML rendering."
             )
@@ -141,7 +150,7 @@ class EnvScale:
         >>> if scale is None:  # doctest: +SKIP
         ...     print("Using fallback transform")  # doctest: +SKIP
         """
-        if getattr(getattr(env, "_binning", None), "grid_frame", None) is not None:
+        if _is_framed_grid(env):
             return cls(env)  # refuses framed grids with the fix
         if (
             env is None

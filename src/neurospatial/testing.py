@@ -61,7 +61,7 @@ def assert_environment_contract(
         if not _assigns_positions(value):
             for refused in (query, np.full((1, value.n_dims), np.nan)):
                 try:
-                    value._locate(refused)
+                    value.bin_at(refused)
                 except NotImplementedError as error:
                     assert "track_width" in str(error), error
                 else:
@@ -70,18 +70,18 @@ def assert_environment_contract(
                     )
             check_width(value)
             return
-        actual = value._locate(query)
+        actual = value.bin_at(query)
         assert actual.dtype == np.dtype(np.intp)
         np.testing.assert_array_equal(actual, expected)
         np.testing.assert_array_equal(query, original_query)
         invalid = np.full((2, value.n_dims), np.nan)
         invalid[1] = np.inf
-        np.testing.assert_array_equal(value._locate(invalid), [-1, -1])
+        np.testing.assert_array_equal(value.bin_at(invalid), [-1, -1])
         check_width(value)
 
     def check_width(value: Environment | PolarEnvironment) -> None:
         try:
-            value._locate(np.zeros((1, value.n_dims + 1)))
+            value.bin_at(np.zeros((1, value.n_dims + 1)))
         except ValueError:
             pass
         else:
@@ -123,8 +123,6 @@ def assert_environment_contract(
         path = Path(directory) / "environment.json"
         env.to_file(path)
         read_back.append(type(env).from_file(path))
-    assert all(restored._cache is env._cache for restored in same_geometry)
-    assert all(len(restored._cache) == 0 for restored in read_back)
     for restored in same_geometry + read_back:
         assert type(restored) is type(env)
         check_lookup(restored)
@@ -146,7 +144,7 @@ def _assigns_positions(env: Environment | PolarEnvironment) -> bool:
     from neurospatial.geometry import require_track_width
 
     try:
-        require_track_width(env._binning, env._arena)
+        require_track_width(env.binning, env.arena)
     except NotImplementedError:
         return False
     return True

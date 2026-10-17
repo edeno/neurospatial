@@ -32,6 +32,7 @@ from neurospatial._validation import (
     times_positions_problems,
     validate_finite,
 )
+from neurospatial.environment import Environment
 
 __all__ = [
     "validate_classifier_trajectory",
@@ -55,9 +56,7 @@ def validate_env_argument(env: object, *, context: str, arguments: str) -> None:
     Parameters
     ----------
     env : object
-        Object expected to be an ``Environment``. Untyped here because importing
-        the ``Environment`` symbol would re-introduce the import cycle that
-        ``encoding._validation`` exists to avoid.
+        Object expected to be an ``Environment``.
     context : str
         Name of the calling public free function, used in the message.
     arguments : str
@@ -69,7 +68,7 @@ def validate_env_argument(env: object, *, context: str, arguments: str) -> None:
         If ``env`` is not an environment. The message shows how to build and
         pass one.
     """
-    if not hasattr(env, "_geometry"):
+    if not isinstance(env, Environment):
         description = type(env).__name__
         shape = getattr(env, "shape", None)
         if shape is not None:
