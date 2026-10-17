@@ -18,6 +18,8 @@ from typing import Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 __all__ = ["SnapshotAdapter"]
 
 _SnapshotRole = Literal["locator", "track", "arena", "binning"]
@@ -179,6 +181,29 @@ def _snapshot_provider(provider: object, role: _SnapshotRole) -> object:
     for adapter in _snapshot_adapters():
         if type(provider) is adapter.provider_type and role == adapter.role:
             return _normalize_snapshot(adapter.snapshot(provider), role)
+    if role == "arena":
+        from shapely.geometry.base import BaseGeometry
+
+        name = type(provider).__name__
+        fix = (
+            "wrap the polygon: from neurospatial.arena import OpenArena; then "
+            "pass arena=OpenArena(polygon)"
+            if isinstance(provider, BaseGeometry)
+            else "build the arena with a class from neurospatial.arena, for "
+            "example arena=OpenArena(polygon) for a polygonal boundary, or "
+            f"install the package that converts {name} to one"
+        )
+        raise TypeError(
+            _format_error(
+                f"arena= takes an arena from neurospatial.arena (OpenArena, "
+                f"MaskArena, TrackArena or UnknownArena, not a subclass), got "
+                f"{name}.",
+                why="Why: the environment stores its arena as data it can "
+                "save, transform and use to test containment, and no installed "
+                f"converter turns a {name} into that data.",
+                fix=fix,
+            )
+        )
     hint = (
         " A layout engine instead supplies its geometry from a binning() "
         "method that returns a Binning."

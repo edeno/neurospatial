@@ -57,8 +57,8 @@ def test_invalid_transforms_raise_actionable_errors(invalid):
     elif invalid == "none":
         transform = None
         error_type, message = (
-            AttributeError,
-            "'NoneType' object has no attribute 'inverse'",
+            TypeError,
+            "apply_transform() takes an AffineND or Affine2D transform, got NoneType.",
         )
     else:
         transform = AffineND(np.diag([0.0, 1.0, 1.0]))
@@ -72,7 +72,9 @@ def test_invalid_transforms_raise_actionable_errors(invalid):
         )
     with pytest.raises(error_type) as error:
         env.apply_transform(transform)
-    assert str(error.value) == message
+    # The type refusal goes on to say why and how to wrap a matrix.
+    shown = str(error.value).splitlines()[0] if invalid == "none" else str(error.value)
+    assert shown == message
 
 
 def test_polar_bound_and_unbound_calls_raise_the_same_refusal():

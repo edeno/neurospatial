@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
+from neurospatial._exceptions import _format_error
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._binning import Binning
@@ -18,7 +19,7 @@ from neurospatial.regions import Region, Regions
 
 
 def _apply_transform(
-    transform: AffineND | Affine2D,
+    transform: object,
     *,
     binning: Binning,
     regions: Regions,
@@ -26,6 +27,26 @@ def _apply_transform(
 ) -> _Derivation:
     """Transform owned cells, their bounds, arenas and regions together."""
     n_dims = binning.bins.n_dims
+    if not isinstance(transform, (AffineND, Affine2D)):
+        shape = np.shape(transform) if isinstance(transform, np.ndarray) else None
+        given = (
+            f"a NumPy array of shape {shape}"
+            if shape is not None
+            else type(transform).__name__
+        )
+        raise TypeError(
+            _format_error(
+                f"apply_transform() takes an AffineND or Affine2D transform, got "
+                f"{given}.",
+                why="Why: the transform object says the matrix is homogeneous "
+                f"(shape ({n_dims + 1}, {n_dims + 1}) for {n_dims}-D bins, with "
+                "the translation in the last column) and supplies the inverse "
+                "used to keep bins, arena and regions consistent.",
+                fix="wrap the homogeneous matrix: from neurospatial.ops import "
+                "AffineND; env.apply_transform(AffineND(matrix)), or build one "
+                "with neurospatial.ops.transforms helpers such as translate(...)",
+            )
+        )
 
     # Validate dimensionality match
     transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2

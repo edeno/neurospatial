@@ -531,24 +531,25 @@ def _build_grid_structure(
     total_bins = math.prod(int(b) for b in n_bins)
     centers_bytes = total_bins * n_dims * 8
     if centers_bytes > _MAX_GRID_CENTERS_BYTES:
-        bins_str = (
-            f"{total_bins:,}"
-            if total_bins < 10**12
-            else f"~10^{len(str(total_bins)) - 1}"
-        )
-        mem_str = (
-            f"~{centers_bytes / 1024**3:,.1f} GiB"
-            if centers_bytes < 10**15
-            else f"~10^{len(str(centers_bytes)) - 1} bytes"
-        )
+        # Python refuses str() of an int with more than 4300 digits, so give
+        # huge counts as a power of ten from their logarithm.
+        def magnitude(count: int) -> str:
+            return f"{count:,}" if count < 10**12 else f"~10^{int(math.log10(count))}"
+
         raise ValueError(
-            f"Requested regular grid spans {n_dims} dimension(s) with {bins_str} "
-            f"total bins, whose full bin-center array needs {mem_str} -- past the "
-            f"{_MAX_GRID_CENTERS_BYTES // 1024**3} GiB safety ceiling -- and would "
-            f"exhaust memory in np.histogramdd / np.meshgrid before any active-bin "
-            f"filtering. This almost always means positions is transposed (many "
-            f"dimensions) or bin_size is far too small: ensure positions is "
-            f"(n_samples, n_dims) and/or increase bin_size."
+            _format_error(
+                f"A regular grid over these positions would have "
+                f"{magnitude(total_bins)} bins in {n_dims} dimension(s), and its "
+                f"bin centers would need {magnitude(centers_bytes)} bytes, more "
+                f"than the {_MAX_GRID_CENTERS_BYTES // 1024**3} GiB limit.",
+                why="Why: each column of positions is one spatial dimension, so "
+                "a transposed array of shape (n_dims, n_samples) reads as one "
+                "dimension per sample; a bin_size far smaller than the arena "
+                "has the same effect.",
+                fix="pass positions with shape (n_samples, n_dims), for example "
+                "positions.T, and check that bin_size is in the units of "
+                "positions",
+            )
         )
 
     # 5) Generate core edges via np.histogramdd

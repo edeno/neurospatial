@@ -245,7 +245,7 @@ def test_analytic_domain_needs_materialization_for_exact_clipping():
 
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"arena= takes an arena from neurospatial.arena",
     ):
         Environment.from_grid_mask(
             np.ones((1, 1), bool),

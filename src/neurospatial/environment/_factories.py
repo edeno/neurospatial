@@ -186,10 +186,17 @@ def _from_samples(
     try:
         positions = np.asarray(positions, dtype=float)
     except (TypeError, ValueError) as e:
-        actual_type = type(positions).__name__
         raise TypeError(
-            f"positions must be a numeric array-like object (e.g., numpy array, "
-            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
+            _format_error(
+                f"{factory}() needs numeric positions, got a "
+                f"{type(positions).__name__} whose values are not all numbers "
+                f"({e}).",
+                why="Why: each row is one sample and each column one spatial "
+                "coordinate in physical units, so every value must be a number.",
+                fix="convert the coordinate columns to floats, for example "
+                "positions = df[['x', 'y']].to_numpy(dtype=float), and mark "
+                "missing samples with np.nan",
+            )
         ) from e
 
     if positions.ndim != 2:

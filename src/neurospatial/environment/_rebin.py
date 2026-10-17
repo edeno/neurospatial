@@ -14,13 +14,14 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import (
@@ -406,22 +407,44 @@ def _rebin_factor(
     grid_edges = grid.edges
     n_dims = len(grid_shape)
 
-    factor_tuple = (factor,) * n_dims if isinstance(factor, int) else tuple(factor)
+    requested: tuple[object, ...] = (
+        (factor,) * n_dims if np.ndim(factor) == 0 else tuple(cast("Any", factor))
+    )
 
     # Validate factor dimensions
-    if len(factor_tuple) != n_dims:
+    if len(requested) != n_dims:
         raise ValueError(
-            f"factor has {len(factor_tuple)} elements but environment has "
+            f"factor has {len(requested)} elements but environment has "
             f"{n_dims} dimensions. factor must be int or tuple matching "
             "environment dimensionality."
         )
 
-    # Validate factor values
-    for i, f in enumerate(factor_tuple):
-        if not isinstance(f, (int, np.integer)):
-            raise ValueError(
-                f"factor[{i}] = {f} must be an integer, got {type(f).__name__}"
+    # A factor merges blocks of whole cells, so it must be a whole number.
+    if any(
+        isinstance(f, (bool, np.bool_)) or not isinstance(f, (int, np.integer))
+        for f in requested
+    ):
+        widths = [float(edges[1] - edges[0]) for edges in grid_edges]
+        try:
+            sizes = [
+                f"{w * float(cast('Any', f)):.3g}"
+                for w, f in zip(widths, requested, strict=True)
+            ]
+            target = sizes[0] if len(set(sizes)) == 1 else f"({', '.join(sizes)})"
+        except (TypeError, ValueError):
+            target = "..."
+        raise ValueError(
+            _format_error(
+                f"rebin(factor={factor!r}) needs a whole number of cells to merge "
+                "along each axis.",
+                why="Why: factor coarsens the grid by merging blocks of whole "
+                "cells, so a fractional factor would split cells.",
+                fix="pass an integer, such as rebin(2), or give the new cell size "
+                f"in physical units, such as rebin(bin_size={target})",
             )
+        )
+    factor_tuple = tuple(int(cast("int", f)) for f in requested)
+    for i, f in enumerate(factor_tuple):
         if f <= 0:
             raise ValueError(
                 f"factor[{i}] = {f} must be positive. "

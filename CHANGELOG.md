@@ -438,6 +438,24 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Common construction mistakes now say what failed, why and how to fix it,
+  instead of surfacing an internal error:
+  - a transposed `positions` array of shape `(n_dims, n_samples)` in
+    `from_samples` or `open_field` raised `Exceeds the limit (4300 digits) for
+    integer string conversion`; it now says the grid would need too many bins
+    and to pass `positions.T`;
+  - non-numeric positions name the conversion to apply
+    (`df[['x', 'y']].to_numpy(dtype=float)`);
+  - a shapely polygon passed as `arena=` asked to install an adapter package;
+    it now says to pass `arena=OpenArena(polygon)`;
+  - `Environment.from_bins(env.binning)` shows the two lines that build the
+    faces first;
+  - `env.rebin(1.5)` raised `TypeError: 'float' object is not iterable`; a
+    factor that is not a whole number now raises `ValueError` suggesting
+    `rebin(2)` or `rebin(bin_size=...)` with the matching size;
+  - `env.apply_transform(np.eye(3))` raised `AttributeError`; a matrix now
+    raises `TypeError` saying to wrap it, `AffineND(matrix)`.
+
 - Every lookup of a region by name raises `RegionNotFoundError` with the
   closest existing name, for example `Fix: pass region_name='reward'` for
   `env.bins_in_region("rewrd")`. This covers `env.regions[name]`,

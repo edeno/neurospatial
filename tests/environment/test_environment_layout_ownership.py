@@ -266,7 +266,7 @@ def test_custom_arena_is_refused_even_under_native_transform():
 
     source = CustomArena(box(0, 0, 2, 2))
     for value in (source, _TransformedArena(source, np.eye(3))):
-        with pytest.raises(TypeError, match="snapshot"):
+        with pytest.raises(TypeError, match="arena= takes an arena"):
             own_arena(value)
 
 

@@ -307,7 +307,7 @@ class _CustomArena:
 def test_custom_arena_requires_owned_data_before_publication():
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"arena= takes an arena from neurospatial.arena",
     ):
         _grid(arena=_CustomArena())
     source, target = _grid(arena=UnknownArena(2)), _grid(arena=UnknownArena(2))

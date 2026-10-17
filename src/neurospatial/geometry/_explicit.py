@@ -8,6 +8,7 @@ from typing import Literal
 
 import numpy as np
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
@@ -123,8 +124,17 @@ def prepare_bins(binning: object) -> Binning:
     binning = _snapshot_binning(binning)
     if type(binning.faces) not in (KnownFaces, MissingFaces):
         raise TypeError(
-            "from_bins requires explicit KnownFaces or MissingFaces; "
-            "materialize valid faces before constructing an environment."
+            _format_error(
+                "from_bins() needs the cell faces themselves, but this Binning "
+                "holds a recipe that builds them, as env.binning returns.",
+                why="Why: from_bins() checks the faces against the bins it is "
+                "given and does not run a layout's recipe, which could describe "
+                "other bins.",
+                fix="build the faces first: from dataclasses import replace; "
+                "from neurospatial.binning import KnownFaces; "
+                "binning = replace(binning, faces=KnownFaces(binning.faces.build())); "
+                "then Environment.from_bins(binning, arena=env.arena)",
+            )
         )
     _check_binning(binning)
     if not isinstance(binning.kind, str):

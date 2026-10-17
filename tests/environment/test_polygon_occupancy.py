@@ -423,7 +423,7 @@ def test_analytic_domain_requires_owned_materialization_before_publication(
         base = base.clip(box(-1, -1, 1, 1))
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"arena= takes an arena from neurospatial.arena",
     ):
         publish_environment(
             base.name,

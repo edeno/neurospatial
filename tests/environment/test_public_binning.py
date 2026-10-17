@@ -74,8 +74,11 @@ def test_from_bins_requires_explicit_faces_for_native_binning():
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
     exported = env.binning
-    with pytest.raises(TypeError, match="explicit KnownFaces or MissingFaces"):
+    with pytest.raises(TypeError, match="needs the cell faces themselves") as caught:
         Environment.from_bins(exported)
+    fix = str(caught.value).split("Fix:")[1]
+    assert "replace(binning, faces=KnownFaces(binning.faces.build()))" in fix
+    assert "NativeFaces" not in str(caught.value)
     rebuilt = Environment.from_bins(
         replace(exported, faces=KnownFaces(exported.faces.build())), arena=env.arena
     )
