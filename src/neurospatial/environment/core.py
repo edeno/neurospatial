@@ -402,13 +402,19 @@ class Environment(Generic[_C]):
 
     @property
     def arena(self) -> Arena:
-        """Continuous domain, distinguished from the active analysis bins."""
-        return copy_module.deepcopy(self._geometry.arena)
+        """Continuous domain, distinguished from the active analysis bins.
+
+        The owned, immutable record is returned without copying.
+        """
+        return self._geometry.arena
 
     @property
     def clip_mapping(self) -> ClipMapping | None:
-        """Most recent clip's source-bin mapping, or None before clipping."""
-        return copy_module.deepcopy(self._binning.clip_mapping)
+        """Most recent clip's source-bin mapping, or None before clipping.
+
+        The owned, immutable record is returned without copying.
+        """
+        return self._binning.clip_mapping
 
     @property
     def edge_pairs(self) -> NDArray[np.intp]:
