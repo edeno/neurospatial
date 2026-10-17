@@ -534,3 +534,18 @@ def test_diagonal_choice_is_kept_where_it_acts(positions):
     )
     assert with_diagonals.layout_parameters["connect_diagonal_neighbors"] is True
     assert len(with_diagonals.edge_pairs) > len(without.edge_pairs)
+
+
+@pytest.mark.parametrize(
+    ("ranges", "rule"),
+    [
+        ((0.0, 30.0), "which is not 2 (min, max) pair(s)"),
+        ([(0.0, np.inf), (0.0, 30.0)], "has a value that is not finite"),
+        ([(30.0, 0.0), (0.0, 30.0)], "axis 0 does not have its minimum below"),
+        ([(0.0, 30.0), (15.0, 15.0)], "axis 1 does not have its minimum below"),
+    ],
+)
+def test_dimension_ranges_refusal_names_the_rule_it_breaks(positions, ranges, rule):
+    with pytest.raises(ValueError, match=r"dimension_ranges") as caught:
+        Environment.from_samples(positions, bin_size=3.0, dimension_ranges=ranges)
+    assert rule in str(caught.value).splitlines()[0]

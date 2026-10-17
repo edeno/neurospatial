@@ -205,24 +205,34 @@ def _check_dimension_ranges(
         ranges = np.asarray(dimension_ranges, dtype=float)
     except (TypeError, ValueError):
         ranges = None
-    valid = (
-        ranges is not None
-        and ranges.shape == (n_dims, 2)
-        and bool(np.all(np.isfinite(ranges)))
-        and bool(np.all(ranges[:, 0] < ranges[:, 1]))
-    )
-    if not valid:
-        raise ValueError(
-            _format_error(
-                f"{factory}() got dimension_ranges={dimension_ranges!r}, but "
-                f"positions has {n_dims} column(s).",
-                why="Why: dimension_ranges gives each spatial axis its "
-                "(minimum, maximum) extent, one finite pair per column of "
-                "positions, with the minimum first.",
-                fix=f"pass dimension_ranges=[{example}] (the extent of these "
-                "positions), or leave it out to use the extent of the samples",
-            )
+    if ranges is None or ranges.shape != (n_dims, 2):
+        problem = (
+            f"got dimension_ranges={dimension_ranges!r}, which is not "
+            f"{n_dims} (min, max) pair(s), one per column of positions"
         )
+    elif not np.all(np.isfinite(ranges)):
+        problem = (
+            f"got dimension_ranges={dimension_ranges!r}, which has a value "
+            "that is not finite"
+        )
+    elif not np.all(ranges[:, 0] < ranges[:, 1]):
+        axis = int(np.flatnonzero(ranges[:, 0] >= ranges[:, 1])[0])
+        problem = (
+            f"got dimension_ranges={dimension_ranges!r}, whose pair for axis "
+            f"{axis} does not have its minimum below its maximum"
+        )
+    else:
+        return
+    raise ValueError(
+        _format_error(
+            f"{factory}() {problem}.",
+            why="Why: dimension_ranges gives each spatial axis its finite "
+            "(minimum, maximum) extent, with the minimum first, so the grid "
+            "has a positive width along every axis.",
+            fix=f"pass dimension_ranges=[{example}] (the extent of these "
+            "positions), or leave it out to use the extent of the samples",
+        )
+    )
 
 
 def diagonal_choice(n_dims: int, connect_diagonal_neighbors: bool) -> bool:
