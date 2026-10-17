@@ -14,6 +14,7 @@ from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._derive import transform_binning
+from neurospatial.geometry._explicit import cell_extent
 from neurospatial.ops.transforms import Affine2D, AffineND
 from neurospatial.regions import Region, Regions
 
@@ -77,10 +78,11 @@ def _apply_transform(
 
     transformed = transform_binning(binning, transform)
 
-    # Transform dimension_ranges (N-dimensional)
-    transformed_dim_ranges = None
+    # The transformed cells' own extent; bins without cells map their
+    # declared box instead.
+    transformed_dim_ranges = cell_extent(transformed, shapeless="none")
     dimension_ranges = binning.dimension_ranges
-    if dimension_ranges is not None:
+    if transformed_dim_ranges is None and dimension_ranges is not None:
         # Generate all corner points of the N-dimensional bounding box
         # For N dims, we have 2^N corners (all combinations of low/high per dimension)
         ranges = dimension_ranges

@@ -192,8 +192,8 @@ def select_bins(binning: Binning, mask: NDArray[np.bool_]) -> Binning:
         The kept bins, renumbered ``0..n_kept-1`` in their original order.
         Its ``dimension_ranges`` is the extent of the kept cells, with no
         margin (see :func:`neurospatial.geometry._explicit.cell_extent`): the
-        grid extent for grids, and the kept bin centers' bounds for bins
-        without shapes.
+        grid extent for grids, the kept stretches of centerline for tracks,
+        and the kept bin centers' bounds for other bins without shapes.
     """
     binning = subset_binning(binning, mask)
     return replace(binning, dimension_ranges=cell_extent(binning, shapeless="centers"))

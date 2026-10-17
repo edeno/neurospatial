@@ -470,12 +470,12 @@ class Binning:
     ``face_normals`` holds physical directions in ``bins.pairs`` order. It is
     independent of solver availability: only ``faces`` grants that capability.
 
-    ``dimension_ranges`` is the ``(low, high)`` range of each coordinate axis
-    that the bins were built over, for example the data range a hexagonal
-    tiling covers. When it is None, an environment uses the extent of the
-    cells (the grid, outline or cell shapes), or no range for bins without
-    cells. An environment's binning carries the environment's
-    ``dimension_ranges``.
+    ``dimension_ranges`` is the ``(low, high)`` extent of each coordinate
+    axis that the bins' cells cover: the full lattice of a grid, the outline
+    or cell shapes otherwise, and the stretch of centerline a track's bins
+    cover. When it is None, an environment computes that extent from the
+    cells, or reports no range for bins without cells. An environment's
+    binning carries the environment's ``dimension_ranges``.
     """
 
     kind: str

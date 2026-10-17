@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning, TrackLinearization
+from neurospatial.geometry._explicit import component_extent
 from neurospatial.geometry._face_builders import track_junctions
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
@@ -138,24 +139,16 @@ class GraphLayout(_KDTreeMixin):
             edge_order=edge_order,
         )
 
-        # Compute dimension_ranges dynamically based on actual dimensionality
-        n_dims = self.bin_centers.shape[1]
-
         # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=n_dims)
-        self.dimension_ranges = tuple(
-            (
-                np.min(self.bin_centers[:, dim]),
-                np.max(self.bin_centers[:, dim]),
-            )
-            for dim in range(n_dims)
-        )
+        validate_connectivity_graph(self.connectivity, n_dims=self.bin_centers.shape[1])
 
         # --- Build KDTree ---
         self._build_kdtree(points_for_tree=self.bin_centers)
         self._linearization = TrackLinearization(
             track_graph, edge_order, edge_spacing, self.grid_edges, self.active_mask
         )
+        # The extent of the track's cells: the centerline the bins cover.
+        self.dimension_ranges = component_extent(linearization=self._linearization)
 
     @property
     def is_linearized_track(self) -> bool:

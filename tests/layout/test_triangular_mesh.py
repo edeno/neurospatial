@@ -20,7 +20,6 @@ from shapely.geometry import Polygon
 from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
-    _compute_mesh_dimension_ranges,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
     _sample_polygon_boundary,
@@ -225,36 +224,6 @@ class TestBuildMeshConnectivityGraph:
         # Check that no reverse edges exist (since graph is undirected)
         edges_set = {tuple(sorted([u, v])) for u, v in graph.edges()}
         assert len(edges_set) == graph.number_of_edges()
-
-
-class TestComputeMeshDimensionRanges:
-    """Tests for _compute_mesh_dimension_ranges helper function."""
-
-    def test_basic_dimension_ranges(self):
-        """Test computing dimension ranges from bin centers."""
-        bin_centers = np.array([[0, 0], [10, 5], [5, 10]], dtype=float)
-        ranges = _compute_mesh_dimension_ranges(bin_centers)
-
-        assert ranges is not None
-        assert len(ranges) == 2  # 2D
-        assert ranges[0] == (0.0, 10.0)  # X range
-        assert ranges[1] == (0.0, 10.0)  # Y range
-
-    def test_empty_bin_centers(self):
-        """Test that empty bin centers returns None."""
-        bin_centers = np.empty((0, 2), dtype=float)
-        ranges = _compute_mesh_dimension_ranges(bin_centers)
-
-        assert ranges is None
-
-    def test_single_point(self):
-        """Test dimension ranges with single point."""
-        bin_centers = np.array([[5.0, 7.0]])
-        ranges = _compute_mesh_dimension_ranges(bin_centers)
-
-        assert ranges is not None
-        assert ranges[0] == (5.0, 5.0)
-        assert ranges[1] == (7.0, 7.0)
 
 
 class TestTriangularMeshLayoutBuild:

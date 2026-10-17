@@ -14,6 +14,7 @@ from shapely.geometry import Polygon
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import Outline, TriangleShapes
+from neurospatial.geometry._explicit import component_extent
 from neurospatial.geometry._locators import MeshLocator
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
@@ -21,7 +22,6 @@ from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
-    _compute_mesh_dimension_ranges,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
     _sample_polygon_boundary,
@@ -159,8 +159,10 @@ class TriangularMeshLayout:
         # Validate connectivity graph has required attributes
         validate_connectivity_graph(self.connectivity, n_dims=2)
 
-        # 7. Compute dimension_ranges based on active bin centers
-        self.dimension_ranges = _compute_mesh_dimension_ranges(self.bin_centers)
+        # 7. Cell extent: the mesh boundary's bounds
+        self.dimension_ranges = component_extent(
+            outline=self.outline(), shapes=self.bin_shapes()
+        )
 
         # 8. Set grid-related attributes for protocol conformance
         # The "conceptual grid" here is the list of all Delaunay triangles.

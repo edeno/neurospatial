@@ -14,10 +14,16 @@ from neurospatial.geometry._binning import (
     KnownFaces,
     MissingFaces,
     SpatialBins,
+    TrackLinearization,
 )
-from neurospatial.geometry._components import HexagonShapes, TriangleShapes
+from neurospatial.geometry._components import (
+    HexagonShapes,
+    Outline,
+    TriangleShapes,
+)
 from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon import PolygonCells
+from neurospatial.geometry._track import track_cell_ends
 
 
 def cell_extent(
@@ -37,10 +43,9 @@ def cell_extent(
     Returns
     -------
     tuple of (float, float), or None
-        Grid extent for grids (full lattice, including inactive cells), the
-        outline's bounds when one is stored, otherwise the bounds of the
-        cells themselves: polygon cells, hexagons, or the vertices of the
-        retained triangles. None for an empty binning.
+        Grid extent for grids (full lattice, including inactive cells),
+        otherwise the extent of the cells themselves (see
+        :func:`component_extent`). None for an empty binning.
     """
     if binning.rectilinear is not None:
         return tuple(
@@ -51,10 +56,51 @@ def cell_extent(
         return tuple((float(axis.min()), float(axis.max())) for axis in corners.T)
     if binning.bins.n_bins == 0:
         return None
-    if binning.outline is not None:
-        low_x, low_y, high_x, high_y = binning.outline.geometry.bounds
+    extent = component_extent(
+        outline=binning.outline,
+        shapes=binning.shapes,
+        linearization=binning.linearization,
+    )
+    if extent is not None or shapeless == "none":
+        return extent
+    centers = binning.bins.centers
+    return tuple(
+        (float(a), float(b))
+        for a, b in zip(centers.min(axis=0), centers.max(axis=0), strict=True)
+    )
+
+
+def component_extent(
+    *,
+    outline: Outline | None = None,
+    shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None,
+    linearization: TrackLinearization | None = None,
+) -> tuple[tuple[float, float], ...] | None:
+    """Bound the cells that an outline, cell shapes or a track describe.
+
+    Layout engines report this as their ``dimension_ranges``, and derived
+    bins report it for the cells they keep, so a parent and its subsets
+    measure their extent the same way.
+
+    Parameters
+    ----------
+    outline : Outline or None, optional
+        Boundary of the cells; when given, its bounds are the extent.
+    shapes : HexagonShapes, TriangleShapes or PolygonCells, optional
+        The cells themselves: hexagon corners, the vertices of the retained
+        triangles, or polygon bounds.
+    linearization : TrackLinearization or None, optional
+        A track: its cells are the stretches of centerline between linear
+        bin edges, so the extent is the ends of its active cells.
+
+    Returns
+    -------
+    tuple of (float, float), or None
+        One ``(low, high)`` per axis, or None when nothing describes cells.
+    """
+    if outline is not None:
+        low_x, low_y, high_x, high_y = outline.geometry.bounds
         return ((low_x, high_x), (low_y, high_y))
-    shapes = binning.shapes
     if isinstance(shapes, PolygonCells):
         bounds = np.array([polygon.bounds for polygon in shapes.polygons])
         low, high = bounds[:, :2].min(axis=0), bounds[:, 2:].max(axis=0)
@@ -67,9 +113,15 @@ def cell_extent(
         # Only the retained triangles: a subset keeps every mesh point.
         vertices = shapes.points[np.unique(shapes.triangles)]
         low, high = vertices.min(axis=0), vertices.max(axis=0)
-    elif shapeless == "centers":
-        centers = binning.bins.centers
-        low, high = centers.min(axis=0), centers.max(axis=0)
+    elif linearization is not None:
+        ends = track_cell_ends(
+            linearization.graph,
+            linearization.edge_order,
+            linearization.edge_spacing,
+            linearization.grid_edges[0],
+            linearization.active_mask,
+        )
+        low, high = ends.min(axis=(0, 1)), ends.max(axis=(0, 1))
     else:
         return None
     return tuple((float(a), float(b)) for a, b in zip(low, high, strict=True))

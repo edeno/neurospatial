@@ -515,19 +515,27 @@ of the bins they were cut from (a grid subset or clip reads as
 parameters (positions, masks, polygons) is dropped when such a file is read;
 the bins themselves are stored in the file.
 
-## Subsets report the extent of the bins they keep
+## `dimension_ranges` is the extent of the bins' cells
 
-`env.subset(...)` sets `dimension_ranges` to the extent of the bins it keeps,
-with no margin. Plot limits follow `dimension_ranges`, so plots of a subset now
-fit its kept cells instead of leaving extra space around them.
+`env.dimension_ranges` is the extent of the cells the bins cover, for every
+layout. A parent reports its cells' extent and `env.subset(...)` the extent of
+the cells it keeps, with no margin, so a subset never reports a larger range
+than its parent. Plot limits follow `dimension_ranges`, so plots fit the cells
+instead of cutting them off or leaving extra space around them.
 
-| Layout of the parent | Before | Now |
+| Layout | Before | Now |
 | --- | --- | --- |
-| Hexagonal | kept hexagons' extent plus 5% on each side | kept hexagons' extent |
-| Triangular mesh | kept triangles' extent plus 5% on each side | kept triangles' extent |
-| Clipped polygon cells (`env.clip(...)`) | kept polygons' extent plus 5% on each side | kept polygons' extent |
-| Rectangular grid (including `from_polygon`, masks and images) | the grid's extent | unchanged |
-| Track or other bins without cell shapes | kept bin centers' extent | unchanged |
+| Hexagonal | the range the tiling was asked to cover (data or `dimension_ranges=`), which cut off the outer hexagons | the hexagons' extent, corners included |
+| Triangular mesh | the bounds of the triangle centroids | the mesh boundary's bounds |
+| Track (`linear_track`, `maze`, `from_graph`) | the bounds of the bin centers, half a bin short at each end | the centerline the bins cover, end to end (the width is not included) |
+| Rectangular grid (including `from_polygon`, masks and images), polar | the grid's extent | unchanged |
+| Subsets of hexagonal, mesh and clipped polygon cells (`env.clip(...)`) | kept cells' extent plus 5% on each side | kept cells' extent |
+| Track subsets | kept bin centers' extent | the centerline the kept bins cover |
+
+For a 200 cm linear track built with `bin_size=2.0`, `dimension_ranges[0]`
+was `(1.0, 199.0)` and is now `(0.0, 200.0)`. A hexagonal environment
+requested over `(0, 30)` with `hexagon_width=4.0` now reports
+`(-2.0, 36.0)`, the hexagons it built.
 
 A mesh subset bounds only the triangles it keeps, so a subset of one corner of
 an arena no longer reports the extent of the whole arena. The same rule applies
@@ -536,6 +544,23 @@ removes bins. `Environment.from_bins` bounds triangular-mesh bins by their
 triangles' vertices rather than every stored mesh point. Grid subsets keep the
 full grid's extent because they keep its whole lattice, matching
 `env.grid_edges`.
+
+Code that reads `dimension_ranges` as a number changes with it on hexagonal,
+mesh and track environments: the automatic scale of
+`neurospatial.ops.spatial_basis`, the "bandwidth spans the environment"
+warning, `simulate_trajectory_sinusoidal` (now oscillates over the track's
+full length), the uniform field placement of `simulate_session`, axis limits,
+`env.info()`, and the extent that animation overlays and an uncalibrated
+video are drawn over. To keep the old numbers, pass them yourself, for
+example the bin-center bounds:
+
+<!-- docs-test: run -->
+```python
+track = Environment.linear_track(endpoints=[(0, 0), (200, 0)], bin_size=2.0)
+assert track.dimension_ranges[0] == (0.0, 200.0)
+# Before: track.dimension_ranges[0] == (1.0, 199.0), the bin-center bounds
+centers_low, centers_high = track.bin_centers.min(axis=0), track.bin_centers.max(axis=0)
+```
 
 If you want space around a subset's cells in a figure, widen the axes limits
 after plotting:

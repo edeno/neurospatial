@@ -199,20 +199,6 @@ def _build_mesh_connectivity_graph(
     return graph
 
 
-def _compute_mesh_dimension_ranges(
-    bin_centers_array: NDArray[np.float64],
-) -> list[tuple[float, float]] | None:
-    """Compute [(min_x, max_x), (min_y, max_y)] from active bin_centers."""
-    if bin_centers_array.shape[0] == 0:
-        return None
-    min_coords = np.min(bin_centers_array, axis=0)
-    max_coords = np.max(bin_centers_array, axis=0)
-    return [
-        (float(min_coords[d]), float(max_coords[d]))
-        for d in range(bin_centers_array.shape[1])
-    ]
-
-
 def _sample_polygon_boundary(
     poly: Polygon, point_spacing: float
 ) -> NDArray[np.float64]:

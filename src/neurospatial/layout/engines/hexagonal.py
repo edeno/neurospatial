@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import LayoutNotBuiltError
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._components import HexagonShapes
+from neurospatial.geometry._explicit import component_extent
 from neurospatial.geometry._locators import HexLocator
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
@@ -117,7 +118,7 @@ class HexagonalLayout:
             self.hex_orientation_,
             self.grid_offset_x_,
             self.grid_offset_y_,
-            self.dimension_ranges,
+            _,
         ) = _create_hex_grid(
             positions=positions,
             dimension_range=dimension_ranges,
@@ -168,6 +169,8 @@ class HexagonalLayout:
 
         # Validate connectivity graph has required attributes
         validate_connectivity_graph(self.connectivity, n_dims=2)
+        # The extent of the active hexagons, corners included.
+        self.dimension_ranges = component_extent(shapes=self.bin_shapes())
 
         self._source_flat_to_active_id_map = {
             data["source_grid_flat_index"]: node_id

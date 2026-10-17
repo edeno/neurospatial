@@ -669,14 +669,29 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   example `"MaskedGrid"` with `connect_diagonal_neighbors`) whether or not the
   arena dropped a bin; they used to switch to a subset record.
 
-- `Environment.subset()` reports the extent of the bins it keeps as
-  `dimension_ranges`, with no added margin. Subsets of hexagonal,
-  triangular-mesh and clipped polygon-cell environments (`env.clip(...)`)
-  used to add 5% on each side; a mesh subset now bounds only its kept
-  triangles, so a subset of one corner of a mesh no longer reports the extent
-  of the whole mesh. Plots of these subsets fit the kept cells more tightly.
-  Grid subsets keep the extent of their grid, and bins without cell shapes
-  (tracks) keep the bounds of the kept bin centers, as before. The same
+- `dimension_ranges` is the extent of the bins' cells for every layout, and
+  `Environment.subset()` reports the extent of the cells it keeps, with no
+  added margin, so a subset never reports a larger range than its parent.
+  Hexagonal environments report their hexagons' extent, corners included,
+  instead of the range the tiling was asked to cover (a tiling requested over
+  `(0, 30)` with 4 cm hexagons reports `(-2, 36)`); triangular meshes report
+  their boundary's bounds instead of the bounds of the triangle centroids;
+  tracks report the centerline their bins cover, end to end, instead of the
+  bin-center bounds (a 200 cm linear track reports `(0, 200)`, not
+  `(1, 199)`). Subsets of hexagonal, triangular-mesh and clipped polygon-cell
+  environments (`env.clip(...)`) used to add 5% on each side; a mesh subset
+  now bounds only its kept triangles, so a subset of one corner of a mesh no
+  longer reports the extent of the whole mesh, and a track subset bounds the
+  centerline its kept bins cover. `apply_transform` reports the extent of the
+  transformed cells rather than the box around the transformed ranges, which
+  was wider after a rotation. Grid and polar environments, and grid
+  subsets, keep the extent of their grid. Readers of `dimension_ranges`
+  change with it on hexagonal, mesh and track environments: plot limits,
+  `env.info()`, the automatic scale of `ops.spatial_basis`, the "bandwidth
+  spans the environment" warning, `simulate_trajectory_sinusoidal` (it now
+  oscillates over the track's full length), the uniform field placement of
+  `simulate_session`, and the extent animation overlays and an uncalibrated
+  video are drawn over. The same
   applies to the bins an `arena=` removes in `Environment.from_layout`,
   `from_grid_mask` and `from_pixel_mask`. For `Environment.from_bins`, the
   ranges of triangular-mesh bins bound the triangles' vertices rather than
@@ -714,12 +729,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   only `build(...)` and `binning()`. Subclasses of built-in engines, which
   used to be refused, now build environments normally.
 
-- `Binning` has a `dimension_ranges` field: the `(low, high)` range of each
-  axis the bins were built over, such as the range a hexagonal tiling covers.
+- `Binning` has a `dimension_ranges` field: the `(low, high)` extent of each
+  axis the bins' cells cover.
   `env.binning.dimension_ranges` equals `env.dimension_ranges`, and
   `Environment.from_bins` uses the field when it is set, so
   `Environment.from_bins(env.binning)` keeps the ranges. When it is `None`,
-  the range comes from the cells (grid, outline or cell shapes) as before.
+  the range comes from the cells (grid, outline, cell shapes or a track's
+  centerline).
 
 - `subset()` and `rebin()` accept `name=` like `clip()` and
   `apply_transform()`.

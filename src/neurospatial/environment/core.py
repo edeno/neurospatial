@@ -316,10 +316,15 @@ class Environment(Generic[_C]):
 
     @property
     def dimension_ranges(self) -> tuple[tuple[float, float], ...] | None:
-        """``(low, high)`` per coordinate axis covered by the bins, or None.
+        """``(low, high)`` per coordinate axis covered by the bins' cells, or None.
 
-        None only for bins without cells or declared ranges, such as
-        explicit point bins.
+        Every layout reports the extent of its cells: a grid its full
+        lattice (``grid_edges``, inactive cells included); hexagons their
+        corners; a mesh its boundary, or the triangles a subset keeps; a
+        track the stretch of centerline its bins cover (the centerline
+        alone, not the track's width). A subset therefore never reports a
+        larger range than its parent. None only for bins without cells or
+        declared ranges, such as explicit point bins.
         """
         return self._binning.dimension_ranges
 
