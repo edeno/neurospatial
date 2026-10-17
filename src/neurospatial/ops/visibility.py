@@ -582,34 +582,54 @@ def compute_viewed_location(
 
     else:
         assert env is not None
-        from neurospatial.ops._boundaries import (
-            analysis_interior,
-            boundary_geometry,
-            physical_ray_hits,
-            ray_hits,
-            valid_observers,
-        )
-
-        binning, arena = env.binning, env.arena
-        indexes = CallIndexes()
-        walls = boundary_geometry(binning, arena, boundary_source)
-        origins = positions.copy()
-        origins[
-            ~valid_observers(binning, arena, positions, boundary_source, indexes)
-        ] = np.nan
-        viewed = (
-            physical_ray_hits(arena, origins, gaze_direction, max_distance)
-            if boundary_source == "physical"
-            else ray_hits(
-                walls,
-                origins,
-                gaze_direction,
-                max_distance,
-                analysis_interior(binning, arena, indexes),
-            )
+        viewed = _boundary_view(
+            env.binning,
+            env.arena,
+            positions,
+            gaze_direction,
+            max_distance,
+            boundary_source,
+            CallIndexes(),
         )
 
     return viewed
+
+
+def _boundary_view(
+    binning: Binning,
+    arena: Arena,
+    positions: NDArray[np.float64],
+    gaze_direction: NDArray[np.float64],
+    max_distance: float,
+    boundary_source: Literal["physical", "analysis"],
+    indexes: LookupIndexes,
+) -> NDArray[np.float64]:
+    """First wall each gaze ray reaches, shape (n_time, 2); NaN for none.
+
+    ``indexes`` keeps the locator's search structures for the computation.
+    """
+    from neurospatial.ops._boundaries import (
+        analysis_interior,
+        boundary_geometry,
+        physical_ray_hits,
+        ray_hits,
+        valid_observers,
+    )
+
+    walls = boundary_geometry(binning, arena, boundary_source)
+    origins = positions.copy()
+    origins[~valid_observers(binning, arena, positions, boundary_source, indexes)] = (
+        np.nan
+    )
+    if boundary_source == "physical":
+        return physical_ray_hits(arena, origins, gaze_direction, max_distance)
+    return ray_hits(
+        walls,
+        origins,
+        gaze_direction,
+        max_distance,
+        analysis_interior(binning, arena, indexes),
+    )
 
 
 def _ray_cast_to_boundary(
@@ -667,6 +687,7 @@ def _line_of_sight_clear(
     n_samples: int = 20,
     *,
     boundary_source: Literal["physical", "analysis"] = "physical",
+    indexes: LookupIndexes | None = None,
 ) -> bool:
     """Check if line of sight between observer and target is clear.
 
@@ -687,6 +708,9 @@ def _line_of_sight_clear(
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
         bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+    indexes : LookupIndexes, optional
+        Search structures shared by the calls of one computation, such as one
+        line-of-sight check per timestep; None keeps them for this call only.
 
     Returns
     -------
@@ -701,6 +725,7 @@ def _line_of_sight_clear(
             np.asarray(target).reshape(1, 2),
             n_samples=n_samples,
             boundary_source=boundary_source,
+            indexes=indexes,
         )[0]
     )
 

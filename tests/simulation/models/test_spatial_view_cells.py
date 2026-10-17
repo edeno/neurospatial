@@ -925,3 +925,45 @@ class TestEdgeCases:
         rate = model.firing_rate(position, headings=heading)
 
         assert rate.shape == (1,)
+
+
+@pytest.mark.parametrize("gaze_model", ["fixed_distance", "boundary"])
+def test_firing_rate_builds_the_mesh_lookup_once_per_call(gaze_model, monkeypatch):
+    """Every timestep's line of sight shares one triangle index."""
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+    from neurospatial.geometry import _locators
+    from neurospatial.layout import create_layout
+    from neurospatial.simulation.models.spatial_view_cells import SpatialViewCellModel
+
+    env = Environment.from_layout(
+        create_layout(
+            "TriangularMesh", boundary_polygon=box(0, 0, 20, 20), point_spacing=2.0
+        )
+    )
+    model = SpatialViewCellModel(
+        env,
+        preferred_view_location=np.array([10.0, 10.0]),
+        gaze_model=gaze_model,
+        require_visibility=True,
+        boundary_source="analysis",
+    )
+    builds: list[int] = []
+    build = _locators._triangle_index
+
+    def counted(*args):
+        builds.append(1)
+        return build(*args)
+
+    monkeypatch.setattr(_locators, "_triangle_index", counted)
+    rng = np.random.default_rng(0)
+    n_time = 12
+    rates = model.firing_rate(
+        rng.uniform(3, 17, (n_time, 2)),
+        times=np.arange(n_time) / 30,
+        headings=rng.uniform(-np.pi, np.pi, n_time),
+    )
+
+    assert np.all(np.isfinite(rates))
+    assert len(builds) == 1

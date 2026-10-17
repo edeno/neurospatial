@@ -84,8 +84,10 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._locators import CallIndexes
 from neurospatial.ops.visibility import (
     FieldOfView,
+    _boundary_view,
     _line_of_sight_clear,
     compute_viewed_location,
 )
@@ -336,27 +338,34 @@ class SpatialViewCellModel:
 
         headings = np.asarray(headings, dtype=np.float64)
 
-        max_distance = 100.0
-        if self.gaze_model != "fixed_distance":
+        # One binning copy and one store of its lookup structures for the
+        # whole call, so the viewed locations and every timestep's line of
+        # sight build each structure once.
+        if self.gaze_model != "fixed_distance" or self.require_visibility:
+            binning, arena = self.env.binning, self.env.arena
+            indexes = CallIndexes()
+        if self.gaze_model == "fixed_distance":
+            viewed_locations = compute_viewed_location(
+                positions,
+                headings,
+                method="fixed_distance",
+                view_distance=self.view_distance,
+            )
+        else:
             from neurospatial.ops._boundaries import boundary_geometry, search_distance
 
             max_distance = search_distance(
-                boundary_geometry(
-                    self.env.binning, self.env.arena, self.boundary_source
-                ),
-                positions,
+                boundary_geometry(binning, arena, self.boundary_source), positions
             )
-
-        # Compute viewed location
-        viewed_locations = compute_viewed_location(
-            positions,
-            headings,
-            method=self.gaze_model,
-            max_distance=max_distance,
-            boundary_source=self.boundary_source,
-            view_distance=self.view_distance,
-            env=self.env if self.gaze_model != "fixed_distance" else None,
-        )
+            viewed_locations = _boundary_view(
+                binning,
+                arena,
+                positions,
+                headings,
+                max_distance,
+                self.boundary_source,
+                indexes,
+            )
 
         # Compute distance from viewed location to preferred
         # Shape: (n_time,)
@@ -394,7 +403,6 @@ class SpatialViewCellModel:
             # Line-of-sight check (scalar per call) for the remaining candidates:
             # not NaN, in FOV, and still responding above zero.
             candidates = np.flatnonzero(~nan_mask & in_fov & (response > 0.0))
-            binning, arena = self.env.binning, self.env.arena
             for i in candidates:
                 if not _line_of_sight_clear(
                     binning,
@@ -402,6 +410,7 @@ class SpatialViewCellModel:
                     positions[i],
                     self.preferred_view_location,
                     boundary_source=self.boundary_source,
+                    indexes=indexes,
                 ):
                     response[i] = 0.0
 
