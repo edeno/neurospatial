@@ -528,6 +528,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `Environment.from_bins(binning)` is annotated as taking a `Binning`. An
+  object from another package that an installed snapshot adapter converts
+  still works at runtime, but a static type checker now flags the call; wrap
+  it as `typing.cast(Binning, obj)` there.
+
 - `nearest_bin` on an egocentric polar environment measures physical
   distance. It places the bin centers and the `(distance, angle)` rows in the
   animal's plane, `(distance * cos(angle), distance * sin(angle))`, before
@@ -893,12 +898,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 - Static type checkers accept `Environment.from_polygon(polygon, ...)` with a
   shapely `Polygon`; it was annotated as taking the `Polygon` class itself.
-  `Environment.from_bins` is annotated as taking a `Binning`. `from_file`,
-  `from_dict` and `from_nwb` (and `neurospatial.io.from_file`, `from_dict`
-  and `neurospatial.io.nwb.read_environment`) keep the static type
+  `from_file`, `from_dict` and `from_nwb` (and `neurospatial.io.from_file`,
+  `from_dict` and `neurospatial.io.nwb.read_environment`) keep the static type
   `Environment[Any]`, because the stored data decides whether the
   environment is Cartesian or polar; their docstrings now say so and point
-  to `env.coordinate_kind`.
+  to `env.coordinate_kind`. The `neurospatial.io.nwb` functions, which load
+  lazily, now have their declared types instead of `Any`.
 
 - The presets `Environment.open_field`, `Environment.linear_track` and
   `Environment.maze` are easy to find: the `from_samples` docstring, a new
