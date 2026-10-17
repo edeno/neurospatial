@@ -1238,6 +1238,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   56 s and about 32 GB of temporary memory. Distances can differ from before
   only in the last digit of floating-point rounding.
 
+- `Environment.transitions(times=..., positions=...)` with the default
+  `allow_teleports=False` checks that each step joins neighboring bins with a
+  sparse adjacency lookup instead of a Python loop: 1,000,000 steps on a
+  90,000-bin grid take 0.04 s instead of 0.49 s. The counts are unchanged.
+
 ### Fixed
 
 - `apply_transform` accepts a rotation by an angle so small that its sine is

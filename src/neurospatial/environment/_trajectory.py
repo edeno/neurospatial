@@ -473,7 +473,6 @@ def _transitions(
         # EMPIRICAL MODE
         return _empirical_transitions(
             bins=bins,
-            graph=graph,
             binning=binning,
             arena=arena,
             cache=cache,
@@ -490,7 +489,6 @@ def _transitions(
 def _empirical_transitions(
     bins: NDArray[np.intp] | None = None,
     *,
-    graph: nx.Graph,
     binning: Binning,
     arena: Arena,
     cache: AnalysisCache,
@@ -662,7 +660,7 @@ def _empirical_transitions(
         source_bins,
         target_bins,
         n_bins,
-        graph=None if allow_teleports else graph,
+        neighbor_pairs=None if allow_teleports else binning.bins.pairs,
         normalize=normalize,
     )
 
