@@ -275,7 +275,7 @@ def _occupancy(
         # Use mode='transition' for occupancy (counts), not 'density'
         # This ensures mass conservation: kernel columns sum to 1
         kernel = _compute_kernel(
-            cache, binning, bandwidth, mode="transition", use_cache=True
+            cache, binning, bandwidth, mode="transition", writable=False
         )
         occupancy = kernel @ occupancy
 
@@ -683,5 +683,5 @@ def _diffusion_transitions(
         )
 
     return _diffusion_transition_matrix(
-        _compute_kernel(cache, binning, bandwidth, mode="transition", use_cache=True)
+        _compute_kernel(cache, binning, bandwidth, mode="transition", writable=False)
     )

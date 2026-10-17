@@ -374,8 +374,13 @@ def _compute_kernel(
     *,
     mode: KernelMode = "density",
     use_cache: bool = True,
+    writable: bool = True,
 ) -> NDArray[np.float64]:
-    """Dense finite-volume diffusion kernel, optionally cached by bandwidth and mode."""
+    """Dense finite-volume diffusion kernel, optionally cached by bandwidth and mode.
+
+    A cached kernel is read-only; ``writable=True`` returns a copy of it, and
+    ``writable=False`` a read-only view for callers that only read it.
+    """
     _check_kernel_mode(mode)
 
     # The kernel uses the cached diffusion geometry, whose cell measures
@@ -384,10 +389,15 @@ def _compute_kernel(
         geometry = diffusion_geometry(cache, binning)
         return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)
 
+    def build_read_only() -> NDArray[np.float64]:
+        kernel = build()
+        kernel.setflags(write=False)
+        return kernel
+
     if not use_cache:
         return build()
-    kernel = cache.get_recent(DIFFUSION_KERNELS, (bandwidth, mode), build)
-    return cast("NDArray[np.float64]", kernel.copy())
+    kernel = cache.get_recent(DIFFUSION_KERNELS, (bandwidth, mode), build_read_only)
+    return cast("NDArray[np.float64]", kernel.copy() if writable else kernel.view())
 
 
 def _field_batch(
