@@ -1826,7 +1826,6 @@ class Environment(Generic[_C]):
             binning=self._binning,
             arena=self.arena,
             coordinates=self._coordinate_system,
-            dimension_ranges=self.dimension_ranges,
             cache=self._cache,
             speed=speed,
             min_speed=min_speed,

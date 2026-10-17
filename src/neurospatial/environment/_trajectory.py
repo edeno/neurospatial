@@ -15,7 +15,6 @@ offsets are ``np.int64``.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -102,7 +101,6 @@ def _occupancy(
     binning: Binning,
     arena: Arena,
     coordinates: CartesianSystem | EgocentricPolarSystem,
-    dimension_ranges: Sequence[tuple[float, float]] | None,
     cache: AnalysisCache,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -123,14 +121,11 @@ def _occupancy(
             f"got shape {positions.shape}"
         )
 
-    # Validate positions dimensionality
-    if dimension_ranges is not None:
-        expected_dims = len(dimension_ranges)
-        if positions.shape[1] != expected_dims:
-            raise ValueError(
-                f"positions must have {expected_dims} dimensions to match environment. "
-                f"Got {positions.shape[1]} dimensions."
-            )
+    if positions.shape[1] != n_dims:
+        raise ValueError(
+            f"positions must have {n_dims} dimensions to match environment. "
+            f"Got {positions.shape[1]} dimensions."
+        )
 
     # Validate speed parameters
     if min_speed is not None and speed is None:
