@@ -37,7 +37,7 @@ def nearest_bin(
     """
     resolved = _validate_nearest_options(tie_break, max_distance, max_distance_factor)
     centers = binning.bins.centers
-    tree = cache.get(KDTREE, lambda: _centers_tree(cache, binning))
+    tree = center_tree(cache, binning)
 
     def query(
         rows: NDArray[np.float64],
@@ -68,6 +68,11 @@ def nearest_bin(
         else:
             bins[finite] = found
     return (bins, distances) if return_dist else bins
+
+
+def center_tree(cache: AnalysisCache, binning: Binning) -> cKDTree:
+    """Return the environment's one cached KD-tree over its bin centers."""
+    return cache.get(KDTREE, lambda: _centers_tree(cache, binning))
 
 
 def _centers_tree(cache: AnalysisCache, binning: Binning) -> cKDTree:

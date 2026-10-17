@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from numpy.typing import NDArray
     from scipy import sparse
+    from scipy.spatial import cKDTree
 
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
@@ -143,7 +144,12 @@ class GraphLookupConsumer(BinningConsumer, CoordinateConsumer, Protocol):
 
 
 class BasisCentersConsumer(GraphConsumer, BinsConsumer, CoordinateConsumer, Protocol):
-    """Centers, graph and coordinate meaning for choosing basis centers."""
+    """Centers, graph and coordinate meaning for choosing basis centers.
+
+    ``bin_center_tree`` is the environment's cached KD-tree over its centers.
+    """
+
+    def bin_center_tree(self) -> cKDTree: ...
 
 
 class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
@@ -158,6 +164,16 @@ class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Prot
 
     @property
     def binning(self) -> Binning: ...
+
+
+class ProbabilityTargetConsumer(CartesianBinsConsumer, Protocol):
+    """Cartesian bins that receive probabilities from their nearest centers.
+
+    ``bin_center_tree`` is read once at the public boundary of
+    ``map_probabilities``: the target environment caches the KD-tree.
+    """
+
+    def bin_center_tree(self) -> cKDTree: ...
 
 
 class ResampleSourceConsumer(CartesianBinsConsumer, Protocol):

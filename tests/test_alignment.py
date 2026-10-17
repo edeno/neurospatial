@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from scipy.spatial import cKDTree
 
 from neurospatial.environment import CartesianSystem
 from neurospatial.ops.alignment import (
@@ -17,6 +18,9 @@ class MockEnvironment:
         self.bin_centers = bin_centers
         self.n_dims = n_dims
         self.n_bins = len(bin_centers)
+
+    def bin_center_tree(self):
+        return cKDTree(self.bin_centers)
 
 
 def test_get_2d_rotation_matrix_identity():

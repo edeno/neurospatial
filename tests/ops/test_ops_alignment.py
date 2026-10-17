@@ -7,6 +7,7 @@ spatial environments.
 
 import numpy as np
 import pytest
+from scipy.spatial import cKDTree
 
 # Test imports from the new location
 from neurospatial.environment import CartesianSystem
@@ -29,6 +30,9 @@ class MockEnvironment:
         self.bin_centers = bin_centers
         self.n_dims = n_dims
         self.n_bins = len(bin_centers)
+
+    def bin_center_tree(self):
+        return cKDTree(self.bin_centers)
 
 
 class TestGet2dRotationMatrix:

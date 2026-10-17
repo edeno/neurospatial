@@ -107,6 +107,7 @@ from neurospatial.geometry._coordinates import require_cartesian
 if TYPE_CHECKING:
     import networkx as nx
     from scipy import sparse
+    from scipy.spatial import cKDTree
 
     from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._protocols import (
@@ -221,7 +222,9 @@ def select_basis_centers(
                 "distance, or method='random' (center_method= in the basis functions)"
             ),
         )
-        return _select_centers_kmeans(env.bin_centers, n_centers, generator)
+        return _select_centers_kmeans(
+            env.bin_centers, env.bin_center_tree(), n_centers, generator
+        )
     elif method == "farthest_point":
         return _select_centers_farthest_point(
             env.connectivity, env.n_bins, n_centers, generator
@@ -239,11 +242,14 @@ def select_basis_centers(
 
 def _select_centers_kmeans(
     bin_centers: NDArray[np.float64],
+    tree: cKDTree,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
-    """Select centers by k-means on ``bin_centers``, shape (n_bins, n_dims)."""
-    from scipy.spatial import cKDTree
+    """Select centers by k-means on ``bin_centers``, shape (n_bins, n_dims).
+
+    ``tree`` is the environment's KD-tree over ``bin_centers``.
+    """
     from sklearn.cluster import KMeans
 
     # Run k-means on bin centers
@@ -255,7 +261,6 @@ def _select_centers_kmeans(
     kmeans.fit(bin_centers)
 
     # Find nearest bin to each cluster centroid
-    tree = cKDTree(bin_centers)
     _, centers = tree.query(kmeans.cluster_centers_)
 
     return np.asarray(centers, dtype=np.int_)
@@ -596,7 +601,7 @@ def geodesic_rbf_basis(
 
 
 def _diffusion_generator(
-    bin_centers: NDArray[np.float64], geometry: DiffusionGeometry
+    bin_centers: NDArray[np.float64], tree: cKDTree, geometry: DiffusionGeometry
 ) -> sparse.csr_matrix:
     """Finite-volume generator in bin-spacing² units, as used by env.smooth.
 
@@ -604,6 +609,8 @@ def _diffusion_generator(
     ----------
     bin_centers : ndarray of float64, shape (n_bins, n_dims)
         Bin centers, for the typical bin spacing.
+    tree : scipy.spatial.cKDTree
+        The environment's KD-tree over ``bin_centers``.
     geometry : DiffusionGeometry
         Conductances ``W`` and cell volumes of the same bins.
 
@@ -613,12 +620,11 @@ def _diffusion_generator(
         ``spacing**2 * M**-1 (Deg - W)``.
     """
     from scipy import sparse
-    from scipy.spatial import cKDTree
 
     from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
     degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
-    spacing = _estimate_typical_bin_spacing(cKDTree(bin_centers), bin_centers)
+    spacing = _estimate_typical_bin_spacing(tree, bin_centers)
     return (
         spacing**2 * sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)
     ).tocsr()
@@ -764,7 +770,9 @@ def heat_kernel_wavelet_basis(
     faces = env.binning.faces
     if not faces.available:
         raise faces.missing_error("heat_kernel_wavelet_basis")
-    laplacian = _diffusion_generator(env.bin_centers, env.get_diffusion_geometry())
+    laplacian = _diffusion_generator(
+        env.bin_centers, env.bin_center_tree(), env.get_diffusion_geometry()
+    )
 
     # Create delta vectors at centers
     # Shape: (n_bins, n_centers)

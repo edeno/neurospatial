@@ -105,6 +105,7 @@ def _typical_bin_spacing(
     bin_sizes: NDArray[np.float64],
     *,
     is_linearized_track: bool,
+    tree: cKDTree,
 ) -> float:
     """Typical distance between neighbouring bins, measured along the space.
 
@@ -122,6 +123,8 @@ def _typical_bin_spacing(
     is_linearized_track : bool
         Whether the bins lie along a linearized track,
         ``env.is_linearized_track``.
+    tree : scipy.spatial.cKDTree
+        KD-tree over ``bin_centers``, ``env.bin_center_tree()``.
 
     Returns
     -------
@@ -131,7 +134,7 @@ def _typical_bin_spacing(
     """
     if is_linearized_track:
         return float(np.median(bin_sizes))
-    return _estimate_typical_bin_spacing(cKDTree(bin_centers), bin_centers)
+    return _estimate_typical_bin_spacing(tree, bin_centers)
 
 
 def _validate_nearest_options(

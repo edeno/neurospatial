@@ -537,6 +537,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `Environment.bin_center_tree()` returns the KD-tree over `bin_centers`
+  that `nearest_bin` searches, built once and kept in the analysis cache.
+  Use it for the `k` nearest bins with their distances.
+  `map_probabilities`, `select_basis_centers(method="kmeans")`,
+  `heat_kernel_wavelet_basis` and the simulated place cells now search this
+  tree instead of building their own, with identical results; repeated
+  `map_probabilities` calls onto a 160,000-bin grid take 28 ms instead of
+  38 ms.
+
 - `neurospatial.environment.BinSequenceWithRuns`, the result type of
   `Environment.bin_sequence_with_runs()`, is importable from a public path for
   type annotations and `isinstance` checks.

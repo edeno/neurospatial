@@ -537,3 +537,30 @@ def test_track_lookups_resolve_equidistant_points_alike():
     nearest = env.nearest_bin(points, tie_break="closest_center", max_distance=np.inf)
 
     np.testing.assert_array_equal(env.bin_at(points), nearest)
+
+
+def test_analyses_reuse_the_environment_kdtree(env, monkeypatch):
+    """Probability mapping and basis selection search env.bin_center_tree()."""
+    import scipy.spatial
+
+    from neurospatial.environment import _lookup
+    from neurospatial.ops import (
+        heat_kernel_wavelet_basis,
+        map_probabilities,
+        select_basis_centers,
+    )
+
+    calls: list[int] = []
+    counted = _counted(scipy.spatial.cKDTree, calls)
+    monkeypatch.setattr(scipy.spatial, "cKDTree", counted)
+    monkeypatch.setattr(_lookup, "cKDTree", counted)
+    probs = np.full(env.n_bins, 1.0 / env.n_bins)
+
+    for mode in ("nearest", "inverse-distance-weighted"):
+        mapped = map_probabilities(env, env, probs, mode=mode, n_neighbors=3)
+        assert np.isclose(mapped.sum(), 1.0)
+    select_basis_centers(env, 4, method="kmeans", rng=0)
+    heat_kernel_wavelet_basis(env, centers=np.array([0, 5]))
+    env.nearest_bin(env.bin_centers)
+
+    assert len(calls) == 1

@@ -115,6 +115,8 @@ if TYPE_CHECKING:
         valid_observers(binning, arena, centers, "physical")
         _line_of_sight_clear(binning, arena, centers[0], centers[1])
         _pull_back_nearest(values, centers, lambda points: points[:, 0].astype(int))
-        _diffusion_generator(centers, env.get_diffusion_geometry())
+        _diffusion_generator(
+            centers, env.bin_center_tree(), env.get_diffusion_geometry()
+        )
         boundary_geometry(env, "analysis")  # type: ignore[call-arg, arg-type]
         _line_of_sight_clear(env, centers[0], centers[1])  # type: ignore[call-arg, arg-type]

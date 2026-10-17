@@ -64,7 +64,7 @@ from neurospatial.environment._fields import (
     diffusion_geometry,
     require_face_geometry,
 )
-from neurospatial.environment._lookup import nearest_bin
+from neurospatial.environment._lookup import center_tree, nearest_bin
 from neurospatial.environment._metrics import (
     _bin_attributes,
     _copy_attributes,
@@ -139,6 +139,7 @@ if TYPE_CHECKING:
     import scipy.sparse
     import shapely
     from matplotlib.colors import Colormap
+    from scipy.spatial import cKDTree
 
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._factories import PolygonType
@@ -1357,6 +1358,35 @@ class Environment(Generic[_C]):
             max_distance=max_distance,
             max_distance_factor=max_distance_factor,
         )
+
+    def bin_center_tree(self) -> cKDTree:
+        """Return the KD-tree over ``bin_centers`` that ``nearest_bin`` searches.
+
+        The tree is built on first use and kept in the analysis cache: it is
+        shared with relabelled copies and released by ``clear_cache()``. Use
+        it for queries that ``nearest_bin`` does not answer, such as the
+        ``k`` nearest bin centers with their distances. Tree indices are bin
+        indices. Query it, but do not modify it.
+
+        Returns
+        -------
+        scipy.spatial.cKDTree
+            Tree over ``bin_centers``, shape ``(n_bins, n_dims)``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> env = Environment.from_samples(
+        ...     np.array([[0.0, 0.0], [3.0, 0.0]]), bin_size=1.0
+        ... )
+        >>> distances, bins = env.bin_center_tree().query([[0.4, 0.5]], k=2)
+        >>> bins.tolist()
+        [[0, 1]]
+        >>> env.bin_center_tree() is env.bin_center_tree()
+        True
+        """
+        return center_tree(self._cache, self._binning)
 
     @cartesian_only(
         why="It tests Cartesian positions against the arena boundary.",

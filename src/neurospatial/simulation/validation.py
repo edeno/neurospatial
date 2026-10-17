@@ -219,7 +219,10 @@ def validate_simulation(
         from neurospatial.ops.mapping import _typical_bin_spacing
 
         max_center_error = 2.0 * _typical_bin_spacing(
-            env.bin_centers, env.bin_sizes, is_linearized_track=env.is_linearized_track
+            env.bin_centers,
+            env.bin_sizes,
+            is_linearized_track=env.is_linearized_track,
+            tree=env.bin_center_tree(),
         )
 
     if min_correlation is None:

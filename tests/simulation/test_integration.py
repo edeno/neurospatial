@@ -253,7 +253,10 @@ class TestPlaceFieldDetectionAccuracy:
         ground_truth = session.ground_truth
         # Bin spacing (a length); env.bin_sizes holds bin areas in 2-D.
         bin_size = _typical_bin_spacing(
-            env.bin_centers, env.bin_sizes, is_linearized_track=env.is_linearized_track
+            env.bin_centers,
+            env.bin_sizes,
+            is_linearized_track=env.is_linearized_track,
+            tree=env.bin_center_tree(),
         )
 
         true_centers = np.array(

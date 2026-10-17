@@ -56,13 +56,17 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
+from neurospatial._constants import IDW_MIN_DISTANCE
 from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
-    from neurospatial.ops._protocols import BinsConsumer, CartesianBinsConsumer
+    from neurospatial.ops._protocols import (
+        BinsConsumer,
+        CartesianBinsConsumer,
+        ProbabilityTargetConsumer,
+    )
 
 __all__ = [
     "ProbabilityMappingParams",
@@ -434,7 +438,7 @@ def _map_inverse_distance_weighted(
 
 def map_probabilities(
     source_env: CartesianBinsConsumer,
-    target_env: CartesianBinsConsumer,
+    target_env: ProbabilityTargetConsumer,
     source_probs: NDArray[np.float64],
     *,
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",
@@ -524,8 +528,6 @@ def map_probabilities(
     ... )
 
     """
-    from scipy.spatial import cKDTree
-
     # Validate inputs using dataclass
     params = ProbabilityMappingParams(
         source_env=source_env,
@@ -567,10 +569,8 @@ def map_probabilities(
         source_translation_vector,
     )
 
-    # Build KDTree on target bin centers. A construction error here means the
-    # target env has malformed (e.g. non-finite or wrong-dimension) bin centers;
-    # surface it instead of returning a misleading all-zero map.
-    tree = cKDTree(target_env.bin_centers, leafsize=KDTREE_LEAF_SIZE)
+    # The target environment's cached KD-tree over its bin centers.
+    tree = target_env.bin_center_tree()
 
     # Perform the requested mapping
     if mode == "nearest":

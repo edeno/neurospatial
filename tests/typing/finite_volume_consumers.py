@@ -37,7 +37,11 @@ if TYPE_CHECKING:
         wavelets: WaveletBasisConsumer = env
         diffusion_kernel(geometry, 1.0)
         divergence(flux, gradient(scalar, np.ones(env.n_bins)))
-        _diffusion_generator(wavelets.bin_centers, wavelets.get_diffusion_geometry())
+        _diffusion_generator(
+            wavelets.bin_centers,
+            wavelets.bin_center_tree(),
+            wavelets.get_diffusion_geometry(),
+        )
         assert_type(env.get_diffusion_geometry(), DiffusionGeometry)
         assert_type(env.get_mrf_basis(np.ones(env.n_bins)), MRFBasis)
         assert_type(env.compute_gaussian_kernel(1.0), NDArray[np.float64])
