@@ -68,3 +68,17 @@ def test_json_only_refusal_names_the_attribute_and_keeps_pickle(
         message = str(error.value)
         assert f"track graph {element} attribute {key!r}" in message
         assert "JSON" in message
+
+
+class _RefusesPickle:
+    def __reduce__(self):
+        raise ValueError("this object refuses to be pickled")
+
+
+def test_any_pickling_failure_is_refused_with_the_attribute_named():
+    with pytest.raises(
+        TypeError, match="Track graph node 0 attribute 'probe'"
+    ) as error:
+        _track("node", "probe", _RefusesPickle())
+
+    assert isinstance(error.value.__cause__, ValueError)

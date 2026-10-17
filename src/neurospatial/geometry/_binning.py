@@ -347,7 +347,9 @@ def _refuse_unsaveable_attributes(graph: nx.Graph) -> None:
     for element, key, value in graph_attribute_items(graph):
         try:
             pickle.dumps(value)
-        except (pickle.PicklingError, TypeError, AttributeError) as exc:
+        # Any failure to pickle, whatever the value's own __reduce__ raises,
+        # means the attribute cannot be saved; name it and chain the cause.
+        except Exception as exc:
             raise TypeError(
                 _format_error(
                     f"Track graph {element} attribute {key!r} holds a "
