@@ -284,58 +284,77 @@ def spatial_autocorrelation(
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
+    _require_fft_grid(env, "spatial_autocorrelation()")
+    _validate_autocorr_input(env, firing_rate)
+
+    autocorr = _spatial_autocorrelation_fft(env, firing_rate)
+    cell_widths = tuple(float(np.median(np.diff(edge))) for edge in env.grid_edges)
+    return _square_lags(autocorr, cell_widths)
+
+
+def _require_fft_grid(env: Environment, operation: str) -> None:
+    """Refuse environments without a regular 2D grid for the FFT lag map.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment to check.
+    operation : str
+        The refused call, named in the error.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    NotImplementedError
+        If ``env`` has no 2D grid of rectangular cells, its cells along an
+        axis are not one width, or fewer than half of its grid cells are
+        active.
+    """
     require_cartesian(
         env.coordinate_system,
-        "spatial_autocorrelation()",
+        operation,
         why="The autocorrelogram shifts the rate map along Cartesian x and y.",
         fix=(
             "compute it on an allocentric environment, for example "
             "Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    _validate_autocorr_input(env, firing_rate)
-
-    if _detect_grid_method(env) != "fft":
-        if len(env.grid_edges) != 2:
-            found = (
-                f"this environment's {env.layout_type} layout has no 2D grid of "
-                "rectangular cells"
-            )
-        elif not _uniform_spacing(env.grid_edges):
-            axis = next(
-                axis
-                for axis, edge in enumerate(env.grid_edges)
-                if not _uniform_spacing((edge,))
-            )
-            widths = np.diff(env.grid_edges[axis])
-            found = (
-                f"its cells along axis {axis} are not all one width: widths "
-                f"range from {widths.min():.6g} to {widths.max():.6g}"
-            )
-        else:
-            found = (
-                f"only {env.n_bins} of its {env.active_mask.size} grid cells are active"
-            )
-        raise NotImplementedError(
-            _format_error(
-                "spatial_autocorrelation() needs a regular 2D grid of rectangular "
-                "cells, one width along each axis, with at least half of them "
-                f"active; {found}.",
-                why=(
-                    "Why: the FFT shifts the rate map one cell at a time along "
-                    "rows and columns, so each shift is one distance only when "
-                    "the cells along an axis share one width."
-                ),
-                fix=(
-                    "use spatial_autocorrelation_radial(env, firing_rate), which "
-                    "works on every layout, with periodicity_score"
-                ),
-            )
+    if _detect_grid_method(env) == "fft":
+        return
+    if len(env.grid_edges) != 2:
+        found = (
+            f"this environment's {env.layout_type} layout has no 2D grid of "
+            "rectangular cells"
         )
-
-    autocorr = _spatial_autocorrelation_fft(env, firing_rate)
-    cell_widths = tuple(float(np.median(np.diff(edge))) for edge in env.grid_edges)
-    return _square_lags(autocorr, cell_widths)
+    elif not _uniform_spacing(env.grid_edges):
+        axis = next(
+            axis
+            for axis, edge in enumerate(env.grid_edges)
+            if not _uniform_spacing((edge,))
+        )
+        widths = np.diff(env.grid_edges[axis])
+        found = (
+            f"its cells along axis {axis} are not all one width: widths "
+            f"range from {widths.min():.6g} to {widths.max():.6g}"
+        )
+    else:
+        found = f"only {env.n_bins} of its {env.active_mask.size} grid cells are active"
+    raise NotImplementedError(
+        _format_error(
+            f"{operation} needs a regular 2D grid of rectangular cells, one width "
+            f"along each axis, with at least half of them active; {found}.",
+            why=(
+                "Why: the FFT shifts the rate map one cell at a time along "
+                "rows and columns, so each shift is one distance only when "
+                "the cells along an axis share one width."
+            ),
+            fix=(
+                "use spatial_autocorrelation_radial(env, firing_rate), which "
+                "works on every layout, with periodicity_score"
+            ),
+        )
+    )
 
 
 def autocorrelation_pixel_size(env: Environment) -> float:
@@ -357,6 +376,15 @@ def autocorrelation_pixel_size(env: Environment) -> float:
     float
         Pixel side in the environment's units, e.g. cm.
 
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    NotImplementedError
+        If :func:`spatial_autocorrelation` refuses ``env``: no regular 2D
+        grid of rectangular cells (hexagonal, mesh, track or 3D layouts),
+        uneven cells along an axis, or fewer than half of the cells active.
+
     Examples
     --------
     >>> import numpy as np
@@ -368,6 +396,7 @@ def autocorrelation_pixel_size(env: Environment) -> float:
     >>> autocorrelation_pixel_size(env)
     2.0
     """
+    _require_fft_grid(env, "autocorrelation_pixel_size()")
     return min(float(np.median(np.diff(edge))) for edge in env.grid_edges)
 
 

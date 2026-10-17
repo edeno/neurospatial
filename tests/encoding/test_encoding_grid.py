@@ -445,3 +445,87 @@ class TestFFTAutocorrelationLagsArePhysical:
         )
 
         np.testing.assert_equal(result.grid_properties().scale, expected.scale)
+
+
+def _pixel_size_cases():
+    from neurospatial.binning import (
+        Binning,
+        MissingFaces,
+        RectilinearGrid,
+        RectilinearLocator,
+        SpatialBins,
+    )
+
+    def uneven():
+        x_edges = np.array([0.0, 2.0, 4.0, 8.0, 12.0])
+        y_edges = np.arange(0.0, 9.0, 2.0)
+        shape = (4, 4)
+        x_mid, y_mid = (
+            (x_edges[:-1] + x_edges[1:]) / 2,
+            (y_edges[:-1] + y_edges[1:]) / 2,
+        )
+        centers = np.stack(np.meshgrid(x_mid, y_mid, indexing="ij"), -1).reshape(-1, 2)
+        index = np.arange(16).reshape(shape)
+        pairs = np.vstack(
+            [
+                np.column_stack((index[:-1].ravel(), index[1:].ravel())),
+                np.column_stack((index[:, :-1].ravel(), index[:, 1:].ravel())),
+            ]
+        )
+        distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
+        areas = np.outer(np.diff(x_edges), np.diff(y_edges)).ravel()
+        mask = np.ones(shape, dtype=bool)
+        return Environment.from_bins(
+            Binning(
+                "RegularGrid",
+                SpatialBins.from_arrays(centers, areas, 2, pairs, distances),
+                RectilinearLocator((x_edges, y_edges), shape, mask, None),
+                MissingFaces("No finite-volume faces supplied."),
+                rectilinear=RectilinearGrid((x_edges, y_edges), shape, mask),
+            )
+        )
+
+    def sparse():
+        mask = np.zeros((10, 10), dtype=bool)
+        mask[:3, :] = True
+        return Environment.from_grid_mask(mask, grid_edges=(np.arange(11.0),) * 2)
+
+    grid = np.stack(np.meshgrid(np.linspace(0, 40, 41), np.linspace(0, 40, 41)), -1)
+    return {
+        "hexagonal": lambda: Environment.from_samples(
+            grid.reshape(-1, 2), bin_size=4.0, layout="Hexagonal"
+        ),
+        "track": lambda: Environment.linear_track(
+            endpoints=[(0.0, 0.0), (40.0, 0.0)], bin_size=2.0
+        ),
+        "uneven": uneven,
+        "sparse": sparse,
+        "polar": lambda: Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 6,
+        ),
+    }
+
+
+@pytest.mark.parametrize("case", list(_pixel_size_cases()))
+def test_pixel_size_refuses_what_the_autocorrelogram_refuses(case) -> None:
+    from neurospatial.encoding.grid import (
+        autocorrelation_pixel_size,
+        spatial_autocorrelation,
+    )
+
+    env = _pixel_size_cases()[case]()
+    rate = np.random.default_rng(13).random(env.n_bins)
+    with pytest.raises(Exception) as autocorrelation_error:
+        spatial_autocorrelation(env, rate)
+    with pytest.raises(Exception) as pixel_error:
+        autocorrelation_pixel_size(env)
+
+    assert type(pixel_error.value) is type(autocorrelation_error.value)
+    assert isinstance(pixel_error.value, (NotImplementedError, TypeError))
+    expected = str(autocorrelation_error.value).replace(
+        "spatial_autocorrelation()", "autocorrelation_pixel_size()"
+    )
+    assert str(pixel_error.value) == expected
