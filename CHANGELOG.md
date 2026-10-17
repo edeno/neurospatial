@@ -399,6 +399,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- On a polar environment, wall geometry (`border_score`, view-cell rates with
+  walls, `boundary_source=...`) and `time_allocation="linear"` rate maps raise
+  `CartesianOnlyError` instead of `NotImplementedError`, like every other
+  operation that reads polar bins as Cartesian positions. Wall geometry on a
+  3-D environment still raises `NotImplementedError`. The error reference
+  page lists the two error types for environments that cannot run an
+  analysis.
+
 - The linear track of `simulation.mazes.make_plus_maze` numbers its arms in
   the order they are laid out along the linear position, clockwise from
   north (north 0, east 1, south 2, west 3), as `Environment.maze(kind="plus")`

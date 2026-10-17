@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, compute_spatial_rate
 from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.behavior import (
     detect_laps,
@@ -23,6 +23,7 @@ from neurospatial.behavior import (
     trajectory_similarity,
 )
 from neurospatial.encoding import (
+    border_score,
     compute_field_emd,
     field_shape_metrics,
     field_shift_distance,
@@ -187,6 +188,20 @@ def _polar_regions_env(env: Environment) -> Environment:
                 min_speed=1.0,
             ),
             "detect_runs_between_regions(min_speed=...)",
+        ),
+        (
+            lambda env: border_score(env, _rates(env)),
+            "Wall geometry (boundary_source='physical')",
+        ),
+        (
+            lambda env: compute_spatial_rate(
+                env,
+                np.array([0.5, 1.5]),
+                np.arange(0.0, 3.0, 0.5),
+                np.column_stack((np.full(6, 10.0), np.linspace(-1.0, 1.0, 6))),
+                time_allocation="linear",
+            ),
+            "time_allocation='linear'",
         ),
     ],
 )

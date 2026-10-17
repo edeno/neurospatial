@@ -38,6 +38,7 @@ from neurospatial._intervals import (
     warn_excluded_intervals,
 )
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.ops._polygon_allocation import (
     RetainedLinearInterval,
     polygon_linear_occupancy,
@@ -119,15 +120,20 @@ def prepare_linear_spatial_intervals(
 
     Raises
     ------
+    CartesianOnlyError
+        If the environment is polar.
     NotImplementedError
         If the environment cannot publish exact planar cell and Arena support.
     """
+    require_cartesian(
+        env.coordinate_system,
+        "time_allocation='linear'",
+        why="It splits each straight Cartesian path between the cells it crosses.",
+        fix="compute rates on the allocentric environment the positions were "
+        "recorded in",
+    )
     binning, arena = env.binning, env.arena
-    if (
-        env.n_dims != 2
-        or binning.bins.measure_dim != 2
-        or arena.coordinate_kind != "cartesian"
-    ):
+    if env.n_dims != 2 or binning.bins.measure_dim != 2:
         raise NotImplementedError(
             "time_allocation='linear' spatial encoding requires exact planar "
             "Cartesian area cells. Use time_allocation='start' for this environment."

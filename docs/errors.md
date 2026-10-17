@@ -36,6 +36,12 @@ Concrete exceptions inherit their standard Python type first, followed by `Neuro
 | `IncompatibleEnvironmentError` | `ValueError` | Incompatible dimensions or decoding model bins |
 | `GraphValidationError` | `ValueError` | Invalid layout connectivity metadata |
 | `LayoutNotBuiltError` | `RuntimeError` | Access to layout geometry before `build()` |
+| `CartesianOnlyError` | `TypeError` | An operation that reads positions as Cartesian `(x, y)` called on a polar environment |
+
+Two kinds of environment cannot run some analyses, and each kind has one error type:
+
+- A **polar** environment (`from_polar_egocentric`) raises `CartesianOnlyError` for every operation that reads its `(distance, angle)` bins as Cartesian positions, for example `bin_at`, wall-based border scores or `time_allocation="linear"`.
+- An environment whose **geometry lacks what the computation needs** raises `NotImplementedError`: for example the FFT `spatial_autocorrelation` on a hexagonal, mesh, track or 3-D environment, wall geometry outside 2-D, `contains()` on a track without a width, or `rebin` on bins that are not a rectangular grid. The message names an alternative that works on that environment.
 
 Graph-query indices previously raised `IndexError`; catch `BinIndexOutOfRangeError` or `ValueError` for those calls. Ordinary input validation can also raise standard `TypeError` or `ValueError` directly.
 

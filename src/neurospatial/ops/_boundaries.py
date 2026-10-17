@@ -10,6 +10,7 @@ import shapely
 from numpy.typing import NDArray
 from shapely.ops import unary_union
 
+from neurospatial._exceptions import CartesianOnlyError, _format_error
 from neurospatial.geometry._locators import CallIndexes
 from neurospatial.geometry._lookup import locate
 
@@ -30,12 +31,31 @@ def boundary_geometry(
     Physical mode uses exact planar footprint rings and explicit internal walls.
     It never infers physical walls from bins, sampling masks or unknown domains.
     Analysis mode uses the exact union of retained planar analysis cells.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If the arena holds polar ``(distance, angle)`` coordinates.
+    NotImplementedError
+        If the arena is not two-dimensional, or its walls or cells are not
+        exact planar geometry.
     """
     if source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
-    if arena.coordinate_kind != "cartesian" or arena.n_dims != 2:
+    if arena.coordinate_kind != "cartesian":
+        raise CartesianOnlyError(
+            f"Wall geometry (boundary_source={source!r})",
+            why="Walls and cell edges are lines in the Cartesian (x, y) plane.",
+            fix="compute wall-based measures on the allocentric environment "
+            "the positions were recorded in",
+        )
+    if arena.n_dims != 2:
         raise NotImplementedError(
-            "Wall geometry requires planar Cartesian coordinates."
+            _format_error(
+                f"Wall geometry needs a 2-D environment; this one is {arena.n_dims}-D.",
+                why="Why: walls and cell edges are lines in a plane.",
+                fix="compute wall-based measures on a 2-D environment",
+            )
         )
     if source == "analysis":
         return _analysis_boundary(binning, arena)
