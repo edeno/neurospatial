@@ -773,8 +773,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   lattice, so its overlay and scale-bar mapping now read `grid_edges` and
   `grid_shape`, with each pixel centered on its cell (overlays used to be
   stretched by up to half a pixel). Readers of `dimension_ranges` change
-  with it on hexagonal, mesh, track and grid-subset environments: plot limits,
-  `env.info()`, the automatic scale of `ops.spatial_basis`, the "bandwidth
+  with it on hexagonal, mesh, track and grid-subset environments: plot limits
+  (a hexagonal `env.plot()` is framed by its cells' extent, the same limits as
+  `env.plot_field()`, with no extra margin), `env.info()`, the automatic scale of `ops.spatial_basis`, the "bandwidth
   spans the environment" warning, the uniform field placement of
   `simulate_session`, and the extent animation overlays and an uncalibrated
   video are drawn over. The same

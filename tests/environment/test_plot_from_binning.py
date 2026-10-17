@@ -303,6 +303,24 @@ def test_plot_1d_uses_linearization(built_environment, plot_artists):
 
 
 @pytest.mark.parametrize("built_environment", ["hex"], indirect=True)
+def test_hexagon_plots_are_framed_by_the_cell_extent(built_environment):
+    """plot() and plot_field() show the hexagons, corners included, and no more."""
+    env = built_environment
+    limits = []
+    for draw in (env.plot, env.plot_field):
+        figure, axes = plt.subplots()
+        try:
+            if draw == env.plot:
+                draw(ax=axes)
+            else:
+                draw(np.ones(env.n_bins), ax=axes, colorbar=False)
+            limits.append((axes.get_xlim(), axes.get_ylim()))
+        finally:
+            plt.close(figure)
+    assert limits[0] == limits[1] == tuple(tuple(r) for r in env.dimension_ranges)
+
+
+@pytest.mark.parametrize("built_environment", ["hex"], indirect=True)
 def test_plot_field_reads_binning_shapes(built_environment, monkeypatch):
     """Hexagon size and orientation come from the retained component."""
     env = built_environment

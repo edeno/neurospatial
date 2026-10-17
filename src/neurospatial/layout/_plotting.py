@@ -264,14 +264,10 @@ def plot_hexagons(
             label="midpoint",
         )
         ax.set_title(f"{title} Layout")
-        padding = 1.1 * shapes.radius
+        # The ranges are the cells' extent, corners included, as in plot_field.
         if dimension_ranges is not None:
-            ax.set_xlim(
-                (dimension_ranges[0][0] - padding, dimension_ranges[0][1] + padding)
-            )
-            ax.set_ylim(
-                (dimension_ranges[1][0] - padding, dimension_ranges[1][1] + padding)
-            )
+            ax.set_xlim(dimension_ranges[0])
+            ax.set_ylim(dimension_ranges[1])
         ax.set_aspect("equal", adjustable="box")
     return ax
 
