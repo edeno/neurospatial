@@ -434,6 +434,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `name=` by keyword, as `from_nwb` does. A positional call raises
   `TypeError`. The migration page has before-and-after calls.
 
+- The coordinate argument of `bin_at`, `contains`, `nearest_bin`,
+  `to_linear` and `interpolate` is named `positions`, the name analysis
+  functions use (it was `points_nd`, `points` or `nd_position`). Only a call
+  that passed it by keyword changes: `env.bin_at(points_nd=xy)` becomes
+  `env.bin_at(xy)` or `env.bin_at(positions=xy)`. The `points=` query
+  target of `distance_to`, `neighbors` and the other graph queries is
+  unchanged.
+
 - A nonzero `edge_spacing` on a track with one edge (for example
   `Environment.linear_track(endpoints=..., edge_spacing=5.0)`) raises
   `ValueError`. A gap goes between consecutive edges, so the value used to be

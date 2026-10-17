@@ -34,7 +34,7 @@ env = Environment.from_graph(
 ```
 
 **Unique features:**
-- `env.to_linear(nd_position)` - Convert N-D coordinates to linear position
+- `env.to_linear(positions)` - Convert N-D coordinates to linear position
 - `env.linear_to_nd(linear_position)` - Convert linear position to N-D coordinates
 - `env.plot_1d()` - 1D visualization
 - `env.is_linearized_track == True`
@@ -236,9 +236,9 @@ print(f"Dimensions: {env.n_dims}")  # 1, 2, or 3
 
 # Check if 1D (linearized)
 if env.is_linearized_track:
-    linear_pos = env.to_linear(nd_position)
+    linear_pos = env.to_linear(positions)
 else:
-    bin_idx = env.bin_at(nd_position)
+    bin_idx = env.bin_at(positions)
 
 # Check before using 2D-only features
 from shapely.geometry import Polygon

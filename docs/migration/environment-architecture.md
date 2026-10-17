@@ -1254,3 +1254,14 @@ plt.close(fig)
 
 `to_nwb(nwbfile, "arena")` is now `to_nwb(nwbfile, name="arena")`, matching
 `Environment.from_nwb(nwbfile, name="arena")`.
+
+Coordinates passed to `bin_at`, `contains`, `nearest_bin`, `to_linear` and
+`interpolate` are named `positions`, as in the analysis functions. A call
+that passes them by position is unchanged:
+
+<!-- docs-test: run -->
+```python
+# Before: env.bin_at(points_nd=positions); env.nearest_bin(points=positions)
+bins = env.bin_at(positions=positions)
+nearest = env.nearest_bin(positions)
+```

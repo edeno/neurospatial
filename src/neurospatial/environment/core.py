@@ -1235,7 +1235,7 @@ class Environment(Generic[_C]):
         example=_polar_bins_example("points"),
     )
     def bin_at(
-        self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
+        self: Environment[CartesianSystem], positions: NDArray[np.float64]
     ) -> NDArray[np.intp]:
         """Map N-dimensional points to bins using geometric containment.
 
@@ -1248,8 +1248,9 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        points_nd : NDArray[np.float64], shape (n_points, n_dims)
-            An array of N-dimensional points to map.
+        positions : NDArray[np.float64], shape (n_points, n_dims)
+            Points to map, such as the animal's positions, in the
+            environment's coordinates.
 
         Returns
         -------
@@ -1262,7 +1263,7 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If ``points_nd`` has a different dimensionality than the
+            If ``positions`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
 
         See Also
@@ -1298,11 +1299,11 @@ class Environment(Generic[_C]):
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        return self._locate(points_nd)
+        return self._locate(positions)
 
     def nearest_bin(
         self,
-        points: NDArray[np.float64],
+        positions: NDArray[np.float64],
         *,
         tie_break: TieBreakStrategy
         | Literal["lowest_index", "closest_center"] = TieBreakStrategy.LOWEST_INDEX,
@@ -1314,8 +1315,9 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        points : ndarray, shape (n_points, n_dims)
-            Coordinates to compare with bin centers.
+        positions : ndarray, shape (n_points, n_dims)
+            Coordinates to compare with bin centers, such as the animal's
+            positions, in the environment's stored coordinates.
         tie_break : TieBreakStrategy or str, default=TieBreakStrategy.LOWEST_INDEX
             Select the lowest bin ID among ties, or use "closest_center" for
             the tree's nearest candidate.
@@ -1355,7 +1357,7 @@ class Environment(Generic[_C]):
         return nearest_bin(
             self._cache,
             self._binning,
-            points,
+            positions,
             tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
@@ -1399,14 +1401,15 @@ class Environment(Generic[_C]):
         "((points >= low) & (points <= high)).all(axis=1)",
     )
     def contains(
-        self: Environment[CartesianSystem], points_nd: NDArray[np.float64]
+        self: Environment[CartesianSystem], positions: NDArray[np.float64]
     ) -> NDArray[np.bool_]:
         """Check if N-dimensional continuous points fall within any active bin.
 
         Parameters
         ----------
-        points_nd : NDArray[np.float64], shape (n_points, n_dims)
-            An array of N-dimensional points to check.
+        positions : NDArray[np.float64], shape (n_points, n_dims)
+            Points to check, such as the animal's positions, in the
+            environment's coordinates.
 
         Returns
         -------
@@ -1419,7 +1422,7 @@ class Environment(Generic[_C]):
         Raises
         ------
         ValueError
-            If ``points_nd`` has a different dimensionality than the
+            If ``positions`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
 
         Notes
@@ -1449,7 +1452,7 @@ class Environment(Generic[_C]):
                     fix="supply track_width when constructing the track, or use bin_at() for nearest-track projection",
                 )
             )
-        indices = self._locate(points_nd)
+        indices = self._locate(positions)
         return np.asarray(indices != -1, dtype=np.bool_)
 
     def distance_between(
@@ -1522,7 +1525,7 @@ class Environment(Generic[_C]):
     )
     def to_linear(
         self: Environment[CartesianSystem],
-        nd_position: NDArray[np.float64],
+        positions: NDArray[np.float64],
     ) -> NDArray[np.float64]:
         """
         Convert N-D positions to 1D linear coordinates.
@@ -1533,7 +1536,7 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        nd_position : NDArray[np.floating], shape (n_samples, n_dims)
+        positions : NDArray[np.floating], shape (n_samples, n_dims)
             N-D position array in the original coordinate space.
             For 2D environments, shape is (n_samples, 2).
 
@@ -1592,7 +1595,7 @@ class Environment(Generic[_C]):
                 "Use bin_at() to map positions to bins for N-D environments."
             )
             raise TypeError(msg)
-        return linearization.to_linear(nd_position)
+        return linearization.to_linear(positions)
 
     @cartesian_only(
         why="It maps positions along a track that Environment.from_graph built "
@@ -2059,7 +2062,7 @@ class Environment(Generic[_C]):
     def interpolate(
         self: Environment[CartesianSystem],
         field: NDArray[np.float64],
-        points: NDArray[np.float64],
+        positions: NDArray[np.float64],
         *,
         mode: Literal["nearest", "linear"] = "nearest",
     ) -> NDArray[np.float64]:
@@ -2075,7 +2078,7 @@ class Environment(Generic[_C]):
             Field values per bin. Must be a 1-D array with length equal to n_bins.
             NaN marks a bin with no value (for example an unvisited bin of a
             rate map). Must not contain Inf values.
-        points : NDArray[np.float64], shape (n_points, n_dims)
+        positions : NDArray[np.float64], shape (n_points, n_dims)
             Query points in environment coordinates. Must be a 2-D array where
             each row is a point with dimensionality matching the environment.
             A point with a NaN coordinate is a missing sample and reads NaN.
@@ -2103,7 +2106,7 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If field has wrong shape, wrong dimensionality, contains Inf,
-            points have wrong dimensionality, mode is invalid, or dimensions
+            positions have wrong dimensionality, mode is invalid, or dimensions
             don't match, or affine projection cannot resolve source cell widths.
         NotImplementedError
             If mode='linear' is requested for non-grid layout.
@@ -2156,7 +2159,7 @@ class Environment(Generic[_C]):
         """
         return _interpolate(
             field,
-            points,
+            positions,
             binning=self._binning,
             arena=self._arena,
             cache=self._cache,

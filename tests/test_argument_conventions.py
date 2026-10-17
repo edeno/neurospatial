@@ -100,3 +100,21 @@ def test_environment_method_options_are_keyword_only():
             ) or parameter.name in required_options:
                 offenders.append(f"{name}({parameter.name}=)")
     assert not offenders, sorted(offenders)
+
+
+def test_environment_coordinate_arguments_are_named_positions():
+    """Methods that map coordinates take them as ``positions``, like analyses."""
+    from neurospatial import Environment
+
+    for name in ("bin_at", "contains", "nearest_bin", "to_linear", "interpolate"):
+        parameters = inspect.signature(getattr(Environment, name)).parameters
+        assert "positions" in parameters, name
+    off_contract = {"points_nd", "nd_position", "trajectory", "xy"}
+    offenders = [
+        (name, parameter)
+        for name in dir(Environment)
+        if not name.startswith("_") and inspect.isfunction(getattr(Environment, name))
+        for parameter in inspect.signature(getattr(Environment, name)).parameters
+        if parameter in off_contract
+    ]
+    assert not offenders, offenders

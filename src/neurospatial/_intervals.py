@@ -25,7 +25,7 @@ from neurospatial._stacklevel import _external_stacklevel
 class _PositionBinLookup(Protocol):
     """Map position samples to bin IDs for an optional interval-start gate."""
 
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]: ...
 
 
 _ACCEPTED_FORMS = (
