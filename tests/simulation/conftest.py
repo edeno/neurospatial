@@ -102,4 +102,6 @@ def hairpin_track_env():
         graph.add_edge(
             u, v, distance=float(np.linalg.norm(np.subtract(nodes[u], nodes[v])))
         )
-    return Environment.from_graph(graph, edge_order, edge_spacing=0.0, bin_size=5.0)
+    return Environment.from_graph(
+        graph, edge_order, edge_spacing=0.0, bin_size=5.0, track_width=1.0
+    )

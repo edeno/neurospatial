@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import pickle
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -15,8 +14,10 @@ from shapely.geometry import box
 from neurospatial import Environment
 from neurospatial.binning import FramedGrid, RectilinearGrid
 from neurospatial.geometry._codecs import decode, encode
-from neurospatial.geometry._polygon import PolygonCells, materialize_cells
+from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, AffineND
 
 
@@ -74,7 +75,7 @@ def test_composed_frames_and_subsets_keep_logical_ids(n_dims):
     child = moved(moved(env, first), second)
     np.testing.assert_allclose(child._binning.grid_frame.forward, second @ first)
     keep = np.arange(child.n_bins) % 3 != 1
-    subset = child.subset(bins=keep)
+    subset = child.subset(mask=keep)
     frame = subset._binning.grid_frame
     expected = env.active_mask.copy()
     expected.flat[np.flatnonzero(expected)] = keep
@@ -89,7 +90,7 @@ def test_composed_frames_and_subsets_keep_logical_ids(n_dims):
 
 @pytest.mark.parametrize(
     "transport",
-    ["dict", "file", pytest.param("nwb", marks=pytest.mark.nwb), "deepcopy", "pickle"],
+    ["dict", "file", pytest.param("nwb", marks=pytest.mark.nwb), "pickle"],
 )
 @pytest.mark.parametrize("n_dims", [2, 3])
 def test_frame_round_trip_owns_all_arrays(
@@ -133,8 +134,6 @@ def test_frame_round_trip_owns_all_arrays(
     elif transport == "file":
         to_file(env, tmp_path / "frame")
         restored = from_file(tmp_path / "frame")
-    elif transport == "deepcopy":
-        restored = copy.deepcopy(env)
     elif transport == "pickle":
         restored = pickle.loads(pickle.dumps(env))
     else:
@@ -214,8 +213,9 @@ def test_partial_clipping_drops_tensor_grid_and_keeps_parent_map():
 @pytest.mark.parametrize("kind", ["reflection", "shear"])
 def test_hexagon_conversion_retains_exact_vertices(kind):
     env = Environment.from_layout(
-        "Hexagonal",
-        {"hexagon_width": 4.0, "dimension_ranges": [(0.0, 12.0), (0.0, 12.0)]},
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0.0, 12.0), (0.0, 12.0)]
+        )
     )
     value = matrix(kind=kind)
     child = env.apply_transform(Affine2D(value))

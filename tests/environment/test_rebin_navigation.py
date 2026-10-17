@@ -11,6 +11,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import FaceGeometry, FaceNormals, KnownFaces, SpatialBins
+from neurospatial.environment._fields import face_geometry
 
 
 def _grid(*, diagonal=False, scale=1.0, arena=None):
@@ -26,7 +27,7 @@ def _explicit_grid(source, *, spec, navigation=None):
     """Retain exact cells and faces while changing only declared navigation."""
     binning = source._binning
     bins = binning.bins
-    faces = source._face_geometry
+    faces = face_geometry(source._cache, source._binning)
     keep = np.ones(len(bins.pairs), dtype=bool)
     distances = bins.pair_distances.copy()
     if navigation == "long_path":
@@ -90,7 +91,7 @@ def test_native_explicit_grid_navigation_survives_copy_and_load(spec, diagonal):
 def test_factor_rebin_accepts_subset_and_wall_filtered_native_graph(diagonal):
     arena = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 4)]),))
     source = _grid(diagonal=diagonal, arena=arena)
-    for parent in (source, source.subset(bins=source.bin_centers[:, 1] < 2)):
+    for parent in (source, source.subset(mask=source.bin_centers[:, 1] < 2)):
         child = parent.rebin(1)
         # The original arena still determines the target support, including when
         # the input is a selected analysis region within that physical arena.

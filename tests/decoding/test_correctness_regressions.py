@@ -33,8 +33,7 @@ def test_rate_result_environment_mismatch_raises(tiny_env, decode, validate, mis
     if mismatch == "coordinates":
         other = Environment.from_samples(env.bin_centers + 100, bin_size=5.0)
     else:
-        other = env.copy()
-        other = other.with_metadata(
+        other = env.with_metadata(
             **{mismatch: "cm" if mismatch == "units" else "camera"}
         )
     assert other.n_bins == env.n_bins
@@ -54,7 +53,7 @@ def test_rate_result_equivalent_environment_copy_decodes(tiny_env, decode):
         np.arange(1.0, env.n_bins + 1)[None], np.ones(env.n_bins), env, "binned", 5.0
     )
     counts = np.array([[1], [0]])
-    actual = decode(env.copy(), counts, rates, 0.1)
+    actual = decode(env.with_metadata(), counts, rates, 0.1)
     expected = decode(env, counts, rates, 0.1)
     np.testing.assert_array_equal(actual.map_position, expected.map_position)
     np.testing.assert_allclose(actual.posterior_entropy, expected.posterior_entropy)

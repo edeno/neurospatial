@@ -13,7 +13,7 @@ from neurospatial import Environment
 @pytest.mark.parametrize("storage", ["dict", "file", "nwb"])
 def test_track_with_repeated_embedded_centers_round_trips(storage, tmp_path):
     env = Environment.linear_track(
-        node_positions=[(0, 0), (10, 0), (0, 0)], bin_size=1.0
+        node_positions=[(0, 0), (10, 0), (0, 0)], bin_size=1.0, track_width=1.0
     )
     if storage == "dict":
         restored = Environment.from_dict(env.to_dict())

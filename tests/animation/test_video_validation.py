@@ -112,9 +112,6 @@ class TestNonGridEnvironmentSupport:
 
         output_path = tmp_path / "polygon_with_video.mp4"
 
-        # Clear cache for pickle safety
-        polygon_env.clear_cache()
-
         # This should work (may emit fallback warning for non-grid)
         polygon_env.animate_fields(
             fields,
@@ -122,7 +119,6 @@ class TestNonGridEnvironmentSupport:
             overlays=[video_overlay],
             backend="video",
             save_path=str(output_path),
-            fps=10,
             n_workers=1,
         )
 
@@ -187,9 +183,6 @@ class TestNapariFreeOperation:
 
         # Mock napari as not installed
         with patch.dict(sys.modules, {"napari": None}):
-            # Clear cache for pickle safety
-            masked_env.clear_cache()
-
             # Video export should work without napari
             masked_env.animate_fields(
                 fields,
@@ -197,7 +190,6 @@ class TestNapariFreeOperation:
                 overlays=[video_overlay],
                 backend="video",
                 save_path=str(output_path),
-                fps=10,
                 n_workers=1,
             )
 

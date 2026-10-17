@@ -51,7 +51,7 @@ def test_new_walls_validate_current_clipped_support_in_shared_source_frame(
     child = base.apply_transform(Affine2D(matrix)).clip(_mapped(region, matrix))
     arena = OpenArena(box(0, 0, 2, 1), walls=(wall,)).transformed(matrix)
     if history == "subset":
-        child = child.subset(bins=np.ones(child.n_bins, bool))
+        child = child.subset(mask=np.ones(child.n_bins, bool))
     elif history == "nested":
         outer = _matrix(5.0)
         child = child.apply_transform(Affine2D(outer))

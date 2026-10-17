@@ -7,7 +7,7 @@ Covers:
 - Advanced spatial queries (distance_to, reachable_from, rings, components)
 - Property tests for query invariants
 
-Target: 21% → 90% coverage for src/neurospatial/environment/queries.py
+Target: 21% → 90% coverage for src/neurospatial/environment/_queries.py
 """
 
 import numpy as np
@@ -230,7 +230,7 @@ class TestNeighbors:
 
     def test_neighbors_returns_list(self, small_2d_env):
         """Test that neighbors returns a list."""
-        neighbors = small_2d_env.neighbors(0)
+        neighbors = small_2d_env.neighbors(bins=0)
 
         assert isinstance(neighbors, list)
         assert all(isinstance(n, (int, np.integer)) for n in neighbors)
@@ -240,7 +240,7 @@ class TestNeighbors:
         # Pick a bin that's not on the boundary
         # (boundary bins may have fewer neighbors)
         center_bin = medium_2d_env.n_bins // 2
-        neighbors = medium_2d_env.neighbors(center_bin)
+        neighbors = medium_2d_env.neighbors(bins=center_bin)
 
         # Should have at least 1 neighbor
         assert len(neighbors) > 0
@@ -248,7 +248,7 @@ class TestNeighbors:
     def test_neighbors_are_valid_indices(self, small_2d_env):
         """Test that neighbor indices are valid bin indices."""
         for bin_idx in range(min(10, small_2d_env.n_bins)):
-            neighbors = small_2d_env.neighbors(bin_idx)
+            neighbors = small_2d_env.neighbors(bins=bin_idx)
 
             # All neighbors should be valid bin indices
             for n in neighbors:
@@ -258,10 +258,10 @@ class TestNeighbors:
         """Test that neighbor relationship is symmetric."""
         # If A is neighbor of B, then B is neighbor of A
         bin_a = 0
-        neighbors_of_a = small_2d_env.neighbors(bin_a)
+        neighbors_of_a = small_2d_env.neighbors(bins=bin_a)
 
         for bin_b in neighbors_of_a:
-            neighbors_of_b = small_2d_env.neighbors(bin_b)
+            neighbors_of_b = small_2d_env.neighbors(bins=bin_b)
             assert bin_a in neighbors_of_b, (
                 f"Neighbor relationship not symmetric for {bin_a}, {bin_b}"
             )
@@ -269,7 +269,7 @@ class TestNeighbors:
     def test_neighbors_bin_not_self_neighbor(self, small_2d_env):
         """Test that bins are not their own neighbors."""
         for bin_idx in range(min(10, small_2d_env.n_bins)):
-            neighbors = small_2d_env.neighbors(bin_idx)
+            neighbors = small_2d_env.neighbors(bins=bin_idx)
 
             # Bin should not be in its own neighbor list
             assert bin_idx not in neighbors
@@ -290,13 +290,11 @@ class TestBinSizes:
 
         assert np.all(sizes > 0)
 
-    def test_bin_sizes_cached(self, small_2d_env):
-        """Measures are cached internally and exported independently."""
+    def test_bin_sizes_exported_independently(self, small_2d_env):
+        """Each read exports the published measures as a separate array."""
         sizes1 = small_2d_env.bin_sizes
-        cached = small_2d_env._bin_sizes_cached
         sizes2 = small_2d_env.bin_sizes
 
-        assert small_2d_env._bin_sizes_cached is cached
         assert sizes1 is not sizes2
         np.testing.assert_array_equal(sizes1, sizes2)
 
@@ -318,7 +316,7 @@ class TestDistanceBetween:
         # Same point twice
         point = small_2d_env.bin_centers[0]
 
-        dist = small_2d_env.distance_between(point, point)
+        dist = small_2d_env.distance_between(points=[point, point])
 
         assert dist == 0.0
 
@@ -327,8 +325,8 @@ class TestDistanceBetween:
         point_a = medium_2d_env.bin_centers[0]
         point_b = medium_2d_env.bin_centers[10]
 
-        dist_ab = medium_2d_env.distance_between(point_a, point_b)
-        dist_ba = medium_2d_env.distance_between(point_b, point_a)
+        dist_ab = medium_2d_env.distance_between(points=[point_a, point_b])
+        dist_ba = medium_2d_env.distance_between(points=[point_b, point_a])
 
         np.testing.assert_allclose(dist_ab, dist_ba)
 
@@ -336,7 +334,7 @@ class TestDistanceBetween:
         """Test distance between neighboring bins."""
         # Get first bin and a neighbor
         bin_id = 0
-        neighbors = small_2d_env.neighbors(bin_id)
+        neighbors = small_2d_env.neighbors(bins=bin_id)
 
         if len(neighbors) > 0:
             neighbor_id = neighbors[0]
@@ -344,69 +342,47 @@ class TestDistanceBetween:
             point_a = small_2d_env.bin_centers[bin_id]
             point_b = small_2d_env.bin_centers[neighbor_id]
 
-            dist = small_2d_env.distance_between(point_a, point_b)
+            dist = small_2d_env.distance_between(points=[point_a, point_b])
 
             # Distance should be positive and reasonable
             assert dist > 0
             assert dist < 100  # Sanity check
 
-    def test_distance_between_outside_points(self, small_2d_env):
-        """Test distance between points outside environment."""
-        # Both points outside
-        point_a = np.array([1000.0, 1000.0])
-        point_b = np.array([2000.0, 2000.0])
+    @pytest.mark.parametrize("n_outside", [1, 2])
+    def test_distance_between_points_outside_raise(self, small_2d_env, n_outside):
+        """A point outside the environment raises instead of returning inf."""
+        points = np.array([[2000.0, 2000.0], [1000.0, 1000.0]])
+        if n_outside == 1:
+            points[0] = small_2d_env.bin_centers[0]
+        with pytest.raises(
+            ValueError, match=rf"{n_outside} point\(s\) outside the environment"
+        ):
+            small_2d_env.distance_between(points=points)
 
-        dist = small_2d_env.distance_between(point_a, point_b)
+    def test_distance_between_bins_equals_points(self, medium_2d_env):
+        """The distance between two points is the distance between their bins."""
+        points = medium_2d_env.bin_centers[[0, 10]] + 0.1
+        bins = medium_2d_env.bin_at(points)
+        assert medium_2d_env.distance_between(
+            points=points
+        ) == medium_2d_env.distance_between(bins=bins)
 
-        # Should return inf since points don't map to valid bins
-        assert dist == np.inf
-
-    def test_distance_between_one_outside(self, small_2d_env):
-        """Test distance when one point is outside environment."""
-        # One inside, one outside
-        point_inside = small_2d_env.bin_centers[0]
-        point_outside = np.array([1000.0, 1000.0])
-
-        dist = small_2d_env.distance_between(point_inside, point_outside)
-
-        # Should return inf
-        assert dist == np.inf
-
-    def test_distance_between_both_outside_warns(self, small_2d_env):
-        """Both points outside should warn rather than silently return inf."""
-        point_a = np.array([1000.0, 1000.0])
-        point_b = np.array([2000.0, 2000.0])
-
-        with pytest.warns(UserWarning, match=r"neither point mapped"):
-            dist = small_2d_env.distance_between(point_a, point_b)
-
-        assert dist == np.inf
-
-    def test_distance_between_one_outside_does_not_warn(self, small_2d_env):
-        """A single out-of-env point must not trigger the both-outside warning."""
-        import warnings
-
-        point_inside = small_2d_env.bin_centers[0]
-        point_outside = np.array([1000.0, 1000.0])
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            dist = small_2d_env.distance_between(point_inside, point_outside)
-
-        assert dist == np.inf
+    def test_distance_between_needs_two_targets(self, small_2d_env):
+        with pytest.raises(ValueError, match=r"takes two bins, a start and an end"):
+            small_2d_env.distance_between(bins=[0, 1, 2])
 
     def test_distance_between_custom_edge_weight(self, small_2d_env):
         """Test distance_between with custom edge weight."""
         # Use two neighboring bins to ensure path exists
         point_a = small_2d_env.bin_centers[0]
-        neighbors = small_2d_env.neighbors(0)
+        neighbors = small_2d_env.neighbors(bins=0)
 
         if len(neighbors) > 0:
             point_b = small_2d_env.bin_centers[neighbors[0]]
 
             # Default uses 'distance' weight
             dist_default = small_2d_env.distance_between(
-                point_a, point_b, edge_weight="distance"
+                points=[point_a, point_b], edge_weight="distance"
             )
 
             # Should be a finite positive number
@@ -419,7 +395,7 @@ class TestPathBetween:
 
     def test_path_between_to_self(self, small_2d_env):
         """Test path from bin to itself."""
-        path = small_2d_env.path_between(0, 0)
+        path = small_2d_env.path_between(bins=[0, 0])
 
         # Path to self should contain only that bin
         assert path == [0]
@@ -427,11 +403,11 @@ class TestPathBetween:
     def test_path_between_to_neighbor(self, small_2d_env):
         """Test path to neighboring bin."""
         bin_a = 0
-        neighbors = small_2d_env.neighbors(bin_a)
+        neighbors = small_2d_env.neighbors(bins=bin_a)
 
         if len(neighbors) > 0:
             bin_b = neighbors[0]
-            path = small_2d_env.path_between(bin_a, bin_b)
+            path = small_2d_env.path_between(bins=[bin_a, bin_b])
 
             # Path should be [bin_a, bin_b] (direct connection)
             assert len(path) == 2
@@ -440,7 +416,7 @@ class TestPathBetween:
 
     def test_path_between_contains_endpoints(self, medium_2d_env):
         """Test that path contains both source and target."""
-        path = medium_2d_env.path_between(0, 10)
+        path = medium_2d_env.path_between(bins=[0, 10])
 
         if len(path) > 0:  # If path exists
             assert path[0] == 0  # Starts at source
@@ -448,7 +424,7 @@ class TestPathBetween:
 
     def test_path_between_all_valid_bins(self, small_2d_env):
         """Test that all bins in path are valid."""
-        path = small_2d_env.path_between(0, 5)
+        path = small_2d_env.path_between(bins=[0, 5])
 
         # All bins in path should be valid indices
         for bin_idx in path:
@@ -456,14 +432,14 @@ class TestPathBetween:
 
     def test_path_between_consecutive_bins_are_neighbors(self, small_2d_env):
         """Test that consecutive bins in path are neighbors."""
-        path = small_2d_env.path_between(0, 5)
+        path = small_2d_env.path_between(bins=[0, 5])
 
         if len(path) > 1:
             # Each consecutive pair should be neighbors
             for i in range(len(path) - 1):
                 bin_a = path[i]
                 bin_b = path[i + 1]
-                neighbors_a = small_2d_env.neighbors(bin_a)
+                neighbors_a = small_2d_env.neighbors(bins=bin_a)
 
                 assert bin_b in neighbors_a, (
                     f"Non-neighbor bins {bin_a}, {bin_b} in path"
@@ -477,7 +453,7 @@ class TestDistanceTo:
         """Test distance_to with single target bin."""
         target = [0]
 
-        distances = small_2d_env.distance_to(target, metric="geodesic")
+        distances = small_2d_env.distance_to(bins=target, metric="geodesic")
 
         # Should have distance for each bin
         assert distances.shape == (small_2d_env.n_bins,)
@@ -492,7 +468,7 @@ class TestDistanceTo:
         """Test distance_to with multiple target bins."""
         targets = [0, 10, 20]
 
-        distances = medium_2d_env.distance_to(targets, metric="geodesic")
+        distances = medium_2d_env.distance_to(bins=targets, metric="geodesic")
 
         # All target bins should have distance zero
         assert distances[0] == 0.0
@@ -503,7 +479,7 @@ class TestDistanceTo:
         """Test distance_to with euclidean metric."""
         target = [0]
 
-        distances = small_2d_env.distance_to(target, metric="euclidean")
+        distances = small_2d_env.distance_to(bins=target, metric="euclidean")
 
         # Target should have distance zero
         assert distances[0] == 0.0
@@ -515,8 +491,8 @@ class TestDistanceTo:
         """Test that geodesic and euclidean give different results."""
         target = [0]
 
-        dist_geodesic = small_2d_env.distance_to(target, metric="geodesic")
-        dist_euclidean = small_2d_env.distance_to(target, metric="euclidean")
+        dist_geodesic = small_2d_env.distance_to(bins=target, metric="geodesic")
+        dist_euclidean = small_2d_env.distance_to(bins=target, metric="euclidean")
 
         # Should have same shape
         assert dist_geodesic.shape == dist_euclidean.shape
@@ -532,19 +508,19 @@ class TestDistanceTo:
         with pytest.raises(
             ValueError, match="metric must be 'euclidean' or 'geodesic'"
         ):
-            small_2d_env.distance_to(target, metric="invalid")
+            small_2d_env.distance_to(bins=target, metric="invalid")
 
     def test_distance_to_empty_targets_raises(self, small_2d_env):
         """Test that empty targets raises ValueError."""
-        with pytest.raises(ValueError, match="targets cannot be empty"):
-            small_2d_env.distance_to([], metric="geodesic")
+        with pytest.raises(ValueError, match="empty bins="):
+            small_2d_env.distance_to(bins=[], metric="geodesic")
 
     def test_distance_to_invalid_target_index_raises(self, small_2d_env):
         """Test that out-of-range target index raises ValueError."""
         invalid_target = [small_2d_env.n_bins + 10]
 
-        with pytest.raises(ValueError, match="Target bin indices must be in range"):
-            small_2d_env.distance_to(invalid_target, metric="geodesic")
+        with pytest.raises(BinIndexOutOfRangeError, match="out of range"):
+            small_2d_env.distance_to(bins=invalid_target, metric="geodesic")
 
     def test_distance_to_missing_region_raises_region_not_found_error(self):
         """distance_to raises RegionNotFoundError for an unknown region name.
@@ -571,15 +547,15 @@ class TestDistanceTo:
 
         # 1. Raises the specific RegionNotFoundError subtype.
         with pytest.raises(RegionNotFoundError, match="nonexistent_region"):
-            env.distance_to("nonexistent_region")
+            env.distance_to(region="nonexistent_region")
 
         # 2. Back-compat: bare KeyError still catches it.
         with pytest.raises(KeyError):
-            env.distance_to("nonexistent_region")
+            env.distance_to(region="nonexistent_region")
 
         # 3 & 4. Message contains region name and "Available regions".
         with pytest.raises(RegionNotFoundError) as exc_info:
-            env.distance_to("my_missing_region")
+            env.distance_to(region="my_missing_region")
 
         # KeyError stores args as (msg,); extract the string.
         msg = exc_info.value.args[0]
@@ -594,7 +570,7 @@ class TestReachableFrom:
 
     def test_reachable_from_no_radius(self, small_2d_env):
         """Test reachable_from with no radius limit (entire component)."""
-        reachable = small_2d_env.reachable_from(0, radius=None)
+        reachable = small_2d_env.reachable_from(bins=0, radius=None)
 
         # Should return boolean mask
         assert reachable.shape == (small_2d_env.n_bins,)
@@ -609,7 +585,7 @@ class TestReachableFrom:
 
     def test_reachable_from_with_hop_radius(self, medium_2d_env):
         """Test reachable_from with hop radius."""
-        reachable = medium_2d_env.reachable_from(0, radius=3, metric="hops")
+        reachable = medium_2d_env.reachable_from(bins=0, radius=3, metric="hops")
 
         # Source should be reachable
         assert reachable[0]
@@ -623,7 +599,7 @@ class TestReachableFrom:
 
     def test_reachable_from_with_geodesic_radius(self, small_2d_env):
         """Test reachable_from with geodesic radius."""
-        reachable = small_2d_env.reachable_from(0, radius=10.0, metric="geodesic")
+        reachable = small_2d_env.reachable_from(bins=0, radius=10.0, metric="geodesic")
 
         # Source should be reachable
         assert reachable[0]
@@ -634,22 +610,22 @@ class TestReachableFrom:
     def test_reachable_from_invalid_source_raises(self, small_2d_env):
         """Test that invalid source bin raises ValueError."""
         with pytest.raises(BinIndexOutOfRangeError, match="out of range"):
-            small_2d_env.reachable_from(small_2d_env.n_bins + 10, radius=None)
+            small_2d_env.reachable_from(bins=small_2d_env.n_bins + 10, radius=None)
 
     def test_reachable_from_negative_radius_raises(self, small_2d_env):
         """Test that negative radius raises ValueError."""
         with pytest.raises(ValueError, match="radius must be non-negative"):
-            small_2d_env.reachable_from(0, radius=-5)
+            small_2d_env.reachable_from(bins=0, radius=-5)
 
     def test_reachable_from_invalid_metric_raises(self, small_2d_env):
         """Test that invalid metric raises ValueError."""
         with pytest.raises(ValueError, match="metric must be 'hops' or 'geodesic'"):
-            small_2d_env.reachable_from(0, radius=5, metric="invalid")
+            small_2d_env.reachable_from(bins=0, radius=5, metric="invalid")
 
     def test_reachable_from_source_always_reachable(self, small_2d_env):
         """Test that source bin is always reachable regardless of radius."""
         # Even with radius=0, source should be reachable
-        reachable = small_2d_env.reachable_from(0, radius=0, metric="hops")
+        reachable = small_2d_env.reachable_from(bins=0, radius=0, metric="hops")
 
         assert reachable[0]
 
@@ -705,7 +681,7 @@ class TestRings:
 
     def test_rings_returns_list(self, small_2d_env):
         """Test that rings returns list of arrays."""
-        rings = small_2d_env.rings(center_bin=0, hops=2)
+        rings = small_2d_env.rings(bins=0, hops=2)
 
         assert isinstance(rings, list)
         assert len(rings) == 3  # 0, 1, 2 hops = 3 rings
@@ -713,7 +689,7 @@ class TestRings:
     def test_rings_center_in_ring_zero(self, small_2d_env):
         """Test that center bin is in ring 0."""
         center = 0
-        rings = small_2d_env.rings(center_bin=center, hops=3)
+        rings = small_2d_env.rings(bins=center, hops=3)
 
         # Ring 0 should contain only the center
         assert len(rings[0]) == 1
@@ -721,7 +697,7 @@ class TestRings:
 
     def test_rings_are_disjoint(self, medium_2d_env):
         """Test that rings are mutually disjoint (no overlaps)."""
-        rings = medium_2d_env.rings(center_bin=0, hops=3)
+        rings = medium_2d_env.rings(bins=0, hops=3)
 
         # Collect all bins from all rings
         all_bins = np.concatenate(rings)
@@ -731,17 +707,17 @@ class TestRings:
 
     def test_rings_invalid_center_raises(self, small_2d_env):
         """Test that invalid center bin raises ValueError."""
-        with pytest.raises(ValueError, match="center_bin must be in range"):
-            small_2d_env.rings(center_bin=small_2d_env.n_bins + 10, hops=2)
+        with pytest.raises(BinIndexOutOfRangeError, match="out of range"):
+            small_2d_env.rings(bins=small_2d_env.n_bins + 10, hops=2)
 
     def test_rings_negative_hops_raises(self, small_2d_env):
         """Test that negative hops raises ValueError."""
         with pytest.raises(ValueError, match="hops must be non-negative"):
-            small_2d_env.rings(center_bin=0, hops=-1)
+            small_2d_env.rings(bins=0, hops=-1)
 
     def test_rings_bins_are_valid(self, small_2d_env):
         """Test that all bins in rings are valid indices."""
-        rings = small_2d_env.rings(center_bin=0, hops=2)
+        rings = small_2d_env.rings(bins=0, hops=2)
 
         for ring in rings:
             assert np.all(ring >= 0)
@@ -750,7 +726,7 @@ class TestRings:
     def test_rings_later_rings_may_be_empty(self, small_2d_env):
         """Test that later rings may be empty for small environments."""
         # Request many hops in a small environment
-        rings = small_2d_env.rings(center_bin=0, hops=100)
+        rings = small_2d_env.rings(bins=0, hops=100)
 
         # Some later rings should be empty
         assert any(len(ring) == 0 for ring in rings)
@@ -787,8 +763,8 @@ class TestQueryPropertiesHypothesis:
         point_a = medium_2d_env.bin_centers[0]
         point_b = medium_2d_env.bin_centers[bin_idx_offset]
 
-        dist_ab = medium_2d_env.distance_between(point_a, point_b)
-        dist_ba = medium_2d_env.distance_between(point_b, point_a)
+        dist_ab = medium_2d_env.distance_between(points=[point_a, point_b])
+        dist_ba = medium_2d_env.distance_between(points=[point_b, point_a])
 
         np.testing.assert_allclose(dist_ab, dist_ba, rtol=1e-10)
 
@@ -799,14 +775,14 @@ class TestQueryPropertiesHypothesis:
             pytest.skip("Not enough bins for this index")
 
         point = medium_2d_env.bin_centers[bin_idx]
-        dist = medium_2d_env.distance_between(point, point)
+        dist = medium_2d_env.distance_between(points=[point, point])
 
         assert dist == 0.0
 
     @pytest.mark.parametrize("hops", [1, 2, 3, 5])
     def test_rings_increase_monotonically(self, medium_2d_env, hops):
         """Property: union of rings up to k includes all bins in ring k."""
-        rings = medium_2d_env.rings(center_bin=0, hops=hops)
+        rings = medium_2d_env.rings(bins=0, hops=hops)
 
         # Union of rings 0 to k should include all bins in ring k
         for k in range(len(rings)):

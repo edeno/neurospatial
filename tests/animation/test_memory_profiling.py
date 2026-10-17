@@ -188,7 +188,6 @@ def test_parallel_rendering_cleanup(tmp_path):
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=1.0)
-    env.clear_cache()
 
     n_frames = 50  # Small for fast test
     rng = np.random.default_rng(42)

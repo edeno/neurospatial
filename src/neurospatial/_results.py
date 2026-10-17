@@ -544,7 +544,7 @@ def _bin_center_coords(
     if env is None:
         return {}
 
-    from neurospatial.geometry._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry import EgocentricPolarSystem
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     # bin-center data IS present (env was given); a shape disagreement here is
@@ -557,8 +557,8 @@ def _bin_center_coords(
             f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).\n"
             "  WHY: each bin needs an (x, y, ...) center for the 'bin' "
             "coordinate.\n"
-            "  Fix: ensure the environment is fitted and exposes 2-D "
-            "bin_centers."
+            "  Fix: pass an Environment, whose bin_centers have shape "
+            "(n_bins, n_dims)."
         )
     if bin_centers.shape[0] != n_bins:
         raise ValueError(

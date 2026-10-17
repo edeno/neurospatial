@@ -23,8 +23,9 @@ a set of **mandatory attributes** on that graph so that spatial queries
 
 - `'distance'`: Positive navigation path length; native grids use the distance
   between centers, while explicit bins can declare longer paths
-- `'vector'`: Displacement vector (as a tuple)
-- `'edge_id'`: Unique integer edge identifier
+- `'vector'`: Displacement vector (as a tuple), from the lower to the higher
+  bin ID
+- `'edge_id'`: The edge's row in `env.edge_pairs`
 - `'angle_2d'`: Angle in 2D (optional, present for 2D layouts)
 
 You can read these attributes directly off `env.connectivity`:
@@ -73,21 +74,35 @@ flowchart TD
 `geometry/` holds immutable bins, locators, arena evidence, coordinate semantics,
 validation and codecs. It does not import builders, numerical solvers, storage
 backends or plotting libraries. `layout/` and `ops/` are independent peers.
-Import-linter checks these package boundaries without exceptions.
+The only upward imports are the `Environment` methods that hand off to storage (`to_file`, `to_nwb`, ...) or
+rendering (`animate_fields`), which import those packages when called.
 
-An environment captures construction output once, owns its geometry, and starts
-fresh caches when derived or restored. Public methods delegate to domain
-functions. Numerical builders take explicit data and arrays; callers use public
-operations for cached analyses. Small consumer protocols describe the operations
-each adapter actually needs.
+An environment captures construction output once and owns its geometry, which
+never changes afterwards. Relabelled copies (`with_metadata`, `with_regions`)
+share its analysis cache; derived and restored environments start with an
+empty one. Public methods delegate to domain functions with the components
+they read (bins, graph, arena, coordinate descriptor and the analysis cache),
+and those functions do not call back into the environment. Numerical builders take explicit data and arrays; callers use
+public operations for cached analyses. Packages that consume an environment,
+such as `ops`, declare small consumer protocols of the operations they need.
 
 ## Custom construction
 
 Use `Environment.from_bins(...)` for explicit Cartesian `Binning` records, or
-`Environment.from_layout(...)` for supported layout construction. Native
-builders supply owned snapshots; live lookup or track-conversion callbacks do
-not remain attached to the environment. Custom providers use registered adapters
-to supported built-in snapshots.
+`Environment.from_layout(engine)` for a built layout engine: a built-in engine
+from `neurospatial.layout.create_layout(...)` or your own engine after its
+`build(...)`. A custom engine needs no registration. Every layout engine,
+built-in or custom, hands its geometry to the environment through `binning()`,
+which returns a `Binning` built from the engine's own state: bins in the order
+of the connectivity graph's nodes, neighbor pairs in the order of its edges,
+point lookup, lazily computed faces and any grid, track, shape or outline
+records. The environment keeps that record, not the engine, so live lookup or
+track-conversion callbacks do not remain attached. It derives the
+connectivity graph, `grid_edges`, `grid_shape`, `active_mask` and
+`dimension_ranges` from the record, so `build(...)` and `binning()` are all
+an engine needs.
+External objects without `binning()` use registered adapters to supported
+built-in snapshots.
 
 Centers and a graph alone establish neither exact cell ownership nor diffusion
 faces. Supply a supported locator and explicit `KnownFaces` or `MissingFaces`;

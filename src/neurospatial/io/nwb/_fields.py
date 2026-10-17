@@ -61,8 +61,8 @@ from neurospatial.io.nwb._core import (
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
-    from neurospatial import Environment
     from neurospatial.encoding.spatial import SpatialRatesResult
+    from neurospatial.environment import Environment
 
 # =============================================================================
 # Constants for NWB spatial fields

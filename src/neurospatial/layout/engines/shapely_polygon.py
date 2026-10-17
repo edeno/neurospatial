@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 import matplotlib
@@ -9,16 +10,13 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._components import Outline
+from neurospatial.geometry import Binning, Outline
+from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_polygon_grid
 from neurospatial.layout.base import capture_build_params
-from neurospatial.layout.helpers.regular_grid import (
-    _create_regular_grid,
-    _create_regular_grid_connectivity_graph,
-)
+from neurospatial.layout.helpers.regular_grid import _create_regular_grid
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
-from neurospatial.layout.validation import validate_connectivity_graph
 
 
 class ShapelyPolygonLayout(_GridMixin):
@@ -38,7 +36,7 @@ class ShapelyPolygonLayout(_GridMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.SHAPELY_POLYGON.value
     _build_params_used: dict[str, Any]
 
     # Layout Specific
@@ -46,7 +44,6 @@ class ShapelyPolygonLayout(_GridMixin):
 
     def __init__(self) -> None:
         """Initialize a ShapelyPolygonLayout engine."""
-        self._layout_type_tag = "ShapelyPolygon"
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2), dtype=np.float64)  # 2D Layout
         self.connectivity = None
@@ -56,17 +53,7 @@ class ShapelyPolygonLayout(_GridMixin):
         self.active_mask = None
         self.polygon_definition_ = None
 
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "polygon"
-
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return True - polygon layouts can be rendered as 2D images."""
-        return True
-
-    @capture_build_params
+    @capture_build_params(data=("polygon",))
     def build(
         self,
         *,
@@ -133,17 +120,9 @@ class ShapelyPolygonLayout(_GridMixin):
         )
         self.active_mask = shapely_mask_flat.reshape(self.grid_shape)
 
-        self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
-        self.connectivity = _create_regular_grid_connectivity_graph(
-            full_grid_bin_centers=full_grid_bin_centers,
-            active_mask_nd=self.active_mask,
-            grid_shape=self.grid_shape,
-            connect_diagonal=connect_diagonal_neighbors,
+        self._assign_cells(
+            full_grid_bin_centers, connect_diagonal=connect_diagonal_neighbors
         )
-
-        # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=2)
-        self._build_locator(connect_diagonal=connect_diagonal_neighbors)
 
     def plot(
         self,
@@ -212,7 +191,7 @@ class ShapelyPolygonLayout(_GridMixin):
 
         return plot_polygon_grid(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             bin_centers=self.bin_centers,
             connectivity=self.connectivity,
             dimension_ranges=self.dimension_ranges,
@@ -225,6 +204,10 @@ class ShapelyPolygonLayout(_GridMixin):
             node_size=node_size,
             node_color=node_color,
         )
+
+    def binning(self) -> Binning:
+        """Return the grid's owned binning, with the polygon as its outline."""
+        return replace(super().binning(), outline=self.outline())
 
     def outline(self) -> Outline:
         """Return the defining polygon, including any interior rings."""

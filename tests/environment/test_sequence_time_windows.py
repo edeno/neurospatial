@@ -39,15 +39,16 @@ def test_same_bin_runs_split_at_pause(two_epoch_recording):
 
 
 def test_samples_in_no_run_are_dropped(small_2d_env):
-    times = np.array([0.0, 0.1, 5.0, 10.0, 10.1])
-    positions = small_2d_env.bin_centers[[0, 0, 1, 2, 2]]
+    # The sample at t=5 is separated from both neighbors by a gap.
+    times = np.array([0.0, 0.1, 0.2, 5.0, 10.0, 10.1, 10.2])
+    positions = small_2d_env.bin_centers[[0, 0, 0, 1, 2, 2, 2]]
     np.testing.assert_array_equal(
-        small_2d_env.bin_sequence(times, positions, dedup=False), [0, 0, 2, 2]
+        small_2d_env.bin_sequence(times, positions, dedup=False), [0, 0, 0, 2, 2, 2]
     )
     result = small_2d_env.bin_sequence_with_runs(times, positions)
     np.testing.assert_array_equal(result.bins, [0, 2])
-    np.testing.assert_array_equal(result.run_starts, [0, 3])
-    np.testing.assert_array_equal(result.run_lengths, [2, 2])
+    np.testing.assert_array_equal(result.run_starts, [0, 4])
+    np.testing.assert_array_equal(result.run_lengths, [3, 3])
 
 
 def test_sequence_epochs_drop_excluded_samples(two_epoch_recording):
@@ -104,16 +105,16 @@ def test_max_gap_none_preserves_unrestricted_sequence(two_epoch_recording):
 
 @pytest.mark.parametrize("normalize", [False, True])
 @pytest.mark.parametrize(
-    "times, lag, epochs",
+    "times, lag, epochs, warning",
     [
-        ([0.0, 1.0, 2.0], 1, None),
-        ([0.0, 0.1, 0.2], 1, (1.0, 2.0)),
-        ([0.0, 0.1, 5.0, 5.1], 2, None),
+        ([0.0, 1.0, 2.0], 1, None, "excluded ALL.*probably not in seconds"),
+        ([0.0, 0.1, 0.2], 1, (1.0, 2.0), "excluded ALL.*epochs"),
+        ([0.0, 0.1, 5.0, 5.1], 2, None, None),
     ],
     ids=["all-gaps", "excluded-epochs", "all-lagged-pairs-cross-gap"],
 )
 def test_no_valid_transition_pairs_returns_zero_matrix(
-    small_2d_env, times, lag, epochs, normalize
+    small_2d_env, times, lag, epochs, warning, normalize
 ):
     times = np.asarray(times)
     positions = np.tile(small_2d_env.bin_centers[0], (len(times), 1))
@@ -122,9 +123,15 @@ def test_no_valid_transition_pairs_returns_zero_matrix(
         times=times, positions=positions, lag=lag, max_gap=None, normalize=False
     )
     assert unrestricted[0, 0] == len(times) - lag
-    matrix = small_2d_env.transitions(
-        times=times, positions=positions, lag=lag, epochs=epochs, normalize=normalize
-    )
+    kwargs = {"lag": lag, "epochs": epochs, "normalize": normalize}
+    if warning is None:
+        matrix = small_2d_env.transitions(times=times, positions=positions, **kwargs)
+    else:
+        # Every interval is excluded, so the empty matrix comes with a warning.
+        with pytest.warns(UserWarning, match=warning):
+            matrix = small_2d_env.transitions(
+                times=times, positions=positions, **kwargs
+            )
     assert matrix.format == "csr"
     assert matrix.shape == (small_2d_env.n_bins, small_2d_env.n_bins)
     assert matrix.nnz == 0

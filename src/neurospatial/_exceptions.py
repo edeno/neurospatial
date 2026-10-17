@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import functools
 from difflib import get_close_matches
-from typing import Any
+from typing import Any, Literal
 
 __all__ = [
     "BinIndexOutOfRangeError",
-    "EnvironmentNotFittedError",
+    "CartesianOnlyError",
     "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",
@@ -83,8 +83,13 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         Requested region name; ``None`` reports a missing name with guidance.
     available : list of str, optional
         Available region names, used to suggest a close match.
-    argument : str, default "region_name"
-        Calling function's argument name, shown in the corrected call.
+    argument : str or None, default "region_name"
+        Calling function's argument name, shown in the corrected call. None
+        for a lookup by key, such as ``env.regions[name]``, which suggests
+        the corrected name alone.
+    in_list : bool, default False
+        Whether ``argument`` takes a list of names, so the corrected call
+        shows a list.
 
     Examples
     --------
@@ -102,7 +107,8 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         name: str | None,
         *,
         available: list[str] | None = None,
-        argument: str = "region_name",
+        argument: str | None = "region_name",
+        in_list: bool = False,
     ) -> None:
         if available:
             what = (
@@ -117,27 +123,34 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
             if isinstance(name, str)
             else []
         )
+
+        def use(region: str) -> str:
+            if argument is None:
+                return f"use {region!r}"
+            value = f"[{region!r}]" if in_list else repr(region)
+            return f"pass {argument}={value}"
+
         if not isinstance(name, str):
-            what = f"{argument}={name!r} was not found; region names must be strings."
+            what = (
+                f"Region name {name!r} was not found; region names must be strings."
+                if argument is None
+                else f"{argument}={name!r} was not found; region names must be strings."
+            )
             suggested = available[0] if available else "home"
-            value = f"[{suggested!r}]" if argument == "end_regions" else repr(suggested)
             fix = (
-                f"pass {argument}={value}; if a new region is needed, create "
+                f"{use(suggested)}; if a new region is needed, create "
                 "regions = Regions(env.regions.values()); "
                 f"regions.add({suggested!r}, point=(x, y)); "
                 "env = env.with_regions(regions)"
             )
         elif matches:
-            value = (
-                f"[{matches[0]!r}]" if argument == "end_regions" else repr(matches[0])
-            )
-            fix = f"pass {argument}={value}"
+            fix = use(matches[0])
         else:
-            value = f"[{name!r}]" if argument == "end_regions" else repr(name)
+            then = "" if argument is None else f", then {use(name)}"
             fix = (
                 "create regions = Regions(env.regions.values()); "
                 f"regions.add({name!r}, point=(x, y)) (or polygon=...); "
-                f"env = env.with_regions(regions), then pass {argument}={value}."
+                f"env = env.with_regions(regions){then}."
             )
         super().__init__(_format_error(what, fix=fix))
         self.region_name = name
@@ -160,17 +173,46 @@ class BinIndexOutOfRangeError(ValueError, NeurospatialError):
     Traceback (most recent call last):
         ...
     neurospatial._exceptions.BinIndexOutOfRangeError: Bin index 99 ...
+
+    Parameters
+    ----------
+    index : int
+        The refused index.
+    n_bins : int
+        Number of active bins.
+    coordinate_kind : {"cartesian", "polar"}, default="cartesian"
+        The environment's coordinates, so the fix shows the rows ``bin_at``
+        takes there: a point for Cartesian bins, ``(distance, angle)`` for
+        egocentric polar bins.
     """
 
-    def __init__(self, index: int, *, n_bins: int) -> None:
+    def __init__(
+        self,
+        index: int,
+        *,
+        n_bins: int,
+        coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
+    ) -> None:
         msg = (
             f"Bin index {index} is out of range for an environment with "
             f"{n_bins} bin(s); valid indices are [0, {n_bins})."
         )
+        lookup = (
+            "int(env.bin_at([[distance, angle]])[0])"
+            if coordinate_kind == "polar"
+            else "int(env.bin_at([point])[0])"
+        )
+        why = (
+            "Why: -1 is the value bin_at gives a position outside the "
+            "environment; it marks no bin."
+            if index == -1
+            else None
+        )
         super().__init__(
             _format_error(
                 msg,
-                fix=f"pass a bin index in [0, {n_bins}); obtain one with int(env.bin_at([point])[0]).",
+                why=why,
+                fix=f"pass a bin index in [0, {n_bins}); obtain one with {lookup}.",
             )
         )
         self.index = index
@@ -212,47 +254,63 @@ class IncompatibleEnvironmentError(ValueError, NeurospatialError):
         self.second = second
 
 
-class CartesianOnlyError(AttributeError, NotImplementedError, NeurospatialError):
-    """Raised when an operation needs Cartesian bin centers the environment lacks.
+class CartesianOnlyError(TypeError, NeurospatialError):
+    """Raised when an operation needs Cartesian positions and the environment is polar.
 
-    A polar ``Environment`` stores ``(distance, angle)`` bins, so an
-    operation that reads bin centers as Cartesian ``(x, y[, z])`` coordinates
-    would return geometric nonsense. Inherits :class:`AttributeError`, so
-    ``hasattr(polar_env, "bin_at")`` is ``False``, and
-    :class:`NotImplementedError`, so existing handlers keep working.
+    A polar ``Environment`` stores ``(distance, angle)`` bins around the
+    animal, so an operation that reads positions or bin centers as Cartesian
+    ``(x, y[, z])`` coordinates would return plausible but wrong numbers. The
+    operation does not apply to this kind of environment, so the error is a
+    :class:`TypeError`; static type checkers flag the same calls. Every
+    Cartesian-only method, Cartesian-only mode and Cartesian-only analysis
+    function raises it with the same message layout: what was refused, why it
+    needs Cartesian coordinates, and what works on a polar environment.
 
     Parameters
     ----------
-    environment_type : str
-        Name of the environment class, e.g. ``"Environment"``.
     operation : str
-        The refused call, e.g. ``"bin_at()"`` or
-        ``"distance_to(metric='euclidean')"``.
-    reason : str
-        ``"Cartesian-coordinate operation"`` or ``"Cartesian-grid operation"``.
-    explanation : str
-        Why the environment cannot run the operation and what to use instead.
+        The refused call, e.g. ``"Environment.bin_at()"`` or
+        ``"Environment.distance_to(metric='euclidean')"``.
+    why : str
+        Why the operation needs Cartesian coordinates.
+    fix : str
+        What to use instead on a polar environment.
+    example : str or None, optional
+        Code for the alternative, shown after the fix: statements separated by
+        ``"; "`` whose last part is an expression giving the result. It uses
+        ``np`` and names such as ``env``, ``points`` or ``field``. None when
+        the alternative needs other data than the refused call had.
+
+    Attributes
+    ----------
+    operation : str
+        The refused call.
+    example : str or None
+        The code shown after the fix.
     """
 
-    # AttributeError defines __reduce__ and precedes NeurospatialError in the
-    # MRO; keep the base's rebuild-from-arguments pickling.
-    __reduce__ = NeurospatialError.__reduce__
-
     def __init__(
-        self, environment_type: str, operation: str, *, reason: str, explanation: str
+        self, operation: str, *, why: str, fix: str, example: str | None = None
     ) -> None:
+        shown = fix if example is None else f"{fix}: {example}"
         super().__init__(
-            f"{environment_type}.{operation} is not available ({reason}): {explanation}"
+            _format_error(
+                f"{operation} does not work on a polar environment.",
+                why=(
+                    f"Why: {why} This environment's bins are (distance, angle) "
+                    "pairs around the animal, not Cartesian (x, y) positions."
+                ),
+                fix=shown,
+            )
         )
-        self.environment_type = environment_type
         self.operation = operation
+        self.example = example
 
 
 class LayoutNotBuiltError(RuntimeError, NeurospatialError):
     """Raised when a :class:`LayoutEngine` is accessed before ``build()``.
 
-    Distinct from :class:`EnvironmentNotFittedError`: this signals that
-    the underlying layout engine itself has not been built (e.g. its
+    This signals that the layout engine has not been built (e.g. its
     ``connectivity`` is ``None``). It is mostly raised inside layout
     engines and helpers; user code typically sees it surfacing through
     a layout property accessed at the wrong time.
@@ -271,107 +329,6 @@ class LayoutNotBuiltError(RuntimeError, NeurospatialError):
         )
         self.layout_name = layout_name
         self.attribute = attribute
-
-
-class EnvironmentNotFittedError(RuntimeError, NeurospatialError):
-    """Exception raised when an unfitted Environment is consumed.
-
-    This exception is raised both by the :func:`check_fitted` decorator on
-    bound methods and by free functions that receive an :class:`Environment`
-    argument. It supports two construction shapes:
-
-    1. Bound-method form: ``EnvironmentNotFittedError(class_name, method_name)``
-       — formats the message as ``Environment.method()`` with factory-method
-       guidance.
-    2. Free-function form:
-       ``EnvironmentNotFittedError(function_name, *, is_function=True)`` —
-       formats the message as ``function()`` (no class qualifier) and the
-       same guidance about factory methods.
-
-    Parameters
-    ----------
-    class_or_function_name : str
-        For the bound-method form, the Environment class name (e.g.
-        "Environment"). For the free-function form, the qualified function
-        name (e.g. "path_progress" or "neurospatial.behavior.navigation.path_progress").
-    method_name : str, optional
-        Name of the method requiring initialization. Required for the
-        bound-method form; ignored when ``is_function=True``.
-    error_code : str, optional
-        Error code for documentation reference. Default is "E1004".
-    is_function : bool, optional
-        If True, format the message as a free function (omit class
-        qualifier). Default is False.
-
-    Examples
-    --------
-    >>> from neurospatial.environment.decorators import EnvironmentNotFittedError
-    >>> raise EnvironmentNotFittedError("Environment", "bin_at")
-    Traceback (most recent call last):
-        ...
-    neurospatial._exceptions.EnvironmentNotFittedError: [E1004] Environment.bin_at() requires...
-
-    >>> raise EnvironmentNotFittedError("path_progress", is_function=True)
-    Traceback (most recent call last):
-        ...
-    neurospatial._exceptions.EnvironmentNotFittedError: [E1004] path_progress() requires...
-
-    See Also
-    --------
-    check_fitted : Decorator that raises this exception for bound methods.
-
-    Notes
-    -----
-    This exception inherits from ``RuntimeError`` to maintain backward
-    compatibility with existing code that catches ``RuntimeError``. Users
-    can catch either ``EnvironmentNotFittedError`` for specific handling or
-    ``RuntimeError`` for general error handling.
-
-    """
-
-    def __init__(
-        self,
-        class_or_function_name: str,
-        method_name: str | None = None,
-        *,
-        is_function: bool = False,
-        error_code: str = "E1004",
-    ) -> None:
-        if is_function:
-            qualified = f"{class_or_function_name}()"
-            class_name: str | None = None
-            method_name_resolved = class_or_function_name
-        else:
-            if method_name is None:
-                raise TypeError(
-                    "EnvironmentNotFittedError requires `method_name` "
-                    "when `is_function=False` (the default bound-method form)."
-                )
-            qualified = f"{class_or_function_name}.{method_name}()"
-            class_name = class_or_function_name
-            method_name_resolved = method_name
-
-        message = (
-            f"[{error_code}] {qualified} "
-            "requires the environment to be fully initialized. "
-            "Ensure it was created with a factory method.\n\n"
-            "Example (correct usage):\n"
-            "    env = Environment.from_samples(data, bin_size=2.0)\n"
-            "    result = env.bin_at(points)\n\n"
-            "Avoid:\n"
-            "    env = Environment()  # This will not work!\n\n"
-            "For more information, see: "
-            f"https://edeno.github.io/neurospatial/errors/#{error_code.lower()}"
-        )
-        super().__init__(
-            _format_error(
-                message, fix="env = Environment.from_samples(positions, bin_size=2.0)"
-            )
-        )
-        self.class_name = class_name
-        self.method_name = method_name_resolved
-        self.error_code = error_code
-        self.is_function = is_function
 
 
 class GraphValidationError(ValueError, NeurospatialError):

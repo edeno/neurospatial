@@ -6,8 +6,9 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial import Environment
 from neurospatial._exceptions import _format_error
+from neurospatial.environment import Environment
+from neurospatial.geometry import require_cartesian
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,13 @@ def simulate_trajectory_ou(
     simulate_trajectory_laps : Structured back-and-forth movement
     simulate_trajectory_sinusoidal : Simple periodic motion (1D)
     """
+    require_cartesian(
+        env.coordinate_system,
+        "simulate_trajectory_ou()",
+        why="It moves the animal with a velocity in Cartesian coordinates and "
+        "keeps it inside the environment's cells.",
+        fix="simulate on the allocentric environment the animal moves in",
+    )
     # Validate environment units
     if env.units is None:
         msg = (
@@ -501,7 +509,8 @@ def simulate_trajectory_sinusoidal(
     Returns
     -------
     positions : NDArray[np.float64], shape (n_time, 1)
-        1D position coordinates.
+        Linear positions along the track (``env.to_linear`` coordinates),
+        oscillating between the two ends of the binned track.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds.
 
@@ -540,11 +549,13 @@ def simulate_trajectory_sinusoidal(
         msg = "Sinusoidal trajectory only works for 1D environments (env.is_linearized_track must be True)"
         raise ValueError(msg)
 
-    # Get track length
-    if env.dimension_ranges is None:
-        msg = "Environment dimension_ranges must be set for sinusoidal trajectory"
-        raise ValueError(msg)
-    range_min, range_max = env.dimension_ranges[0]
+    # The motion runs along the track, in linear position: from the start of
+    # the first bin to the end of the last one.
+    linearization = env.binning.linearization
+    assert linearization is not None  # is_linearized_track
+    edges = np.asarray(linearization.grid_edges[0])
+    active = np.flatnonzero(linearization.active_mask)
+    range_min, range_max = float(edges[active[0]]), float(edges[active[-1] + 1])
     track_length = range_max - range_min
 
     # Compute period if not provided
@@ -920,9 +931,8 @@ def _simulate_trajectory_laps(
 
         # Ensure all positions are within environment bounds by mapping to bins
         # This handles edge cases where interpolation might go slightly outside
-        from neurospatial.ops import map_points_to_bins
 
-        bin_indices = map_points_to_bins(env, lap_positions, tie_break="lowest_index")
+        bin_indices = env.nearest_bin(lap_positions, tie_break="lowest_index")
         # Use bin centers to ensure all positions are valid
         lap_positions = env.bin_centers[bin_indices]
 

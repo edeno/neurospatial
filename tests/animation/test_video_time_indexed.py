@@ -30,7 +30,7 @@ pytest.importorskip("napari")
 
 
 # =============================================================================
-# Protocol for VideoReader (file-based video source)
+# Protocol for _VideoReader (file-based video source)
 # =============================================================================
 
 

@@ -161,8 +161,15 @@ The implementation is based on standard Bayesian methods for neural decoding,
 with numerical stability considerations for log-domain computation.
 """
 
-from neurospatial.decoding._binning import bin_spikes_in_time
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
+from neurospatial.decoding._time_bins import (
+    _count_spikes_in_time_bins as _count_spikes_in_time_bins,
+)
+from neurospatial.decoding._time_bins import _time_bin_rounding as _time_bin_rounding
+from neurospatial.decoding._time_bins import (
+    _time_bins_in_windows as _time_bins_in_windows,
+)
+from neurospatial.decoding._time_bins import bin_spikes_in_time
 from neurospatial.decoding.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
@@ -208,6 +215,8 @@ from neurospatial.decoding.trajectory import (
 # Public API exports
 # =============================================================================
 
+# The ``_`` names imported here are internal helpers shared with other
+# neurospatial packages; they are not public API.
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Immutable fit/predict estimator
     "BayesianDecoder",

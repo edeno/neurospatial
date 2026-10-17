@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-import pandas as pd
 import shapely.geometry as shp
 from numpy.typing import NDArray
 from shapely.errors import ShapelyError
@@ -25,6 +24,8 @@ from shapely.geometry import Polygon
 from .core import Region, Regions
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from ..ops.transforms import SpatialTransform
 
 # --------------------------------------------------------------------------
@@ -997,6 +998,8 @@ def regions_to_dataframe(regions: Regions) -> pd.DataFrame:
         A DataFrame with columns for region name, kind, area, and metadata.
 
     """
+    import pandas as pd
+
     records: list[Mapping[str, Any]] = []
     for reg in regions.values():
         rec = reg.to_dict()

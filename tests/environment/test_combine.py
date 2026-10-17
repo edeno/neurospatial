@@ -9,6 +9,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+from neurospatial.layout import create_layout
 
 
 def grid(shift=0.0, *, dims=2, count=2, units="cm"):
@@ -72,7 +73,7 @@ def test_combined_planar_boundary_survives_subset_and_rotation():
         for key, offset in (("left", 0.0), ("right", 3.0))
     }
     combined = Environment.combine(children)
-    subset = combined.subset(bins=combined.bin_centers[:, 0] < 4.0)
+    subset = combined.subset(mask=combined.bin_centers[:, 0] < 4.0)
     assert len(subset.boundary_bins) == 10
     angle = 0.3
     rotated = subset.apply_transform(
@@ -110,7 +111,7 @@ def test_ordinary_environment_retains_support_sources_and_path_bridges(restore):
         [0, 2, -1, -1],
     )
     np.testing.assert_array_equal(joined.edge_pairs, [[0, 1], [2, 3], [1, 2]])
-    assert joined.path_between(0, 3) == [0, 1, 2, 3]
+    assert joined.path_between(bins=[0, 3]) == [0, 1, 2, 3]
     bridges = joined.get_bridge_attributes()
     assert len(bridges) == 1
     assert bridges.iloc[0]["distance"] == 3.0
@@ -132,14 +133,16 @@ def test_path_bridges_do_not_diffuse_but_declared_conductance_does():
     children = {"a": grid(), "b": grid(4.0)}
     path_only = Environment.combine(children)
     field = np.array([1.0, 1.0, 0.0, 0.0])
-    np.testing.assert_allclose(path_only.diffuse(field, 1.0), field, atol=1e-14)
+    np.testing.assert_allclose(
+        path_only.diffuse(field, bandwidth=1.0), field, atol=1e-14
+    )
     coupled = Environment.combine(
         children, bridge_conductances={(("a", 1), ("b", 0)): 0.5}
     )
-    output = coupled.diffuse(field, 1.0)
+    output = coupled.diffuse(field, bandwidth=1.0)
     assert output[2] > 0
     np.testing.assert_allclose(output @ coupled.bin_sizes, field @ coupled.bin_sizes)
-    np.testing.assert_allclose(coupled.diffuse(np.ones(4), 1.0), np.ones(4))
+    np.testing.assert_allclose(coupled.diffuse(np.ones(4), bandwidth=1.0), np.ones(4))
     with pytest.raises(NotImplementedError, match=r"[Bb]ridge|face"):
         path_only.get_differential_operator()
 
@@ -156,7 +159,7 @@ def test_nearest_support_must_be_certified_and_missing_faces_remain_missing():
     )
     np.testing.assert_array_equal(env.bin_at([[0, 0], [3, 0], [1, 0]]), [0, 1, -1])
     with pytest.raises(NotImplementedError, match=r"geometry|faces"):
-        env.diffuse(np.ones(2), 1.0)
+        env.diffuse(np.ones(2), bandwidth=1.0)
 
 
 def test_metadata_regions_and_cutoff():
@@ -176,10 +179,10 @@ def test_metadata_regions_and_cutoff():
 
 def test_subsets_remove_bridges_and_keep_original_sources():
     env = Environment.combine({"a": grid(), "b": grid(4.0)})
-    subset = env.subset(bins=np.array([True, False, True, True]))
+    subset = env.subset(mask=np.array([True, False, True, True]))
     assert subset.bin_sources == (("a", 0), ("b", 0), ("b", 1))
     assert subset.get_bridge_attributes().empty
-    np.testing.assert_allclose(subset.diffuse(np.ones(3), 1.0), np.ones(3))
+    np.testing.assert_allclose(subset.diffuse(np.ones(3), bandwidth=1.0), np.ones(3))
 
 
 def test_no_bridge_combination_clips_without_losing_sources():
@@ -194,8 +197,8 @@ def test_no_bridge_combination_clips_without_losing_sources():
         expected._diffusion_geometry.W.toarray(),
     )
     np.testing.assert_allclose(
-        clipped.diffuse(np.array([1.0, 0.0]), 0.5, mode="average"),
-        expected.diffuse(np.array([1.0, 0.0]), 0.5, mode="average"),
+        clipped.diffuse(np.array([1.0, 0.0]), bandwidth=0.5, mode="average"),
+        expected.diffuse(np.array([1.0, 0.0]), bandwidth=0.5, mode="average"),
     )
 
 
@@ -216,14 +219,14 @@ def test_uncertified_combined_clip_cannot_regain_its_parents_diffusion(history):
     assert parent._binning.faces.available
     clipped = parent.clip(Polygon([(0, 0), (2, 0), (0, 2)]))
     if history == "subset":
-        clipped = clipped.subset(bins=np.ones(clipped.n_bins, dtype=bool))
+        clipped = clipped.subset(mask=np.ones(clipped.n_bins, dtype=bool))
     elif history == "transform":
         clipped = clipped.apply_transform(translate(10, 0))
     elif history == "load":
         clipped = Environment.from_dict(clipped.to_dict())
     assert not clipped._binning.faces.available
     with pytest.raises(NotImplementedError, match="orthogonality"):
-        clipped.diffuse(np.ones(clipped.n_bins), 0.5, mode="average")
+        clipped.diffuse(np.ones(clipped.n_bins), bandwidth=0.5, mode="average")
 
 
 @pytest.mark.parametrize("kind", ["hex", "mesh", "polygon", "mask", "samples"])
@@ -232,12 +235,15 @@ def test_native_cell_families_keep_child_lookup_and_numeric_blocks(kind):
 
     if kind == "hex":
         child = Environment.from_layout(
-            "Hexagonal", {"hexagon_width": 1.0, "dimension_ranges": [(0, 3), (0, 3)]}
+            create_layout(
+                "Hexagonal", hexagon_width=1.0, dimension_ranges=[(0, 3), (0, 3)]
+            )
         )
     elif kind == "mesh":
         child = Environment.from_layout(
-            "TriangularMesh",
-            {"boundary_polygon": box(0, 0, 3, 3), "point_spacing": 0.75},
+            create_layout(
+                "TriangularMesh", boundary_polygon=box(0, 0, 3, 3), point_spacing=0.75
+            )
         )
     elif kind == "polygon":
         child = Environment.from_polygon(
@@ -260,10 +266,12 @@ def test_native_cell_families_keep_child_lookup_and_numeric_blocks(kind):
     )
     values = np.arange(child.n_bins, dtype=float)
     actual = combined.diffuse(
-        np.concatenate([values, np.zeros(other.n_bins)]), 0.5, mode="average"
+        np.concatenate([values, np.zeros(other.n_bins)]), bandwidth=0.5, mode="average"
     )
     np.testing.assert_allclose(
-        actual[: child.n_bins], child.diffuse(values, 0.5, mode="average"), atol=1e-12
+        actual[: child.n_bins],
+        child.diffuse(values, bandwidth=0.5, mode="average"),
+        atol=1e-12,
     )
     np.testing.assert_allclose(actual[child.n_bins :], 0, atol=1e-14)
 
@@ -278,7 +286,9 @@ def test_measured_embedded_tracks_and_crossing_footprint_refusal():
             1, pos=(shift if vertical else shift + 4, 4.0 if vertical else 0.0)
         )
         graph.add_edge(0, 1, distance=4.0)
-        return Environment.from_graph(graph, [(0, 1)], 0.0, 1.0, track_width=0.5)
+        return Environment.from_graph(
+            graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, track_width=0.5
+        )
 
     a, b = track(0), track(10)
     combined = Environment.combine({"a": a, "b": b})
@@ -286,7 +296,7 @@ def test_measured_embedded_tracks_and_crossing_footprint_refusal():
         combined.bin_at(b.bin_centers), a.n_bins + np.arange(b.n_bins)
     )
     np.testing.assert_allclose(
-        combined.diffuse(np.ones(combined.n_bins), 0.5, mode="average"), 1
+        combined.diffuse(np.ones(combined.n_bins), bandwidth=0.5, mode="average"), 1
     )
     with pytest.raises(ValueError, match=r"[Oo]verlap"):
         Environment.combine({"a": a, "crossing": track(2, vertical=True)})
@@ -305,8 +315,8 @@ def test_complementary_unbounded_nearest_subsets_are_valid():
         )
     )
     a, b = (
-        parent.subset(bins=np.array([True, False])),
-        parent.subset(bins=np.array([False, True])),
+        parent.subset(mask=np.array([True, False])),
+        parent.subset(mask=np.array([False, True])),
     )
     combined = Environment.combine({"a": a, "b": b})
     np.testing.assert_array_equal(combined.bin_at([[-100, 0], [100, 0]]), [0, 1])
@@ -321,7 +331,7 @@ def test_automatic_bridges_do_not_bypass_a_third_grid_component(dims):
         }
     )
     assert not joined.connectivity.has_edge(0, 2)
-    assert joined.path_between(0, 2) == [0, 1, 2]
+    assert joined.path_between(bins=[0, 2]) == [0, 1, 2]
 
 
 @pytest.mark.parametrize("dims", [1, 2, 3])
@@ -339,12 +349,12 @@ def test_automatic_bridges_respect_nearest_component_interiors(dims, finite):
         )
     )
     components = {
-        key: parent.subset(bins=np.arange(3) == index)
+        key: parent.subset(mask=np.arange(3) == index)
         for index, key in enumerate(("a", "b", "c"))
     }
     joined = Environment.combine(components)
     assert not joined.connectivity.has_edge(0, 2)
-    assert joined.path_between(0, 2) == [0, 1, 2]
+    assert joined.path_between(bins=[0, 2]) == [0, 1, 2]
 
 
 @pytest.mark.parametrize("angle", [0.0, 0.1, 0.3, 0.37, 0.7])
@@ -452,7 +462,7 @@ def test_bounded_nearest_clearance_uses_its_retained_partition():
             MissingFaces("Sites lack faces."),
         )
     )
-    middle = parent.subset(bins=np.array([True, False]))
+    middle = parent.subset(mask=np.array([True, False]))
     # The radius ball extends across this bridge, but its retained Voronoi
     # cell does not: the dropped site owns the whole y=-0.5 line.
     joined = Environment.combine(
@@ -536,7 +546,9 @@ def test_automatic_bridges_do_not_bypass_a_measured_track(dims):
         graph.add_node(0, pos=(shift, *([0.0] * (dims - 1))))
         graph.add_node(1, pos=(shift + 1, *([0.0] * (dims - 1))))
         graph.add_edge(0, 1, distance=1.0)
-        return Environment.from_graph(graph, [(0, 1)], 0.0, 1.0, track_width=0.25)
+        return Environment.from_graph(
+            graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, track_width=0.25
+        )
 
     joined = Environment.combine(
         {key: track(shift) for key, shift in (("a", 0), ("b", 2), ("c", 4))}
@@ -618,7 +630,9 @@ def test_nearly_parallel_crossing_track_clearance_is_not_falsely_certified():
         graph.add_node(0, pos=start)
         graph.add_node(1, pos=end)
         graph.add_edge(0, 1, distance=float(np.hypot.reduce(np.array(end) - start)))
-        return Environment.from_graph(graph, [(0, 1)], 0.0, 5e7, track_width=0.1)
+        return Environment.from_graph(
+            graph, [(0, 1)], edge_spacing=0.0, bin_size=5e7, track_width=0.1
+        )
 
     first = make_track((-1e8, 0.0), (1e8, 0.0))
     second = make_track((-1e8, -1.0), (1e8, 1.0))
@@ -632,10 +646,10 @@ def test_removed_missing_geometry_no_longer_blocks_certified_subset():
     env = Environment.combine(
         {"grid": grid(), "site": nearest([10.0, 0.5], radius=0.1)}
     )
-    reduced = env.subset(bins=np.array([True, True, False]))
+    reduced = env.subset(mask=np.array([True, True, False]))
     np.testing.assert_allclose(
-        reduced.diffuse(np.array([1.0, 0.0]), 1.0),
-        grid().diffuse(np.array([1.0, 0.0]), 1.0),
+        reduced.diffuse(np.array([1.0, 0.0]), bandwidth=1.0),
+        grid().diffuse(np.array([1.0, 0.0]), bandwidth=1.0),
     )
 
 
@@ -700,7 +714,7 @@ def test_derived_saved_authority_cannot_disagree(derive, with_bridge):
 
     env = Environment.combine({"a": grid(), "b": grid(4)}, auto_bridge=with_bridge)
     env = (
-        env.subset(bins=np.array([True, True, True, True]))
+        env.subset(mask=np.array([True, True, True, True]))
         if derive == "subset"
         else env.apply_transform(translate(2, 3))
     )
@@ -741,8 +755,8 @@ def test_nwb_preserves_composition_after_reader_closes(tmp_path):
     assert restored.bin_sources == env.bin_sources
     np.testing.assert_array_equal(restored.edge_pairs, env.edge_pairs)
     np.testing.assert_allclose(
-        restored.compute_kernel(1, mode="average"),
-        env.compute_kernel(1, mode="average"),
+        restored.compute_kernel(bandwidth=1, mode="average"),
+        env.compute_kernel(bandwidth=1, mode="average"),
     )
     assert restored.get_bridge_attributes().iloc[0]["conductance"] == 0.5
 
@@ -783,7 +797,9 @@ def test_rotated_wall_geometry_is_retained_and_transformed_tracks_are_certified(
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(4.0, 0.0))
     graph.add_edge(0, 1, distance=4.0)
-    track = Environment.from_graph(graph, [(0, 1)], 0.0, 1.0, track_width=0.5)
+    track = Environment.from_graph(
+        graph, [(0, 1)], edge_spacing=0.0, bin_size=1.0, track_width=0.5
+    )
     moved = track.apply_transform(translate(10, 0)).with_metadata(frame=track.frame)
     assert Environment.combine({"track": track, "moved": moved}).n_bins == 8
 
@@ -920,3 +936,14 @@ def test_touching_grid_certification_tests_no_cell_pairs(monkeypatch):
     with pytest.raises(ValueError, match=r"[Oo]verlap"):
         Environment.combine({"a": square(0.0), "b": square(29.5)})
     assert len(calls) == 1
+
+
+def test_subclass_combine_accepts_plain_environment_components():
+    class Room(Environment):
+        pass
+
+    a = Environment.from_polygon(box(0, 0, 4, 4), bin_size=1.0)
+    b = Environment.from_polygon(box(6, 0, 10, 4), bin_size=1.0)
+    combined = Room.combine({"a": a, "b": b})
+    assert combined.n_bins == a.n_bins + b.n_bins
+    assert combined.layout_type == "Combined"

@@ -1,7 +1,9 @@
 """Behavioral tests for GraphLayout driven directly through the engine."""
 
 import numpy as np
+import pytest
 
+from neurospatial import Environment
 from neurospatial.layout.engines.graph import GraphLayout
 
 
@@ -37,14 +39,14 @@ def test_point_to_bin_on_node(simple_y_maze_graph):
     layout = _build_graph_layout(simple_y_maze_graph)
 
     # Node 0 sits at (0, 0); its bin is the first along the linearized track.
-    result = layout.point_to_bin_index(np.array([[0.0, 0.0]]))
+    result = layout.binning().locator.locate(np.array([[0.0, 0.0]]))
     assert result[0] == 0
 
 
 def test_point_off_graph_returns_negative_one(simple_y_maze_graph):
     """A linearized position outside the track range maps to -1.
 
-    Note: ``point_to_bin_index`` is KDTree-based and snaps every query to its
+    Note: the track locator is KDTree-based and snaps every query to its
     nearest active bin, so it never returns -1 for an off-graph point. The -1
     sentinel for off-track positions is produced by the linearized lookup
     ``linear_point_to_bin_ind``, which is asserted here. Both behaviors are
@@ -58,7 +60,7 @@ def test_point_off_graph_returns_negative_one(simple_y_maze_graph):
     assert layout.linear_point_to_bin_ind(off_track)[0] == -1
 
     # Pin the KDTree-snap behavior: a far 2D point still binds to some bin.
-    far = layout.point_to_bin_index(np.array([[1000.0, 1000.0]]))
+    far = layout.binning().locator.locate(np.array([[1000.0, 1000.0]]))
     assert far[0] >= 0
 
 
@@ -82,7 +84,7 @@ def test_point_to_bin_maps_nonfinite_rows_to_sentinel(simple_y_maze_graph):
             [np.inf, 0.0],  # partially non-finite -> -1
         ]
     )
-    result = layout.point_to_bin_index(query)
+    result = layout.binning().locator.locate(query)
 
     assert result[0] == 0
     assert result[1] == -1
@@ -135,3 +137,19 @@ def test_graph_linear_point_to_bin_active_indices_with_gap(graph_layout_with_gap
 
     track_length = float(layout.grid_edges[0][-1])
     assert layout.linear_point_to_bin_ind(np.array([track_length + 100.0]))[0] == -1
+
+
+@pytest.mark.parametrize("spacing", [np.float32(1.5), np.float64(1.5), np.int64(2)])
+def test_numpy_scalar_edge_spacing_matches_python_number(simple_y_maze_graph, spacing):
+    """A NumPy scalar gap builds the same track as the equal Python number."""
+    graph, edge_order = simple_y_maze_graph
+    expected = Environment.from_graph(
+        graph, edge_order, bin_size=1.0, edge_spacing=float(spacing)
+    )
+    env = Environment.from_graph(graph, edge_order, bin_size=1.0, edge_spacing=spacing)
+
+    np.testing.assert_array_equal(env.bin_centers, expected.bin_centers)
+    np.testing.assert_allclose(
+        env.to_linear(env.bin_centers), expected.to_linear(expected.bin_centers)
+    )
+    assert env.layout_parameters == expected.layout_parameters

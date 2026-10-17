@@ -10,6 +10,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.encoding.spatial import detect_place_fields
+from neurospatial.layout import create_layout
 
 
 def _grid(*, diagonal: bool, shape: tuple[int, ...] = (2, 2), arena=None):
@@ -43,12 +44,12 @@ def test_diagonal_field_connections_survive_grid_derivation(diagonal, derivation
     """A diagonal is usable exactly when an edge survives publication."""
     if derivation == "rebin":
         env = Environment.from_layout(
-            "RegularGrid",
-            {
-                "bin_size": 1.0,
-                "dimension_ranges": [(0, 4), (0, 4)],
-                "connect_diagonal_neighbors": diagonal,
-            },
+            create_layout(
+                "RegularGrid",
+                bin_size=1.0,
+                dimension_ranges=[(0, 4), (0, 4)],
+                connect_diagonal_neighbors=diagonal,
+            )
         ).rebin(2)
     elif derivation == "arena":
         env = _grid(
@@ -59,7 +60,7 @@ def test_diagonal_field_connections_survive_grid_derivation(diagonal, derivation
     else:
         env = _grid(diagonal=diagonal)
         if derivation == "subset":
-            env = env.subset(bins=np.array([True, False, False, True]))
+            env = env.subset(mask=np.array([True, False, False, True]))
 
     rates = np.zeros(env.n_bins)
     rates[0], rates[-1] = 10.0, 9.0
@@ -80,7 +81,7 @@ def test_serialized_field_detection_uses_restored_edges(tmp_path, storage, bound
         )
         rates, expected = np.array([10.0, 9.0]), [[0], [1]]
     else:
-        env = _grid(diagonal=True).subset(bins=np.array([True, False, False, True]))
+        env = _grid(diagonal=True).subset(mask=np.array([True, False, False, True]))
         rates, expected = np.array([10.0, 9.0]), [[0, 1]]
 
     if storage == "dict":
@@ -113,7 +114,7 @@ def test_declared_wall_splits_a_field_before_and_after_subsetting():
         arena=OpenArena(box(0, 0, 2, 1), walls=(LineString([(1, 0), (1, 1)]),)),
     )
     assert env.connectivity.number_of_edges() == 0
-    for candidate in (env, env.subset(bins=np.ones(2, dtype=bool))):
+    for candidate in (env, env.subset(mask=np.ones(2, dtype=bool))):
         _assert_fields(candidate, np.array([10.0, 9.0]), [[0], [1]])
 
 

@@ -2,7 +2,7 @@
 
 Verifies, in the default env (no pynapple installed):
 
-- ``as_spike_trains_with_ids`` normalizes arrays (ids ``None``) and both group
+- ``_as_spike_trains_with_ids`` normalizes arrays (ids ``None``) and both group
   shapes (surfacing ids): an iterate-yields-trains double (the future
   ``SpikeTrains``) AND a ``UserDict``-based double (a real pynapple ``TsGroup``,
   whose iteration yields KEYS, not trains).
@@ -17,7 +17,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rates
-from neurospatial.encoding._spikes import as_spike_trains, as_spike_trains_with_ids
+from neurospatial.encoding._spikes import _as_spike_trains_with_ids, as_spike_trains
 
 
 class _FakeTsGroup:
@@ -50,13 +50,13 @@ def session():
 
 
 # ---------------------------------------------------------------------------
-# as_spike_trains_with_ids
+# _as_spike_trains_with_ids
 # ---------------------------------------------------------------------------
 
 
 def test_as_spike_trains_with_ids_array_returns_none_ids() -> None:
     spikes = [np.array([0.1, 0.5]), np.array([0.2, 0.3, 0.8])]
-    trains, ids = as_spike_trains_with_ids(spikes)
+    trains, ids = _as_spike_trains_with_ids(spikes)
 
     assert ids is None
     canonical = as_spike_trains(spikes)
@@ -67,7 +67,7 @@ def test_as_spike_trains_with_ids_array_returns_none_ids() -> None:
 
 def test_as_spike_trains_with_ids_2d_array_returns_none_ids() -> None:
     spikes = np.array([[0.1, 0.5, np.nan], [0.2, 0.3, 0.8]])
-    trains, ids = as_spike_trains_with_ids(spikes)
+    trains, ids = _as_spike_trains_with_ids(spikes)
 
     assert ids is None
     np.testing.assert_array_equal(trains[0], np.array([0.1, 0.5]))
@@ -78,7 +78,7 @@ def test_as_spike_trains_with_ids_group_surfaces_ids() -> None:
     trains_in = [np.array([0.1, 0.5]), np.array([0.2])]
     group = _FakeTsGroup(trains_in, index=np.array([7, 9]))
 
-    trains, ids = as_spike_trains_with_ids(group)
+    trains, ids = _as_spike_trains_with_ids(group)
 
     np.testing.assert_array_equal(ids, np.array([7, 9]))
     np.testing.assert_array_equal(trains[0], trains_in[0])
@@ -95,7 +95,7 @@ def test_as_spike_trains_with_ids_mapping_group_extracts_by_index(
     trains_in = [np.array([0.1, 0.5]), np.array([0.2, 0.9, 1.3])]
     group = make_spike_group(trains_in, index=np.array([7, 9]))
 
-    trains, ids = as_spike_trains_with_ids(group)
+    trains, ids = _as_spike_trains_with_ids(group)
 
     np.testing.assert_array_equal(ids, np.array([7, 9]))
     assert len(trains) == len(trains_in)

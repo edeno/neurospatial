@@ -8,14 +8,21 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import TrackLinearization
-from neurospatial.layout._plotting import plot_track, plot_track_linear
+from neurospatial.geometry import (
+    Binning,
+    TrackLinearization,
+    component_extent,
+    project_1d_to_2d,
+    track_junctions,
+)
+from neurospatial.layout._assembly import assemble_binning
+from neurospatial.layout._labels import LayoutType
+from neurospatial.layout._plotting import _plot_track_linear, plot_track
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
     _find_bin_for_linear_position,
     _get_graph_bins,
-    _project_1d_to_2d,
 )
 from neurospatial.layout.mixins import _KDTreeMixin
 from neurospatial.layout.validation import validate_connectivity_graph
@@ -39,7 +46,7 @@ class GraphLayout(_KDTreeMixin):
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
 
-    _layout_type_tag: str
+    layout_type: str = LayoutType.GRAPH.value
     _build_params_used: dict[str, Any]
 
     # Layout Specific
@@ -47,7 +54,6 @@ class GraphLayout(_KDTreeMixin):
 
     def __init__(self) -> None:
         """Initialize a GraphLayout engine."""
-        self._layout_type_tag = "Graph"
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 0), dtype=np.float64)
         self.connectivity = None
@@ -58,17 +64,7 @@ class GraphLayout(_KDTreeMixin):
         self.linear_bin_centers_ = None
         self._linearization: TrackLinearization | None = None
 
-    @property
-    def layout_type(self) -> str:
-        """Return standardized category for this layout type."""
-        return "graph"
-
-    @property
-    def is_grid_compatible(self) -> bool:
-        """Return False - graph layouts cannot be rendered as 2D images."""
-        return False
-
-    @capture_build_params
+    @capture_build_params(data=("graph_definition", "edge_order"))
     def build(
         self,
         *,
@@ -120,7 +116,6 @@ class GraphLayout(_KDTreeMixin):
         track_graph = graph_definition.copy()
         for enumeration_index, (u, v) in enumerate(track_graph.edges()):
             track_graph.edges[u, v]["edge_id"] = enumeration_index
-        self._build_params_used["graph_definition"] = track_graph
 
         (linear_bin_centers, self.grid_edges, self.active_mask, edge_ids) = (
             _get_graph_bins(
@@ -132,7 +127,7 @@ class GraphLayout(_KDTreeMixin):
         )
 
         self.linear_bin_centers_ = linear_bin_centers[self.active_mask]
-        self.bin_centers = _project_1d_to_2d(
+        self.bin_centers = project_1d_to_2d(
             self.linear_bin_centers_,
             track_graph,
             edge_order,
@@ -147,24 +142,16 @@ class GraphLayout(_KDTreeMixin):
             edge_order=edge_order,
         )
 
-        # Compute dimension_ranges dynamically based on actual dimensionality
-        n_dims = self.bin_centers.shape[1]
-
         # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=n_dims)
-        self.dimension_ranges = tuple(
-            (
-                np.min(self.bin_centers[:, dim]),
-                np.max(self.bin_centers[:, dim]),
-            )
-            for dim in range(n_dims)
-        )
+        validate_connectivity_graph(self.connectivity, n_dims=self.bin_centers.shape[1])
 
         # --- Build KDTree ---
         self._build_kdtree(points_for_tree=self.bin_centers)
         self._linearization = TrackLinearization(
             track_graph, edge_order, edge_spacing, self.grid_edges, self.active_mask
         )
+        # The extent of the track's cells: the centerline the bins cover.
+        self.dimension_ranges = component_extent(linearization=self._linearization)
 
     @property
     def is_linearized_track(self) -> bool:
@@ -210,7 +197,7 @@ class GraphLayout(_KDTreeMixin):
         """
         return plot_track(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             linearization=self.linearization(),
             bin_centers=self.bin_centers,
             connectivity=self.connectivity,
@@ -244,9 +231,9 @@ class GraphLayout(_KDTreeMixin):
             The axes on which the 1D layout is plotted.
 
         """
-        return plot_track_linear(
+        return _plot_track_linear(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             linearization=self.linearization(),
             grid_edges=self.grid_edges,
             **kwargs,
@@ -291,20 +278,49 @@ class GraphLayout(_KDTreeMixin):
         return self.linearization().linear_to_nd(linear_coordinates)
 
     def linearization(self) -> TrackLinearization:
-        """Return owned track geometry, restoring caches for older saved layouts."""
-        linearization = getattr(self, "_linearization", None)
-        if linearization is None:
-            if self.grid_edges is None or self.active_mask is None:
-                raise LayoutNotBuiltError(type(self).__name__, "grid_edges")
-            linearization = TrackLinearization(
-                self._build_params_used["graph_definition"],
-                self._build_params_used["edge_order"],
-                self._build_params_used["edge_spacing"],
-                self.grid_edges,
-                self.active_mask,
-            )
-            self._linearization = linearization
-        return linearization
+        """Return the owned track graph and linear coordinate system.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self._linearization is None:
+            raise LayoutNotBuiltError(type(self).__name__, "linearization")
+        return self._linearization
+
+    def binning(self) -> Binning:
+        """Return owned track bins, lookup, linearization and lazy track faces.
+
+        Faces have unit cross-section. A connection between bins on different
+        track segments uses the along-track distance through their shared
+        junction node as its flux distance.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self.connectivity is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        track = self.linearization()
+        return assemble_binning(
+            self.connectivity,
+            kind=self.layout_type,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=1,
+            locator=self.locator(),
+            faces="track",
+            face_arrays=(
+                track_junctions(
+                    self.connectivity, track.graph, self.bin_centers.shape[1]
+                ),
+            ),
+            face_normals=False,
+            linearization=track,
+            dimension_ranges=self.dimension_ranges,
+        )
 
     def linear_point_to_bin_ind(
         self,
@@ -385,33 +401,6 @@ class GraphLayout(_KDTreeMixin):
 
         all_1d_bin_lengths = np.diff(self.grid_edges[0])
         return all_1d_bin_lengths[self.active_mask]
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Linear-track face measure: unit cross-section ``A = 1`` on every edge,
-        with junction (inter-segment) edge distances corrected to the true
-        along-track length.
-
-        An intra-segment edge already carries the correct along-track spacing (its
-        ``"distance"`` is the straight-line length along that segment). An
-        inter-segment edge currently carries the Euclidean CHORD between the two
-        junction bins, which understates the along-track distance around a bend and
-        oversmooths. Its ``"distance"`` is replaced by the along-track length
-        ``||bin_u - J|| + ||bin_v - J||`` through the shared junction node ``J`` (the
-        geodesic over the straight-segment substrate). A straight track has no
-        inter-segment edges, so this is a no-op there.
-        """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.geometry._face_builders import track_geometry, track_junctions
-
-        junctions = track_junctions(
-            self.connectivity,
-            self._build_params_used["graph_definition"],
-            self.bin_centers.shape[1],
-        )
-        return track_geometry(
-            self.connectivity, self.bin_centers, self.bin_sizes(), junctions
-        )
 
 
 def _shared_track_node(

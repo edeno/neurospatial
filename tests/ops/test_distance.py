@@ -382,3 +382,16 @@ class TestGeodesicDistanceBetweenPoints:
 
         assert_allclose(dist_forward, dist_backward)
         assert_allclose(dist_forward, 5.0)
+
+    def test_weight_selects_the_edge_length(self):
+        """The shortest route depends on which edge attribute measures length."""
+        graph = nx.Graph()
+        graph.add_edge(0, 1, distance=1.0, cost=10.0)
+        graph.add_edge(1, 2, distance=1.0, cost=10.0)
+        graph.add_edge(0, 2, distance=5.0, cost=1.0)
+
+        assert_allclose(geodesic_distance_between_points(graph, 0, 2), 2.0)
+        assert_allclose(
+            geodesic_distance_between_points(graph, 0, 2, weight="cost"), 1.0
+        )
+        assert_allclose(geodesic_distance_between_points(graph, 0, 2, weight=None), 1.0)

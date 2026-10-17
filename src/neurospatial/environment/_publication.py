@@ -1,28 +1,64 @@
-"""Owned environment records and protected views of published geometry."""
+"""Owned environment records and the one publisher that builds them."""
 
 from __future__ import annotations
 
-import copy as copy_module
-from collections.abc import Iterator, Mapping, Sequence
+import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    NoReturn,
+    TypeVar,
+    cast,
+)
 
 import networkx as nx
 import numpy as np
-from numpy.typing import NDArray
+import shapely
+from scipy import sparse
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial._logging import log_environment_created
+from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.arena import EgocentricSurround
+from neurospatial.environment._cache import AnalysisCache
+from neurospatial.environment._regions import _owned_regions
+from neurospatial.geometry import (
+    Binning,
+    CartesianSystem,
+    DiffusionGeometry,
+    EgocentricPolarSystem,
+    GridIndex,
+    apply_walls,
+    binning_ranges,
+    graph_from_binning,
+    infer_arena,
+    own_arena,
+    own_binning,
+    select_bins,
+    validate_arena,
+    validate_components,
+)
+from neurospatial.geometry import grid_index as compute_grid_index
+from neurospatial.layout import _built_layout_data
+from neurospatial.layout.base import build_choices
+from neurospatial.layout.validation import (
+    GraphValidationError,
+    validate_connectivity_graph,
+)
+from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.arena import Arena
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-    from neurospatial.geometry._polygon import ClipMapping
+    from neurospatial.layout.base import LayoutEngine
 
-_T = TypeVar("_T")
+_CoordinatesT = TypeVar(
+    "_CoordinatesT", bound="CartesianSystem | EgocentricPolarSystem"
+)
 
 
 class _Unset(Enum):
@@ -49,141 +85,128 @@ class _Metadata:
                 raise TypeError(f"Environment.{key} must be a {expected}.")
 
 
-class _MetadataView(Generic[_T]):
-    """A non-shadowable declaration backed by one metadata record."""
+# Unit labels that tools reading ``units`` (scale bars, simulators) recognize.
+_UNITS_REGISTRY: frozenset[str] = frozenset({"cm", "m", "mm", "px", "pixels"})
 
-    def __set_name__(self, owner: type, name: str) -> None:
-        self.name = name
 
-    @overload
-    def __get__(self, obj: None, owner: type | None = None) -> _MetadataView[_T]: ...
+def _validate_units(value: object) -> None:
+    """Warn if ``value`` is not in :data:`_UNITS_REGISTRY`.
 
-    @overload
-    def __get__(self, obj: object, owner: type | None = None) -> _T: ...
-
-    def __get__(
-        self, obj: object | None, owner: type | None = None
-    ) -> _MetadataView[_T] | _T:
-        if obj is None:
-            return self
-        return cast("_T", getattr(cast("Any", obj)._metadata, self.name))
-
-    def __set__(self, obj: object, value: object) -> None:
-        raise AttributeError(
-            f"Environment.{self.name} is read-only; use env.with_metadata({self.name}=...)."
+    Called when constructing or replacing the units declaration. The
+    registry is intentionally small and advisory; the goal is to
+    catch typos (``"centimeters"``, ``"px "``) without preventing
+    legitimate free-form values.
+    """
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise TypeError(
+            f"Environment.units must be a str or None, got {type(value).__name__}."
+        )
+    if value not in _UNITS_REGISTRY:
+        warnings.warn(
+            f"Environment.units={value!r} is not in the standard "
+            f"registry {sorted(_UNITS_REGISTRY)}. Free-form strings "
+            "are allowed but may not be interpreted by tools that consume "
+            "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+            category=UserWarning,
+            stacklevel=_external_stacklevel(),
         )
 
-    def __delete__(self, obj: object) -> None:
-        self.__set__(obj, None)
 
+def _replace_metadata(
+    metadata: _Metadata,
+    *,
+    name: str | _Unset,
+    units: str | None | _Unset,
+    frame: str | None | _Unset,
+) -> _Metadata:
+    """Return ``metadata`` with the labels a caller supplied replaced.
 
-def _array_header(array: NDArray[Any]) -> NDArray[Any]:
-    """Expose immutable bytes through a header independent of private arrays."""
-    buffer: Any = array.base
-    while isinstance(buffer, np.ndarray):
-        buffer = buffer.base
-    assert isinstance(buffer, bytes)
-    return np.frombuffer(buffer, dtype=array.dtype).reshape(array.shape)
-
-
-def _immutable_array(array: NDArray[Any]) -> NDArray[Any]:
-    """Own immutable bytes once so exported headers cannot change cached data."""
-    return np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(array.shape)
-
-
-def _diffusion_geometry_header(geometry: DiffusionGeometry) -> DiffusionGeometry:
-    """Export independent sparse/array headers over immutable cached buffers."""
-    from scipy import sparse
-
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-
-    weights = sparse.csr_matrix(geometry.W, copy=False)
-    weights.data = _array_header(geometry.W.data)
-    weights.indices = _array_header(geometry.W.indices)
-    weights.indptr = _array_header(geometry.W.indptr)
-    return DiffusionGeometry(
-        weights,
-        _array_header(geometry.volumes),
-        geometry.n_components,
-        _array_header(geometry.labels),
+    An omitted label (``UNSET``) is kept; ``None`` clears ``units`` or
+    ``frame``. Only newly declared units are checked against the registry.
+    """
+    replaced = _Metadata(
+        metadata.name if isinstance(name, _Unset) else name,
+        metadata.units if isinstance(units, _Unset) else units,
+        metadata.frame if isinstance(frame, _Unset) else frame,
     )
+    if not isinstance(units, _Unset):
+        _validate_units(replaced.units)
+    return replaced
 
 
 def _freeze_diffusion_geometry(geometry: DiffusionGeometry) -> DiffusionGeometry:
-    """Own diffusion buffers once before publishing their read-only headers."""
-    from scipy import sparse
+    """Mark freshly built diffusion arrays read-only before the cache keeps them."""
+    for array in (
+        geometry.W.data,
+        geometry.W.indices,
+        geometry.W.indptr,
+        geometry.volumes,
+        geometry.labels,
+    ):
+        array.setflags(write=False)
+    return geometry
 
-    from neurospatial.geometry._diffusion import DiffusionGeometry
 
+def _diffusion_geometry_view(geometry: DiffusionGeometry) -> DiffusionGeometry:
+    """Return the cached diffusion geometry over new read-only array views.
+
+    Rebinding an attribute of the returned matrix or tuple, such as
+    ``W.data``, cannot reach the cached value.
+    """
     weights = sparse.csr_matrix(geometry.W, copy=False)
-    weights.data = _immutable_array(geometry.W.data)
-    weights.indices = _immutable_array(geometry.W.indices)
-    weights.indptr = _immutable_array(geometry.W.indptr)
+    weights.data = geometry.W.data.view()
+    weights.indices = geometry.W.indices.view()
+    weights.indptr = geometry.W.indptr.view()
     return DiffusionGeometry(
         weights,
-        _immutable_array(geometry.volumes),
+        geometry.volumes.view(),
         geometry.n_components,
-        _immutable_array(geometry.labels),
+        geometry.labels.view(),
     )
 
 
-class _ReadOnlyGraphAttributes(Mapping[str, Any]):
-    """Published graph attributes, with pickle and editable-copy support."""
+def _refuse_graph_edit(*args: Any, **kwargs: Any) -> NoReturn:
+    raise TypeError(
+        _format_error(
+            "Environment.connectivity attributes are read-only.",
+            why="Why: editing geometry would leave cached kernels and operators stale.",
+            fix="build a new environment; use env.to_networkx() for an editable graph for separate analyses",
+        )
+    )
 
-    def __init__(self, attributes: Mapping[str, Any], **kwargs: Any) -> None:
-        self._data = copy_module.deepcopy({**attributes, **kwargs})
 
-    def __getitem__(self, key: str) -> Any:
-        return copy_module.deepcopy(self._data[key])
+class _ReadOnlyGraphAttributes(dict[str, Any]):
+    """Published node or edge attributes; every edit is refused.
 
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._data)
+    The values are scalars and tuples of scalars, derived from the binning,
+    so reads return them without copying.
+    """
 
-    def __len__(self) -> int:
-        return len(self._data)
+    __slots__ = ()
 
     def copy(self) -> dict[str, Any]:
-        return copy_module.deepcopy(self._data)
+        """Return an editable dict with the same keys and values."""
+        return dict(self)
 
-    def _refuse_edit(self, *args: Any, **kwargs: Any) -> NoReturn:
-        raise TypeError(
-            _format_error(
-                "Environment.connectivity attributes are read-only.",
-                why="Why: editing geometry would leave cached kernels and operators stale.",
-                fix="build a new environment; use env.connectivity.copy() for an editable graph for separate analyses",
-            )
-        )
+    __setitem__ = _refuse_graph_edit
+    __delitem__ = _refuse_graph_edit
+    clear = _refuse_graph_edit
+    pop = _refuse_graph_edit
+    popitem = _refuse_graph_edit
+    setdefault = _refuse_graph_edit
+    update = _refuse_graph_edit
+    __ior__ = _refuse_graph_edit
 
-    __setitem__ = _refuse_edit
-    __delitem__ = _refuse_edit
-    clear = _refuse_edit
-    pop = _refuse_edit
-    popitem = _refuse_edit
-    setdefault = _refuse_edit
-    update = _refuse_edit
-    __ior__ = _refuse_edit
+    def __copy__(self) -> _ReadOnlyGraphAttributes:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _ReadOnlyGraphAttributes:
+        return self
 
     def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
-        return type(self), (self.copy(),)
-
-
-class _ReadOnlyGraphMetadata(dict[str, Any]):
-    """Detached JSON-compatible metadata that refuses ordinary graph edits."""
-
-    __setitem__ = _ReadOnlyGraphAttributes._refuse_edit
-    __delitem__ = _ReadOnlyGraphAttributes._refuse_edit
-    clear = _ReadOnlyGraphAttributes._refuse_edit
-    pop = _ReadOnlyGraphAttributes._refuse_edit
-    popitem = _ReadOnlyGraphAttributes._refuse_edit
-    setdefault = _ReadOnlyGraphAttributes._refuse_edit
-    update = _ReadOnlyGraphAttributes._refuse_edit
-    __ior__ = _ReadOnlyGraphAttributes._refuse_edit
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> dict[str, Any]:
-        return copy_module.deepcopy(dict(self), memo)
-
-    def __reduce__(self) -> tuple[Any, tuple[dict[str, Any]]]:
-        return dict, (dict(self),)
+        return type(self), (dict(self),)
 
 
 class _PublishedGraph(nx.Graph):
@@ -195,13 +218,9 @@ class _PublishedGraph(nx.Graph):
 
     @property
     def graph(self) -> dict[str, Any]:
-        # node_link_data retains this object directly, unlike node/edge
-        # attributes. Return a detached dict so standard JSON encoding works
-        # without exposing the authoritative metadata to base-dict mutation.
-        attributes = self.__dict__["graph"]
-        if not self.__dict__.get("_published", False):
-            return cast("dict[str, Any]", attributes)
-        return _ReadOnlyGraphMetadata(attributes.copy())
+        # A published graph stores read-only metadata, frozen once like node
+        # and edge attributes; it is a dict, so JSON encoding works.
+        return cast("dict[str, Any]", self.__dict__["graph"])
 
     @graph.setter
     def graph(self, attributes: dict[str, Any]) -> None:
@@ -210,6 +229,13 @@ class _PublishedGraph(nx.Graph):
                 "Environment.connectivity is read-only; copy the graph to edit it."
             )
         self.__dict__["graph"] = attributes
+
+    def copy(self, as_view: bool = False) -> nx.Graph:
+        """Return an editable copy, with editable graph metadata as well."""
+        result = super().copy(as_view=as_view)
+        if not as_view and self.__dict__.get("_published", False):
+            result.graph = dict(self.graph)
+        return result
 
     def __setattr__(self, name: str, value: Any) -> None:
         if not name.startswith("_") and getattr(self, "_published", False):
@@ -226,108 +252,444 @@ class _PublishedGraph(nx.Graph):
         super().__delattr__(name)
 
 
-def _freeze_graph_attributes(graph: nx.Graph) -> None:
-    """Protect node, edge and graph attributes when publishing connectivity."""
-    graph._published = False
-    # NetworkX's freeze protects topology only. Replace its attribute mappings
-    # in place so the layout and environment keep sharing the same graph.
-    for node, attrs in graph.nodes(data=True):
-        graph._node[node] = _ReadOnlyGraphAttributes(
-            attrs,
-            pos=tuple(float(value) for value in attrs["pos"]),
-            original_grid_nd_index=tuple(
-                int(value) for value in attrs["original_grid_nd_index"]
-            ),
-        )
-    for u, v, attrs in graph.edges(data=True):
-        frozen = _ReadOnlyGraphAttributes(
-            attrs, vector=tuple(float(value) for value in attrs["vector"])
-        )
-        graph._adj[u][v] = graph._adj[v][u] = frozen
-    graph.graph = _ReadOnlyGraphAttributes(graph.graph)
+def _published_graph(binning: Binning) -> _PublishedGraph:
+    """Build the frozen navigation graph an environment publishes for ``binning``.
+
+    Nodes, attributes and edge orientation follow
+    :func:`neurospatial.geometry.graph_from_binning`; each undirected
+    edge keeps one attribute record shared by both directions.
+    """
+    source = graph_from_binning(binning)
+    graph = _PublishedGraph()
+    graph.__dict__["graph"] = _ReadOnlyGraphAttributes(source.graph)
+    graph._node = {
+        node: _ReadOnlyGraphAttributes(attrs) for node, attrs in source._node.items()
+    }
+    frozen_edges: dict[int, _ReadOnlyGraphAttributes] = {}
+    adjacency: dict[Any, dict[Any, _ReadOnlyGraphAttributes]] = {}
+    for u, neighbors in source._adj.items():
+        row = adjacency[u] = {}
+        for v, attrs in neighbors.items():
+            frozen = frozen_edges.get(id(attrs))
+            if frozen is None:
+                frozen = frozen_edges[id(attrs)] = _ReadOnlyGraphAttributes(attrs)
+            row[v] = frozen
+    graph._adj = adjacency
     nx.freeze(graph)
-    graph.__class__ = _PublishedGraph
     graph._published = True
+    return graph
 
 
-@dataclass(frozen=True)
-class _PublishedGeometry:
+def editable_graph(graph: nx.Graph) -> nx.Graph:
+    """Return an independent ordinary graph whose attributes can be edited."""
+    result = nx.Graph(graph)
+    result.graph = dict(graph.graph)
+    return result
+
+
+@dataclass(frozen=True, eq=False)
+class _PublishedGeometry(Generic[_CoordinatesT]):
     """The geometry an environment publishes, replaced whole and never edited.
 
-    ``_from_binning`` publishes owned arrays and a frozen graph atomically.
-    Each new value owns fresh versioned analysis caches.
+    :func:`_publish` builds it once. The binning owns the bins, lookup, faces,
+    ``dimension_ranges``, clip mapping and track linearization; the graph and
+    grid index are derived from it at publication.
+
+    Attributes
+    ----------
+    binning : Binning
+        Owned bins, lookup, faces and optional components.
+    graph : _PublishedGraph
+        Frozen navigation graph derived from ``binning``.
+    grid : GridIndex
+        Logical grid edges, shape and active mask derived from ``binning``.
+    arena : Arena
+        Owned continuous domain.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        Meaning of the bin coordinates.
     """
 
-    binning: Binning | None
-    bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph
-    dimension_ranges: Sequence[tuple[float, float]] | None
-    grid_edges: tuple[NDArray[np.float64], ...] | None
-    grid_shape: tuple[int, ...] | None
-    active_mask: NDArray[np.bool_] | None
-    arena: Arena | None = None
-    clip_mapping: ClipMapping | None = None
-    coordinates: CartesianSystem | EgocentricPolarSystem | None = None
+    binning: Binning
+    graph: _PublishedGraph
+    grid: GridIndex
+    arena: Arena
+    coordinates: _CoordinatesT
 
 
-class _GeometryView(Generic[_T]):
-    """Read-only environment attribute backed by its published geometry."""
+@dataclass(frozen=True, init=False)
+class _Provenance:
+    """How the bins were built: scalar build choices and the derivations since.
 
-    def __set_name__(self, owner: type, name: str) -> None:
-        self._name = name
+    Provenance is descriptive. Geometry and behavior come from the owned
+    ``Binning``, graph and arena, never from these records. The layout label
+    is the binning's ``kind``. Only scalar build choices are kept (see
+    :func:`neurospatial.layout.base.build_choices`), so a saved environment
+    does not grow with the data it was built from.
 
-    @overload
-    def __get__(self, obj: None, objtype: type | None = None) -> _GeometryView[_T]: ...
+    Attributes
+    ----------
+    choices : tuple of (str, object)
+        The build choices, in recorded order.
+    derivations : tuple of str
+        Names of the derivations (``"subset"``, ``"clip"``, ``"rebin"``,
+        ``"apply_transform"``, ``"combine"``) applied since the bins were
+        built, oldest first.
 
-    @overload
-    def __get__(self, obj: Environment[Any], objtype: type | None = None) -> _T: ...
+    Raises
+    ------
+    TypeError
+        If a build choice is not a scalar or a flat sequence of scalars, or a
+        derivation name is not a string.
+    """
 
-    def __get__(
-        self, obj: Environment[Any] | None, objtype: type | None = None
-    ) -> _GeometryView[_T] | _T:
-        if obj is None:
-            return self
-        value: _T = getattr(obj._geometry, self._name)
-        if isinstance(value, np.ndarray):
-            return cast("_T", _array_header(value))
-        if isinstance(value, tuple) and self._name == "grid_edges":
-            return cast("_T", tuple(_array_header(edge) for edge in value))
-        return value
+    choices: tuple[tuple[str, Any], ...]
+    derivations: tuple[str, ...]
 
-    def __set__(self, obj: object, value: object) -> NoReturn:
-        raise AttributeError(
+    def __init__(
+        self, build_params: Mapping[str, Any], derivations: tuple[str, ...] = ()
+    ) -> None:
+        choices = build_choices(build_params, owner="layout_parameters")
+        object.__setattr__(self, "choices", tuple(choices.items()))
+        derivations = tuple(derivations)
+        if not all(isinstance(step, str) for step in derivations):
+            raise TypeError("Derivation names must be strings.")
+        object.__setattr__(self, "derivations", derivations)
+
+    @property
+    def build_params(self) -> dict[str, Any]:
+        """Return the build choices as a new dict."""
+        return dict(self.choices)
+
+
+def _declared_metadata(
+    *,
+    name: str = "",
+    units: str | None = None,
+    frame: str | None = None,
+) -> _Metadata:
+    """Return a metadata record for labels a caller declares at construction.
+
+    Unrecognized units warn here, once per declaration; derived environments
+    reuse their parent's record and do not warn again.
+    """
+    _validate_units(units)
+    return _Metadata(name, units, frame)
+
+
+_EnvironmentT = TypeVar("_EnvironmentT", bound="Environment[Any]")
+
+
+def _validate_coordinates(
+    coordinates: CartesianSystem | EgocentricPolarSystem, arena: Arena
+) -> None:
+    """Refuse a polar environment whose arena disagrees with its angular axis."""
+    if not isinstance(coordinates, EgocentricPolarSystem):
+        return
+    if not isinstance(arena, EgocentricSurround):
+        raise ValueError(
             _format_error(
-                f"Environment.{self._name} is read-only.",
-                why=(
-                    "Why: cached kernels, operators and lookups belong to the "
-                    "geometry the environment was built with, so replacing part "
-                    "of it would leave them stale."
-                ),
-                fix=(
-                    "build a new environment instead, e.g. with a factory, "
-                    "subset, rebin or apply_transform"
-                ),
+                "A polar environment needs an EgocentricSurround arena, which declares whether the angle wraps around.",
+                why="Why: the angular seam decides which bins are neighbors and how distances are measured, and nothing else records it.",
+                fix="build the environment with Environment.from_polar_egocentric, or re-save an older record with this version",
+            )
+        )
+    if arena.circular != coordinates.circular:
+        raise ValueError(
+            _format_error(
+                f"A polar environment's arena has circular={arena.circular}, but "
+                f"its coordinates have circular={coordinates.circular}.",
+                why="Why: both describe whether the angle wraps around, which "
+                "decides the seam neighbors and angular distances.",
+                fix="pass coordinates matching the arena's circular flag, e.g. "
+                "EgocentricPolarSystem(arena.circular)",
             )
         )
 
-    def __delete__(self, obj: object) -> NoReturn:
-        self.__set__(obj, None)
+
+def _restored_state(state: object) -> dict[str, Any]:
+    """Validate an unpickled Environment state and re-own its records.
+
+    The geometry records mark their arrays read-only again as they are
+    unpickled; the arena and regions are snapshotted again here.
+
+    Raises
+    ------
+    TypeError
+        If ``state`` is not the state of an Environment pickled by this
+        version of neurospatial.
+    """
+    expected = {
+        "_metadata": _Metadata,
+        "_regions": Regions,
+        "_provenance": _Provenance,
+        "_geometry": _PublishedGeometry,
+        "_cache": AnalysisCache,
+    }
+    if (
+        not isinstance(state, dict)
+        or state.keys() != expected.keys()
+        or not all(isinstance(state[key], kind) for key, kind in expected.items())
+    ):
+        found = sorted(state) if isinstance(state, dict) else type(state).__name__
+        raise TypeError(
+            _format_error(
+                "This pickle does not hold an Environment saved by this "
+                f"version of neurospatial (its state is {found}).",
+                why=(
+                    "Why: pickle stores the class's private layout, which "
+                    "changes between versions; it only moves environments "
+                    "between processes running the same version."
+                ),
+                fix=(
+                    "save with env.to_file(path) and read with "
+                    "Environment.from_file(path), which work across versions"
+                ),
+            )
+        )
+    geometry: _PublishedGeometry = state["_geometry"]
+    return {
+        **state,
+        "_geometry": replace(geometry, arena=own_arena(geometry.arena)),
+        "_regions": _owned_regions(state["_regions"], geometry.binning.bins.n_dims),
+    }
 
 
-def _freeze_geometry_arrays(geometry: _PublishedGeometry) -> _PublishedGeometry:
-    """Own immutable buffers; public descriptors expose separate array headers."""
+def _publish(
+    cls: type[_EnvironmentT],
+    binning: Binning,
+    *,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
+    provenance: _Provenance,
+    metadata: _Metadata,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+) -> _EnvironmentT:
+    """Validate owned geometry and publish it as one new environment.
 
-    return replace(
-        geometry,
-        bin_centers=_immutable_array(geometry.bin_centers),
-        active_mask=(
-            _immutable_array(geometry.active_mask)
-            if geometry.active_mask is not None
-            else None
-        ),
-        grid_edges=(
-            tuple(_immutable_array(edge) for edge in geometry.grid_edges)
-            if geometry.grid_edges is not None
-            else None
-        ),
+    Every factory, derivation and reader creates its environment here, once.
+    The binning is owned and validated, including that every bin center
+    locates its own bin; the arena's physical walls are applied; and the
+    navigation graph, grid index and ``dimension_ranges`` are derived from
+    the resulting binning.
+
+    Parameters
+    ----------
+    cls : type
+        Environment class to allocate.
+    binning : Binning
+        Bins, lookup and geometry components. Its ``dimension_ranges``, when
+        set, are the environment's; otherwise they come from the cells.
+    coordinates : CartesianSystem or EgocentricPolarSystem
+        Meaning of the bin coordinates.
+    provenance : _Provenance
+        Build choices and derivation history.
+    metadata : _Metadata
+        Name, units and frame.
+    regions : Regions or None, optional
+        Named regions to snapshot.
+    arena : Arena or None, optional
+        Continuous domain. Omission infers one from the binning.
+
+    Returns
+    -------
+    Environment
+        A new instance of ``cls``.
+    """
+    if not isinstance(coordinates, (CartesianSystem, EgocentricPolarSystem)):
+        raise TypeError(
+            "coordinates must be a CartesianSystem or EgocentricPolarSystem."
+        )
+    polar = isinstance(coordinates, EgocentricPolarSystem)
+    # Whether the angular axis wraps; False for Cartesian coordinates.
+    circular = isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
+    binning = own_binning(binning)
+    # The published binning carries the environment's ranges, so the two
+    # never disagree after a derivation or a read-back.
+    binning = replace(binning, dimension_ranges=binning_ranges(binning))
+    validate_components(
+        binning,
+        binning.linearization is not None,
+        "polar" if polar else "cartesian",
+    )
+    if arena is None:
+        arena = infer_arena(binning, polar=polar, circular=circular)
+    arena = own_arena(arena)
+    _validate_coordinates(coordinates, arena)
+    validate_arena(arena, binning, polar=polar)
+    binning = apply_walls(binning, arena)
+    graph = _published_graph(binning)
+    try:
+        validate_connectivity_graph(
+            graph,
+            n_dims=binning.bins.n_dims,
+            check_node_attrs=True,
+            check_edge_attrs=True,
+        )
+    except GraphValidationError as error:
+        raise ValueError(
+            f"Invalid connectivity graph from layout engine '{binning.kind}': {error}"
+        ) from error
+    env = cls.__new__(cls)
+    env._metadata = metadata
+    env._provenance = provenance
+    env._geometry = _PublishedGeometry(
+        binning, graph, compute_grid_index(binning), arena, coordinates
+    )
+    env._regions = _owned_regions(
+        Regions() if regions is None else regions, binning.bins.n_dims
+    )
+    env._cache = AnalysisCache()
+    log_environment_created(
+        env_type=binning.kind,
+        n_bins=env.n_bins,
+        n_dims=env.n_dims,
+        env_name=metadata.name,
+    )
+    return env
+
+
+def publish_layout(
+    cls: type[_EnvironmentT],
+    layout: LayoutEngine,
+    *,
+    metadata: _Metadata,
+    regions: Regions | None = None,
+    arena: Arena | None = None,
+    coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
+    within_arena: bool = False,
+) -> _EnvironmentT:
+    """Consume a built layout once and publish only its owned data.
+
+    Parameters
+    ----------
+    cls : type
+        Environment class to allocate.
+    layout : LayoutEngine
+        Built layout engine; it is read, never modified.
+    metadata : _Metadata
+        Name, units and frame.
+    regions : Regions or None, optional
+        Named regions to snapshot.
+    arena : Arena or None, optional
+        Continuous domain. Omission infers one from the binning.
+    coordinates : CartesianSystem or EgocentricPolarSystem or None, optional
+        Coordinate meaning; ``None`` means Cartesian.
+    within_arena : bool, default=False
+        Keep only the bins whose centers lie in a known Cartesian ``arena``
+        (strictly inside a polygonal one). The bins are selected on the
+        layout's binning, as ``subset`` selects them, before the single
+        publication, so the recorded layout and build choices do not depend
+        on whether the arena dropped a bin.
+
+    Returns
+    -------
+    Environment
+        A new instance of ``cls``.
+    """
+    binning, resolved = _built_layout_data(layout)
+    coordinates = CartesianSystem() if coordinates is None else coordinates
+    polar = isinstance(coordinates, EgocentricPolarSystem)
+    if within_arena and arena is not None and arena.domain_known and not polar:
+        centers = binning.bins.centers
+        domain = arena.polygonal_domain()
+        keep = (
+            shapely.contains_xy(domain, centers[:, 0], centers[:, 1])
+            if domain is not None
+            else arena.contains(centers)
+        )
+        if not np.all(keep):
+            binning = select_bins(binning, keep)
+    return _publish(
+        cls,
+        binning,
+        coordinates=coordinates,
+        provenance=_Provenance(resolved),
+        metadata=metadata,
+        regions=regions,
+        arena=arena,
+    )
+
+
+@dataclass(frozen=True)
+class _Derivation:
+    """Geometry derived from a parent environment, ready to publish.
+
+    Parameters
+    ----------
+    binning : Binning
+        The derived bins, carrying their ``dimension_ranges`` and any clip
+        mapping. Its ``kind`` is the layout label of the result.
+    step : str
+        Name of the derivation, appended to the derivation history.
+    build_params : mapping or None, optional
+        Build choices of new bins; ``None`` keeps the parent's choices.
+    continues_history : bool, default=True
+        Append ``step`` to the parent's derivation history. ``False`` starts
+        a new history at ``step``, for a result with no single parent.
+    regions : Regions or None, optional
+        Replacement regions; ``None`` keeps the parent's regions.
+    arena : Arena or None, optional
+        Replacement arena; ``None`` keeps the parent's arena.
+    """
+
+    binning: Binning
+    step: str
+    build_params: Mapping[str, Any] | None = None
+    continues_history: bool = True
+    regions: Regions | None = None
+    arena: Arena | None = None
+
+
+def publish_derived(
+    parent: _EnvironmentT,
+    derivation: _Derivation,
+    *,
+    name: str | None = None,
+    frame: str | None | _Unset = UNSET,
+) -> _EnvironmentT:
+    """Publish an environment derived from ``parent``, keeping its labels.
+
+    Derivations (subset, clip, rebin, apply_transform and combine) keep the
+    parent's class, name, units, frame, regions, arena, coordinate meaning
+    and build choices unless the derivation supplies a replacement, and add
+    their name to the derivation history. Units are never changed by a
+    derivation, and an inherited label is not checked again.
+
+    Parameters
+    ----------
+    parent : Environment
+        The environment the new geometry was derived from.
+    derivation : _Derivation
+        The derived geometry and any replacement regions or arena.
+    name : str or None, optional
+        Replacement name; ``None`` keeps the parent's name.
+    frame : str or None, optional
+        Replacement frame label; omission keeps the parent's frame.
+
+    Returns
+    -------
+    Environment
+        A new instance of ``type(parent)``.
+    """
+    metadata = _Metadata(
+        parent.name if name is None else name,
+        parent.units,
+        parent.frame if isinstance(frame, _Unset) else frame,
+    )
+    inherited = parent._provenance
+    history = inherited.derivations if derivation.continues_history else ()
+    provenance = _Provenance(
+        inherited.build_params
+        if derivation.build_params is None
+        else derivation.build_params,
+        (*history, derivation.step),
+    )
+    return _publish(
+        type(parent),
+        derivation.binning,
+        coordinates=parent._geometry.coordinates,
+        provenance=provenance,
+        metadata=metadata,
+        regions=parent.regions if derivation.regions is None else derivation.regions,
+        arena=parent._geometry.arena if derivation.arena is None else derivation.arena,
     )

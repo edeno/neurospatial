@@ -32,6 +32,7 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+from neurospatial.layout import create_layout
 from neurospatial.layout.engines.graph import GraphLayout
 
 BASELINE_PATH = Path(__file__).parent / "data" / "diffusion_perf_baseline.pkl"
@@ -77,7 +78,6 @@ def build_track_1d(bin_size: float = 2.0) -> tuple[Environment, None]:
         name="track",
         layout=layout,
         layout_type_used="Graph",
-        layout_params_used=params,
     )
     return env, None  # source chosen by index in the field builder
 
@@ -156,8 +156,9 @@ def build_mesh(point_spacing: float = 5.0) -> tuple[Environment, list[float]]:
     """Well-shaped flat triangular mesh over a square."""
     boundary = Polygon([(-30, -30), (30, -30), (30, 30), (-30, 30)])
     env = Environment.from_layout(
-        kind="TriangularMesh",
-        layout_params={"boundary_polygon": boundary, "point_spacing": point_spacing},
+        create_layout(
+            "TriangularMesh", boundary_polygon=boundary, point_spacing=point_spacing
+        )
     )
     return env, [0.0, 0.0]
 

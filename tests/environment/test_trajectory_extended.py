@@ -7,7 +7,7 @@ Covers:
 - Temporal binning with overlapping/non-overlapping windows
 - Integration: Complete trajectory analysis workflow
 
-Target: 36% → 85% coverage for src/neurospatial/environment/trajectory.py
+Target: 36% → 85% coverage for src/neurospatial/environment/_trajectory.py
 
 Priority 2.1 from TEST_PLAN2.md
 """
@@ -28,18 +28,15 @@ class TestOccupancy:
         center_bin = medium_2d_env.n_bins // 2
         test_pos = medium_2d_env.bin_centers[center_bin : center_bin + 1]
 
-        times = np.array([0.0, 1.0, 2.0, 3.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3])  # 10 Hz tracking, in seconds
         positions = np.tile(test_pos, (4, 1))
 
         occ = medium_2d_env.occupancy(times, positions)
 
-        # Should allocate time (up to 3 seconds total)
+        # All three intervals start in the one visited bin.
         assert occ.shape == (medium_2d_env.n_bins,)
-        total_occ = np.sum(occ)
-        # At least some time should be allocated (unless bin is isolated/filtered)
-        # Relax this to just check basic properties
-        assert total_occ >= 0
-        assert total_occ <= 3.0  # Should not exceed total time
+        assert occ[center_bin] == pytest.approx(0.3)
+        assert np.sum(occ) == pytest.approx(0.3)
 
     def test_occupancy_multiple_bins(self, medium_2d_env):
         """Test occupancy across multiple bins."""
@@ -48,37 +45,36 @@ class TestOccupancy:
         n_bins = medium_2d_env.n_bins
         bin_ids = [0, n_bins // 3, 2 * n_bins // 3]
 
-        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3, 0.4])  # 10 Hz, in seconds
         positions = np.array(
             [
-                medium_2d_env.bin_centers[bin_ids[0]],  # t=0-1
-                medium_2d_env.bin_centers[bin_ids[0]],  # t=1-2
-                medium_2d_env.bin_centers[bin_ids[1]],  # t=2-3
-                medium_2d_env.bin_centers[bin_ids[2]],  # t=3-4
+                medium_2d_env.bin_centers[bin_ids[0]],  # t=0-0.1
+                medium_2d_env.bin_centers[bin_ids[0]],  # t=0.1-0.2
+                medium_2d_env.bin_centers[bin_ids[1]],  # t=0.2-0.3
+                medium_2d_env.bin_centers[bin_ids[2]],  # t=0.3-0.4
                 medium_2d_env.bin_centers[bin_ids[2]],
             ]
         )
 
         occ = medium_2d_env.occupancy(times, positions)
 
-        # Total time should be 4 seconds (intervals may be filtered if bins are isolated)
-        total_occ = np.sum(occ)
-        assert total_occ >= 0
-        assert total_occ <= 4.0  # Should not exceed total time
+        # Each interval's time goes to the bin of its start sample.
+        np.testing.assert_allclose(occ[bin_ids], [0.2, 0.1, 0.1])
+        assert np.sum(occ) == pytest.approx(0.4)
 
     def test_occupancy_with_speed_filter(self, medium_2d_env):
         """Test occupancy with speed filtering."""
-        times = np.array([0.0, 1.0, 2.0, 3.0])
-        positions = np.tile(np.array([[0.0, 0.0]]), (4, 1))
+        times = np.array([0.0, 0.1, 0.2, 0.3])
+        positions = np.tile(medium_2d_env.bin_centers[0:1], (4, 1))
         # Speed filter: only include fast periods
         speeds = np.array([5.0, 0.5, 5.0, 5.0])  # Second sample is slow
 
         occ = medium_2d_env.occupancy(times, positions, speed=speeds, min_speed=2.0)
 
-        # Only 2 intervals pass: t=0-1 and t=2-3
-        # Interval t=1-2 is excluded (speed[1]=0.5 < 2.0)
-        # Total should be <= 2.0 (might be less if positions are outside)
-        assert np.sum(occ) <= 2.0
+        # Only 2 intervals pass: t=0-0.1 and t=0.2-0.3
+        # Interval t=0.1-0.2 is excluded (speed[1]=0.5 < 2.0)
+        assert occ[0] == pytest.approx(0.2)
+        assert np.sum(occ) == pytest.approx(0.2)
 
     def test_occupancy_with_max_gap(self, small_2d_env):
         """Test occupancy with max_gap filtering."""
@@ -94,14 +90,14 @@ class TestOccupancy:
 
     def test_occupancy_return_seconds_false(self, medium_2d_env):
         """Test occupancy with return_seconds=False (counts intervals)."""
-        times = np.array([0.0, 1.0, 3.0, 5.0])  # Unequal intervals
-        positions = np.tile(np.array([[0.0, 0.0]]), (4, 1))
+        times = np.array([0.0, 0.1, 0.3, 0.5])  # Unequal intervals
+        positions = np.tile(medium_2d_env.bin_centers[0:1], (4, 1))
 
         occ_counts = medium_2d_env.occupancy(times, positions, return_seconds=False)
 
         # Should count intervals (3 total), not sum their durations
-        # Might be less if positions are outside
-        assert np.sum(occ_counts) <= 3.0
+        assert occ_counts[0] == 3.0
+        assert np.sum(occ_counts) == 3.0
 
     def test_occupancy_empty_trajectory(self, small_2d_env):
         """Test occupancy with empty trajectory."""
@@ -159,49 +155,50 @@ class TestOccupancy:
 
     def test_occupancy_with_kernel_smoothing(self, medium_2d_env):
         """Test occupancy with kernel smoothing."""
-        times = np.array([0.0, 1.0, 2.0])
+        times = np.array([0.0, 0.1, 0.2])
         positions = np.tile(medium_2d_env.bin_centers[0:1], (3, 1))
 
         occ_raw = medium_2d_env.occupancy(times, positions, bandwidth=None)
         occ_smooth = medium_2d_env.occupancy(times, positions, bandwidth=5.0)
 
         # Smoothing should preserve total mass
+        assert np.sum(occ_raw) == pytest.approx(0.2)
         assert np.sum(occ_smooth) == pytest.approx(np.sum(occ_raw))
-        # Smoothing should spread occupancy
-        assert np.sum(occ_smooth > 0) >= np.sum(occ_raw > 0)
+        # Smoothing should spread occupancy beyond the one visited bin
+        assert np.sum(occ_raw > 0) == 1
+        assert np.sum(occ_smooth > 1e-9) > 1
 
     def test_occupancy_filters_outside_positions(self, medium_2d_env):
         """Test that positions outside environment are filtered."""
-        times = np.array([0.0, 1.0, 2.0, 3.0])
-        positions = np.array(
-            [
-                [0.0, 0.0],  # Might be inside or outside
-                [10000.0, 10000.0],  # Definitely outside
-                [10000.0, 10000.0],  # Definitely outside
-                [0.0, 0.0],  # Might be inside or outside
-            ]
-        )
+        times = np.array([0.0, 0.1, 0.2, 0.3])
+        inside = medium_2d_env.bin_centers[0]
+        positions = np.array([inside, [10000.0, 10000.0], [10000.0, 10000.0], inside])
 
         occ = medium_2d_env.occupancy(times, positions)
 
-        # Intervals starting outside are excluded
-        # Result depends on whether [0,0] is in environment
-        # Just check that method runs without error and gives sensible result
+        # Only the first interval starts inside; the two starting outside are
+        # excluded.
         assert occ.shape == (medium_2d_env.n_bins,)
-        assert np.sum(occ) >= 0  # Non-negative
-        assert np.sum(occ) <= 3.0  # Cannot exceed total time
+        assert occ[0] == pytest.approx(0.1)
+        assert np.sum(occ) == pytest.approx(0.1)
 
-    @pytest.mark.parametrize("max_gap", [0.1, 0.5, 1.0, 5.0])
-    def test_occupancy_various_max_gaps(self, small_2d_env, max_gap):
-        """Test occupancy with various max_gap values."""
-        times = np.array([0.0, 0.2, 2.0, 3.0])
+    @pytest.mark.parametrize(
+        ("max_gap", "expected"), [(0.1, 0.0), (0.5, 0.2), (1.0, 1.2), (5.0, 3.0)]
+    )
+    def test_occupancy_various_max_gaps(self, small_2d_env, max_gap, expected):
+        """Intervals longer than max_gap are dropped; the rest are kept."""
+        times = np.array([0.0, 0.2, 2.0, 3.0])  # intervals 0.2, 1.8 and 1.0 s
         positions = np.tile(small_2d_env.bin_centers[0:1], (4, 1))
 
-        occ = small_2d_env.occupancy(times, positions, max_gap=max_gap)
+        if max_gap < 1.0:
+            # The median interval (1 s) exceeds max_gap, which is flagged.
+            with pytest.warns(UserWarning, match="probably not in seconds"):
+                occ = small_2d_env.occupancy(times, positions, max_gap=max_gap)
+        else:
+            occ = small_2d_env.occupancy(times, positions, max_gap=max_gap)
 
-        # Results depend on which gaps are allowed
-        assert occ.shape == (small_2d_env.n_bins,)
-        assert np.sum(occ) >= 0.0
+        assert occ[0] == pytest.approx(expected)
+        assert np.sum(occ) == pytest.approx(expected)
 
 
 class TestBinSequence:
@@ -349,7 +346,7 @@ class TestBinSequence:
 
     def test_bin_sequence_all_outside_with_none(self, small_2d_env):
         """Test bin sequence when all positions are outside (outside_value=None)."""
-        times = np.array([0.0, 1.0, 2.0])
+        times = np.array([0.0, 0.1, 0.2])
         positions = np.ones((3, small_2d_env.n_dims)) * 1000  # All outside
 
         bins = small_2d_env.bin_sequence(times, positions, outside_value=None)
@@ -419,10 +416,10 @@ class TestTransitionMatrix:
         # Use bins that are graph-adjacent (neighbors)
         # Get a sequence of bins that are actually connected
         bin_0 = 0
-        neighbors_0 = list(small_2d_env.neighbors(bin_0))
+        neighbors_0 = list(small_2d_env.neighbors(bins=bin_0))
         if len(neighbors_0) > 0:
             bin_1 = neighbors_0[0]
-            neighbors_1 = list(small_2d_env.neighbors(bin_1))
+            neighbors_1 = list(small_2d_env.neighbors(bins=bin_1))
             if len(neighbors_1) > 0:
                 bin_2 = neighbors_1[0]
                 bins = np.array([bin_0, bin_1, bin_2, bin_0], dtype=np.int32)
@@ -438,7 +435,7 @@ class TestTransitionMatrix:
         """Test unnormalized transition counts."""
         # Find adjacent bins for valid transitions
         bin_0 = 0
-        neighbors = list(small_2d_env.neighbors(bin_0))
+        neighbors = list(small_2d_env.neighbors(bins=bin_0))
         if len(neighbors) > 0:
             bin_1 = neighbors[0]
             bins = np.array([bin_0, bin_1, bin_0, bin_1, bin_0], dtype=np.int32)
@@ -571,10 +568,10 @@ class TestTemporalBinning:
         # Varying intervals: 1s, 2s, 3s
         # Find 3 distinct adjacent bins (bin_0 -> bin_1 -> bin_2)
         bin_0 = 0
-        neighbors_0 = list(small_2d_env.neighbors(bin_0))
+        neighbors_0 = list(small_2d_env.neighbors(bins=bin_0))
         if len(neighbors_0) > 0:
             bin_1 = neighbors_0[0]
-            neighbors_1 = list(small_2d_env.neighbors(bin_1))
+            neighbors_1 = list(small_2d_env.neighbors(bins=bin_1))
             # bin_2 must be different from bin_0 (bin_0 is neighbor of bin_1)
             bin_2_candidates = [n for n in neighbors_1 if n != bin_0]
             if len(bin_2_candidates) > 0:
@@ -660,7 +657,7 @@ class TestTrajectoryIntegration:
 
     def test_occupancy_and_bin_sequence_consistency(self, small_2d_env):
         """Test that occupancy and bin_sequence give consistent results."""
-        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
         positions = np.array(
             [
                 small_2d_env.bin_centers[0],
@@ -676,22 +673,18 @@ class TestTrajectoryIntegration:
 
         # Get bin sequence with runs
         _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
-        bins, starts, ends = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
+        assert_array_equal(bins, [0, 1, 2])
 
-        # Compute occupancy from runs
+        # Each run owns the intervals that start at its samples; the last
+        # sample starts no interval.
         occ_from_runs = np.zeros(small_2d_env.n_bins)
-        for bin_id, start_idx, end_idx in zip(bins, starts, ends, strict=True):
-            duration = times[end_idx] - times[start_idx]
-            occ_from_runs[bin_id] += duration
+        for bin_id, start, length in zip(bins, starts, lengths, strict=True):
+            stop = min(start + length, len(times) - 1)
+            occ_from_runs[bin_id] += times[stop] - times[start]
 
-        # Should match (approximately, due to how intervals are allocated)
-        # Actually, they measure different things:
-        # - occupancy: time allocated to bins based on interval starts
-        # - runs: time based on run duration
-        # So this test verifies the relationship, not exact equality
-
-        # At least bins with occupancy should appear in runs
-        assert np.all((occ > 0) <= (occ_from_runs >= 0))
+        np.testing.assert_allclose(occ, occ_from_runs)
+        np.testing.assert_allclose(occ[[0, 1, 2]], [0.2, 0.2, 0.0])
 
     def test_transition_matrix_properties(self, medium_2d_env):
         """Test mathematical properties of transition matrices."""

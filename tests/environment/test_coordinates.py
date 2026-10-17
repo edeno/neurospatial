@@ -1,11 +1,14 @@
 """Coordinate systems preserve physical distances and environment-owned caches."""
 
+import pickle
+
 import numpy as np
 import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import _get_gaussian_kernel
 from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
+from neurospatial.environment._cache import GAUSSIAN_KERNELS
 
 
 @pytest.fixture
@@ -81,11 +84,13 @@ def test_polar_declaration_and_fallback_lengths(polar_env):
     np.testing.assert_array_equal(system.fallback_lengths(polar_env), np.full(6, 5.0))
 
 
-def test_gaussian_cache_reuses_only_its_own_kernel(cartesian_env):
+def test_gaussian_cache_is_shared_only_with_metadata_copies(cartesian_env):
     kernel = _get_gaussian_kernel(cartesian_env, 1.0)
     assert np.shares_memory(_get_gaussian_kernel(cartesian_env, 1.0), kernel)
-    copied = cartesian_env.copy()
-    other = _get_gaussian_kernel(copied, 1.0)
+    renamed = cartesian_env.with_metadata(name="renamed")
+    assert np.shares_memory(_get_gaussian_kernel(renamed, 1.0), kernel)
+    restored = pickle.loads(pickle.dumps(cartesian_env))
+    other = _get_gaussian_kernel(restored, 1.0)
     assert not np.shares_memory(other, kernel)
     np.testing.assert_array_equal(other, kernel)
     assert not np.shares_memory(_get_gaussian_kernel(cartesian_env, 2.0), kernel)
@@ -94,7 +99,7 @@ def test_gaussian_cache_reuses_only_its_own_kernel(cartesian_env):
 def test_clear_cache_rebuilds_an_identical_gaussian_kernel(cartesian_env):
     original = _get_gaussian_kernel(cartesian_env, 1.0)
     cartesian_env.clear_cache()
-    assert cartesian_env._gaussian_kernels == {}
+    assert GAUSSIAN_KERNELS not in cartesian_env._cache
     rebuilt = _get_gaussian_kernel(cartesian_env, 1.0)
     assert rebuilt is not original
     np.testing.assert_array_equal(rebuilt, original)

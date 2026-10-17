@@ -34,11 +34,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.ops._protocols import GraphConsumer
 
 
 def neighbor_reduce(
-    env: Environment,
+    env: GraphConsumer,
     field: NDArray[np.float64],
     *,
     op: Literal["sum", "mean", "max", "min", "std"] = "mean",
@@ -204,7 +204,7 @@ def neighbor_reduce(
 
 
 def _neighbor_reduce_linear(
-    env: Environment,
+    env: GraphConsumer,
     field: NDArray[np.float64],
     *,
     op: Literal["sum", "mean"],
@@ -286,7 +286,7 @@ def _neighbor_reduce_linear(
 
 
 def graph_convolve(
-    env: Environment,
+    env: GraphConsumer,
     field: NDArray[np.float64],
     kernel: Callable[[NDArray[np.float64]], NDArray[np.float64]] | NDArray[np.float64],
     *,

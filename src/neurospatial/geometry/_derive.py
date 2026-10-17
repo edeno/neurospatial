@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,7 +14,6 @@ from neurospatial.geometry._binning import (
     Binning,
     FacesSource,
     KnownFaces,
-    Locator,
     MissingFaces,
     SpatialBins,
     TrackLinearization,
@@ -22,7 +22,9 @@ from neurospatial.geometry._capabilities import (
     RectilinearGrid,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.geometry._composition import bridge_values
 from neurospatial.geometry._diffusion import FaceGeometry
+from neurospatial.geometry._explicit import cell_extent
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._face_transform import (
     certify_transformed_faces,
@@ -31,10 +33,18 @@ from neurospatial.geometry._face_transform import (
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._locators import (
     AffineMatrix,
+    Locator,
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
     _check_homogeneous,
+)
+from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.geometry._polygon_cells import (
+    ClipMapping,
+    PolygonCells,
+    subset_polygon_cells,
+    transform_polygon_cells,
 )
 
 
@@ -65,11 +75,6 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     Binning
         Owned child geometry. Points in dropped bins are outside the child.
     """
-    from neurospatial.geometry._polygon import (
-        ClipMapping,
-        PolygonCells,
-        subset_polygon_cells,
-    )
 
     keep = np.asarray(keep)
     if (
@@ -137,7 +142,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
                 "Track derivation requires an owned TrackLinearization snapshot."
             )
     return Binning(
-        "MaskedGrid" if grid is not None else "subset",
+        binning.kind,
         bins,
         locator,
         faces,
@@ -172,6 +177,29 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
             else None
         ),
     )
+
+
+def select_bins(binning: Binning, mask: NDArray[np.bool_]) -> Binning:
+    """Keep the selected bins of a binning, with the bounds of what is kept.
+
+    Parameters
+    ----------
+    binning : Binning
+        Bins to select from.
+    mask : ndarray of bool, shape (n_bins,)
+        Bins to keep.
+
+    Returns
+    -------
+    Binning
+        The kept bins, renumbered ``0..n_kept-1`` in their original order.
+        Its ``dimension_ranges`` is the extent of the kept cells, with no
+        margin (see :func:`neurospatial.geometry._explicit.cell_extent`): the
+        kept grid cells for grids, the kept stretches of centerline for tracks,
+        and the kept bin centers' bounds for other bins without shapes.
+    """
+    binning = subset_binning(binning, mask)
+    return replace(binning, dimension_ranges=cell_extent(binning, shapeless="centers"))
 
 
 def _matrix(transform: AffineMatrix, n_dims: int) -> NDArray[np.float64]:
@@ -276,18 +304,11 @@ def transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
 
 
 def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
-    from neurospatial.geometry._polygon import (
-        PolygonCells,
-        materialize_cells,
-        transform_polygon_cells,
-    )
-
     parent = binning.bins
     matrix = _matrix(transform, parent.n_dims)
     linear = matrix[:-1, :-1]
     kind, scale, logdet = _classification(linear)
     similarity = kind in {"translation", "similarity"}
-    from neurospatial.geometry._composition import bridge_values
 
     couplings = bridge_values(binning)
     if any(value > 0 for value in couplings.values()):
@@ -335,7 +356,19 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             "bin measures must remain finite and positive",
             "rescale the coordinate units before applying the transform",
         )
-    centers = _mapped(parent.centers, matrix)
+    # Edge-defined cells keep one source of truth: their centers are the
+    # midpoints of the mapped edges, so a chain of transforms cannot drift
+    # the stored centers away from the cells the locator assigns.
+    locator: Locator | None = (
+        binning.locator.transformed(transform)
+        if isinstance(binning.locator, RectilinearLocator)
+        else None
+    )
+    centers = (
+        locator.active_centers()
+        if isinstance(locator, RectilinearLocator)
+        else _mapped(parent.centers, matrix)
+    )
     sizes = parent.sizes * factor
     if (
         not np.all(np.isfinite(centers))
@@ -380,11 +413,6 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         )
     bins = SpatialBins.from_arrays(
         centers, sizes, parent.measure_dim, parent.pairs, distances
-    )
-    locator: Locator | None = (
-        binning.locator.transformed(transform)
-        if isinstance(binning.locator, RectilinearLocator)
-        else None
     )
     if locator is None:
         locator = TransformedLocator(
@@ -513,7 +541,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "Track derivation requires an owned TrackLinearization snapshot."
             )
     return Binning(
-        f"{binning.kind}_transformed",
+        binning.kind,
         bins,
         locator,
         faces,

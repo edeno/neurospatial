@@ -42,18 +42,22 @@ def test_full_circle_allows_explicit_open_or_circular_topology(option):
     assert env.connectivity.has_edge(0, 3) is option
 
 
-@pytest.mark.parametrize(
-    "angle_range", [(-np.pi / 2, np.pi / 2), (0.0, np.pi), (0.0, 2 * np.pi + 1e-6)]
-)
+@pytest.mark.parametrize("angle_range", [(-np.pi / 2, np.pi / 2), (0.0, np.pi)])
 def test_explicit_circular_topology_requires_a_full_circle(angle_range):
     with pytest.raises(ValueError, match=r"circular_angle=True.*full circle"):
         _polar(angle_range, circular_angle=True)
 
 
+def test_a_range_just_past_one_turn_is_refused_whatever_the_topology():
+    for option in (None, False, True):
+        with pytest.raises(ValueError, match="more than one full turn"):
+            _polar((0.0, 2 * np.pi + 1e-6), circular_angle=option)
+
+
 def test_partial_range_has_no_shortcut_across_its_unobserved_angles():
     env = _polar((-np.pi / 2, np.pi / 2))
     np.testing.assert_allclose(
-        env.distance_to([0], metric="geodesic")[3], 15 * np.pi / 4
+        env.distance_to(bins=[0], metric="geodesic")[3], 15 * np.pi / 4
     )
 
 
@@ -63,7 +67,7 @@ def test_inferred_periodicity_survives_copy_and_storage(tmp_path, full_circle):
     env = _polar((0.0, span))
     env.to_file(tmp_path / "polar")
     for restored in (
-        env.copy(),
+        env.with_metadata(),
         Environment.from_dict(env.to_dict()),
         Environment.from_file(tmp_path / "polar"),
     ):

@@ -9,9 +9,9 @@ each surfaced length errors with a slightly different message style.
 
 This module centralizes:
 
-- ``validate_times`` — monotonic-non-decreasing + min-length check on a
+- ``_validate_times`` — monotonic-non-decreasing + min-length check on a
   timestamp array (previously duplicated byte-for-byte in
-  ``_view_binning.py`` and ``_egocentric_binning.py``).
+  ``_view_counts.py`` and ``_egocentric_counts.py``).
 - ``validate_trajectory`` — joint length + dimensionality check on
   ``(times, positions?, headings?)``.
 
@@ -26,56 +26,49 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import EnvironmentNotFittedError, _format_error
+from neurospatial._exceptions import _format_error
 from neurospatial._validation import (
     format_times_positions_error,
     times_positions_problems,
     validate_finite,
 )
+from neurospatial.environment import Environment
 
 __all__ = [
+    "_validate_env_argument",
+    "_validate_times",
     "validate_classifier_trajectory",
-    "validate_env_fitted",
     "validate_spike_times",
-    "validate_times",
     "validate_trajectory",
 ]
 
 
-def validate_env_fitted(env: object, *, context: str, arguments: str) -> None:
-    """Raise ``EnvironmentNotFittedError`` if ``env`` is not fitted.
+def _validate_env_argument(env: object, *, context: str, arguments: str) -> None:
+    """Raise ``TypeError`` if ``env`` is not an environment.
 
     Public ``compute_*_rate(s)`` and ``decode_position`` entry points use
-    this to fail at the API boundary rather than letting an unfitted env
+    this to fail at the API boundary rather than letting a non-environment
     surface as a confusing ``AttributeError`` from a deep helper. The
     ``context`` label is the user-facing free-function name (e.g.
     ``"compute_spatial_rate"``) and is forwarded to the free-function
-    form of :class:`EnvironmentNotFittedError` so the rendered message
-    reads ``compute_spatial_rate()`` rather than the misleading
-    ``Environment.compute_spatial_rate()``.
+    error message.
 
     Parameters
     ----------
     env : object
-        Object expected to expose ``_is_fitted`` (typically an
-        ``Environment``). Untyped here because import-time importing the
-        ``Environment`` symbol would re-introduce the import cycle that
-        ``encoding._validation`` exists to avoid.
+        Object expected to be an ``Environment``.
     context : str
-        Name of the calling public free function, used as the
-        ``EnvironmentNotFittedError`` function-name argument.
+        Name of the calling public free function, used in the message.
     arguments : str
         Required argument names after ``env`` in the corrected public call.
 
     Raises
     ------
     TypeError
-        If ``env`` has no fitted-state attribute and cannot serve as an
-        environment. The message shows how to build and pass one.
-    EnvironmentNotFittedError
-        If ``env`` exposes ``_is_fitted`` but is not fitted.
+        If ``env`` is not an environment. The message shows how to build and
+        pass one.
     """
-    if not hasattr(env, "_is_fitted"):
+    if not isinstance(env, Environment):
         description = type(env).__name__
         shape = getattr(env, "shape", None)
         if shape is not None:
@@ -87,8 +80,6 @@ def validate_env_fitted(env: object, *, context: str, arguments: str) -> None:
                 fix=f"build one with env = Environment.from_samples(positions, bin_size=2.0), then call {context}(env, {arguments}).",
             )
         )
-    if not getattr(env, "_is_fitted", False):
-        raise EnvironmentNotFittedError(context, is_function=True)
 
 
 def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None:
@@ -145,7 +136,7 @@ def _time_problems(times: NDArray[np.float64]) -> list[tuple[str, str]]:
     return problems
 
 
-def validate_times(times: NDArray[np.float64], *, context: str) -> None:
+def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     """Check finite, non-decreasing timestamps with at least two samples.
 
     Parameters

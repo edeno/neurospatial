@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.ops.binning import resample_field
+from neurospatial.ops.mapping import resample_field
 
 
 class TestResampleFieldBasic:

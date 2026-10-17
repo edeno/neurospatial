@@ -28,20 +28,19 @@ population-statistics branches.
 
 ### [neurospatial.environment](neurospatial/environment/index.md)
 
-The main `Environment` class and related functionality (modular package).
+The `Environment` class: bins, their connectivity graph and named regions,
+with methods for spatial queries, occupancy, smoothing, plotting and saving.
 
 **Key Classes:**
 
-- `Environment`: Main class for discretized spatial environments
+- `Environment`: Discretized spatial environment, built with factory
+  classmethods such as `Environment.from_samples` and `Environment.from_polygon`
+- `BinSequenceWithRuns`: Result of `Environment.bin_sequence_with_runs`
+- `CartesianSystem`, `EgocentricPolarSystem`: What the bin coordinates mean
 
-**Modules:**
-
-- `environment.core`: Core dataclass with state and properties
-- `environment.factories`: Factory classmethods for creating environments
-- `environment.queries`: Spatial query methods
-- `environment.trajectory`: Trajectory analysis methods
-- `environment.fields`: Spatial field operations
-- `environment.metrics`: Environment metrics and properties
+Every method is documented on the
+[`Environment` reference page](neurospatial/environment/core.md). The
+`_`-prefixed modules in this package hold private implementations.
 
 ### [Combining environments](../user-guide/composite-environments.md)
 

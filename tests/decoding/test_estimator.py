@@ -100,7 +100,9 @@ def _make_linear_sim(
     """1-D linearized-track sim (back-and-forth), for graph/geodesic decoding."""
     from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
 
-    env = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
+    env = Environment.linear_track(
+        endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0, track_width=5.0
+    )
     env = env.with_metadata(units="cm")
 
     times = np.linspace(0.0, 20.0, 1000)

@@ -38,7 +38,7 @@ class TestPathBetweenErrorPaths:
 
         # Should warn and return empty path when no path exists
         with pytest.warns(UserWarning, match="No path found"):
-            path = env.path_between(bin1, bin2)
+            path = env.path_between(bins=[bin1, bin2])
 
         assert path == []
         assert isinstance(path, list)
@@ -51,7 +51,7 @@ class TestPathBetweenErrorPaths:
         valid_target = 0
 
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
-            env.path_between(invalid_source, valid_target)
+            env.path_between(bins=[invalid_source, valid_target])
 
     def test_shortest_path_invalid_target_node(self):
         """Test path_between with invalid target node index."""
@@ -61,7 +61,7 @@ class TestPathBetweenErrorPaths:
         invalid_target = -999  # Negative index
 
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
-            env.path_between(valid_source, invalid_target)
+            env.path_between(bins=[valid_source, invalid_target])
 
     def test_shortest_path_both_nodes_invalid(self):
         """Test path_between when both nodes are invalid."""
@@ -71,14 +71,14 @@ class TestPathBetweenErrorPaths:
         invalid_target = env.n_bins + 100
 
         with pytest.raises(BinIndexOutOfRangeError):
-            env.path_between(invalid_source, invalid_target)
+            env.path_between(bins=[invalid_source, invalid_target])
 
     def test_shortest_path_same_node(self):
         """Test path_between when source and target are the same."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         # Path from node to itself should work
-        path = env.path_between(5, 5)
+        path = env.path_between(bins=[5, 5])
         assert path == [5]
 
     def test_shortest_path_adjacent_nodes(self):
@@ -87,11 +87,11 @@ class TestPathBetweenErrorPaths:
 
         # Get first node and one of its neighbors
         source = 0
-        neighbors = env.neighbors(source)
+        neighbors = env.neighbors(bins=source)
 
         if len(neighbors) > 0:
             target = neighbors[0]
-            path = env.path_between(source, target)
+            path = env.path_between(bins=[source, target])
 
             assert len(path) == 2
             assert path[0] == source
@@ -118,29 +118,6 @@ class TestBinsInRegionErrorPaths:
         with pytest.raises(ValueError, match="dimensions must match"):
             env.with_regions(region_builder)
         assert "test_poly" not in env.regions
-
-    def test_bins_in_region_polygon_without_shapely(self, monkeypatch):
-        """Test polygon region query when shapely not available."""
-        from shapely.geometry import Polygon as ShapelyPolygon
-
-        # Create 2D environment
-        env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-
-        # Add polygon region
-        polygon_coords = [(0, 0), (10, 0), (10, 10), (0, 10)]
-        shapely_poly = ShapelyPolygon(polygon_coords)
-        region_builder = Regions(env.regions.values())
-        region_builder.add("test_poly", polygon=shapely_poly)
-        env = env.with_regions(region_builder)
-
-        # Mock shapely as unavailable
-        import neurospatial.environment as env_module
-
-        monkeypatch.setattr(env_module, "_HAS_SHAPELY", False)
-
-        # Should raise RuntimeError
-        with pytest.raises(RuntimeError, match="Polygon region queries require"):
-            env.bins_in_region("test_poly")
 
     def test_bins_in_region_nonexistent_region(self):
         """Test bins_in_region with region name that doesn't exist."""
@@ -265,14 +242,14 @@ class TestNeighborsErrorPaths:
         invalid_idx = env.n_bins + 100
 
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
-            env.neighbors(invalid_idx)
+            env.neighbors(bins=invalid_idx)
 
     def test_neighbors_negative_index(self):
         """Test neighbors with negative bin index."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
-            env.neighbors(-1)
+            env.neighbors(bins=-1)
 
     def test_neighbors_valid_isolated_node(self):
         """Test neighbors for node with no neighbors (if such exists)."""
@@ -282,74 +259,58 @@ class TestNeighborsErrorPaths:
 
         # Get any valid node
         valid_node = 0
-        neighbors = env.neighbors(valid_node)
+        neighbors = env.neighbors(bins=valid_node)
 
         assert isinstance(neighbors, list)
         # For regular grids, nodes typically have neighbors
 
 
-class TestGraphQueriesAcceptCoordinates:
-    """neighbors/path_between/reachable_from accept a point OR a bin index.
+class TestGraphQueriesExplicitTargets:
+    """Graph queries take a bin with bins= or a coordinate with points=."""
 
-    Resolves the coordinate-vs-index footgun: these graph queries now accept a
-    coordinate array (mapped via bin_at) just like the geometric methods, while
-    still accepting integer bin indices. A point outside the environment raises.
-    """
-
-    def test_coordinate_and_index_agree(self):
+    def test_point_and_its_bin_agree(self):
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-        # Use a CONNECTED pair so path_between returns a non-empty path -- an
-        # equivalence over two empty lists (disconnected bins) would be vacuous
-        # and prove nothing about coordinate resolution.
+        # A connected pair, so path_between returns a real path rather than
+        # two equal empty lists.
         idx_a = 3
-        idx_b = env.neighbors(idx_a)[0]  # a bin directly connected to idx_a
-        coord_a = env.bin_centers[idx_a]
-        coord_b = env.bin_centers[idx_b]
+        idx_b = env.neighbors(bins=idx_a)[0]
+        coord_a = env.bin_centers[[idx_a]]
+        coord_b = env.bin_centers[[idx_b]]
 
-        assert sorted(env.neighbors(coord_a)) == sorted(env.neighbors(idx_a))
+        assert sorted(env.neighbors(points=coord_a)) == sorted(
+            env.neighbors(bins=idx_a)
+        )
 
-        path_from_coords = env.path_between(coord_a, coord_b)
-        assert path_from_coords == env.path_between(idx_a, idx_b)
-        assert len(path_from_coords) >= 2  # a real path, not vacuous [] == []
+        path_from_coords = env.path_between(points=np.vstack([coord_a, coord_b]))
+        assert path_from_coords == env.path_between(bins=[idx_a, idx_b])
+        assert len(path_from_coords) >= 2
 
         assert np.array_equal(
-            env.reachable_from(coord_a, radius=2),
-            env.reachable_from(idx_a, radius=2),
+            env.reachable_from(points=coord_a, radius=2),
+            env.reachable_from(bins=idx_a, radius=2),
         )
 
     def test_point_outside_environment_raises(self):
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-        far = np.array([1e6, 1e6])
-        with pytest.raises(ValueError, match=r"not inside any active bin"):
-            env.neighbors(far)
+        with pytest.raises(ValueError, match=r"outside the environment[\s\S]*Fix:"):
+            env.neighbors(points=[[1e6, 1e6]])
 
-    def test_batch_of_coordinates_raises(self):
-        """A multi-point coordinate array is rejected, not silently truncated.
-
-        Regression: ``_resolve_point_or_index`` resolved the whole batch via
-        ``bin_at`` but kept only the first bin, so ``neighbors(bin_centers[[0,
-        3]])`` silently returned bin 0's neighbors. A batch must fail loud.
-        """
+    def test_batch_of_points_for_one_start_raises(self):
+        """Two points cannot be the one start bin of a neighbor query."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-        batch = env.bin_centers[[0, 3]]  # two points -> shape (2, n_dims)
-        with pytest.raises(ValueError, match=r"single coordinate point"):
-            env.neighbors(batch)
+        batch = env.bin_centers[[0, 3]]
+        with pytest.raises(ValueError, match=r"takes one bin; got 2"):
+            env.neighbors(points=batch)
 
 
 class TestDistanceBetweenErrorPaths:
     """Test error handling in Environment.distance_between()."""
 
-    def test_distance_between_points_outside_environment(self):
-        """Test distance_between with points outside environment returns inf."""
+    def test_distance_between_points_outside_environment_raises(self):
+        """Points outside the environment raise instead of returning inf."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-
-        # Points far outside the environment
-        far_point1 = np.array([1000.0, 1000.0])
-        far_point2 = np.array([1100.0, 1100.0])
-
-        # Should return infinity when points map to invalid bins
-        dist = env.distance_between(far_point1, far_point2)
-        assert np.isinf(dist)
+        with pytest.raises(ValueError, match=r"2 point\(s\) outside the environment"):
+            env.distance_between(points=[[1000.0, 1000.0], [1100.0, 1100.0]])
 
 
 class TestBinAtErrorPaths:
@@ -375,7 +336,7 @@ class TestBinAtErrorPaths:
         like the grid path, and point at the real fix.
         """
         env = Environment.linear_track(
-            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0
+            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0, track_width=5.0
         )
         assert env.is_linearized_track and env.n_dims == 2
 

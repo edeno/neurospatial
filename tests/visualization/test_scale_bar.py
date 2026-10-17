@@ -1,7 +1,4 @@
-"""Tests for scale bar visualization utilities.
-
-Tests follow TDD approach - written before implementation.
-"""
+"""Tests for scale bar visualization utilities."""
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -97,7 +94,7 @@ class TestAutoContrast:
 
     def test_dark_background_selects_white(self):
         """Dark background should select white text."""
-        from neurospatial.animation.config import _auto_contrast_color
+        from neurospatial.layout._scale_bar import _auto_contrast_color
 
         fig, ax = plt.subplots()
         ax.set_facecolor("black")
@@ -106,7 +103,7 @@ class TestAutoContrast:
 
     def test_light_background_selects_black(self):
         """Light background should select black text."""
-        from neurospatial.animation.config import _auto_contrast_color
+        from neurospatial.layout._scale_bar import _auto_contrast_color
 
         fig, ax = plt.subplots()
         ax.set_facecolor("white")
@@ -115,7 +112,7 @@ class TestAutoContrast:
 
     def test_gray_background(self):
         """Mid-gray background (luminance ~0.5) should pick one."""
-        from neurospatial.animation.config import _auto_contrast_color
+        from neurospatial.layout._scale_bar import _auto_contrast_color
 
         fig, ax = plt.subplots()
         ax.set_facecolor((0.5, 0.5, 0.5))  # RGB gray
@@ -283,7 +280,6 @@ class TestAnimateFieldsWithScaleBar:
             frame_times=frame_times,
             backend="napari",
             scale_bar=True,
-            show=False,
         )
 
         try:

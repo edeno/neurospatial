@@ -72,9 +72,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import RegionNotFoundError
 from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _safe_gather
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -347,12 +350,8 @@ def decision_region_entry_time(
     >>> print(f"Entered decision region at t={entry_time:.2f}s")  # doctest: +SKIP
     """
     if region not in env.regions:
-        available = list(env.regions.keys())
-        raise ValueError(
-            f"Region '{region}' not found in environment. "
-            f"Available regions: {available}. "
-            "Create regions = Regions(env.regions.values()), add the region "
-            "with regions.add(...), then use env = env.with_regions(regions)."
+        raise RegionNotFoundError(
+            region, available=list(env.regions), argument="region"
         )
 
     # Get bins in the region
@@ -508,7 +507,7 @@ def pre_decision_heading_stats(
         times, positions, call="pre_decision_heading_stats"
     )
     from neurospatial._intervals import observed_interval_mask
-    from neurospatial.ops.egocentric import _velocity_heading_and_speed
+    from neurospatial.ops import _velocity_heading_and_speed
 
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
@@ -745,28 +744,29 @@ def geodesic_voronoi_labels(
 
     Examples
     --------
-    >>> left_bin = env.bin_at([10, 55])  # doctest: +SKIP
-    >>> right_bin = env.bin_at([90, 55])  # doctest: +SKIP
+    >>> left_bin = int(env.bin_at([[10, 55]])[0])  # doctest: +SKIP
+    >>> right_bin = int(env.bin_at([[90, 55]])[0])  # doctest: +SKIP
     >>> labels = geodesic_voronoi_labels(env, [left_bin, right_bin])  # doctest: +SKIP
     >>> # labels[i] == 0 means bin i is closer to left goal
     >>> # labels[i] == 1 means bin i is closer to right goal
     """
+    from neurospatial.environment import _validate_target_bins
     from neurospatial.ops.distance import distance_field
 
-    goal_bins_arr = np.asarray(goal_bins)
+    goal_bins_arr = _validate_target_bins(
+        goal_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="geodesic_voronoi_labels()",
+        argument="goal_bins",
+    )
     n_goals = len(goal_bins_arr)
     n_bins = env.n_bins
 
     # Compute distance field from each goal
     distances = np.full((n_goals, n_bins), np.inf)
     for i, goal_bin in enumerate(goal_bins_arr):
-        # Ensure goal_bin is a Python int, not numpy scalar
-        goal_bin_int = (
-            int(goal_bin.item()) if hasattr(goal_bin, "item") else int(goal_bin)
-        )
-        distances[i] = distance_field(
-            env.connectivity, [goal_bin_int], metric="geodesic"
-        )
+        distances[i] = distance_field(env.connectivity, [goal_bin], metric="geodesic")
 
     # Label by nearest goal
     labels = np.argmin(distances, axis=0)
@@ -816,9 +816,16 @@ def distance_to_decision_boundary(
     ... )  # doctest: +SKIP
     >>> commitment_mask = distances > 20.0  # Committed to a goal  # doctest: +SKIP
     """
+    from neurospatial.environment import _validate_target_bins
     from neurospatial.ops.distance import distance_field
 
-    goal_bins_arr = np.asarray(goal_bins)
+    goal_bins_arr = _validate_target_bins(
+        goal_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="distance_to_decision_boundary()",
+        argument="goal_bins",
+    )
     n_goals = len(goal_bins_arr)
 
     if n_goals < 2:
@@ -828,12 +835,8 @@ def distance_to_decision_boundary(
     # Compute distance from each goal to all bins
     all_distances = np.zeros((n_goals, env.n_bins))
     for i, goal_bin in enumerate(goal_bins_arr):
-        # Ensure goal_bin is a Python int, not numpy scalar
-        goal_bin_int = (
-            int(goal_bin.item()) if hasattr(goal_bin, "item") else int(goal_bin)
-        )
         all_distances[i] = distance_field(
-            env.connectivity, [goal_bin_int], metric="geodesic"
+            env.connectivity, [goal_bin], metric="geodesic"
         )
 
     # For each trajectory bin, the boundary distance is the gap between the two
@@ -1043,24 +1046,30 @@ def compute_decision_analysis(
     """
     from neurospatial._validation import validate_times_positions
 
+    require_cartesian(
+        env.coordinate_system,
+        "compute_decision_analysis()",
+        why="It reads positions as the animal's allocentric positions, with "
+        "speeds and regions in the same Cartesian coordinates.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
     times, positions = validate_times_positions(
         times, positions, call="compute_decision_analysis"
     )
 
     # Validate regions exist
     if decision_region not in env.regions:
-        available = list(env.regions.keys())
-        raise ValueError(
-            f"Decision region '{decision_region}' not found in environment. "
-            f"Available regions: {available}."
+        raise RegionNotFoundError(
+            decision_region, available=list(env.regions), argument="decision_region"
         )
 
     for goal_region in goal_regions:
         if goal_region not in env.regions:
-            available = list(env.regions.keys())
-            raise ValueError(
-                f"Goal region '{goal_region}' not found in environment. "
-                f"Available regions: {available}."
+            raise RegionNotFoundError(
+                goal_region,
+                available=list(env.regions),
+                argument="goal_regions",
+                in_list=True,
             )
 
     # Get position bins
@@ -1082,13 +1091,13 @@ def compute_decision_analysis(
         epochs=epochs,
     )
 
-    # Compute boundary metrics
-    # Get the representative bin for each goal region (first bin in region)
+    # Compute boundary metrics. Each goal region is represented by its
+    # centroid bin, as in trials_to_region_arrays.
     goal_bins = []
     for r in goal_regions:
-        bins = env.bins_in_region(r)
-        if len(bins) > 0:
-            goal_bins.append(int(bins[0]))
+        goal_bin = region_representative_bin(env, r)
+        if goal_bin is not None:
+            goal_bins.append(goal_bin)
         else:
             raise ValueError(
                 f"Goal region '{r}' contains no bins. "

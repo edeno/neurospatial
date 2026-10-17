@@ -45,7 +45,7 @@ import numpy as np
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.ops.binning import regions_to_mask
+from neurospatial.ops.mapping import regions_to_mask
 from neurospatial.regions import Regions
 
 _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()

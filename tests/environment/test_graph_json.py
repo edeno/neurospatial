@@ -14,53 +14,53 @@ from neurospatial import Environment
 
 
 def _environment():
-    env = Environment.from_grid_mask(
+    return Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    payload = env.to_dict()
-    payload["graph"]["graph"]["session"] = {"tags": ["first", "second"]}
-    return Environment.from_dict(payload)
 
 
-@pytest.mark.parametrize("restore", ["fresh", "copy", "deepcopy", "pickle"])
+@pytest.mark.parametrize("restore", ["fresh", "deepcopy", "pickle"])
 def test_standard_node_link_export_is_json_serializable(restore):
     env = _environment()
-    if restore == "copy":
-        env = env.copy()
-    elif restore == "deepcopy":
+    if restore == "deepcopy":
         env = copy.deepcopy(env)
     elif restore == "pickle":
         env = pickle.loads(pickle.dumps(env))
 
     payload = json.loads(json.dumps(nx.node_link_data(env.connectivity, edges="links")))
     exported = nx.node_link_graph(payload, edges="links")
-    assert exported.graph["session"] == {"tags": ["first", "second"]}
     assert list(exported.edges) == list(env.connectivity.edges)
     assert list(exported.nodes) == list(env.connectivity.nodes)
+    assert exported.nodes[0]["pos"] == list(env.connectivity.nodes[0]["pos"])
 
 
-def test_json_compatible_metadata_exports_cannot_change_owned_graph_state():
+def test_published_graph_metadata_is_read_only():
     env = _environment()
-    with pytest.raises(TypeError, match="read-only"):
-        env.connectivity.graph["caller"] = 1
     metadata = env.connectivity.graph
-    # Even base-dict operations affect only the detached export header.
-    dict.__setitem__(metadata, "caller", 1)
-    metadata["session"]["tags"].append("caller")
+    assert metadata is env.connectivity.graph
+    assert metadata == {}
+    with pytest.raises(TypeError, match="read-only"):
+        metadata["caller"] = 1
     assert "caller" not in env.connectivity.graph
-    assert env.connectivity.graph["session"]["tags"] == ["first", "second"]
 
 
-@pytest.mark.parametrize("method", ["copy", "pickle"])
-def test_graph_metadata_exports_support_copy_and_pickle(method):
+def test_exported_graph_metadata_is_editable_and_independent():
     env = _environment()
-    original = env.connectivity.graph
-    exported = (
-        copy.copy(original)
-        if method == "copy"
-        else pickle.loads(pickle.dumps(original))
-    )
-    assert exported == original
-    assert json.loads(json.dumps(exported)) == original
-    exported["session"]["tags"].append("caller")
-    assert env.connectivity.graph["session"]["tags"] == ["first", "second"]
+    for metadata in (env.to_networkx().graph, env.connectivity.copy().graph):
+        assert type(metadata) is dict
+        metadata["caller"] = 1
+    assert "caller" not in env.connectivity.graph
+
+
+@pytest.mark.parametrize("method", ["copy", "deepcopy", "pickle"])
+def test_graph_metadata_survives_copy_and_pickle_read_only(method):
+    original = _environment().connectivity.graph
+    restored = {
+        "copy": copy.copy,
+        "deepcopy": copy.deepcopy,
+        "pickle": lambda value: pickle.loads(pickle.dumps(value)),
+    }[method](original)
+    assert restored == original
+    assert json.loads(json.dumps(restored)) == {}
+    with pytest.raises(TypeError, match="read-only"):
+        restored["caller"] = 1

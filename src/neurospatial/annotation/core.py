@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
     from shapely.geometry import Polygon
 
-    from neurospatial import Environment
     from neurospatial.annotation._boundary_inference import BoundaryConfig
+    from neurospatial.environment import Environment
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Regions
 
@@ -536,11 +536,11 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    from neurospatial.animation._video_io import VideoReader
+    from neurospatial.animation import _VideoReader
 
     # Use the reader as a context manager so its resources (e.g. the prefetch
     # thread pool) are always released, even when frame_index is out of range.
-    with VideoReader(str(video_path)) as reader:
+    with _VideoReader(str(video_path)) as reader:
         try:
             return reader[frame_index]
         except (IndexError, KeyError) as e:

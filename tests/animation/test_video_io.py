@@ -1,6 +1,6 @@
-"""Tests for VideoReader class.
+"""Tests for _VideoReader class.
 
-This module tests the VideoReader class which provides lazy-loading video
+This module tests the _VideoReader class which provides lazy-loading video
 frame access with LRU caching for efficient memory usage.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from neurospatial.animation._video_io import VideoReader
+from neurospatial.animation._video_io import _VideoReader
 
 # Check for optional dependencies
 try:
@@ -82,11 +82,11 @@ def larger_video_path(tmp_path: Path) -> Path:
 
 
 class TestVideoReaderBasics:
-    """Test basic VideoReader functionality."""
+    """Test basic _VideoReader functionality."""
 
     def test_reader_loads_metadata(self, tiny_video_path: Path):
-        """Test that VideoReader loads video metadata correctly."""
-        reader = VideoReader(tiny_video_path)
+        """Test that _VideoReader loads video metadata correctly."""
+        reader = _VideoReader(tiny_video_path)
 
         assert reader.n_frames == 5
         assert reader.fps == pytest.approx(10.0, rel=0.1)
@@ -95,8 +95,8 @@ class TestVideoReaderBasics:
         assert reader.duration == pytest.approx(0.5, rel=0.1)  # 5 frames / 10 fps
 
     def test_reader_lazy_loading(self, tiny_video_path: Path):
-        """Test that VideoReader does not load frames until accessed."""
-        reader = VideoReader(tiny_video_path)
+        """Test that _VideoReader does not load frames until accessed."""
+        reader = _VideoReader(tiny_video_path)
 
         # Check cache is empty initially
         assert reader.cache_info().currsize == 0
@@ -110,7 +110,7 @@ class TestVideoReaderBasics:
 
     def test_reader_getitem_returns_rgb(self, tiny_video_path: Path):
         """Test that __getitem__ returns RGB frames (not BGR)."""
-        reader = VideoReader(tiny_video_path)
+        reader = _VideoReader(tiny_video_path)
 
         frame = reader[0]
 
@@ -121,7 +121,7 @@ class TestVideoReaderBasics:
 
     def test_reader_getitem_different_frames(self, tiny_video_path: Path):
         """Test that different frame indices return different content."""
-        reader = VideoReader(tiny_video_path)
+        reader = _VideoReader(tiny_video_path)
 
         frame0 = reader[0]
         frame2 = reader[2]
@@ -133,7 +133,7 @@ class TestVideoReaderBasics:
 
     def test_reader_invalid_index_raises(self, tiny_video_path: Path):
         """Test that invalid frame indices raise IndexError."""
-        reader = VideoReader(tiny_video_path)
+        reader = _VideoReader(tiny_video_path)
 
         with pytest.raises(IndexError):
             reader[10]  # Only 5 frames
@@ -147,7 +147,7 @@ class TestVideoReaderCaching:
 
     def test_reader_lru_cache(self, tiny_video_path: Path):
         """Test that LRU cache works correctly."""
-        reader = VideoReader(tiny_video_path, cache_size=3)
+        reader = _VideoReader(tiny_video_path, cache_size=3)
 
         # Access frames 0, 1, 2
         _ = reader[0]
@@ -168,7 +168,7 @@ class TestVideoReaderCaching:
 
     def test_reader_cache_size_parameter(self, tiny_video_path: Path):
         """Test that cache_size parameter is respected."""
-        reader = VideoReader(tiny_video_path, cache_size=2)
+        reader = _VideoReader(tiny_video_path, cache_size=2)
 
         # Fill cache
         _ = reader[0]
@@ -184,8 +184,8 @@ class TestVideoReaderPickle:
     """Test pickle serialization for parallel rendering."""
 
     def test_reader_pickle_roundtrip(self, tiny_video_path: Path):
-        """Test that VideoReader can be pickled and unpickled."""
-        reader = VideoReader(tiny_video_path, cache_size=50)
+        """Test that _VideoReader can be pickled and unpickled."""
+        reader = _VideoReader(tiny_video_path, cache_size=50)
 
         # Populate cache
         _ = reader[0]
@@ -209,7 +209,7 @@ class TestVideoReaderPickle:
 
     def test_reader_pickle_preserves_settings(self, larger_video_path: Path):
         """Test that pickle preserves crop and downsample settings."""
-        reader = VideoReader(
+        reader = _VideoReader(
             larger_video_path,
             cache_size=10,
             downsample=2,
@@ -229,7 +229,7 @@ class TestVideoReaderTimestamps:
 
     def test_reader_timestamps_length(self, tiny_video_path: Path):
         """Test that get_timestamps returns correct number of timestamps."""
-        reader = VideoReader(tiny_video_path)
+        reader = _VideoReader(tiny_video_path)
 
         timestamps = reader.get_timestamps()
 
@@ -238,7 +238,7 @@ class TestVideoReaderTimestamps:
 
     def test_reader_timestamps_monotonic(self, tiny_video_path: Path):
         """Test that timestamps are monotonically increasing."""
-        reader = VideoReader(tiny_video_path)
+        reader = _VideoReader(tiny_video_path)
 
         timestamps = reader.get_timestamps()
 
@@ -247,7 +247,7 @@ class TestVideoReaderTimestamps:
 
     def test_reader_timestamps_spacing(self, tiny_video_path: Path):
         """Test that timestamps have correct spacing based on fps."""
-        reader = VideoReader(tiny_video_path)
+        reader = _VideoReader(tiny_video_path)
 
         timestamps = reader.get_timestamps()
 
@@ -262,7 +262,7 @@ class TestVideoReaderCropDownsample:
 
     def test_reader_downsample(self, larger_video_path: Path):
         """Test that downsample reduces frame size."""
-        reader = VideoReader(larger_video_path, downsample=2)
+        reader = _VideoReader(larger_video_path, downsample=2)
 
         assert reader.original_size_px == (32, 32)
         assert reader.frame_size_px == (16, 16)
@@ -272,7 +272,7 @@ class TestVideoReaderCropDownsample:
 
     def test_reader_crop(self, larger_video_path: Path):
         """Test that crop extracts correct region."""
-        reader = VideoReader(
+        reader = _VideoReader(
             larger_video_path,
             crop=(8, 8, 16, 16),  # x, y, width, height
         )
@@ -286,7 +286,7 @@ class TestVideoReaderCropDownsample:
 
     def test_reader_crop_and_downsample(self, larger_video_path: Path):
         """Test crop followed by downsample."""
-        reader = VideoReader(
+        reader = _VideoReader(
             larger_video_path,
             crop=(0, 0, 16, 16),  # Crop to 16x16
             downsample=2,  # Then downsample to 8x8
@@ -304,13 +304,13 @@ class TestVideoReaderErrorHandling:
     def test_reader_nonexistent_file_raises(self, tmp_path: Path):
         """Test that nonexistent file raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
-            VideoReader(tmp_path / "nonexistent.mp4")
+            _VideoReader(tmp_path / "nonexistent.mp4")
 
     def test_reader_invalid_crop_raises(self, larger_video_path: Path):
         """Test that invalid crop raises ValueError."""
         # Crop extends beyond frame bounds
         with pytest.raises(ValueError) as exc_info:
-            VideoReader(larger_video_path, crop=(0, 0, 100, 100))
+            _VideoReader(larger_video_path, crop=(0, 0, 100, 100))
 
         error_msg = str(exc_info.value)
         assert "crop" in error_msg.lower()
@@ -318,7 +318,7 @@ class TestVideoReaderErrorHandling:
     def test_reader_invalid_downsample_raises(self, larger_video_path: Path):
         """Test that invalid downsample raises ValueError."""
         with pytest.raises(ValueError):
-            VideoReader(larger_video_path, downsample=0)
+            _VideoReader(larger_video_path, downsample=0)
 
         with pytest.raises(ValueError):
-            VideoReader(larger_video_path, downsample=-1)
+            _VideoReader(larger_video_path, downsample=-1)

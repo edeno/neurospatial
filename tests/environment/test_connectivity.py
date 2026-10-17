@@ -136,7 +136,7 @@ class TestComponentsEdgeCases:
         assert comps[0][0] == 0
 
     def test_components_return_type(self):
-        """Test that components returns list of int32 arrays."""
+        """Test that components returns list of np.intp index arrays."""
         data = np.array([[0, 0], [0, 1], [10, 10]], dtype=np.float64)
         env = Environment.from_samples(data, bin_size=1.5)
 
@@ -145,7 +145,7 @@ class TestComponentsEdgeCases:
         assert isinstance(comps, list)
         for comp in comps:
             assert isinstance(comp, np.ndarray)
-            assert comp.dtype == np.int32
+            assert comp.dtype == np.intp
 
 
 # =============================================================================
@@ -165,7 +165,7 @@ class TestReachableFromBasic:
 
         # Start from center bin
         center_bin = env.bin_at(np.array([[1, 1]]))[0]
-        mask = env.reachable_from(center_bin)
+        mask = env.reachable_from(bins=center_bin)
 
         # Should reach all bins (single component)
         assert mask.shape == (env.n_bins,)
@@ -186,7 +186,7 @@ class TestReachableFromBasic:
 
         # Start from first component
         source_bin = env.bin_at(np.array([[0, 0]]))[0]
-        mask = env.reachable_from(source_bin)
+        mask = env.reachable_from(bins=source_bin)
 
         # Should only reach bins in same component (not all bins)
         assert mask.sum() < env.n_bins
@@ -205,7 +205,7 @@ class TestReachableFromBasic:
         env = Environment.from_samples(data, bin_size=1.5)
 
         source_bin = env.bin_at(np.array([[0, 0]]))[0]
-        mask = env.reachable_from(source_bin)
+        mask = env.reachable_from(bins=source_bin)
 
         # Source bin should always be reachable
         assert mask[source_bin]
@@ -227,7 +227,7 @@ class TestReachableFromMetrics:
 
         # Start from middle, radius=1 hop
         center_bin = env.bin_at(np.array([[2]]))[0]
-        mask = env.reachable_from(center_bin, radius=1, metric="hops")
+        mask = env.reachable_from(bins=center_bin, radius=1, metric="hops")
 
         # Should reach bins within 1 hop (at least source + neighbors)
         reachable_bins = np.where(mask)[0]
@@ -244,7 +244,7 @@ class TestReachableFromMetrics:
 
         # Start from corner, radius=1.5 units
         source_bin = env.bin_at(np.array([[0, 0]]))[0]
-        mask = env.reachable_from(source_bin, radius=1.5, metric="geodesic")
+        mask = env.reachable_from(bins=source_bin, radius=1.5, metric="geodesic")
 
         # Should reach nearby bins based on graph distance
         # At least source bin and immediate neighbors
@@ -258,7 +258,7 @@ class TestReachableFromMetrics:
 
         source_bin = 0
         # Call without specifying metric
-        mask = env.reachable_from(source_bin, radius=1)
+        mask = env.reachable_from(bins=source_bin, radius=1)
 
         # Should behave as hops (default)
         assert mask.shape == (env.n_bins,)
@@ -279,7 +279,7 @@ class TestReachableFromRadius:
         env = Environment.from_samples(data, bin_size=1.5)
 
         source_bin = 0
-        mask = env.reachable_from(source_bin, radius=0, metric="hops")
+        mask = env.reachable_from(bins=source_bin, radius=0, metric="hops")
 
         # Should only reach source bin
         assert mask.sum() == 1
@@ -292,8 +292,8 @@ class TestReachableFromRadius:
         env = Environment.from_samples(data, bin_size=1.5)
 
         center_bin = 2
-        mask_r1 = env.reachable_from(center_bin, radius=1, metric="hops")
-        mask_r2 = env.reachable_from(center_bin, radius=2, metric="hops")
+        mask_r1 = env.reachable_from(bins=center_bin, radius=1, metric="hops")
+        mask_r2 = env.reachable_from(bins=center_bin, radius=2, metric="hops")
 
         # r=2 should include all r=1 bins plus more
         assert mask_r2.sum() >= mask_r1.sum()
@@ -305,7 +305,7 @@ class TestReachableFromRadius:
         env = Environment.from_samples(data, bin_size=1.5)
 
         source_bin = 0
-        mask = env.reachable_from(source_bin, radius=None, metric="hops")
+        mask = env.reachable_from(bins=source_bin, radius=None, metric="hops")
 
         # Should reach all bins (single component)
         assert mask.sum() == env.n_bins
@@ -324,7 +324,7 @@ class TestReachableFromEdgeCases:
         data = np.array([[0, 0]], dtype=np.float64)
         env = Environment.from_samples(data, bin_size=1.0)
 
-        mask = env.reachable_from(0)
+        mask = env.reachable_from(bins=0)
 
         assert mask.shape == (1,)
         assert mask[0]
@@ -336,11 +336,11 @@ class TestReachableFromEdgeCases:
 
         # Test negative bin index
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range.*\[0, "):
-            env.reachable_from(-1)
+            env.reachable_from(bins=-1)
 
         # Test bin index >= n_bins
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range.*\[0, "):
-            env.reachable_from(env.n_bins)
+            env.reachable_from(bins=env.n_bins)
 
     def test_reachable_from_negative_radius(self):
         """Test reachable_from() with negative radius raises error."""
@@ -348,7 +348,7 @@ class TestReachableFromEdgeCases:
         env = Environment.from_samples(data, bin_size=1.5)
 
         with pytest.raises(ValueError, match=r"radius must be non-negative"):
-            env.reachable_from(0, radius=-1.0)
+            env.reachable_from(bins=0, radius=-1.0)
 
     def test_reachable_from_invalid_metric(self):
         """Test reachable_from() with invalid metric raises error."""
@@ -356,7 +356,7 @@ class TestReachableFromEdgeCases:
         env = Environment.from_samples(data, bin_size=1.5)
 
         with pytest.raises(ValueError, match=r"metric must be"):
-            env.reachable_from(0, metric="invalid")
+            env.reachable_from(bins=0, metric="invalid")
 
 
 # =============================================================================
@@ -426,7 +426,7 @@ class TestConnectivityMultipleLayouts:
         )
 
         # Start from first bin (part of first segment)
-        mask = env.reachable_from(0)
+        mask = env.reachable_from(bins=0)
 
         # Should only reach bins in first segment (not second segment)
         # Note: exact number depends on binning, but should be < total bins
@@ -441,22 +441,3 @@ class TestConnectivityMultipleLayouts:
 
 class TestConnectivityValidation:
     """Test input validation for connectivity operations."""
-
-    def test_components_fitted_check(self):
-        """Test that components() requires fitted environment."""
-        # This test verifies @check_fitted decorator is applied
-        # We can't easily create an unfitted Environment with public API,
-        # so this test mainly documents the expected behavior
-        data = np.array([[0, 0], [0, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
-        # Fitted environment should work
-        comps = env.components()
-        assert len(comps) >= 1
-
-    def test_reachable_from_fitted_check(self):
-        """Test that reachable_from() requires fitted environment."""
-        data = np.array([[0, 0], [0, 1]], dtype=np.float64)
-        env = Environment.from_samples(data, bin_size=1.5)
-        # Fitted environment should work
-        mask = env.reachable_from(0)
-        assert mask.shape == (env.n_bins,)

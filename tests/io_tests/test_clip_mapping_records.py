@@ -24,7 +24,7 @@ def test_equal_owned_clip_mappings_use_one_stored_snapshot(operation, expected_c
     if operation == "transform":
         env = env.apply_transform(translate(5, -2))
     elif operation == "subset":
-        env = env.subset(bins=np.array([True, False, True, False]))
+        env = env.subset(mask=np.array([True, False, True, False]))
     record = env.to_dict()
     assert len(record["binning"]["snapshots"]["clip_mappings"]) == expected_count
     assert sum("/clip_mappings/" in key for key in record["arrays"]) == expected_count

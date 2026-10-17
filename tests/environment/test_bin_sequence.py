@@ -29,7 +29,7 @@ class TestBinSequenceBasic:
         bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert bins.shape == (6,)
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
         # All bins should be valid (>= 0)
         assert np.all(bins >= 0)
 
@@ -72,7 +72,7 @@ class TestBinSequenceBasic:
         bins = env.bin_sequence(times, positions)
 
         assert bins.shape == (0,)
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
 
     def test_single_sample(self):
         """Test trajectory with single sample."""
@@ -133,13 +133,18 @@ class TestBinSequenceDeduplication:
             bin_size=5.0,
         )
 
-        times = np.array([0.0, 1.0, 2.0, 3.0])
+        times = np.array([0.0, 0.1, 0.2, 0.3])
         positions = np.array([[2.0], [2.5], [7.0], [7.5]])
 
         bins_default = env.bin_sequence(times, positions)
         bins_explicit = env.bin_sequence(times, positions, dedup=True)
 
         assert_array_equal(bins_default, bins_explicit)
+        # Consecutive samples in the same bin collapse to one entry.
+        per_sample = env.bin_at(positions)
+        runs = per_sample[np.r_[True, per_sample[1:] != per_sample[:-1]]]
+        assert len(runs) < len(per_sample)
+        assert_array_equal(bins_default, runs)
 
     def test_no_dedup_preserves_all_samples(self):
         """Test that dedup=False keeps all samples."""
@@ -160,6 +165,19 @@ class TestBinSequenceDeduplication:
 
 class TestBinSequenceRuns:
     """Test run-length encoding functionality."""
+
+    def test_result_type_is_public(self):
+        """The returned record is the type exported by neurospatial.environment."""
+        from neurospatial.environment import BinSequenceWithRuns
+
+        env = Environment.from_samples(np.array([[0.0], [5.0]]), bin_size=5.0)
+        result = env.bin_sequence_with_runs(
+            np.arange(3.0), np.array([[0.5], [1.0], [5.5]]), max_gap=None
+        )
+        assert type(result) is BinSequenceWithRuns
+        assert_array_equal(result.bins, [0, 1])
+        assert_array_equal(result.run_starts, [0, 2])
+        assert_array_equal(result.run_lengths, [2, 1])
 
     def test_return_runs_basic(self):
         """Test that return_runs=True returns run boundaries."""
@@ -427,26 +445,6 @@ class TestBinSequenceValidation:
         with pytest.raises(ValueError, match=r"positions.*dimensions"):
             env.bin_sequence(times, positions_1d)
 
-    def test_requires_fitted_environment(self):
-        """Test that check_fitted decorator works."""
-        # Create environment normally - it will be fitted
-        # This test just verifies the decorator is applied
-        env = Environment.from_samples(
-            np.array([[0.0], [5.0], [10.0]]),
-            bin_size=5.0,
-        )
-
-        times = np.array([0.0, 1.0])
-        positions = np.array([[2.5], [7.5]])
-
-        # Should work fine - environment is fitted
-        bins = env.bin_sequence(times, positions, max_gap=None)
-        assert len(bins) > 0
-
-        # Note: We can't easily test unfitted environment without
-        # breaking encapsulation, but the @check_fitted decorator
-        # ensures this method requires fitted state
-
     def test_non_monotonic_times_error(self):
         """Test error for non-monotonic timestamps."""
         env = Environment.from_samples(
@@ -478,7 +476,7 @@ class TestBinSequenceMultipleLayouts:
         bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert bins.shape == (50,)
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
 
     def test_polygon_layout(self):
         """Test bin_sequence on polygon layout."""
@@ -492,15 +490,16 @@ class TestBinSequenceMultipleLayouts:
             bin_size=2.5,
         )
 
-        times = np.arange(20, dtype=float)
+        times = np.arange(20, dtype=float) / 30.0
         positions = rng.uniform(0, 10, (20, 2))
 
         bins = env.bin_sequence(times, positions)
 
-        # Length may be less than 20 if dedup=True (default)
-        assert len(bins) <= 20
-        # Some may be outside (-1) if they fall outside polygon
-        assert bins.dtype == np.int32
+        # One entry per run of equal bins (dedup=True is the default)
+        per_sample = env.bin_at(positions)
+        runs = per_sample[np.r_[True, per_sample[1:] != per_sample[:-1]]]
+        assert_array_equal(bins, runs)
+        assert bins.dtype == np.intp
 
 
 class TestBinSequenceEdgeCases:
@@ -513,13 +512,13 @@ class TestBinSequenceEdgeCases:
             bin_size=5.0,
         )
 
-        times = np.arange(5, dtype=float)
+        times = np.arange(5, dtype=float) / 10.0
         positions = np.full((5, 1), 100.0)  # All far outside
 
         bins = env.bin_sequence(times, positions, dedup=False)
 
-        # All should be -1 (outside)
-        assert np.all(bins == -1)
+        # Every sample is kept, and all are -1 (outside)
+        assert_array_equal(bins, np.full(5, -1))
 
     def test_all_samples_outside_with_none(self):
         """Test all outside samples with outside_value=None."""
@@ -528,14 +527,14 @@ class TestBinSequenceEdgeCases:
             bin_size=5.0,
         )
 
-        times = np.arange(5, dtype=float)
+        times = np.arange(5, dtype=float) / 10.0
         positions = np.full((5, 1), 100.0)  # All far outside
 
         bins = env.bin_sequence(times, positions, outside_value=None)
 
         # Should return empty array
         assert len(bins) == 0
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
 
     def test_rapid_bin_changes(self):
         """Test trajectory with rapid bin changes (no consecutive repeats)."""
@@ -544,13 +543,15 @@ class TestBinSequenceEdgeCases:
             bin_size=5.0,
         )
 
-        times = np.arange(4, dtype=float)
+        times = np.arange(4, dtype=float) / 10.0
         positions = np.array([[2.5], [7.5], [12.5], [17.5]])  # Different bin each time
 
         bins_no_dedup = env.bin_sequence(times, positions, dedup=False)
         bins_dedup = env.bin_sequence(times, positions, dedup=True)
 
         # No consecutive repeats, so dedup should have no effect
+        assert_array_equal(bins_no_dedup, env.bin_at(positions))
+        assert len(np.unique(bins_no_dedup)) == 4
         assert_array_equal(bins_no_dedup, bins_dedup)
 
     def test_boundary_crossing(self):

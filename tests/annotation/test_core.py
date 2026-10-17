@@ -135,7 +135,7 @@ class TestAnnotateVideoValidation:
         video_file.touch()
 
         # With mode='regions', no bin_size validation error
-        # But it will fail on video read (empty file) - ValueError from VideoReader
+        # But it will fail on video read (empty file) - ValueError from _VideoReader
         with pytest.raises(ValueError, match="Could not open video file"):
             annotate_video(str(video_file), mode="regions", bin_size=None)
 
@@ -806,10 +806,10 @@ class TestLoadVideoFrame:
             _load_video_frame(video_file, frame_index=0)
 
     def test_reader_closed_on_success(self, tmp_path, monkeypatch):
-        """The VideoReader is closed after a successful frame load."""
+        """The _VideoReader is closed after a successful frame load."""
         from pathlib import Path
 
-        import neurospatial.animation._video_io as video_io
+        import neurospatial.animation as animation
         from neurospatial.annotation.core import _load_video_frame
 
         video_file = Path(tmp_path / "test.mp4")
@@ -835,17 +835,17 @@ class TestLoadVideoFrame:
             def close(self):
                 closed["count"] += 1
 
-        monkeypatch.setattr(video_io, "VideoReader", FakeVideoReader)
+        monkeypatch.setattr(animation, "_VideoReader", FakeVideoReader)
 
         frame = _load_video_frame(video_file, frame_index=0)
         assert frame.shape == (4, 4, 3)
         assert closed["count"] == 1, "Reader should be closed exactly once"
 
     def test_reader_closed_on_invalid_frame_index(self, tmp_path, monkeypatch):
-        """The VideoReader is closed even when frame_index is out of range."""
+        """The _VideoReader is closed even when frame_index is out of range."""
         from pathlib import Path
 
-        import neurospatial.animation._video_io as video_io
+        import neurospatial.animation as animation
         from neurospatial.annotation.core import _load_video_frame
 
         video_file = Path(tmp_path / "test.mp4")
@@ -871,7 +871,7 @@ class TestLoadVideoFrame:
             def close(self):
                 closed["count"] += 1
 
-        monkeypatch.setattr(video_io, "VideoReader", FakeVideoReader)
+        monkeypatch.setattr(animation, "_VideoReader", FakeVideoReader)
 
         with pytest.raises(IndexError, match="out of range"):
             _load_video_frame(video_file, frame_index=99)

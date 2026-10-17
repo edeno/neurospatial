@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._capabilities import RectilinearGrid, require_rectilinear
+from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._locators import (
     RectilinearLocator,
     SubsetLocator,
@@ -19,11 +20,11 @@ from neurospatial.geometry._locators import (
 )
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._binning import Binning, Locator
+    from neurospatial.geometry._locators import Locator
 
 
 @dataclass(frozen=True, eq=False)
-class FramedGrid:
+class FramedGrid(ReadOnlyState):
     """Owned current grid cells with an affine map into world coordinates.
 
     Parameters
@@ -87,12 +88,6 @@ class FramedGrid:
         )
         object.__setattr__(self, "forward", matrix)
         object.__setattr__(self, "inverse", inverse)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        self.forward.setflags(write=False)
-        self.inverse.setflags(write=False)
 
     def _map(
         self,
@@ -198,13 +193,24 @@ class FramedGrid:
         )
 
 
-def require_grid_context(
-    binning: Binning, operation: str, *, fix: str
-) -> tuple[RectilinearGrid, FramedGrid | None]:
-    """Read source axes and their optional world frame without copying grids."""
-    if binning.grid_frame is not None:
-        return binning.grid_frame.source, binning.grid_frame
-    return require_rectilinear(binning, operation, fix=fix), None
+def _underflow_error(
+    matrix: NDArray[np.floating[Any]], other: NDArray[np.floating[Any]] | None = None
+) -> NDArray[np.float64]:
+    """Absolute roundoff of products whose results fall below the normal range.
+
+    Relative roundoff (``eps * |value|``) vanishes for subnormal and zero
+    entries, such as the sine of a tiny rotation angle, but a multiply or
+    divide there still rounds by up to ``smallest_subnormal`` in absolute
+    terms. Inverting the stored inverse ``B`` moves those absolute errors
+    through ``dA = A dB A``, so each entry is bounded by the operation count
+    times ``smallest_subnormal`` times ``(|A| J |A|)``, with ``J`` all ones.
+    With ``other``, it bounds the product ``matrix @ other`` instead.
+    """
+    floor = 16 * len(matrix) * np.finfo(np.float64).smallest_subnormal
+    left = np.abs(matrix).sum(axis=1)
+    right = (np.abs(matrix) if other is None else np.abs(other)).sum(axis=0)
+    error: NDArray[np.float64] = floor * (1.0 + np.outer(left, right))
+    return error
 
 
 def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64]]:
@@ -217,9 +223,11 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
             np.abs(matrix) @ np.abs(locator.inverse) @ np.abs(matrix)
         )
         inverse_error += 4 * np.spacing(np.abs(matrix))
+        inverse_error += _underflow_error(matrix)
         error = (np.abs(matrix) + inverse_error) @ parent_error
         error += inverse_error @ np.abs(base.forward)
         error += rounding * (np.abs(matrix) @ np.abs(base.forward))
+        error += _underflow_error(matrix, base.forward)
         return FramedGrid(base.source, matrix @ base.forward), error
     if isinstance(locator, SubsetLocator):
         base, error = frame_from_locator(locator.base)

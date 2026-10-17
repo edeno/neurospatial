@@ -315,7 +315,7 @@ class TestNapariPlaybackIndividualOverlays:
                 benchmark_fields,
                 frame_times=frame_times,
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -358,7 +358,7 @@ class TestNapariPlaybackIndividualOverlays:
                 frame_times=frame_times,
                 overlays=[overlay],
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -426,7 +426,7 @@ class TestNapariPlaybackIndividualOverlays:
                 frame_times=frame_times,
                 overlays=[overlay],
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -478,7 +478,7 @@ class TestNapariPlaybackIndividualOverlays:
                 frame_times=frame_times,
                 overlays=[overlay],
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -539,7 +539,7 @@ class TestNapariPlaybackIndividualOverlays:
                 frame_times=frame_times,
                 overlays=[overlay],
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -591,7 +591,7 @@ class TestNapariPlaybackIndividualOverlays:
                 frame_times=frame_times,
                 overlays=[overlay],
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -642,7 +642,7 @@ class TestNapariPlaybackIndividualOverlays:
                 frame_times=frame_times,
                 overlays=[overlay],
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -805,7 +805,7 @@ class TestNapariPlaybackCombinedOverlays:
                 frame_times=frame_times,
                 overlays=overlays,
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -872,7 +872,7 @@ class TestNapariPlaybackFieldSizes:
                 _fields_100x100,
                 frame_times=frame_times,
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, DEFAULT_PLAYBACK_FRAMES)
@@ -934,7 +934,7 @@ class TestNapariPlaybackFrameCounts:
                 fields,
                 frame_times=frame_times_local,
                 backend="napari",
-                colormap="viridis",
+                cmap="viridis",
             )
             try:
                 times = _step_frames(viewer, playback_frames)

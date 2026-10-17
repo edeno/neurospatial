@@ -7,6 +7,14 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
+from neurospatial.environment._cache import MRF_EIGENBASIS
+from neurospatial.environment._fields import diffusion_eigenbasis
+from neurospatial.ops.diffusion import _MRFEigenbasis
+
+
+def _mrf_holder(env):
+    """The environment's cached MRF eigenbasis holder, empty until first use."""
+    return env._cache.get(MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(env.n_bins))
 
 
 @pytest.fixture(params=["dict", "file"])
@@ -34,35 +42,33 @@ class TestPublishedValueOwnership:
 
     def test_restoration_publishes_saved_geometry_with_fresh_caches(self) -> None:
         """Reading a different saved graph does not change an existing value."""
-        from scipy.spatial import cKDTree
-
         grid = (np.ones((3, 3), dtype=bool), (np.arange(4.0),) * 2)
         env = Environment.from_grid_mask(grid[0], grid_edges=grid[1])
         expected = Environment.from_grid_mask(
             grid[0], grid_edges=grid[1], connect_diagonal_neighbors=False
         )
-        env.compute_kernel(1.0)
-        env.diffuse(np.ones(env.n_bins), 1.0)
+        env.compute_kernel(bandwidth=1.0)
+        env.diffuse(np.ones(env.n_bins), bandwidth=1.0)
         env.get_mrf_basis(np.ones(env.n_bins), rank=3)
         env.get_differential_operator()
-        env._kdtree_cache = cKDTree(env.bin_centers)
+        env.nearest_bin(env.bin_centers)
         old_geometry = env._diffusion_geometry
-        old_diffusion_cache = env._diffusion_eigenbasis
-        old_mrf_cache = env._mrf_eigenbasis
+        old_diffusion_cache = diffusion_eigenbasis(env._cache)
+        old_mrf_cache = _mrf_holder(env)
         geometry = env._geometry
+        cache, n_cached = env._cache, len(env._cache)
 
         restored = Environment.from_dict(expected.to_dict())
 
         assert env._geometry is geometry
-        assert env._kernel_cache
+        assert env._cache is cache and len(cache) == n_cached
         assert env._diffusion_geometry is old_geometry
-        assert env._diffusion_eigenbasis is old_diffusion_cache
-        assert env._mrf_eigenbasis is old_mrf_cache
-        assert restored._kernel_cache == {}
-        assert restored._kdtree_cache is None
+        assert diffusion_eigenbasis(env._cache) is old_diffusion_cache
+        assert _mrf_holder(env) is old_mrf_cache
+        assert len(restored._cache) == 0
         assert restored._diffusion_geometry is not old_geometry
-        assert restored._diffusion_eigenbasis is not old_diffusion_cache
-        assert restored._mrf_eigenbasis is not old_mrf_cache
+        assert diffusion_eigenbasis(restored._cache) is not old_diffusion_cache
+        assert _mrf_holder(restored) is not old_mrf_cache
         assert list(restored.connectivity.edges) == list(expected.connectivity.edges)
         np.testing.assert_array_equal(restored.bin_centers, expected.bin_centers)
         np.testing.assert_allclose(
@@ -70,31 +76,26 @@ class TestPublishedValueOwnership:
             expected.get_differential_operator().toarray(),
         )
 
-    def test_invalid_layout_graph_leaves_environment_unchanged(self) -> None:
-        """Validation runs before any environment state changes."""
+    def test_engine_graph_attributes_do_not_reach_environment(self) -> None:
+        """The published graph is derived from the binning, not the engine's graph."""
         from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
-        env = Environment.from_grid_mask(
-            np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
-        )
-        env.compute_kernel(1.0)
-        connectivity, geometry = env.connectivity, env._geometry
-        broken = connectivity.copy()
-        for _, _, data in broken.edges(data=True):
-            del data["edge_id"]
         layout = MaskedGridLayout()
         layout.build(
             active_mask=np.ones((2, 2), dtype=bool),
             grid_edges=(np.arange(3.0),) * 2,
         )
-        layout.connectivity = broken
+        assert layout.connectivity is not None
+        for _, _, data in layout.connectivity.edges(data=True):
+            del data["edge_id"]
+            data["stale"] = True
 
-        with pytest.raises(ValueError, match="layout engine bug"):
-            publish_environment("invalid", layout, "MaskedGrid", {})
+        env = publish_environment("derived", layout, "MaskedGrid", {})
 
-        assert env.connectivity is connectivity
-        assert env._geometry is geometry
-        assert env._kernel_cache
+        rows = {frozenset(map(int, pair)): i for i, pair in enumerate(env.edge_pairs)}
+        for u, v, data in env.connectivity.edges(data=True):
+            assert data["edge_id"] == rows[frozenset((u, v))]
+            assert "stale" not in data
 
 
 class TestPublishedGeometryIsReadOnly:
@@ -106,7 +107,7 @@ class TestPublishedGeometryIsReadOnly:
         env = Environment.from_grid_mask(
             np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
         )
-        for env_or_copy in (env, env.copy()):
+        for env_or_copy in (env, env.with_metadata()):
             for array in (
                 env_or_copy.bin_centers,
                 env_or_copy.active_mask,
@@ -125,7 +126,7 @@ class TestPublishedGeometryIsReadOnly:
         env = Environment.from_grid_mask(
             np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
         )
-        env.compute_kernel(1.0)
+        env.compute_kernel(bandwidth=1.0)
         if target == "node":
             attrs, key, value = env.connectivity.nodes[0], "pos", (99.0,)
         elif target == "edge":
@@ -140,9 +141,9 @@ class TestPublishedGeometryIsReadOnly:
                 attrs.update({key: value})
             else:
                 attrs.pop(key, None)
-        assert env.distance_between(np.array([0.5]), np.array([2.5])) == 2.0
+        assert env.distance_between(points=[np.array([0.5]), np.array([2.5])]) == 2.0
 
-    @pytest.mark.parametrize("how", ["copy", "deepcopy", "pickle"])
+    @pytest.mark.parametrize("how", ["deepcopy", "pickle"])
     def test_graph_attributes_stay_read_only_after_copy(self, how) -> None:
         import copy
         import pickle
@@ -151,11 +152,7 @@ class TestPublishedGeometryIsReadOnly:
             np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
         )
         restored = (
-            env.copy()
-            if how == "copy"
-            else copy.deepcopy(env)
-            if how == "deepcopy"
-            else pickle.loads(pickle.dumps(env))
+            copy.deepcopy(env) if how == "deepcopy" else pickle.loads(pickle.dumps(env))
         )
         with pytest.raises(TypeError, match="read-only"):
             restored.connectivity.edges[0, 1]["distance"] = 100.0
@@ -167,7 +164,7 @@ class TestPublishedGeometryIsReadOnly:
     def test_restored_graph_sequences_reject_edits(
         self, restored_grid, attribute
     ) -> None:
-        from neurospatial.layout.helpers.utils import find_boundary_nodes
+        from neurospatial.geometry._boundary_bins import find_boundary_nodes
 
         env = restored_grid
         boundary = env.boundary_bins.copy()
@@ -183,9 +180,7 @@ class TestPublishedGeometryIsReadOnly:
         assert env._geometry is geometry
         np.testing.assert_array_equal(env.boundary_bins, boundary)
         np.testing.assert_array_equal(
-            find_boundary_nodes(
-                env.connectivity, env.grid_shape, env.active_mask, env.layout_type
-            ),
+            find_boundary_nodes(env.connectivity, env.grid_shape, env.active_mask),
             boundary,
         )
 
@@ -231,7 +226,7 @@ class TestPublishedGeometryIsReadOnly:
         graph.edges[0, 1]["vector"] = vector
         layout.connectivity = graph
         published = publish_environment(
-            name="", layout=layout, layout_type_used=layout._layout_type_tag
+            name="", layout=layout, layout_type_used=layout.layout_type
         )
 
         pos[0] = index[0] = vector[0] = 99
@@ -256,7 +251,6 @@ class TestPublishedGeometryIsReadOnly:
 
         np.testing.assert_array_equal(env.bin_at(point), before)
         assert env.active_mask[0, 0]
-        assert env.layout_parameters["active_mask"][0, 0]
         np.testing.assert_array_equal(env.grid_edges[0], np.arange(4.0))
 
     @pytest.mark.parametrize(

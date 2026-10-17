@@ -460,7 +460,7 @@ class TestVideoCalibration:
 
 
 class TestCalibrationEdgeCases:
-    """Edge case tests for calibration validation (Task 6.1)."""
+    """Edge case tests for calibration validation."""
 
     def test_rejects_ill_conditioned_landmarks(self):
         """Collinear landmarks raise ValueError due to ill-conditioned transform.
@@ -530,7 +530,7 @@ class TestCalibrationEdgeCases:
 
 
 class TestBoundsMismatchWarning:
-    """Tests for bounds coverage validation (Task 6.1)."""
+    """Tests for bounds coverage validation."""
 
     def test_warns_bounds_mismatch(self, tmp_path):
         """Warns when environment bounds exceed calibrated video coverage.

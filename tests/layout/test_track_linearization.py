@@ -10,6 +10,7 @@ from dataclasses import FrozenInstanceError, replace
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import native_layout
 
 from neurospatial.geometry._binning import TrackLinearization
 
@@ -42,7 +43,7 @@ def _assert_previous_projection(component, layout, prefix, recorded):
 @pytest.mark.parametrize("built_environment", ["track"], indirect=True)
 def test_track_linearization_matches_previous(built_environment, locator_parity):
     """On- and off-track points retain their recorded branching-track projections."""
-    layout = _native_oracle(built_environment)
+    layout = native_layout(built_environment)
     component = built_environment._binning.linearization
     assert isinstance(component, TrackLinearization)
     assert built_environment._binning.linearization is component
@@ -52,17 +53,17 @@ def test_track_linearization_matches_previous(built_environment, locator_parity)
 
 @pytest.mark.parametrize("spacing_kind", ["scalar", "list"])
 def test_gapped_track_linearization_matches_previous(
-    graph_layout_with_gap, locator_parity, spacing_kind
+    graph_layout_with_gap, simple_y_maze_graph, locator_parity, spacing_kind
 ):
     """Gap and outside queries retain their previous endpoint projections."""
     layout = graph_layout_with_gap
     if spacing_kind == "list":
-        params = layout._build_params_used
+        graph, edge_order = simple_y_maze_graph
         layout.build(
-            graph_definition=params["graph_definition"],
-            edge_order=params["edge_order"],
+            graph_definition=graph,
+            edge_order=edge_order,
             edge_spacing=[10.0, 10.0],
-            bin_size=params["bin_size"],
+            bin_size=layout._build_params_used["bin_size"],
         )
     _assert_previous_projection(
         layout.linearization(), layout, "gapped_track/projection", locator_parity
@@ -81,8 +82,9 @@ def test_track_linearization_owns_constructor_geometry(
 ):
     """Caller graph, order, gaps and grid buffers cannot alter a stored projection."""
     layout = graph_layout_with_gap
-    graph = copy.deepcopy(layout._build_params_used["graph_definition"])
-    order = list(layout._build_params_used["edge_order"])
+    built = layout.linearization()
+    graph = nx.Graph(built.graph)  # an editable copy of the caller's track
+    order = list(built.edge_order)
     spacing = np.full(len(order) - 1, layout._build_params_used["edge_spacing"])
     edges = tuple(edge.copy() for edge in layout.grid_edges)
     mask = layout.active_mask.copy()
@@ -141,21 +143,6 @@ def test_track_linearization_is_identity_hashed_and_read_only(
     )
 
 
-def test_legacy_track_layout_rebuilds_missing_component(
-    graph_layout_with_gap, locator_parity
-):
-    """Layouts saved before the component existed can recreate their projection."""
-    layout = graph_layout_with_gap
-    original = layout.linearization()
-    del layout._linearization
-    restored = layout.linearization()
-    assert restored is not original
-    assert restored is layout.linearization()
-    _assert_previous_projection(
-        restored, layout, "gapped_track/projection", locator_parity
-    )
-
-
 @pytest.mark.parametrize(
     "restore",
     [lambda x: x, copy.deepcopy, lambda x: pickle.loads(pickle.dumps(x))],
@@ -182,15 +169,3 @@ def test_stored_track_graph_attributes_cannot_change_projections(
     np.testing.assert_array_equal(component.to_linear(points), expected)
     with pytest.raises(nx.NetworkXError):
         component.graph.add_node("new")
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

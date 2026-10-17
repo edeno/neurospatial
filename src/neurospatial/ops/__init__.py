@@ -6,7 +6,7 @@ that can be composed into higher-level functionality.
 
 Submodules
 ----------
-binning : Point-to-bin mapping, region masks
+mapping : Point-to-bin mapping, region masks, field resampling
 distance : Distance fields, pairwise distances
 normalize : Field normalization, clamping
 diffusion : Finite-volume heat operator and its eigenbasis apply-path
@@ -21,12 +21,27 @@ basis : GLM spatial basis functions
 """
 
 # Alignment operations
-# Visibility operations - imported lazily to avoid circular imports
-# These modules depend on Environment, which creates a circular import when
-# ops/__init__.py is imported during Environment initialization.
-# Use direct imports: from neurospatial.ops.visibility import FieldOfView
-import importlib as _importlib
-
+from neurospatial.ops._linear_allocation import (
+    _linear_grid_occupancy as _linear_grid_occupancy,
+)
+from neurospatial.ops._polygon_allocation import (
+    _polygon_linear_occupancy as _polygon_linear_occupancy,
+)
+from neurospatial.ops._polygon_allocation import (
+    _RetainedLinearInterval as _RetainedLinearInterval,
+)
+from neurospatial.ops._polygon_allocation import _source_grid as _source_grid
+from neurospatial.ops._polygon_allocation import (
+    _uses_polygon_allocation as _uses_polygon_allocation,
+)
+from neurospatial.ops._transitions import _count_transitions as _count_transitions
+from neurospatial.ops._transitions import (
+    _diffusion_transitions as _diffusion_transitions,
+)
+from neurospatial.ops._transitions import (
+    _random_walk_transitions as _random_walk_transitions,
+)
+from neurospatial.ops._types import KernelMode
 from neurospatial.ops.alignment import (
     ProbabilityMappingParams,
     apply_similarity_transform,
@@ -44,21 +59,36 @@ from neurospatial.ops.basis import (
     spatial_basis,
 )
 
-# Binning operations
-from neurospatial.ops.binning import (
-    TieBreakStrategy,
-    map_points_to_bins,
-    regions_to_mask,
-    resample_field,
-)
-
 # Calculus operations (gradient, divergence)
 from neurospatial.ops.calculus import (
-    compute_differential_operator,
-    divergence,
-    gradient,
+    _compute_differential_operator as _compute_differential_operator,
 )
+from neurospatial.ops.calculus import (
+    _compute_divergence_operator as _compute_divergence_operator,
+)
+from neurospatial.ops.calculus import divergence, gradient
+from neurospatial.ops.diffusion import _HEAT_KERNEL_RANK_TOL as _HEAT_KERNEL_RANK_TOL
+from neurospatial.ops.diffusion import _RESOLUTION_MARGIN as _RESOLUTION_MARGIN
 from neurospatial.ops.diffusion import MRFBasis
+from neurospatial.ops.diffusion import _above_component_floor as _above_component_floor
+from neurospatial.ops.diffusion import (
+    _component_support_mask as _component_support_mask,
+)
+from neurospatial.ops.diffusion import _diffusion_apply as _diffusion_apply
+from neurospatial.ops.diffusion import _diffusion_apply_rtol as _diffusion_apply_rtol
+from neurospatial.ops.diffusion import _DiffusionEigenbasis as _DiffusionEigenbasis
+from neurospatial.ops.diffusion import _ensure_global_modes as _ensure_global_modes
+from neurospatial.ops.diffusion import _live_components as _live_components
+from neurospatial.ops.diffusion import (
+    _masked_diffusion_average as _masked_diffusion_average,
+)
+from neurospatial.ops.diffusion import _MRFEigenbasis as _MRFEigenbasis
+from neurospatial.ops.diffusion import _null_mode_indices as _null_mode_indices
+from neurospatial.ops.diffusion import _resolve_basis as _resolve_basis
+from neurospatial.ops.diffusion import _select_live_basis as _select_live_basis
+from neurospatial.ops.diffusion import _symmetric_conjugate as _symmetric_conjugate
+from neurospatial.ops.diffusion import _target_live_rank as _target_live_rank
+from neurospatial.ops.diffusion import _validate_occupancy as _validate_occupancy
 
 # Distance operations
 from neurospatial.ops.distance import (
@@ -80,11 +110,24 @@ from neurospatial.ops.egocentric import (
     heading_from_body_orientation,
     heading_from_velocity,
 )
+from neurospatial.ops.egocentric import (
+    _velocity_heading_and_speed as _velocity_heading_and_speed,
+)
+from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 
 # Graph operations
 from neurospatial.ops.graph import (
     graph_convolve,
     neighbor_reduce,
+)
+
+# Point-to-bin mapping, region masks and field resampling
+from neurospatial.ops.mapping import TieBreakStrategy, regions_to_mask, resample_field
+from neurospatial.ops.mapping import _nearest_bin_query as _nearest_bin_query
+from neurospatial.ops.mapping import _regions_mask as _regions_mask
+from neurospatial.ops.mapping import _typical_bin_spacing as _typical_bin_spacing
+from neurospatial.ops.mapping import (
+    _validate_nearest_options as _validate_nearest_options,
 )
 
 # Normalize operations
@@ -93,12 +136,10 @@ from neurospatial.ops.normalize import (
     combine_fields,
     normalize_field,
 )
+from neurospatial.ops.smoothing import _gaussian_kernel as _gaussian_kernel
 
 # Smoothing operations
-from neurospatial.ops.smoothing import (
-    apply_kernel,
-    compute_diffusion_kernels,
-)
+from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
 
 # Transform operations
 from neurospatial.ops.transforms import (
@@ -106,7 +147,6 @@ from neurospatial.ops.transforms import (
     AffineND,
     SpatialTransform,
     VideoCalibration,
-    apply_transform_to_environment,
     calibrate_from_landmarks,
     calibrate_from_scale_bar,
     convert_to_cm,
@@ -124,37 +164,20 @@ from neurospatial.ops.transforms import (
     translate_3d,
 )
 
+# Visibility operations
+from neurospatial.ops.visibility import (
+    FieldOfView,
+    ViewshedResult,
+    compute_view_field,
+    compute_viewed_location,
+    compute_viewshed,
+    compute_viewshed_trajectory,
+    visibility_occupancy,
+    visible_cues,
+)
 
-def __getattr__(name: str):
-    """Lazy import for visibility module to avoid circular imports."""
-    _visibility_exports = {
-        "FieldOfView",
-        "ViewshedResult",
-        "compute_view_field",
-        "compute_viewed_location",
-        "compute_viewshed",
-        "compute_viewshed_trajectory",
-        "visibility_occupancy",
-        "visible_cues",
-    }
-    if name in _visibility_exports:
-        _visibility = _importlib.import_module("neurospatial.ops.visibility")
-        return getattr(_visibility, name)
-    msg = f"module 'neurospatial.ops' has no attribute {name!r}"
-    raise AttributeError(msg)
-
-
-def __dir__() -> list[str]:
-    """List module attributes, including lazily-exported names, for autocomplete.
-
-    Merges the eagerly-imported module globals with everything in ``__all__``
-    (which includes the lazily-loaded visibility exports) so interactive tools
-    and ``dir()`` surface the full public surface, not just the already-imported
-    names.
-    """
-    return sorted(set(globals()) | set(__all__))
-
-
+# The ``_`` names imported here are internal helpers shared with other
+# neurospatial packages; they are not public API.
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
     "MRFBasis",
@@ -165,11 +188,9 @@ __all__ = [
     "map_probabilities",
     # Binning
     "TieBreakStrategy",
-    "map_points_to_bins",
     "regions_to_mask",
     "resample_field",
     # Calculus
-    "compute_differential_operator",
     "divergence",
     "gradient",
     # Distance
@@ -195,6 +216,7 @@ __all__ = [
     "combine_fields",
     "normalize_field",
     # Smoothing
+    "KernelMode",
     "apply_kernel",
     "compute_diffusion_kernels",
     # Transforms - Core classes
@@ -221,7 +243,6 @@ __all__ = [
     "convert_to_pixels",
     "flip_y_data",
     # Transforms - Estimation
-    "apply_transform_to_environment",
     "estimate_transform",
     # Visibility
     "FieldOfView",

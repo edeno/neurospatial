@@ -309,28 +309,6 @@ def test_html_export_image_format_parameter(tmp_path):
     assert output_path.exists()
 
 
-def test_html_export_gracefully_accepts_unused_parameters(tmp_path):
-    """Test HTML export gracefully accepts parameters for other backends."""
-    rng = np.random.default_rng(42)
-    positions = rng.standard_normal((100, 2)) * 50
-    env = Environment.from_samples(positions, bin_size=10.0)
-
-    fields = [rng.random(env.n_bins) for _ in range(3)]
-
-    output_path = tmp_path / "test.html"
-
-    # Should not error on video-specific or napari-specific parameters
-    render_html(
-        env,
-        fields,
-        save_path=str(output_path),
-        n_workers=4,  # Video-specific
-        contrast_limits=(0, 1),  # Napari-specific
-    )
-
-    assert output_path.exists()
-
-
 def test_html_title_escaping(tmp_path):
     """Test HTML title properly escapes dangerous characters."""
     rng = np.random.default_rng(42)

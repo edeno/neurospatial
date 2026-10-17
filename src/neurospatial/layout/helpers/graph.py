@@ -10,7 +10,7 @@ such as an animal's track in an experiment. These functions handle:
   represent active 1D bin centers and edges connect adjacent bins
   (`_create_graph_layout_connectivity_graph`).
 - Projecting 1D linearized positions back to their corresponding N-D
-  coordinates on the original track graph (`_project_1d_to_2d`).
+  coordinates on the original track graph (`project_1d_to_2d`).
 - Finding the appropriate 1D bin index for a given linear position
   (`_find_bin_for_linear_position`).
 
@@ -26,9 +26,6 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._track import (
-    _project_1d_to_2d as _project_1d_to_2d,
-)
 from neurospatial.layout.helpers.utils import get_centers
 
 Edge = tuple[Any, Any]
@@ -92,7 +89,7 @@ def _get_graph_bins(
 
     # 3) Build gap array
     n_edges = len(edge_order)
-    if isinstance(edge_spacing, (int, float)):
+    if isinstance(edge_spacing, (int, float, np.number)):
         gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
     else:
         gaps = np.asarray(edge_spacing, dtype=float)

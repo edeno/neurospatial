@@ -8,7 +8,8 @@ import pytest
 from shapely.geometry import Point
 
 from neurospatial import Environment
-from neurospatial.arena import encode_arena
+from neurospatial.geometry._codecs import encode_arena
+from neurospatial.layout import create_layout
 
 
 def _arena_record(arena):
@@ -105,12 +106,12 @@ def test_rebinned_environment_round_trips(
 ) -> None:
     """A saved coarse grid restores its cells, queries, graph and smoothing."""
     env = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": [(0, 4), (0, 4)],
-            "connect_diagonal_neighbors": diagonal,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(0, 4), (0, 4)],
+            connect_diagonal_neighbors=diagonal,
+        )
     ).rebin(factor)
     path = tmp_path / "coarse"
     env.to_file(path)
@@ -122,7 +123,9 @@ def test_rebinned_environment_round_trips(
         )
         assert set(restored.connectivity.edges()) == set(env.connectivity.edges())
         field = np.arange(env.n_bins, dtype=float)
-        np.testing.assert_allclose(restored.smooth(field, 1.0), env.smooth(field, 1.0))
+        np.testing.assert_allclose(
+            restored.smooth(field, bandwidth=1.0), env.smooth(field, bandwidth=1.0)
+        )
 
 
 @pytest.mark.parametrize("diagonal", [False, True])
@@ -132,12 +135,12 @@ def test_rebin_identity_keeps_small_grid_edges(
 ) -> None:
     """Rebinning a full grid by one preserves edges even without interior nodes."""
     env = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": [(0, side) for side in shape],
-            "connect_diagonal_neighbors": diagonal,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(0, side) for side in shape],
+            connect_diagonal_neighbors=diagonal,
+        )
     )
     assert set(env.rebin(1).connectivity.edges()) == set(env.connectivity.edges())
 
@@ -260,7 +263,6 @@ class TestRebinBasic:
 
         # Verify it's a valid environment
         assert isinstance(coarse, Environment)
-        assert coarse._is_fitted
 
     def test_rebin_publishes_fitted_geometry(self):
         """Rebin publishes complete coarse geometry with independent caches."""
@@ -272,11 +274,9 @@ class TestRebinBasic:
 
         coarse = env.rebin(factor=2)
 
-        assert coarse._is_fitted
-        assert coarse._layout_type_used == "RegularGrid"
+        assert coarse.layout_type == "RegularGrid"
         assert coarse._geometry is not env._geometry
-        assert coarse._kernel_cache == {}
-        assert coarse._kdtree_cache is None
+        assert len(coarse._cache) == 0
         # Cached operators must use the rebinned graph. The
         # differential operator has shape (n_bins, n_edges).
         D = coarse.get_differential_operator()
@@ -393,10 +393,15 @@ class TestRebinValidation:
     def test_rebin_non_grid_layout_raises(self):
         """Factor rebinning needs rectangular cell geometry."""
         env = Environment.from_layout(
-            "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 20), (0, 20)]}
+            create_layout(
+                "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 20), (0, 20)]
+            )
         )
-        with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+        with pytest.raises(
+            NotImplementedError, match="works on rectangular grids"
+        ) as caught:
             env.rebin(factor=2)
+        assert "layout='Hexagonal'" in str(caught.value).split("Fix:")[1]
 
     def test_rebin_invalid_factor_raises(self):
         """Invalid factor values raise ValueError."""
@@ -405,10 +410,10 @@ class TestRebinValidation:
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Factor must be positive
-        with pytest.raises(ValueError, match=r"positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             env.rebin(factor=0)
 
-        with pytest.raises(ValueError, match=r"positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             env.rebin(factor=-2)
 
     def test_rebin_factor_too_large_raises(self):
@@ -419,7 +424,7 @@ class TestRebinValidation:
         env = Environment.from_samples(data, bin_size=10.0)
 
         # Factor 10 is too large for 4x4 grid
-        with pytest.raises(ValueError, match=r"too large.*grid shape"):
+        with pytest.raises(ValueError, match="asks to merge"):
             env.rebin(factor=10)
 
     def test_rebin_non_divisible_warns(self):
@@ -527,9 +532,8 @@ class TestRebinIntegration:
         coarse = env.rebin(factor=2)
 
         # All original bin centers should map to some bin in coarse
-        from neurospatial.ops import map_points_to_bins
 
-        indices = map_points_to_bins(coarse, env.bin_centers)
+        indices = coarse.nearest_bin(env.bin_centers)
 
         # Should all be valid (not -1)
         assert np.all(indices >= 0)

@@ -55,11 +55,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
-from neurospatial.stats.circular import (
-    _mean_resultant_length,
+from neurospatial.stats import (
     _to_radians,
     _validate_paired_input,
     circular_linear_correlation,
+    mean_resultant_length,
 )
 
 if TYPE_CHECKING:
@@ -444,7 +444,7 @@ def _fit_slope(
 
     def _neg_mean_resultant_length(slope: float) -> float:
         residuals = (phases - slope * positions) % (2 * np.pi)
-        return -_mean_resultant_length(residuals)
+        return -mean_resultant_length(residuals)
 
     # The circular objective is multimodal: as a function of slope it has a
     # main lobe at the true slope surrounded by side-lobes, and the main lobe

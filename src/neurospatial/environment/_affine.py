@@ -2,32 +2,64 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import replace
+from itertools import product
 
 import numpy as np
+from numpy.typing import NDArray
+from shapely.geometry import Polygon
 
+from neurospatial._exceptions import _format_error
+from neurospatial.environment._publication import _Derivation
+from neurospatial.geometry import Arena, Binning, cell_extent, transform_binning
 from neurospatial.ops.transforms import Affine2D, AffineND
-
-if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+from neurospatial.regions import Region, Regions
 
 
-def _apply_transform_to_environment(
-    env: Environment,
-    transform: AffineND | Affine2D,
+def _apply_transform(
+    transform: object,
     *,
-    name: str | None = None,
-) -> Environment:
-    """Transform owned cells, graphs, arenas and regions together."""
-    from neurospatial.environment import Environment
-    from neurospatial.regions import Region, Regions
+    binning: Binning,
+    regions: Regions,
+    arena: Arena,
+) -> _Derivation:
+    """Transform owned cells, their bounds, arenas and regions together."""
+    n_dims = binning.bins.n_dims
+    if not isinstance(transform, (AffineND, Affine2D)):
+        shape = np.shape(transform) if isinstance(transform, np.ndarray) else None
+        given = (
+            f"a NumPy array of shape {shape}"
+            if shape is not None
+            else type(transform).__name__
+        )
+        raise TypeError(
+            _format_error(
+                f"apply_transform() takes an AffineND or Affine2D transform, got "
+                f"{given}.",
+                why="Why: the transform object says the matrix is homogeneous "
+                f"(shape ({n_dims + 1}, {n_dims + 1}) for {n_dims}-D bins, with "
+                "the translation in the last column) and supplies the inverse "
+                "used to keep bins, arena and regions consistent.",
+                fix="wrap the homogeneous matrix: from neurospatial.ops import "
+                "AffineND; env.apply_transform(AffineND(matrix)), or build one "
+                "with neurospatial.ops.transforms helpers such as translate(...)",
+            )
+        )
 
     # Validate dimensionality match
     transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2
-    if env.n_dims != transform_dims:
+    if n_dims != transform_dims:
         raise ValueError(
-            f"Transform dimensionality ({transform_dims}D) does not match "
-            f"environment dimensionality ({env.n_dims}D)."
+            _format_error(
+                f"apply_transform() got a {transform_dims}-D transform for "
+                f"{n_dims}-D bins.",
+                why="Why: a transform maps points of its own dimension, so it "
+                "cannot move bins with another number of coordinates.",
+                fix=f"build a {n_dims}-D transform from a ({n_dims + 1}, "
+                f"{n_dims + 1}) homogeneous matrix, such as the identity: from "
+                "neurospatial.ops import AffineND; "
+                f"env.apply_transform(AffineND(np.eye({n_dims + 1})))",
+            )
         )
 
     # Containment is evaluated in the original layout's coordinate frame.
@@ -41,46 +73,16 @@ def _apply_transform_to_environment(
             "Fix: use nonzero scale factors and an invertible affine matrix."
         ) from exc
 
-    from neurospatial.geometry._derive import transform_binning
+    transformed = transform_binning(binning, transform)
 
-    binning = transform_binning(env._binning, transform)
-    transformed_centers = binning.bins.centers
-
-    # Create new connectivity graph with updated node positions
-
-    new_graph = env.connectivity.copy()
-    for node_id in new_graph.nodes:
-        new_graph.nodes[node_id]["pos"] = tuple(transformed_centers[node_id])
-
-    # Recompute edge attributes (distance, vector, and angle_2d for 2D)
-    for u, v in new_graph.edges:
-        pos_u = np.array(new_graph.nodes[u]["pos"])
-        pos_v = np.array(new_graph.nodes[v]["pos"])
-        vec = pos_v - pos_u
-
-        new_graph.edges[u, v]["vector"] = tuple(vec)
-
-        # Recompute angle_2d for 2D environments only
-        if env.n_dims == 2 and "angle_2d" in new_graph.edges[u, v]:
-            angle = float(np.arctan2(vec[1], vec[0]))
-            new_graph.edges[u, v]["angle_2d"] = angle
-
-    for (u, v), distance in zip(
-        binning.bins.pairs, binning.bins.pair_distances, strict=True
-    ):
-        new_graph.edges[u, v]["distance"] = float(distance)
-
-    # Transform dimension_ranges (N-dimensional)
-    transformed_dim_ranges = None
-    if env.dimension_ranges is not None:
+    # The transformed cells' own extent; bins without cells map their
+    # declared box instead.
+    transformed_dim_ranges = cell_extent(transformed, shapeless="none")
+    dimension_ranges = binning.dimension_ranges
+    if transformed_dim_ranges is None and dimension_ranges is not None:
         # Generate all corner points of the N-dimensional bounding box
         # For N dims, we have 2^N corners (all combinations of low/high per dimension)
-        n_dims = env.n_dims
-        ranges = env.dimension_ranges
-
-        # Generate corner points using itertools.product
-        from itertools import product
-
+        ranges = dimension_ranges
         corner_indices = list(product([0, 1], repeat=n_dims))  # All combinations of 0/1
         corners = np.array(
             [
@@ -93,73 +95,45 @@ def _apply_transform_to_environment(
         transformed_corners = transform(corners)
 
         # New bounding box: min/max along each dimension
-        transformed_dim_ranges = [
-            (transformed_corners[:, dim].min(), transformed_corners[:, dim].max())
+        transformed_dim_ranges = tuple(
+            (
+                float(transformed_corners[:, dim].min()),
+                float(transformed_corners[:, dim].max()),
+            )
             for dim in range(n_dims)
-        ]
-
-    tag = f"{env.layout_type}_transformed"
-    params = {**env.layout_parameters, "transformed": True}
-    new_name = name if name is not None else f"{env.name}_transformed"
-    new_env = Environment._from_binning(
-        binning,
-        connectivity=new_graph,
-        dimension_ranges=transformed_dim_ranges,
-        layout_type_tag=tag,
-        layout_type=env._layout_category,
-        build_params=params,
-        is_linearized_track=env.is_linearized_track,
-        name=new_name,
-        arena=env.arena.transformed(transform.A),
-        clip_mapping=env.clip_mapping,
-    )
-    # Transform and copy regions
-    if env.regions and len(env.regions) > 0:
-        transformed_regions = []
-        for region in env.regions.values():
-            if region.kind == "point":
-                # Transform point
-                old_point = np.array(region.data)
-                new_point = transform(old_point.reshape(1, -1))[0]
-                new_region = Region(
-                    name=region.name,
-                    kind="point",
-                    data=new_point,
-                    metadata={**region.metadata, "transformed": True},
-                )
-            elif region.kind == "polygon":
-                # Transform polygon
-                import shapely.geometry as shp
-                from shapely.geometry import Polygon
-
-                # Type narrowing: region.data is a Polygon when kind == "polygon"
-                if not isinstance(region.data, Polygon):
-                    raise TypeError(
-                        f"Region '{region.name}' has kind='polygon' but data is not a Polygon"
-                    )
-                old_coords = np.array(region.data.exterior.coords)
-                new_coords = transform(old_coords)
-                new_holes = [
-                    transform(np.asarray(ring.coords)) for ring in region.data.interiors
-                ]
-                new_poly = shp.Polygon(new_coords, holes=new_holes)
-                new_region = Region(
-                    name=region.name,
-                    kind="polygon",
-                    data=new_poly,
-                    metadata={**region.metadata, "transformed": True},
-                )
-
-            transformed_regions.append(new_region)
-
-        new_env = new_env.with_regions(Regions(transformed_regions))
-
-    # Copy units and frame
-    if hasattr(env, "units"):
-        new_env = new_env.with_metadata(units=env.units)
-    if hasattr(env, "frame"):
-        new_env = new_env.with_metadata(
-            frame=f"{env.frame}_transformed" if env.frame else "transformed"
         )
 
-    return new_env
+    return _Derivation(
+        replace(transformed, dimension_ranges=transformed_dim_ranges),
+        "apply_transform",
+        regions=Regions(
+            _transformed_region(region, transform) for region in regions.values()
+        ),
+        arena=arena.transformed(transform.A),
+    )
+
+
+def _transformed_region(region: Region, transform: AffineND | Affine2D) -> Region:
+    """Map a point or polygon region through ``transform``, marking it transformed."""
+    if region.kind == "point":
+        data: NDArray[np.float64] | Polygon = transform(
+            np.asarray(region.data).reshape(1, -1)
+        )[0]
+    else:
+        # Type narrowing: region.data is a Polygon when kind == "polygon"
+        if not isinstance(region.data, Polygon):
+            raise TypeError(
+                f"Region '{region.name}' has kind='polygon' but data is not a Polygon"
+            )
+        data = Polygon(
+            transform(np.asarray(region.data.exterior.coords)),
+            holes=[
+                transform(np.asarray(ring.coords)) for ring in region.data.interiors
+            ],
+        )
+    return Region(
+        name=region.name,
+        kind=region.kind,
+        data=data,
+        metadata={**region.metadata, "transformed": True},
+    )

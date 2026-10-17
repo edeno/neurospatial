@@ -5,7 +5,7 @@ import pytest
 from shapely.geometry import Polygon, box
 
 from neurospatial import Environment
-from neurospatial.encoding._binning import (
+from neurospatial.encoding._spatial_counts import (
     _resolve_spatial_time_support,
     bin_spike_train,
     bin_spike_trains,
@@ -223,3 +223,25 @@ def test_linear_fractional_support_refuses_unresolvable_absolute_clock():
         ),
         [1],
     )
+
+
+@pytest.mark.parametrize("layout", ["RegularGrid", "Hexagonal"])
+def test_encoding_dwell_matches_environment_linear_occupancy(layout):
+    # Rate maps divide by the dwell time Environment.occupancy reports, so the
+    # two must allocate each straight interval identically.
+    rng = np.random.default_rng(3)
+    env = Environment.from_samples(
+        rng.uniform(0, 30, (2000, 2)), bin_size=3.0, layout=layout
+    )
+    times = np.cumsum(rng.uniform(0.01, 0.05, 600))
+    positions = np.clip(15 + np.cumsum(rng.normal(0, 0.8, (600, 2)), axis=0), -2, 32)
+    positions[[50, 51, 300]] = np.nan
+    speed = np.abs(rng.normal(5, 3, 600))
+    record = prepare_linear_spatial_intervals(
+        env, times, positions, speed=speed, min_speed=4.0
+    )
+    occupancy = env.occupancy(
+        times, positions, speed=speed, min_speed=4.0, time_allocation="linear"
+    )
+    assert occupancy.sum() > 0
+    np.testing.assert_array_equal(record.occupancy, occupancy)

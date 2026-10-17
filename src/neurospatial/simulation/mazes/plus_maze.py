@@ -28,9 +28,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import networkx as nx
-
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_corridor_polygon,
@@ -250,46 +249,20 @@ def _create_plus_maze_track_graph(
     Environment
         1D linearized environment representing the plus maze track.
     """
-    # Key positions
-    center_pos = (0.0, 0.0)
-    north_end_pos = (0.0, dims.arm_length)
-    south_end_pos = (0.0, -dims.arm_length)
-    east_end_pos = (dims.arm_length, 0.0)
-    west_end_pos = (-dims.arm_length, 0.0)
-
-    # Create track graph (star topology)
-    graph = nx.Graph()
-
-    # Add nodes with positions
-    graph.add_node("center", pos=center_pos)
-    graph.add_node("north_end", pos=north_end_pos)
-    graph.add_node("south_end", pos=south_end_pos)
-    graph.add_node("east_end", pos=east_end_pos)
-    graph.add_node("west_end", pos=west_end_pos)
-
-    # Add edges with distances (all arms have same length)
-    arm_distance = dims.arm_length
-    graph.add_edge("center", "north_end", distance=arm_distance)
-    graph.add_edge("center", "south_end", distance=arm_distance)
-    graph.add_edge("center", "east_end", distance=arm_distance)
-    graph.add_edge("center", "west_end", distance=arm_distance)
-
-    # Edge order for linearization (traversal from center outward)
-    edge_order = [
-        ("center", "north_end"),
-        ("center", "east_end"),
-        ("center", "south_end"),
-        ("center", "west_end"),
-    ]
-
-    # Create the 1D environment
-    env_track = Environment.from_graph(
-        graph=graph,
-        edge_order=edge_order,
-        edge_spacing=0.0,  # No spacing between edges
+    # Node order [center, arm1, ..., arm4] gives one edge per arm,
+    # linearized clockwise from north.
+    return Environment.maze(
+        kind="plus",
+        node_positions={
+            "center": (0.0, 0.0),
+            "north_end": (0.0, dims.arm_length),
+            "east_end": (dims.arm_length, 0.0),
+            "south_end": (0.0, -dims.arm_length),
+            "west_end": (-dims.arm_length, 0.0),
+        },
         bin_size=bin_size,
+        track_width=dims.width,
+        edge_spacing=0.0,
         name="plus_maze_1d",
+        units="cm",
     )
-    env_track = env_track.with_metadata(units="cm")
-
-    return env_track

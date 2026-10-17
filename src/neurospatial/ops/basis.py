@@ -102,12 +102,20 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-if TYPE_CHECKING:
-    from scipy import sparse
+from neurospatial.geometry import require_cartesian
 
-    from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
-    from neurospatial.ops._protocols import WaveletGeometryConsumer
+if TYPE_CHECKING:
+    import networkx as nx
+    from scipy import sparse
+    from scipy.spatial import cKDTree
+
+    from neurospatial.geometry import DiffusionGeometry
+    from neurospatial.ops._protocols import (
+        BasisCentersConsumer,
+        FieldPlotConsumer,
+        SpatialBasisConsumer,
+        WaveletBasisConsumer,
+    )
 
 __all__ = [
     "chebyshev_filter_basis",
@@ -120,7 +128,7 @@ __all__ = [
 
 
 def select_basis_centers(
-    env: Environment,
+    env: BasisCentersConsumer,
     n_centers: int,
     *,
     method: Literal["kmeans", "farthest_point", "random", "grid"] = "kmeans",
@@ -132,7 +140,7 @@ def select_basis_centers(
     Parameters
     ----------
     env : Environment
-        Fitted environment with bin_centers.
+        Environment with bin_centers.
     n_centers : int
         Number of centers to select.
 
@@ -205,24 +213,26 @@ def select_basis_centers(
         generator = np.random.default_rng(rng)
 
     if method == "kmeans":
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "select_basis_centers(method='kmeans')",
-            instead=(
-                "Use method='farthest_point', which spreads centers by graph "
-                "distance, or method='random' (center_method= in the basis "
-                "functions)."
+            why="k-means clusters bin centers as Cartesian positions.",
+            fix=(
+                "use method='farthest_point', which spreads centers by graph "
+                "distance, or method='random' (center_method= in the basis functions)"
             ),
         )
-        return _select_centers_kmeans(env, n_centers, generator)
+        return _select_centers_kmeans(
+            env.bin_centers, env.bin_center_tree(), n_centers, generator
+        )
     elif method == "farthest_point":
-        return _select_centers_farthest_point(env, n_centers, generator)
+        return _select_centers_farthest_point(
+            env.connectivity, env.n_bins, n_centers, generator
+        )
     elif method == "random":
-        return _select_centers_random(env, n_centers, generator)
+        return _select_centers_random(env.n_bins, n_centers, generator)
     elif method == "grid":
-        return _select_centers_grid(env, n_centers)
+        return _select_centers_grid()
     else:
         raise ValueError(
             f"Unknown method: {method!r}. "
@@ -231,12 +241,15 @@ def select_basis_centers(
 
 
 def _select_centers_kmeans(
-    env: Environment,
+    bin_centers: NDArray[np.float64],
+    tree: cKDTree,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
-    """Select centers using k-means clustering on bin_centers."""
-    from scipy.spatial import cKDTree
+    """Select centers by k-means on ``bin_centers``, shape (n_bins, n_dims).
+
+    ``tree`` is the environment's KD-tree over ``bin_centers``.
+    """
     from sklearn.cluster import KMeans
 
     # Run k-means on bin centers
@@ -245,27 +258,27 @@ def _select_centers_kmeans(
         random_state=int(rng.integers(0, 2**31)),
         n_init=10,
     )
-    kmeans.fit(env.bin_centers)
+    kmeans.fit(bin_centers)
 
     # Find nearest bin to each cluster centroid
-    tree = cKDTree(env.bin_centers)
     _, centers = tree.query(kmeans.cluster_centers_)
 
     return np.asarray(centers, dtype=np.int_)
 
 
 def _select_centers_random(
-    env: Environment,
+    n_bins: int,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
     """Select centers uniformly at random."""
-    centers = rng.choice(env.n_bins, size=n_centers, replace=False)
+    centers = rng.choice(n_bins, size=n_centers, replace=False)
     return np.asarray(centers, dtype=np.int_)
 
 
 def _select_centers_farthest_point(
-    env: Environment,
+    connectivity: nx.Graph,
+    n_bins: int,
     n_centers: int,
     rng: np.random.Generator,
 ) -> NDArray[np.int_]:
@@ -274,12 +287,10 @@ def _select_centers_farthest_point(
     from scipy.sparse.csgraph import shortest_path
 
     # Get adjacency matrix for shortest path computation
-    adjacency = nx.to_scipy_sparse_array(
-        env.connectivity, weight="distance", format="csr"
-    )
+    adjacency = nx.to_scipy_sparse_array(connectivity, weight="distance", format="csr")
 
     # Start with a random point
-    centers = [int(rng.integers(0, env.n_bins))]
+    centers = [int(rng.integers(0, n_bins))]
 
     # Compute distances from first center
     distances_from_centers = shortest_path(
@@ -309,10 +320,7 @@ def _select_centers_farthest_point(
     return np.asarray(centers, dtype=np.int_)
 
 
-def _select_centers_grid(
-    env: Environment,
-    n_centers: int,
-) -> NDArray[np.int_]:
+def _select_centers_grid() -> NDArray[np.int_]:
     """Select centers using regular grid subsampling."""
     # For now, raise NotImplementedError - grid method requires
     # knowing the grid structure which not all environments have
@@ -366,7 +374,7 @@ def _normalize_basis(
 
 
 def geodesic_rbf_basis(
-    env: Environment,
+    env: BasisCentersConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     sigma: float | Sequence[float] = 5.0,
@@ -386,7 +394,7 @@ def geodesic_rbf_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment.
+        Environment.
     centers : NDArray[np.int_] or None
         Node indices for basis centers. If None, auto-select using
         n_centers and center_method.
@@ -592,27 +600,38 @@ def geodesic_rbf_basis(
     return basis
 
 
-def _diffusion_generator(env: WaveletGeometryConsumer) -> sparse.csr_matrix:
-    """Finite-volume generator in bin-spacing² units, as used by env.smooth."""
+def _diffusion_generator(
+    bin_centers: NDArray[np.float64], tree: cKDTree, geometry: DiffusionGeometry
+) -> sparse.csr_matrix:
+    """Finite-volume generator in bin-spacing² units, as used by env.smooth.
+
+    Parameters
+    ----------
+    bin_centers : ndarray of float64, shape (n_bins, n_dims)
+        Bin centers, for the typical bin spacing.
+    tree : scipy.spatial.cKDTree
+        The environment's KD-tree over ``bin_centers``.
+    geometry : DiffusionGeometry
+        Conductances ``W`` and cell volumes of the same bins.
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+        ``spacing**2 * M**-1 (Deg - W)``.
+    """
     from scipy import sparse
-    from scipy.spatial import cKDTree
 
-    from neurospatial.ops.binning import _estimate_typical_bin_spacing
+    from neurospatial.ops.mapping import _estimate_typical_bin_spacing
 
-    # Name this analysis, not "smoothing", if the layout has no cell faces.
-    faces = env.binning.faces
-    if not faces.available:
-        raise faces.missing_error("heat_kernel_wavelet_basis")
-    geometry = env.get_diffusion_geometry()
     degree = sparse.diags(np.asarray(geometry.W.sum(axis=1)).ravel())
-    spacing = _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
+    spacing = _estimate_typical_bin_spacing(tree, bin_centers)
     return (
         spacing**2 * sparse.diags(1.0 / geometry.volumes) @ (degree - geometry.W)
     ).tocsr()
 
 
 def heat_kernel_wavelet_basis(
-    env: Environment,
+    env: WaveletBasisConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     scales: Sequence[float] = (0.5, 1.0, 2.0, 4.0),
@@ -634,7 +653,7 @@ def heat_kernel_wavelet_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment with connectivity graph.
+        Environment with connectivity graph.
     centers : NDArray[np.int_] or None
         Node indices for wavelet centers. If None, auto-select.
     scales : sequence of float, default=(0.5, 1.0, 2.0, 4.0)
@@ -747,7 +766,13 @@ def heat_kernel_wavelet_basis(
     n_scales = len(scales_arr)
     n_bins = env.n_bins
 
-    laplacian = _diffusion_generator(env)
+    # Name this analysis, not "smoothing", if the layout has no cell faces.
+    faces = env.binning.faces
+    if not faces.available:
+        raise faces.missing_error("heat_kernel_wavelet_basis")
+    laplacian = _diffusion_generator(
+        env.bin_centers, env.bin_center_tree(), env.get_diffusion_geometry()
+    )
 
     # Create delta vectors at centers
     # Shape: (n_bins, n_centers)
@@ -783,7 +808,7 @@ def heat_kernel_wavelet_basis(
 
 
 def chebyshev_filter_basis(
-    env: Environment,
+    env: BasisCentersConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
     max_degree: int = 5,
@@ -804,7 +829,7 @@ def chebyshev_filter_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment with connectivity graph.
+        Environment with connectivity graph.
     centers : NDArray[np.int_] or None
         Node indices for filter centers. If None, auto-select.
     max_degree : int, default=5
@@ -1036,7 +1061,7 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
 
 
 def spatial_basis(
-    env: Environment[CartesianSystem],
+    env: SpatialBasisConsumer,
     *,
     coverage: Literal["local", "medium", "global"] = "medium",
     n_features: int = 100,
@@ -1054,9 +1079,12 @@ def spatial_basis(
     Parameters
     ----------
     env : Environment
-        Fitted environment.
+        Environment.
     coverage : {"local", "medium", "global"}, default="medium"
         Spatial scale of basis functions:
+
+        Environment size is the track length on a linearized track and the
+        geometric mean of the axis extents (``dimension_ranges``) otherwise.
 
         - "local": Fine-grained (sigma ≈ 5% of environment size)
           Good for: Detailed place fields, small receptive fields
@@ -1100,15 +1128,13 @@ def spatial_basis(
     The function creates a multi-scale basis with 3 octave-spaced sigma
     values centered around the coverage-determined scale.
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "spatial_basis()",
-        instead=(
-            "Its automatic scale assumes Cartesian extents. Use "
-            "geodesic_rbf_basis(env, sigma=..., center_method='farthest_point') "
-            "with sigma in distance units."
+        why="Its automatic scale comes from the Cartesian extent of the bins.",
+        fix=(
+            "use geodesic_rbf_basis(env, sigma=..., center_method='farthest_point') "
+            "with sigma in distance units"
         ),
     )
     # Compute environment extent
@@ -1120,7 +1146,12 @@ def spatial_basis(
             "Ensure the environment was created with valid data."
         )
 
-    if env.n_dims == 1:
+    if env.is_linearized_track:
+        # A track's size is the length of centerline its bins cover; the
+        # bounding box of its centerline is flat for a straight track and
+        # unrelated to the length for a bent one.
+        extent = float(np.sum(env.bin_sizes))
+    elif env.n_dims == 1:
         min_val, max_val = dim_ranges[0]
         extent = max_val - min_val
     else:
@@ -1148,7 +1179,7 @@ def spatial_basis(
 
 
 def plot_basis_functions(
-    env: Environment,
+    env: FieldPlotConsumer,
     basis: NDArray[np.float64],
     indices: list[int] | None = None,
     n_examples: int = 6,

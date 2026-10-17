@@ -243,8 +243,14 @@ class TestFullTrajectoryAnalysisWorkflow:
                 # Different choice → lower similarity expected
                 assert similarity >= 0.0  # Valid similarity score
 
-    def test_exploration_to_goal_directed_workflow(self) -> None:
-        """Test workflow detecting transition from exploration to goal-directed behavior."""
+    def test_goal_directed_run_in_a_recording_after_exploration(self) -> None:
+        """An approach recorded after a pause is found; exploration is not.
+
+        Exploration and the straight approach to the goal are two recordings,
+        separated by a pause longer than max_gap. detect_goal_directed_runs
+        scores each recording as one candidate, so this covers that case only,
+        not finding an approach inside one continuous recording.
+        """
         # Create environment
         x = np.linspace(0, 50, 250)
         y = np.linspace(0, 50, 250)
@@ -260,7 +266,7 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Phase 1: Random exploration (first 100 samples)
         rng = np.random.default_rng(42)
         explore_positions = rng.uniform(10, 50, (100, 2))
-        explore_times = np.linspace(0, 50, 100)
+        explore_times = np.arange(100) / 30.0  # 30 Hz tracking, in seconds
 
         # Phase 2: Goal-directed behavior (next 50 samples)
         goal_positions = np.column_stack(
@@ -269,7 +275,9 @@ class TestFullTrajectoryAnalysisWorkflow:
                 np.linspace(25, 40, 50),
             ]
         )
-        goal_times = np.linspace(50, 75, 50)
+        # A 10 s pause separates the phases, so each is its own recording;
+        # goal-directed runs are scored per recording.
+        goal_times = explore_times[-1] + 10.0 + np.arange(50) / 30.0
 
         # Combine phases
         all_positions = np.vstack([explore_positions, goal_positions])
@@ -286,12 +294,11 @@ class TestFullTrajectoryAnalysisWorkflow:
             min_progress=3.0,
         )
 
-        # Should detect at least one goal-directed run in phase 2
-        # (may detect 0 if discretization artifacts, but list should be valid)
-        assert isinstance(goal_runs, list)
-        if len(goal_runs) > 0:
-            # Runs should be in second half of trajectory
-            assert all(run.start_time >= 30 for run in goal_runs)
+        # The straight approach in phase 2 is a goal-directed run; the random
+        # exploration in phase 1 is not.
+        assert len(goal_runs) == 1
+        assert goal_runs[0].start_time == goal_times[0]
+        assert goal_runs[0].success
 
         # Step 2: Compare exploration vs goal-directed similarity
         explore_bins = position_bins[:100]

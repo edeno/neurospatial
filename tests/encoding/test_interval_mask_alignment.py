@@ -12,13 +12,13 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding._binning import (
+from neurospatial._intervals import interval_valid_mask
+from neurospatial.encoding._spatial_counts import (
     bin_spike_train,
     bin_spike_trains,
     compute_occupancy,
 )
 from neurospatial.encoding.spatial import compute_spatial_rate, compute_spatial_rates
-from neurospatial.environment.trajectory import interval_valid_mask
 
 
 @pytest.mark.parametrize("offset", [0.0, 1e9])
@@ -44,7 +44,7 @@ SMOOTHING_METHODS = ["diffusion_kde", "gaussian_kde", "binned"]
 
 @pytest.mark.parametrize("offset,step", [(0.0, 0.5), (0.1, 0.1), (1e9, 0.1)])
 def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
-    from neurospatial.encoding._binning import _bin_spike_train_with_stats
+    from neurospatial.encoding._spatial_counts import _bin_spike_train_with_stats
 
     times = offset + np.arange(3) * step
     positions = np.full((3, 1), 20.0)
@@ -390,7 +390,7 @@ def test_combined_mask_alignment(env_1d) -> None:
     t_gap = 0.5 * (times[7] + times[8])
     spike_times = np.append(spike_times, t_gap)
 
-    from neurospatial.encoding._binning import resolve_speed
+    from neurospatial.encoding._spatial_counts import resolve_speed
 
     resolved = resolve_speed(times, positions, speed, min_speed)
     counts = bin_spike_train(

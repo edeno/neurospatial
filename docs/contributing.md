@@ -93,10 +93,207 @@ uv run ruff format .
 uv run mypy src/neurospatial
 ```
 
-### Diffusion geometry providers
+### Environment architecture
 
-Smoothing, diffusion, smoothness bases, gradients and divergence use the owned
-face source in `Binning.faces`:
+`Environment` is a facade over owned data. It holds published geometry,
+labels, named regions, a build record and one analysis cache, and its public
+methods hand that data to private module functions. This section explains the
+design choices behind that shape.
+
+#### Layers
+
+Packages depend downward. Storage, rendering, decoding, encoding and
+statistics build on the `Environment` facade. The facade builds on `layout`
+(which constructs bins) and `ops` (numerical algorithms), and those build on
+`geometry`, which holds the owned records and imports no builder, analysis,
+storage or rendering package. `layout` and `ops` are peers. When a new import
+points upward, move the imported code down or the importer up. The exceptions
+are function-local imports in the `Environment` methods that hand off to
+storage or rendering (`to_file`, `to_nwb`, `animate_fields`, ...), which load
+those packages only when called. Nothing checks these layers automatically;
+review imports by hand.
+
+A package imports another package's names from that package's `__init__`
+(for example `from neurospatial.geometry import Binning`), never from its `_`
+modules, and reads an `Environment` only through public members. An internal
+helper that another package needs keeps its leading underscore where it is
+defined, and the package `__init__` re-exports it under that name
+(`from neurospatial.ops import _ensure_global_modes`); only `__all__` names are
+public API. `geometry` is wholly internal, so its names carry no underscore.
+`geometry/` has no import cycles: when two modules need each other, move the
+shared definition to a lower module.
+
+`neurospatial.binning` and `neurospatial.arena` are the public import paths
+for geometry records. Importing them does not load layout engines,
+`environment.core` or Matplotlib.
+
+#### One publisher
+
+`environment/_publication.py:_publish` is the only code that creates an
+`Environment`; `Environment()` itself always raises E1006. Funnelling every
+factory, derivation and reader through one function means validation runs in
+one place, and an environment cannot exist in a half-built state. The three
+entry points are `publish_layout` for a built layout engine, `publish_derived`
+for `subset`, `clip`, `rebin`, `apply_transform` and `combine`, and `_publish`
+itself for `from_bins` and the file, dict and NWB readers, which decode stored
+geometry without replaying build parameters.
+
+A published environment never changes. The graph is frozen, geometry arrays
+are read-only (handed out as `.view()`s of arrays marked with
+`setflags(write=False)`; geometry records restore the flag after unpickling
+through `geometry._arrays.ReadOnlyState`), public attributes cannot be
+assigned, and equality is by identity, so cached analyses and
+`copy.copy`/`copy.deepcopy` (which return the same object) are always valid.
+`env.to_networkx()` returns an editable copy. `with_metadata` and
+`with_regions` return a new object over the same geometry and cache.
+
+The build record (`_Provenance`) only describes how the bins were built, as
+scalar choices such as `bin_size`, and the derivations applied since
+(`env.derivations`). It never holds input data: an engine
+declares its data arguments once, with `@capture_build_params(data=(...))` on
+its `build` method, and any other argument that is not a scalar or a flat
+sequence of scalars is refused when the engine is built. The layout label is
+one vocabulary, `LayoutType` in `layout/_labels.py`: an engine's
+`layout_type` is a member's value, its binning carries the same label as
+`Binning.kind`, `env.layout_type` reads `Binning.kind`, and derivations keep
+the parent's label (`combine` reports `"Combined"`). Behavior comes from the
+owned binning, graph and arena, so do not branch on `layout_type` or build
+parameters.
+
+Pickling keeps the published state and drops the cache. It is for passing an
+environment between processes of the same version. Use `to_file`, `to_dict`
+or NWB for storage.
+
+#### Layout engines own their binning
+
+Every layout engine, built-in or custom, implements `binning()`, which
+returns a `Binning` assembled from the engine's own state. The environment
+never inspects engine classes or reads build parameters for geometry, so a
+custom engine needs no registration: build it and pass it to
+`Environment.from_layout(engine)`. Built-in engines share one rule for pair
+order, bin measures and face directions through `assemble_binning` in
+`layout/_assembly.py`. Polar environments use a masked grid over
+(distance, angle) with circular seam edges and are built only by
+`Environment.from_polar_egocentric`.
+
+#### Methods pass explicit components
+
+A public method is a thin entry point. It unpacks owned data (the `Binning`,
+graph, arena, coordinate descriptor and, for a function that caches, the
+`AnalysisCache`) and calls a private module function. That function takes the
+environment only when it needs the whole facade, and never calls back into the
+environment. This keeps the numerical code testable on explicit arrays and
+stops the facade from growing back into a mixin tangle. Warnings use
+`stacklevel=_external_stacklevel()` so they point at the scientist's line;
+errors use `_format_error` to say what failed, why and how to fix it.
+
+A package that consumes an environment declares a small `Protocol` of the
+members it reads, as `ops/_protocols.py` does, so Cartesian and polar
+environments satisfy it without casts and `ops` never imports `Environment`.
+A public `ops` function that scientists call as `f(env, ...)` keeps taking
+the environment: it reads the components it needs once at the top (for
+example `env.binning`, `env.arena`, `env.connectivity` or
+`env.get_diffusion_geometry()`) and passes them to private functions that take
+those components. It does not call environment analysis methods such as
+`bin_at`, `nearest_bin` or `diffuse` from inside the computation. One exception
+is allowed: an operator the environment caches (its KD-tree search or its
+diffusion eigenbasis) may be read at the boundary as a callable, for example
+`dst_env.diffuse` in `resample_field`, so repeated calls do not rebuild it. Each base
+protocol names one to three members; combine bases rather than repeating
+members, and do not repeat a method's full signature unless the function calls
+it.
+
+#### Analysis cache
+
+Every memoized analysis lives in the environment's one `AnalysisCache`
+(`environment/_cache.py`) under a module-level `CacheKey` or `RecentKey`,
+read with `cache.get(key, build)`. Do not use `cached_property` for analysis
+values: one cache means `clear_cache()` empties everything, the relabelling
+methods can share it with their parent, and derivations, readers and
+unpickled environments can start with a fresh one. Each key has its own
+re-entrant lock so concurrent first requests compute a value once. Cached
+values are never edited. A value that grows, such as an eigenbasis that gains
+modes, is an immutable record: `cache.update(key, initial, step)` passes the
+current record to `step`, which returns its replacement and a result, under
+the key's lock, so the growth happens once and readers never see a partial
+record.
+
+Locators hold no search structures of their own. The KD-tree, triangle index
+or polygon tree a locator searches is built by `locate(points, indexes)` and
+kept in `indexes`, a `LookupIndexes` store keyed by the locator. Environment
+code passes its `AnalysisCache` (`cache.lookup_index`), so these structures
+are locked, shared and cleared like every other analysis. Code that locates
+points repeatedly on a binning outside an environment, such as the copy
+`env.binning` returns, passes one `CallIndexes` to every call; `None` builds
+the structure for that call only.
+
+#### Cartesian-only members
+
+There is one runtime `Environment` class; factories give it a static
+coordinate type, `Environment[CartesianSystem]` or
+`Environment[EgocentricPolarSystem]`. Mark a member that is meaningless on
+polar bins with `@cartesian_only(why=..., fix=...)` from
+`environment/_cartesian.py`, and annotate `self` as
+`Environment[CartesianSystem]`. `why` says what the member does with Cartesian
+coordinates and `fix` names what works on a polar environment. The decorator is
+the only record of the capability: it refuses polar environments when the
+member is called and feeds `CARTESIAN_OPERATIONS`. The member stays visible, so
+`hasattr` is True. A Cartesian-only mode of a shared method, or an analysis
+function in another package, refuses with
+`neurospatial.geometry.require_cartesian(env.coordinate_system, operation,
+why=..., fix=...)`. Both raise `CartesianOnlyError`, a `TypeError`, with one
+message layout.
+Shared code asks the coordinate descriptor about lengths, axes and
+circularity, or reads `coordinate_kind`; it does not branch on classes or
+layout labels. Every other public member needs a stated polar meaning, which
+`test_every_public_member_is_classified_for_polar` enforces.
+
+#### Derivations
+
+`subset`, `clip`, `rebin`, `apply_transform` and `combine` compute a
+`_Derivation` record in a private module and pass it to `publish_derived`,
+which keeps the parent's class, name, units, frame, regions and arena unless
+the record or the caller replaces them. A derivation never changes units,
+never rebuilds through a factory and starts with a fresh cache, so fields and
+fitted models do not transfer. Metadata follows what the operation means:
+
+- `subset`, `clip` and `rebin` keep every label and accept `name=`.
+- `apply_transform` keeps the name and units, maps the regions and arena with
+  the bins, and sets `frame` only from the caller's `frame=`, because a
+  transformed environment is no longer in the old frame.
+- `combine` prefixes each child's regions with its key and has an empty name
+  unless `name=` is given.
+
+#### Factories
+
+Data arguments are positional and every option is keyword-only after `*`,
+with an explicit signature and no `**kwargs` that change meaning. An option
+that does not apply to the chosen layout or mode raises an actionable
+`ValueError` instead of being ignored. Cartesian factories accept `name`,
+`units`, `frame` and `regions`, and `arena` where an arena is meaningful.
+
+#### Checking a refactor
+
+`scripts/environment_baseline.py` records every probe's output, refusal,
+warning, signature and docstring on ten environment types, each also read
+back from a dict, a file and NWB. Record on the base commit before changing
+code, record again after, and compare:
+
+```bash
+uv run python scripts/environment_baseline.py record base.npz  # on the base commit
+uv run python scripts/environment_baseline.py record new.npz   # on your change
+uv run python scripts/environment_baseline.py compare base.npz new.npz
+```
+
+Outputs must match exactly, or the pull request lists and explains every
+intended difference. If you remove an API that the script probes, update the
+script in the same change.
+
+### Numerical geometry, storage and derivation details
+
+Reference notes for geometry that numerical code depends on. Smoothing,
+diffusion, smoothness bases, gradients and divergence use the owned face
+source in `Binning.faces`:
 
 - Native construction captures the data needed to compute faces lazily;
   explicit and restored geometry use validated face records. Gradient and
@@ -110,12 +307,15 @@ face source in `Binning.faces`:
   so zero-area (corner-touching) edges and isolated bins form separate
   components.
 
-The construction adapter captures supported native face inputs once when
-publishing owned binning. The obsolete finite-volume provider protocol is
-removed; numerical capability comes from the stored faces source. Environment operations read the
-resulting components. Geometry without supported faces has a `MissingFaces`
-reason. Saved binnings use
-`KnownFaces` for validated geometry and retain that reason when geometry is absent.
+A layout engine's `binning()` records the inputs of its native face formula;
+the faces are computed on first use. Explicit and restored binnings carry
+validated `KnownFaces`. Geometry without supported faces carries a
+`MissingFaces` reason, which saved binnings keep. Numerical capability comes
+only from this faces source, never from a layout name.
+
+Builders that need faces call `require_face_geometry(cache, binning,
+operation)` in `environment/_fields.py`, which names the analysis when the
+layout has no cell faces.
 
 `Binning.face_normals` optionally supplies an owned `FaceNormals` record.
 Cell faces are interfaces between bins; they do not assert physical arena walls. Its
@@ -141,13 +341,15 @@ protects representability. Native approximate meshes retain their existing
 similarity behavior; a normal alone does not certify a new deformation.
 
 `Binning.grid_frame` optionally stores an owned `FramedGrid`: current source
-`RectilinearGrid` axes/mask plus their forward world map. Migrate consumers via
-`require_grid_context` and map coordinates explicitly. Keep `rectilinear` and
-legacy world-grid properties truthful. Framed interpolation/allocation share
+`RectilinearGrid` axes/mask plus their forward world map. Grid consumers read
+it through `require_grid_context` and map coordinates explicitly. Keep
+`rectilinear` and the environment's world-grid attributes (`grid_edges`,
+`grid_shape`, `active_mask`) truthful. Framed interpolation/allocation share
 bounded source-plane recovery capped at a quarter of the smallest cell width.
 QuadMesh consumers transform corners and reshape values with the source mask.
 Partial clipping drops the tensor-grid component. `GridBinningSpec` separately
-describes future rebin construction and must not replace current-cell geometry.
+describes how `rebin(bin_size=...)` builds a new grid and must not replace
+current-cell geometry.
 
 Binning codec version 3 stores frames and normals; readers accept version 2
 (normals only) and version 1 (neither component). New stored geometry components
@@ -162,37 +364,13 @@ numerical geometry still prevents whole-environment diffusion; removing it with
 a subset allows the certified remainder. Gradient/divergence keep the existing
 physical-face contract and refuse combinations with nonphysical bridges.
 
-Grid, hexagonal, track, mesh, and polar layouts own their geometry assembly.
-Polar environments are built on `_PolarGridLayout`, a masked grid over
-`(distance, angle)` whose cell and face measures are the grid's scaled by
-radius. A new layout or subclass does not need registration in the diffusion
-solver. These are internal interfaces, not additional scientist-facing factory
-requirements.
-
-`layout.engines._polar` also builds physical polar edge distances and circular
-seam edges before the environment is initialized. Its masked-grid build records
-`circular_angle` alongside the shared grid parameters.
-
-Factories build native layouts once, then extract owned binning, lookup data
-and a lazy numerical face recipe. No builder, layout facade or opaque provider
-callback remains in the resulting environment. One frozen `_PublishedGeometry`
-owns the binning, coordinate descriptor, arena and grid context; its public
-array views reject writes and its graph rejects topology and attribute edits.
-`env.connectivity.copy()` supplies an independent editable graph.
-
-`Environment._from_binning` validates and publishes owned data atomically and
-starts fresh caches. Readers decode binning and graph records directly through
-this path, without replaying build parameters. Readers validate the storage
-format; publication runs the shared geometry checks once.
-`geometry/_validation.py` checks positions, ordered faces and distances, measures,
-locator/component agreement, frames and immediate clip mappings. Center lookup
-is checked on a detached locator so publication does not warm the saved value's
-lookup cache. Validated embedded tracks may revisit identical spatial centers; center
-lookup must still choose a bin at that same coordinate. Other bins retain
-strict center identity checks.
-Native mesh and hex logical indexing is distinct from a framed raster's source
-coordinates.
-Descriptive layout names and parameters never grant numerical capabilities.
+Publication validates geometry once, so readers only validate the storage
+format; a reader rebuilds the graph from the binning instead of reading the
+stored one. Every publication checks that each bin center locates its own
+bin, on a detached locator so publication does not warm the saved value's
+lookup cache. Validated embedded tracks may revisit
+identical spatial centers; center lookup must still choose a bin at that same
+coordinate. Other bins keep strict center identity checks.
 
 Stored node-link graphs use an optional `_neurospatial_reserved_attributes`
 sidecar to preserve user attributes named `id`, `source`, `target`, or multigraph
@@ -202,18 +380,33 @@ without the sidecar retain their existing format. Older readers can still read
 the topology of new records, but retain their previous limitation of dropping
 these reserved user attributes; use a current reader to recover them.
 
+Subsets select whole bins and restrict ordered faces, locators and components.
+Like every derivation, they hand publication only the derived binning;
+publication rebuilds the navigation graph, grid index and ranges from it,
+so a subset's graph follows its kept pairs and keeps the parent's bin IDs in
+`source_grid_flat_index`. Translations and similarities preserve finite-volume geometry;
+diagonal grid scaling retains axis-aligned faces. Other affine maps retain
+inverse lookup and cell measures, with a `MissingFaces` reason where right
+angles are lost; tracks refuse non-similarities. Triangle drawing vertices
+are retained under all invertible affine maps, independently of whether
+finite-volume faces remain valid for smoothing. Objects from outside
+neurospatial enter only through an installed snapshot adapter
+(`neurospatial.extensions.SnapshotAdapter`), which converts them to owned
+records. Live delegated lookup and track conversion callbacks are refused.
 
-`subset` and `apply_transform` derive a binning through `geometry/_derive.py` and
-publish it through the same owned-data path. Subsets select whole bins and restrict
-ordered faces, locators and components. Translations and similarities preserve
-finite-volume geometry; diagonal grid scaling retains axis-aligned faces.
-Other affine maps retain inverse lookup and cell measures, with a `MissingFaces`
-reason where right angles are lost; tracks refuse non-similarities. New
-derivations follow these rules and never rebuild through a factory.
-Triangle drawing vertices are retained under all invertible affine maps,
-independently of whether finite-volume faces remain valid for smoothing.
-Custom providers must use registered adapters to supported built-in owned
-snapshots. Live delegated lookup and track conversion callbacks are refused.
+Both rebin modes live in `environment/_rebin.py` and keep distinct
+construction rules. Integer-factor `rebin` requires uniform rectangular cells
+and native grid navigation, allowing physical walls to remove connections. It
+refuses custom path lengths or topology that cell geometry cannot
+reconstruct, keeps its historical grid partitioning, retains native lazy
+faces and its recorded grid parameters, and keeps truncation warnings and
+complete-face wall constraints. `rebin(bin_size=...)` uses the owned
+`GridBinningSpec`, independently of provenance: it re-bins the retained known
+arena, preserving the grid anchor and affine frame, and prepares faces for
+that frame. Requested sizes are physical lengths along those axes. Subset and
+clipping preserve the specification; combining does not invent a shared one.
+Unsupported families and records without a specification refuse new-size
+re-binning.
 
 `env.arena` describes continuous support independently of the active analysis
 bins. Samples, grid masks and image masks supply computational domains without
@@ -221,6 +414,14 @@ asserting measured physical walls. Explicit polygons and measured track widths
 record known footprints; units, frame and regions remain environment-owned.
 Subsets preserve the parent arena, while affine transforms map its geometry
 with the bins. Exact lookup applies both the arena gate and locator ownership.
+
+Border and visibility consumers use shared planar wall evidence in
+`geometry/_boundaries.py`. Physical mode reads asserted footprints and internal walls;
+analysis mode is explicit. Analysis cuts never create physical walls. Boundary
+contacts and wall-hit bin ownership use retained source frames with locally
+bounded inverse rounding. Viewshed bin coverage remains sampled, while first
+contacts and cue occlusion use geometric intersections. Unsupported geometry
+must refuse instead of silently switching boundary sources.
 
 `clip` intersects planar cells with the crop and known domain. Disconnected
 pieces become separate bins with an owned immediate-parent `ClipMapping`.
@@ -235,170 +436,17 @@ orthogonality checks; containment and plotting do not depend on certification.
 Files and dictionaries use `Environment-v3`; NWB environment records use `3.0`.
 They include a required Arena record. Version 2/`2.0` remains readable with an
 explicit `UnknownArena`, without inferring physical geometry from parameters,
-outlines or masks. Version 1/`1.x` records are refused with recreation guidance.
-Pure codecs in `geometry/_codecs.py` and `geometry/_arena.py` store typed arrays and JSON
-metadata; polygon WKB bytes and offsets preserve ordered cells and holes.
-Shared snapshot references retain locator ownership without duplicating each
-record. Bounded KD-tree and mesh triangle-lookup memos are rebuilt from saved data.
-Standard NWB containers reject slash-containing names, so a one-row ragged
-DynamicTable stores arrays under safe column names. Its description holds the
-JSON metadata and canonical-key/shape/dtype mapping, without padding or a
-custom extension.
-
-`Environment._face_geometry` builds from `env._binning.faces` and caches the
-validated faces once for the immutable environment;
-the diffusion snapshot (`_diffusion_geometry`) and the gradient and divergence
-operators all derive from it. Consumers read it through
-`_require_face_geometry(operation)`, which names the analysis when the layout
-has no cell faces. Private analyses use standard-library `cached_property`; `clear_cache()`
-ends their lifetime explicitly. Copies and saved environments omit these caches.
-
-Numerical consumers declare their small environment requirements in
-`ops._protocols`, so Cartesian and polar environments satisfy them without
-casts to a broad host interface. `ops._types` describes the diffusion and
-MRF eigenbasis cache dictionaries with `TypedDict`; it imports no scientific
-libraries at runtime. The dense-operation warning threshold is
-`neurospatial._constants.LARGE_KERNEL_THRESHOLD`, shared by diffusion and
-Gaussian smoothing without an import back into the smoothing adapter. CI type-checks both coordinate variants of the common Environment against these consumer protocols in `tests/typing/finite_volume_consumers.py`.
-
-### Owned geometry and builder boundaries
-
-`geometry/` holds immutable binning records, locators, arena evidence, coordinate
-semantics, validation and codecs. It does not import environment adapters,
-layout builders, numerical solvers, storage backends or rendering libraries.
-`neurospatial.binning` and `neurospatial.arena` retain their public import paths.
-Private aliases keep existing supported pickle records readable; new code imports
-geometry from its current package.
-
-`layout/` constructs native binnings. `ops/` implements numerical algorithms on
-explicit geometry and arrays. These packages are independent peers above
-`geometry/`. `environment/` coordinates them and owns cached analyses. Import
-contracts enforce these package boundaries without ignored dependency edges.
-Importing `neurospatial.binning` does not load native builders, `environment.core`
-or Matplotlib. Standalone validation functions retain their public contracts;
-publication additionally checks agreement between the graph and owned binning.
-
-Subset selection lives in `environment/_subset.py`; both supported rebin calls
-live in `environment/_rebin.py`. Factor rebin preserves its historical grid
-partitioning rules, while `rebin(bin_size=...)` uses the saved binning
-specification and frame. Both publish through the same owned-data path. Shared
-time-support calculations live in `_intervals.py`, and physical wall-frame
-evidence lives in `geometry/_wall_frame.py`. Wall-hit bin ownership is an
-`ops/_boundaries.py` calculation with explicit geometry inputs.
-
-### Environment architecture
-
-New operations are module functions with explicit inputs. When an operation
-needs an environment, declare a small consumer `Protocol` listing only the
-members it reads in `environment/_protocols.py`; numerical operators use
-`ops/_protocols.py`. An environment method is an optional scientist-facing
-entry point that delegates to the function in one call.
-
-When extracting an existing implementation, preserve the method's name,
-signature, decorators and docstring exactly. Put its implementation in a private
-`_<method>` function in the same module, with `env` first and the remaining
-parameters in their original order and keyword-only positions. Forward keyword
-arguments by keyword. Type `env` with the narrow consumer protocol; functions
-that read only geometry take data components. Functions that read no environment
-members take no `env` argument. Keep builder inputs in construction adapters.
-
-Move logic unchanged: rename `self` to `env`, replace helper-method calls with
-module-function calls, and split long bodies only at existing section comments.
-Fix discovered bugs separately. Moved warnings use
-`stacklevel=_external_stacklevel()` from `neurospatial._stacklevel` so the warning
-still points to the scientist's line. Keep implementation functions private and
-out of `__all__`; the public API snapshot stays unchanged. Preserve moved helper
-docstrings, and give new private functions a one-line NumPy summary plus a
-`Parameters` section when an argument's meaning is not clear from its name and
-type.
-
-Geometry uses the [owned publication path](#diffusion-geometry-providers)
-described above. Derivations return new environments with fresh analysis caches.
-The environment owns its nearest-query tree and differential-operator caches.
-Compatibility functions delegate through public query, operator and cache-control
-methods. Numerical builders receive explicit centers, trees or face geometry;
-they do not inspect or mutate environment caches. `env.binning` is a detached
-public snapshot for consumers preparing geometry, and keeps native faces lazy.
-`geometry/_graph.py` projects newly constructed binning into standard navigation
-graph attributes for explicit bins and clipping. It preserves bin IDs and pair
-row IDs. Derivations such as subsets retain their existing graph metadata and
-edge ordering rather than rebuilding those annotations from geometry alone.
-
-There is one public runtime `Environment` class. Factories infer its static
-Cartesian or egocentric-polar coordinate type. Cartesian-only entry points use
-restricted `self` annotations and a runtime `_require_cartesian` guard, including
-unbound calls. `CARTESIAN_OPERATIONS` controls polar attribute availability;
-`test_every_public_member_is_classified_for_polar` checks that capability table.
-The attribute-filtering hook exists only at runtime: type checkers must still
-reject missing attributes and unsatisfied consumer protocols. Negative static
-contracts in `tests/typing` guard these failures with checked ignore comments.
-Shared code asks the owned coordinate descriptor about lengths, axes and
-circularity, or uses public `coordinate_kind` for metadata. Do not discriminate
-using environment classes or descriptive layout labels.
-
-Environment adapters read components from the owned binning; other packages
-use `env.binning`: faces for
-smoothing, a rectilinear grid for grid interpolation and native N-D time
-allocation, exact planar cells for polygon time allocation, and linearization
-for track coordinate conversions. The construction adapter reads a
-`RectilinearGridProvider` snapshot when available and obtains track data through
-`track_linearization()`. Custom builders supply supported owned binning
-snapshots. Do not dispatch new behavior by comparing
-`_layout_type_tag` strings. Refusals name the operation and suggest a supported
-alternative. Integer-factor `rebin` requires uniform rectangular cells and
-native grid navigation, allowing physical walls to remove connections. It
-refuses custom path lengths or topology that cell geometry cannot reconstruct,
-and retains truncation warnings and complete-face wall constraints.
-Both rebin modes live in `environment/_rebin.py`; selection of existing bins
-lives in `environment/_subset.py`. Rebin construction policies remain distinct:
-factor mode retains native lazy faces and its recorded grid parameters, while
-resolution mode prepares faces for the retained affine frame. Both use the
-same atomic `Environment._from_binning` publisher for owned data, walls and
-fresh analysis caches. The old `environment.transforms` path only re-exports
-private implementation functions for compatibility.
-`rebin(bin_size=...)` uses an owned `GridBinningSpec`, independently of descriptive
-provenance. It re-bins the retained known arena, preserving the grid anchor and
-affine frame; requested sizes are physical lengths along those axes. Subset and
-clipping preserve the specification; combining does not invent a shared one.
-Unsupported families and old records without a specification refuse new-size
-re-binning. Fields and models do not transfer automatically.
-
-Border and visibility consumers use shared planar wall evidence in
-`ops/_boundaries.py`. Physical mode reads asserted footprints and internal walls;
-analysis mode is explicit. Analysis cuts never create physical walls. Boundary
-contacts and wall-hit bin ownership use retained source frames with locally
-bounded inverse rounding. Viewshed bin coverage remains sampled, while first
-contacts and cue occlusion use geometric intersections. Unsupported geometry
-must refuse instead of silently switching boundary sources.
-
-`Environment` is the only environment dataclass and holds thin forwarding
-methods. Algorithms live in private module functions using narrow protocols;
-there are no environment mixins or broad host protocol.
-
-Owned geometry, validation, codecs and pure coordinate math live in `geometry/`;
-native builders and their construction adapters live in `layout/`. The public
-`neurospatial.binning` and `neurospatial.arena` imports remain stable. Former
-private geometry modules contain explicit aliases so trusted builder-free
-pickles written before this move can still resolve their classes. They contain
-no parallel implementation. Older layout-bearing pickles remain unsupported.
-
-Run `uv run lint-imports --no-cache` to enforce `.importlinter`. Environment
-adapters sit above independent `layout` and `ops` packages, which consume
-`geometry`. The whole geometry package cannot import builders, environments,
-analysis, storage or rendering packages. Type-only imports are excluded. Affine
-convenience functions call the public environment method through a narrow
-consumer protocol; Environment retains construction and analysis caches. No
-import exceptions are needed. New geometry modules are covered automatically.
-Keep `import-linter` in the dev extra; CI runs it on Python 3.13.
-
-Check refactors with `scripts/environment_baseline.py`. Before changing code,
-run `uv run python scripts/environment_baseline.py record base.npz` on the
-branch's base commit. After changing code, record `new.npz` the same way, then
-run `uv run python scripts/environment_baseline.py compare base.npz new.npz`.
-Outputs, refusals, signatures and docstrings must match exactly, or the pull
-request must list and verify every intended difference. Also run the suite,
-doctests, executable documentation, public API snapshot, Ruff and the source
-and static-contract mypy checks.
+outlines or masks; a polar environment in such a record is refused because
+it has no stored `EgocentricSurround`. Version 1/`1.x` records are refused
+with recreation guidance. Pure codecs in `geometry/_codecs.py`, including the
+arena codec, store typed arrays and JSON metadata; polygon WKB bytes
+and offsets preserve ordered cells and holes. Shared snapshot references
+retain locator ownership without duplicating each record. Locator search
+structures are not stored; they are rebuilt from saved data. Standard NWB
+containers reject slash-containing names, so a one-row ragged DynamicTable
+stores arrays under safe column names. Its description holds the JSON
+metadata and canonical-key/shape/dtype mapping, without padding or a custom
+extension.
 
 ## Code Standards
 
@@ -474,8 +522,8 @@ Example test:
 def test_environment_bin_at_maps_points_correctly():
     """Test that bin_at correctly maps points to bin indices."""
     env = Environment.from_samples(sample_data, bin_size=2.0)
-    points = np.array([[10.0, 10.0]])
-    bin_idx = env.bin_at(points)
+    positions = np.array([[10.0, 10.0]])
+    bin_idx = env.bin_at(positions)
     assert bin_idx.shape == (1,)
     assert 0 <= bin_idx[0] < env.n_bins
 ```

@@ -2,6 +2,7 @@
 Tests for the Environment class using a plus maze example.
 """
 
+import pickle
 import warnings
 from pathlib import Path
 
@@ -26,7 +27,6 @@ class TestEnvironmentFromGraph:
         """Test basic attributes after creation."""
         assert graph_env.name == "PlusMazeGraph"
         assert graph_env._binning.linearization is not None
-        assert graph_env._is_fitted
         assert graph_env.is_linearized_track
         assert graph_env.n_dims == 2
 
@@ -73,32 +73,48 @@ class TestEnvironmentFromGraph:
         bin_idx_center = graph_env.bin_at(point_center)
         assert bin_idx_center[0] != -1
 
+        # Beyond the track's 0.5-unit width there is no bin.
         point_off_track = np.array([[10.0, 10.0]])
         bin_idx_off = graph_env.bin_at(point_off_track)
-        assert bin_idx_off[0] != -1
+        assert bin_idx_off[0] == -1
 
         points = np.array([[-1.0, 0.0], [0.0, 1.0], [10.0, 10.0]])
         bin_indices = graph_env.bin_at(points)
         assert len(bin_indices) == 3
         assert bin_indices[0] != -1
         assert bin_indices[1] != -1
-        assert bin_indices[2] != -1
+        assert bin_indices[2] == -1
 
     def test_contains(self, graph_env: Environment):
-        """A centerline alone supports projection but cannot assert containment."""
+        """A track with a width contains the points within half a width."""
+        points = np.array([[-1.0, 0.0], [-1.0, 0.24], [-1.0, 0.26], [10.0, 10.0]])
+        np.testing.assert_array_equal(
+            graph_env.contains(points), [True, True, False, False]
+        )
+        np.testing.assert_array_equal(
+            graph_env.bin_at(points) >= 0, [True, True, False, False]
+        )
+
+    def test_a_track_without_width_refuses_position_lookups(
+        self, plus_maze_graph, plus_maze_edge_order
+    ):
+        """A centerline alone cannot say whether a point is on the track."""
+        env = Environment.from_graph(
+            plus_maze_graph, plus_maze_edge_order, edge_spacing=0.0, bin_size=0.5
+        )
         points = np.array([[-1.0, 0.0], [10.0, 10.0]])
-        assert (graph_env.bin_at(points) >= 0).all()
-        with pytest.raises(NotImplementedError, match="track_width"):
-            graph_env.contains(points)
+        for lookup in (env.bin_at, env.contains):
+            with pytest.raises(NotImplementedError, match="track_width"):
+                lookup(points)
 
     def test_neighbors(self, graph_env: Environment):
         """Test getting neighbors of a bin."""
-        neighbors_of_0 = graph_env.neighbors(0)  # Start of West arm segment
+        neighbors_of_0 = graph_env.neighbors(bins=0)  # Start of West arm segment
         assert isinstance(neighbors_of_0, list)
         assert set(neighbors_of_0) == {1}  # Only connected to next bin on segment
 
         idx_on_west_arm = graph_env.bin_at(np.array([[-1.0, 0.0]]))[0]  # Bin 2
-        neighbors_on_west = graph_env.neighbors(idx_on_west_arm)
+        neighbors_on_west = graph_env.neighbors(bins=idx_on_west_arm)
         assert isinstance(neighbors_on_west, list)
         assert len(neighbors_on_west) > 0
         if 0 < idx_on_west_arm < 3:
@@ -107,7 +123,7 @@ class TestEnvironmentFromGraph:
         # Bin 3 is the end of the West arm segment (4,0)
         # Based on current graph_utils, it connects to bin 2 (intra-segment)
         # and to bin 4 (start of North arm, due to (3,4) inter-segment connection)
-        neighbors_of_3 = graph_env.neighbors(3)
+        neighbors_of_3 = graph_env.neighbors(bins=3)
         assert isinstance(neighbors_of_3, list)
         expected_neighbors_of_3 = {2, 4}  # Corrected expectation
         assert set(neighbors_of_3) == expected_neighbors_of_3
@@ -117,7 +133,7 @@ class TestEnvironmentFromGraph:
         p1 = np.array([[-1.5, 0.0]])
         p2 = np.array([[0.0, 1.5]])
 
-        manifold_dist = graph_env.distance_between(p1, p2)
+        manifold_dist = graph_env.distance_between(points=np.vstack([p1, p2]))
 
         bin_p1 = graph_env.bin_at(p1)[0]
         bin_p2 = graph_env.bin_at(p2)[0]
@@ -135,7 +151,7 @@ class TestEnvironmentFromGraph:
         bin_idx_west = graph_env.bin_at(np.array([[-1.5, 0.0]]))[0]
         bin_idx_north = graph_env.bin_at(np.array([[0.0, 1.5]]))[0]
 
-        path = graph_env.path_between(bin_idx_west, bin_idx_north)
+        path = graph_env.path_between(bins=[bin_idx_west, bin_idx_north])
         assert isinstance(path, list)
         assert len(path) > 1
         assert path[0] == bin_idx_west
@@ -143,11 +159,11 @@ class TestEnvironmentFromGraph:
         for bin_idx_path in path:  # Renamed variable to avoid conflict
             assert 0 <= bin_idx_path < 16
 
-        path_to_self = graph_env.path_between(bin_idx_west, bin_idx_west)
+        path_to_self = graph_env.path_between(bins=[bin_idx_west, bin_idx_west])
         assert path_to_self == [bin_idx_west]
 
         with pytest.raises(BinIndexOutOfRangeError, match=r"out of range"):
-            graph_env.path_between(0, 100)
+            graph_env.path_between(bins=[0, 100])
 
     def test_linearized_coordinates(self, graph_env: Environment):
         """Test linearization and mapping back to N-D."""
@@ -336,7 +352,7 @@ class TestEnvironmentFromDataSamplesGrid:
         assert idx_active[0] != -1
 
         # Test a point known to be within the grid_edges but potentially inactive
-        # This depends on regular_grid_utils._points_to_regular_grid_bin_ind handling
+        # This depends on regular_grid_utils.points_to_regular_grid_bin_ind handling
         # For points outside ALL grid_edges, it should be -1.
         # For points inside grid_edges but in an inactive bin, it should also be -1.
         # The ValueError in ravel_multi_index typically happens if np.digitize gives out-of-bounds indices.
@@ -380,7 +396,7 @@ class TestEnvironmentSerialization:
         loaded_env = Environment.from_file(str(base))
         assert isinstance(loaded_env, Environment)
         assert loaded_env.name == env.name
-        assert loaded_env._layout_type_used == env._layout_type_used
+        assert loaded_env.layout_type == env.layout_type
         assert loaded_env.is_linearized_track == env.is_linearized_track
         assert loaded_env.n_dims == env.n_dims
         assert np.array_equal(loaded_env.bin_centers, env.bin_centers)
@@ -436,7 +452,6 @@ def test_from_mask():
         )
         assert env.name == "NDMaskTest"
         assert env._binning.rectilinear is not None
-        assert env._is_fitted
         assert env.n_dims == 2
         assert env.bin_centers.shape[0] == np.sum(active_mask_np)
         assert np.array_equal(env.active_mask, active_mask_np)
@@ -458,7 +473,6 @@ def test_from_image():
     )
     assert env.name == "ImageMaskTest"
     assert env._binning.rectilinear is not None
-    assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == np.sum(image_mask_np)
     # ImageMaskLayout.build uses (x, y) axis order, so a row-major (y, x) image
@@ -476,7 +490,6 @@ def test_from_polygon():
     assert env.name == "ShapelyTest"
     assert env._binning.outline is not None
     assert env._binning.outline.geometry.equals(polygon)
-    assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == 4
     assert np.sum(env.active_mask) == 4
@@ -676,7 +689,7 @@ class TestHexagonalLayout:
         assert env_hexagonal._binning.shapes.radius * np.sqrt(3.0) == pytest.approx(1.0)
         assert env_hexagonal.bin_centers.shape[0] > 0  # Some bins should be active
 
-    def test_point_to_bin_index_hex(self, env_hexagonal: Environment):
+    def test_bin_at_hex(self, env_hexagonal: Environment):
         # Test a point known to be near the center of some active hexagon
         # (e.g., one of the input samples if it's isolated enough)
         if env_hexagonal.bin_centers.shape[0] > 0:
@@ -689,9 +702,7 @@ class TestHexagonalLayout:
             # Test a point far away
             far_point = np.array([[100.0, 100.0]])
             idx_far = env_hexagonal.bin_at(far_point)
-            assert (
-                idx_far[0] == -1
-            )  # Hexagonal point_to_bin_index should return -1 if outside
+            assert idx_far[0] == -1  # a point outside every hexagon gets -1
 
     def test_bin_size_hex(self, env_hexagonal: Environment):
         areas = env_hexagonal.bin_sizes
@@ -712,7 +723,7 @@ class TestHexagonalLayout:
         # A qualitative check: find a bin, get its neighbors.
         # Neighbors should be distinct and their centers should be approx hexagon_width away.
         some_bin_idx = env_hexagonal.bin_centers.shape[0] // 2  # A somewhat central bin
-        neighbors = env_hexagonal.neighbors(some_bin_idx)
+        neighbors = env_hexagonal.neighbors(bins=some_bin_idx)
         assert isinstance(neighbors, list)
         if len(neighbors) > 0:
             assert len(set(neighbors)) == len(neighbors)  # Unique neighbors
@@ -981,7 +992,6 @@ def env_path_graph_3nodes() -> Environment:
         name="PathGraph3",
         layout=gl,
         layout_type_used="Graph",
-        layout_params_used=layout_params,
     )
 
 
@@ -1009,7 +1019,6 @@ class TestEnvironment3D:
     def test_creation_3d(self, simple_3d_env: Environment):
         """Test 3D environment creation and basic properties."""
         assert simple_3d_env.name == "Simple3DEnv"
-        assert simple_3d_env._is_fitted
         assert simple_3d_env.n_dims == 3
         assert not simple_3d_env.is_linearized_track  # RegularGrid is never 1D
 
@@ -1083,7 +1092,7 @@ class TestEnvironment3D:
 
         # Test an interior bin
         interior_bin = interior_bins[0]
-        neighbors = simple_3d_env.neighbors(interior_bin)
+        neighbors = simple_3d_env.neighbors(bins=interior_bin)
 
         # Interior bin with diagonal connectivity should have > 6 neighbors
         assert len(neighbors) > 6, (
@@ -1096,12 +1105,12 @@ class TestEnvironment3D:
         boundary_bins = simple_3d_env.boundary_bins
         if len(boundary_bins) > 0:
             boundary_bin = boundary_bins[0]
-            boundary_neighbors = simple_3d_env.neighbors(boundary_bin)
+            boundary_neighbors = simple_3d_env.neighbors(bins=boundary_bin)
             # Boundary should have fewer neighbors than max
             assert len(boundary_neighbors) < 26
 
         # Verify all neighbors are valid bin indices
-        all_neighbors = simple_3d_env.neighbors(interior_bin)
+        all_neighbors = simple_3d_env.neighbors(bins=interior_bin)
         assert all(0 <= n < simple_3d_env.n_bins for n in all_neighbors)
 
     def test_distance_between_3d(self, simple_3d_env: Environment):
@@ -1115,7 +1124,7 @@ class TestEnvironment3D:
         p2 = simple_3d_env.bin_centers[-1]  # Last bin (likely far from first)
 
         # Calculate manifold distance
-        manifold_dist = simple_3d_env.distance_between(p1, p2)
+        manifold_dist = simple_3d_env.distance_between(points=[p1, p2])
         assert manifold_dist > 0
         assert np.isfinite(manifold_dist)
 
@@ -1125,13 +1134,13 @@ class TestEnvironment3D:
         assert manifold_dist >= euclidean_dist * 0.9  # Allow some tolerance
 
         # Distance from a point to itself should be 0
-        dist_self = simple_3d_env.distance_between(p1, p1)
+        dist_self = simple_3d_env.distance_between(points=[p1, p1])
         assert np.isclose(dist_self, 0.0, atol=1e-6)
 
         # Test multiple point pairs
         p3 = simple_3d_env.bin_centers[1]  # Second bin
-        dist_p1_p3 = simple_3d_env.distance_between(p1, p3)
-        dist_p3_p2 = simple_3d_env.distance_between(p3, p2)
+        dist_p1_p3 = simple_3d_env.distance_between(points=[p1, p3])
+        dist_p3_p2 = simple_3d_env.distance_between(points=[p3, p2])
 
         # Triangle inequality: dist(p1, p3) + dist(p3, p2) >= dist(p1, p2)
         # (with some tolerance for floating point)
@@ -1266,182 +1275,117 @@ class TestEnvironment3D:
 class TestPositionsParameterNaming:
     """Tests for standardized 'positions' parameter naming.
 
-    Task 2.5: Verify that from_samples() uses 'positions' instead of 'data_samples'
+    Verify that from_samples() uses 'positions' instead of 'data_samples'
     for consistency with trajectory analysis methods like occupancy() and
     compute_spatial_rate().
     """
 
 
 class TestCacheManagement:
-    """Tests for Environment cache management functionality.
+    """Environment analyses are computed once, reused and released by clear_cache().
 
-    Environment caches several computationally expensive properties:
-    - KDTree (_kdtree_cache) for fast point-to-bin mapping
-    - @cached_property values like differential_operator, boundary_bins, etc.
-
-    These tests verify that caching works correctly and can be cleared when needed.
-
-    Note: Uses fresh copies of session-scoped fixtures to avoid mutating shared state.
+    Each test starts from an unpickled copy of a session fixture: unpickling
+    gives an environment with the same geometry and its own empty cache, so
+    the tests neither see nor change the shared fixture's cache.
     """
 
     @pytest.fixture
     def cache_test_env(self, grid_env_from_samples):
-        """Provide a fresh copy of grid_env_from_samples for cache testing.
-
-        This fixture creates a copy to avoid mutating the session-scoped
-        fixture, which would affect other tests.
-        """
-        return grid_env_from_samples.copy()
-
-    @pytest.fixture
-    def cache_test_graph_env(self, simple_graph_env):
-        """Provide a fresh copy of simple_graph_env for cache testing."""
-        return simple_graph_env.copy()
+        """The plus-maze grid with its own empty analysis cache."""
+        return pickle.loads(pickle.dumps(grid_env_from_samples))
 
     def test_kernel_cache_keeps_most_recently_used_kernels(
         self, cache_test_env, monkeypatch
     ):
         """The diffusion-kernel cache drops the least recently used kernel."""
-        from neurospatial import _constants
+        from neurospatial.environment import _fields
+        from neurospatial.environment._cache import DIFFUSION_KERNELS
 
-        monkeypatch.setattr(_constants, "MAX_CACHED_KERNELS", 2)
-        first = cache_test_env.compute_kernel(1.0, mode="density")
-        cached = cache_test_env._kernel_cache[(1.0, "density")]
-        cache_test_env.compute_kernel(2.0, mode="density")
+        monkeypatch.setattr(DIFFUSION_KERNELS, "limit", 2)
+        built = []
+        original = _fields.heat_kernel_from_W
+
+        def counted(W, volumes, bandwidth, **kwargs):
+            built.append(bandwidth)
+            return original(W, volumes, bandwidth, **kwargs)
+
+        monkeypatch.setattr(_fields, "heat_kernel_from_W", counted)
+        first = cache_test_env.compute_kernel(bandwidth=1.0, mode="density")
+        cache_test_env.compute_kernel(bandwidth=2.0, mode="density")
         np.testing.assert_array_equal(
-            cache_test_env.compute_kernel(1.0, mode="density"), first
+            cache_test_env.compute_kernel(bandwidth=1.0, mode="density"), first
         )
-        assert cache_test_env._kernel_cache[(1.0, "density")] is cached
-        cache_test_env.compute_kernel(3.0, mode="density")
+        cache_test_env.compute_kernel(bandwidth=3.0, mode="density")  # drops 2.0
+        cache_test_env.compute_kernel(bandwidth=1.0, mode="density")
+        cache_test_env.compute_kernel(bandwidth=2.0, mode="density")
 
-        assert list(cache_test_env._kernel_cache) == [
-            (1.0, "density"),
-            (3.0, "density"),
-        ]
+        assert built == [1.0, 2.0, 3.0, 2.0]
 
-    def test_clear_cache_clears_kdtree(self, cache_test_env):
-        """Test that clear_cache() clears the KDTree cache."""
-        from neurospatial.ops.binning import map_points_to_bins
+    def test_clear_cache_takes_no_options(self, cache_test_env):
+        """Selective clearing is gone; clear_cache() always releases everything."""
+        with pytest.raises(TypeError):
+            cache_test_env.clear_cache(kdtree=True)
 
-        # Create KDTree cache by calling map_points_to_bins
+    def test_clear_cache_releases_every_analysis(self, cache_test_env):
+        """Every cached analysis is released and recomputes to the same value."""
+
         points = np.array([[5.0, 5.0]])
-        map_points_to_bins(cache_test_env, points)
+        before = {
+            "boundary": cache_test_env.boundary_bins,
+            "differential": cache_test_env.get_differential_operator().toarray(),
+            "divergence": cache_test_env.get_divergence_operator().toarray(),
+            "bins": cache_test_env.get_bin_attributes(),
+            "edges": cache_test_env.get_edge_attributes(),
+            "nearest": cache_test_env.nearest_bin(points),
+            "kernel": cache_test_env.compute_kernel(bandwidth=1.0),
+            "smoothed": cache_test_env.smooth(
+                np.ones(cache_test_env.n_bins), bandwidth=1.0
+            ),
+        }
+        assert len(cache_test_env._cache) > 0
 
-        # Verify cache exists
-        assert hasattr(cache_test_env, "_kdtree_cache")
-        assert cache_test_env._kdtree_cache is not None
-
-        # Clear all caches
         cache_test_env.clear_cache()
 
-        # Verify KDTree cache is cleared
-        assert cache_test_env._kdtree_cache is None
+        assert len(cache_test_env._cache) == 0
+        np.testing.assert_array_equal(cache_test_env.boundary_bins, before["boundary"])
+        np.testing.assert_array_equal(
+            cache_test_env.get_differential_operator().toarray(),
+            before["differential"],
+        )
+        np.testing.assert_array_equal(
+            cache_test_env.get_divergence_operator().toarray(), before["divergence"]
+        )
+        pd.testing.assert_frame_equal(
+            cache_test_env.get_bin_attributes(), before["bins"]
+        )
+        pd.testing.assert_frame_equal(
+            cache_test_env.get_edge_attributes(), before["edges"]
+        )
+        np.testing.assert_array_equal(
+            cache_test_env.nearest_bin(points), before["nearest"]
+        )
+        np.testing.assert_array_equal(
+            cache_test_env.compute_kernel(bandwidth=1.0), before["kernel"]
+        )
+        np.testing.assert_allclose(
+            cache_test_env.smooth(np.ones(cache_test_env.n_bins), bandwidth=1.0),
+            before["smoothed"],
+            rtol=0,
+            atol=1e-12,
+        )
 
-    def test_clear_cache_clears_cached_properties(self, cache_test_env):
-        """Test that clear_cache() clears @cached_property values."""
-        # Access several cached properties to trigger computation
-        _ = cache_test_env.boundary_bins
-        _ = cache_test_env.bin_sizes
-
-        # Verify they're in __dict__ (cached)
-        assert "_boundary_bins_cached" in cache_test_env.__dict__
-        assert "_bin_sizes_cached" in cache_test_env.__dict__
-
-        # Clear all caches
-        cache_test_env.clear_cache()
-
-        # Verify cached properties are cleared from __dict__
-        assert "_boundary_bins_cached" not in cache_test_env.__dict__
-        assert "_bin_sizes_cached" not in cache_test_env.__dict__
-
-    def test_clear_cache_clears_differential_operator(self, cache_test_env):
-        """Test that clear_cache() clears the differential_operator cache."""
-        # Public calls return copies while sharing a private cached operator.
-        cache_key = "_differential_operator_cached"
-
-        diff_op_original = cache_test_env.get_differential_operator()
+    def test_cached_operator_is_reused_until_cleared(self, cache_test_env):
+        """Public operator calls return copies of one cached matrix."""
+        first = cache_test_env.get_differential_operator()
         cached = cache_test_env._differential_operator_cached
-        assert cache_key in cache_test_env.__dict__
         second = cache_test_env.get_differential_operator()
         assert cache_test_env._differential_operator_cached is cached
-        assert second is not diff_op_original
-        np.testing.assert_array_equal(second.toarray(), diff_op_original.toarray())
-
-        cache_test_env.clear_cache()
-        assert cache_key not in cache_test_env.__dict__
-
-        diff_op_new = cache_test_env.get_differential_operator()
-        assert diff_op_new is not None
-        assert diff_op_new.shape == diff_op_original.shape
-        assert np.allclose(diff_op_new.toarray(), diff_op_original.toarray())
-
-    def test_clear_cache_allows_recomputation(self, cache_test_env):
-        """Test that after clearing, cached properties can be recomputed."""
-        # Access property
-        boundary_original = cache_test_env.boundary_bins
-        assert len(boundary_original) > 0
-
-        # Clear cache
-        cache_test_env.clear_cache()
-
-        # Access again - should recompute
-        boundary_new = cache_test_env.boundary_bins
-        assert len(boundary_new) > 0
-
-        # Should be equal (same computation)
-        np.testing.assert_array_equal(boundary_new, boundary_original)
-
-    def test_clear_cache_with_all_cached_properties(self, cache_test_env):
-        """Test clearing when ALL cached properties are populated."""
-        from neurospatial.ops.binning import map_points_to_bins
-
-        _ = cache_test_env.boundary_bins
-        _ = cache_test_env.bin_sizes
-        _ = cache_test_env.get_differential_operator()
-        _ = cache_test_env._source_flat_to_active_node_id_map
-        _ = cache_test_env.get_bin_attributes()
-        _ = cache_test_env.get_edge_attributes()
-        # linearization_properties only exists for 1D environments - skip for 2D grid
-        map_points_to_bins(cache_test_env, np.array([[5.0, 5.0]]))
-
-        # Keys for the three method-form caches.
-        diff_key = "_differential_operator_cached"
-        bin_key = "_bin_attributes_cached"
-        edge_key = "_edge_attributes_cached"
-
-        # Verify all are cached.
-        assert cache_test_env._kdtree_cache is not None
-        assert "_boundary_bins_cached" in cache_test_env.__dict__
-        assert "_bin_sizes_cached" in cache_test_env.__dict__
-        assert diff_key in cache_test_env.__dict__
-        assert "_source_flat_to_active_node_id_map" in cache_test_env.__dict__
-        assert bin_key in cache_test_env.__dict__
-        assert edge_key in cache_test_env.__dict__
+        assert second is not first
+        np.testing.assert_array_equal(second.toarray(), first.toarray())
 
         cache_test_env.clear_cache()
 
-        # Verify ALL are cleared.
-        assert cache_test_env._kdtree_cache is None
-        assert "_boundary_bins_cached" not in cache_test_env.__dict__
-        assert "_bin_sizes_cached" not in cache_test_env.__dict__
-        assert diff_key not in cache_test_env.__dict__
-        assert "_source_flat_to_active_node_id_map" not in cache_test_env.__dict__
-        assert bin_key not in cache_test_env.__dict__
-        assert edge_key not in cache_test_env.__dict__
-
-    def test_clear_cache_clears_linearization_properties(self, cache_test_graph_env):
-        """Test that clear_cache() clears linearization_properties on 1D environments."""
-        # linearization_properties only exists for 1D (GraphLayout) environments
-        if not cache_test_graph_env.is_linearized_track:
-            pytest.skip("Requires 1D environment")
-
-        # Access linearization properties (triggers caching)
-        _ = cache_test_graph_env.linearization_properties
-        cache_key = "_linearization_properties_cached"
-        assert cache_key in cache_test_graph_env.__dict__
-
-        # Clear cache
-        cache_test_graph_env.clear_cache()
-
-        # Verify cleared
-        assert cache_key not in cache_test_graph_env.__dict__
+        assert cache_test_env._differential_operator_cached is not cached
+        np.testing.assert_array_equal(
+            cache_test_env.get_differential_operator().toarray(), first.toarray()
+        )

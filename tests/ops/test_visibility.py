@@ -2,8 +2,6 @@
 
 Tests for visibility/gaze computation including field of view dataclass,
 viewshed analysis, and cue visibility checking.
-
-TDD: These tests are written BEFORE implementation to define expected behavior.
 """
 
 from unittest.mock import patch
@@ -814,12 +812,12 @@ class TestVisibilityOccupancy:
 
 
 class TestLineOfSightClear:
-    """Tests for _line_of_sight_clear helper function."""
+    """Tests for line_of_sight_clear helper function."""
 
     def test_clear_line_of_sight(self):
         """Line of sight is clear in open environment."""
         from neurospatial import Environment
-        from neurospatial.ops.visibility import _line_of_sight_clear
+        from neurospatial.geometry._boundaries import line_of_sight_clear
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -828,12 +826,14 @@ class TestLineOfSightClear:
         observer = np.array([50.0, 50.0])
         target = np.array([60.0, 50.0])
 
-        assert _line_of_sight_clear(env, observer, target, boundary_source="analysis")
+        assert line_of_sight_clear(
+            env.binning, env.arena, observer, target, boundary_source="analysis"
+        )
 
     def test_blocked_line_of_sight(self):
         """Line of sight is blocked by obstacle."""
         from neurospatial import Environment
-        from neurospatial.ops.visibility import _line_of_sight_clear
+        from neurospatial.geometry._boundaries import line_of_sight_clear
 
         # Create C-shaped environment
         rng = np.random.default_rng(42)
@@ -847,6 +847,51 @@ class TestLineOfSightClear:
         observer = np.array([20.0, 50.0])
         target = np.array([80.0, 50.0])
 
-        assert not _line_of_sight_clear(
-            env, observer, target, boundary_source="analysis"
+        assert not line_of_sight_clear(
+            env.binning, env.arena, observer, target, boundary_source="analysis"
         )
+
+
+@pytest.mark.parametrize("call", ["occupancy", "trajectory"])
+def test_trajectory_viewsheds_build_the_mesh_lookup_once(call, monkeypatch):
+    """Per-frame viewsheds share one triangle index over the whole trajectory."""
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+    from neurospatial.geometry import _locators
+    from neurospatial.layout import create_layout
+    from neurospatial.ops.visibility import (
+        compute_viewshed_trajectory,
+        visibility_occupancy,
+    )
+
+    env = Environment.from_layout(
+        create_layout(
+            "TriangularMesh", boundary_polygon=box(0, 0, 20, 20), point_spacing=2.0
+        )
+    )
+    builds: list[int] = []
+    build = _locators._triangle_index
+
+    def counted(*args):
+        builds.append(1)
+        return build(*args)
+
+    monkeypatch.setattr(_locators, "_triangle_index", counted)
+    n_frames = 4
+    times = np.arange(n_frames, dtype=float)
+    positions = np.column_stack((np.linspace(5, 15, n_frames), np.full(n_frames, 10.0)))
+    headings = np.zeros(n_frames)
+
+    if call == "occupancy":
+        occupancy = visibility_occupancy(
+            env, times, positions, headings, n_rays=12, boundary_source="analysis"
+        )
+        assert occupancy.sum() > 0
+    else:
+        results = compute_viewshed_trajectory(
+            env, positions, headings, n_rays=12, boundary_source="analysis"
+        )
+        assert all(result.n_visible_bins > 0 for result in results)
+
+    assert len(builds) == 1

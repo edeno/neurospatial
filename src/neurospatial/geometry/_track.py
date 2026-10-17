@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 Edge = tuple[Any, Any]
 
 
-def _project_1d_to_2d(
+def project_1d_to_2d(
     linear_position: NDArray[np.float64],
     graph: nx.Graph,
     edge_order: list[Edge],
@@ -89,7 +89,7 @@ def _project_1d_to_2d(
         dtype=float,
     )
 
-    if isinstance(edge_spacing, (int, float)):
+    if isinstance(edge_spacing, (int, float, np.number)):
         gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
     else:
         gaps = np.asarray(edge_spacing, dtype=float)
@@ -141,3 +141,60 @@ def _project_1d_to_2d(
     position_2d[nan_mask] = np.nan
 
     return np.asarray(position_2d, dtype=np.float64)
+
+
+def track_cell_ends(
+    graph: nx.Graph,
+    edge_order: Sequence[Edge],
+    edge_spacing: float | Sequence[float],
+    linear_edges: NDArray[np.float64],
+    active_mask: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Both ends of each active track cell, in the track's coordinates.
+
+    A track cell is the stretch of centerline between two consecutive linear
+    bin edges. Each cell lies on one track segment, so both of its ends are
+    placed on the segment that holds the cell's middle; a cell ending where
+    the next segment starts elsewhere keeps its own segment's end node.
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        Track graph with node ``pos`` and edge ``distance`` attributes.
+    edge_order : sequence of (node, node)
+        Track segments in linear coordinate order.
+    edge_spacing : float or sequence of float
+        Gaps between successive segments in linear coordinates.
+    linear_edges : ndarray, shape (n_linear_bins + 1,)
+        Linear bin edges, including gap bins.
+    active_mask : ndarray of bool, shape (n_linear_bins,)
+        Cells that are bins, in linear order.
+
+    Returns
+    -------
+    ndarray, shape (n_active, 2, n_dims)
+        Start and end of each active cell.
+    """
+    order = list(edge_order)
+    lengths = np.array([graph.edges[e]["distance"] for e in order], dtype=float)
+    if isinstance(edge_spacing, (int, float, np.number)):
+        gaps = np.full(max(0, len(order) - 1), float(edge_spacing))
+    else:
+        gaps = np.asarray(edge_spacing, dtype=float)
+    starts = np.concatenate([[0.0], np.cumsum(lengths[:-1] + gaps)])
+    low = np.asarray(linear_edges[:-1], dtype=float)[active_mask]
+    high = np.asarray(linear_edges[1:], dtype=float)[active_mask]
+    segment = np.clip(
+        np.searchsorted(starts, (low + high) / 2, side="right") - 1, 0, len(order) - 1
+    )
+    positions = nx.get_node_attributes(graph, "pos")
+    first = np.array([positions[u] for u, _ in order], dtype=float)[segment]
+    last = np.array([positions[v] for _, v in order], dtype=float)[segment]
+    ends = np.stack([low, high], axis=1)
+    fraction = np.clip(
+        (ends - starts[segment, None]) / lengths[segment, None], 0.0, 1.0
+    )
+    return np.asarray(
+        first[:, None] + fraction[..., None] * (last - first)[:, None],
+        dtype=np.float64,
+    )

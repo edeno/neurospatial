@@ -1,11 +1,9 @@
-"""Tests for neurospatial.encoding._directional_binning module.
+"""Tests for neurospatial.encoding._directional_counts module.
 
 This module tests the directional binning layer that converts spike trains
 and head direction data to spike counts and occupancy arrays.
 
-TDD approach: Tests written first, implementation follows.
-
-Task 3.7: Implement binning layer for directional encoding
+The binning layer:
 - Create helper to convert (spike_times, times, headings, bin_size) -> (spike_counts, occupancy)
 - Handle circular binning (0 to 2π)
 - Support `angle_unit` parameter for input conversion
@@ -71,8 +69,8 @@ class TestBinDirectionalSpikeTrain:
     """Tests for bin_directional_spike_train function (single neuron binning)."""
 
     def test_function_is_importable(self) -> None:
-        """bin_directional_spike_train should be importable from encoding._directional_binning."""
-        from neurospatial.encoding._directional_binning import (
+        """bin_directional_spike_train should be importable from encoding._directional_counts."""
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -84,7 +82,7 @@ class TestBinDirectionalSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """bin_directional_spike_train should return spike counts array."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -104,7 +102,7 @@ class TestBinDirectionalSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """bin_directional_spike_train should return array with shape (n_bins,)."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -126,7 +124,7 @@ class TestBinDirectionalSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Spike counts should all be non-negative."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -145,7 +143,7 @@ class TestBinDirectionalSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Total spike count should equal number of spikes (within time range)."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -171,7 +169,7 @@ class TestBinDirectionalSpikeTrain:
         simple_trajectory: dict,
     ) -> None:
         """Empty spike train should produce all-zero spike counts."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -193,7 +191,7 @@ class TestBinDirectionalSpikeTrain:
         simple_trajectory: dict,
     ) -> None:
         """Spikes outside time range should be excluded."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -219,7 +217,7 @@ class TestBinDirectionalSpikeTrainAngleUnit:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Default angle_unit should be 'rad'."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -238,7 +236,7 @@ class TestBinDirectionalSpikeTrainAngleUnit:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Should handle headings in degrees."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -262,7 +260,7 @@ class TestBinDirectionalSpikeTrainAngleUnit:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Same data in rad/deg should give same spike counts."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -299,8 +297,8 @@ class TestComputeDirectionalOccupancy:
     """Tests for compute_directional_occupancy function."""
 
     def test_function_is_importable(self) -> None:
-        """compute_directional_occupancy should be importable from encoding._directional_binning."""
-        from neurospatial.encoding._directional_binning import (
+        """compute_directional_occupancy should be importable from encoding._directional_counts."""
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -311,7 +309,7 @@ class TestComputeDirectionalOccupancy:
         simple_trajectory: dict,
     ) -> None:
         """compute_directional_occupancy should return (occupancy, bin_centers) tuple."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -332,7 +330,7 @@ class TestComputeDirectionalOccupancy:
         simple_trajectory: dict,
     ) -> None:
         """Occupancy should have shape (n_bins,)."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -353,7 +351,7 @@ class TestComputeDirectionalOccupancy:
         simple_trajectory: dict,
     ) -> None:
         """Bin centers should be in [0, 2π) range."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -371,7 +369,7 @@ class TestComputeDirectionalOccupancy:
         simple_trajectory: dict,
     ) -> None:
         """Occupancy should be float64."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -388,7 +386,7 @@ class TestComputeDirectionalOccupancy:
         simple_trajectory: dict,
     ) -> None:
         """Occupancy should all be non-negative."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -405,7 +403,7 @@ class TestComputeDirectionalOccupancy:
         simple_trajectory: dict,
     ) -> None:
         """Total occupancy should approximately equal recording duration."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -427,7 +425,7 @@ class TestComputeDirectionalOccupancy:
 
     def test_angle_unit_deg(self) -> None:
         """Should handle headings in degrees with angle_unit='deg'."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -458,8 +456,8 @@ class TestBinDirectionalSpikeTrains:
     """Tests for bin_directional_spike_trains function (multiple neurons)."""
 
     def test_function_is_importable(self) -> None:
-        """bin_directional_spike_trains should be importable from encoding._directional_binning."""
-        from neurospatial.encoding._directional_binning import (
+        """bin_directional_spike_trains should be importable from encoding._directional_counts."""
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -471,7 +469,7 @@ class TestBinDirectionalSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """bin_directional_spike_trains should return (spike_counts, occupancy, bin_centers) tuple."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -495,7 +493,7 @@ class TestBinDirectionalSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Spike counts should have shape (n_neurons, n_bins)."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -518,7 +516,7 @@ class TestBinDirectionalSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Occupancy should have shape (n_bins,)."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -540,7 +538,7 @@ class TestBinDirectionalSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Spike counts should be float64."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -559,7 +557,7 @@ class TestBinDirectionalSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Neuron with no spikes should have all-zero counts."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -579,7 +577,7 @@ class TestBinDirectionalSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Batch result should be consistent with single-neuron results."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
             bin_directional_spike_trains,
         )
@@ -611,7 +609,7 @@ class TestBinDirectionalSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """n_jobs parameter should not change results."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -645,7 +643,7 @@ class TestBinDirectionalSpikeTrains:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Should handle list with single neuron."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -669,7 +667,7 @@ class TestBinDirectionalSpikeTrains:
         simple_trajectory: dict,
     ) -> None:
         """Should accept normalized input from as_spike_trains formats."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_trains,
         )
 
@@ -708,7 +706,7 @@ class TestDirectionalBinningEdgeCases:
         simple_trajectory: dict,
     ) -> None:
         """Spikes at times with same heading should be binned together."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -732,7 +730,7 @@ class TestDirectionalBinningEdgeCases:
 
     def test_uniform_heading_distribution(self) -> None:
         """Uniform heading should give roughly uniform occupancy."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -753,7 +751,7 @@ class TestDirectionalBinningEdgeCases:
 
     def test_headings_wrap_around(self) -> None:
         """Headings crossing 0/2π boundary should be handled correctly."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -779,7 +777,7 @@ class TestDirectionalBinningInputValidation:
 
     def test_mismatched_times_headings_length(self) -> None:
         """Should raise error if times and headings have different lengths."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -791,7 +789,7 @@ class TestDirectionalBinningInputValidation:
 
     def test_insufficient_samples(self) -> None:
         """Should raise error with fewer than 3 samples."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -803,7 +801,7 @@ class TestDirectionalBinningInputValidation:
 
     def test_non_monotonic_times(self) -> None:
         """Should raise error if times are not monotonically increasing."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -815,7 +813,7 @@ class TestDirectionalBinningInputValidation:
 
     def test_invalid_angle_unit_occupancy(self) -> None:
         """Should raise error for invalid angle_unit in compute_directional_occupancy."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -832,7 +830,7 @@ class TestDirectionalBinningInputValidation:
 
     def test_invalid_angle_unit_spike_train(self) -> None:
         """Should raise error for invalid angle_unit in bin_directional_spike_train."""
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 
@@ -861,7 +859,7 @@ class TestNonFiniteHeadingMasking:
     def test_nan_heading_not_folded_into_bin0(
         self, nan_block_heading_trajectory
     ) -> None:
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -881,7 +879,7 @@ class TestNonFiniteHeadingMasking:
         # Parametrized fixture also covers the Inf variant; assert the
         # non-finite frames are excluded from occupancy (no bin-0 inflation,
         # and total occupancy excludes the masked frames' deltas).
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             compute_directional_occupancy,
         )
 
@@ -903,7 +901,7 @@ class TestNonFiniteHeadingMasking:
         assert occ_bad.sum() == pytest.approx(expected_total, abs=1e-9)
 
     def test_nan_heading_spikes_excluded(self, nan_block_heading_trajectory) -> None:
-        from neurospatial.encoding._directional_binning import (
+        from neurospatial.encoding._directional_counts import (
             bin_directional_spike_train,
         )
 

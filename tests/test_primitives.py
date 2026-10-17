@@ -501,7 +501,7 @@ class TestConvolve:
         result_convolve = graph_convolve(env, field, gaussian_kernel, normalize=True)
 
         # Use env.smooth() with same bandwidth (mode='density' is default Gaussian)
-        result_smooth = env.smooth(field, bandwidth, mode="density")
+        result_smooth = env.smooth(field, bandwidth=bandwidth, mode="density")
 
         # Should match closely (may differ slightly due to implementation details)
         # env.smooth uses kernel_matrix directly, convolve computes on-the-fly

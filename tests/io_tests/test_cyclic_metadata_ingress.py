@@ -33,7 +33,7 @@ def test_shared_acyclic_metadata_is_valid():
     )
     data = env.to_dict()
     shared = {"recording": ["one", "two"]}
-    data["layout_parameters"].update(first=shared, second=shared)
+    data.update(first=shared, second=shared)
     restored = Environment.from_dict(data)
     np.testing.assert_array_equal(
         restored.bin_at(env.bin_centers), np.arange(env.n_bins)

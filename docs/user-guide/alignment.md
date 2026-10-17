@@ -90,7 +90,9 @@ aligned_points = T_rigid(new_points)
 `env.apply_transform(transform)` returns an environment in the new coordinates.
 It moves cells, the arena, physical walls and regions together. Bin IDs and the
 order of neighbor pairs stay the same, including after reflection. Supply query
-positions in the new world coordinates.
+positions in the new world coordinates. The name and units are kept. Name the
+new coordinate frame with `frame=` (for example `frame="room"`); without it the
+frame is `None`, because the coordinates are no longer in the source frame.
 
 A grid keeps its original coordinate axes internally. Interpolation and linear
 movement allocation use those axes; plots transform the cell corners into world
@@ -123,7 +125,7 @@ assert not source.arena.walls
 landmarks = np.array([[0., 0.], [3., 0.], [0., 3.], [3., 3.]])
 known_map = Affine2D(np.array([[.8, -.6, 10.], [.6, .8, 20.], [0., 0., 1.]]))
 transform = estimate_transform(landmarks, known_map(landmarks), kind="affine")
-room = source.apply_transform(transform).with_metadata(frame="room")
+room = source.apply_transform(transform, frame="room")
 np.testing.assert_array_equal(room.bin_at(transform(source.bin_centers)), np.arange(source.n_bins))
 
 # Values indexed by bin ID keep their order. Queries use room coordinates.
@@ -178,7 +180,7 @@ x = np.linspace(0., 10., 101)
 positions = np.column_stack((x, 2. + np.sin(x)))
 source = Environment.from_samples(positions, bin_size=.5, units="cm")
 reflection = Affine2D(np.diag([1., -1., 1.]))
-aligned = source.apply_transform(reflection).with_metadata(frame="room")
+aligned = source.apply_transform(reflection, frame="room")
 assert not aligned.arena.physical_footprint_known
 assert not aligned.arena.walls
 np.testing.assert_array_equal(aligned.bin_at(reflection(source.bin_centers)), np.arange(source.n_bins))
@@ -227,7 +229,7 @@ to_cm = estimate_transform(detected_px, corners_cm, kind="similarity")
 room = camera.apply_transform(to_cm).with_metadata(units="cm")
 cm_per_px = np.sqrt(abs(np.linalg.det(to_cm.A[:2, :2])))
 field = rng.random(camera.n_bins)
-np.testing.assert_allclose(room.smooth(field, 5.0), camera.smooth(field, 5.0 / cm_per_px))
+np.testing.assert_allclose(room.smooth(field, bandwidth=5.0), camera.smooth(field, bandwidth=5.0 / cm_per_px))
 ```
 
 New face certification checks normalized orthogonality residuals against `1e-12`.
@@ -298,7 +300,7 @@ Here's a complete example aligning two 3D environments:
 import numpy as np
 from scipy.spatial.transform import Rotation
 from neurospatial import Environment
-from neurospatial.ops import apply_transform_to_environment, estimate_transform
+from neurospatial.ops import estimate_transform
 
 # Create two 3D environments
 positions_session1 = np.random.randn(1000, 3) * 20
@@ -315,7 +317,7 @@ landmarks_env2 = np.array([[10, 5, 2], [18.66, 10, 2], [1.34, 13.66, 2], [10, 5,
 transform = estimate_transform(landmarks_env1, landmarks_env2, kind="rigid")
 
 # Align env1 to env2's coordinate frame
-env1_aligned = apply_transform_to_environment(env1, transform, name="session1_aligned")
+env1_aligned = env1.apply_transform(transform, name="session1_aligned")
 
 # Now compare neural activity, place fields, etc. in aligned coordinate frame
 ```

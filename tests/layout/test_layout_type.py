@@ -1,99 +1,126 @@
-"""Tests for the ``layout_type`` / ``is_grid_compatible`` metadata on layout engines.
+"""Layout labels: one ``LayoutType`` vocabulary for engines, bins and environments.
 
-Each layout engine exposes a stable ``layout_type`` tag used by rendering
-code to decide whether the field can be rasterized as a 2-D image. We pin
-the tag and the ``is_grid_compatible`` flag for every registered layout
-plus a smoke test that the napari rendering path actually consumes the
-flag on a grid env.
-
-The previous version of this file had a per-layout TestLayoutTypeProperty
-class that duplicated the parametrized TestLayoutTypeConsistency coverage,
-plus a ``hasattr(LayoutEngine, "layout_type")`` test that's tautological
-once the parametrized check runs.
+Each built-in engine's ``layout_type`` is a ``LayoutType`` value, the binning
+it builds carries the same label as ``kind``, and an environment reports it.
+User spellings of a layout name are normalized where they enter. A smoke test
+checks that the napari rendering path rasterizes a rectilinear grid.
 """
 
 import numpy as np
 import pytest
+from shapely.geometry import box
+
+from neurospatial import Environment
+from neurospatial.layout import (
+    LayoutType,
+    MaskedGridLayout,
+    RegularGridLayout,
+    create_layout,
+    get_layout_parameters,
+    list_available_layouts,
+)
+from neurospatial.layout.factories import _ENGINES, _LAYOUT_MAP
+
+# Minimal builds of every registered engine.
+_BUILDS = {
+    "RegularGrid": {"bin_size": 2.0, "dimension_ranges": [(0, 6), (0, 6)]},
+    "MaskedGrid": {
+        "active_mask": np.ones((2, 2), dtype=bool),
+        "grid_edges": (np.arange(3.0), np.arange(3.0)),
+    },
+    "ImageMask": {"image_mask": np.ones((2, 2), dtype=bool), "pixel_size": 1.0},
+    "Hexagonal": {"hexagon_width": 2.0, "dimension_ranges": [(0, 6), (0, 6)]},
+    "TriangularMesh": {"boundary_polygon": box(0, 0, 6, 6), "point_spacing": 2.0},
+    "ShapelyPolygon": {"polygon": box(0, 0, 6, 6), "bin_size": 2.0},
+}
 
 
-def _get_layout_class(layout_kind: str):
-    """Get layout class without building it."""
-    from neurospatial.layout.engines.hexagonal import HexagonalLayout
-    from neurospatial.layout.engines.image_mask import ImageMaskLayout
-    from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-    from neurospatial.layout.engines.regular_grid import RegularGridLayout
-    from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
+def test_every_engine_label_is_a_layout_type_value():
+    labels = [engine.layout_type for engine in _ENGINES]
+    assert all(type(label) is str for label in labels)
+    assert {LayoutType(label) for label in labels} <= set(LayoutType)
+    assert set(_LAYOUT_MAP) == set(labels)
+    assert list_available_layouts() == sorted(labels)
+    # Polar and combined environments are not built with create_layout.
+    assert LayoutType.POLAR.value not in _LAYOUT_MAP
+    assert LayoutType.COMBINED.value not in _LAYOUT_MAP
 
-    layout_map = {
-        "RegularGrid": RegularGridLayout,
-        "MaskedGrid": MaskedGridLayout,
-        "ImageMask": ImageMaskLayout,
-        "Hexagonal": HexagonalLayout,
-        "TriangularMesh": TriangularMeshLayout,
-    }
 
-    if layout_kind == "ShapelyPolygon":
-        from neurospatial.layout.engines.shapely_polygon import ShapelyPolygonLayout
-
-        return ShapelyPolygonLayout
-    if layout_kind == "Graph":
-        from neurospatial.layout.engines.graph import GraphLayout
-
-        return GraphLayout
-
-    return layout_map[layout_kind]
+@pytest.mark.parametrize("label", sorted(_BUILDS))
+def test_engine_binning_and_environment_share_one_label(label):
+    layout = create_layout(label, **_BUILDS[label])
+    assert layout.layout_type == label
+    assert layout.binning().kind == label
+    env = Environment.from_layout(layout)
+    assert env.layout_type == label == env.binning.kind
 
 
 @pytest.mark.parametrize(
-    "layout_kind,expected_type",
-    [
-        ("RegularGrid", "grid"),
-        ("MaskedGrid", "mask"),
-        ("ImageMask", "mask"),
-        ("ShapelyPolygon", "polygon"),
-        ("Hexagonal", "hexagonal"),
-        ("TriangularMesh", "mesh"),
-        ("Graph", "graph"),
-    ],
+    "spelling", ["RegularGrid", "regular-grid", "regular_grid", "REGULARGRID", "grid"]
 )
-def test_layout_type_values(layout_kind, expected_type):
-    """Each layout reports its canonical ``layout_type`` tag."""
-    if layout_kind == "Graph":
-        pytest.importorskip("track_linearization")
-    if layout_kind == "ShapelyPolygon":
-        pytest.importorskip("shapely")
-
-    layout_class = _get_layout_class(layout_kind)
-    layout = layout_class()
-    assert layout.layout_type == expected_type
+def test_user_spellings_name_the_canonical_layout(spelling):
+    layout = create_layout(spelling, bin_size=2.0, dimension_ranges=[(0, 4), (0, 4)])
+    assert type(layout) is RegularGridLayout
+    assert (
+        get_layout_parameters(spelling).keys()
+        == get_layout_parameters(LayoutType.REGULAR_GRID).keys()
+    )
 
 
 @pytest.mark.parametrize(
-    "layout_kind,expected_compatible",
+    ("spelling", "expected"),
     [
-        ("RegularGrid", True),
-        ("MaskedGrid", True),
-        ("ImageMask", True),
-        ("ShapelyPolygon", True),
-        ("Hexagonal", False),
-        ("TriangularMesh", False),
-        ("Graph", False),
+        ("regular-grid", "RegularGrid"),
+        ("hexagonal", "Hexagonal"),
+        ("grid", "RegularGrid"),
     ],
 )
-def test_is_grid_compatible(layout_kind, expected_compatible):
-    """``is_grid_compatible`` reflects whether the layout can rasterize."""
-    if layout_kind == "Graph":
-        pytest.importorskip("track_linearization")
-    if layout_kind == "ShapelyPolygon":
-        pytest.importorskip("shapely")
+def test_sample_factories_report_the_canonical_label(spelling, expected):
+    positions = np.random.default_rng(0).uniform(0, 20, (300, 2))
+    env = Environment.from_samples(positions, bin_size=4.0, layout=spelling)
+    assert env.layout_type == expected
+    assert env.binning.kind == expected
 
-    layout_class = _get_layout_class(layout_kind)
-    layout = layout_class()
-    assert layout.is_grid_compatible == expected_compatible
+
+@pytest.mark.parametrize(
+    ("name", "fix"),
+    [
+        ("Polar", "Environment.from_polar_egocentric"),
+        ("Combined", "Environment.combine"),
+        ("circle", "RegularGrid"),
+        ("mask", "could mean a masked grid or an image mask"),
+    ],
+)
+def test_names_without_an_engine_are_refused_with_the_way_to_build_them(name, fix):
+    with pytest.raises(ValueError, match="cannot build layout") as error:
+        create_layout(name)
+    assert fix in str(error.value)
+
+
+def test_subclass_engine_label_is_the_environment_label():
+    class Wall(MaskedGridLayout):
+        layout_type = "WalledGrid"
+
+    class Plain(MaskedGridLayout):
+        pass
+
+    for engine, label in ((Wall, "WalledGrid"), (Plain, "MaskedGrid")):
+        layout = engine()
+        layout.build(**_BUILDS["MaskedGrid"])
+        env = Environment.from_layout(layout)
+        assert layout.binning().kind == label
+        assert env.layout_type == label == env.binning.kind
+
+
+def test_custom_label_matching_a_layout_type_is_spelled_canonically():
+    layout = MaskedGridLayout()
+    layout.build(**_BUILDS["MaskedGrid"])
+    layout.layout_type = "masked-grid"
+    assert Environment.from_layout(layout).layout_type == "MaskedGrid"
 
 
 def test_field_to_rgb_for_napari_grid_layout():
-    """End-to-end: napari rendering path consumes ``is_grid_compatible``."""
+    """End-to-end: napari rendering rasterizes a rectilinear grid."""
     import matplotlib.pyplot as plt
 
     from neurospatial import Environment

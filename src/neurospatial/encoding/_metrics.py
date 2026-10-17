@@ -157,7 +157,7 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
 
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 __all__ = [
     "batch_border_scores",
@@ -878,12 +878,12 @@ def batch_border_scores(
     if metric not in ("geodesic", "euclidean"):
         raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
-    from neurospatial.ops._boundaries import boundary_geometry
+    from neurospatial.geometry import boundary_geometry
 
     if boundary_source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")
     if boundary_source == "physical":
-        boundary_geometry(env, "physical")
+        boundary_geometry(env.binning, env.arena, "physical")
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)

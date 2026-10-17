@@ -1,8 +1,6 @@
 """
 Tests for boundary cell metrics.
 
-Following TDD: Tests written FIRST before implementation.
-
 References
 ----------
 Solstad et al. (2008). Representation of geometric borders in the entorhinal cortex.

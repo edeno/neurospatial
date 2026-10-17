@@ -11,15 +11,20 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
+    from matplotlib.patches import RegularPolygon
 
-    from neurospatial.geometry._binning import TrackLinearization
-    from neurospatial.geometry._capabilities import RectilinearGrid
-    from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
-    from neurospatial.geometry._grid_frame import FramedGrid
-    from neurospatial.geometry._polygon import PolygonCells
+    from neurospatial.geometry import (
+        FramedGrid,
+        HexagonShapes,
+        Outline,
+        PolygonCells,
+        RectilinearGrid,
+        TrackLinearization,
+        TriangleShapes,
+    )
 
 
-def polygon_patches(shapes: PolygonCells) -> list[Any]:
+def _polygon_patches(shapes: PolygonCells) -> list[Any]:
     """Build compound paths whose interior rings remain unfilled."""
     from matplotlib.patches import PathPatch
     from matplotlib.path import Path
@@ -60,7 +65,7 @@ def plot_polygon_cells(
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     collection = PatchCollection(
-        polygon_patches(shapes), cmap=cmap, alpha=alpha, **kwargs
+        _polygon_patches(shapes), cmap=cmap, alpha=alpha, **kwargs
     )
     collection.set_array(np.ones(len(shapes.polygons)))
     ax.add_collection(collection)
@@ -188,6 +193,35 @@ def plot_polygon_grid(
     return ax
 
 
+def _hexagon_patches(
+    shapes: HexagonShapes, centers: NDArray[np.float64]
+) -> list[RegularPolygon]:
+    """Build one hexagon patch per center, with the cells' radius and orientation.
+
+    Parameters
+    ----------
+    shapes : HexagonShapes
+        Hexagonal cells supplying the radius and orientation.
+    centers : ndarray of float64, shape (n_patches, 2)
+        Centers of the hexagons to draw.
+
+    Returns
+    -------
+    list of matplotlib.patches.RegularPolygon
+    """
+    from matplotlib.patches import RegularPolygon
+
+    return [
+        RegularPolygon(
+            (x, y),
+            numVertices=6,
+            radius=shapes.radius,
+            orientation=shapes.orientation,
+        )
+        for x, y in centers
+    ]
+
+
 def plot_hexagons(
     ax: Axes | None = None,
     *,
@@ -199,7 +233,6 @@ def plot_hexagons(
 ) -> Axes:
     """Draw hexagonal cells and the graph of active bin centers."""
     from matplotlib.collections import PatchCollection
-    from matplotlib.patches import RegularPolygon
 
     from neurospatial.layout.helpers.utils import _generic_graph_plot
 
@@ -217,16 +250,9 @@ def plot_hexagons(
         ax.scatter(
             shapes.centers[:, 0], shapes.centers[:, 1], s=1, label="hexagonal grid"
         )
-        patches = [
-            RegularPolygon(
-                (x, y),
-                numVertices=6,
-                radius=shapes.radius,
-                orientation=shapes.orientation,
-            )
-            for x, y in shapes.centers
-        ]
-        collection = PatchCollection(patches, **hex_kws)
+        collection = PatchCollection(
+            _hexagon_patches(shapes, shapes.centers), **hex_kws
+        )
         ax.add_collection(collection)
         ax.plot(
             shapes.centers[:, 0],
@@ -238,14 +264,10 @@ def plot_hexagons(
             label="midpoint",
         )
         ax.set_title(f"{title} Layout")
-        padding = 1.1 * shapes.radius
+        # The ranges are the cells' extent, corners included, as in plot_field.
         if dimension_ranges is not None:
-            ax.set_xlim(
-                (dimension_ranges[0][0] - padding, dimension_ranges[0][1] + padding)
-            )
-            ax.set_ylim(
-                (dimension_ranges[1][0] - padding, dimension_ranges[1][1] + padding)
-            )
+            ax.set_xlim(dimension_ranges[0])
+            ax.set_ylim(dimension_ranges[1])
         ax.set_aspect("equal", adjustable="box")
     return ax
 
@@ -393,7 +415,7 @@ def plot_track(
     return ax
 
 
-def plot_track_linear(
+def _plot_track_linear(
     ax: Axes | None = None,
     *,
     title: str,

@@ -3,25 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 from shapely.geometry import MultiPolygon, Polygon
 
-
-class _ComponentState:
-    """Restore array write protection after pickle and deepcopy."""
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            if isinstance(value, np.ndarray):
-                value.setflags(write=False)
-            object.__setattr__(self, name, value)
+from neurospatial.geometry._arrays import ReadOnlyState
 
 
 @dataclass(frozen=True, eq=False)
-class HexagonShapes(_ComponentState):
+class HexagonShapes(ReadOnlyState):
     """Regular hexagons with centers ``(n_bins, 2)``, radius and orientation."""
 
     centers: NDArray[np.float64]
@@ -35,7 +26,7 @@ class HexagonShapes(_ComponentState):
 
 
 @dataclass(frozen=True, eq=False)
-class TriangleShapes(_ComponentState):
+class TriangleShapes(ReadOnlyState):
     """Mesh points ``(n_points, 2)`` and active triangles ``(n_bins, 3)``."""
 
     points: NDArray[np.float64]

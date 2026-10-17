@@ -73,7 +73,7 @@ numbers, then plot the map:
 ```python
 # Scalar headline metrics include peak_firing_rate, spatial_info and sparsity.
 print(result.summary())
-# -> a dict of scalars, e.g. ~1378 bins, peak firing rate ~9.3 Hz,
+# -> a dict of scalars, e.g. ~1378 bins, peak firing rate ~12 Hz,
 #    spatial_info in bits/spike and ~300 s shared occupancy (exact values vary).
 
 # Where the cell fires most, and how spatially informative it is.
@@ -131,8 +131,12 @@ Four concepts carried that analysis. They are worth a minute now; the
 
 **Environment.** `Environment.from_samples(...)` discretized the continuous
 arena into a grid of **bins** (small square tiles), keeping only the bins your
-samples actually covered. `env.n_bins` reports how many there are, and every
-later step — occupancy, smoothing, plotting — is defined over those bins:
+samples actually covered. Presets cover common apparatus:
+`Environment.open_field` also keeps unvisited patches inside the arena, and
+`Environment.linear_track` and `Environment.maze` build linearized tracks (see
+[presets](../user-guide/environments.md#presets)). `env.n_bins` reports how
+many bins there are, and every later step — occupancy, smoothing, plotting —
+is defined over those bins:
 
 ```python
 print(f"{env.n_bins} active bins, {env.n_dims}D, units = {env.units!r}")
@@ -151,7 +155,7 @@ same graph powers geodesic distances and shortest paths:
 
 ```python
 center_bin = env.bin_at([[50.0, 50.0]])[0]
-print("Neighbors of the center bin:", env.neighbors(center_bin))
+print("Neighbors of the center bin:", env.neighbors(bins=center_bin))
 ```
 
 **Recording gaps and time windows.** Gaps longer than `max_gap=0.5` seconds

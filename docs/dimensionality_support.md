@@ -30,11 +30,12 @@ env = Environment.from_graph(
     edge_order=[(0, 1)],
     edge_spacing=0.0,
     bin_size=2.0,
+    track_width=10.0,  # full corridor width; needed to assign positions to bins
 )
 ```
 
 **Unique features:**
-- `env.to_linear(nd_position)` - Convert N-D coordinates to linear position
+- `env.to_linear(positions)` - Convert N-D coordinates to linear position
 - `env.linear_to_nd(linear_position)` - Convert linear position to N-D coordinates
 - `env.plot_1d()` - 1D visualization
 - `env.is_linearized_track == True`
@@ -106,10 +107,10 @@ env_3d = Environment.from_samples(data_3d, bin_size=2.0)
 # These all work:
 bins = env_3d.bin_at(points_3d)
 mask = env_3d.contains(points_3d)
-neighbors = env_3d.neighbors(bin_idx)
-path = env_3d.path_between(source_bin, target_bin)
-dist = env_3d.distance_between(points_3d[0], points_3d[1])
-bin_dist = float(env_3d.distance_to([target_bin])[source_bin])
+neighbors = env_3d.neighbors(bins=bin_idx)
+path = env_3d.path_between(bins=[source_bin, target_bin])
+dist = env_3d.distance_between(points=points_3d[:2])
+bin_dist = float(env_3d.distance_to(bins=target_bin)[source_bin])
 ```
 
 ✅ **Connectivity graphs** - Full 3D graph support
@@ -136,8 +137,7 @@ R = Rotation.from_euler('z', 45, degrees=True).as_matrix()
 transform = from_rotation_matrix(R, translation=[10, 20, 30])
 
 # Apply to 3D environment
-from neurospatial.ops import apply_transform_to_environment
-env_transformed = apply_transform_to_environment(env_3d, transform)
+env_transformed = env_3d.apply_transform(transform)
 ```
 
 ✅ **Transform estimation** - Estimate rigid, similarity, or affine transforms from point pairs
@@ -237,9 +237,9 @@ print(f"Dimensions: {env.n_dims}")  # 1, 2, or 3
 
 # Check if 1D (linearized)
 if env.is_linearized_track:
-    linear_pos = env.to_linear(nd_position)
+    linear_pos = env.to_linear(positions)
 else:
-    bin_idx = env.bin_at(nd_position)
+    bin_idx = env.bin_at(positions)
 
 # Check before using 2D-only features
 from shapely.geometry import Polygon

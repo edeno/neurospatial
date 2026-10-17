@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
+from scipy.spatial import cKDTree
 
+from neurospatial.environment import CartesianSystem
 from neurospatial.ops.alignment import (
     apply_similarity_transform,
     get_2d_rotation_matrix,
@@ -10,11 +12,15 @@ from neurospatial.ops.alignment import (
 
 # Minimal mock Environment class for testing
 class MockEnvironment:
-    def __init__(self, bin_centers, n_dims, is_fitted=True):
+    coordinate_system = CartesianSystem()
+
+    def __init__(self, bin_centers, n_dims):
         self.bin_centers = bin_centers
         self.n_dims = n_dims
-        self._is_fitted = is_fitted
         self.n_bins = len(bin_centers)
+
+    def bin_center_tree(self):
+        return cKDTree(self.bin_centers)
 
 
 def test_get_2d_rotation_matrix_identity():
@@ -124,18 +130,6 @@ def test_map_probabilities_empty_target():
     tgt_env = MockEnvironment(tgt_bins, 2)
     tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
     assert tgt_probs.size == 0
-
-
-def test_map_probabilities_not_fitted():
-    from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-    src_bins = np.array([[0, 0]])
-    tgt_bins = np.array([[0, 0]])
-    src_probs = np.array([1.0])
-    src_env = MockEnvironment(src_bins, 2, is_fitted=False)
-    tgt_env = MockEnvironment(tgt_bins, 2)
-    with pytest.raises(EnvironmentNotFittedError, match="map_probabilities"):
-        map_probabilities(src_env, tgt_env, src_probs)
 
 
 def test_map_probabilities_shape_mismatch():

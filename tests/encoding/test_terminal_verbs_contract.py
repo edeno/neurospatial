@@ -1,4 +1,4 @@
-"""Contract tests for the split terminal verbs (Task 1.3).
+"""Contract tests for the split terminal verbs.
 
 The v0.6 api-contract requires that the analysis-ending verbs mean ONE thing on
 every result class:

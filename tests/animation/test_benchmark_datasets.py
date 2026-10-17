@@ -86,12 +86,11 @@ class TestCreateBenchmarkEnv:
     """Tests for create_benchmark_env function."""
 
     def test_returns_environment(self):
-        """Should return a fitted Environment."""
+        """Should return an Environment."""
         from neurospatial import Environment
 
         env = create_benchmark_env(SMALL_CONFIG)
         assert isinstance(env, Environment)
-        assert env._is_fitted is True
 
     def test_grid_size_respected(self):
         """Grid size should result in a reasonable number of bins."""

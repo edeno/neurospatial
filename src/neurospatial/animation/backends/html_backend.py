@@ -89,6 +89,9 @@ import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
 
+from neurospatial.animation._region_names import shown_region_names
+from neurospatial.animation._utils import _emit_status
+
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
     from neurospatial.environment.core import Environment
@@ -308,14 +311,10 @@ def _estimate_overlay_json_size(
     if overlay_data is not None and overlay_data.regions is not None:
         region_names = overlay_data.regions.get(0, [])
     elif show_regions:
-        region_names = (
-            show_regions if isinstance(show_regions, list) else list(env.regions.keys())
-        )
+        region_names = shown_region_names(env, show_regions)
 
     if region_names:
         for name in region_names:
-            if name not in env.regions:
-                continue
             region = env.regions[name]
 
             if region.kind == "point":
@@ -417,14 +416,10 @@ def _serialize_overlay_data(
         region_names = overlay_data.regions.get(0, [])
     elif show_regions:
         # Fall back to show_regions parameter
-        region_names = (
-            show_regions if isinstance(show_regions, list) else list(env.regions.keys())
-        )
+        region_names = shown_region_names(env, show_regions)
 
     if region_names:
         for name in region_names:
-            if name not in env.regions:
-                continue
             region = env.regions[name]
 
             if region.kind == "point":
@@ -470,8 +465,9 @@ def render_html(
     overlay_data: OverlayData | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
-    **kwargs,  # Accept other parameters gracefully
-) -> Path:
+    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    dry_run: bool = False,
+) -> Path | None:
     """Generate standalone HTML player with instant scrubbing.
 
     Pre-renders all frames as base64-encoded images embedded in HTML (default),
@@ -537,13 +533,17 @@ def render_html(
     region_alpha : float, default=0.3
         Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque.
-    **kwargs
-        Other parameters (accepted gracefully for compatibility).
+    scale_bar : bool or ScaleBarConfig, default=False
+        Draw a scale bar in every frame. If True, uses the default config.
+    dry_run : bool, default=False
+        If True, check the inputs and output paths, report the number of
+        frames and the estimated file size, and return None without
+        rendering or writing anything.
 
     Returns
     -------
-    save_path : Path
-        Path to saved HTML file
+    save_path : Path or None
+        Path to saved HTML file, or None if ``dry_run=True``.
 
     Raises
     ------
@@ -741,6 +741,22 @@ def render_html(
             stacklevel=2,
         )
 
+    if dry_run:
+        report = [
+            "=" * 60,
+            "HTML Export Dry Run Estimate:",
+            "=" * 60,
+            f"  Frames:          {n_frames:,}",
+            f"  Image format:    {image_format.upper() if embed else 'PNG'}",
+            f"  Est. file size:  {estimated_mb:.0f} MB",
+            f"  Output path:     {output_path}",
+        ]
+        if not embed:
+            report.append(f"  Frames directory: {frames_dir}")
+        report += ["", "To proceed, call again with dry_run=False", "=" * 60]
+        _emit_status("\n".join(report))
+        return None
+
     # Compute global color scale
     vmin_computed, vmax_computed = compute_global_colormap_range(fields, vmin, vmax)
     vmin = vmin if vmin is not None else vmin_computed
@@ -775,6 +791,7 @@ def render_html(
             overlay_data=overlay_data,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
         )
 
         # Generate frame labels if not provided
@@ -817,6 +834,7 @@ def render_html(
             frame_idx=frame_idx,
             show_regions=show_regions,
             region_alpha=region_alpha,
+            scale_bar=scale_bar,
         )
 
         # Convert to base64

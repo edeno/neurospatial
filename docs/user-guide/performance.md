@@ -2,183 +2,72 @@
 
 This guide covers performance characteristics, caching strategies, and optimization techniques for neurospatial.
 
-## Caching Strategy
+## One analysis cache per environment
 
-neurospatial uses multiple caching mechanisms to optimize repeated operations on environments. Understanding these caches helps manage memory usage and performance for large-scale analyses.
+Each environment keeps one analysis cache. Its values depend only on the bins
+and their connectivity, which never change, so a cached value is always valid.
+`env.clear_cache()` (no arguments) releases everything in it to free memory;
+the next analysis recomputes what it needs and returns the same result.
 
-### Cache Types
+Environments returned by `env.with_metadata(...)` and `env.with_regions(...)`
+have the same bins, so they share their parent's cache: renaming an
+environment or changing its regions does not throw away the kernels and
+eigenbases already computed. Clearing the cache on any of them clears it for
+all of them. Environments made by `subset`, `clip`, `rebin`, `apply_transform`,
+`with_track_width` or `combine`, and environments loaded from a file, a dict,
+NWB or a pickle, start with their own empty cache. Pickles, files and NWB
+exports never include cached analyses, so there is no need to clear the cache
+before saving an environment or sending it to worker processes.
 
-#### 1. Kernel Cache
+### What the cache holds
 
-**Location**: Managed internally by `Environment`
-**Purpose**: Stores diffusion kernels used for field smoothing operations.
-**Key**: `(bandwidth, mode)` tuple where mode is `"transition"` or `"density"`.
+| Value | Built by | Size |
+|-------|----------|------|
+| KD-tree over the bin centers | `nearest_bin`, `interpolate(mode="nearest")` and other nearest-center lookups | about 50 bytes per bin |
+| Face and diffusion geometry | `smooth`, `diffuse`, `compute_kernel`, `get_diffusion_geometry` | sparse, a few numbers per bin and per edge |
+| Diffusion eigenbasis | `smooth` and `diffuse` | `n_bins × k` floats; `k` grows with the smallest bandwidth used |
+| MRF eigenbasis | `get_mrf_basis` and `method="glm"` rate maps | `n_bins × rank` floats |
+| Dense diffusion kernels | `compute_kernel(bandwidth=..., mode=...)` with `cache=True` | `n_bins × n_bins` floats each; the 8 most recent `(bandwidth, mode)` pairs are kept |
+| Gaussian weights | `compute_gaussian_kernel(bandwidth=...)` | `n_bins × n_bins` floats each; the 8 most recent bandwidths are kept |
+| Gradient and divergence operators, boundary bins, bin and edge attribute tables | their accessors | sparse or one row per bin |
 
-**When populated**:
-- During `env.smooth(field, bandwidth=X)` calls
-- During `env.compute_kernel(bandwidth=X, mode="density")` calls
-
-**Memory usage**:
-
-| Environment Size | Single Kernel | 10 Kernels |
-|-----------------|---------------|------------|
-| 100 bins        | ~80 KB        | ~800 KB    |
-| 1,000 bins      | ~8 MB         | ~80 MB     |
-| 10,000 bins     | ~800 MB       | ~8 GB      |
-
-**Example**:
+`env.smooth` and `env.diffuse` never build a dense `(n_bins, n_bins)` kernel:
+they apply the heat operator through the cached eigenbasis, so their memory
+grows with `n_bins × k`, not `n_bins²`. Only `compute_kernel` and
+`compute_gaussian_kernel` build dense matrices. A dense kernel of 10,000 bins
+takes about 800 MB, and the cache keeps at most 8 of them (about 6.4 GB), so
+on large environments pass `cache=False` to `compute_kernel` for a kernel you
+use once.
 
 ```python
-from neurospatial import Environment
 import numpy as np
+from neurospatial import Environment
 
-env = Environment.from_samples(data, bin_size=2.0)
+positions = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # cm
+env = Environment.from_samples(positions, bin_size=2.0)
+rate = np.random.default_rng(1).random(env.n_bins)  # Hz
 
-# First call: Computes and caches kernel
-smoothed1 = env.smooth(field, bandwidth=10.0)  # Slower
-
-# Second call: Retrieves from cache
-smoothed2 = env.smooth(field, bandwidth=10.0)  # Faster
-
-# Different bandwidth: New kernel computed
-smoothed3 = env.smooth(field, bandwidth=15.0)  # Slower (new cache entry)
-
-# Manual cache control
-kernel = env.compute_kernel(bandwidth=10.0, cache=False)  # Skip cache
-env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
+smoothed = env.smooth(rate, bandwidth=5.0)  # builds the eigenbasis once
+smoothed_again = env.smooth(rate, bandwidth=5.0)  # reuses it
+kernel = env.compute_kernel(bandwidth=5.0, mode="average", cache=False)
+bins = env.nearest_bin(positions)  # builds the KD-tree once
+env.clear_cache()  # release every cached analysis
 ```
 
-**When to clear**:
-- After processing many fields with different bandwidths (prevents memory bloat)
-- Before serializing environment (caches don't serialize)
-- In memory-constrained environments
+`env.bin_at(positions)` and `env.contains(positions)` use each layout's own
+containment test instead of the nearest center. Prefer them for tracking data
+when positions outside the environment should get `-1` / `False`.
 
----
+### Memory management
 
-#### 2. KDTree Cache
-
-**Location**: Managed internally by `Environment`
-**Purpose**: Accelerates nearest-neighbor queries.
-**Populated**: Automatically on first call to KDTree-backed helpers.
-
-**Memory usage**:
-
-| Environment Size | KDTree Size |
-|-----------------|-------------|
-| 100 bins        | ~5 KB       |
-| 1,000 bins      | ~50 KB      |
-| 10,000 bins     | ~500 KB     |
-| 100,000 bins    | ~5 MB       |
-
-**Operations using KDTree**:
-- `map_points_to_bins(points, env)` - nearest-neighbor bin assignment
-- `env.interpolate(field, points, method="nearest")` - nearest-neighbor interpolation
-
-`env.bin_at(points)` and `env.contains(points)` use layout-specific geometric
-containment instead of nearest-neighbor assignment. Prefer those methods for
-tracking data when points outside the environment should return `-1` / `False`.
-
-**Example**:
+To process many environments one after another, clear each one's cache when
+you are done with it, or let the environment go out of scope:
 
 ```python
-from neurospatial.ops import map_points_to_bins
-
-# First nearest-neighbor query: builds KDTree
-bin_indices = map_points_to_bins(env, points)  # Slower (tree construction)
-
-# Subsequent nearest-neighbor queries: use cached tree
-more_indices = map_points_to_bins(env, more_points)  # Fast
-
-# Clear KDTree cache when you want to free memory
-env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
-```
-
-**Performance impact**:
-- Tree construction: O(n log n) where n = number of bins
-- Query: O(log n) per point
-- For 1,000 points × 10,000 bins: ~10ms (cached) vs ~50ms (uncached)
-
----
-
-#### 3. Nearest-Neighbor Mapping Cache
-
-**Location**: `Environment`, accessed by `neurospatial.ops.map_points_to_bins()`
-**Purpose**: Reuse the same KDTree across repeated nearest-neighbor calls.
-
-**Example**:
-
-```python
-from neurospatial.ops import map_points_to_bins
-
-# Uses cached KDTree
-bin_indices = map_points_to_bins(env, points)
-
-# Clear only KDTree cache (selective clearing)
-env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
-
-# Or clear all caches
-env.clear_cache()
-```
-
-**When to clear**:
-- When processing many different environments sequentially
-- Before long-running processes to free memory
-- After environment modifications (rare - environments are immutable)
-- Use selective clearing to preserve specific caches
-
----
-
-## Memory Management
-
-### Estimating Total Memory Usage
-
-For a typical workflow processing multiple fields on a single environment:
-
-**Example**: 10,000 bin environment, 5 different smoothing bandwidths, 10 fields analyzed
-
-```
-Environment base:     ~1 MB   (bin_centers, connectivity)
-KDTree cache:         ~500 KB
-Kernel cache:         ~40 MB  (5 kernels × 8 MB each)
-Field data (10x):     ~800 KB (10 fields × 80 KB each)
-─────────────────────────────
-Total:                ~42 MB
-```
-
-### Memory Optimization Strategies
-
-#### Strategy 1: Batch Processing with Cache Clearing
-
-```python
-environments = [env1, env2, env3, ...]
-
 for env in environments:
-    # Process environment
-    for bandwidth in [5.0, 10.0, 15.0]:
-        result = env.smooth(field, bandwidth=bandwidth)
-        process_result(result)
-
-    # Clear caches before next environment
+    for bandwidth in (5.0, 10.0, 15.0):
+        process_result(env.smooth(field, bandwidth=bandwidth))
     env.clear_cache()
-```
-
-#### Strategy 2: Disable Kernel Caching for One-Off Operations
-
-```python
-# Don't cache if you won't reuse this kernel
-kernel = env.compute_kernel(bandwidth=10.0, cache=False)
-smoothed = kernel @ field
-```
-
-#### Strategy 3: Pre-compute and Reuse Kernels
-
-```python
-# Compute once, reuse many times
-kernel_10cm = env.compute_kernel(bandwidth=10.0, cache=True)
-
-# Process multiple fields with same kernel (fast!)
-for field in fields:
-    smoothed = env.smooth(field, bandwidth=10.0)  # Uses cached kernel
 ```
 
 ---
@@ -189,7 +78,7 @@ for field in fields:
 
 Benchmarked on MacBook Pro M1, Python 3.13, numpy 2.3
 
-**`map_points_to_bins()` - Nearest-neighbor point-to-bin mapping**:
+**`env.nearest_bin()` - Nearest-neighbor point-to-bin mapping**:
 
 | Environment | n_bins | n_points | Uncached | Cached  | Speedup |
 |-------------|--------|----------|----------|---------|---------|
@@ -297,11 +186,11 @@ final_result = combine_results(results)
 coarse_env = large_env.rebin(factor=4)  # Reduce from 100k to 6k bins
 coarse_result = analyze(coarse_env)
 
-# Identify regions of interest
+# Identify regions of interest as a boolean mask over large_env's bins
 roi_mask = identify_interesting_regions(coarse_result)
 
 # Refine only interesting regions
-refined_env = large_env.subset(roi_mask)
+refined_env = large_env.subset(mask=roi_mask)
 refined_result = analyze(refined_env)
 ```
 
@@ -309,41 +198,23 @@ refined_result = analyze(refined_env)
 
 ## Thread Safety
 
-**Important**: neurospatial caches are **not thread-safe**.
-
-**Single-threaded (safe)**:
-
-```python
-for i in range(100):
-    result = env.smooth(field, bandwidth=10.0)  # Uses cache safely
-```
-
-**Multi-threaded (unsafe)**:
+Threads can share one environment. Each cached analysis is computed once,
+even when several threads ask for it at the same time; the other threads wait
+and then use the same result. Smoothing with `env.smooth` or `env.diffuse` and
+building an MRF basis take turns while they grow the shared eigenbasis, so
+every thread gets the same answer as a single-threaded run.
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
 
-# DON'T DO THIS - cache corruption possible
 with ThreadPoolExecutor() as executor:
-    futures = [executor.submit(env.smooth, field, bandwidth=10.0) for _ in range(100)]
+    futures = [executor.submit(env.smooth, field, bandwidth=10.0) for field in fields]
 ```
 
-**Multi-threaded (safe)**:
-
-```python
-# Option 1: One environment per thread
-with ThreadPoolExecutor() as executor:
-    envs = [copy.deepcopy(env) for _ in range(n_threads)]
-    futures = [executor.submit(process, envs[i], field) for i in range(n_threads)]
-
-# Option 2: Disable caching in parallel context
-def process_field(field):
-    kernel = env.compute_kernel(bandwidth=10.0, cache=False)
-    return kernel @ field
-
-with ThreadPoolExecutor() as executor:
-    futures = [executor.submit(process_field, field) for field in fields]
-```
+Because of these turns, smoothing calls on one environment do not run in
+parallel. To spread smoothing over CPU cores, pass the environment to worker
+processes (for example with `multiprocessing`); each process unpickles its own
+copy with an empty cache.
 
 ---
 
@@ -423,7 +294,7 @@ tracemalloc.stop()
 import time
 
 # Benchmark uncached vs cached
-env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
+env.clear_cache()
 
 start = time.time()
 result1 = env.smooth(field, bandwidth=10.0)

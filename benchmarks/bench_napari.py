@@ -65,15 +65,12 @@ def benchmark_napari_init(
     start_memory = get_memory_mb()
     start_time = time.perf_counter()
 
-    # Clear cache to ensure pickleable (standard practice)
-    env.clear_cache()
-
     viewer = animate_fields(
         env,
         fields,
         backend="napari",
         overlays=overlays,
-        fps=30,
+        frame_times=np.arange(len(fields)) / 30.0,
     )
 
     end_time = time.perf_counter()

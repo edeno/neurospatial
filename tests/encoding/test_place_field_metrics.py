@@ -1,7 +1,5 @@
 """
 Tests for place field metrics.
-
-Following TDD: Tests written FIRST before implementation.
 """
 
 from __future__ import annotations
@@ -1815,7 +1813,7 @@ class TestDetectPlaceFieldsValidation:
         firing_rate = np.zeros(env.n_bins)
         peak_idx = env.n_bins // 2
         firing_rate[peak_idx] = 5.0
-        for neighbor in env.neighbors(peak_idx):
+        for neighbor in env.neighbors(bins=peak_idx):
             firing_rate[neighbor] = 3.0
 
         fields = detect_place_fields(env, firing_rate, min_size=20)
@@ -2253,6 +2251,35 @@ class TestFieldShiftDistanceEdgeCases:
         # Should return either a valid distance (Euclidean fallback) or NaN (out of bounds)
         assert isinstance(result, float)
         assert result >= 0
+
+    def test_geodesic_shift_maps_both_centroids_on_the_first_environment(self):
+        """Both centroids are located on env_1's graph, not by env_2's indices."""
+        from neurospatial.encoding._field_metrics import (
+            field_shift_distance,
+            rate_map_centroid,
+        )
+        from neurospatial.ops.transforms import translate
+
+        x, y = np.meshgrid(np.arange(0.0, 40.0), np.arange(0.0, 40.0))
+        env_1 = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
+        # Same bins and indices, shifted 8 cm east: index i is a different place.
+        env_2 = env_1.apply_transform(translate(8.0, 0.0))
+        field_bins = np.flatnonzero(
+            np.linalg.norm(env_1.bin_centers - [18.0, 18.0], axis=1) < 5.0
+        )
+        rate = np.zeros(env_1.n_bins)
+        rate[field_bins] = 10.0
+
+        shift = field_shift_distance(
+            env_1, rate, field_bins, env_2, rate, field_bins, metric="geodesic"
+        )
+
+        centroids = [
+            rate_map_centroid(env_1, rate, field_bins),
+            rate_map_centroid(env_2, rate, field_bins),
+        ]
+        assert shift == env_1.distance_between(points=centroids)
+        assert shift > 0.0  # the fields sit 8 cm apart
 
 
 class TestComputeFieldEMDEdgeCases:

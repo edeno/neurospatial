@@ -18,6 +18,8 @@ import numpy as np
 from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon, mapping, shape
 
+from neurospatial._exceptions import RegionNotFoundError
+
 if TYPE_CHECKING:
     from pandas import DataFrame
 
@@ -373,7 +375,19 @@ class Regions(MutableMapping[str, Region]):
         )
 
     def __getitem__(self, key: str) -> Region:
-        return self._store[key]
+        try:
+            return self._store[key]
+        except KeyError:
+            raise RegionNotFoundError(
+                key, available=list(self._store), argument=None
+            ) from None
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._store
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Return the region named ``key``, or ``default`` when it is absent."""
+        return self._store.get(key, default)
 
     def __setitem__(self, key: str, value: Region) -> None:
         """Insert a region under ``key``; refuse to silently overwrite.
@@ -436,7 +450,10 @@ class Regions(MutableMapping[str, Region]):
         store[key] = value
 
     def __delitem__(self, key: str) -> None:
-        self._mutable_store().pop(key)
+        store = self._mutable_store()
+        if key not in store:
+            raise RegionNotFoundError(key, available=list(store), argument=None)
+        del store[key]
 
     def clear(self) -> None:
         """Remove every region from a mutable builder."""
@@ -581,9 +598,7 @@ class Regions(MutableMapping[str, Region]):
         if (point is None) == (polygon is None):
             raise ValueError("Specify **one** of 'point' or 'polygon'.")
         if name not in self:
-            raise KeyError(
-                f"Region {name!r} does not exist. Use add() to create new regions."
-            )
+            raise RegionNotFoundError(name, available=list(self), argument=None)
 
         # Preserve existing metadata if not explicitly provided
         old_region = self._store[name]
@@ -659,7 +674,7 @@ class Regions(MutableMapping[str, Region]):
             ``remove``) raises rather than silently absorbing the case where
             the caller's mental model of the collection disagrees with reality.
         """
-        del self._mutable_store()[name]
+        del self[name]
 
     def list_names(self) -> list[str]:
         """Get list of region names in insertion order.
@@ -714,7 +729,7 @@ class Regions(MutableMapping[str, Region]):
 
         """
         if name not in self._store:
-            raise KeyError(f"Region '{name}' not found in this collection.")
+            raise RegionNotFoundError(name, available=list(self._store), argument=None)
 
         region = self._store[name]
 
@@ -836,3 +851,8 @@ class Regions(MutableMapping[str, Region]):
         from .io import regions_from_json
 
         return regions_from_json(path)
+
+
+def _snapshot_regions(regions: Regions) -> Regions:
+    """Return an ordered, immutable copy of ``regions`` for an environment to own."""
+    return regions._snapshot()

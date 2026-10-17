@@ -1,79 +1,94 @@
-"""Small environment capabilities consumed by finite-volume operators."""
+"""The environment members that public ops functions read at their boundary.
+
+A public ops function that takes an environment reads the components it
+needs once, through these members, and computes from those components; it
+does not call back into environment analysis methods. Each base protocol
+names one to three members; the composite protocols only combine bases.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Protocol
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     import networkx as nx
     import numpy as np
+    from matplotlib.axes import Axes
     from numpy.typing import NDArray
     from scipy import sparse
+    from scipy.spatial import cKDTree
 
-    from neurospatial.environment import Environment
-    from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._binning import Binning
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-    from neurospatial.ops.binning import TieBreakStrategy
-    from neurospatial.ops.transforms import Affine2D, AffineND
+    from neurospatial.geometry import (
+        Arena,
+        Binning,
+        CartesianSystem,
+        DiffusionGeometry,
+        EgocentricPolarSystem,
+    )
+    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops.mapping import TieBreakStrategy
+    from neurospatial.regions import Regions
 
 
-class AffineTransformConsumer(Protocol):
-    """Fitted status and the environment-owned affine construction adapter."""
+# ---------------------------------------------------------------------------
+# Base protocols: one to three members each.
+# ---------------------------------------------------------------------------
+class CoordinateConsumer(Protocol):
+    """The coordinate descriptor, for functions with a Cartesian-only mode."""
 
     @property
-    def _is_fitted(self) -> bool: ...
-
-    def apply_transform(
-        self, transform: AffineND | Affine2D, *, name: str | None = None
-    ) -> Environment: ...
+    def coordinate_system(self) -> CartesianSystem | EgocentricPolarSystem: ...
 
 
-class NearestBinConsumer(Protocol):
-    """Nearest-bin assignment with environment-owned query caching."""
+class CartesianConsumer(CoordinateConsumer, Protocol):
+    """An environment whose bin centers are Cartesian positions."""
 
-    def nearest_bin(
-        self,
-        points: NDArray[np.float64],
-        *,
-        tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"] = ...,
-        return_dist: bool = False,
-        max_distance: float | None = None,
-        max_distance_factor: float | None = None,
-    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]: ...
+    @property
+    def coordinate_system(self) -> CartesianSystem: ...
 
 
-class CacheClearConsumer(Protocol):
-    """Public control over which environment-owned analyses are discarded."""
+class BinCentersConsumer(Protocol):
+    """Bin centers, in the environment's coordinates."""
 
-    def clear_cache(
-        self,
-        *,
-        kdtree: bool = True,
-        kernels: bool = True,
-        cached_properties: bool = True,
-    ) -> None: ...
+    @property
+    def bin_centers(self) -> NDArray[np.float64]: ...
 
 
-class DiffusionGeometryConsumer(Protocol):
-    """Access to an environment's cached conductances and cell measures."""
-
-    def get_diffusion_geometry(self) -> DiffusionGeometry: ...
-
-
-class DiffusionAccuracyConsumer(Protocol):
-    """Report apply accuracy without exposing the mutable eigenbasis holder."""
-
-    def diffusion_accuracy(self, bandwidth: float) -> float: ...
-
-
-class FaceGeometryConsumer(Protocol):
-    """Public access to an environment-owned differential operator."""
+class BinsConsumer(BinCentersConsumer, Protocol):
+    """Bin count, dimensionality and centers."""
 
     @property
     def n_bins(self) -> int: ...
 
-    def get_differential_operator(self) -> sparse.csc_matrix: ...
+    @property
+    def n_dims(self) -> int: ...
+
+
+class GraphConsumer(Protocol):
+    """Bin count and navigation graph."""
+
+    @property
+    def n_bins(self) -> int: ...
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+
+class BinningConsumer(Protocol):
+    """The bins with their point lookup, and the continuous domain."""
+
+    @property
+    def binning(self) -> Binning: ...
+
+    @property
+    def arena(self) -> Arena: ...
+
+
+class DiffusionGeometryConsumer(Protocol):
+    """The environment's cached conductances and cell measures."""
+
+    def get_diffusion_geometry(self) -> DiffusionGeometry: ...
 
 
 class GradientConsumer(Protocol):
@@ -94,27 +109,100 @@ class DivergenceConsumer(Protocol):
     def get_divergence_operator(self) -> sparse.csc_matrix: ...
 
 
-class WaveletGeometryConsumer(DiffusionGeometryConsumer, Protocol):
-    """Cell geometry and coordinates for a physical diffusion-wavelet generator."""
+class FieldPlotConsumer(Protocol):
+    """Draw one value per bin on an Axes, through the environment's renderer."""
+
+    def plot_field(
+        self,
+        field: NDArray[np.float64],
+        ax: Axes | None = ...,
+        *,
+        cmap: str = ...,
+        colorbar: bool = ...,
+    ) -> Axes: ...
+
+
+# ---------------------------------------------------------------------------
+# Composite protocols: named combinations of the bases.
+# ---------------------------------------------------------------------------
+class CartesianBinsConsumer(CartesianConsumer, BinsConsumer, Protocol):
+    """Bin count, dimensionality and Cartesian centers."""
+
+
+class RegionMaskConsumer(BinningConsumer, Protocol):
+    """Bins, their domain and the named regions for region membership masks."""
 
     @property
-    def bin_centers(self) -> NDArray[np.float64]: ...
+    def regions(self) -> Regions: ...
+
+
+class GraphLookupConsumer(BinningConsumer, CoordinateConsumer, Protocol):
+    """Point lookup, coordinate meaning and graph for geodesic distances."""
+
+    @property
+    def connectivity(self) -> nx.Graph: ...
+
+
+class BasisCentersConsumer(GraphConsumer, BinsConsumer, CoordinateConsumer, Protocol):
+    """Centers, graph and coordinate meaning for choosing basis centers.
+
+    ``bin_center_tree`` is the environment's cached KD-tree over its centers.
+    """
+
+    def bin_center_tree(self) -> cKDTree: ...
+
+
+class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
+    """Cartesian bins with extents for sizing a default spatial basis."""
+
+    @property
+    def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
+
+    @property
+    def is_linearized_track(self) -> bool: ...
+
+    @property
+    def bin_sizes(self) -> NDArray[np.float64]: ...
+
+
+class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Protocol):
+    """Diffusion geometry, cell faces and graph for heat-kernel wavelets."""
 
     @property
     def binning(self) -> Binning: ...
 
 
-class BoundaryConsumer(Protocol):
-    """Continuous domain and explicit cells for physical/analysis boundaries."""
+class ProbabilityTargetConsumer(CartesianBinsConsumer, Protocol):
+    """Cartesian bins that receive probabilities from their nearest centers.
 
-    @property
-    def arena(self) -> Arena: ...
+    ``bin_center_tree`` is read once at the public boundary of
+    ``map_probabilities``: the target environment caches the KD-tree.
+    """
 
-    @property
-    def binning(self) -> Binning: ...
+    def bin_center_tree(self) -> cKDTree: ...
 
 
-class ObserverConsumer(BoundaryConsumer, Protocol):
-    """Boundary geometry plus assignment for explicit analysis-mode observers."""
+class ResampleSourceConsumer(CartesianBinsConsumer, Protocol):
+    """Cartesian bins whose field is pulled back by nearest bin center.
 
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]: ...
+    ``nearest_bin`` is read once at the public boundary of ``resample_field``:
+    the source environment caches the KD-tree it searches.
+    """
+
+    def nearest_bin(
+        self, positions: NDArray[np.float64], *, tie_break: TieBreakStrategy = ...
+    ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]: ...
+
+
+class ResampleTargetConsumer(
+    CartesianConsumer, BinCentersConsumer, DiffusionGeometryConsumer, Protocol
+):
+    """Cartesian bins that receive a resampled field and may diffuse it.
+
+    ``diffuse`` is read once at the public boundary of ``resample_field``: the
+    destination environment caches the eigenbasis it smooths with.
+    """
+
+    def diffuse(
+        self, fields: Any, *, bandwidth: float, mode: KernelMode = ...
+    ) -> NDArray[np.float64]: ...

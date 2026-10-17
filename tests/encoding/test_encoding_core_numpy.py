@@ -6,8 +6,6 @@ This module tests the NumPy core array operations stubs:
 - smooth_rate_map_single: Apply smoothing to a single rate map
 - smooth_rate_maps_batch: Batch version for multiple rate maps
 
-TDD approach: Tests written first, implementation follows.
-
 Design requirements:
 - Core Rate/Metrics Layer operates on dense arrays with shapes like (n_neurons, n_bins)
 - Single-neuron functions operate on (n_bins,) arrays

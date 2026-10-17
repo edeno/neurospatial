@@ -6,14 +6,23 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._capabilities import RectilinearGrid
-from neurospatial.geometry._locators import NearestBinLocator, RectilinearLocator
-from neurospatial.geometry._rebin_spec import GridBinningSpec
+from neurospatial.geometry import (
+    Binning,
+    GridBinningSpec,
+    NearestBinLocator,
+    RectilinearGrid,
+    RectilinearLocator,
+)
+from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_grid
+from neurospatial.layout.helpers.regular_grid import (
+    _create_regular_grid_connectivity_graph,
+)
+from neurospatial.layout.validation import validate_connectivity_graph
 
 
 # ---------------------------------------------------------------------------
-# KD-tree mixin (for point_to_bin_index)
+# KD-tree mixin (nearest-bin lookup)
 # ---------------------------------------------------------------------------
 class _KDTreeMixin:
     """Mixin providing nearest-bin lookup through an owned data locator.
@@ -66,40 +75,19 @@ class _KDTreeMixin:
     def locator(self) -> NearestBinLocator:
         """Return the built layout's owned nearest-bin locator."""
         if self._locator is None:
-            # Older pickles contain the tree and source mapping rather than a
-            # locator; their data is sufficient to construct the new record.
-            legacy_tree = getattr(self, "_kdtree", None)
-            if legacy_tree is not None:
-                self._locator = NearestBinLocator(
-                    legacy_tree.data,
-                    bin_indices=getattr(self, "_kdtree_nodes_to_bin_indices_map", None),
-                )
-            else:
-                centers = getattr(self, "bin_centers", None)
-                if centers is None or len(centers) == 0:
-                    raise LayoutNotBuiltError(type(self).__name__, "bin_centers")
-                self._build_kdtree(centers)
-        assert self._locator is not None
-        return self._locator
-
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map points to their nearest bin, with -1 for non-finite rows.
-
-        An unbuilt or empty layout returns -1 for every query point. Built
-        layouts reject a coordinate width that differs from their bin centers.
-        """
-        if self._locator is None and getattr(self, "_kdtree", None) is None:
             centers = getattr(self, "bin_centers", None)
             if centers is None or len(centers) == 0:
-                return np.full(np.atleast_2d(points).shape[0], -1, dtype=np.intp)
-        return self.locator().locate(points)
+                raise LayoutNotBuiltError(type(self).__name__, "bin_centers")
+            self._build_kdtree(centers)
+        assert self._locator is not None
+        return self._locator
 
 
 class _GridMixin:
     """Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
 
     Provides common functionality for layouts that are based on an underlying
-    N-dimensional grid, such as `point_to_bin_index` using grid definitions,
+    N-dimensional grid, such as point lookup from grid definitions,
     default plotting, and `bin_size` for uniform grids.
 
     Assumes the inheriting class defines grid-specific attributes like
@@ -113,7 +101,7 @@ class _GridMixin:
     bin_centers: NDArray[np.float64] | None = None
     connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
-    _layout_type_tag: str = "_Grid_Layout"
+    layout_type: str
     _active_mask_inverse_map: NDArray[np.intp] | None = None
     _locator: RectilinearLocator | None = None
     _grid_spec: GridBinningSpec | None = None
@@ -172,42 +160,66 @@ class _GridMixin:
             )
 
     def locator(self) -> RectilinearLocator:
-        """Return the owned locator, rebuilding it for older saved layouts."""
+        """Return the owned locator, building it on first use."""
         if self._locator is None:
             self._build_locator()
         assert self._locator is not None
         return self._locator
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Map N-D points to active bin indices based on grid structure.
+    def _assign_cells(
+        self, full_grid_bin_centers: NDArray[np.float64], *, connect_diagonal: bool
+    ) -> None:
+        """Keep the active cells, connect them and snapshot lookup and grid choices.
+
+        Every Cartesian grid engine finishes ``build()`` here once it has set
+        ``grid_edges``, ``grid_shape`` and ``active_mask``.
 
         Parameters
         ----------
-        points : NDArray[np.float64], shape (n_points, n_dims)
-            N-D points to map.
+        full_grid_bin_centers : ndarray of float64, shape (n_cells, n_dims)
+            Centers of every grid cell, active or not, in flat grid order.
+        connect_diagonal : bool
+            Whether cells that share only a corner are neighbors. Recorded in
+            the grid's binning specification even when no such pair is active.
+        """
+        assert self.active_mask is not None and self.grid_shape is not None
+        self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
+        self.connectivity = _create_regular_grid_connectivity_graph(
+            full_grid_bin_centers=full_grid_bin_centers,
+            active_mask_nd=self.active_mask,
+            grid_shape=self.grid_shape,
+            connect_diagonal=connect_diagonal,
+        )
+        validate_connectivity_graph(self.connectivity, n_dims=len(self.grid_shape))
+        self._build_locator(connect_diagonal=connect_diagonal)
 
-        Returns
-        -------
-        NDArray[np.intp], shape (n_points,)
-            Active bin indices (0 to N-1). -1 for points outside active areas.
+    def binning(self) -> Binning:
+        """Return owned bins, lookup, lazy grid faces and grid components.
+
+        Faces use one width per axis. Face directions come from the grid
+        cells, and the binning specification records the grid's anchor and
+        diagonal-neighbor choice for later re-binning.
 
         Raises
         ------
-        RuntimeError
-            If grid attributes (`grid_edges`, `grid_shape`) are not set.
-
+        LayoutNotBuiltError
+            If the layout has not been built.
         """
-        if self.grid_edges is None or self.grid_shape is None:
-            raise LayoutNotBuiltError(
-                type(self).__name__,
-                next(
-                    name
-                    for name in ("grid_edges", "grid_shape")
-                    if getattr(self, name) is None
-                ),
-            )
-
-        return self.locator().locate(points)
+        if self.connectivity is None or self.bin_centers is None:
+            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        return assemble_binning(
+            self.connectivity,
+            kind=self.layout_type,
+            centers=self.bin_centers,
+            sizes=self.bin_sizes(),
+            measure_dim=self.bin_centers.shape[1],
+            locator=self.locator(),
+            faces="grid",
+            face_arrays=(self._axis_widths(),),
+            rectilinear=self.rectilinear_grid(),
+            grid_spec=self._grid_spec,
+            dimension_ranges=self.dimension_ranges,
+        )
 
     def plot(
         self,
@@ -281,7 +293,7 @@ class _GridMixin:
 
         return plot_grid(
             ax,
-            title=self._layout_type_tag,
+            title=self.layout_type,
             bin_centers=self.bin_centers,
             connectivity=self.connectivity,
             dimension_ranges=self.dimension_ranges,
@@ -365,20 +377,3 @@ class _GridMixin:
         ):
             raise LayoutNotBuiltError(type(self).__name__, "rectilinear_grid")
         return RectilinearGrid(self.grid_edges, self.grid_shape, self.active_mask)
-
-    def finite_volume_geometry(self) -> tuple[nx.Graph, NDArray[np.float64]]:
-        """Cartesian face measure: product of the OTHER axes' widths for an
-        axis-aligned neighbor; corner-only (diagonal) neighbors get ``A = 0``.
-
-        On a uniform grid this is ``A = h**(n_dims - 1)`` for face-adjacent edges
-        (and ``A = 1`` in 1D). Masks/holes only drop nodes; the geometry of the
-        remaining edges is unchanged.
-        """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
-        from neurospatial.geometry._face_builders import grid_geometry
-
-        assert self.bin_centers is not None
-        return grid_geometry(
-            self.connectivity, self.bin_centers, self.bin_sizes(), self._axis_widths()
-        )

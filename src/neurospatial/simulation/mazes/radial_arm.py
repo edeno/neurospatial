@@ -33,7 +33,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from neurospatial import Environment, Regions
+from neurospatial.environment import Environment
+from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
     make_circular_arena,
@@ -280,6 +281,7 @@ def _create_radial_arm_track_graph(
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
+        track_width=dims.arm_width,
         name="radial_arm_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")

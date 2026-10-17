@@ -199,7 +199,7 @@ class TestSmoothValidation:
         # Wrong shape
         field_wrong = rng.random(env.n_bins + 10)
 
-        with pytest.raises(ValueError, match=r"Field shape.*must match n_bins"):
+        with pytest.raises(ValueError, match=r"bins, which must be the first axis"):
             env.smooth(field_wrong, bandwidth=2.0)
 
     def test_smooth_negative_bandwidth_raises_error(self):
@@ -235,34 +235,36 @@ class TestSmoothValidation:
         with pytest.raises(ValueError, match=r"mode must be"):
             env.smooth(field, bandwidth=2.0, mode="invalid")
 
-    # NOTE: No test for @check_fitted decorator on unfitted environments because:
-    # - Cannot create unfitted Environment with current public API (by design)
-    # - The decorator is tested indirectly by all other tests in this suite
-    # - Factory methods always create fitted environments
-
-    def test_smooth_2d_field_raises_error(self):
-        """Field must be 1-D array. 2-D arrays should raise ValueError."""
+    def test_smooth_takes_the_same_field_batch_as_diffuse(self):
+        """A (n_bins, n_fields) batch smooths each column as smooth does alone."""
         rng = np.random.default_rng(42)
         positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
+        fields = rng.random((env.n_bins, 3))
+        fields[0, 1] = np.nan  # one missing bin in the middle column
 
-        # 2D field
-        field_2d = rng.random((env.n_bins, 3))
+        batch = env.smooth(fields, bandwidth=2.0)
 
-        with pytest.raises(ValueError, match=r"Field must be 1-D array"):
-            env.smooth(field_2d, bandwidth=2.0)
+        assert batch.shape == fields.shape
+        columns = np.column_stack(
+            [env.smooth(fields[:, k], bandwidth=2.0) for k in range(3)]
+        )
+        np.testing.assert_allclose(batch, columns, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(
+            batch, env.diffuse(fields, bandwidth=2.0, mode="average"), atol=1e-12
+        )
 
-    def test_smooth_field_with_nan_raises_error(self):
-        """Field containing NaN should raise ValueError."""
+    def test_fields_with_bins_last_are_refused_with_the_transpose(self):
+        """Population rates are (n_units, n_bins); smoothing needs bins first."""
         rng = np.random.default_rng(42)
         positions = rng.random((50, 2)) * 20
         env = Environment.from_samples(positions, bin_size=2.0)
+        rates = rng.random((3, env.n_bins))
 
-        field = np.ones(env.n_bins)
-        field[0] = np.nan
-
-        with pytest.raises(ValueError, match=r"Field contains NaN values"):
-            env.smooth(field, bandwidth=2.0)
+        for smoothing, argument in ((env.smooth, "field"), (env.diffuse, "fields")):
+            with pytest.raises(ValueError, match="must be the first axis") as caught:
+                smoothing(rates, bandwidth=2.0)
+            assert f"Fix: pass {argument}.T" in str(caught.value)
 
     def test_smooth_field_with_inf_raises_error(self):
         """Field containing Inf should raise ValueError."""
@@ -394,3 +396,35 @@ class TestSmoothCaching:
 
         # Results should be different (different inputs)
         assert not np.allclose(smoothed1, smoothed2)
+
+
+@pytest.mark.parametrize("population", [False, True])
+def test_rate_result_is_refused_with_the_array_to_pass(population):
+    """Smoothing returns an array, so it takes the rates, not the result."""
+    from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+
+    rng = np.random.default_rng(0)
+    times = np.arange(3000) / 30.0
+    positions = rng.uniform(0, 100, (3000, 2))
+    env = Environment.from_samples(positions, bin_size=10.0)
+    spikes = np.sort(rng.uniform(0, times[-1], 200))
+    if population:
+        result = compute_spatial_rates(env, [spikes, spikes], times, positions)
+        expected = "env.smooth(result.firing_rates.T, bandwidth=10.0).T"
+        rates = result.firing_rates.T
+    else:
+        result = compute_spatial_rate(env, spikes, times, positions)
+        expected = "env.smooth(result.firing_rate, bandwidth=10.0)"
+        rates = result.firing_rate
+
+    for smoothing in (env.smooth, env.diffuse):
+        with pytest.raises(
+            TypeError, match="takes an array of values per bin"
+        ) as caught:
+            smoothing(result, bandwidth=10.0)
+        assert expected in str(caught.value).split("Fix:")[1]
+
+    # The suggested call works and keeps unvisited bins missing.
+    smoothed = env.smooth(rates, bandwidth=10.0)
+    assert smoothed.shape == rates.shape
+    assert np.all(np.isfinite(smoothed[np.isfinite(rates)]))

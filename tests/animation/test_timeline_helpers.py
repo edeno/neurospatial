@@ -18,7 +18,7 @@ from neurospatial.animation.overlays import (
 
 
 class TestValidateFrameTimes:
-    """Test _validate_frame_times() function (Task 2.1).
+    """Test _validate_frame_times() function.
 
     This function validates that frame_times array is correctly shaped
     and monotonically increasing. It does NOT synthesize frame_times

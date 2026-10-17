@@ -168,7 +168,6 @@ class TestNapariBackendIntegration:
             backend="napari",
             overlays=[position_overlay_data],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -200,7 +199,6 @@ class TestNapariBackendIntegration:
             backend="napari",
             overlays=[bodypart_overlay_data],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -232,7 +230,6 @@ class TestNapariBackendIntegration:
             backend="napari",
             overlays=[head_direction_overlay_data],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -278,7 +275,6 @@ class TestNapariBackendIntegration:
                 head_direction_overlay_data,
             ],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -319,7 +315,6 @@ class TestNapariBackendIntegration:
             show_regions=True,
             region_alpha=0.3,
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -367,7 +362,6 @@ class TestVideoBackendIntegration:
                 overlays=[position_overlay_data],
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
                 n_workers=1,  # Serial for pickle safety in tests
             )
 
@@ -407,7 +401,6 @@ class TestVideoBackendIntegration:
                 overlays=[bodypart_overlay_data],
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
                 n_workers=1,
             )
 
@@ -455,7 +448,6 @@ class TestVideoBackendIntegration:
                 ],
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
                 n_workers=1,
             )
 
@@ -494,7 +486,6 @@ class TestVideoBackendIntegration:
                 region_alpha=0.3,
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
                 n_workers=1,
             )
 
@@ -533,7 +524,6 @@ class TestHTMLBackendIntegration:
                 overlays=[position_overlay_data],
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
             )
 
             # Verify HTML file created
@@ -562,7 +552,6 @@ class TestHTMLBackendIntegration:
                 region_alpha=0.3,
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
             )
 
             # Verify HTML file created
@@ -590,7 +579,6 @@ class TestHTMLBackendIntegration:
                 overlays=[bodypart_overlay_data],
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
             )
 
             # Verify HTML file created with bodypart overlay
@@ -620,7 +608,6 @@ class TestWidgetBackendIntegration:
             backend="widget",
             overlays=[position_overlay_data],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Widget backend returns None but executes successfully
@@ -650,7 +637,6 @@ class TestWidgetBackendIntegration:
                 head_direction_overlay_data,
             ],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Widget backend returns None but executes successfully
@@ -700,7 +686,6 @@ class TestMultiAnimalScenarios:
             backend="napari",
             overlays=overlays,
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -763,7 +748,6 @@ class TestMultiAnimalScenarios:
             backend="napari",
             overlays=overlays,
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -855,7 +839,6 @@ class TestCrossBackendConsistency:
             backend="napari",
             overlays=[position_overlay_data],
             frame_times=frame_times,
-            fps=10,
         )
         assert result_napari is mock_viewer
 
@@ -869,7 +852,6 @@ class TestCrossBackendConsistency:
                 overlays=[position_overlay_data],
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
                 n_workers=1,
             )
 
@@ -915,7 +897,6 @@ class TestMixedOverlayTypes:
             backend="napari",
             overlays=[position_overlay_data, bodypart_overlay_data],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -957,7 +938,6 @@ class TestMixedOverlayTypes:
                 head_direction_overlay_data,
             ],
             frame_times=frame_times,
-            fps=10,
         )
 
         # Verify viewer created
@@ -1007,7 +987,6 @@ class TestMixedOverlayTypes:
                 region_alpha=0.3,
                 save_path=str(save_path),
                 frame_times=frame_times,
-                fps=10,
                 n_workers=1,
             )
 
@@ -1048,5 +1027,4 @@ class TestErrorHandling:
                 backend="napari",
                 overlays=[invalid_overlay],
                 frame_times=frame_times,
-                fps=10,
             )

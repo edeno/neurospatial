@@ -11,9 +11,10 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment, Regions
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import KnownFaces, MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.io import from_dict, from_file, to_dict, to_file
@@ -57,7 +58,7 @@ def test_file_round_trip_identical(environment_round_trip):
         loaded.bin_sizes,
         loaded._binning.bins.pairs,
         loaded._binning.bins.pair_distances,
-        *loaded._face_geometry,
+        *face_geometry(loaded._cache, loaded._binning),
     ):
         assert not array.flags.writeable
 
@@ -116,7 +117,8 @@ def test_loaded_environment_smooths_like_original(environment_round_trip, mode):
     loaded = restore()
     field = np.random.default_rng(14).uniform(0.1, 4.0, original.n_bins)
     np.testing.assert_array_equal(
-        loaded.smooth(field, 5.0, mode=mode), original.smooth(field, 5.0, mode=mode)
+        loaded.smooth(field, bandwidth=5.0, mode=mode),
+        original.smooth(field, bandwidth=5.0, mode=mode),
     )
 
 
@@ -124,7 +126,7 @@ def test_loaded_finite_volume_operators_match_original(environment_round_trip):
     original, restore = environment_round_trip
     loaded = restore()
     np.testing.assert_array_equal(
-        loaded.compute_kernel(2.0), original.compute_kernel(2.0)
+        loaded.compute_kernel(bandwidth=2.0), original.compute_kernel(bandwidth=2.0)
     )
     for method in ("get_differential_operator", "get_divergence_operator"):
         actual = getattr(loaded, method)().toarray()
@@ -149,28 +151,28 @@ def test_loaded_snapshot_pickle_restores_protected_arrays(environment_round_trip
         loaded.bin_centers,
         loaded.bin_sizes,
         loaded._binning.bins.pairs,
-        *loaded._face_geometry,
+        *face_geometry(loaded._cache, loaded._binning),
     ):
         assert not array.flags.writeable
 
 
-@pytest.mark.parametrize("deep", [True, False])
-def test_copy_of_loaded_environment(environment_round_trip, forbid_layout_builds, deep):
+def test_derived_from_loaded_environment(environment_round_trip, forbid_layout_builds):
     original, restore = environment_round_trip
     loaded = restore()
-    copied = loaded.copy(deep=deep)
+    copied = loaded.with_metadata()
     np.testing.assert_array_equal(copied.bin_centers, original.bin_centers)
     np.testing.assert_array_equal(copied.bin_sizes, original.bin_sizes)
     np.testing.assert_array_equal(
         copied._binning.locator.locate(original.bin_centers), np.arange(original.n_bins)
     )
     field = np.arange(original.n_bins, dtype=float)
-    np.testing.assert_array_equal(copied.smooth(field, 2.0), loaded.smooth(field, 2.0))
+    np.testing.assert_array_equal(
+        copied.smooth(field, bandwidth=2.0), loaded.smooth(field, bandwidth=2.0)
+    )
     region_builder = Regions(copied.regions.values())
     region_builder.add("copy_only", point=tuple(original.bin_centers[-1]))
     copied = copied.with_regions(region_builder)
-    if deep:
-        assert "copy_only" not in loaded.regions
+    assert "copy_only" not in loaded.regions
 
 
 def test_old_environment_file_refused():
@@ -211,7 +213,8 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
             assert "binning/bins/centers" in arrays
             assert "binning/faces/volumes" in arrays
     assert payload["schema_version"] == "Environment-v3"
-    assert payload["layout_category"] == simple_saved_grid._layout_category
+    assert payload["layout_type"] == simple_saved_grid.layout_type
+    assert payload["derivations"] == list(simple_saved_grid.derivations)
     assert payload["binning"]["codec_version"] == 3
 
 
@@ -271,7 +274,7 @@ def test_missing_faces_reason_survives_public_round_trip(
         loaded = from_file(path)
     assert not loaded._binning.faces.available
     with pytest.raises(NotImplementedError) as caught:
-        loaded.smooth(np.ones(loaded.n_bins), 1.0)
+        loaded.smooth(np.ones(loaded.n_bins), bandwidth=1.0)
     assert reason in str(caught.value)
     assert "Fix:" in str(caught.value)
 
@@ -293,8 +296,10 @@ def test_loaded_regular_grid_still_rebins(environment_round_trip):
     ids=["mixed", "numeric"],
 )
 def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_path):
-    """Data-backed tracks preserve node identities in geometry and provenance."""
-    native = Environment.linear_track(endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0)
+    """Data-backed tracks preserve node identities in their stored geometry."""
+    native = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [2.0, 0.0]], bin_size=1.0, track_width=1.0
+    )
     component = native._binning.linearization
     old_nodes = list(component.graph)
     graph = nx.relabel_nodes(
@@ -304,24 +309,19 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
     binning = replace(
         native._binning,
         linearization=component,
-        faces=KnownFaces(native._face_geometry),
+        faces=KnownFaces(face_geometry(native._cache, native._binning)),
     )
-    parameters = {
-        "graph_definition": graph,
-        "edge_order": [labels],
-        "edge_spacing": 0.0,
-        "bin_size": 1.0,
-    }
-    facade = Environment._from_binning(
+    parameters = {"edge_spacing": 0.0, "bin_size": 1.0}
+    facade = publish_binning(
         binning,
-        connectivity=native.connectivity,
         dimension_ranges=native.dimension_ranges,
-        layout_type_tag="Graph",
-        layout_type=native._layout_category,
+        layout_type="Graph",
         build_params=parameters,
-        is_linearized_track=True,
+        arena=native.arena,
     )
-    original = publish_environment(layout=facade, layout_type_used="Graph")
+    original = publish_environment(
+        layout=facade, layout_type_used="Graph", arena=native.arena
+    )
     if transport == "dict":
         loaded = from_dict(json.loads(json.dumps(to_dict(original))))
     else:
@@ -329,7 +329,6 @@ def test_saved_track_preserves_nested_tuple_node_labels(transport, labels, tmp_p
         to_file(original, path)
         loaded = from_file(path)
     assert list(loaded._binning.linearization.graph) == list(labels)
-    assert list(loaded.layout_parameters["graph_definition"]) == list(labels)
     assert loaded._binning.linearization.edge_order == (labels,)
     np.testing.assert_array_equal(
         loaded.bin_at(original.bin_centers), np.arange(original.n_bins)

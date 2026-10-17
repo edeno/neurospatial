@@ -41,12 +41,17 @@ from typing import Any
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import (
+    built_from,
+    publish_binning,
+    publish_environment,
+)
 from hypothesis import Phase, Verbosity, settings
 from numpy.typing import NDArray
 from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment, Regions
+from neurospatial.layout import create_layout
 from neurospatial.layout.engines.graph import GraphLayout
 
 # =============================================================================
@@ -113,7 +118,9 @@ def pytest_configure(config: pytest.Config) -> None:
 def analysis_invariant_env(request):
     """Small environments for testing scientific meaning across API boundaries."""
     if request.param == "graph":
-        env = Environment.linear_track(endpoints=[[0.0, 0.0], [6.0, 0.0]], bin_size=1.0)
+        env = Environment.linear_track(
+            endpoints=[[0.0, 0.0], [6.0, 0.0]], bin_size=1.0, track_width=1.0
+        )
     elif request.param == "hexagonal":
         points = np.array([[0.0, 0.0], [4.0, 4.0]])
         env = Environment.from_samples(
@@ -301,27 +308,18 @@ def plus_maze_positions() -> NDArray[np.float64]:
 def graph_env(
     plus_maze_graph: nx.Graph, plus_maze_edge_order: list[tuple[int, int]]
 ) -> Environment:
-    """Environment created from the plus maze graph.
+    """Environment created from the plus maze graph, 0.5 units wide.
 
     Session-scoped for performance: Environment is read-only in tests,
     safe to share across all tests.
     """
-    # Capture parameters explicitly to pass to Environment constructor
-    # for correct serialization testing.
-    layout_build_params = {
-        "graph_definition": plus_maze_graph,
-        "edge_order": plus_maze_edge_order,
-        "edge_spacing": 0.0,
-        "bin_size": 0.5,
-    }
-    layout_instance = GraphLayout()
-    layout_instance.build(**layout_build_params)
-
-    return publish_environment(
+    return Environment.from_graph(
+        plus_maze_graph,
+        plus_maze_edge_order,
+        edge_spacing=0.0,
+        bin_size=0.5,
+        track_width=0.5,
         name="PlusMazeGraph",
-        layout=layout_instance,
-        layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 
@@ -399,7 +397,6 @@ def simple_graph_env(simple_graph_for_layout) -> Environment:
         name="SimpleGraphEnvForMask",
         layout=layout_instance,
         layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 
@@ -447,10 +444,9 @@ def ymaze_graph() -> nx.Graph:
         Node 2 (left/Northwest arm): (-7, 7)
         Node 3 (right/Northeast arm): (7, 7)
 
-    The animal starts at center (0) and can choose between:
-    - Straight ahead (0→1): No turn
-    - Left (0→2): Left turn (~45 degrees)
-    - Right (0→3): Right turn (~45 degrees)
+    Arm names are map sides (x < 0 is "left"), not the animal's turn: an
+    animal walking South from the North arm into the Northwest arm turns to
+    its right.
     """
     graph = nx.Graph()
     graph.add_node(0, pos=(0.0, 0.0))  # Center/junction
@@ -490,7 +486,6 @@ def ymaze_env(ymaze_graph: nx.Graph) -> Environment:
         name="YMaze",
         layout=layout_instance,
         layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 
@@ -542,7 +537,6 @@ def tmaze_env(tmaze_graph: nx.Graph) -> Environment:
         name="TMaze",
         layout=layout_instance,
         layout_type_used="Graph",
-        layout_params_used=layout_build_params,
     )
 
 
@@ -1011,6 +1005,11 @@ def polar_display_offset() -> Callable[..., NDArray[np.float64]]:
 def built_environment(request) -> Environment | Environment:
     """Small deterministic environments covering every built-in geometry."""
     kind = request.param
+    return built_from(lambda: _build_environment(kind))
+
+
+def _build_environment(kind: str) -> Environment:
+    """Build one ``built_environment`` case from its fixed inputs."""
     if kind in {"grid8", "grid4"}:
         positions = np.random.default_rng(0).uniform(0, 12, (1000, 2))
         return Environment.from_samples(
@@ -1028,8 +1027,9 @@ def built_environment(request) -> Environment | Environment:
         return Environment.from_grid_mask(mask, grid_edges=(np.linspace(0, 15, 6),) * 2)
     if kind == "hex":
         return Environment.from_layout(
-            "Hexagonal",
-            {"hexagon_width": 4.0, "dimension_ranges": [(0, 12), (0, 12)]},
+            create_layout(
+                "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+            )
         )
     if kind == "track":
         graph = nx.Graph()
@@ -1039,15 +1039,19 @@ def built_environment(request) -> Environment | Environment:
         for u, v in edge_order:
             graph.add_edge(u, v, distance=6.0)
         return Environment.from_graph(
-            graph, edge_order=edge_order, edge_spacing=0.0, bin_size=2.0
+            graph,
+            edge_order=edge_order,
+            edge_spacing=0.0,
+            bin_size=2.0,
+            track_width=2.0,
         )
     if kind == "mesh":
         return Environment.from_layout(
-            "TriangularMesh",
-            {
-                "boundary_polygon": Polygon([(0, 0), (12, 0), (12, 12), (0, 12)]),
-                "point_spacing": 4.0,
-            },
+            create_layout(
+                "TriangularMesh",
+                boundary_polygon=Polygon([(0, 0), (12, 0), (12, 12), (0, 12)]),
+                point_spacing=4.0,
+            )
         )
     if kind == "mesh_boundary":
         boundary = Polygon(
@@ -1055,7 +1059,9 @@ def built_environment(request) -> Environment | Environment:
             [[(4, 3), (6, 3), (6, 5), (4, 5)]],
         )
         return Environment.from_layout(
-            "TriangularMesh", {"boundary_polygon": boundary, "point_spacing": 1.5}
+            create_layout(
+                "TriangularMesh", boundary_polygon=boundary, point_spacing=1.5
+            )
         )
     if kind == "polar":
         return Environment.from_polar_egocentric(
@@ -1076,7 +1082,6 @@ def built_environment(request) -> Environment | Environment:
 @pytest.fixture(params=["file", "dict", pytest.param("nwb", marks=pytest.mark.nwb)])
 def environment_round_trip(built_environment, request, tmp_path):
     """Save labelled geometry once and expose an independently repeatable loader."""
-    from neurospatial import Environment
     from neurospatial.io.files import from_dict, from_file, to_dict, to_file
 
     original = copy.deepcopy(built_environment)
@@ -1086,21 +1091,13 @@ def environment_round_trip(built_environment, request, tmp_path):
     region_builder = Regions(original.regions.values())
     region_builder.add("goal", point=tuple(original.bin_centers[0]))
     original = original.with_regions(region_builder)
-    # Graph metadata is scientifically relevant and must survive beyond topology.
-    graph = original.connectivity.copy()
-    graph.graph["recording"] = "session-a"
-    graph.nodes[0]["label"] = "start"
-    first_edge = next(iter(graph.edges))
-    graph.edges[first_edge]["annotation"] = ["measured", 7]
-    layout = Environment._from_binning(
+    layout = publish_binning(
         original._binning,
-        connectivity=graph,
         dimension_ranges=original.dimension_ranges,
-        layout_type_tag=original.layout_type,
-        layout_type=original._layout_category,
+        layout_type=original.layout_type,
         build_params=original.layout_parameters,
-        is_linearized_track=original.is_linearized_track,
-        coordinate_kind=original.arena.coordinate_kind,
+        coordinates=original._geometry.coordinates,
+        arena=original.arena,
     )
     original = publish_environment(
         original.name,

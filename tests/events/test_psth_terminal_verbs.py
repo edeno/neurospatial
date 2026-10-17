@@ -1,4 +1,4 @@
-"""Contract tests for PSTH terminal verbs (Task 1.3).
+"""Contract tests for PSTH terminal verbs.
 
 ``PeriEventResult`` and ``PopulationPeriEventResult`` gained ``ResultMixin`` and
 the terminal verbs. These tests assert:

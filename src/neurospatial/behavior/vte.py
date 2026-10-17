@@ -78,6 +78,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 from neurospatial._results import ResultMixin
+from neurospatial.geometry import require_cartesian
 from neurospatial.stats.circular import wrap_angle
 
 __all__ = [
@@ -754,6 +755,13 @@ def compute_vte_session(
     """
     from neurospatial._validation import validate_times_positions
 
+    require_cartesian(
+        env.coordinate_system,
+        "compute_vte_session()",
+        why="It reads positions as the animal's allocentric positions, with "
+        "head sweeps and speeds in the same Cartesian coordinates.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
     times, positions = validate_times_positions(
         times, positions, call="compute_vte_session"
     )

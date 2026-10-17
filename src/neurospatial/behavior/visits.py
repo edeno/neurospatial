@@ -16,10 +16,10 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError
 from neurospatial._intervals import as_intervals, intervals_contain
-from neurospatial.ops.binning import regions_to_mask
+from neurospatial.ops.mapping import regions_to_mask
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 __all__ = [
     "RegionTransition",
@@ -217,7 +217,7 @@ def detect_region_visits(
     for label, name in enumerate(names):
         if name not in env.regions:
             raise RegionNotFoundError(
-                name, available=list(env.regions), argument="region_names"
+                name, available=list(env.regions), argument="region_names", in_list=True
             )
         mask = regions_to_mask(env, name)
         overlap = mask & (labels >= 0)

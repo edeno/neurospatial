@@ -24,19 +24,20 @@ import contextlib
 import json
 import zlib
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from zipfile import BadZipFile
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
+    from neurospatial.geometry import Binning
 
 # Type alias for file paths (supports both str and pathlib.Path)
 PathLike = str | Path
@@ -71,119 +72,6 @@ def _convert_arrays_to_lists(obj: Any) -> Any:
         return obj.item()
     else:
         return obj
-
-
-def _convert_lists_to_arrays(obj: Any) -> Any:
-    """Recursively convert lists to numpy arrays where appropriate.
-
-    Parameters
-    ----------
-    obj : Any
-        Object that may contain lists representing arrays.
-
-    Returns
-    -------
-    Any
-        Object with numeric lists converted to arrays.
-
-    """
-    if isinstance(obj, list):
-        # Only convert to a numpy array when the result is numeric (int/float/
-        # bool/complex). A list of strings (or other objects) would otherwise
-        # become a dtype=object array, silently corrupting non-numeric layout
-        # parameters (e.g. dimension labels). Such lists are recursed into and
-        # left as Python lists instead.
-        try:
-            arr = np.asarray(obj)
-        except (ValueError, TypeError):
-            return [_convert_lists_to_arrays(item) for item in obj]
-        if arr.dtype.kind in "biufc":  # bool, int, uint, float, complex
-            return arr
-        # Non-numeric (e.g. strings, ragged/object): recurse element-wise.
-        return [_convert_lists_to_arrays(item) for item in obj]
-    elif isinstance(obj, dict):
-        return {k: _convert_lists_to_arrays(v) for k, v in obj.items()}
-    else:
-        return obj
-
-
-def _jsonsafe_layout_parameters(params: dict[str, Any] | None) -> dict[str, Any]:
-    """Return a JSON-serializable copy of layout-engine parameters.
-
-    ``env.layout_parameters`` may contain objects that ``json`` cannot encode:
-    a ``networkx.Graph`` (Graph layout) or a Shapely geometry (Polygon layout).
-    These are converted to portable, self-describing forms so the metadata JSON
-    round-trips. The geometry itself is restored on read from the stored
-    ``bin_centers``/``active_mask``/``grid_edges`` arrays and the node-link
-    ``graph`` (see ``from_file``); these serialized parameters are introspection
-    metadata, not the source of truth for reconstruction.
-
-    Parameters
-    ----------
-    params : dict or None
-        The ``env.layout_parameters`` dict (or None).
-
-    Returns
-    -------
-    dict
-        A new dict with every value JSON-serializable.
-    """
-    if not params:
-        return {}
-
-    def _encode(value: Any) -> Any:
-        # networkx graph -> node-link dict (same form used for connectivity)
-        if isinstance(value, nx.Graph):
-            from neurospatial.geometry._codecs import graph_to_node_link
-
-            return {"__nx_graph__": graph_to_node_link(value)}
-        # shapely geometry -> WKT string (round-trippable, human-readable)
-        wkt = getattr(value, "wkt", None)
-        geom_type = getattr(value, "geom_type", None)
-        if wkt is not None and geom_type is not None:
-            return {"__shapely_wkt__": wkt}
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-        if isinstance(value, (np.integer, np.floating)):
-            return value.item()
-        if isinstance(value, dict):
-            return {k: _encode(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [_encode(v) for v in value]
-        return value
-
-    return {k: _encode(v) for k, v in params.items()}
-
-
-def _decode_layout_parameters(params: Any) -> Any:
-    """Inverse of ``_jsonsafe_layout_parameters`` for the sentinel dicts."""
-    if isinstance(params, dict):
-        if set(params) == {"__nx_graph__"}:
-            from neurospatial.geometry._codecs import graph_from_node_link
-
-            return graph_from_node_link(params["__nx_graph__"])
-        if set(params) == {"__shapely_wkt__"}:
-            try:
-                from shapely import wkt as _wkt
-
-                return _wkt.loads(params["__shapely_wkt__"])
-            except ImportError:
-                # shapely absent at load time: leave the WKT string in place
-                # rather than fail; geometry is reconstructed from arrays anyway.
-                return params["__shapely_wkt__"]
-        decoded = {k: _decode_layout_parameters(v) for k, v in params.items()}
-        # The Graph layout's ``edge_order`` is a list of node-id tuples in the
-        # original parameters; the generic numeric-list converter turns it into
-        # a 2-D ndarray on read, which the Graph engine's ``build`` cannot index
-        # (it expects an iterable of edge tuples). Restore the list-of-tuples
-        # form so the round-tripped parameters reconstruct an equivalent env.
-        edge_order = decoded.get("edge_order")
-        if isinstance(edge_order, np.ndarray):
-            decoded["edge_order"] = [tuple(e) for e in edge_order.tolist()]
-        return decoded
-    if isinstance(params, list):
-        return [_decode_layout_parameters(v) for v in params]
-    return params
 
 
 def _get_library_version() -> str:
@@ -285,8 +173,11 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
 
     Examples
     --------
-    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env.to_file("my_environment")  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> to_file(env, "my_environment")  # writes my_environment.json and .npz
 
     See Also
     --------
@@ -344,7 +235,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
         raise
 
 
-def from_file(path: PathLike) -> Environment:
+def from_file(path: PathLike) -> Environment[Any]:
     """Load binning and Arena data without running a layout builder.
 
     Version 2 files retain their bins with an explicitly unknown Arena. Version 1
@@ -363,6 +254,9 @@ def from_file(path: PathLike) -> Environment:
     -------
     Environment
         Reconstructed Environment instance.
+        Cartesian or egocentric polar, as stored; static type checkers see
+        ``Environment[Any]`` because the stored data decides. Check
+        ``env.coordinate_kind`` before calling Cartesian-only methods.
 
     Raises
     ------
@@ -374,8 +268,14 @@ def from_file(path: PathLike) -> Environment:
 
     Examples
     --------
-    >>> env = from_file("my_environment")  # doctest: +SKIP
-    >>> print(env.n_bins)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> to_file(env, "my_environment")
+    >>> loaded = from_file("my_environment")
+    >>> np.array_equal(loaded.bin_centers, env.bin_centers)
+    True
 
     See Also
     --------
@@ -449,8 +349,7 @@ def _environment_payload(
     env: Environment,
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
-    from neurospatial.geometry._arena import encode_arena
-    from neurospatial.geometry._codecs import encode, graph_to_node_link
+    from neurospatial.geometry import encode, encode_arena, graph_to_node_link
 
     binning_meta, binning_arrays = encode(env.binning, "binning")
     arena_meta, arena_arrays = encode_arena(env.arena)
@@ -463,15 +362,15 @@ def _environment_payload(
         "n_bins": env.n_bins,
         "is_linearized_track": env.is_linearized_track,
         "layout_type": env.layout_type,
-        "layout_category": env._layout_category,
-        "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
+        "layout_parameters": env.layout_parameters,
+        "derivations": list(env.derivations),
         "binning": binning_meta,
         "arena": arena_meta,
         "dimension_ranges": env.dimension_ranges,
         "grid_shape": env.grid_shape,
         "graph": graph_to_node_link(env.connectivity),
         "regions": [region.to_dict() for region in env.regions.values()],
-        "coordinate_kind": "polar" if env._is_polar else "cartesian",
+        "coordinate_kind": env.coordinate_kind,
     }
     for attribute in ("units", "frame"):
         value = getattr(env, attribute)
@@ -556,12 +455,26 @@ def _restore_environment(
     legacy_arena: bool = False,
 ) -> Environment:
     """Decode authoritative binning and Arena data without a layout builder."""
-    from neurospatial.environment import Environment
-    from neurospatial.geometry._arena import Arena, UnknownArena, decode_arena
-    from neurospatial.geometry._binning import Binning, TrackLinearization
-    from neurospatial.geometry._codecs import decode, graph_from_node_link
-    from neurospatial.geometry._context import grid_index
-    from neurospatial.geometry._locators import HexLocator, MeshLocator
+    from neurospatial.environment import (
+        Environment,
+        _declared_metadata,
+        _Provenance,
+        _publish,
+    )
+    from neurospatial.geometry import (
+        Arena,
+        Binning,
+        CartesianSystem,
+        EgocentricPolarSystem,
+        EgocentricSurround,
+        HexLocator,
+        MeshLocator,
+        TrackLinearization,
+        UnknownArena,
+        decode,
+        decode_arena,
+        grid_index,
+    )
     from neurospatial.regions import Region, Regions
 
     try:
@@ -612,11 +525,17 @@ def _restore_environment(
                 raise ValueError(
                     "stored arena coordinate_kind differs from the environment"
                 )
-        params = _decode_layout_parameters(
-            _convert_lists_to_arrays(metadata["layout_parameters"])
+        binning = replace(
+            binning, kind=_saved_label(binning, polar=coordinate_kind == "polar")
         )
+        params, derivations = _saved_history(metadata, binning.kind)
         ranges = metadata.get("dimension_ranges")
-        graph = graph_from_node_link(metadata["graph"])
+        if ranges is not None:
+            binning = replace(binning, dimension_ranges=tuple(tuple(r) for r in ranges))
+        if metadata["is_linearized_track"] != (binning.linearization is not None):
+            raise ValueError("stored is_linearized_track differs from the binning")
+        # The stored graph is written for other tools; the environment
+        # rebuilds its graph from the binning.
         context = grid_index(binning)
         if binning.grid_frame is not None and any(
             key.startswith("grid_edges_") for key in arrays
@@ -644,21 +563,23 @@ def _restore_environment(
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
-        env = Environment._from_binning(
+        coordinates: CartesianSystem | EgocentricPolarSystem = CartesianSystem()
+        if coordinate_kind == "polar":
+            coordinates = EgocentricPolarSystem(
+                arena.circular if isinstance(arena, EgocentricSurround) else True
+            )
+        env = _publish(
+            Environment,
             binning,
-            connectivity=graph,
-            dimension_ranges=None if ranges is None else [tuple(r) for r in ranges],
-            layout_type_tag=metadata["layout_type"],
-            layout_type=metadata["layout_category"],
-            build_params=params,
-            is_linearized_track=metadata["is_linearized_track"],
-            name=metadata["name"],
-            coordinate_kind=coordinate_kind,
+            coordinates=coordinates,
+            provenance=_Provenance(params, derivations),
+            metadata=_declared_metadata(
+                name=metadata["name"],
+                units=metadata.get("units"),
+                frame=metadata.get("frame"),
+            ),
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
-            restored_from=source,
             arena=arena,
-            units=metadata.get("units"),
-            frame=metadata.get("frame"),
         )
         return env
     except (
@@ -676,6 +597,135 @@ def _restore_environment(
                 fix="re-save the environment from its original factory-built object with this version",
             )
         ) from error
+
+
+_TRANSFORMED = "_transformed"
+
+
+def _saved_label(binning: Binning, *, polar: bool) -> str:
+    """Return the canonical layout label of saved bins.
+
+    The label is the binning's ``kind``, spelled as a ``LayoutType`` value.
+    Files written before derivations kept their parent's label are read the
+    same way: their polar bins (labelled ``"MaskedGrid"``) are ``"Polar"``,
+    an ``"_transformed"`` suffix per ``apply_transform`` is dropped, and
+    ``"subset"`` and ``"PolygonCells"`` (a subset of non-grid bins and a
+    clip) take the label of the bins they were cut from. A subset or clip
+    whose bins came from none of the built-in lookups (for example
+    ``from_bins`` bins with nearest-center lookup) keeps its saved spelling,
+    because the file does not record the original label.
+
+    Parameters
+    ----------
+    binning : Binning
+        The decoded bins.
+    polar : bool
+        Whether the bins have egocentric polar coordinates, which only
+        ``Environment.from_polar_egocentric`` builds.
+
+    Returns
+    -------
+    str
+        The layout label.
+    """
+    from neurospatial.geometry import (
+        ClippedLocator,
+        CombinedLocator,
+        HexLocator,
+        MeshLocator,
+        RectilinearLocator,
+        SubsetLocator,
+        TransformedLocator,
+    )
+    from neurospatial.layout import LayoutType, find_layout_type
+
+    if polar:
+        return LayoutType.POLAR.value
+    kind = binning.kind
+    while kind.endswith(_TRANSFORMED):
+        kind = kind.removesuffix(_TRANSFORMED)
+    if kind not in ("subset", "PolygonCells"):
+        member = find_layout_type(kind)
+        return kind if member is None else member.value
+    locator = binning.locator
+    while isinstance(locator, (SubsetLocator, TransformedLocator, ClippedLocator)):
+        locator = locator.base
+    if binning.linearization is not None:
+        return LayoutType.GRAPH.value
+    for lookup, label in (
+        (HexLocator, LayoutType.HEXAGONAL),
+        (MeshLocator, LayoutType.TRIANGULAR_MESH),
+        (CombinedLocator, LayoutType.COMBINED),
+        # A grid subset was always labelled "MaskedGrid".
+        (RectilinearLocator, LayoutType.MASKED_GRID),
+    ):
+        if isinstance(locator, lookup):
+            return label.value
+    return kind
+
+
+def _saved_history(
+    metadata: dict[str, Any], label: str
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Return the saved build choices and derivation history.
+
+    Files without a ``"derivations"`` record kept the input data among the
+    layout parameters and marked derivations there: ``"source"`` named a
+    subset or clip and ``"transformed": True`` an ``apply_transform``, with
+    one ``"_transformed"`` suffix on the layout label for each. Bins that
+    read as ``"Combined"`` were made by ``combine``, which comes first in
+    their history. Input data is dropped (the bins are stored directly), and
+    the markers become the derivation history.
+
+    Parameters
+    ----------
+    metadata : dict
+        The saved environment metadata.
+    label : str
+        The canonical layout label read from the bins (see ``_saved_label``).
+
+    Returns
+    -------
+    build_params : dict of str to object
+        Scalar build choices.
+    derivations : tuple of str
+        Derivation names, oldest first.
+
+    Raises
+    ------
+    ValueError
+        If ``layout_parameters`` is not a dictionary or ``derivations`` is not
+        a list of names.
+    """
+    from neurospatial.layout import LayoutType
+    from neurospatial.layout.base import build_choices
+
+    params = metadata["layout_parameters"]
+    if not isinstance(params, dict):
+        raise ValueError("layout_parameters must be a dictionary of build choices")
+    choices: dict[str, Any] = {}
+    for key, value in params.items():
+        with contextlib.suppress(TypeError):
+            choices.update(build_choices({key: value}, owner="layout_parameters"))
+    if "derivations" in metadata:
+        derivations = metadata["derivations"]
+        if not isinstance(derivations, list) or not all(
+            isinstance(step, str) for step in derivations
+        ):
+            raise ValueError("derivations must be a list of derivation names")
+        return choices, tuple(derivations)
+    kind = str(metadata.get("binning", {}).get("kind", ""))
+    history = ["combine"] if label == LayoutType.COMBINED.value else []
+    if choices.get("source") in ("subset", "clip"):
+        history.append(choices.pop("source"))
+        choices.pop("original_n_bins", None)
+    if choices.pop("transformed", None) is True:
+        n_transforms = 0
+        while kind.endswith(_TRANSFORMED):
+            kind = kind.removesuffix(_TRANSFORMED)
+            n_transforms += 1
+        history.extend(["apply_transform"] * max(n_transforms, 1))
+    return choices, tuple(history)
 
 
 def _arrays_from_lists(metadata: dict[str, Any]) -> dict[str, NDArray[Any]]:
@@ -729,11 +779,14 @@ def to_dict(env: Environment) -> dict[str, Any]:
 
     Examples
     --------
-    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env_dict = to_dict(env)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> import json
+    >>> env_dict = to_dict(env)
     >>> # Pass to another process or serialize to JSON
-    >>> import json  # doctest: +SKIP
-    >>> json_str = json.dumps(env_dict)  # doctest: +SKIP
+    >>> json_str = json.dumps(env_dict)
 
     See Also
     --------
@@ -747,7 +800,7 @@ def to_dict(env: Environment) -> dict[str, Any]:
     return metadata
 
 
-def from_dict(data: dict[str, Any]) -> Environment:
+def from_dict(data: dict[str, Any]) -> Environment[Any]:
     """Decode bins and Arena without rebuilding; v2 Arenas remain unknown.
 
     Version 1 dictionaries must be recreated with a factory and saved again.
@@ -761,11 +814,19 @@ def from_dict(data: dict[str, Any]) -> Environment:
     -------
     Environment
         Reconstructed Environment instance.
+        Cartesian or egocentric polar, as stored; static type checkers see
+        ``Environment[Any]`` because the stored data decides. Check
+        ``env.coordinate_kind`` before calling Cartesian-only methods.
 
     Examples
     --------
-    >>> env_dict = to_dict(env)  # doctest: +SKIP
-    >>> env_restored = from_dict(env_dict)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> env_restored = from_dict(to_dict(env))
+    >>> np.array_equal(env_restored.bin_centers, env.bin_centers)
+    True
 
     See Also
     --------

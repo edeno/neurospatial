@@ -67,21 +67,15 @@ from numpy.typing import ArrayLike, NDArray
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.ops.diffusion import (
-    _DIFFUSE_DENOM_EPS,
-    component_support_mask,
-    diffusion_apply_rtol,
-    diffusion_component_labels,
+from neurospatial.ops import (
+    _RESOLUTION_MARGIN,
+    _above_component_floor,
+    _component_support_mask,
+    _masked_diffusion_average,
 )
 
-# A smoothed denominator is resolved when it exceeds this many times the
-# diffusion apply's noise floor (``diffusion_apply_rtol``) relative to the
-# largest value in its W-component. The ratio's error at a resolved bin is then
-# at most about 1/1000 = 0.1% of its value.
-_RESOLUTION_MARGIN = 1e3
-
 if TYPE_CHECKING:
-    from neurospatial.environment._protocols import SmoothingConsumer
+    from neurospatial.environment import Environment
 
 __all__ = [
     "smooth_rate_map",
@@ -149,15 +143,13 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
     return float(bandwidth)
 
 
-def _get_gaussian_kernel(
-    env: SmoothingConsumer, bandwidth: float
-) -> NDArray[np.float64]:
+def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float64]:
     """Compatibility wrapper for environment-owned Gaussian weights."""
-    return env.compute_gaussian_kernel(bandwidth)
+    return env.compute_gaussian_kernel(bandwidth=bandwidth)
 
 
 def smooth_rate_map(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -340,7 +332,7 @@ def smooth_rate_map(
 
 
 def smooth_rate_maps_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -459,7 +451,7 @@ def smooth_rate_maps_batch(
 
 
 def _validate_smoothing_inputs(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: str,
@@ -609,7 +601,7 @@ def validate_pooled(pooled: Any, method: str) -> None:
         )
 
 
-def validate_spatial_method_params(
+def _validate_spatial_method_params(
     method: str,
     *,
     bandwidth: float | None,
@@ -767,17 +759,17 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
         )
 
 
-def _resolution_floor(env: SmoothingConsumer, bandwidth: float) -> float:
+def _resolution_floor(env: Environment, bandwidth: float) -> float:
     """Fraction of its component maximum below which a smoothed value is noise.
 
     ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
     ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
     """
-    return _RESOLUTION_MARGIN * diffusion_apply_rtol(env, bandwidth)
+    return _RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth=bandwidth)
 
 
 def _resolved_density_mask(
-    env: SmoothingConsumer,
+    env: Environment,
     occupancy: NDArray[np.float64],
     occupancy_density: NDArray[np.float64],
     bandwidth: float,
@@ -785,7 +777,7 @@ def _resolved_density_mask(
     """Bins whose smoothed occupancy density is resolved above the apply's noise.
 
     ``env.diffuse`` reproduces the dense heat operator only to a relative
-    accuracy (``diffusion_apply_rtol``: the truncation tolerance, or float64
+    accuracy (``env.diffusion_accuracy``: the truncation tolerance, or float64
     roundoff for the full basis). Far from all occupancy the smoothed spike and
     occupancy densities both approach that noise, so their ratio is noise too
     (it reached 20,000 Hz on a 50 Hz field). A bin is resolved when its
@@ -809,53 +801,24 @@ def _resolved_density_mask(
     NDArray[np.bool_], shape (n_bins,)
         True where the KDE ratio is numerically meaningful.
     """
-    n_components, labels = diffusion_component_labels(env)
-    support = component_support_mask(labels, n_components, occupancy > 0)
+    geometry = env.get_diffusion_geometry()
+    n_components, labels = geometry.n_components, geometry.labels
+    support = _component_support_mask(labels, n_components, occupancy > 0)
     resolved = _above_component_floor(
         labels, n_components, occupancy_density, _resolution_floor(env, bandwidth)
     )
     return support & resolved
 
 
-def _above_component_floor(
-    labels: NDArray[np.int_],
-    n_components: int,
-    values: NDArray[np.float64],
-    floor: float,
-) -> NDArray[np.bool_]:
-    """``values > floor`` times the maximum of ``values`` in each bin's component.
-
-    Parameters
-    ----------
-    labels : NDArray[np.int_], shape (n_bins,)
-        Per-bin ``W``-component id.
-    n_components : int
-        Number of components.
-    values : NDArray[np.float64], shape (..., n_bins)
-        Smoothed weights; a leading batch axis is handled row by row.
-    floor : float
-        Relative floor (see :func:`_resolution_floor`).
-
-    Returns
-    -------
-    NDArray[np.bool_], shape (..., n_bins)
-        True where the value is resolved above the apply's noise.
-    """
-    values = np.asarray(values, dtype=np.float64)
-    flat = values.reshape(-1, values.shape[-1])  # (B, n_bins)
-    component_max = np.zeros((flat.shape[0], n_components))
-    np.maximum.at(component_max, (np.arange(flat.shape[0])[:, None], labels), flat)
-    return np.asarray(flat > floor * component_max[:, labels]).reshape(values.shape)
-
-
 def _resolved_density_mask_jax(
-    env: SmoothingConsumer, occupancy: Any, occupancy_density: Any, bandwidth: float
+    env: Environment, occupancy: Any, occupancy_density: Any, bandwidth: float
 ) -> Any:
     """JAX version of :func:`_resolved_density_mask` (traceable under ``jit``)."""
     import jax
     import jax.numpy as jnp
 
-    n_components, labels = diffusion_component_labels(env)
+    geometry = env.get_diffusion_geometry()
+    n_components, labels = geometry.n_components, geometry.labels
     labels_j = jnp.asarray(labels)
     has_occupancy = (
         jax.ops.segment_max(occupancy, labels_j, num_segments=n_components) > 0.0
@@ -868,7 +831,7 @@ def _resolved_density_mask_jax(
 
 
 def _diffusion_kde(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -907,7 +870,7 @@ def _diffusion_kde(
 
     # Smooth counts and occupancy in one matrix-free density-mode pass.
     stacked = np.column_stack([spike_counts, occupancy])  # (n_bins, 2)
-    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="density"))
+    smoothed = np.asarray(env.diffuse(stacked, bandwidth=bandwidth, mode="density"))
     spike_density = smoothed[:, 0]
     occupancy_density = smoothed[:, 1]
 
@@ -930,7 +893,7 @@ def _diffusion_kde(
 
 
 def _gaussian_kde(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -974,7 +937,7 @@ def _gaussian_kde(
 
 
 def _binned(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1019,73 +982,47 @@ def _binned(
 
 
 def _binned_gate(
-    env: SmoothingConsumer,
+    env: Environment,
     raw_rate: NDArray[np.float64],
     bandwidth: float,
 ) -> NDArray[np.float64]:
     """Masked diffusion average of a (possibly NaN) intensive rate.
 
-    Nadaraya-Watson with the row-stochastic average operator on the input's
-    valid (finite) bins: ``diffuse(rate * valid) / diffuse(valid)``, so uncovered
-    / NaN bins contribute no weight (they do not pull covered neighbours toward
-    zero) and an interior NaN is interpolated rather than propagating. Both the
-    filled rate and the validity mask are smoothed in one matrix-free
-    ``env.diffuse(mode="average")`` pass.
-
-    The final ``> 0`` support is derived from the **W-component structure**, NOT
-    the smoothed weight's sign: within a connected component the average operator
-    is entrywise positive, so a bin is supported iff its component holds a valid
-    input bin. This is exact and truncation-proof (a ``max(den, 0)`` floor would
-    still fail ``> 0`` where truncation flipped a tiny-positive dense denominator,
-    spuriously emitting NaN). Where support holds we divide by ``max(den, eps)``.
-
-    This helper is **sign-preserving** (the numerator is not floored), so it is
-    also the pattern ``resample_field`` uses for signed intensive fields; callers
-    that need a non-negative result (the ``binned`` firing-rate wrappers) clip
-    the output themselves.
+    The shared :func:`~neurospatial.ops._masked_diffusion_average`
+    over the rate's valid (finite) bins, so NaN bins contribute no weight and an
+    interior NaN is interpolated rather than propagating. It is
+    **sign-preserving**; the ``binned`` firing-rate wrappers clip the output.
 
     **Far field.** Many bandwidths from any valid bin, both ``num`` and ``den``
     approach the truncated apply's noise, and their ratio is noise (it reached
     295,658 Hz from raw rates of at most 50 Hz). Bins whose smoothed weight is
     below :func:`_resolution_floor` of the largest in their component are
-    therefore NaN (see :func:`_above_component_floor`); elsewhere the result
-    matches the dense masked average.
+    therefore NaN (see :func:`~neurospatial.ops._above_component_floor`);
+    elsewhere the result matches the dense masked average.
 
     Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
     """
-    nan_mask = np.isnan(raw_rate)
-    valid = ~nan_mask
-    rate_filled = np.where(nan_mask, 0.0, raw_rate)
-    weights = valid.astype(np.float64)
-
-    # Smooth [rate_filled | weights] together (columns of an (n_bins, 2*k) batch).
-    if raw_rate.ndim == 1:
-        stacked = np.column_stack([rate_filled, weights])  # (n_bins, 2)
-    else:
-        stacked = np.concatenate([rate_filled.T, weights.T], axis=1)
-    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="average"))
-    if raw_rate.ndim == 1:
-        rate_smoothed = smoothed[:, 0]
-        weights_smoothed = smoothed[:, 1]
-    else:
-        n_neurons = raw_rate.shape[0]
-        rate_smoothed = smoothed[:, :n_neurons].T
-        weights_smoothed = smoothed[:, n_neurons:].T
-
-    n_components, labels = diffusion_component_labels(env)
-    support = component_support_mask(labels, n_components, valid)
-    # Far from every valid bin both smoothed sums approach the apply's
-    # truncation noise; leave those bins NaN rather than report noise/noise.
-    support &= _above_component_floor(
-        labels, n_components, weights_smoothed, _resolution_floor(env, bandwidth)
-    )
-    den = np.maximum(weights_smoothed, _DIFFUSE_DENOM_EPS)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        return np.where(support, rate_smoothed / den, np.nan)
+    geometry = env.get_diffusion_geometry()
+    n_components, labels = geometry.n_components, geometry.labels
+    rates = np.atleast_2d(raw_rate)  # (n_neurons, n_bins)
+    averaged = _masked_diffusion_average(
+        lambda columns: np.asarray(
+            env.diffuse(columns, bandwidth=bandwidth, mode="average")
+        ),
+        rates.T,
+        ~np.isnan(rates.T),
+        labels,
+        n_components,
+        # Far from every valid bin both smoothed sums approach the apply's
+        # truncation noise; leave those bins NaN rather than report noise/noise.
+        floor=lambda: _resolution_floor(env, bandwidth),
+    ).T
+    result: NDArray[np.float64] = averaged[0] if raw_rate.ndim == 1 else averaged
+    return result
 
 
 def _diffusion_kde_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1102,7 +1039,7 @@ def _diffusion_kde_batch(
     # columns, spike_counts.T) plus the shared occupancy as one extra column, so
     # all neurons + occupancy diffuse in a single matrix-free density-mode pass.
     cols = np.column_stack([spike_counts.T, occupancy])  # (n_bins, n_neurons + 1)
-    smoothed = np.asarray(env.diffuse(cols, bandwidth, mode="density"))
+    smoothed = np.asarray(env.diffuse(cols, bandwidth=bandwidth, mode="density"))
     spike_density = smoothed[:, :n_neurons].T  # (n_neurons, n_bins)
     occupancy_density = smoothed[:, n_neurons]  # (n_bins,)
 
@@ -1123,7 +1060,7 @@ def _diffusion_kde_batch(
 
 
 def _gaussian_kde_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1153,7 +1090,7 @@ def _gaussian_kde_batch(
 
 
 def _binned_batch(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -1190,7 +1127,7 @@ def _binned_batch(
 
 
 def _smooth_rate_map_jax(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
@@ -1235,7 +1172,7 @@ def _smooth_rate_map_jax(
         # occupancy diffuse together in one density-mode pass, no (n, n) kernel.
         stacked = jnp.stack([spike_counts_j, occupancy_j], axis=1)  # (n_bins, 2)
         smoothed = jnp.asarray(
-            env.diffuse(stacked, bandwidth, mode="density", backend="jax")
+            env.diffuse(stacked, bandwidth=bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, 0]
         occupancy_density = smoothed[:, 1]
@@ -1270,7 +1207,7 @@ def _smooth_rate_map_jax(
 
 
 def _smooth_rate_maps_batch_jax(
-    env: SmoothingConsumer,
+    env: Environment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
@@ -1323,7 +1260,7 @@ def _smooth_rate_maps_batch_jax(
             [spike_counts_j.T, occupancy_j[:, None]], axis=1
         )  # (n_bins, n_neurons + 1)
         smoothed = jnp.asarray(
-            env.diffuse(cols, bandwidth, mode="density", backend="jax")
+            env.diffuse(cols, bandwidth=bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, :n_neurons].T
         occupancy_density = smoothed[:, n_neurons]

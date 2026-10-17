@@ -1,7 +1,6 @@
 """
 Tests for encoding.border module.
 
-Following TDD: Tests written FIRST before implementation.
 Tests verify that encoding.border re-exports functions from metrics.boundary_cells.
 """
 

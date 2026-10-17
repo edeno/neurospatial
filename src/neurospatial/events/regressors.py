@@ -22,9 +22,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 def time_to_nearest_event(
@@ -530,7 +531,7 @@ def distance_to_reward(
     Parameters
     ----------
     env : Environment
-        Fitted spatial environment.
+        Spatial environment.
     times : NDArray[np.float64], shape (n_samples,)
         Sample timestamps (seconds).
     positions : NDArray[np.float64], shape (n_samples, n_dims)
@@ -640,6 +641,14 @@ def distance_to_reward(
     """
     from neurospatial._validation import validate_finite
     from neurospatial.ops.distance import distance_field
+
+    require_cartesian(
+        env.coordinate_system,
+        "distance_to_reward()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
 
     # Input validation: reject NaN/Inf in the spatial + temporal inputs.
     # A non-finite time or position silently corrupts interpolation,
@@ -843,7 +852,7 @@ def distance_to_boundary(
     Parameters
     ----------
     env : Environment
-        Fitted spatial environment.
+        Spatial environment.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates at each sample. Must match environment
         dimensionality.
@@ -933,6 +942,14 @@ def distance_to_boundary(
     """
     from neurospatial.ops.distance import distance_field
 
+    require_cartesian(
+        env.coordinate_system,
+        "distance_to_boundary()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
+
     # Input validation
     positions = np.asarray(positions, dtype=np.float64)
     n_samples = len(positions)
@@ -1019,7 +1036,7 @@ def _find_edge_bins(env: Environment) -> list[int]:
     Parameters
     ----------
     env : Environment
-        Fitted environment.
+        Environment.
 
     Returns
     -------
@@ -1060,7 +1077,7 @@ def _find_obstacle_boundary_bins(env: Environment) -> list[int]:
     Parameters
     ----------
     env : Environment
-        Fitted environment with obstacle regions.
+        Environment with obstacle regions.
 
     Returns
     -------
@@ -1095,7 +1112,7 @@ def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
     Parameters
     ----------
     env : Environment
-        Fitted environment.
+        Environment.
     region_name : str
         Name of the region.
 

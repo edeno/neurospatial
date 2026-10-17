@@ -216,9 +216,14 @@ def validate_simulation(
     if max_center_error is None:
         # 2 bin spacings (accounts for discretization). ``env.bin_sizes`` is a
         # per-bin volume, not a length.
-        from neurospatial.ops.binning import _typical_bin_spacing
+        from neurospatial.ops import _typical_bin_spacing
 
-        max_center_error = 2.0 * _typical_bin_spacing(env)
+        max_center_error = 2.0 * _typical_bin_spacing(
+            env.bin_centers,
+            env.bin_sizes,
+            is_linearized_track=env.is_linearized_track,
+            tree=env.bin_center_tree(),
+        )
 
     if min_correlation is None:
         min_correlation = 0.5  # Reasonable threshold for noisy place fields
@@ -696,47 +701,40 @@ Traj: {metadata.get("trajectory_method", "ou")}
             )
 
             # Plot as 2D heatmap if possible
-            if hasattr(env, "grid_shape"):
-                grid_shape = env.grid_shape
+            grid_shape = env.grid_shape
 
-                # Check if rate_map matches full grid (no inactive bins)
-                if grid_shape is not None and len(rate_map) == np.prod(grid_shape):
-                    # Can reshape directly
-                    rate_map_2d = rate_map.reshape(grid_shape)
+            # Check if rate_map matches full grid (no inactive bins)
+            if grid_shape is not None and len(rate_map) == np.prod(grid_shape):
+                # Can reshape directly
+                rate_map_2d = rate_map.reshape(grid_shape)
 
-                    im = ax.imshow(
-                        rate_map_2d.T,
-                        origin="lower",
-                        aspect="equal",
-                        cmap="viridis",
-                        interpolation="nearest",
-                    )
-                    ax.set_title(f"Cell {cell_id}", fontsize=10)
-                    ax.set_xlabel("X bin")
-                    ax.set_ylabel("Y bin")
-                    plt.colorbar(im, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04)
-                else:
-                    # Has inactive bins - use scatter plot instead
-                    scatter = ax.scatter(
-                        env.bin_centers[:, 0],
-                        env.bin_centers[:, 1],
-                        c=rate_map,
-                        cmap="viridis",
-                        s=10,
-                    )
-                    ax.set_title(f"Cell {cell_id}", fontsize=10)
-                    ax.set_xlabel(f"X ({env.units or 'units'})")
-                    ax.set_ylabel(f"Y ({env.units or 'units'})")
-                    ax.set_aspect("equal")
-                    plt.colorbar(
-                        scatter, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04
-                    )
-            else:
-                # Fallback: plot as 1D trace
-                ax.plot(rate_map)
+                im = ax.imshow(
+                    rate_map_2d.T,
+                    origin="lower",
+                    aspect="equal",
+                    cmap="viridis",
+                    interpolation="nearest",
+                )
                 ax.set_title(f"Cell {cell_id}", fontsize=10)
-                ax.set_xlabel("Bin")
-                ax.set_ylabel("Rate (Hz)")
+                ax.set_xlabel("X bin")
+                ax.set_ylabel("Y bin")
+                plt.colorbar(im, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04)
+            else:
+                # Has inactive bins - use scatter plot instead
+                scatter = ax.scatter(
+                    env.bin_centers[:, 0],
+                    env.bin_centers[:, 1],
+                    c=rate_map,
+                    cmap="viridis",
+                    s=10,
+                )
+                ax.set_title(f"Cell {cell_id}", fontsize=10)
+                ax.set_xlabel(f"X ({env.units or 'units'})")
+                ax.set_ylabel(f"Y ({env.units or 'units'})")
+                ax.set_aspect("equal")
+                plt.colorbar(
+                    scatter, ax=ax, label="Rate (Hz)", fraction=0.046, pad=0.04
+                )
 
     # Hide unused rate map subplots
     for i in range(len(cell_indices), len(axes_rates)):

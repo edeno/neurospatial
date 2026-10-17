@@ -9,6 +9,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._binning import SpatialBins
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_builders import (
@@ -21,7 +22,7 @@ from neurospatial.geometry._face_builders import (
 
 
 @dataclass(frozen=True, eq=False)
-class NativeFaces:
+class NativeFaces(ReadOnlyState):
     """Closed native recipe over owned numerical data; materialized on demand.
 
     Parameters
@@ -50,12 +51,6 @@ class NativeFaces:
         for array in arrays:
             array.setflags(write=False)
         object.__setattr__(self, "arrays", arrays)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        for array in self.arrays:
-            array.setflags(write=False)
 
     @property
     def available(self) -> bool:

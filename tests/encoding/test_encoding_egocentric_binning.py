@@ -80,7 +80,7 @@ class TestComputeEgocentricOccupancy:
 
     def test_import(self):
         """Function can be imported from _egocentric_binning module."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -93,7 +93,7 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Function returns numpy array."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -115,7 +115,7 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Function returns egocentric polar environment."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -140,7 +140,7 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Occupancy shape matches env.n_bins."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -165,7 +165,7 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Occupancy values are non-negative."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -186,7 +186,7 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Occupancy has float64 dtype."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -207,7 +207,7 @@ class TestComputeEgocentricOccupancy:
         object_positions: np.ndarray,
     ):
         """Total occupancy approximates recording duration."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -237,7 +237,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
         object_positions: np.ndarray,
     ):
         """Euclidean is the default distance metric."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -259,7 +259,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
         object_positions: np.ndarray,
     ):
         """Geodesic distance metric requires env parameter."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -282,7 +282,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
         object_positions: np.ndarray,
     ):
         """Geodesic distance works when env is provided."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -305,7 +305,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
         object_positions: np.ndarray,
     ):
         """Invalid distance metric raises ValueError."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -327,7 +327,7 @@ class TestComputeEgocentricOccupancyInputValidation:
 
     def test_mismatched_times_positions_raises(self, object_positions: np.ndarray):
         """Mismatched times and positions lengths raise error."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -348,7 +348,7 @@ class TestComputeEgocentricOccupancyInputValidation:
 
     def test_mismatched_times_headings_raises(self, object_positions: np.ndarray):
         """Mismatched times and headings lengths raise error."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -369,7 +369,7 @@ class TestComputeEgocentricOccupancyInputValidation:
 
     def test_insufficient_samples_raises(self, object_positions: np.ndarray):
         """Fewer than 2 samples raises error."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -390,7 +390,7 @@ class TestComputeEgocentricOccupancyInputValidation:
 
     def test_unsorted_times_raises(self, object_positions: np.ndarray):
         """Non-monotonic times raise error."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -420,7 +420,7 @@ class TestBinEgocentricSpikeTrain:
 
     def test_import(self):
         """Function can be imported from _egocentric_binning module."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         assert callable(bin_egocentric_spike_train)
 
@@ -431,7 +431,7 @@ class TestBinEgocentricSpikeTrain:
         spike_times: np.ndarray,
     ):
         """Function returns numpy array."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         spike_counts, _env = bin_egocentric_spike_train(
             spike_times,
@@ -452,7 +452,7 @@ class TestBinEgocentricSpikeTrain:
         spike_times: np.ndarray,
     ):
         """Spike counts shape matches env.n_bins."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         n_distance_bins = 10
         n_direction_bins = 12
@@ -477,7 +477,7 @@ class TestBinEgocentricSpikeTrain:
         spike_times: np.ndarray,
     ):
         """Spike counts are non-negative."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         spike_counts, _ = bin_egocentric_spike_train(
             spike_times,
@@ -498,7 +498,7 @@ class TestBinEgocentricSpikeTrain:
         spike_times: np.ndarray,
     ):
         """Spike counts have float64 dtype (for smoothing compatibility)."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         spike_counts, _ = bin_egocentric_spike_train(
             spike_times,
@@ -519,7 +519,7 @@ class TestBinEgocentricSpikeTrain:
         spike_times: np.ndarray,
     ):
         """Total spike count is at most number of input spikes."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         # Use large distance range to capture all spikes
         spike_counts, _ = bin_egocentric_spike_train(
@@ -540,7 +540,7 @@ class TestBinEgocentricSpikeTrain:
         object_positions: np.ndarray,
     ):
         """Empty spike train returns zeros."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         spike_times = np.array([])
         spike_counts, env = bin_egocentric_spike_train(
@@ -568,7 +568,7 @@ class TestBinEgocentricSpikeTrainValidation:
 
         This matches the validation behavior of bin_egocentric_spike_trains (batch version).
         """
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
         positions = np.random.rand(4, 2)
@@ -592,7 +592,7 @@ class TestBinEgocentricSpikeTrainValidation:
 
         This matches the validation behavior of bin_egocentric_spike_trains (batch version).
         """
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         times = np.array([0.0])  # Only 1 sample
         positions = np.array([[50, 50]])
@@ -619,7 +619,7 @@ class TestBinEgocentricSpikeTrainDistanceMetric:
         spike_times: np.ndarray,
     ):
         """Euclidean is the default distance metric."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         spike_counts, _ = bin_egocentric_spike_train(
             spike_times,
@@ -640,7 +640,7 @@ class TestBinEgocentricSpikeTrainDistanceMetric:
         spike_times: np.ndarray,
     ):
         """Geodesic distance metric requires env parameter."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         with pytest.raises(ValueError, match=r"geodesic.*requires.*env"):
             bin_egocentric_spike_train(
@@ -663,7 +663,7 @@ class TestBinEgocentricSpikeTrainDistanceMetric:
         spike_times: np.ndarray,
     ):
         """Geodesic distance works when env is provided."""
-        from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
+        from neurospatial.encoding._egocentric_counts import bin_egocentric_spike_train
 
         spike_counts, _ = bin_egocentric_spike_train(
             spike_times,
@@ -690,7 +690,7 @@ class TestBinEgocentricSpikeTrains:
 
     def test_import(self):
         """Function can be imported from _egocentric_binning module."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -703,7 +703,7 @@ class TestBinEgocentricSpikeTrains:
         spike_times_list: list[np.ndarray],
     ):
         """Function returns tuple of (spike_counts, occupancy, env)."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -727,7 +727,7 @@ class TestBinEgocentricSpikeTrains:
         spike_times_list: list[np.ndarray],
     ):
         """Spike counts shape is (n_neurons, n_bins)."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -756,7 +756,7 @@ class TestBinEgocentricSpikeTrains:
         spike_times_list: list[np.ndarray],
     ):
         """Occupancy shape is (n_bins,) - shared across neurons."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -784,7 +784,7 @@ class TestBinEgocentricSpikeTrains:
         spike_times_list: list[np.ndarray],
     ):
         """Both outputs have float64 dtype."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -808,7 +808,7 @@ class TestBinEgocentricSpikeTrains:
         spike_times_list: list[np.ndarray],
     ):
         """Batch results match single-neuron results."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_train,
             bin_egocentric_spike_trains,
         )
@@ -847,7 +847,7 @@ class TestBinEgocentricSpikeTrains:
         object_positions: np.ndarray,
     ):
         """Empty neuron list returns correct shapes."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -876,7 +876,7 @@ class TestBinEgocentricSpikeTrains:
         spike_times_list: list[np.ndarray],
     ):
         """n_jobs parameter is accepted."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -915,7 +915,7 @@ class TestBinEgocentricSpikeTrains:
         spike_times_list: list[np.ndarray],
     ):
         """Accepts 2D NaN-padded array format for spike times."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -948,7 +948,7 @@ class TestBinEgocentricSpikeTrainsDistanceMetric:
         spike_times_list: list[np.ndarray],
     ):
         """Geodesic distance metric requires env parameter."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -973,7 +973,7 @@ class TestBinEgocentricSpikeTrainsDistanceMetric:
         spike_times_list: list[np.ndarray],
     ):
         """Geodesic distance works when env is provided."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_trains,
         )
 
@@ -1002,7 +1002,7 @@ class TestEgocentricCoordinates:
 
     def test_bearing_zero_ahead(self):
         """Object directly ahead should have bearing 0."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1020,7 +1020,7 @@ class TestEgocentricCoordinates:
 
     def test_bearing_left(self):
         """Object to the left should have bearing ~pi/2."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1038,7 +1038,7 @@ class TestEgocentricCoordinates:
 
     def test_bearing_right(self):
         """Object to the right should have bearing ~-pi/2."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1056,7 +1056,7 @@ class TestEgocentricCoordinates:
 
     def test_nearest_object_selection(self):
         """Nearest object should be selected at each timepoint."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1085,7 +1085,7 @@ class TestCoordsToFlatBinIdxWrap:
 
     def test_plus_pi_and_minus_pi_same_direction_bin(self):
         """Bearing +pi and -pi map to the same direction bin (same flat bin)."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _coords_to_flat_bin_idx,
         )
 
@@ -1113,7 +1113,7 @@ class TestCoordsToFlatBinIdxWrap:
 
     def test_plus_pi_not_in_overflow_bin(self):
         """Bearing +pi must not produce a direction bin >= n_direction_bins."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _coords_to_flat_bin_idx,
         )
 
@@ -1191,7 +1191,7 @@ class TestEgocentricNaNHandling:
 
     def test_object_outside_env_geodesic(self, env_with_hole: Environment):
         """Object outside environment should produce NaN distance with geodesic."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1216,7 +1216,7 @@ class TestEgocentricNaNHandling:
 
     def test_mixed_nan_finite_distances(self, env_with_hole: Environment):
         """With mixed NaN/finite distances, should select nearest valid object."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1250,7 +1250,7 @@ class TestEgocentricNaNHandling:
 
     def test_all_objects_outside_env_geodesic(self, env_with_hole: Environment):
         """When all objects are outside env, should return NaN distance."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1280,7 +1280,7 @@ class TestEgocentricNaNHandling:
 
     def test_position_outside_env_geodesic(self, env_with_hole: Environment):
         """When animal position is outside env, should return NaN distance."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1303,7 +1303,7 @@ class TestEgocentricNaNHandling:
 
     def test_mixed_valid_invalid_positions_geodesic(self, env_with_hole: Environment):
         """With some positions outside env, should handle NaN distances correctly."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             _compute_object_coords,
         )
 
@@ -1335,7 +1335,7 @@ class TestEgocentricNaNHandling:
 
     def test_occupancy_with_nan_distances(self, env_with_hole: Environment):
         """Occupancy computation should handle NaN distances gracefully."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             compute_egocentric_occupancy,
         )
 
@@ -1370,7 +1370,7 @@ class TestEgocentricNaNHandling:
 
     def test_spike_binning_with_nan_distances(self, env_with_hole: Environment):
         """Spike binning should handle NaN distances gracefully."""
-        from neurospatial.encoding._egocentric_binning import (
+        from neurospatial.encoding._egocentric_counts import (
             bin_egocentric_spike_train,
         )
 

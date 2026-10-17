@@ -94,7 +94,7 @@ class TestPlaceCellModel:
             "am": (50, 50),
             "ar": (100, 50),
         }
-        env = Environment.maze("w", node_positions=nodes, bin_size=5.0)
+        env = Environment.maze(kind="w", node_positions=nodes, bin_size=5.0)
 
         pc = PlaceCellModel(env, center=[50.0, 0.0])
 
@@ -694,13 +694,9 @@ class TestGridCellModel:
 
         hex_rates = gc.firing_rate(hex_points)
 
-        # All hexagonal neighbors should have similar rates (hexagonal symmetry)
-        # Allow some tolerance due to numerical precision and grid structure
-        # Note: exact hexagonal symmetry depends on the phase relationship
-        mean_rate = np.mean(hex_rates)
-        for rate in hex_rates:
-            # Each point should be within reasonable range of mean
-            assert abs(rate - mean_rate) < 8.0  # Relaxed tolerance for grid structure
+        # grid_orientation=0 puts the field lattice along +x, so the six
+        # neighbors one spacing away at 0, 60, ..., 300 degrees are fields.
+        np.testing.assert_allclose(hex_rates, center_rate, rtol=1e-9)
 
     def test_grid_spacing_matches_parameter(self, simple_2d_env):
         """Test that distance between grid peaks matches grid_spacing."""
@@ -942,7 +938,11 @@ class TestGridCellModel:
         # Reference: original explicit-loop algorithm.
         rel_pos = positions - gc.phase_offset
         k_magnitude = (4.0 * np.pi) / (np.sqrt(3.0) * gc.grid_spacing)
-        angles = np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0]) + gc.grid_orientation
+        angles = (
+            np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0])
+            + gc.grid_orientation
+            - np.pi / 6.0
+        )
         wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
         grid_pattern = np.zeros(len(rel_pos))
         for k_vec in wave_vectors:
@@ -954,3 +954,81 @@ class TestGridCellModel:
         actual = gc.firing_rate(positions)
 
         np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("orientation_deg", [0.0, 10.0, 25.0, 50.0])
+def test_simulated_orientation_is_recovered_by_grid_properties(orientation_deg):
+    """Simulating at orientation theta and analysing returns theta."""
+    from neurospatial import Environment
+    from neurospatial.encoding.grid import (
+        autocorrelation_pixel_size,
+        grid_properties,
+        spatial_autocorrelation,
+    )
+    from neurospatial.simulation.models.grid_cells import GridCellModel
+
+    positions = np.random.default_rng(0).uniform(0, 120, (30000, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+    grid_orientation = np.radians(orientation_deg)
+    model = GridCellModel(env, grid_spacing=30.0, grid_orientation=grid_orientation)
+    autocorr = spatial_autocorrelation(env, model.firing_rate(env.bin_centers))
+
+    measured = grid_properties(autocorr, autocorrelation_pixel_size(env)).orientation
+
+    error = abs(measured - grid_orientation) % (np.pi / 3)
+    assert min(error, np.pi / 3 - error) < np.radians(2.0)
+
+
+class TestPolarPlaceCellModel:
+    """On an egocentric polar environment the field is a Gaussian of real distance."""
+
+    @pytest.fixture
+    def surround(self):
+        from neurospatial import Environment
+
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 40.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 8,
+            units="cm",
+        )
+
+    def test_rate_falls_off_with_the_distance_between_places(self, surround):
+        pc = PlaceCellModel(
+            surround, center=np.array([10.0, 0.0]), width=5.0, baseline_rate=0.0
+        )
+        rows = np.array([[10.0, 0.0], [10.0, 2 * np.pi], [10.0, np.pi], [5.0, 0.0]])
+        # 10 cm ahead, the same place a turn later, 10 cm behind (20 cm away),
+        # and 5 cm ahead (5 cm away).
+        expected = 20.0 * np.exp(-0.5 * (np.array([0.0, 0.0, 20.0, 5.0]) / 5.0) ** 2)
+        np.testing.assert_allclose(pc.firing_rate(rows), expected, atol=1e-9)
+
+    def test_default_width_is_three_bin_spacings_in_length_units(self, surround):
+        pc = PlaceCellModel(surround, center=np.array([10.0, 0.0]))
+        # Innermost-ring neighbours are 2.5 * 2 * sin(pi/16) apart; the median
+        # nearest-neighbour spacing of the placed centers is a length in cm.
+        places = surround.bin_centers[:, 0] * np.exp(1j * surround.bin_centers[:, 1])
+        gaps = np.abs(places[:, None] - places[None])
+        np.fill_diagonal(gaps, np.inf)
+        assert pc.width == pytest.approx(3.0 * np.median(gaps.min(axis=1)))
+
+    def test_per_axis_width_is_refused_with_a_working_alternative(self, surround):
+        import neurospatial
+        from neurospatial import CartesianOnlyError
+
+        center, width = np.array([10.0, 0.0]), np.array([5.0, 0.3])
+        with pytest.raises(CartesianOnlyError) as refused:
+            PlaceCellModel(surround, center=center, width=width)
+        example = refused.value.example
+        assert example is not None and example in str(refused.value)
+        model = eval(
+            example,
+            {
+                "neurospatial": neurospatial,
+                "env": surround,
+                "center": center,
+                "width": width,
+            },
+        )
+        assert model.width == 5.0

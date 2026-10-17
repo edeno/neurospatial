@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import KnownFaces, MissingFaces
 from neurospatial.geometry._components import TriangleShapes
 from neurospatial.geometry._derive import subset_binning, transform_binning
@@ -188,11 +189,16 @@ def test_three_dimensional_axis_scaling_keeps_physical_faces():
     )
     np.testing.assert_allclose(child.bin_sizes, parent.bin_sizes * 24.0, rtol=1e-12)
     for actual, wanted in zip(
-        child._face_geometry, expected._face_geometry, strict=True
+        face_geometry(child._cache, child._binning),
+        face_geometry(expected._cache, expected._binning),
+        strict=True,
     ):
         np.testing.assert_allclose(actual, wanted, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(
-        child.compute_kernel(2.0), expected.compute_kernel(2.0), rtol=1e-12, atol=1e-12
+        child.compute_kernel(bandwidth=2.0),
+        expected.compute_kernel(bandwidth=2.0),
+        rtol=1e-12,
+        atol=1e-12,
     )
 
 
@@ -204,6 +210,6 @@ def test_reflection_uses_inverse_locator_and_preserves_face_geometry():
     assert isinstance(child.locator, TransformedLocator)
     assert child.rectilinear is None
     for actual, expected in zip(
-        child.faces.build(), parent._face_geometry, strict=True
+        child.faces.build(), face_geometry(parent._cache, parent._binning), strict=True
     ):
         np.testing.assert_array_equal(actual, expected)

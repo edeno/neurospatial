@@ -10,8 +10,6 @@ Core Classes (Top-Level Exports)
 Environment : Main spatial discretization class
     Discretizes continuous space into bins with connectivity graph.
     Factory methods: from_samples, from_polygon, from_graph, from_grid_mask, from_pixel_mask.
-EnvironmentNotFittedError : Exception for unfitted environments
-    Raised when methods requiring fitted state are called on unfitted environment.
 Region : Immutable region of interest (ROI)
     Point or polygon-based spatial region with metadata.
 Regions : Container for multiple named regions
@@ -201,10 +199,8 @@ Create 2D environment and compute shortest path::
     ...     connect_diagonal_neighbors=True,
     ... )
     >>> env = env.with_metadata(units='cm')
-    >>> path = env.path_between(0, 100)
-    >>> # distance_between takes coordinates; for graph distance between bin
-    >>> # indices use distance_to([target_bin]) and index by the source bin.
-    >>> distance = float(env.distance_to([100])[0])
+    >>> path = env.path_between(bins=[0, 100])
+    >>> distance = env.distance_between(bins=[0, 100])  # along the graph, in cm
 
 Create 3D environment::
 
@@ -230,7 +226,7 @@ from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
-    EnvironmentNotFittedError,
+    CartesianOnlyError,
     GraphValidationError,
     IncompatibleEnvironmentError,
     LayoutNotBuiltError,
@@ -240,7 +236,7 @@ from neurospatial._exceptions import (
 
 if TYPE_CHECKING:
     # Concrete definitions for analyzers; PEP 562 still loads them lazily at runtime.
-    from neurospatial.decoding._result import DecodingResult as DecodingResult
+    from neurospatial.decoding import DecodingResult as DecodingResult
     from neurospatial.decoding.posterior import decode_position as decode_position
     from neurospatial.encoding.spatial import SpatialRateResult as SpatialRateResult
     from neurospatial.encoding.spatial import SpatialRatesResult as SpatialRatesResult
@@ -251,7 +247,7 @@ if TYPE_CHECKING:
         compute_spatial_rates as compute_spatial_rates,
     )
     from neurospatial.environment import Environment as Environment
-    from neurospatial.events._core import PeriEventResult as PeriEventResult
+    from neurospatial.events import PeriEventResult as PeriEventResult
     from neurospatial.events.alignment import (
         peri_event_histogram as peri_event_histogram,
     )
@@ -298,9 +294,9 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "SpatialRateResult": ("encoding.spatial", "SpatialRateResult"),
     "SpatialRatesResult": ("encoding.spatial", "SpatialRatesResult"),
     "decode_position": ("decoding.posterior", "decode_position"),
-    "DecodingResult": ("decoding._result", "DecodingResult"),
+    "DecodingResult": ("decoding", "DecodingResult"),
     "peri_event_histogram": ("events.alignment", "peri_event_histogram"),
-    "PeriEventResult": ("events._core", "PeriEventResult"),
+    "PeriEventResult": ("events", "PeriEventResult"),
 }
 
 
@@ -326,9 +322,9 @@ def __dir__() -> list[str]:
 
 __all__ = [
     "BinIndexOutOfRangeError",
+    "CartesianOnlyError",
     "DecodingResult",
     "Environment",
-    "EnvironmentNotFittedError",
     "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",

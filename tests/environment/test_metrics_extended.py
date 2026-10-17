@@ -1,7 +1,7 @@
 """Comprehensive tests for environment metrics.
 
-This module provides extensive test coverage for the EnvironmentMetrics mixin,
-targeting 80% coverage for src/neurospatial/environment/metrics.py.
+This module provides extensive test coverage for the Environment metric methods,
+targeting 80% coverage for src/neurospatial/environment/_metrics.py.
 
 Test Coverage
 -------------
@@ -16,6 +16,8 @@ Coverage Target: 36% → 80%
 """
 
 from __future__ import annotations
+
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -86,7 +88,7 @@ class TestBoundaryBins:
         # Get first boundary bin
         if len(boundary) > 0:
             boundary_bin = boundary[0]
-            boundary_neighbors = medium_2d_env.neighbors(boundary_bin)
+            boundary_neighbors = medium_2d_env.neighbors(bins=boundary_bin)
 
             # Find an interior bin (not in boundary)
             interior_bins = np.setdiff1d(
@@ -95,7 +97,7 @@ class TestBoundaryBins:
 
             if len(interior_bins) > 0:
                 interior_bin = interior_bins[0]
-                interior_neighbors = medium_2d_env.neighbors(interior_bin)
+                interior_neighbors = medium_2d_env.neighbors(bins=interior_bin)
 
                 # Interior bins typically have more neighbors
                 # (This may not always be true for irregular environments)
@@ -348,8 +350,8 @@ class TestLinearization:
         assert not medium_2d_env.is_linearized_track
 
         with pytest.raises(
-            AttributeError,
-            match="to_linear\\(\\) is only available for 1D environments",
+            TypeError,
+            match="to_linear\\(\\) needs a linearized track",
         ):
             medium_2d_env.to_linear(np.array([[0.0, 0.0]]))
 
@@ -358,8 +360,8 @@ class TestLinearization:
         assert not medium_2d_env.is_linearized_track
 
         with pytest.raises(
-            AttributeError,
-            match="linear_to_nd\\(\\) is only available for 1D environments",
+            TypeError,
+            match="linear_to_nd\\(\\) needs a linearized track",
         ):
             medium_2d_env.linear_to_nd(np.array([0.0]))
 
@@ -432,13 +434,13 @@ class TestLinearizationProperties:
         # Should only have is_linearized_track key for N-D environments
         assert len(props) == 1
 
-    def test_linearization_properties_cached(self, graph_env: Environment) -> None:
-        """Test that linearization_properties is cached."""
+    def test_linearization_properties_are_independent(
+        self, graph_env: Environment
+    ) -> None:
+        """Each read returns a new dict with the same values."""
         props1 = graph_env.linearization_properties
-        cached = graph_env._linearization_properties_cached
         props2 = graph_env.linearization_properties
 
-        assert graph_env._linearization_properties_cached is cached
         assert props1 is not props2
         assert props1["is_linearized_track"] == props2["is_linearized_track"]
 
@@ -503,13 +505,13 @@ class TestSpatialMetrics:
         if len(boundary) > 0 and len(interior) > 0:
             # Average neighbor count for boundary bins
             boundary_neighbor_counts = [
-                len(small_2d_env.neighbors(b)) for b in boundary
+                len(small_2d_env.neighbors(bins=b)) for b in boundary
             ]
             avg_boundary_neighbors = np.mean(boundary_neighbor_counts)
 
             # Average neighbor count for interior bins
             interior_neighbor_counts = [
-                len(small_2d_env.neighbors(b)) for b in interior[:10]
+                len(small_2d_env.neighbors(bins=b)) for b in interior[:10]
             ]  # Sample
             avg_interior_neighbors = np.mean(interior_neighbor_counts)
 
@@ -605,8 +607,8 @@ class TestMetricsIntegration:
 
     def test_metrics_work_after_clear_cache(self, small_2d_env: Environment) -> None:
         """Test that metrics work after clearing cache."""
-        # Make a copy to avoid mutating session-scoped fixture
-        env = small_2d_env.copy()
+        # Unpickling gives the session fixture's geometry its own cache.
+        env = pickle.loads(pickle.dumps(small_2d_env))
 
         # Access metrics
         _ = env.boundary_bins

@@ -1,4 +1,4 @@
-"""Tests for memory-safe summary decoding (Task 2.1).
+"""Tests for memory-safe summary decoding.
 
 Covers:
 - ``decode_position`` gains ``dtype`` and ``time_chunk`` keyword-only params

@@ -21,10 +21,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
-from neurospatial.ops.binning import regions_to_mask
+from neurospatial._exceptions import RegionNotFoundError
 from neurospatial.ops.distance import distance_field
+from neurospatial.ops.mapping import regions_to_mask
 
 __all__ = [
     "goal_reward_field",
@@ -131,9 +132,8 @@ def region_reward_field(
     """
     # Validate region exists
     if region_name not in env.regions:
-        raise KeyError(
-            f"Region '{region_name}' not found in environment. "
-            f"Available regions: {list(env.regions.keys())}"
+        raise RegionNotFoundError(
+            region_name, available=list(env.regions), argument="region_name"
         )
 
     # Get region mask
@@ -201,7 +201,7 @@ def region_reward_field(
         # field is non-negative, so floor it (the dense clipped kernel did this
         # implicitly). Positivity is the consumer's job for the linear smoother.
         smoothed = np.maximum(
-            np.asarray(env.smooth(indicator, bandwidth, mode="average")),
+            np.asarray(env.smooth(indicator, bandwidth=bandwidth, mode="average")),
             0.0,
         )
 
@@ -313,18 +313,15 @@ def goal_reward_field(
     region_reward_field : Reward fields from spatial regions
     neurospatial.distance_field : Compute distance maps
     """
-    # Convert scalar to array
-    goal_bins_array = np.asarray(goal_bins)
-    if goal_bins_array.ndim == 0:
-        goal_bins_array = goal_bins_array[None]
+    from neurospatial.environment import _validate_target_bins
 
-    # Validate goal bins
-    goal_bins_list = goal_bins_array.tolist()
-    if not all(0 <= g < env.n_bins for g in goal_bins_list):
-        raise ValueError(
-            f"Invalid goal bins. All indices must be in range [0, {env.n_bins}). "
-            f"Got: {goal_bins_list}"
-        )
+    goal_bins_list = _validate_target_bins(
+        goal_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="goal_reward_field()",
+        argument="goal_bins",
+    ).tolist()
 
     # Compute distance field from goals
     distances = distance_field(env.connectivity, sources=goal_bins_list)

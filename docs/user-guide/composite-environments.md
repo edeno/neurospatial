@@ -78,12 +78,12 @@ components = {
 }
 env = Environment.combine(components)
 field = np.array([1.0, 1.0, 0.0, 0.0])
-np.testing.assert_allclose(env.diffuse(field, 1.0, mode="average"), field, atol=1e-14)
+np.testing.assert_allclose(env.diffuse(field, bandwidth=1.0, mode="average"), field, atol=1e-14)
 coupled = Environment.combine(
     components,
     bridge_conductances={(('left', 1), ('right', 0)): 0.5},
 )
-smoothed = coupled.diffuse(field, 1.0, mode="average")
+smoothed = coupled.diffuse(field, bandwidth=1.0, mode="average")
 assert smoothed[2] > 0
 np.testing.assert_allclose(smoothed @ coupled.bin_sizes, field @ coupled.bin_sizes)
 ```

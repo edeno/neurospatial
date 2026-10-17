@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+import pickle
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
@@ -11,23 +12,25 @@ import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial.geometry._capabilities import (
-    RectilinearGrid,
-)
+from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid
+from neurospatial.geometry._locators import Locator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
+from neurospatial.geometry._track import project_1d_to_2d
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._polygon import ClipMapping, PolygonCells
+    from neurospatial.geometry._polygon_cells import ClipMapping, PolygonCells
 
 
 @dataclass(frozen=True, eq=False)
-class SpatialBins:
+class SpatialBins(ReadOnlyState):
     """Discrete bins with owned, read-only geometry arrays.
 
     Attributes
@@ -130,13 +133,6 @@ class SpatialBins:
             array.setflags(write=False)
             object.__setattr__(self, name, array)
 
-    def __setstate__(self, state: dict[str, object]) -> None:
-        """Restore array write protection after pickle or deepcopy."""
-        for name, value in state.items():
-            if isinstance(value, np.ndarray):
-                value.setflags(write=False)
-            object.__setattr__(self, name, value)
-
     @classmethod
     def from_arrays(
         cls,
@@ -191,18 +187,6 @@ class SpatialBins:
         return int(self.centers.shape[1])
 
 
-class Locator(Protocol):
-    """Find the bin that contains each query point."""
-
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
-        """Return bin indices for ``(n_points, n_dims)`` coordinates, or -1.
-
-        Non-finite rows return -1; a wrong number of columns raises ValueError.
-        The input is not modified.
-        """
-        ...
-
-
 class FacesSource(Protocol):
     """Source of an environment's finite-volume cell faces."""
 
@@ -221,7 +205,7 @@ class FacesSource(Protocol):
 
 
 @dataclass(frozen=True, eq=False)
-class KnownFaces:
+class KnownFaces(ReadOnlyState):
     """Owned finite-volume faces that no longer need their originating layout."""
 
     faces: FaceGeometry
@@ -259,11 +243,6 @@ class KnownFaces:
             self, "faces", FaceGeometry(owned_edges, areas, distances, volumes)
         )
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for array in state["faces"]:
-            array.setflags(write=False)
-        object.__setattr__(self, "faces", state["faces"])
-
     @property
     def available(self) -> bool:
         """Whether validated face geometry can be obtained."""
@@ -295,8 +274,6 @@ class MissingFaces:
 
     def missing_error(self, operation: str) -> NotImplementedError:
         """Name the operation, missing geometry and supported recovery."""
-        from neurospatial._exceptions import _format_error
-
         return NotImplementedError(
             _format_error(
                 f"{operation} needs finite-volume cell geometry. {self.reason}",
@@ -325,8 +302,54 @@ class _ReadOnlyTrackAttributes(dict[str, Any]):
         return type(self), (dict(self),)
 
 
+def graph_attribute_items(graph: nx.Graph) -> Iterator[tuple[str, Any, Any]]:
+    """Yield ``(element, key, value)`` for every graph, node and edge attribute.
+
+    ``element`` names where the attribute is, ``"metadata"`` for
+    ``graph.graph``, ``"node 3"`` or ``"edge (0, 1)"``, for error messages.
+    """
+    for key, value in graph.graph.items():
+        yield "metadata", key, value
+    for node, attributes in graph.nodes(data=True):
+        for key, value in attributes.items():
+            yield f"node {node!r}", key, value
+    for u, v, attributes in graph.edges(data=True):
+        for key, value in attributes.items():
+            yield f"edge ({u!r}, {v!r})", key, value
+
+
+def _refuse_unsaveable_attributes(graph: nx.Graph) -> None:
+    """Refuse attribute values that no environment format can store.
+
+    Pickle stores the most kinds of values of any format an environment is
+    written to, so a value pickle refuses (a lambda, a lock, an open file)
+    could never be saved or sent to a worker process.
+    """
+    for element, key, value in graph_attribute_items(graph):
+        try:
+            pickle.dumps(value)
+        # Any failure to pickle, whatever the value's own __reduce__ raises,
+        # means the attribute cannot be saved; name it and chain the cause.
+        except Exception as exc:
+            raise TypeError(
+                _format_error(
+                    f"Track graph {element} attribute {key!r} holds a "
+                    f"{type(value).__name__} that cannot be saved ({exc}).",
+                    why=(
+                        "Why: the environment keeps the track graph, and neither "
+                        "pickle (used to send it to worker processes) nor "
+                        "to_file, to_dict or NWB can store this value."
+                    ),
+                    fix=(
+                        f"remove {key!r} from the graph, or store a number, "
+                        "string or list instead, before building the environment"
+                    ),
+                )
+            ) from exc
+
+
 @dataclass(frozen=True, eq=False)
-class TrackLinearization:
+class TrackLinearization(ReadOnlyState):
     """Owned track geometry and its absolute linear coordinate system.
 
     Parameters
@@ -341,6 +364,12 @@ class TrackLinearization:
         Full linear bin edges, including gaps.
     active_mask : ndarray of bool, shape (n_linear_bins,)
         Active linear cells in their original coordinate order.
+
+    Raises
+    ------
+    TypeError
+        If a graph, node or edge attribute holds a value that pickle cannot
+        store, such as a lambda or a lock.
     """
 
     graph: nx.Graph
@@ -350,6 +379,7 @@ class TrackLinearization:
     active_mask: NDArray[np.bool_]
 
     def __post_init__(self) -> None:
+        _refuse_unsaveable_attributes(self.graph)
         graph = copy.deepcopy(self.graph)
         for node, attrs in graph.nodes(data=True):
             graph._node[node] = _ReadOnlyTrackAttributes(
@@ -376,7 +406,7 @@ class TrackLinearization:
             self,
             "edge_spacing",
             float(spacing)
-            if isinstance(spacing, (int, float))
+            if isinstance(spacing, (int, float, np.number))
             else tuple(float(x) for x in spacing),
         )
         edges = tuple(np.array(e, dtype=np.float64, copy=True) for e in self.grid_edges)
@@ -386,16 +416,9 @@ class TrackLinearization:
         object.__setattr__(self, "grid_edges", edges)
         object.__setattr__(self, "active_mask", mask)
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore array protection without storing derived lookup memos."""
-        for edge in state["grid_edges"]:
-            edge.setflags(write=False)
-        state["active_mask"].setflags(write=False)
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` coordinates onto the track."""
+        # Imported on use: track_linearization loads pandas and matplotlib (~0.6 s).
         from track_linearization import get_linearized_position
 
         result = get_linearized_position(
@@ -412,9 +435,8 @@ class TrackLinearization:
         self, linear_coordinates: NDArray[np.float64]
     ) -> NDArray[np.float64]:
         """Map ``(n_points,)`` absolute linear positions into track coordinates."""
-        from neurospatial.geometry._track import _project_1d_to_2d
 
-        return _project_1d_to_2d(
+        return project_1d_to_2d(
             linear_coordinates,
             self.graph,
             list(self.edge_order),
@@ -428,6 +450,13 @@ class Binning:
 
     ``face_normals`` holds physical directions in ``bins.pairs`` order. It is
     independent of solver availability: only ``faces`` grants that capability.
+
+    ``dimension_ranges`` is the ``(low, high)`` extent of each coordinate
+    axis that the bins' cells cover: a grid's active cells, the outline or
+    cell shapes otherwise, and the stretch of centerline a track's bins
+    cover. An environment computes that extent from the cells; only bins
+    without cells keep a declared value (or None). An environment's
+    binning carries the environment's ``dimension_ranges``.
     """
 
     kind: str
@@ -442,3 +471,58 @@ class Binning:
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
     grid_frame: FramedGrid | None = None
+    dimension_ranges: tuple[tuple[float, float], ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.dimension_ranges is None:
+            return
+        try:
+            ranges = tuple(
+                (float(low), float(high)) for low, high in self.dimension_ranges
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "Binning.dimension_ranges must be one (low, high) pair of numbers "
+                f"per coordinate axis, got {self.dimension_ranges!r}."
+            ) from error
+        if len(ranges) != self.bins.n_dims:
+            raise ValueError(
+                f"Binning.dimension_ranges has {len(ranges)} axes but the bins "
+                f"have {self.bins.n_dims}; give one (low, high) pair per axis."
+            )
+        object.__setattr__(self, "dimension_ranges", ranges)
+
+
+def require_rectilinear(
+    binning: Binning, operation: str, *, fix: str
+) -> RectilinearGrid:
+    """Return the published rectangular cells, or raise naming ``operation``.
+
+    Raises
+    ------
+    NotImplementedError
+        If the binning has no axis-aligned rectangular cells.
+    """
+    if binning.rectilinear is not None:
+        return binning.rectilinear
+    raise NotImplementedError(
+        _format_error(
+            f"{operation} needs a grid of axis-aligned rectangular cells; this "
+            f"environment's {binning.kind} layout does not have one.",
+            why=(
+                "Why: it reads the cell edges along each axis, which grids built "
+                "by from_samples, from_grid_mask, from_pixel_mask and "
+                "from_polygon provide."
+            ),
+            fix=fix,
+        )
+    )
+
+
+def require_grid_context(
+    binning: Binning, operation: str, *, fix: str
+) -> tuple[RectilinearGrid, FramedGrid | None]:
+    """Read source axes and their optional world frame without copying grids."""
+    if binning.grid_frame is not None:
+        return binning.grid_frame.source, binning.grid_frame
+    return require_rectilinear(binning, operation, fix=fix), None

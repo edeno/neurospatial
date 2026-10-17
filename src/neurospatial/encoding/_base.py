@@ -25,7 +25,7 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 if TYPE_CHECKING:
     import pandas as pd
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 def _is_jax_array(arr: ArrayLike) -> bool:

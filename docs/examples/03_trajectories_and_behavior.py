@@ -68,14 +68,17 @@ apply_style(figsize=(11, 5))
 #
 # Define the centerline from the apparatus coordinates in `node_positions`.
 # `linear_track()` keeps both this 2D description and the distance along it.
-# `edge_spacing=0` keeps distance continuous at the corner. The circles have
-# an 8 cm radius and define the end zones for left-to-right traversals below.
+# `edge_spacing=0` keeps distance continuous at the corner. `track_width` is
+# the measured width of the 10 cm corridor: a position farther than 5 cm from
+# the centerline is off the track and gets no bin. The circles have an 8 cm
+# radius and define the end zones for left-to-right traversals below.
 
 # %%
 track = Environment.linear_track(
     node_positions=[(0.0, 0.0), (60.0, 0.0), (60.0, 40.0)],
     bin_size=2.0,
     edge_spacing=0.0,
+    track_width=10.0,
     units="cm",
     frame="track",
     name="Bent shuttle track",

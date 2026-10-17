@@ -796,7 +796,7 @@ def _setup_video_figure_with_timeseries(
         dark_theme=False,  # Video uses light theme
     )
 
-    # Adjust layout to prevent overlap
-    fig.tight_layout()
+    # No tight_layout: it skips a GridSpec with explicit spacing (only warning
+    # that the axes are incompatible), so the spacing above is the layout.
 
     return fig, ax_field, ts_manager

@@ -23,6 +23,7 @@ from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._components import Outline, TriangleShapes
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._locators import MeshLocator, NearestBinLocator
+from neurospatial.layout import create_layout
 
 
 @pytest.fixture(
@@ -70,7 +71,7 @@ def codec_part(request):
         )._binning.linearization
     if request.param in {"hexagons", "hex_locator"}:
         hex_binning = Environment.from_layout(
-            "Hexagonal", {"hexagon_width": 2.0, "dimension_ranges": [(0, 5)] * 2}
+            create_layout("Hexagonal", hexagon_width=2.0, dimension_ranges=[(0, 5)] * 2)
         )._binning
         return (
             hex_binning.shapes if request.param == "hexagons" else hex_binning.locator

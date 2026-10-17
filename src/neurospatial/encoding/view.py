@@ -90,22 +90,22 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
-from neurospatial.encoding._binning import (
-    _warn_if_population_silent,
-)
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
     check_mode_keywords,
     resolve_shuffle_settings,
 )
+from neurospatial.encoding._spatial_counts import (
+    _warn_if_population_silent,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
 
-    from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
+    from neurospatial.environment import Environment
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 
@@ -1202,8 +1202,8 @@ def compute_view_rate(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -1315,7 +1315,7 @@ def compute_view_rate(
     checks and lies inside ``epochs ∩ spike_window``. The same intervals
     are removed from the spike counts and the occupancy.
 
-    The function uses the view binning layer (``_view_binning.py``) to convert
+    The function uses the view binning layer (``_view_counts.py``) to convert
     spike times to spike counts based on *viewed* location, then the smoothing
     layer (``_smoothing.py``) to compute the smoothed firing rate.
 
@@ -1389,17 +1389,21 @@ def compute_view_rate(
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import prepare_view_binning
+    from neurospatial.encoding._view_counts import (
+        prepare_view_binning,
+        require_allocentric_view,
+    )
 
-    validate_env_fitted(
+    _validate_env_argument(
         env,
         context="compute_view_rate",
         arguments="spike_times, times, positions, headings",
     )
+    require_allocentric_view(env, "compute_view_rate()")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1547,8 +1551,8 @@ def compute_view_rates(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -1559,7 +1563,7 @@ def compute_view_rates(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
@@ -1828,19 +1832,23 @@ def _compute_view_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import prepare_view_binning
+    from neurospatial.encoding._view_counts import (
+        prepare_view_binning,
+        require_allocentric_view,
+    )
 
-    validate_env_fitted(
+    _validate_env_argument(
         env,
         context="compute_view_rates",
         arguments="spike_times, times, positions, headings",
     )
+    require_allocentric_view(env, "compute_view_rates()")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1868,7 +1876,7 @@ def _compute_view_rates(
 
     # Normalize spike times to canonical list-of-arrays format, surfacing the
     # unit labels a spike group (e.g. a pynapple TsGroup) carries.
-    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
+    spike_times_list, extracted_unit_ids = _as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
     # Resolve and validate per-unit identity labels (defaults to arange). A
@@ -2022,8 +2030,8 @@ def is_spatial_view_cell(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -2261,8 +2269,8 @@ def spatial_view_cell_significance(
     Parameters
     ----------
     env : Environment
-        The spatial environment defining the bin structure. Must be fitted
-        (e.g., created via ``Environment.from_samples()``).
+        The spatial environment defining the bin structure, for example
+        one built with ``Environment.from_samples()``.
     spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
@@ -2273,7 +2281,7 @@ def spatial_view_cell_significance(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Sample timestamps in seconds, sorted and aligned with the raw coordinates.
 
@@ -2401,18 +2409,19 @@ def spatial_view_cell_significance(
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_fitted,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_binning import (
+    from neurospatial.encoding._view_counts import (
         _precompute_view_bins,
         _view_observation_mask,
+        require_allocentric_view,
     )
 
-    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
     times = np.array(times, dtype=np.float64, copy=True)
     positions = np.array(positions, dtype=np.float64, copy=True)
@@ -2445,11 +2454,12 @@ def spatial_view_cell_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    validate_env_fitted(
+    _validate_env_argument(
         env,
         context="spatial_view_cell_significance",
         arguments="spike_times, times, positions, headings",
     )
+    require_allocentric_view(env, "spatial_view_cell_significance()")
     validate_trajectory(
         times,
         positions=positions,

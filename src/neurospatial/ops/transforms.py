@@ -41,16 +41,10 @@ Notes
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
-
-from neurospatial._exceptions import CartesianOnlyError, EnvironmentNotFittedError
-
-if TYPE_CHECKING:
-    from neurospatial.environment import Environment
-    from neurospatial.ops._protocols import AffineTransformConsumer
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
@@ -78,7 +72,6 @@ __all__ = [
     "convert_to_pixels",
     "flip_y_data",
     # Transform estimation
-    "apply_transform_to_environment",
     "estimate_transform",
 ]
 
@@ -1234,7 +1227,7 @@ def estimate_transform(
     --------
     AffineND : N-D affine transformation class
     Affine2D : 2D affine transformation (same as AffineND with n_dims=2)
-    apply_transform_to_environment : Apply transform to Environment
+    Environment.apply_transform : Apply a transform to an environment.
 
     """
     src = np.asanyarray(src, dtype=float)
@@ -1344,128 +1337,6 @@ def estimate_transform(
         raise ValueError(
             f"Invalid kind: {kind!r}. Must be 'rigid', 'similarity', or 'affine'."
         )
-
-
-def apply_transform_to_environment(
-    env: Environment,
-    transform: AffineND | Affine2D,
-    *,
-    name: str | None = None,
-) -> Environment:
-    """Apply N-D affine transformation to an Environment, returning a new instance.
-
-    This function creates a new Environment with transformed bin_centers and
-    updated connectivity graph. All other properties (regions, metadata) are
-    copied from the source environment. Supports 2D, 3D, or higher-dimensional
-    transformations.
-
-    Parameters
-    ----------
-    env : Environment
-        Source environment to transform (any dimensionality).
-    transform : AffineND or Affine2D
-        Transformation to apply. Must match environment dimensionality:
-        - For 2D environments: use Affine2D or AffineND with n_dims=2
-        - For 3D environments: use AffineND with n_dims=3
-    name : str, optional
-        Name for the new environment. If None, appends "_transformed" to original name.
-
-    Returns
-    -------
-    Environment
-        New Environment instance with transformed coordinates and physical bin
-        measures. Areas and volumes scale by the absolute determinant of the
-        linear transform; embedded track lengths scale uniformly under a
-        similarity transform. Finite-volume geometry is retained for
-        similarities and axis-aligned grid scaling. General affine maps retain
-        lookup but refuse smoothing when right angles between faces and center
-        links are lost. Triangle drawing vertices are retained under every
-        invertible affine map.
-
-    Raises
-    ------
-    ValueError
-        If transform dimensionality doesn't match environment dimensionality,
-        the transform is not invertible, or a track transform is not a
-        similarity. Rebuild such tracks with ``Environment.from_graph``.
-    RuntimeError
-        If environment is not fitted.
-
-    Examples
-    --------
-    2D transformation (backward compatible):
-
-    >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.ops.transforms import (  # doctest: +SKIP
-    ...     estimate_transform,
-    ...     apply_transform_to_environment,
-    ... )
-    >>> # Create environment from session 1
-    >>> env1 = Environment.from_samples(data1, bin_size=2.0)  # doctest: +SKIP
-    >>> # Estimate transform from landmarks
-    >>> transform = estimate_transform(  # doctest: +SKIP
-    ...     landmarks_session1, landmarks_session2, kind="rigid"
-    ... )
-    >>> # Transform environment to session 2 coordinates
-    >>> env1_aligned = apply_transform_to_environment(  # doctest: +SKIP
-    ...     env1, transform, name="session1_aligned"
-    ... )
-
-    3D transformation:
-
-    >>> import numpy as np  # doctest: +SKIP
-    >>> from scipy.spatial.transform import Rotation  # doctest: +SKIP
-    >>> from neurospatial.ops.transforms import from_rotation_matrix  # doctest: +SKIP
-    >>> # Create 3D environment
-    >>> positions_3d = np.random.randn(1000, 3) * 20  # doctest: +SKIP
-    >>> env_3d = Environment.from_samples(positions_3d, bin_size=5.0)  # doctest: +SKIP
-    >>> # Apply 45-degree rotation around z-axis
-    >>> R = Rotation.from_euler("z", 45, degrees=True).as_matrix()  # doctest: +SKIP
-    >>> transform_3d = from_rotation_matrix(
-    ...     R, translation=[10, 20, 30]
-    ... )  # doctest: +SKIP
-    >>> env_3d_rotated = apply_transform_to_environment(
-    ...     env_3d, transform_3d
-    ... )  # doctest: +SKIP
-
-    See Also
-    --------
-    estimate_transform : Estimate transformation from point pairs
-    Affine2D : 2D affine transformation class
-    AffineND : N-dimensional affine transformation class
-    from_rotation_matrix : Create transform from rotation matrix (scipy integration)
-
-    Notes
-    -----
-    This function is pure: it does not modify the source environment.
-
-    The transformation is applied to:
-    - bin_centers
-    - graph node 'pos' attributes
-    - regions (points and polygons)
-
-    Edge vectors and Euclidean distances are recomputed after transformation.
-    Declared navigation path lengths are preserved by rigid maps and scaled
-    by uniform scaling. Other affine maps require known paths and are refused
-    when only their scalar lengths are supplied.
-
-    For 2D environments, edge 'angle_2d' attributes are also recomputed.
-
-    """
-    consumer: AffineTransformConsumer = env
-    if not getattr(consumer, "_is_fitted", False):
-        raise EnvironmentNotFittedError(
-            "apply_transform_to_environment", is_function=True
-        )
-    try:
-        return consumer.apply_transform(transform, name=name)
-    except CartesianOnlyError:
-        raise ValueError(
-            "apply_transform requires a Cartesian environment but got an "
-            "egocentric polar environment (an affine transform on "
-            "(distance, angle) pairs is not geometrically meaningful). For "
-            "polar envs, work in the egocentric coordinate space directly."
-        ) from None
 
 
 # ---------------------------------------------------------------------

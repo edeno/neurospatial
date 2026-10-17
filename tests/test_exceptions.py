@@ -16,7 +16,6 @@ import pytest
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
-    EnvironmentNotFittedError,
     GraphValidationError,
     IncompatibleEnvironmentError,
     LayoutNotBuiltError,
@@ -105,7 +104,6 @@ class TestPublicReExports:
         "name",
         [
             "BinIndexOutOfRangeError",
-            "EnvironmentNotFittedError",
             "GraphValidationError",
             "IncompatibleEnvironmentError",
             "LayoutNotBuiltError",
@@ -119,13 +117,6 @@ class TestPublicReExports:
             f"{name} should be importable from `neurospatial`"
         )
         assert name in neurospatial.__all__
-
-    def test_environment_not_fitted_error_is_same_class(self):
-        from neurospatial.environment.decorators import (
-            EnvironmentNotFittedError as DecoratorEnvErr,
-        )
-
-        assert EnvironmentNotFittedError is DecoratorEnvErr
 
     def test_graph_validation_error_is_same_class(self):
         from neurospatial.layout.validation import (
@@ -143,7 +134,6 @@ class TestPublicReExports:
         ("BinIndexOutOfRangeError", ValueError),
         ("IncompatibleEnvironmentError", ValueError),
         ("LayoutNotBuiltError", RuntimeError),
-        ("EnvironmentNotFittedError", RuntimeError),
         ("GraphValidationError", ValueError),
     ],
 )
@@ -179,9 +169,16 @@ def test_region_not_found_handles_missing_name():
 
 
 @pytest.mark.parametrize("name,available", [("hom", ["home"]), ("home", [])])
-def test_region_not_found_formats_end_regions_as_a_list(name, available):
-    exc = RegionNotFoundError(name, available=available, argument="end_regions")
+def test_region_not_found_formats_a_list_argument_as_a_list(name, available):
+    exc = RegionNotFoundError(
+        name, available=available, argument="end_regions", in_list=True
+    )
     assert "end_regions=['home']" in str(exc)
+
+
+def test_region_not_found_by_key_suggests_the_name_alone():
+    exc = RegionNotFoundError("rewrd", available=["reward", "home"], argument=None)
+    assert str(exc).endswith("Fix: use 'reward'")
 
 
 def test_no_import_cycle():
@@ -194,7 +191,7 @@ def test_no_import_cycle():
         elif isinstance(node, ast.ImportFrom):
             imports.append(node.module or "")
     assert not any(name.startswith("neurospatial") for name in imports)
-    queries = ast.parse((source / "environment" / "queries.py").read_text())
+    queries = ast.parse((source / "environment" / "_queries.py").read_text())
     for node in ast.walk(queries):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             assert not any(
@@ -211,7 +208,7 @@ def test_layout_not_built_sites(engine):
 
     layout = RegularGridLayout() if engine == "grid" else TriangularMeshLayout()
     with pytest.raises(LayoutNotBuiltError) as caught:
-        layout.point_to_bin_index(np.array([[0.0, 0.0]]))
+        layout.binning()
     assert isinstance(caught.value, RuntimeError)
     assert str(caught.value).splitlines()[-1].startswith("Fix: ")
 
@@ -221,7 +218,7 @@ def test_bin_index_out_of_range_site():
 
     env = Environment.from_samples(np.arange(10.0)[:, None], bin_size=2.0)
     with pytest.raises(BinIndexOutOfRangeError) as caught:
-        env.neighbors(env.n_bins)
+        env.neighbors(bins=env.n_bins)
     assert caught.value.index == env.n_bins
     assert "Fix:" in str(caught.value)
 
@@ -245,13 +242,9 @@ def test_incompatible_environment_site():
         lambda e: e.BinIndexOutOfRangeError(99, n_bins=4),
         lambda e: e.IncompatibleEnvironmentError("dims differ", fix="match them."),
         lambda e: e.CartesianOnlyError(
-            "Environment",
-            "bin_at()",
-            reason="Cartesian-coordinate operation",
-            explanation="x",
+            "Environment.bin_at()", why="It reads positions.", fix="use bins."
         ),
         lambda e: e.LayoutNotBuiltError("RegularGrid", "bin_centers"),
-        lambda e: e.EnvironmentNotFittedError("Environment", "bin_at"),
         lambda e: e.GraphValidationError("bad graph"),
     ],
 )

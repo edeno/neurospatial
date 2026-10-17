@@ -37,7 +37,8 @@ def test_event_on_run_edges(pause_events):
 
 
 def test_event_on_isolated_sample_gets_nan():
-    times = np.array([0.0, 0.1, 5.0, 10.0, 10.1])
+    # The sample at t=5 is separated from both neighbors by a gap.
+    times = np.array([0.0, 0.1, 0.2, 5.0, 10.0, 10.1, 10.2])
     positions = np.column_stack([times, times * 2])
     events = pd.DataFrame({"timestamp": [0.05, 5.0, 10.05]})
     result = add_positions(events, times=times, positions=positions)
@@ -46,11 +47,13 @@ def test_event_on_isolated_sample_gets_nan():
 
 
 def test_event_with_no_observed_runs_gets_nan():
-    result = add_positions(
-        pd.DataFrame({"timestamp": [0.0, 0.5, 1.0, np.nan]}),
-        times=np.array([0.0, 1.0]),
-        positions=np.array([[1.0, 2.0], [3.0, 4.0]]),
-    )
+    # The only interval is longer than max_gap, so nothing is observed.
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = add_positions(
+            pd.DataFrame({"timestamp": [0.0, 0.5, 1.0, np.nan]}),
+            times=np.array([0.0, 1.0]),
+            positions=np.array([[1.0, 2.0], [3.0, 4.0]]),
+        )
     assert np.isnan(result[["x", "y"]].to_numpy()).all()
 
 

@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._locators import _check_homogeneous
 
 
 @dataclass(frozen=True, eq=False)
-class GridBinningSpec:
+class GridBinningSpec(ReadOnlyState):
     """Rectangular lattice origin, frame and navigation choices.
 
     Parameters
@@ -62,9 +62,3 @@ class GridBinningSpec:
         matrix.setflags(write=False)
         object.__setattr__(self, "origin", origin)
         object.__setattr__(self, "forward", matrix)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for key, value in state.items():
-            object.__setattr__(self, key, value)
-        self.origin.setflags(write=False)
-        self.forward.setflags(write=False)

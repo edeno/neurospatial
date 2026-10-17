@@ -1,8 +1,7 @@
-"""Internal finite-volume diffusion data and the layout geometry contract.
+"""Internal finite-volume diffusion data shared by every diffusion consumer.
 
-This foundation module knows no Environment or solver. A layout that supports
-diffusion and differential operators defines ``finite_volume_geometry()``: a
-copy of its connectivity graph with face measures (``A``) and edge distances,
+This foundation module knows no Environment or solver. Face builders return a
+copy of a connectivity graph with face measures (``A``) and edge distances,
 plus cell measures. ``FaceGeometry.from_graph`` validates that into per-edge
 arrays in the supplied graph's order. Explicit binning data can supply another
 edge order; ``env.edge_pairs`` defines gradient and flux alignment in either

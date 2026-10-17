@@ -15,11 +15,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding._smoothing import _binned
-from neurospatial.ops.binning import (
-    TieBreakStrategy,
-    map_points_to_bins,
-    resample_field,
-)
+from neurospatial.ops.mapping import TieBreakStrategy, resample_field
 from neurospatial.ops.smoothing import apply_kernel
 
 
@@ -143,9 +139,7 @@ def _partial_coverage_pair():
         bin_size=1.0,
     )
     idx = np.asarray(
-        map_points_to_bins(
-            src, dst.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
-        )
+        src.nearest_bin(dst.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX)
     )
     outside = idx < 0
     return src, dst, idx, outside

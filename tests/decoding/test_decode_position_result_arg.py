@@ -1,4 +1,4 @@
-"""decode_position accepts a SpatialRatesResult directly (Task 1.4f).
+"""decode_position accepts a SpatialRatesResult directly.
 
 Passing a population rate result object (anything exposing ``firing_rates``)
 should be equivalent to passing its ``firing_rates`` array, removing the
@@ -12,11 +12,12 @@ from typing import Any
 
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import publish_binning, publish_environment
 
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.decoding.posterior import decode_position, decode_position_summary
 from neurospatial.encoding.spatial import SpatialRatesResult, compute_spatial_rates
+from neurospatial.environment._fields import face_geometry
 
 
 @pytest.fixture
@@ -44,7 +45,7 @@ def test_rate_result_rejects_different_environment(
     small_rates, decode, validate, mismatch, monkeypatch
 ) -> None:
     """Equal bin counts cannot establish spatial or coordinate compatibility."""
-    env = small_rates.env.copy()
+    env = small_rates.env
     if mismatch == "coordinates":
         env = Environment.from_grid_mask(
             np.ones((2, 2), dtype=bool),
@@ -65,7 +66,7 @@ def test_rate_result_rejects_different_environment(
         from neurospatial.geometry._locators import NearestBinLocator
 
         bins = replace(env._binning.bins, sizes=env.bin_sizes * 2)
-        faces = env._face_geometry._replace(volumes=bins.sizes)
+        faces = face_geometry(env._cache, env._binning)._replace(volumes=bins.sizes)
         binning = replace(
             env._binning,
             bins=bins,
@@ -73,14 +74,11 @@ def test_rate_result_rejects_different_environment(
             faces=KnownFaces(faces),
             rectilinear=None,
         )
-        layout = Environment._from_binning(
+        layout = publish_binning(
             binning,
-            connectivity=env.connectivity,
             dimension_ranges=env.dimension_ranges,
-            layout_type_tag="UnequalCells",
-            layout_type="graph",
+            layout_type="UnequalCells",
             build_params={},
-            is_linearized_track=False,
         )
         env = publish_environment(
             layout=layout,
@@ -102,7 +100,7 @@ def test_rate_result_rejects_different_environment(
 def test_rate_result_accepts_equivalent_copied_environment(small_rates, decode) -> None:
     counts = np.array([[0], [1]])
     reference = decode(small_rates.env, counts, small_rates, 0.1)
-    copied = decode(small_rates.env.copy(), counts, small_rates, 0.1)
+    copied = decode(small_rates.env.with_metadata(), counts, small_rates, 0.1)
     np.testing.assert_array_equal(copied.map_position, reference.map_position)
     np.testing.assert_array_equal(copied.posterior_entropy, reference.posterior_entropy)
 

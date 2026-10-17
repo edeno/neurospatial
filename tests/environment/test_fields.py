@@ -1,13 +1,13 @@
-"""Comprehensive tests for Environment field operations (fields.py module).
+"""Comprehensive tests for Environment field operations (_fields.py module).
 
-This module tests the field operations mixin for Environment, covering:
+This module tests the Environment field methods, covering:
 - compute_kernel() method (diffusion kernel computation)
 - smooth() method (field smoothing with various modes)
 - interpolate() method (nearest and linear interpolation)
 - Edge cases and validation
 - Property-based tests for smoothing invariants
 
-Target coverage: 8% → 90% for src/neurospatial/environment/fields.py
+Target coverage: 8% → 90% for src/neurospatial/environment/_fields.py
 
 See Also
 --------
@@ -15,6 +15,8 @@ TEST_PLAN2.md : Section 1.2 - Field Operations Tests
 """
 
 from __future__ import annotations
+
+import pickle
 
 import numpy as np
 import pytest
@@ -83,17 +85,24 @@ class TestComputeKernel:
         assert kernel.shape == (small_2d_env.n_bins, small_2d_env.n_bins)
         assert kernel.dtype == np.float64
 
-    def test_compute_kernel_caching_enabled(self, small_2d_env):
+    def test_compute_kernel_caching_enabled(self, small_2d_env, monkeypatch):
         """Test that kernel caching works when enabled."""
-        # First call - computes and caches
-        kernel1 = small_2d_env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
-        cached = small_2d_env._kernel_cache[(5.0, "density")]
+        from neurospatial.environment import _fields
 
-        # Second call - should return cached result
-        kernel2 = small_2d_env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
+        env = pickle.loads(pickle.dumps(small_2d_env))  # own empty cache
+        calls = []
+        original = _fields.heat_kernel_from_W
+
+        def counted(*args, **kwargs):
+            calls.append(1)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(_fields, "heat_kernel_from_W", counted)
+        kernel1 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
+        kernel2 = env.compute_kernel(bandwidth=5.0, mode="density", cache=True)
 
         # Cache reuse does not expose its mutable array to callers.
-        assert small_2d_env._kernel_cache[(5.0, "density")] is cached
+        assert len(calls) == 1
         assert kernel1 is not kernel2
         np.testing.assert_array_equal(kernel1, kernel2)
 
@@ -248,16 +257,16 @@ class TestSmooth:
         rng = np.random.default_rng(42)
         field_wrong = rng.random(medium_2d_env.n_bins + 10)
 
-        with pytest.raises(ValueError, match=r"Field shape.*must match n_bins"):
+        with pytest.raises(ValueError, match=r"bins, which must be the first axis"):
             medium_2d_env.smooth(field_wrong, bandwidth=2.0)
 
-    def test_smooth_2d_field_raises(self, medium_2d_env):
-        """Test that 2-D field raises ValueError."""
+    def test_smooth_3d_field_raises(self, medium_2d_env):
+        """A field batch has two axes at most: bins, then fields."""
         rng = np.random.default_rng(42)
-        field_2d = rng.random((medium_2d_env.n_bins, 3))
+        field_3d = rng.random((medium_2d_env.n_bins, 3, 2))
 
-        with pytest.raises(ValueError, match=r"Field must be 1-D array"):
-            medium_2d_env.smooth(field_2d, bandwidth=2.0)
+        with pytest.raises(ValueError, match=r"\(n_bins,\) or \(n_bins, n_fields\)"):
+            medium_2d_env.smooth(field_3d, bandwidth=2.0)
 
     def test_smooth_negative_bandwidth_raises(self, medium_2d_env):
         """Test that negative bandwidth raises ValueError."""
@@ -282,14 +291,6 @@ class TestSmooth:
 
         with pytest.raises(ValueError, match=r"mode must be"):
             medium_2d_env.smooth(field, bandwidth=2.0, mode="invalid")
-
-    def test_smooth_field_with_nan_raises(self, medium_2d_env):
-        """Test that field with NaN raises ValueError."""
-        field = np.ones(medium_2d_env.n_bins)
-        field[0] = np.nan
-
-        with pytest.raises(ValueError, match=r"Field contains NaN values"):
-            medium_2d_env.smooth(field, bandwidth=2.0)
 
     def test_smooth_field_with_inf_raises(self, medium_2d_env):
         """Test that field with Inf raises ValueError."""
@@ -465,15 +466,6 @@ class TestInterpolate:
         with pytest.raises(ValueError, match=r"mode must be"):
             medium_2d_env.interpolate(field, query_points, mode="invalid")
 
-    def test_interpolate_field_with_nan_raises(self, medium_2d_env):
-        """Test that field with NaN raises ValueError."""
-        field = np.ones(medium_2d_env.n_bins)
-        field[0] = np.nan
-        query_points = medium_2d_env.bin_centers[:5]
-
-        with pytest.raises(ValueError, match=r"Field contains NaN values"):
-            medium_2d_env.interpolate(field, query_points)
-
     def test_interpolate_field_with_inf_raises(self, medium_2d_env):
         """Test that field with Inf raises ValueError."""
         field = np.ones(medium_2d_env.n_bins)
@@ -481,26 +473,6 @@ class TestInterpolate:
         query_points = medium_2d_env.bin_centers[:5]
 
         with pytest.raises(ValueError, match=r"Field contains infinite values"):
-            medium_2d_env.interpolate(field, query_points)
-
-    def test_interpolate_points_with_nan_raises(self, medium_2d_env):
-        """Test that points with NaN raises ValueError."""
-        rng = np.random.default_rng(42)
-        field = rng.random(medium_2d_env.n_bins)
-        query_points = medium_2d_env.bin_centers[:5].copy()
-        query_points[0, 0] = np.nan
-
-        with pytest.raises(ValueError, match=r"non-finite value"):
-            medium_2d_env.interpolate(field, query_points)
-
-    def test_interpolate_points_with_inf_raises(self, medium_2d_env):
-        """Test that points with Inf raises ValueError."""
-        rng = np.random.default_rng(42)
-        field = rng.random(medium_2d_env.n_bins)
-        query_points = medium_2d_env.bin_centers[:5].copy()
-        query_points[0, 0] = np.inf
-
-        with pytest.raises(ValueError, match=r"non-finite value"):
             medium_2d_env.interpolate(field, query_points)
 
     def test_interpolate_linear_on_graph_raises(self, graph_env):

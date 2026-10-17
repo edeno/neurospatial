@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import pytest
 from environment_helpers import publish_environment
@@ -44,12 +46,19 @@ def _wall_environment():
 )
 def test_polygon_linear_occupancy_exact_duration(positions, duration, expected):
     env = _one_cell_environment()
-    result = env.occupancy(
-        np.array([0.0, duration]),
-        np.asarray(positions, dtype=float),
-        max_gap=None,
-        time_allocation="linear",
+    # A path that never enters the cell keeps no time, and a warning says so.
+    flagged = (
+        pytest.warns(UserWarning, match="excluded ALL.*out of bounds")
+        if expected == 0.0
+        else contextlib.nullcontext()
     )
+    with flagged:
+        result = env.occupancy(
+            np.array([0.0, duration]),
+            np.asarray(positions, dtype=float),
+            max_gap=None,
+            time_allocation="linear",
+        )
     np.testing.assert_allclose(result, [expected], rtol=0, atol=1e-14)
 
 
@@ -75,12 +84,14 @@ def test_polygon_observation_filters_precede_geometric_subdivision(gate):
         kwargs.update(speed=np.array([0.0, 1.0]), min_speed=0.5)
     else:
         kwargs["epochs"] = (0.0, 1.0)
-    result = env.occupancy(
-        np.array([0.0, 2.0]),
-        np.array([[-1.0, 1.0], [1.0, 1.0]]),
-        time_allocation="linear",
-        **kwargs,
-    )
+    # The one interval is excluded, so occupancy is empty and a warning says so.
+    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+        result = env.occupancy(
+            np.array([0.0, 2.0]),
+            np.array([[-1.0, 1.0], [1.0, 1.0]]),
+            time_allocation="linear",
+            **kwargs,
+        )
     np.testing.assert_array_equal(result, [0.0])
 
 
@@ -261,11 +272,12 @@ def test_polygon_nonfinite_observation_drops_both_adjacent_intervals():
 
 
 def test_retained_intervals_keep_original_fractional_clock():
-    from neurospatial.environment._polygon_trajectory import retained_linear_intervals
+    from neurospatial.ops._polygon_allocation import retained_linear_intervals
 
     env = _one_cell_environment()
     intervals = retained_linear_intervals(
-        env,
+        env.binning,
+        env.arena,
         np.array([0.0, 4.0]),
         np.array([[1.0, 1.0], [5.0, 1.0]]),
         np.array([True]),
@@ -286,7 +298,7 @@ def test_clipped_cell_occupancy_survives_nested_derivations_and_transport(
     positions = np.array([[-1.0, 1.0], [7.0, 1.0]])
     expected = [2.0, 2.0]
     if derivation in {"subset", "chain"}:
-        env = env.subset(bins=np.array([True, False]))
+        env = env.subset(mask=np.array([True, False]))
         expected = [2.0]
     if derivation in {"transform", "chain"}:
         matrix = np.array([[1.0, 0.5, 10.0], [0.0, 2.0, -3.0], [0.0, 0.0, 1.0]])
@@ -352,7 +364,7 @@ def test_matching_native_nd_mask_preserves_linear_allocation(subset):
     expected = np.zeros(8)
     expected[[0, 7]] = 0.5
     if subset:
-        env = env.subset(bins=np.array([True] + [False] * 6 + [True]))
+        env = env.subset(mask=np.array([True] + [False] * 6 + [True]))
         expected = expected[[0, 7]]
     result = env.occupancy(
         np.array([0.0, 1.0]),
@@ -373,7 +385,7 @@ def test_restricted_nd_mask_refuses_unimplemented_linear_subdivision():
         grid_edges=(np.array([0.0, 2.0]), np.array([0.0, 1.0]), np.array([0.0, 1.0])),
         arena=arena,
     )
-    with pytest.raises(NotImplementedError, match="restricted MaskArena"):
+    with pytest.raises(NotImplementedError, match="restricted arena mask"):
         env.occupancy(
             np.array([0.0, 1.0]),
             np.array([[0.75, 0.5, 0.5], [1.75, 0.5, 0.5]]),
@@ -411,7 +423,7 @@ def test_analytic_domain_requires_owned_materialization_before_publication(
         base = base.clip(box(-1, -1, 1, 1))
     with pytest.raises(
         TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
+        match=r"arena= takes an arena from neurospatial.arena",
     ):
         publish_environment(
             base.name,
@@ -523,7 +535,14 @@ def test_sampled_wall_crossing_check_does_not_join_filtered_intervals(excluded):
         kwargs["epochs"] = np.array([[1.0, 2.0]])
     else:
         positions[0] = np.nan
-    occupancy = env.occupancy(times, positions, time_allocation="linear", **kwargs)
+    if excluded == "gap":
+        # Half the intervals are gaps, so the median exceeds max_gap: flagged.
+        with pytest.warns(UserWarning, match="probably not in seconds"):
+            occupancy = env.occupancy(
+                times, positions, time_allocation="linear", **kwargs
+            )
+    else:
+        occupancy = env.occupancy(times, positions, time_allocation="linear", **kwargs)
     assert occupancy.sum() == pytest.approx(1.0)
 
 

@@ -1,11 +1,9 @@
-"""Tests for neurospatial.encoding._view_binning module.
+"""Tests for neurospatial.encoding._view_counts module.
 
 This module tests the view binning layer that converts spike trains
 and gaze data to spike counts and view occupancy arrays.
 
-TDD approach: Tests written first, implementation follows.
-
-Task 4.6: Implement binning layer for view encoding
+The binning layer:
 - Create helper to compute view occupancy (time viewing each spatial bin)
 - Support gaze models: "fixed_distance", "ray_cast", "boundary"
 - Convert (spike_times, times, positions, headings, gaze_model) -> (spike_counts, occupancy)
@@ -90,8 +88,8 @@ class TestComputeViewOccupancy:
     """Tests for compute_occupancy function."""
 
     def test_function_is_importable(self) -> None:
-        """compute_occupancy should be importable from encoding._view_binning."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        """compute_occupancy should be importable from encoding._view_counts."""
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         assert compute_occupancy is not None
 
@@ -101,7 +99,7 @@ class TestComputeViewOccupancy:
         trajectory_data: dict,
     ) -> None:
         """compute_occupancy should return view occupancy array in seconds."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -120,7 +118,7 @@ class TestComputeViewOccupancy:
         trajectory_data: dict,
     ) -> None:
         """compute_occupancy should return array with shape (n_bins,)."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -138,7 +136,7 @@ class TestComputeViewOccupancy:
         trajectory_data: dict,
     ) -> None:
         """View occupancy should all be non-negative."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -161,7 +159,7 @@ class TestComputeViewOccupancy:
         - Viewed locations falling outside the environment (reduces occupancy)
         - Floating point accumulation in dt computation (may slightly exceed)
         """
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -187,7 +185,7 @@ class TestComputeViewOccupancy:
         This tests the key concept: view occupancy is time *viewing* each bin,
         not time *at* each bin.
         """
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -216,7 +214,7 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Default gaze_model should be 'fixed_distance'."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -236,7 +234,7 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Explicit 'fixed_distance' should work."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -256,7 +254,7 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """'ray_cast' gaze model should work."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -275,7 +273,7 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """'boundary' gaze model should work."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occupancy = compute_occupancy(
             simple_env,
@@ -294,7 +292,7 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Different gaze models should produce different view occupancies."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occ_fixed = compute_occupancy(
             simple_env,
@@ -324,7 +322,7 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Different view_distance values should give different results."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         occ_short = compute_occupancy(
             simple_env,
@@ -359,8 +357,8 @@ class TestBinViewSpikeTrain:
     """Tests for bin_view_spike_train function (single neuron binning)."""
 
     def test_function_is_importable(self) -> None:
-        """bin_view_spike_train should be importable from encoding._view_binning."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        """bin_view_spike_train should be importable from encoding._view_counts."""
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         assert bin_view_spike_train is not None
 
@@ -371,7 +369,7 @@ class TestBinViewSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """bin_view_spike_train should return spike counts array."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         spike_counts = bin_view_spike_train(
             simple_env,
@@ -392,7 +390,7 @@ class TestBinViewSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """bin_view_spike_train should return array with shape (n_bins,)."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         spike_counts = bin_view_spike_train(
             simple_env,
@@ -412,7 +410,7 @@ class TestBinViewSpikeTrain:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Spike counts should all be non-negative."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         spike_counts = bin_view_spike_train(
             simple_env,
@@ -436,7 +434,7 @@ class TestBinViewSpikeTrain:
         Note: May be less if some viewed locations at spike times fall outside
         the environment.
         """
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         spike_counts = bin_view_spike_train(
             simple_env,
@@ -463,7 +461,7 @@ class TestBinViewSpikeTrain:
         trajectory_data: dict,
     ) -> None:
         """Empty spike train should produce all-zero spike counts."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         empty_spikes = np.array([])
 
@@ -485,7 +483,7 @@ class TestBinViewSpikeTrain:
         trajectory_data: dict,
     ) -> None:
         """Spikes outside time range should be excluded."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         # Spikes at -1.0 and 20.0, both outside the 0-10 second range
         spikes_outside = np.array([-1.0, 20.0])
@@ -512,7 +510,7 @@ class TestBinViewSpikeTrainGazeModels:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Default gaze_model should be 'fixed_distance'."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         spike_counts = bin_view_spike_train(
             simple_env,
@@ -532,7 +530,7 @@ class TestBinViewSpikeTrainGazeModels:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """'ray_cast' gaze model should work."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         spike_counts = bin_view_spike_train(
             simple_env,
@@ -553,7 +551,7 @@ class TestBinViewSpikeTrainGazeModels:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """'boundary' gaze model should work."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         spike_counts = bin_view_spike_train(
             simple_env,
@@ -579,7 +577,7 @@ class TestBinViewSpikeTrainValidation:
 
         This matches the validation behavior of bin_view_spike_trains (batch version).
         """
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
         positions = np.tile([50, 50], (4, 1))
@@ -604,7 +602,7 @@ class TestBinViewSpikeTrainValidation:
 
         This matches the validation behavior of bin_view_spike_trains (batch version).
         """
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         times = np.array([0.0])  # Only 1 sample
         positions = np.array([[50, 50]])
@@ -631,8 +629,8 @@ class TestBinViewSpikeTrains:
     """Tests for bin_view_spike_trains function (multiple neurons)."""
 
     def test_function_is_importable(self) -> None:
-        """bin_view_spike_trains should be importable from encoding._view_binning."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        """bin_view_spike_trains should be importable from encoding._view_counts."""
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         assert bin_view_spike_trains is not None
 
@@ -643,7 +641,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """bin_view_spike_trains should return (spike_counts, occupancy) tuple."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         result = bin_view_spike_trains(
             simple_env,
@@ -667,7 +665,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Spike counts should have shape (n_neurons, n_bins)."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         spike_counts, _ = bin_view_spike_trains(
             simple_env,
@@ -688,7 +686,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """View occupancy should have shape (n_bins,)."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         _, occupancy = bin_view_spike_trains(
             simple_env,
@@ -708,7 +706,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Spike counts should be float64."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         spike_counts, _ = bin_view_spike_trains(
             simple_env,
@@ -728,7 +726,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """View occupancy should be float64."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         _, occupancy = bin_view_spike_trains(
             simple_env,
@@ -748,7 +746,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Neuron with no spikes should have all-zero counts."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         spike_counts, _ = bin_view_spike_trains(
             simple_env,
@@ -769,7 +767,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Batch result should be consistent with single-neuron results."""
-        from neurospatial.encoding._view_binning import (
+        from neurospatial.encoding._view_counts import (
             bin_view_spike_train,
             bin_view_spike_trains,
         )
@@ -802,7 +800,7 @@ class TestBinViewSpikeTrains:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """n_jobs parameter should not change results."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         spike_counts_serial, occupancy_serial = bin_view_spike_trains(
             simple_env,
@@ -834,7 +832,7 @@ class TestBinViewSpikeTrains:
         single_neuron_spikes: NDArray[np.float64],
     ) -> None:
         """Should handle list with single neuron."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         spike_times_list = [single_neuron_spikes]
 
@@ -856,7 +854,7 @@ class TestBinViewSpikeTrains:
         trajectory_data: dict,
     ) -> None:
         """Should accept normalized input from as_spike_trains formats."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         # Test with 2D NaN-padded array (common format)
         spikes_2d = np.array(
@@ -892,7 +890,7 @@ class TestViewBinningEdgeCases:
         simple_env: Environment,
     ) -> None:
         """Constant heading should view along one direction."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.linspace(0, 10.0, 1000)
         # Animal at center, looking east (heading=0)
@@ -918,7 +916,7 @@ class TestViewBinningEdgeCases:
         simple_env: Environment,
     ) -> None:
         """Views outside environment should not contribute to occupancy."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.linspace(0, 10.0, 1000)
         # Animal at edge, looking outward
@@ -944,7 +942,7 @@ class TestViewBinningEdgeCases:
         simple_env: Environment,
     ) -> None:
         """Spikes at times with same view should be binned together."""
-        from neurospatial.encoding._view_binning import bin_view_spike_train
+        from neurospatial.encoding._view_counts import bin_view_spike_train
 
         times = np.linspace(0, 10.0, 1000)
         # Constant position and heading
@@ -978,7 +976,7 @@ class TestViewBinningInputValidation:
         simple_env: Environment,
     ) -> None:
         """Should raise error if times and positions have different lengths."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(50, 2) * 100  # Different length
@@ -994,7 +992,7 @@ class TestViewBinningInputValidation:
         simple_env: Environment,
     ) -> None:
         """Should raise error if times and headings have different lengths."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(100, 2) * 100
@@ -1011,7 +1009,7 @@ class TestViewBinningInputValidation:
         trajectory_data: dict,
     ) -> None:
         """Should raise error for invalid gaze_model."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         with pytest.raises(ValueError, match=r"gaze_model|invalid"):
             compute_occupancy(
@@ -1028,7 +1026,7 @@ class TestViewBinningInputValidation:
         simple_env: Environment,
     ) -> None:
         """Should raise error with fewer than 2 samples."""
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.array([0.0])  # Only 1 sample - need at least 2
         positions = np.array([[50, 50]])
@@ -1061,7 +1059,7 @@ class TestViewOccupancyNonUniformSampling:
         With non-uniform sampling, using median(dt) instead of actual dt
         gives incorrect total occupancy.
         """
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         # Create non-uniform time samples: first half at 10Hz, second half at 100Hz
         times_slow = np.linspace(0, 5, 51)  # 50 intervals of 0.1s
@@ -1104,7 +1102,7 @@ class TestViewOccupancyNonUniformSampling:
         Occupancy uses (n-1) intervals from n samples. The last sample
         has no following interval to contribute.
         """
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])  # 5 samples, 4 intervals
         positions = np.tile([50, 50], (5, 1))
@@ -1141,7 +1139,7 @@ class TestTimesValidation:
         searchsorted assumes sorted input. Unsorted times will silently
         produce incorrect results without validation.
         """
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not sorted
         positions = np.tile([50, 50], (4, 1))
@@ -1165,7 +1163,7 @@ class TestTimesValidation:
         Times like [0, 1, 1, 2] are valid (non-decreasing but not strictly
         increasing). The duplicate contributes 0 seconds.
         """
-        from neurospatial.encoding._view_binning import compute_occupancy
+        from neurospatial.encoding._view_counts import compute_occupancy
 
         times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at t=1
         positions = np.tile([50, 50], (4, 1))
@@ -1206,7 +1204,7 @@ class TestBinViewSpikeTrainsPrecomputation:
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
         """Batch result should match sequential single-neuron calls."""
-        from neurospatial.encoding._view_binning import (
+        from neurospatial.encoding._view_counts import (
             bin_view_spike_train,
             bin_view_spike_trains,
         )
@@ -1249,7 +1247,7 @@ class TestBinViewSpikeTrainsPrecomputation:
         This test verifies that viewed locations are precomputed by checking
         that the internal implementation uses precomputed view_bins.
         """
-        from neurospatial.encoding._view_binning import (
+        from neurospatial.encoding._view_counts import (
             _precompute_view_bins,
         )
 
@@ -1278,7 +1276,7 @@ class TestBinViewSpikeTrainsValidation:
         simple_env: Environment,
     ) -> None:
         """bin_view_spike_trains should reject unsorted times."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
         positions = np.tile([50, 50], (4, 1))
@@ -1300,7 +1298,7 @@ class TestBinViewSpikeTrainsValidation:
         simple_env: Environment,
     ) -> None:
         """bin_view_spike_trains should reject fewer than 2 samples."""
-        from neurospatial.encoding._view_binning import bin_view_spike_trains
+        from neurospatial.encoding._view_counts import bin_view_spike_trains
 
         times = np.array([0.0])  # Only 1 sample
         positions = np.array([[50, 50]])

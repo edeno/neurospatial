@@ -2,8 +2,6 @@
 
 This module tests the neighbors_within() function for finding all bins
 within a specified radius of center bins, using either geodesic or Euclidean metrics.
-
-Tests follow TDD - written BEFORE implementation.
 """
 
 import networkx as nx

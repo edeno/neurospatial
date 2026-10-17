@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.animation._timing import timing
+from neurospatial.animation._utils import _emit_status
 
 # Module-level logger for fallback diagnostics
 _logger = logging.getLogger("neurospatial.animation.backends.widget_backend")
@@ -503,10 +504,10 @@ class PersistentFigureRenderer:
                     self._mesh.set_array(mesh_data)
                 else:
                     # Fallback: re-render completely for non-grid layouts
-                    layout_type = self._env._layout_category
+                    layout_type = self._env.layout_type
                     fallback_reason = (
                         f"set_array optimization not supported for layout type "
-                        f"'{layout_type}' (is_grid_compatible=False)"
+                        f"'{layout_type}' (no rectilinear grid)"
                     )
                     self._handle_fallback(fallback_reason)
                     self._do_full_rerender(
@@ -677,7 +678,7 @@ class PersistentFigureRenderer:
         grid = self._binning_snapshot.rectilinear
 
         # Only grid-compatible layouts can use set_array optimization
-        # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
+        # Grid layouts (grid, mask, polygon) have a rectilinear record.
         if grid is None:
             return None
 
@@ -714,7 +715,7 @@ class PersistentFigureRenderer:
         grid = self._binning_snapshot.rectilinear
 
         # Only grid-compatible layouts can use set_data optimization
-        # Grid-compatible layouts have is_grid_compatible=True (grid, mask, polygon)
+        # Grid layouts (grid, mask, polygon) have a rectilinear record.
         if grid is None:
             return None
 
@@ -753,7 +754,7 @@ def render_widget(
     region_alpha: float = 0.3,
     image_format: str = "png",
     frame_times: NDArray[np.float64] | None = None,
-    **kwargs: Any,  # Accept other parameters gracefully
+    dry_run: bool = False,
 ) -> None:
     """Create interactive Jupyter widget with slider control.
 
@@ -811,8 +812,9 @@ def render_widget(
         Timestamps for each animation frame. Required when overlay_data
         contains time series overlays, for synchronizing the time series
         display with the spatial field animation.
-    **kwargs : dict
-        Additional parameters (accepted for backend compatibility, ignored).
+    dry_run : bool, default=False
+        If True, check the inputs, report the number of frames and how many
+        would be pre-rendered, and return without rendering or displaying.
 
     Returns
     -------
@@ -892,6 +894,19 @@ def render_widget(
         n_frames=n_frames,
         backend_name="widget",
     )
+
+    if dry_run:
+        n_prerendered = min(
+            n_frames,
+            cache_limit,
+            500 if initial_cache_size is None else initial_cache_size,
+        )
+        _emit_status(
+            f"Widget dry run: {n_frames:,} frames; {n_prerendered:,} would be "
+            "pre-rendered when the widget is created. Nothing was displayed. "
+            "To proceed, call again with dry_run=False."
+        )
+        return None
 
     # LRU cache storing raw PNG bytes (not base64 strings)
     cached_frames: OrderedDict[int, bytes] = OrderedDict()

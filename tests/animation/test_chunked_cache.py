@@ -348,14 +348,14 @@ class TestRenderNapariWithChunkedCache:
         reason="napari not available",
     )
     def test_render_napari_with_chunk_size(self, simple_env, sample_fields):
-        """Test render_napari with cache_chunk_size parameter."""
+        """Test render_napari with the chunk_size parameter."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
         viewer = render_napari(
             simple_env,
             sample_fields,
             fps=30,
-            cache_chunk_size=10,  # Use chunked cache
+            chunk_size=10,  # Use chunked cache
         )
 
         # Viewer should be created successfully
@@ -368,14 +368,13 @@ class TestRenderNapariWithChunkedCache:
         reason="napari not available",
     )
     def test_render_napari_default_chunk_size(self, simple_env, sample_fields):
-        """Test render_napari with default chunking (None = auto-select)."""
+        """Test render_napari with the default chunk size (auto-selected)."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
         viewer = render_napari(
             simple_env,
             sample_fields,
             fps=30,
-            cache_chunk_size=None,  # Auto-select based on dataset size
         )
 
         # Should auto-select chunking for large datasets
@@ -388,14 +387,14 @@ class TestRenderNapariWithChunkedCache:
         reason="napari not available",
     )
     def test_render_napari_disable_chunking(self, simple_env, sample_fields):
-        """Test render_napari with chunking disabled (cache_chunk_size=1)."""
+        """Test render_napari with chunking disabled (chunk_size=1)."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
         viewer = render_napari(
             simple_env,
             sample_fields,
             fps=30,
-            cache_chunk_size=1,  # Disable chunking (1 frame per chunk = no benefit)
+            chunk_size=1,  # Disable chunking (1 frame per chunk = no benefit)
         )
 
         # Should still work (just less efficient for sequential access)

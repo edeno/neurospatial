@@ -20,7 +20,6 @@ from shapely.geometry import Polygon
 from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
-    _compute_mesh_dimension_ranges,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
     _sample_polygon_boundary,
@@ -227,36 +226,6 @@ class TestBuildMeshConnectivityGraph:
         assert len(edges_set) == graph.number_of_edges()
 
 
-class TestComputeMeshDimensionRanges:
-    """Tests for _compute_mesh_dimension_ranges helper function."""
-
-    def test_basic_dimension_ranges(self):
-        """Test computing dimension ranges from bin centers."""
-        bin_centers = np.array([[0, 0], [10, 5], [5, 10]], dtype=float)
-        ranges = _compute_mesh_dimension_ranges(bin_centers)
-
-        assert ranges is not None
-        assert len(ranges) == 2  # 2D
-        assert ranges[0] == (0.0, 10.0)  # X range
-        assert ranges[1] == (0.0, 10.0)  # Y range
-
-    def test_empty_bin_centers(self):
-        """Test that empty bin centers returns None."""
-        bin_centers = np.empty((0, 2), dtype=float)
-        ranges = _compute_mesh_dimension_ranges(bin_centers)
-
-        assert ranges is None
-
-    def test_single_point(self):
-        """Test dimension ranges with single point."""
-        bin_centers = np.array([[5.0, 7.0]])
-        ranges = _compute_mesh_dimension_ranges(bin_centers)
-
-        assert ranges is not None
-        assert ranges[0] == (5.0, 5.0)
-        assert ranges[1] == (7.0, 7.0)
-
-
 class TestTriangularMeshLayoutBuild:
     """Tests for TriangularMeshLayout.build() method."""
 
@@ -307,15 +276,13 @@ class TestTriangularMeshLayoutBuild:
             layout.build(poly, point_spacing=10.0)
 
     def test_build_params_stored(self):
-        """Test that build parameters are stored correctly."""
+        """The build record keeps point_spacing and leaves out the polygon."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
 
         layout.build(poly, point_spacing=2.5)
 
-        assert layout._build_params_used["point_spacing"] == 2.5
-        assert "boundary_exterior_coords" in layout._build_params_used
-        assert "boundary_interior_coords_list" in layout._build_params_used
+        assert layout._build_params_used == {"point_spacing": 2.5}
 
     def test_triangular_mesh_build_capture_params(self):
         """build() captures point_spacing; positional point_spacing is rejected."""
@@ -344,8 +311,8 @@ class TestTriangularMeshLayoutBuild:
         assert np.sum(layout.active_mask) == layout.bin_centers.shape[0]
 
 
-class TestTriangularMeshLayoutPointToBinIndex:
-    """Tests for TriangularMeshLayout.point_to_bin_index() method."""
+class TestTriangularMeshLayoutPointLookup:
+    """Tests for the point lookup of a TriangularMeshLayout's binning."""
 
     def test_points_inside_triangles(self):
         """Test mapping points that fall inside triangles."""
@@ -355,7 +322,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
 
         # Points inside the polygon
         test_points = np.array([[5.0, 5.0], [2.0, 2.0], [8.0, 8.0]])
-        bin_indices = layout.point_to_bin_index(test_points)
+        bin_indices = layout.binning().locator.locate(test_points)
 
         assert bin_indices.shape[0] == 3
         # All points should map to valid bins (not -1)
@@ -370,7 +337,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
 
         # Points outside the polygon
         test_points = np.array([[20.0, 20.0], [-5.0, -5.0]])
-        bin_indices = layout.point_to_bin_index(test_points)
+        bin_indices = layout.binning().locator.locate(test_points)
 
         assert bin_indices.shape[0] == 2
         assert np.all(bin_indices == -1)
@@ -382,7 +349,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
         layout.build(poly, point_spacing=3.0)
 
         test_points = np.array([[5.0, 5.0], [20.0, 20.0], [2.0, 2.0]])
-        bin_indices = layout.point_to_bin_index(test_points)
+        bin_indices = layout.binning().locator.locate(test_points)
 
         assert bin_indices.shape[0] == 3
         # First and third should be valid, second should be -1
@@ -391,24 +358,23 @@ class TestTriangularMeshLayoutPointToBinIndex:
         assert bin_indices[2] >= 0
 
     def test_single_point_input(self):
-        """Test point_to_bin_index with single point."""
+        """Test point lookup with a single point."""
         layout = TriangularMeshLayout()
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         layout.build(poly, point_spacing=3.0)
 
         test_point = np.array([5.0, 5.0])
-        bin_index = layout.point_to_bin_index(test_point)
+        bin_index = layout.binning().locator.locate(test_point)
 
         assert bin_index.shape == (1,)
         assert bin_index[0] >= 0
 
     def test_unbuild_layout_raises_error(self):
-        """Test that calling point_to_bin_index before build raises RuntimeError."""
+        """Test that asking an unbuilt layout for its binning raises RuntimeError."""
         layout = TriangularMeshLayout()
-        test_points = np.array([[5.0, 5.0]])
 
         with pytest.raises(RuntimeError, match="not built"):
-            layout.point_to_bin_index(test_points)
+            layout.binning()
 
     def test_invalid_point_shape_raises_error(self):
         """Test that invalid point shape raises ValueError."""
@@ -420,7 +386,7 @@ class TestTriangularMeshLayoutPointToBinIndex:
         test_points = np.array([[5.0, 5.0, 5.0]])
 
         with pytest.raises(ValueError, match="shape \\(M, 2\\)"):
-            layout.point_to_bin_index(test_points)
+            layout.binning().locator.locate(test_points)
 
 
 class TestTriangularMeshLayoutProperties:
@@ -436,10 +402,10 @@ class TestTriangularMeshLayoutProperties:
         layout.build(poly, point_spacing=3.0)
         assert layout.is_linearized_track is False
 
-    def test_layout_type_tag(self):
-        """Test that _layout_type_tag is set correctly."""
+    def test_layout_type_label(self):
+        """The engine's label is the TriangularMesh layout type."""
         layout = TriangularMeshLayout()
-        assert layout._layout_type_tag == "TriangularMesh"
+        assert layout.layout_type == "TriangularMesh"
 
 
 class TestTriangularMeshLayoutBinSizes:

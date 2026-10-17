@@ -7,11 +7,21 @@ from unittest.mock import patch
 import networkx as nx
 import numpy as np
 import pytest
-from environment_helpers import publish_environment
+from environment_helpers import (
+    built_from,
+    face_graph,
+    publish_binning,
+    publish_environment,
+)
 from scipy import linalg
 from shapely.geometry import Polygon
 
 from neurospatial import Environment, _constants
+from neurospatial.environment._cache import MRF_EIGENBASIS
+from neurospatial.environment._fields import (
+    diffusion_eigenbasis,
+    face_geometry,
+)
 from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
 from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
@@ -19,12 +29,18 @@ from neurospatial.geometry._diffusion import (
 )
 from neurospatial.geometry._locators import NearestBinLocator
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+from neurospatial.layout import create_layout
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-from neurospatial.layout.factories import _LAYOUT_MAP
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
+from neurospatial.ops.diffusion import _MRFEigenbasis
 from neurospatial.ops.smoothing import compute_diffusion_kernels
 from neurospatial.ops.transforms import Affine2D
+
+
+def _mrf_holder(env):
+    """The environment's cached MRF eigenbasis holder, empty until first use."""
+    return env._cache.get(MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(env.n_bins))
 
 
 def _face_environment(scale=1.0):
@@ -40,14 +56,11 @@ def _face_environment(scale=1.0):
         layout.bin_centers, volumes, 1, faces.edges, np.ones(2)
     )
     binning = Binning("Faces", bins, NearestBinLocator(bins.centers), KnownFaces(faces))
-    owned = Environment._from_binning(
+    owned = publish_binning(
         binning,
-        connectivity=graph,
         dimension_ranges=layout.dimension_ranges,
-        layout_type_tag="Faces",
-        layout_type="Graph",
+        layout_type="Faces",
         build_params={},
-        is_linearized_track=False,
     )
     return publish_environment(layout=owned, layout_type_used="Faces")
 
@@ -79,9 +92,11 @@ def test_all_diffusion_consumers_share_provider_snapshot(face_env, monkeypatch):
         ("transition", heat.T),
         ("density", heat @ np.linalg.inv(mass)),
     ):
-        np.testing.assert_allclose(env.compute_kernel(1.0, mode=mode), expected)
         np.testing.assert_allclose(
-            env.diffuse(field, 1.0, mode=mode), expected @ field, atol=1e-12
+            env.compute_kernel(bandwidth=1.0, mode=mode), expected
+        )
+        np.testing.assert_allclose(
+            env.diffuse(field, bandwidth=1.0, mode=mode), expected @ field, atol=1e-12
         )
 
     wavelets = heat_kernel_wavelet_basis(
@@ -103,54 +118,49 @@ def test_all_diffusion_consumers_share_provider_snapshot(face_env, monkeypatch):
 
 def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     env = face_env
-    before = env.compute_kernel(1.0, mode="average")
-    env.diffuse(np.ones(3), 1.0)
+    before = env.compute_kernel(bandwidth=1.0, mode="average")
+    env.diffuse(np.ones(3), bandwidth=1.0)
     env.get_mrf_basis(np.ones(3), rank=3)
     old_geometry = env._diffusion_geometry
-    old_diffusion_cache = env._diffusion_eigenbasis
-    old_mrf_cache = env._mrf_eigenbasis
+    old_diffusion_cache = diffusion_eigenbasis(env._cache)
+    old_mrf_cache = _mrf_holder(env)
 
     env.clear_cache()
-    np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
+    np.testing.assert_allclose(
+        env.compute_kernel(bandwidth=1.0, mode="average"), before
+    )
     replacement = _face_environment(scale=2.0)
-    after = replacement.compute_kernel(1.0, mode="average")
+    after = replacement.compute_kernel(bandwidth=1.0, mode="average")
     np.testing.assert_allclose(after, before @ before, atol=1e-12)
     np.testing.assert_allclose(
-        replacement.diffuse(np.arange(3.0), 1.0, mode="average"), after @ np.arange(3.0)
+        replacement.diffuse(np.arange(3.0), bandwidth=1.0, mode="average"),
+        after @ np.arange(3.0),
     )
     assert env._diffusion_geometry is not old_geometry
-    assert env._diffusion_eigenbasis is not old_diffusion_cache
-    assert env._mrf_eigenbasis is not old_mrf_cache
-    np.testing.assert_allclose(env.compute_kernel(1.0, mode="average"), before)
+    assert diffusion_eigenbasis(env._cache) is not old_diffusion_cache
+    assert _mrf_holder(env) is not old_mrf_cache
+    np.testing.assert_allclose(
+        env.compute_kernel(bandwidth=1.0, mode="average"), before
+    )
 
 
-def test_layout_subclass_requires_owned_data_migration(monkeypatch):
+def test_layout_subclass_publishes_through_its_binning():
+    """An unregistered engine subclass uses the same binning() contract and faces."""
+
     class RenamedGrid(MaskedGridLayout):
         pass
 
-    monkeypatch.setitem(_LAYOUT_MAP, "Renamed", RenamedGrid)
     params = {
         "active_mask": np.ones((2, 3), dtype=bool),
         "grid_edges": (np.arange(3.0), np.arange(4.0)),
     }
-    original = Environment.from_layout("MaskedGrid", params)
-    with pytest.raises(
-        TypeError,
-        match=r"No installed snapshot adapter|owned immutable snapshot.*Migrate custom",
-    ):
-        Environment.from_layout("Renamed", params)
-    layout = Environment._from_binning(
-        original._binning,
-        connectivity=original.connectivity,
-        dimension_ranges=original.dimension_ranges,
-        layout_type_tag="Renamed",
-        layout_type=original._layout_category,
-        build_params=params,
-        is_linearized_track=False,
-    )
-    migrated = publish_environment(layout=layout, layout_type_used="Renamed")
+    subclass = RenamedGrid()
+    subclass.build(**params)
+    original = Environment.from_layout(create_layout("MaskedGrid", **params))
+    renamed = Environment.from_layout(subclass)
+    assert renamed.layout_type == original.layout_type == "MaskedGrid"
     np.testing.assert_array_equal(
-        migrated.compute_kernel(1.0), original.compute_kernel(1.0)
+        renamed.compute_kernel(bandwidth=1.0), original.compute_kernel(bandwidth=1.0)
     )
 
 
@@ -254,13 +264,13 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
     """Read-back environments and their copies keep 4-connectivity and polar seams.
 
     The rebuilt layout would otherwise supply an 8-connected grid graph (NWB) or
-    a Cartesian, seamless polar graph, which copy() and the geometry read.
+    a Cartesian, seamless polar graph, which derived environments and the geometry read.
     """
     original = make_env()
     field = np.sin(np.arange(original.n_bins) * 0.37)
     expected_divergence = divergence(original, gradient(original, field))
     restored = _round_trip(original, how, tmp_path)
-    for env in (restored, restored.copy()):
+    for env in (restored, restored.with_metadata()):
         assert list(env.connectivity.edges(data=True)) == list(
             env.connectivity.edges(data=True)
         )
@@ -274,7 +284,9 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
             divergence(env, gradient(env, field)), expected_divergence
         )
         np.testing.assert_allclose(
-            env.compute_kernel(3.0), original.compute_kernel(3.0), atol=1e-12
+            env.compute_kernel(bandwidth=3.0),
+            original.compute_kernel(bandwidth=3.0),
+            atol=1e-12,
         )
 
 
@@ -293,11 +305,13 @@ def test_missing_optional_descriptions_keep_authoritative_binning_geometry():
     )
 
     hexagonal = Environment.from_layout(
-        "Hexagonal", {"hexagon_width": 4.0, "dimension_ranges": [(0, 20), (0, 20)]}
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 20), (0, 20)]
+        )
     )
     restored = from_dict(to_dict(hexagonal))
     assert tuple(restored.grid_edges) == ()
-    assert tuple(restored.copy().grid_edges) == ()
+    assert tuple(restored.with_metadata().grid_edges) == ()
     np.testing.assert_array_equal(
         restored.bin_at(hexagonal.bin_centers), np.arange(hexagonal.n_bins)
     )
@@ -306,30 +320,28 @@ def test_missing_optional_descriptions_keep_authoritative_binning_geometry():
 @pytest.mark.parametrize("how", ["dict", "file", "nwb"])
 def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
     """Readers decode geometry and set the environment up exactly once."""
-    from neurospatial.environment.core import Environment
+    import neurospatial.environment
+    from neurospatial.environment import _publication
 
     original = _four_connected_grid()
-    setup = Environment._from_binning.__func__
+    setup = _publication._publish
     calls = []
 
     def counting_setup(cls, binning, **kwargs):
-        calls.append(kwargs.get("restored_from"))
+        calls.append(cls)
         return setup(cls, binning, **kwargs)
 
-    monkeypatch.setattr(Environment, "_from_binning", classmethod(counting_setup))
-    from neurospatial.geometry import _validation
+    monkeypatch.setattr(_publication, "_publish", counting_setup)
+    # io imports _publish from neurospatial.environment inside its reader, at
+    # call time, so the package's binding must be patched as well.
+    monkeypatch.setattr(neurospatial.environment, "_publish", counting_setup)
 
-    with (
-        patch.object(
-            _validation, "_validate_graph", wraps=_validation._validate_graph
-        ) as graph_check,
-        patch.object(
-            _validation, "_validate_components", wraps=_validation._validate_components
-        ) as component_check,
-    ):
+    with patch.object(
+        _publication, "validate_components", wraps=_publication.validate_components
+    ) as component_check:
         restored = _round_trip(original, how, tmp_path)
-    assert graph_check.call_count == component_check.call_count == 1
-    assert len(calls) == 1 and calls[0] is not None
+    assert component_check.call_count == 1
+    assert len(calls) == 1
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
 
 
@@ -413,27 +425,27 @@ def test_non_finite_saved_centers_are_rejected():
     assert "\nFix:" in str(exc.value)
 
 
-def test_invalid_saved_graph_names_the_saved_data():
-    """A malformed saved graph is reported against the data, not the library."""
-    data = to_dict(_four_connected_grid())
+def test_saved_graph_is_rebuilt_from_the_binning():
+    """The stored graph is for other tools; reading rebuilds it from the bins."""
+    original = _four_connected_grid()
+    data = to_dict(original)
     for link in data["graph"]["links"]:
         link.pop("edge_id")
-    with pytest.raises(ValueError, match="environment dictionary is invalid") as exc:
-        from_dict(data)
-    assert "layout engine bug" not in str(exc.value)
-    assert "\nFix:" in str(exc.value)
+        link["distance"] = -1.0
+    restored = from_dict(data)
+    assert list(restored.connectivity.edges(data=True)) == list(
+        original.connectivity.edges(data=True)
+    )
 
 
 def test_native_faces_remain_independent_of_later_builder_graph_changes():
-    from neurospatial.layout._construction import binning_from_layout
-
     layout = MaskedGridLayout()
     layout.build(
         active_mask=np.ones((3, 3), dtype=bool),
         grid_edges=(np.arange(4.0),) * 2,
         connect_diagonal_neighbors=False,
     )
-    binning = binning_from_layout(layout, layout.connectivity)
+    binning = layout.binning()
     expected = binning.faces.build()
     layout.connectivity.clear()
     actual = binning.faces.build()
@@ -446,13 +458,13 @@ def test_native_faces_remain_independent_of_later_builder_graph_changes():
 # ---------------------------------------------------------------------------
 def test_polar_layout_supplies_annular_sector_geometry():
     """Asking the layout directly gives sector areas, not Cartesian dr*dtheta."""
-    env = _polar()
+    env = built_from(_polar)
     assert env._binning.rectilinear is not None
     distance_edges, angle_edges = env.grid_edges
     sectors = (0.5 * np.diff(distance_edges**2)[:, None] * np.diff(angle_edges)).ravel()
     np.testing.assert_allclose(env.bin_sizes, sectors)
     np.testing.assert_allclose(env.bin_sizes, sectors)
-    graph, volumes = _native_oracle(env).finite_volume_geometry()
+    graph, volumes = face_graph(env._binning)
     np.testing.assert_allclose(volumes, sectors)
     geometry = DiffusionGeometry.from_graph(graph, volumes)
     assert (geometry.W != env._diffusion_geometry.W).nnz == 0
@@ -460,12 +472,12 @@ def test_polar_layout_supplies_annular_sector_geometry():
 
 def test_common_class_from_layout_builds_cartesian_geometry():
     env = Environment.from_layout(
-        "RegularGrid",
-        {
-            "bin_size": 1.0,
-            "dimension_ranges": [(0.0, 2.0)] * 2,
-            "infer_active_bins": False,
-        },
+        create_layout(
+            "RegularGrid",
+            bin_size=1.0,
+            dimension_ranges=[(0.0, 2.0)] * 2,
+            infer_active_bins=False,
+        )
     )
     assert env.coordinate_kind == "cartesian"
     np.testing.assert_array_equal(env.bin_sizes, np.ones(env.n_bins))
@@ -475,15 +487,17 @@ def test_common_class_from_layout_builds_cartesian_geometry():
 @pytest.mark.parametrize("diagonal", [False, True])
 def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal):
     """Half-annuli have one shared face on an open axis and two on a circle."""
-    env = Environment.from_polar_egocentric(
-        (1.0, 4.0),
-        (-np.pi, np.pi),
-        1.0,
-        np.pi,
-        circular_angle=circular,
-        connect_diagonal_neighbors=diagonal,
+    env = built_from(
+        lambda: Environment.from_polar_egocentric(
+            distance_range=(1.0, 4.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=1.0,
+            angle_bin_size=np.pi,
+            circular_angle=circular,
+            connect_diagonal_neighbors=diagonal,
+        )
     )
-    graph, _ = _native_oracle(env).finite_volume_geometry()
+    graph, _ = face_graph(env._binning)
     for ring in range(3):
         assert graph[2 * ring][2 * ring + 1]["A"] == pytest.approx(2 if circular else 1)
     for u, v, data in graph.edges(data=True):
@@ -498,10 +512,10 @@ def test_two_polar_sectors_aggregate_both_circular_interfaces(circular, diagonal
 def test_two_polar_sectors_diffuse_at_the_physical_angular_rate(circular):
     """Diffusion agrees with the analytical solution for the two-cell system."""
     env = Environment.from_polar_egocentric(
-        (1.0, 2.0),
-        (-np.pi, np.pi),
-        1.0,
-        np.pi,
+        distance_range=(1.0, 2.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=1.0,
+        angle_bin_size=np.pi,
         circular_angle=circular,
         connect_diagonal_neighbors=False,
     )
@@ -513,7 +527,7 @@ def test_two_polar_sectors_diffuse_at_the_physical_angular_rate(circular):
     contrast = np.exp(-2 * conductance / area * bandwidth**2 / 2)
     expected = 0.5 * np.array([1 + contrast, 1 - contrast])
     np.testing.assert_allclose(
-        env.diffuse(np.array([1.0, 0.0]), bandwidth, mode="average"), expected
+        env.diffuse(np.array([1.0, 0.0]), bandwidth=bandwidth, mode="average"), expected
     )
 
 
@@ -538,7 +552,7 @@ def test_polar_layout_builds_physical_geometry(circular, diagonal):
     radial, angular = (n_r - 1) * n_t, n_r * (n_t - 1)
     diagonals = 2 * (n_r - 1) * (n_t - 1) if diagonal else 0
     seams = (n_r + (2 * (n_r - 1) if diagonal else 0)) if circular else 0
-    graph, volumes = layout.finite_volume_geometry()
+    graph, volumes = face_graph(layout.binning())
     assert graph.number_of_edges() == radial + angular + diagonals + seams
 
     r, theta = layout.bin_centers.T
@@ -576,7 +590,7 @@ def test_masked_polar_layout_preserves_active_bin_indices():
     assert layout.connectivity.has_edge(by_flat[0], by_flat[3])
     assert layout.connectivity.has_edge(by_flat[0], by_flat[7])
     assert len(layout.connectivity.nodes()) == mask.sum()
-    graph, volumes = layout.finite_volume_geometry()
+    graph, volumes = face_graph(layout.binning())
     assert DiffusionGeometry.from_graph(graph, volumes).W.shape == (6, 6)
 
 
@@ -594,9 +608,9 @@ def test_polar_rebuild_refreshes_active_bin_mapping():
     expected.build(active_mask=mask, grid_edges=edges)
     assert list(layout.connectivity.edges()) == list(expected.connectivity.edges())
     np.testing.assert_array_equal(
-        layout.point_to_bin_index(layout.bin_centers), np.arange(mask.sum())
+        layout.binning().locator.locate(layout.bin_centers), np.arange(mask.sum())
     )
-    graph, volumes = layout.finite_volume_geometry()
+    graph, volumes = face_graph(layout.binning())
     assert DiffusionGeometry.from_graph(graph, volumes).W.shape == (6, 6)
 
 
@@ -610,7 +624,7 @@ def test_legacy_polar_parameters_restore_saved_connectivity(circular):
     assert restored._angular_is_circular is circular
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
     np.testing.assert_allclose(
-        restored.compute_kernel(3.0), original.compute_kernel(3.0)
+        restored.compute_kernel(bandwidth=3.0), original.compute_kernel(bandwidth=3.0)
     )
 
 
@@ -620,15 +634,15 @@ def test_legacy_polar_parameters_restore_saved_connectivity(circular):
 def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env):
     for env in (_four_connected_grid(), _polar(), reloaded_graph_env):
         assert env._binning.faces.available
-        assert len(env._face_geometry.volumes) == env.n_bins
+        assert len(face_geometry(env._cache, env._binning).volumes) == env.n_bins
 
 
 @pytest.mark.parametrize(
     ("call", "operation"),
     [
-        (lambda env: env.smooth(np.ones(env.n_bins), 3.0), "smoothing"),
-        (lambda env: env.compute_kernel(3.0), "smoothing"),
-        (lambda env: env.diffuse(np.ones(env.n_bins), 3.0), "smoothing"),
+        (lambda env: env.smooth(np.ones(env.n_bins), bandwidth=3.0), "smoothing"),
+        (lambda env: env.compute_kernel(bandwidth=3.0), "smoothing"),
+        (lambda env: env.diffuse(np.ones(env.n_bins), bandwidth=3.0), "smoothing"),
         (lambda env: gradient(env, np.ones(env.n_bins)), "gradient/divergence"),
         (
             lambda env: divergence(env, np.ones(env.connectivity.number_of_edges())),
@@ -678,7 +692,7 @@ def test_dense_kernel_warning_points_at_the_callers_line(monkeypatch, face_env):
     nx.set_edge_attributes(graph, 1.0, "distance")
     with pytest.warns(UserWarning, match="dense diffusion kernel") as record:
         compute_diffusion_kernels(graph, volumes=np.ones(3), sigma=1.0, mode="average")
-        face_env.compute_kernel(1.0, cache=False)
+        face_env.compute_kernel(bandwidth=1.0, cache=False)
     dense = [w for w in record if "dense diffusion kernel" in str(w.message)]
     assert [w.filename for w in dense] == [__file__, __file__]
 
@@ -687,19 +701,20 @@ def test_mesh_skew_warning_is_raised_once_per_geometry_at_the_callers_line():
     shear = 6.0
     corners = [(x + shear * y, y) for x, y in [(-30, -8), (30, -8), (30, 8), (-30, 8)]]
     env = Environment.from_layout(
-        "TriangularMesh",
-        {"boundary_polygon": Polygon(corners), "point_spacing": 4.0},
+        create_layout(
+            "TriangularMesh", boundary_polygon=Polygon(corners), point_spacing=4.0
+        )
     )
     with pytest.warns(UserWarning, match="non-K-orthogonal") as record:
-        env.compute_kernel(3.0)
+        env.compute_kernel(bandwidth=3.0)
     skew = [w for w in record if "non-K-orthogonal" in str(w.message)]
     assert [w.filename for w in skew] == [__file__]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        env.compute_kernel(5.0, cache=False)  # the cached geometry is reused
+        env.compute_kernel(bandwidth=5.0, cache=False)  # the cached geometry is reused
     env.clear_cache()
     with pytest.warns(UserWarning, match="non-K-orthogonal"):
-        env.smooth(np.ones(env.n_bins), 3.0)
+        env.smooth(np.ones(env.n_bins), bandwidth=3.0)
 
 
 # ---------------------------------------------------------------------------
@@ -722,15 +737,3 @@ def test_invalid_layout_faces_fail_before_publication(volumes, scale, match):
         graph.edges[u, v]["A"] = area * scale
     with pytest.raises(ValueError, match=match):
         FaceGeometry.from_graph(graph, volumes)
-
-
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
-
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    from neurospatial import Environment
-
-    return Environment._create_layout(env.layout_type, env.layout_parameters)

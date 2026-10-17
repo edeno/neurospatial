@@ -10,18 +10,17 @@ This guide provides a comprehensive reference for spatial analysis operations in
 | Operation | Category | Purpose | Returns |
 |-----------|----------|---------|---------|
 | [`occupancy()`](#occupancy) | Trajectory | Time spent in each bin | `NDArray[np.float64]` |
-| [`bin_sequence()`](#bin-sequence) | Trajectory | Sequence of visited bins | `NDArray[np.int64]` |
+| [`bin_sequence()`](#bin-sequence) | Trajectory | Sequence of visited bins | `NDArray[np.int32]` |
 | [`transitions()`](#transitions) | Movement | Bin-to-bin transition counts | `scipy.sparse.csr_matrix` |
-| [`components()`](#components) | Movement | Connected subgraphs | `List[Set[int]]` |
-| [`reachable_from()`](#reachable-from) | Movement | Accessible bins from source | `Set[int]` |
+| [`components()`](#components) | Movement | Connected subgraphs | `list[NDArray[np.int32]]` |
+| [`reachable_from()`](#reachable-from) | Movement | Accessible bins from source | `NDArray[np.bool_]` |
 | [`smooth()`](#smooth) | Fields | Gaussian smoothing of values | `NDArray[np.float64]` |
 | [`interpolate()`](#interpolate) | Fields | Fill missing values | `NDArray[np.float64]` |
-| [`rebin()`](#rebin) | Fields | Change spatial resolution | `Tuple[Environment, NDArray]` |
+| [`rebin()`](#rebin) | Fields | Change spatial resolution | `Environment` |
 | [`subset()`](#subset) | Fields | Extract sub-environment | `Environment` |
 | [`distance_to()`](#distance-to) | Utilities | Geodesic distances to point | `NDArray[np.float64]` |
 | [`rings()`](#rings) | Utilities | Bins by graph hop distance (BFS layers) | `list[NDArray[np.int32]]` |
-| [`region_membership()`](#region-membership) | Utilities | Which region contains each bin | `NDArray[np.int64]` |
-| [`copy()`](#copy) | Utilities | Deep copy environment | `Environment` |
+| [`region_membership()`](#region-membership) | Utilities | Which region contains each bin | `NDArray[np.bool_]` |
 
 ## Trajectory Analysis
 
@@ -38,8 +37,10 @@ def occupancy(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
     bandwidth: float | None = None,
     time_allocation: Literal["start", "linear"] = "start",
+    return_seconds: bool = True,
 ) -> NDArray[np.float64]:
     """
     Compute occupancy (time spent in each bin).
@@ -60,6 +61,11 @@ def occupancy(
         Maximum time gap in seconds. Intervals with Δt > max_gap are not
         counted toward occupancy. Default: 0.5 seconds. Set to None to
         count all intervals.
+    epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows
+        (seconds, same clock as ``times``). An interval counts only if it
+        lies entirely inside one window. ``None`` (default) means
+        unrestricted.
     bandwidth : float, optional
         If provided, apply diffusion kernel smoothing with this bandwidth
         (in physical units). Preserves total occupancy time.
@@ -67,6 +73,9 @@ def occupancy(
         Method for allocating time intervals:
         - 'start': Assign entire Δt to starting bin (fast, all layouts)
         - 'linear': Split Δt across bins traversed (accurate, grid layouts with rectangular cells: from_samples, from_grid_mask, from_pixel_mask, from_polygon)
+    return_seconds : bool, default=True
+        If True, return time in seconds. If False, return the number of
+        intervals starting in each bin.
 
     Returns
     -------
@@ -155,6 +164,8 @@ def bin_sequence(
     *,
     dedup: bool = True,
     outside_value: int | None = -1,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> NDArray[np.int32]:
     """Map a trajectory to a sequence of bin indices.
 
@@ -169,6 +180,13 @@ def bin_sequence(
     outside_value : int or None, default -1
         Bin index for samples outside active bins. ``None`` drops
         them from the returned sequence.
+    max_gap : float or None, default 0.5
+        Longest sampling interval (seconds) treated as continuous
+        recording. Longer intervals (dropped frames, pauses between
+        sessions) are excluded. ``None`` disables the gap check.
+    epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
+        Restrict the sequence to these half-open [start, stop) windows
+        (seconds, same clock as ``times``).
 
     Returns
     -------
@@ -184,10 +202,15 @@ def bin_sequence_with_runs(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    dedup: bool = True,
     outside_value: int | None = -1,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> BinSequenceWithRuns:
     """Same mapping as ``bin_sequence`` plus per-run boundaries.
+
+    Runs are always collapsed, so there is no ``dedup`` option.
+    ``outside_value``, ``max_gap`` and ``epochs`` mean the same as in
+    ``bin_sequence``.
 
     Returns a ``BinSequenceWithRuns`` dataclass with three fields:
 
@@ -266,7 +289,7 @@ bins = result.bins
 starts = result.run_starts
 spatial_jumps = []
 for i in range(len(bins) - 1):
-    dist = env.distance_between_bins(bins[i], bins[i + 1])
+    dist = env.distance_between(bins=[bins[i], bins[i + 1]])
     if dist > 20.0:  # cm
         jump_time = times[starts[i + 1]]
         spatial_jumps.append((jump_time, dist))
@@ -315,6 +338,8 @@ def transitions(
     bandwidth: float | None = None,
     # Common
     normalize: bool = True,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> scipy.sparse.csr_matrix:
     """
     Compute bin-to-bin transition matrix.
@@ -351,6 +376,13 @@ def transitions(
     normalize : bool, optional
         If True, normalize rows to sum to 1 (probabilities).
         If False, return raw counts. Default is True.
+    max_gap : float or None, default 0.5
+        Longest sampling interval (seconds) treated as continuous
+        recording (empirical mode with times). Transitions across longer
+        intervals are not counted. ``None`` disables the gap check.
+    epochs : (start, stop), array of shape (n, 2), IntervalSet, or None
+        Count only transitions inside these half-open [start, stop)
+        windows (seconds, same clock as ``times``).
 
     Returns
     -------
@@ -460,14 +492,23 @@ print(f"Strongest directional bias: bin {max_bias_idx[0]} ↔ bin {max_bias_idx[
 Find connected components (subgraphs) within the environment's connectivity graph.
 
 ```python
-def components(self) -> List[Set[int]]:
+def components(
+    self,
+    *,
+    largest_only: bool = False,
+) -> list[NDArray[np.int32]]:
     """
     Find connected components in environment.
 
+    Parameters
+    ----------
+    largest_only : bool, default=False
+        If True, return only the largest component.
+
     Returns
     -------
-    components : list of sets
-        Each set contains bin indices in one connected component.
+    components : list of arrays
+        Each array holds the bin indices of one connected component.
         Sorted by size (largest first).
     """
 ```
@@ -495,10 +536,9 @@ fig, ax = plt.subplots(figsize=(10, 10))
 colors = plt.cm.tab10(np.arange(len(comps)))
 
 for i, comp in enumerate(comps):
-    comp_bins = list(comp)
     ax.scatter(
-        env.bin_centers[comp_bins, 0],
-        env.bin_centers[comp_bins, 1],
+        env.bin_centers[comp, 0],
+        env.bin_centers[comp, 1],
         c=[colors[i]],
         s=100,
         label=f'Component {i} ({len(comp)} bins)'
@@ -528,25 +568,33 @@ Find all bins reachable from a source bin via the connectivity graph.
 ```python
 def reachable_from(
     self,
-    source: int,
     *,
-    max_distance: Optional[float] = None,
-) -> Set[int]:
+    bins: int | None = None,
+    points: ArrayLike | None = None,
+    radius: int | float | None = None,
+    metric: Literal["hops", "geodesic"] = "hops",
+) -> NDArray[np.bool_]:
     """
     Find bins reachable from source.
 
     Parameters
     ----------
-    source : int
+    bins : int, optional
         Starting bin index.
-    max_distance : float, optional
-        Maximum geodesic distance to traverse.
-        If None, returns all reachable bins. Default is None.
+    points : array-like, shape (1, n_dims), optional
+        Starting coordinate, mapped to the bin that contains it. Give exactly
+        one of ``bins`` and ``points``.
+    radius : int, float, or None, optional
+        Maximum number of edges (``metric="hops"``) or graph distance in
+        physical units (``metric="geodesic"``). If None, returns every bin
+        in the source's connected component. Default is None.
+    metric : {"hops", "geodesic"}, default="hops"
+        Count graph edges, or sum edge distances.
 
     Returns
     -------
-    reachable : set of int
-        Bin indices reachable from source.
+    reachable : array of bool, shape (n_bins,)
+        True for each bin reachable from the source.
     """
 ```
 
@@ -555,18 +603,18 @@ def reachable_from(
 ```python
 # Find all bins reachable from center
 center_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]
-reachable = env.reachable_from(center_bin)
+reachable = env.reachable_from(bins=center_bin)
 
-print(f"Bins reachable from center: {len(reachable)} / {env.n_bins}")
+print(f"Bins reachable from center: {reachable.sum()} / {env.n_bins}")
 
 # Find bins within 20 cm geodesic distance
-nearby = env.reachable_from(center_bin, max_distance=20.0)
-print(f"Bins within 20 cm: {len(nearby)}")
+nearby = env.reachable_from(bins=center_bin, radius=20.0, metric="geodesic")
+print(f"Bins within 20 cm: {nearby.sum()}")
 
 # Detect unreachable regions
-unreachable = set(range(env.n_bins)) - reachable
-if unreachable:
-    print(f"Warning: {len(unreachable)} bins unreachable from center!")
+unreachable = np.flatnonzero(~reachable)
+if unreachable.size:
+    print(f"Warning: {unreachable.size} bins unreachable from center!")
 ```
 
 **Use Cases:**
@@ -669,19 +717,26 @@ for ax, data, title in zip(
 plt.show()
 ```
 
-**Migrating the default:** `env.smooth(field, bandwidth)` now uses `mode="average"`.
+**Migrating the default:** `env.smooth(field, bandwidth=...)` now uses `mode="average"`.
 To preserve the previous count-to-density operation, write
-`env.smooth(counts, bandwidth, mode="density")`. Use `mode="transition"` when
+`env.smooth(counts, bandwidth=..., mode="density")`. Use `mode="transition"` when
 smoothing per-bin counts, occupancy, or probability mass while keeping their sum.
 `compute_kernel` and the lower-level `diffuse` retain their existing defaults;
 select their mode explicitly when composing operators.
 
-`env.smooth` requires finite input and rejects NaN/Inf. For spike-derived rate
-maps, prefer `compute_spatial_rate`, which handles shared spike/occupancy support
-and estimator-specific smoothing. Applying another smoothing pass to a returned
-map changes that estimator. A masked average requires smoothing both the filled
-numerator and the validity weights, dividing, then restoring the desired mask;
-simply replacing missing observations with zero changes their meaning.
+With the default `mode="average"`, `env.smooth` treats NaN bins as missing,
+never as zero. It smooths the field with NaN read as 0, smooths the
+observed-bin mask with the same operator, and divides, so holes are filled
+from their observed neighbors and a constant field with holes stays constant.
+A bin stays NaN when the share of its smoothing weight on observed bins is at
+most 0.1% of the largest share in its connected part of the environment, for
+example a room with no visits. `mode="transition"` and `mode="density"`
+refuse NaN, since a missing bin has no defensible count or mass; fill it
+explicitly first. Inf is refused. For spike-derived rate maps, prefer `compute_spatial_rate`, which
+handles shared spike/occupancy support and estimator-specific smoothing.
+Applying another smoothing pass to a returned map changes that estimator, and
+the filled holes are estimates: restore the original NaN mask if unvisited
+bins must stay empty.
 
 **Use Cases:**
 
@@ -808,32 +863,34 @@ Coarsen the environment grid by integer subsampling (geometry-only operation).
 ```python
 def rebin(
     self,
-    factor: int | tuple[int, ...],
+    factor: int | tuple[int, ...] | None = None,
+    *,
+    bin_size: float | tuple[float, ...] | None = None,
+    name: str | None = None,
 ) -> Environment:
     """
-    Create coarser environment by integer subsampling.
+    Re-bin an arena at a new size, or coarsen a grid by integer factor.
 
-    This is a geometry-only operation that reduces spatial resolution
-    by subsampling the grid at integer factors. It does NOT remap or
-    aggregate field values - use separate field processing for that.
+    This is a geometry-only operation: it does NOT remap or aggregate
+    field values - use separate field processing for that.
 
     Parameters
     ----------
-    factor : int or tuple of int
-        Integer subsampling factor(s):
+    factor : int or tuple of int, optional
+        Integer coarsening factor(s):
         - int: Apply same factor to all dimensions
         - tuple: Per-dimension factors (length must match n_dims)
-
-        Examples:
-        - factor=2: Keep every 2nd bin (halve resolution)
-        - factor=3: Keep every 3rd bin (third resolution)
-        - factor=(2, 3): Different factors per dimension
+    bin_size : float or tuple of float, optional
+        New bin lengths in environment units, rebuilt over the arena.
+        Pass exactly one of ``factor`` or ``bin_size``.
+    name : str, optional
+        Name of the new environment; defaults to this environment's name.
 
     Returns
     -------
     coarse_env : Environment
-        New environment with reduced spatial resolution.
-        Number of bins reduced by product of factors.
+        New environment with the new spatial resolution. It keeps the
+        name, units, frame and regions.
     """
 ```
 
@@ -917,46 +974,61 @@ Extract a sub-environment containing only specified bins.
 ```python
 def subset(
     self,
-    bin_indices: Union[List[int], NDArray[np.int64], Set[int]],
     *,
-    name: Optional[str] = None,
+    mask: NDArray[np.bool_] | None = None,
+    region_names: Sequence[str] | None = None,
+    polygon: shapely.Polygon | None = None,
+    include_boundary: bool = True,
+    invert: bool = False,
+    name: str | None = None,
 ) -> Environment:
     """
-    Create sub-environment from bin subset.
+    Create new environment containing subset of bins.
 
     Parameters
     ----------
-    bin_indices : list, array, or set of int
-        Bins to include in subset.
+    mask : NDArray[np.bool_], shape (n_bins,), optional
+        Boolean mask of bins to keep. True = keep, False = discard.
+    region_names : Sequence[str], optional
+        Keep the bins these named regions cover: the bin containing a point
+        region, or the bins whose centers lie inside a polygon region or on
+        its edge.
+    polygon : shapely.Polygon, optional
+        Keep bins whose centers lie inside this polygon or on its edge
+        (2D only).
+    include_boundary : bool, default=True
+        For polygons, keep bins whose centers lie exactly on the edge; with
+        False keep only centers strictly inside. Refused with ``mask=``.
+    invert : bool, default=False
+        If True, keep the complement of the selection.
     name : str, optional
-        Name for new environment.
-        If None, uses f"{original_name}_subset".
+        Name of the new environment; defaults to this environment's name.
 
     Returns
     -------
     subset_env : Environment
-        New environment containing only specified bins.
-        Bin indices are remapped (starting from 0).
+        New environment containing only the selected bins. Bin indices are
+        renumbered from 0; name, units, frame and regions are kept.
     """
 ```
 
 **Example:**
 
+<!-- docs-test: run -->
 ```python
-# Extract region of interest
-# Get bins in north arm
+# Extract region of interest: the bins within 15 cm of the north arm's center
 north_center = np.array([50.0, 75.0])
 distances = np.linalg.norm(env.bin_centers - north_center, axis=1)
-north_bins = np.where(distances < 15.0)[0]
+north_bins = distances < 15.0  # boolean mask, one entry per bin
 
 # Create subset environment
-env_north = env.subset(north_bins, name='NorthArm')
+env_north = env.subset(mask=north_bins, name="NorthArm")
 
 print(f"Original: {env.n_bins} bins")
 print(f"North arm: {env_north.n_bins} bins")
 
-# Analyze just this region
-occupancy_north = env_north.occupancy(timestamps, positions)
+# Analyze just this region: time outside the north arm is not counted
+occupancy_north = env_north.occupancy(times, positions)
 ```
 
 **Use Cases:**
@@ -987,8 +1059,10 @@ Compute geodesic or Euclidean distance from each bin to target bins or regions.
 ```python
 def distance_to(
     self,
-    targets: Sequence[int] | str,
     *,
+    bins: int | Sequence[int] | None = None,
+    points: ArrayLike | None = None,
+    region: str | None = None,
     metric: Literal["euclidean", "geodesic"] = "geodesic",
 ) -> NDArray[np.float64]:
     """
@@ -996,10 +1070,14 @@ def distance_to(
 
     Parameters
     ----------
-    targets : sequence of int, or str
-        Target specification:
-        - Sequence of bin indices: Distance to closest target bin
-        - String: Region name - distance to closest bin in region
+    bins : int or sequence of int, optional
+        Target bin indices: distance to the closest one.
+    points : array-like, shape (n_points, n_dims), optional
+        Target coordinates, mapped to the bins that contain them.
+    region : str, optional
+        Region name: distance to the closest bin the region covers (the bin
+        containing a point region, or the bins whose centers lie inside a
+        polygon). Give exactly one of ``bins``, ``points`` and ``region``.
     metric : {"euclidean", "geodesic"}, optional
         Distance metric:
         - "geodesic": Follows connectivity graph (path distance, respects barriers)
@@ -1021,24 +1099,24 @@ from neurospatial import Regions
 
 # Distance to specific bin indices
 goal_bins = [42, 87, 103]
-dist_to_goals = env.distance_to(goal_bins, metric='geodesic')
+dist_to_goals = env.distance_to(bins=goal_bins, metric='geodesic')
 
 # Distance to named region (requires regions defined)
 region_builder = Regions(env.regions.values())
 region_builder.add('goal_zone', polygon=goal_polygon)
 env = env.with_regions(region_builder)
-dist_to_goal_region = env.distance_to('goal_zone', metric='geodesic')
+dist_to_goal_region = env.distance_to(region='goal_zone', metric='geodesic')
 
 # Euclidean vs geodesic comparison
-dist_euclidean = env.distance_to([goal_bin], metric='euclidean')
-dist_geodesic = env.distance_to([goal_bin], metric='geodesic')
+dist_euclidean = env.distance_to(bins=goal_bin, metric='euclidean')
+dist_geodesic = env.distance_to(bins=goal_bin, metric='geodesic')
 
 ratio = dist_geodesic / dist_euclidean
 print(f"Mean geodesic/euclidean ratio: {ratio[np.isfinite(ratio)].mean():.2f}")
 
 # Multiple target bins (distance to nearest)
 reward_bins = [10, 50, 90]
-dist_to_nearest_reward = env.distance_to(reward_bins, metric='geodesic')
+dist_to_nearest_reward = env.distance_to(bins=reward_bins, metric='geodesic')
 
 # Visualize distance field
 import matplotlib.pyplot as plt
@@ -1094,8 +1172,9 @@ Get bins organized by graph distance (hop count) from a center bin using BFS lay
 ```python
 def rings(
     self,
-    center_bin: int,
     *,
+    bins: int | None = None,
+    points: ArrayLike | None = None,
     hops: int,
 ) -> list[NDArray[np.int32]]:
     """
@@ -1106,8 +1185,10 @@ def rings(
 
     Parameters
     ----------
-    center_bin : int
-        Starting bin index.
+    bins : int, optional
+        Center bin index.
+    points : array-like, shape (1, n_dims), optional
+        Center coordinate, mapped to the bin that contains it.
     hops : int
         Maximum number of hops (BFS layers) to compute.
 
@@ -1133,7 +1214,7 @@ def rings(
 ```python
 # Get bins by hop distance from center
 center_bin = 42
-hop_layers = env.rings(center_bin, hops=5)
+hop_layers = env.rings(bins=center_bin, hops=5)
 
 print(f"Center bin: {center_bin}")
 for k, layer_bins in enumerate(hop_layers):
@@ -1197,7 +1278,7 @@ plt.show()
 ```python
 # Count total bins within k hops
 center_bin = 50
-layers = env.rings(center_bin, hops=3)
+layers = env.rings(bins=center_bin, hops=3)
 bins_within_3_hops = np.concatenate(layers[:4])  # layers 0-3
 print(f"Bins within 3 hops: {len(bins_within_3_hops)}")
 
@@ -1327,66 +1408,37 @@ for j in range(membership.shape[1]):
 
 ---
 
-### Copy
+### Copying
 
-Create a copy of the environment (deep or shallow).
-
-```python
-def copy(self, *, deep: bool = True) -> Environment:
-    """
-    Create copy of environment.
-
-    Parameters
-    ----------
-    deep : bool, optional
-        If True, create a deep copy (independent arrays and objects).
-        If False, create a shallow copy (shares array references).
-        Default is True.
-
-    Returns
-    -------
-    env_copy : Environment
-        Copy of environment.
-        - Deep copy: Independent geometry storage
-        - Shallow copy: Shares immutable geometry
-        Both copies have read-only public values and fresh analysis caches.
-    """
-```
-
-**Example:**
+An `Environment` cannot be changed after it is built, so there is nothing to
+copy. `copy.copy(env)` and `copy.deepcopy(env)` return the same object, and
+there is no `env.copy()` method. To get a variant, use a method that returns a
+new environment, such as `with_regions`, `with_metadata`, `subset` or `rebin`.
 
 ```python
 from neurospatial import Regions
 
-# Create baseline environment
 env_baseline = Environment.from_samples(positions, bin_size=3.0, name='Session1')
 
-# Deep copy (default) - fully independent
-env_deep = env_baseline.copy(deep=True)
-region_builder = Regions(env_deep.regions.values())
+# Add a goal region: returns a new environment, the baseline is unchanged.
+region_builder = Regions(env_baseline.regions.values())
 region_builder.add('goal', point=np.array([75.0, 75.0]))
-env_deep = env_deep.with_regions(region_builder)
+env_goal = env_baseline.with_regions(region_builder)
 
-# Original unchanged
 assert 'goal' not in env_baseline.regions
-assert 'goal' in env_deep.regions
-
-# Shallow copy - safely shares immutable geometry
-env_shallow = env_baseline.copy(deep=False)
+assert 'goal' in env_goal.regions
 
 # Export an editable array for separate calculations.
-centers = env_shallow.bin_centers.copy()
+centers = env_goal.bin_centers.copy()
 centers[0] = [999.0, 999.0]
 assert not np.allclose(env_baseline.bin_centers[0], centers[0])
 ```
 
 **Use Cases:**
 
-- Safe experimentation with deep copy
-- Creating environment variants
+- Creating environment variants (extra regions, new labels)
 - Before/after comparisons
-- Preserving original state
-- Performance optimization with shallow copy (read-only use)
+- Preserving the original environment
 
 ---
 
@@ -1426,8 +1478,7 @@ T = env.transitions(positions, normalize=False)  # Sparse CSR format
 # T_dense = T.toarray()  # Only if env.n_bins is small (<1000)
 
 # Subset environment for region-specific analysis
-region_bins = get_region_bins(env, region_name)
-env_region = env.subset(region_bins)
+env_region = env.subset(region_names=[region_name])
 # Now all operations faster on smaller env_region
 ```
 
@@ -1435,11 +1486,11 @@ env_region = env.subset(region_bins)
 
 ```python
 # GOOD: Vectorized operations
-distances = env.distance_to(target_bin)
+distances = env.distance_to(bins=target_bin)
 
 # AVOID: Loops when vectorization possible
-# distances = np.array([env.distance_between_bins(i, target_bin)
-#                       for i in range(env.n_bins)])
+# distances = np.array([env.distance_between(bins=[b, target_bin])
+#                       for b in range(env.n_bins)])
 ```
 
 ### Common Pitfalls
@@ -1471,8 +1522,8 @@ mean_rate = np.nanmean(firing_rate)
 
 ```python
 # These can differ greatly in complex environments!
-dist_geodesic = env.distance_to(goal, metric='geodesic')  # Through maze
-dist_euclidean = env.distance_to(goal, metric='euclidean')  # Straight line
+dist_geodesic = env.distance_to(bins=goal, metric='geodesic')  # Through maze
+dist_euclidean = env.distance_to(bins=goal, metric='euclidean')  # Straight line
 
 # Always specify which you're using
 ```
@@ -1500,7 +1551,7 @@ When reporting analyses, include:
 
 > "Firing rate maps were computed on a 2.5 cm spatial grid (total bins: 256, active: 198).
 > Bins with <0.5 s occupancy were excluded. Firing rates were smoothed with a Gaussian
-> kernel (σ = 5 cm, 2.0 bins) using the `smooth()` method with `respect_nans=True`."
+> kernel (σ = 5 cm, 2.0 bins) using the `smooth()` method, averaging over visited bins only."
 
 ---
 

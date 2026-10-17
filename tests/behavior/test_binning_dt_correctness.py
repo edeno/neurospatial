@@ -53,7 +53,7 @@ class TestSafeGatherRegions:
 
         # Pick a bin that is genuinely *outside* the region.
         outside_bin = 0
-        from neurospatial.ops.binning import regions_to_mask
+        from neurospatial.ops.mapping import regions_to_mask
 
         assert not regions_to_mask(env, [region_name])[outside_bin]
 
@@ -94,7 +94,7 @@ class TestSafeGatherRegions:
         # the run success=True.
         source_bin = 0
         neutral_bin = 100  # not in source, not in target
-        from neurospatial.ops.binning import regions_to_mask
+        from neurospatial.ops.mapping import regions_to_mask
 
         assert not regions_to_mask(env, ["target"])[neutral_bin]
         assert not regions_to_mask(env, ["source"])[neutral_bin]
@@ -145,7 +145,7 @@ class TestSafeGatherRegions:
         # with one off-env (-1) sample. The wrapped -1 -> last_bin sits near the
         # opposite corner, so the buggy speed estimate is large.
         neutral_bin = 100
-        from neurospatial.ops.binning import regions_to_mask
+        from neurospatial.ops.mapping import regions_to_mask
 
         assert not regions_to_mask(env, ["target"])[neutral_bin]
         assert not regions_to_mask(env, ["source"])[neutral_bin]
@@ -196,7 +196,7 @@ class TestSafeGatherRegions:
         env = env.with_regions(region_builder)
 
         neutral_bin = 100
-        from neurospatial.ops.binning import regions_to_mask
+        from neurospatial.ops.mapping import regions_to_mask
 
         assert not regions_to_mask(env, ["target"])[neutral_bin]
         assert not regions_to_mask(env, ["source"])[neutral_bin]
@@ -240,7 +240,7 @@ class TestSafeGatherRegions:
 
         # Exit source at the first step, then traverse distinct neutral bins
         # (a steady move each frame) so the run has a well-defined mean speed.
-        from neurospatial.ops.binning import regions_to_mask
+        from neurospatial.ops.mapping import regions_to_mask
 
         neutral_bins = [200, 201, 202]
         for b in neutral_bins:

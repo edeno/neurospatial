@@ -23,7 +23,7 @@ from numpy.testing import assert_allclose
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.arena import encode_arena
+from neurospatial.geometry._codecs import encode_arena
 from neurospatial.regions import Regions
 
 
@@ -99,12 +99,12 @@ class TestRebin:
 
     def test_rebin_invalid_bin_size_negative(self, medium_2d_env: Environment) -> None:
         """Test that negative factor raises ValueError."""
-        with pytest.raises(ValueError, match="must be positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             medium_2d_env.rebin(factor=-1)
 
     def test_rebin_invalid_bin_size_zero(self, medium_2d_env: Environment) -> None:
         """Test that zero factor raises ValueError."""
-        with pytest.raises(ValueError, match="must be positive"):
+        with pytest.raises(ValueError, match="asks to merge"):
             medium_2d_env.rebin(factor=0)
 
     def test_rebin_invalid_bin_size_too_large(self, small_2d_env: Environment) -> None:
@@ -114,7 +114,7 @@ class TestRebin:
         # Factor larger than smallest dimension
         too_large_factor = max(grid_shape) + 10
 
-        with pytest.raises(ValueError, match="too large for grid shape"):
+        with pytest.raises(ValueError, match="asks to merge"):
             small_2d_env.rebin(factor=too_large_factor)
 
     @pytest.mark.parametrize("factor", [1, 2, 3, 5])
@@ -203,32 +203,19 @@ class TestRebin:
 
     def test_rebin_requires_uniform_grid_cells(self, graph_env: Environment) -> None:
         """A track graph cannot establish rectangular cells for factor rebinning."""
-        with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+        with pytest.raises(NotImplementedError, match="works on rectangular grids"):
             graph_env.rebin(factor=2)
 
     def test_rebin_factor_wrong_dimensions(self, medium_2d_env: Environment) -> None:
         """Test that factor tuple with wrong number of dimensions raises error."""
         # 2D environment, but provide 3D factor
-        with pytest.raises(
-            ValueError, match=r"factor has .* elements but environment has"
-        ):
+        with pytest.raises(ValueError, match=r"gives 3 factors for a 2-D grid"):
             medium_2d_env.rebin(factor=(2, 2, 2))
 
     def test_rebin_factor_non_integer(self, medium_2d_env: Environment) -> None:
         """Test that non-integer factor raises error."""
         with pytest.raises((ValueError, TypeError)):
             medium_2d_env.rebin(factor=2.5)  # type: ignore
-
-    def test_rebin_updates_name(self, medium_2d_env: Environment) -> None:
-        """Test that rebinned environment has updated name."""
-        # Set original name
-        env = medium_2d_env.copy()
-        env = env.with_metadata(name="OriginalEnv")
-
-        rebinned = env.rebin(factor=2)
-
-        assert "rebinned" in rebinned.name.lower()
-        assert "OriginalEnv" in rebinned.name
 
 
 class TestSubset:
@@ -242,7 +229,7 @@ class TestSubset:
         # Select first 10 bins
         bin_ids = np.array([True] * 10 + [False] * (medium_2d_env.n_bins - 10))
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         assert subset_env.n_bins == 10
         assert subset_env.n_dims == medium_2d_env.n_dims
@@ -257,7 +244,7 @@ class TestSubset:
         distances = np.linalg.norm(medium_2d_env.bin_centers - center, axis=1)
         bin_ids = distances < 10.0
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         # Should have connectivity
         assert subset_env.connectivity.number_of_edges() > 0
@@ -283,7 +270,7 @@ class TestSubset:
         bin_ids = np.zeros(medium_2d_env.n_bins, dtype=bool)
 
         with pytest.raises(ValueError, match="No bins selected"):
-            medium_2d_env.subset(bins=bin_ids)
+            medium_2d_env.subset(mask=bin_ids)
 
     def test_subset_wrong_shape_raises_error(self, medium_2d_env: Environment) -> None:
         """Test that mask with wrong shape raises error."""
@@ -291,15 +278,15 @@ class TestSubset:
         bin_ids = np.ones(10, dtype=bool)
 
         with pytest.raises(ValueError, match="must have shape"):
-            medium_2d_env.subset(bins=bin_ids)
+            medium_2d_env.subset(mask=bin_ids)
 
     def test_subset_wrong_dtype_raises_error(self, medium_2d_env: Environment) -> None:
         """Test that mask with wrong dtype raises error."""
         # Integer array instead of bool
         bin_ids = np.arange(medium_2d_env.n_bins)
 
-        with pytest.raises(ValueError, match="must be boolean array"):
-            medium_2d_env.subset(bins=bin_ids)  # type: ignore
+        with pytest.raises(ValueError, match="mask= is a boolean array"):
+            medium_2d_env.subset(mask=bin_ids)  # type: ignore
 
     def test_subset_by_polygon(self, medium_2d_env: Environment) -> None:
         """Test subsetting by Shapely polygon."""
@@ -334,7 +321,7 @@ class TestSubset:
     def test_subset_by_region_names(self, medium_2d_env: Environment) -> None:
         """Test subsetting by named regions."""
         # Make a copy to avoid mutating session-scoped fixture
-        env = medium_2d_env.copy()
+        env = medium_2d_env.with_metadata()
 
         # Add a region to the copy
         center = env.bin_centers.mean(axis=0)
@@ -363,19 +350,6 @@ class TestSubset:
         with pytest.raises(ValueError, match=r"Region .* not found"):
             medium_2d_env.subset(region_names=["nonexistent_region"])
 
-    def test_subset_point_region_raises_error(self, medium_2d_env: Environment) -> None:
-        """Test that point-type regions raise error."""
-        # Make a copy to avoid mutating session-scoped fixture
-        env = medium_2d_env.copy()
-
-        # Add a point region to the copy
-        region_builder = Regions(env.regions.values())
-        region_builder.add("goal", point=np.array([0.0, 0.0]))
-        env = env.with_regions(region_builder)
-
-        with pytest.raises(ValueError, match="point-type region"):
-            env.subset(region_names=["goal"])
-
     def test_subset_inverted_selection(self, medium_2d_env: Environment) -> None:
         """Test inverted selection (complement)."""
         # Select center bins
@@ -387,7 +361,7 @@ class TestSubset:
         n_selected = np.sum(bin_ids)
 
         # Get inverted selection (everything except center)
-        subset_env = medium_2d_env.subset(bins=bin_ids, invert=True)
+        subset_env = medium_2d_env.subset(mask=bin_ids, invert=True)
 
         # Should have complementary number of bins
         assert subset_env.n_bins == medium_2d_env.n_bins - n_selected
@@ -405,7 +379,7 @@ class TestSubset:
         poly = box(0, 0, 10, 10)
 
         with pytest.raises(ValueError, match="Exactly one of"):
-            medium_2d_env.subset(bins=bin_ids, polygon=poly)
+            medium_2d_env.subset(mask=bin_ids, polygon=poly)
 
     def test_subset_preserves_metadata(self, medium_2d_env: Environment) -> None:
         """Test that subsetting preserves units and frame metadata."""
@@ -418,28 +392,10 @@ class TestSubset:
 
         # Select subset
         bin_ids = np.array([True] * 10 + [False] * (env_copy.n_bins - 10))
-        subset_env = env_copy.subset(bins=bin_ids)
+        subset_env = env_copy.subset(mask=bin_ids)
 
         assert subset_env.units == "cm"
         assert subset_env.frame == "arena1"
-
-    def test_subset_drops_regions(self, medium_2d_env: Environment) -> None:
-        """Test that subsetting drops all regions."""
-        # Create a fresh copy to avoid region conflicts
-        import copy
-
-        env_copy = copy.copy(medium_2d_env)
-        env_copy = env_copy.with_regions(Regions())  # Fresh regions
-        region_builder = Regions(env_copy.regions.values())
-        region_builder.add("goal", point=np.array([0.0, 0.0]))
-        env_copy = env_copy.with_regions(region_builder)
-
-        # Select subset
-        bin_ids = np.array([True] * 10 + [False] * (env_copy.n_bins - 10))
-        subset_env = env_copy.subset(bins=bin_ids)
-
-        # Regions should be empty
-        assert len(subset_env.regions) == 0
 
     def test_subset_renumbers_nodes(self, small_2d_env: Environment) -> None:
         """Test that subset renumbers node IDs to be contiguous."""
@@ -447,7 +403,7 @@ class TestSubset:
         bin_ids = np.zeros(small_2d_env.n_bins, dtype=bool)
         bin_ids[::2] = True
 
-        subset_env = small_2d_env.subset(bins=bin_ids)
+        subset_env = small_2d_env.subset(mask=bin_ids)
 
         # Node IDs should be 0, 1, 2, ..., n-1
         node_ids = sorted(subset_env.connectivity.nodes())
@@ -457,7 +413,7 @@ class TestSubset:
         """Test that polygon subsetting on 3D environment raises error."""
         poly = box(0, 0, 10, 10)
 
-        with pytest.raises(ValueError, match="only works for 2D"):
+        with pytest.raises(ValueError, match="needs 2-D bins"):
             simple_3d_env.subset(polygon=poly)
 
     def test_subset_region_names_empty_raises_error(
@@ -565,7 +521,7 @@ class TestSubsetProperties:
             [True] * n_select + [False] * (medium_2d_env.n_bins - n_select)
         )
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         assert subset_env.n_bins == n_select
 
@@ -580,7 +536,7 @@ class TestSubsetProperties:
             [True] * n_select + [False] * (medium_2d_env.n_bins - n_select)
         )
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         assert subset_env.n_dims == medium_2d_env.n_dims
 
@@ -591,8 +547,8 @@ class TestSubsetProperties:
         bin_ids[: small_2d_env.n_bins // 2] = True
 
         # Get subset and its complement
-        subset_env = small_2d_env.subset(bins=bin_ids)
-        complement_env = small_2d_env.subset(bins=bin_ids, invert=True)
+        subset_env = small_2d_env.subset(mask=bin_ids)
+        complement_env = small_2d_env.subset(mask=bin_ids, invert=True)
 
         # Together they should cover all bins
         assert subset_env.n_bins + complement_env.n_bins == small_2d_env.n_bins
@@ -640,11 +596,11 @@ class TestSubsetIntegration:
         distances = np.linalg.norm(medium_2d_env.bin_centers - center, axis=1)
         bin_ids = distances < 15.0
 
-        subset_env = medium_2d_env.subset(bins=bin_ids)
+        subset_env = medium_2d_env.subset(mask=bin_ids)
 
         # Query neighbors for each bin (should work without errors)
         for bin_id in range(min(10, subset_env.n_bins)):
-            neighbors = subset_env.neighbors(bin_id)
+            neighbors = subset_env.neighbors(bins=bin_id)
             assert isinstance(neighbors, list)
 
             # All neighbor IDs should be valid
@@ -658,12 +614,12 @@ class TestSubsetIntegration:
         distances = np.linalg.norm(small_2d_env.bin_centers - center, axis=1)
         bin_ids = distances < 10.0
 
-        subset_env = small_2d_env.subset(bins=bin_ids)
+        subset_env = small_2d_env.subset(mask=bin_ids)
 
         # Should be able to compute paths (if connected)
         if nx.is_connected(subset_env.connectivity):
             # path_between expects bin indices (integers), not bin centers
-            path = subset_env.path_between(0, subset_env.n_bins - 1)
+            path = subset_env.path_between(bins=[0, subset_env.n_bins - 1])
             assert isinstance(path, list)
             assert len(path) > 0
 
@@ -780,7 +736,7 @@ class TestApplyTransform:
         # Can't use 3D transform on 2D environment
         transform_3d = translate_3d(10, 20, 30)
 
-        with pytest.raises(ValueError, match=r"dimensionality.*does not match"):
+        with pytest.raises(ValueError, match=r"got a 3-D transform for 2-D bins"):
             medium_2d_env.apply_transform(transform_3d)
 
     def test_apply_transform_affine_nd_3d(self, simple_3d_env: Environment) -> None:
@@ -893,19 +849,6 @@ class TestApplyTransform:
 
         assert transformed.name == "rotated_env"
 
-    def test_apply_transform_default_name(self, medium_2d_env: Environment) -> None:
-        """Test that default name appends '_transformed'."""
-        from neurospatial.ops.transforms import translate
-
-        # Set original name
-        env = medium_2d_env.copy()
-        env = env.with_metadata(name="OriginalEnv")
-
-        transform = translate(5, 5)
-        transformed = env.apply_transform(transform)
-
-        assert "transformed" in transformed.name.lower()
-
     def test_apply_transform_preserves_units(self, medium_2d_env: Environment) -> None:
         """Test that units metadata is preserved."""
         # Create isolated copy to avoid mutating fixture
@@ -920,21 +863,6 @@ class TestApplyTransform:
         transformed = env_copy.apply_transform(transform)
 
         assert transformed.units == "cm"
-
-    def test_apply_transform_updates_frame(self, medium_2d_env: Environment) -> None:
-        """Test that frame is updated with '_transformed' suffix."""
-        # Create isolated copy
-        import copy
-
-        env_copy = copy.copy(medium_2d_env)
-        env_copy = env_copy.with_metadata(frame="session1")
-
-        from neurospatial.ops.transforms import translate
-
-        transform = translate(5, 5)
-        transformed = env_copy.apply_transform(transform)
-
-        assert "transformed" in transformed.frame
 
     def test_apply_transform_with_regions(self, medium_2d_env: Environment) -> None:
         """Test that regions are transformed along with environment."""
@@ -1018,23 +946,5 @@ class TestApplyTransform:
         # Try to apply 3D transform to 2D environment
         transform_3d = translate_3d(10, 20, 30)
 
-        with pytest.raises(ValueError, match=r"dimensionality.*does not match"):
+        with pytest.raises(ValueError, match=r"-D transform for .-D bins"):
             medium_2d_env.apply_transform(transform_3d)
-
-    def test_apply_transform_unfitted_env_raises_error(
-        self, small_2d_env: Environment
-    ) -> None:
-        """Test that applying transform to unfitted environment raises error."""
-        from neurospatial.ops.transforms import translate
-
-        # Create a fitted environment and then mark it as unfitted
-        # (simulates an environment that hasn't been properly initialized)
-        env = small_2d_env.copy()
-        env._is_fitted = False
-
-        transform = translate(5, 5)
-
-        from neurospatial.environment.decorators import EnvironmentNotFittedError
-
-        with pytest.raises(EnvironmentNotFittedError):
-            env.apply_transform(transform)

@@ -66,7 +66,7 @@ def capture_baseline(*, reuse_perf: bool = False) -> dict:
             for mode in MODES:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    kernel = env.compute_kernel(sigma, mode=mode, cache=False)
+                    kernel = env.compute_kernel(bandwidth=sigma, mode=mode, cache=False)
                 # Store only the dense operator's ACTION on the canonical fields
                 # (kernel @ field), not the full (n, n) matrix -- keeps the
                 # committed baseline small. A linear operator is determined by
@@ -116,7 +116,7 @@ def _capture_perf() -> dict:
     t0 = time.perf_counter()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        env.compute_kernel(PERF_SIGMA, mode="density", cache=False)
+        env.compute_kernel(bandwidth=PERF_SIGMA, mode="density", cache=False)
     elapsed = time.perf_counter() - t0
     _current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()

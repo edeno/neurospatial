@@ -12,17 +12,18 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import PathPatch
-from matplotlib.path import Path as MplPath
 from numpy.typing import NDArray
 
-from ..ops.transforms import SpatialTransform
+from neurospatial._exceptions import RegionNotFoundError
+
 from .core import Region, Regions
+
+if TYPE_CHECKING:
+    from ..ops.transforms import SpatialTransform
 
 
 # ---------------------------------------------------------------------
@@ -47,7 +48,9 @@ def plot_regions(
     ax : matplotlib.axes.Axes, optional
         Destination Axes. If None, uses the current Axes (``plt.gca()``).
     region_names : optional list or tuple
-        If given, plot only these names; otherwise plot *all*.
+        If given, plot only these names; otherwise plot *all*. A name not in
+        ``regions`` raises :class:`~neurospatial.RegionNotFoundError` with the
+        closest name.
     default_kwargs : dict, optional
         Plot kwargs applied to every region (unless overridden).
     world_to_pixel : SpatialTransform, optional
@@ -73,13 +76,20 @@ def plot_regions(
     * Legend labels default to the region name.
 
     """
-    try:
-        import shapely.geometry as _shp
-    except ModuleNotFoundError:  # polygon plotting will warn later if needed
-        _shp = None
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path as MplPath
 
     if region_names is None:
         region_names = tuple(regions.keys())
+    elif isinstance(region_names, str):
+        region_names = (region_names,)  # one name, not its characters
+
+    for name in region_names:
+        if name not in regions:
+            raise RegionNotFoundError(
+                name, available=list(regions), argument="region_names", in_list=True
+            )
 
     if not region_names:
         return  # nothing to draw
@@ -88,14 +98,6 @@ def plot_regions(
         ax = plt.gca()
 
     for name in region_names:
-        if name not in regions:
-            warnings.warn(
-                f"plot_regions: '{name}' not in collection; skipping.",
-                category=UserWarning,
-                stacklevel=2,
-            )
-            continue
-
         reg: Region = regions[name]
 
         # base → per-region kw → metadata → kwargs passed in call
@@ -124,14 +126,6 @@ def plot_regions(
             )
 
         elif reg.kind == "polygon":
-            if _shp is None:
-                warnings.warn(
-                    f"Can't draw polygon '{name}': shapely not installed.",
-                    category=UserWarning,
-                    stacklevel=2,
-                )
-                continue
-
             # Narrow type to Polygon
             from shapely.geometry import Polygon
 

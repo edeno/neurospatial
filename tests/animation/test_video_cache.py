@@ -2,7 +2,7 @@
 
 Tests verify that:
 1. VideoOverlay accepts cache_size parameter with appropriate defaults
-2. cache_size is passed through to VideoReader during conversion
+2. cache_size is passed through to _VideoReader during conversion
 3. cache_size validation works correctly
 4. Async prefetching pre-loads upcoming frames during sequential playback
 """
@@ -89,7 +89,7 @@ class TestVideoOverlayCacheSize:
 
 
 class TestVideoOverlayCacheSizeConversion:
-    """Test that cache_size is passed through to VideoReader during conversion."""
+    """Test that cache_size is passed through to _VideoReader during conversion."""
 
     @pytest.fixture
     def simple_env(self) -> Environment:
@@ -121,7 +121,7 @@ class TestVideoOverlayCacheSizeConversion:
     def test_cache_size_passed_to_videoreader(
         self, tiny_video_path: Path, simple_env: Environment
     ):
-        """Test that cache_size is passed to VideoReader."""
+        """Test that cache_size is passed to _VideoReader."""
         import warnings
 
         overlay = VideoOverlay(source=tiny_video_path, cache_size=50)
@@ -137,13 +137,13 @@ class TestVideoOverlayCacheSizeConversion:
             )
 
         # The reader should have cache_size=50
-        # VideoReader stores cache_size as _cache_size
+        # _VideoReader stores cache_size as _cache_size
         assert video_data.reader._cache_size == 50
 
     def test_cache_size_default_passed_to_videoreader(
         self, tiny_video_path: Path, simple_env: Environment
     ):
-        """Test that default cache_size=100 is passed to VideoReader."""
+        """Test that default cache_size=100 is passed to _VideoReader."""
         import warnings
 
         overlay = VideoOverlay(source=tiny_video_path)
@@ -203,7 +203,7 @@ class TestVideoOverlayCacheSizeConversion:
 
 
 class TestVideoReaderCachePerformance:
-    """Test that VideoReader cache works correctly with custom cache_size."""
+    """Test that _VideoReader cache works correctly with custom cache_size."""
 
     @pytest.fixture
     def tiny_video_path(self, tmp_path: Path) -> Path:
@@ -228,10 +228,10 @@ class TestVideoReaderCachePerformance:
 
     def test_small_cache_evicts_frames(self, tiny_video_path: Path):
         """Test that small cache size causes frame eviction."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
         # Create reader with cache size of 3
-        reader = VideoReader(tiny_video_path, cache_size=3)
+        reader = _VideoReader(tiny_video_path, cache_size=3)
 
         # Access frames 0, 1, 2 (fills cache)
         _ = reader[0]
@@ -257,10 +257,10 @@ class TestVideoReaderCachePerformance:
 
     def test_large_cache_retains_frames(self, tiny_video_path: Path):
         """Test that large cache size retains all accessed frames."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
         # Create reader with cache size of 100 (more than 20 frames)
-        reader = VideoReader(tiny_video_path, cache_size=100)
+        reader = _VideoReader(tiny_video_path, cache_size=100)
 
         # Access all 20 frames
         for i in range(20):
@@ -280,7 +280,7 @@ class TestVideoReaderCachePerformance:
 
 
 class TestVideoPrefetching:
-    """Test VideoReader prefetch_ahead parameter for async frame loading."""
+    """Test _VideoReader prefetch_ahead parameter for async frame loading."""
 
     @pytest.fixture
     def video_path_30_frames(self, tmp_path: Path) -> Path:
@@ -305,24 +305,24 @@ class TestVideoPrefetching:
 
     def test_prefetch_ahead_default_disabled(self, video_path_30_frames: Path):
         """Test that prefetch_ahead defaults to 0 (disabled)."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
-        reader = VideoReader(video_path_30_frames)
+        reader = _VideoReader(video_path_30_frames)
         assert reader.prefetch_ahead == 0
 
     def test_prefetch_ahead_can_be_set(self, video_path_30_frames: Path):
         """Test that prefetch_ahead can be set to a positive value."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
-        reader = VideoReader(video_path_30_frames, prefetch_ahead=5)
+        reader = _VideoReader(video_path_30_frames, prefetch_ahead=5)
         assert reader.prefetch_ahead == 5
 
     def test_prefetch_ahead_negative_raises_error(self, video_path_30_frames: Path):
         """Test that negative prefetch_ahead raises ValueError."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
         with pytest.raises(ValueError) as exc_info:
-            VideoReader(video_path_30_frames, prefetch_ahead=-1)
+            _VideoReader(video_path_30_frames, prefetch_ahead=-1)
 
         assert "prefetch_ahead" in str(exc_info.value).lower()
 
@@ -330,10 +330,10 @@ class TestVideoPrefetching:
         self, video_path_30_frames: Path
     ):
         """Test that accessing frame N pre-loads frames N+1 to N+prefetch_ahead."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
         # Create reader with prefetch_ahead=5 and large cache
-        reader = VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=5)
+        reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=5)
 
         # Access frame 0
         _ = reader[0]
@@ -358,10 +358,10 @@ class TestVideoPrefetching:
 
     def test_prefetch_stops_at_end_of_video(self, video_path_30_frames: Path):
         """Test that prefetch doesn't try to load frames past the end."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
         # Video has 30 frames (0-29)
-        reader = VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=10)
+        reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=10)
 
         # Access frame 25 - prefetch should only go up to frame 29
         _ = reader[25]
@@ -376,9 +376,9 @@ class TestVideoPrefetching:
 
     def test_prefetch_disabled_when_zero(self, video_path_30_frames: Path):
         """Test that prefetch_ahead=0 disables prefetching."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
-        reader = VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=0)
+        reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=0)
 
         # Access frame 0
         _ = reader[0]
@@ -394,9 +394,9 @@ class TestVideoPrefetching:
         """Test that concurrent access with prefetching is thread-safe."""
         from concurrent.futures import ThreadPoolExecutor
 
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
-        reader = VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=3)
+        reader = _VideoReader(video_path_30_frames, cache_size=100, prefetch_ahead=3)
 
         def access_frame(idx: int) -> np.ndarray:
             return reader[idx]
@@ -413,9 +413,9 @@ class TestVideoPrefetching:
 
     def test_prefetch_shutdown_on_deletion(self, video_path_30_frames: Path):
         """Test that prefetch thread is properly shut down when reader is deleted."""
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
-        reader = VideoReader(video_path_30_frames, prefetch_ahead=5)
+        reader = _VideoReader(video_path_30_frames, prefetch_ahead=5)
 
         # Access a frame to potentially start prefetching
         _ = reader[0]
@@ -484,7 +484,7 @@ class TestVideoOverlayPrefetching:
     def test_prefetch_ahead_passed_to_videoreader(
         self, tiny_video_path: Path, simple_env: Environment
     ):
-        """Test that prefetch_ahead is passed to VideoReader."""
+        """Test that prefetch_ahead is passed to _VideoReader."""
         import warnings
 
         overlay = VideoOverlay(source=tiny_video_path, prefetch_ahead=5)

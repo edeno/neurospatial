@@ -37,11 +37,13 @@ from matplotlib.quiver import Quiver
 from numpy.typing import NDArray
 from tqdm import tqdm
 
+from neurospatial.animation._region_names import shown_region_names
+
 if TYPE_CHECKING:
     from matplotlib.artist import Artist
 
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry import Binning
 
 
 def _get_field_artist(ax: Any) -> Artist | None:
@@ -110,7 +112,7 @@ def _update_field_artist(artist: Any, binning: Binning, field: Any) -> None:
     from matplotlib.collections import QuadMesh
 
     if isinstance(artist, QuadMesh):
-        from neurospatial.geometry._grid_frame import require_grid_context
+        from neurospatial.geometry import require_grid_context
         from neurospatial.layout.helpers.utils import map_active_data_to_grid
 
         grid, _ = require_grid_context(binning, "animation", fix="use a cell renderer")
@@ -702,20 +704,8 @@ def _render_regions_matplotlib(
     -----
     Uses PathPatch for polygon regions and circles for point regions.
     """
-    if not show_regions or len(env.regions) == 0:
-        return
-
-    # Determine which regions to show
-    if isinstance(show_regions, bool):
-        region_names = list(env.regions.keys())
-    else:
-        region_names = show_regions
-
     # Render each region
-    for region_name in region_names:
-        if region_name not in env.regions:
-            continue
-
+    for region_name in shown_region_names(env, show_regions):
         region = env.regions[region_name]
 
         if region.kind == "point":
@@ -902,19 +892,7 @@ class OverlayArtistManager:
 
     def _initialize_regions(self) -> None:
         """Create region patches (static, not updated per frame)."""
-        if not self.show_regions or len(self.env.regions) == 0:
-            return
-
-        region_names: list[str]
-        if isinstance(self.show_regions, bool):
-            region_names = list(self.env.regions.keys())
-        else:
-            region_names = self.show_regions
-
-        for region_name in region_names:
-            if region_name not in self.env.regions:
-                continue
-
+        for region_name in shown_region_names(self.env, self.show_regions):
             region = self.env.regions[region_name]
 
             if region.kind == "point":
@@ -1415,7 +1393,7 @@ def parallel_render_frames(
     ----------
     env : Environment
         Environment defining spatial structure. Must be pickle-able
-        (will be serialized to workers). Call env.clear_cache() first.
+        (will be serialized to workers). Cached analyses are never pickled.
     fields : list of ndarray of shape (n_bins,), dtype float64
         All fields to render. Each array contains field values for one frame.
     output_dir : str
@@ -1454,7 +1432,7 @@ def parallel_render_frames(
     ValueError
         If environment or overlay_data is not pickle-able when n_workers > 1.
         Error message includes WHAT/WHY/HOW format with actionable solutions:
-        - For environment: Call env.clear_cache() or use n_workers=1
+        - For environment: Replace unpickleable attached objects or use n_workers=1
         - For overlay_data: Remove unpickleable objects or use n_workers=1
 
     Examples
@@ -1489,17 +1467,16 @@ def parallel_render_frames(
         try:
             pickle.dumps(env, protocol=pickle.HIGHEST_PROTOCOL)
         except Exception as e:
-            # WHAT: Environment not pickle-able
-            # WHY: Parallel rendering requires pickling to send to workers
-            # Fix: Call env.clear_cache() or use n_workers=1
+            from neurospatial.animation._utils import _pickling_guidance
+
             raise ValueError(
                 f"WHAT: Environment is not pickle-able for parallel rendering.\n"
+                f"  Pickling failed with: {type(e).__name__}: {e}\n"
                 f"WHY: Parallel rendering (n_workers={n_workers}) requires serializing "
-                f"the environment to send to worker processes.\n"
-                f"Fix: Choose one of these solutions:\n"
-                f"  1. Call env.clear_cache() to remove unpickleable cached objects\n"
-                f"  2. Use n_workers=1 for serial rendering (no pickling required)\n"
-                f"Original error: {e}"
+                f"the environment to send to worker processes. Something attached "
+                f"to it cannot be pickled; cached analyses are never pickled, so "
+                f"they are not the cause.\n"
+                f"{_pickling_guidance('environment')}"
             ) from e
 
         # Validate overlay_data is pickle-able (if provided)

@@ -15,11 +15,13 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import native_layout
 from matplotlib.colors import to_rgba
 from matplotlib.patches import RegularPolygon
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
+from neurospatial.layout import create_layout
 
 
 def record_path(data, prefix, path):
@@ -229,12 +231,8 @@ def _assert_mesh_artists(env, figure, operation):
             axes.lines[len(rings) :], env.connectivity.edges(), strict=True
         ):
             np.testing.assert_array_equal(line.get_xydata(), env.bin_centers[[u, v]])
-    assert axes.get_xlabel() == (
-        "X coordinate" if operation == "plot" else "X Position"
-    )
-    assert axes.get_ylabel() == (
-        "Y coordinate" if operation == "plot" else "Y Position"
-    )
+    assert axes.get_xlabel() == "X Position"
+    assert axes.get_ylabel() == "Y Position"
 
 
 @pytest.mark.slow
@@ -258,7 +256,7 @@ def test_plot_artists_unchanged(built_environment, request, plot_artists, operat
 
 def _detached_native_layout(env, monkeypatch):
     """Inject a detached builder for tests deliberately corrupting layout data."""
-    layout = _native_oracle(env)
+    layout = native_layout(env)
     monkeypatch.setattr(env, "_layout", layout, raising=False)
     return layout
 
@@ -280,7 +278,7 @@ def test_plot_field_renderer_by_component(built_environment, request, monkeypatc
     }
     case = request.node.callspec.params["built_environment"]
     layout = _detached_native_layout(built_environment, monkeypatch)
-    layout._layout_type_tag = "unknown_layout"
+    layout.layout_type = "unknown_layout"
     figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
     try:
         built_environment.plot_field(
@@ -302,6 +300,24 @@ def test_plot_1d_uses_linearization(built_environment, plot_artists):
         _assert_artists(plot_artists, "track/plot_1d/", actual)
     finally:
         plt.close(figure)
+
+
+@pytest.mark.parametrize("built_environment", ["hex"], indirect=True)
+def test_hexagon_plots_are_framed_by_the_cell_extent(built_environment):
+    """plot() and plot_field() show the hexagons, corners included, and no more."""
+    env = built_environment
+    limits = []
+    for draw in (env.plot, env.plot_field):
+        figure, axes = plt.subplots()
+        try:
+            if draw == env.plot:
+                draw(ax=axes)
+            else:
+                draw(np.ones(env.n_bins), ax=axes, colorbar=False)
+            limits.append((axes.get_xlim(), axes.get_ylim()))
+        finally:
+            plt.close(figure)
+    assert limits[0] == limits[1] == tuple(tuple(r) for r in env.dimension_ranges)
 
 
 @pytest.mark.parametrize("built_environment", ["hex"], indirect=True)
@@ -423,11 +439,21 @@ def test_plot_helpers_draw_every_multipolygon_component(drawing):
         plt.close(figure)
 
 
-def _native_oracle(env):
-    if env._is_polar:
-        from neurospatial.layout.engines._polar import _PolarGridLayout
+def test_drawn_hexagons_are_the_environment_cells():
+    from shapely.geometry import Polygon as ShapelyPolygon
 
-        layout = _PolarGridLayout()
-        layout.build(**env.layout_parameters)
-        return layout
-    return Environment._create_layout(env.layout_type, env.layout_parameters)
+    from neurospatial.geometry._polygon import materialize_cells
+    from neurospatial.layout._plotting import _hexagon_patches
+
+    env = Environment.from_layout(
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
+    )
+    shapes = env.binning.shapes
+    cells = materialize_cells(env.binning)
+    patches = _hexagon_patches(shapes, shapes.centers)
+    assert len(patches) == env.n_bins
+    for patch, cell in zip(patches, cells, strict=True):
+        drawn = ShapelyPolygon(patch.get_verts())
+        assert drawn.symmetric_difference(cell).area < 1e-9 * cell.area

@@ -23,7 +23,6 @@ class TestMakeWatermaze:
         maze = make_watermaze()
         # Should have n_bins > 0 if fitted
         assert maze.env_2d.n_bins > 0
-        assert maze.env_2d._is_fitted
 
     def test_env_2d_connectivity_is_connected(self):
         """The open-field 2D environment must be a single connected component."""

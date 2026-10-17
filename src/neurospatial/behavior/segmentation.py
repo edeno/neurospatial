@@ -84,10 +84,11 @@ from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.environment import Environment
+    from neurospatial.geometry import CartesianSystem
 
 
 def _safe_gather(
@@ -468,7 +469,7 @@ def _detect_region_crossings_contiguous(
 ) -> list[Crossing]:
     """Detect crossings within one recording, after public input validation."""
     # Get bins in region using existing regions_to_mask functionality
-    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.mapping import regions_to_mask
 
     region_mask = regions_to_mask(env, [region_name])
 
@@ -652,15 +653,14 @@ def detect_runs_between_regions(
     True
     """
     if min_speed is not None:
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             "detect_runs_between_regions(min_speed=...)",
-            instead=(
-                "Run speed needs Cartesian bin centers; pass min_speed=None to "
-                "detect runs from region entries alone."
+            why=(
+                "Run speed comes from the Cartesian distance between successive bin "
+                "centers."
             ),
+            fix="pass min_speed=None to detect runs from region entries alone",
         )
     # Validate inputs
     if source not in env.regions:
@@ -711,7 +711,7 @@ def _detect_runs_between_regions_contiguous(
 ) -> list[Run]:
     """Analyze one recording after the public input validation."""
     # Get region masks
-    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.mapping import regions_to_mask
 
     source_mask = regions_to_mask(env, [source])
     target_mask = regions_to_mask(env, [target])
@@ -1331,14 +1331,13 @@ def detect_laps(
            The reorganization and reactivation of hippocampal maps predict
            spatial memory performance. Nature Neuroscience, 13(8), 995-1002.
     """
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    _require_cartesian_coordinates(
-        env,
+    require_cartesian(
+        env.coordinate_system,
         "detect_laps()",
-        instead=(
-            "Lap direction needs Cartesian bin centers; detect laps on an "
-            "allocentric Cartesian environment."
+        why="Lap direction comes from Cartesian steps between bin centers.",
+        fix=(
+            "detect laps on an allocentric environment built from the animal's "
+            "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
     # Validate method
@@ -2077,7 +2076,7 @@ def segment_trials(
         if region not in env.regions:
             available = list(env.regions.keys())
             raise RegionNotFoundError(
-                region, available=available, argument="end_regions"
+                region, available=available, argument="end_regions", in_list=True
             )
 
     # Prevent start_region from being in end_regions (typical neuroscience practice)
@@ -2132,7 +2131,7 @@ def _segment_trials_contiguous(
 ) -> list[Trial]:
     """Analyze one recording after the public input validation."""
     # Get region masks using existing functionality
-    from neurospatial.ops.binning import regions_to_mask
+    from neurospatial.ops.mapping import regions_to_mask
 
     start_mask = regions_to_mask(env, [start_region])
     end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
@@ -2357,12 +2356,14 @@ def trajectory_similarity(
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
     if method in ("hausdorff", "dtw"):
-        from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-        _require_cartesian_coordinates(
-            env,
+        require_cartesian(
+            env.coordinate_system,
             f"trajectory_similarity(method={method!r})",
-            instead="Use method='jaccard' or method='correlation', which compare bins.",
+            why=(
+                "Hausdorff and DTW distances measure straight lines between bin "
+                "centers."
+            ),
+            fix="use method='jaccard' or method='correlation', which compare bins",
         )
 
     if method == "jaccard":
@@ -2637,8 +2638,8 @@ def detect_goal_directed_runs(
     position_bins = np.asarray(position_bins)
     times = np.asarray(times, dtype=np.float64)
 
-    from neurospatial.ops.binning import regions_to_mask
     from neurospatial.ops.distance import distance_field
+    from neurospatial.ops.mapping import regions_to_mask
 
     goal_bin_indices = np.flatnonzero(regions_to_mask(env, [goal_region]))
     if len(goal_bin_indices) == 0:

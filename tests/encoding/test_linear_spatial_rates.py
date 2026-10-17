@@ -282,9 +282,9 @@ def test_linear_speed_windows_and_provenance_snapshot_share_retained_support():
 def test_linear_interval_preparation_happens_once_per_public_batch(
     monkeypatch, method, n_units
 ):
-    from neurospatial.encoding import _binning
+    from neurospatial.encoding import _spatial_counts
 
-    original = _binning.prepare_linear_spatial_intervals
+    original = _spatial_counts.prepare_linear_spatial_intervals
     calls = []
 
     def record(*args, **kwargs):
@@ -292,7 +292,7 @@ def test_linear_interval_preparation_happens_once_per_public_batch(
         calls.append(result)
         return result
 
-    monkeypatch.setattr(_binning, "prepare_linear_spatial_intervals", record)
+    monkeypatch.setattr(_spatial_counts, "prepare_linear_spatial_intervals", record)
     options = {
         "method": method,
         "time_allocation": "linear",

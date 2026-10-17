@@ -329,7 +329,7 @@ Which boundary counts as a wall is a scientific choice. By default
 declared footprint and any internal walls. An environment built from tracked
 positions (`Environment.from_samples`) has no measured walls, so the default
 raises and asks for that choice. Either build the environment from the
-measured arena outline (`Environment.from_polygon(outline, bin_size)`), or
+measured arena outline (`Environment.from_polygon(outline, bin_size=...)`), or
 pass `boundary_source="analysis"` to score against the edges of the visited
 bins, as in the examples below. See
 [Choose physical walls or analysis boundaries](environments.md#choose-physical-walls-or-analysis-boundaries).

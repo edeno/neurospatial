@@ -43,8 +43,7 @@ This module is designed to assist in scenarios such as:
         to another (e.g., a coarser grid or a different layout type), while
         attempting to preserve the spatial correspondence of the data.
 
-The functions generally expect `Environment` objects that have been "fitted"
-(i.e., their `bin_centers` attribute is populated) and probability arrays
+The functions expect `Environment` objects and probability arrays
 that correspond to the active bins of these environments.
 """
 
@@ -57,14 +56,17 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
-from neurospatial._exceptions import EnvironmentNotFittedError
+from neurospatial._constants import IDW_MIN_DISTANCE
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
-    from neurospatial.environment import Environment
-    from neurospatial.environment._coordinates import CartesianSystem
+    from neurospatial.ops._protocols import (
+        BinsConsumer,
+        CartesianBinsConsumer,
+        ProbabilityTargetConsumer,
+    )
 
 __all__ = [
     "ProbabilityMappingParams",
@@ -85,9 +87,9 @@ class ProbabilityMappingParams:
     Parameters
     ----------
     source_env : Environment
-        Source environment (must be fitted).
+        Source environment.
     target_env : Environment
-        Target environment (must be fitted).
+        Target environment.
     source_probs : NDArray[np.float64]
         Source probability array, shape (n_source_bins,).
     mode : Literal["nearest", "inverse-distance-weighted"]
@@ -102,24 +104,14 @@ class ProbabilityMappingParams:
 
     """
 
-    source_env: Environment
-    target_env: Environment
+    source_env: BinsConsumer
+    target_env: BinsConsumer
     source_probs: NDArray[np.float64]
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest"
     n_neighbors: int = 1
 
     def __post_init__(self) -> None:
         """Validate all parameters."""
-        # Check fitted state
-        if not getattr(self.source_env, "_is_fitted", False):
-            raise EnvironmentNotFittedError(
-                "map_probabilities(source_env)", is_function=True
-            )
-        if not getattr(self.target_env, "_is_fitted", False):
-            raise EnvironmentNotFittedError(
-                "map_probabilities(target_env)", is_function=True
-            )
-
         # Check dimension compatibility
         if self.source_env.n_dims != self.target_env.n_dims:
             raise ValueError(
@@ -445,8 +437,8 @@ def _map_inverse_distance_weighted(
 
 
 def map_probabilities(
-    source_env: Environment[CartesianSystem],
-    target_env: Environment[CartesianSystem],
+    source_env: CartesianBinsConsumer,
+    target_env: ProbabilityTargetConsumer,
     source_probs: NDArray[np.float64],
     *,
     mode: Literal["nearest", "inverse-distance-weighted"] = "nearest",
@@ -462,9 +454,9 @@ def map_probabilities(
     Parameters
     ----------
     source_env : Environment
-        A fitted Environment whose bins currently have centers `source_env.bin_centers`.
+        An Environment whose bins currently have centers `source_env.bin_centers`.
     target_env : Environment
-        A fitted Environment onto whose bins we want to map probabilities.
+        An Environment onto whose bins we want to map probabilities.
     source_probs : NDArray[np.float64]
         1D array of length source_env.n_bins (nonnegative).
     mode : {'nearest', 'inverse-distance-weighted'}
@@ -497,8 +489,6 @@ def map_probabilities(
 
     Raises
     ------
-    RuntimeError
-        If either `source_env` or `target_env` is not fitted.
     ValueError
         If `source_probabilities` has incorrect shape, or if dims mismatch.
     CartesianOnlyError
@@ -538,8 +528,6 @@ def map_probabilities(
     ... )
 
     """
-    from scipy.spatial import cKDTree
-
     # Validate inputs using dataclass
     params = ProbabilityMappingParams(
         source_env=source_env,
@@ -548,15 +536,17 @@ def map_probabilities(
         mode=mode,
         n_neighbors=n_neighbors,
     )
-    from neurospatial.geometry._coordinates import _require_cartesian_coordinates
-
-    for env in (source_env, target_env):
-        _require_cartesian_coordinates(
-            env,
-            "map_probabilities()",
-            instead=(
-                "Bins are matched by nearest Cartesian center; map probabilities "
-                "between allocentric Cartesian environments."
+    for argument, env in (("source_env", source_env), ("target_env", target_env)):
+        require_cartesian(
+            env.coordinate_system,
+            f"map_probabilities({argument}=...)",
+            why=(
+                "It matches each target bin to the nearest Cartesian source bin center."
+            ),
+            fix=(
+                "map probabilities between allocentric environments; decode polar "
+                "maps on one shared Environment.from_polar_egocentric(...) "
+                "environment"
             ),
         )
     n_src = params.n_source_bins
@@ -579,10 +569,8 @@ def map_probabilities(
         source_translation_vector,
     )
 
-    # Build KDTree on target bin centers. A construction error here means the
-    # target env has malformed (e.g. non-finite or wrong-dimension) bin centers;
-    # surface it instead of returning a misleading all-zero map.
-    tree = cKDTree(target_env.bin_centers, leafsize=KDTREE_LEAF_SIZE)
+    # The target environment's cached KD-tree over its bin centers.
+    tree = target_env.bin_center_tree()
 
     # Perform the requested mapping
     if mode == "nearest":

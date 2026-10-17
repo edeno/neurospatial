@@ -16,7 +16,6 @@ class TestMakeSungodMaze:
         maze = make_sungod_maze()
         assert isinstance(maze, MazeEnvironments)
         assert maze.env_2d.n_bins > 0
-        assert maze.env_2d._is_fitted
         assert maze.env_2d.units == "cm"
 
     def test_env_2d_is_connected(self):
