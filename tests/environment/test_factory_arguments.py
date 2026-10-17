@@ -176,6 +176,30 @@ def test_open_field_accepts_fill_holes_false_where_nothing_is_filled(
     )
 
 
+@pytest.mark.parametrize("factory", ["from_samples", "open_field"])
+def test_unused_mask_options_are_recorded_at_their_no_op_values(factory, positions):
+    """Without inferred bins nothing is thresholded, dilated, filled or closed.
+
+    ``layout_parameters`` describes the bins that were built, so it must not
+    report ``open_field``'s ``fill_holes=True`` default for an all-active grid.
+    """
+    env = getattr(Environment, factory)(
+        positions, bin_size=3.0, infer_active_bins=False
+    )
+    recorded = {option: env.layout_parameters[option] for option in _MASK_OPTIONS}
+    assert recorded == {
+        "bin_count_threshold": 0,
+        "dilate": False,
+        "fill_holes": False,
+        "close_gaps": False,
+    }
+    unfilled = Environment.from_samples(
+        positions, bin_size=3.0, infer_active_bins=False
+    )
+    _same_bins(env, unfilled)
+    assert env.layout_parameters == unfilled.layout_parameters
+
+
 def test_refusal_lists_every_inapplicable_option(positions):
     with pytest.raises(ValueError, match="cannot apply dilate=True, close_gaps=True"):
         Environment.from_samples(

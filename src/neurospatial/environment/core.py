@@ -825,6 +825,9 @@ class Environment(Generic[_C]):
         here; the geometry built from it is in ``env.binning``, for example
         ``env.binning.linearization.graph`` for a track. The values describe
         how the environment was built and do not affect any analysis.
+        An option the bins did not use is recorded at the value that does
+        nothing, so ``open_field(..., infer_active_bins=False)`` records
+        ``fill_holes=False``: no bin was filled.
 
         ``subset``, ``clip`` and ``apply_transform`` keep the bins they were
         given, so they keep these choices. ``rebin`` builds new bins and

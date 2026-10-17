@@ -431,6 +431,18 @@ numbers come back as tuples.
 The parameters never affected any analysis, and loading a saved environment
 does not need them: the bins, graph and arena are stored directly.
 
+They describe the bins that were built. An option the bins did not use is
+recorded at the value that does nothing: with `infer_active_bins=False` every
+bin is active, so `open_field` records `fill_holes=False` (it used to record
+its default `fill_holes=True`):
+
+<!-- docs-test: run -->
+```python
+assert Environment.open_field(
+    positions, bin_size=4.0, infer_active_bins=False
+).layout_parameters["fill_holes"] is False
+```
+
 <!-- docs-test: run -->
 ```python
 # Before: env.layout_parameters["dimension_ranges"]

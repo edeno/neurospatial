@@ -310,12 +310,19 @@ def _from_samples(
             )
         )
 
+    # The layout records every option it is given as env.layout_parameters,
+    # so pass an option the bins do not use at its no-op value: the record
+    # then describes the bins that were built (open_field's fill_holes=True
+    # did not fill anything when every bin is active).
+    if not infer_active_bins:
+        options.update({key: _SAMPLE_OPTION_DEFAULTS[key] for key in _MASK_OPTIONS})
+
     # Build the dict of layout parameters
     # Common parameters for all layouts
     common_params = {
         "positions": positions,
         "infer_active_bins": infer_active_bins,
-        "bin_count_threshold": bin_count_threshold,
+        "bin_count_threshold": options["bin_count_threshold"],
     }
 
     # Layout-specific parameters
