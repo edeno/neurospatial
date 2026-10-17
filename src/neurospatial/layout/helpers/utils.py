@@ -316,7 +316,9 @@ def _infer_dimension_ranges_from_samples(
     if clean_samples.shape[0] == 0:
         raise ValueError(
             _format_error(
-                f"All 'positions' are NaN or the array is empty: {len(positions)} of {len(positions)} rows contain NaN; check for tracking dropouts.",
+                f"No position has a finite value: all {len(positions)} rows contain "
+                "NaN or infinite coordinates, or the array is empty; check for "
+                "tracking dropouts.",
                 why="Why: finite positions are required to infer the environment's extent.",
                 fix="remove tracking-dropout rows or interpolate them before calling Environment.from_samples(positions, bin_size=2.0)",
             )
