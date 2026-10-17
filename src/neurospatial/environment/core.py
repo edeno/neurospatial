@@ -2727,6 +2727,7 @@ class Environment(Generic[_C]):
             binning=self._binning,
             regions=self.regions,
             arena=self.arena,
+            cache=self._cache,
         )
         return publish_derived(self, derivation, name=name, frame=frame)
 

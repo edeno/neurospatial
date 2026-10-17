@@ -8,6 +8,7 @@ function here takes the cache and the published :class:`Binning` explicitly.
 from __future__ import annotations
 
 import warnings
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -33,6 +34,7 @@ from neurospatial.geometry import (
     DiffusionGeometry,
     EgocentricPolarSystem,
     FaceGeometry,
+    KnownFaces,
     combined_diffusion,
     get_centers,
     locate,
@@ -320,6 +322,17 @@ def _interpolate_linear(
 def face_geometry(cache: AnalysisCache, binning: Binning) -> FaceGeometry:
     """Validated cell faces, built once per published geometry."""
     return cache.get(FACE_GEOMETRY, binning.faces.build)
+
+
+def with_cached_faces(cache: AnalysisCache, binning: Binning) -> Binning:
+    """Return ``binning`` with its faces taken from the cache, built once.
+
+    A derivation that carries faces into its child then reads the parent's
+    cached faces instead of building them again from the layout's recipe.
+    """
+    if not binning.faces.available or isinstance(binning.faces, KnownFaces):
+        return binning
+    return replace(binning, faces=KnownFaces(face_geometry(cache, binning)))
 
 
 def require_face_geometry(

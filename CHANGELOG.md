@@ -1256,6 +1256,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   3.4 s instead of 4.6 s and `subset` 2.2 s instead of 3.2 s. The graph is
   unchanged.
 
+- `subset` and `apply_transform` reuse the parent environment's cell faces
+  once smoothing or another diffusion analysis has built them, instead of
+  building them again: on a 90,000-bin grid `subset` takes 0.43 s instead of
+  2.2 s after such an analysis.
+
 ### Fixed
 
 - `apply_transform` accepts a rotation by an angle so small that its sine is

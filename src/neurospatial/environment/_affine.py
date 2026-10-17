@@ -10,6 +10,8 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import _format_error
+from neurospatial.environment._cache import AnalysisCache
+from neurospatial.environment._fields import with_cached_faces
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry import (
     Arena,
@@ -28,6 +30,7 @@ def _apply_transform(
     binning: Binning,
     regions: Regions,
     arena: Arena,
+    cache: AnalysisCache,
 ) -> _Derivation:
     """Transform owned cells, their bounds, arenas and regions together."""
     n_dims = binning.bins.n_dims
@@ -79,7 +82,7 @@ def _apply_transform(
             "Fix: use nonzero scale factors and an invertible affine matrix."
         ) from exc
 
-    transformed = transform_binning(binning, transform)
+    transformed = transform_binning(with_cached_faces(cache, binning), transform)
 
     # Publication records the transformed cells' extent as the ranges; bins
     # without cells map the corners of their declared box instead.

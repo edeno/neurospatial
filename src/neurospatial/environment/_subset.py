@@ -11,6 +11,7 @@ import shapely.geometry.base
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial.environment._fields import with_cached_faces
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry import (
     Binning,
@@ -169,4 +170,4 @@ def _subset(
         include_boundary=include_boundary,
         invert=invert,
     )
-    return _Derivation(select_bins(binning, mask), "subset")
+    return _Derivation(select_bins(with_cached_faces(cache, binning), mask), "subset")
