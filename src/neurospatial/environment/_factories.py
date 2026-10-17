@@ -155,6 +155,17 @@ def _changed(
     ]
 
 
+def diagonal_choice(n_dims: int, connect_diagonal_neighbors: bool) -> bool:
+    """Return the diagonal-neighbor choice to build and record for a grid.
+
+    A diagonal neighbor differs along two axes, so a 1-D grid, and every grid
+    derived from it, has none; its record is then ``False``, the value that
+    does nothing, whatever was asked for. A 2-D grid one cell wide keeps the
+    choice, because refining it with ``rebin`` creates diagonal neighbors.
+    """
+    return bool(connect_diagonal_neighbors) if n_dims >= 2 else False
+
+
 def _from_samples(
     cls: type[Environment[Any]],
     positions: NDArray[np.float64],
@@ -323,6 +334,9 @@ def _from_samples(
     # did not fill anything when every bin is active).
     if not infer_active_bins:
         options.update({key: _SAMPLE_OPTION_DEFAULTS[key] for key in _MASK_OPTIONS})
+    options["connect_diagonal_neighbors"] = diagonal_choice(
+        n_dims, options["connect_diagonal_neighbors"]
+    )
 
     # Build the dict of layout parameters
     # Common parameters for all layouts
@@ -687,7 +701,9 @@ def _from_grid_mask(
     layout_params = {
         "active_mask": active_mask,
         "grid_edges": grid_edges,
-        "connect_diagonal_neighbors": connect_diagonal_neighbors,
+        "connect_diagonal_neighbors": diagonal_choice(
+            np.ndim(active_mask), connect_diagonal_neighbors
+        ),
     }
 
     return _build_layout(

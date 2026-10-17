@@ -500,3 +500,37 @@ def test_other_argument_errors_keep_their_python_message(positions):
     # A TypeError raised while the factory runs is not rewritten.
     with pytest.raises(TypeError, match="bin_size must be a numeric value"):
         Environment.from_samples(positions, bin_size="four")
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda diagonal: Environment.from_samples(
+            np.linspace(0.0, 30.0, 200)[:, None],
+            bin_size=3.0,
+            connect_diagonal_neighbors=diagonal,
+        ),
+        lambda diagonal: Environment.from_grid_mask(
+            np.ones(6, dtype=bool),
+            (np.arange(7.0),),
+            connect_diagonal_neighbors=diagonal,
+        ),
+    ],
+    ids=["1-D samples", "1-D mask"],
+)
+def test_diagonal_choice_on_a_1d_grid_is_recorded_as_no_op(build):
+    """A 1-D grid, and every grid derived from it, has no diagonal neighbors."""
+    connected, unconnected = build(True), build(False)
+    _same_bins(connected, unconnected)
+    assert connected.layout_parameters["connect_diagonal_neighbors"] is False
+    assert connected.layout_parameters == unconnected.layout_parameters
+    _same_bins(connected.rebin(bin_size=1.0), unconnected.rebin(bin_size=1.0))
+
+
+def test_diagonal_choice_is_kept_where_it_acts(positions):
+    with_diagonals = Environment.from_samples(positions, bin_size=3.0)
+    without = Environment.from_samples(
+        positions, bin_size=3.0, connect_diagonal_neighbors=False
+    )
+    assert with_diagonals.layout_parameters["connect_diagonal_neighbors"] is True
+    assert len(with_diagonals.edge_pairs) > len(without.edge_pairs)

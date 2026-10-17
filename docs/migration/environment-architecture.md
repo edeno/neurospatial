@@ -441,7 +441,8 @@ bin_size = env.layout_parameters["bin_size"]  # scalar choices are still there
 The recorded choices describe the bins that were built. An option the bins
 did not use is recorded at the value that does nothing: with
 `infer_active_bins=False` every bin is active, so `open_field` records
-`fill_holes=False` (it used to record its default `fill_holes=True`). An
+`fill_holes=False` (it used to record its default `fill_holes=True`), and a
+1-D grid records `connect_diagonal_neighbors=False`. An
 option that cannot act at all is refused, as `edge_spacing` is on a straight
 `linear_track`, which has one edge and no gap between edges:
 

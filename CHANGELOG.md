@@ -740,7 +740,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `fill_holes=True`, its default, although every bin is active and nothing was
   filled; it now records `fill_holes=False`, and `bin_count_threshold`,
   `dilate` and `close_gaps` are recorded as `0`/`False` whenever active bins
-  are not inferred.
+  are not inferred. A 1-D grid (from 1-D samples or a 1-D mask) has no
+  diagonal neighbors, and neither has any grid `rebin` derives from it, so it
+  records `connect_diagonal_neighbors=False` whatever was passed; it used to
+  record the default `True`. The bins are unchanged. A 2-D grid one cell wide
+  keeps the choice, because refining it creates diagonal neighbors.
 
 - `Environment.from_graph`, `linear_track` and `maze` accept a NumPy scalar
   `edge_spacing` (for example `np.float32(2.0)` read from a config array) as
