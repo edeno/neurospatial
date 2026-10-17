@@ -1112,8 +1112,8 @@ polar_env = Environment.from_polar_egocentric(
     units="cm",
 )
 points = np.array([[15.0, 0.3], [15.0, 0.3 + 2 * np.pi], [55.0, 0.0]])
-# Before: polar_env.bin_at(points) raised CartesianOnlyError, and the suggested
-# workaround compared the rows with dimension_ranges and used nearest_bin
+# Before: polar_env.bin_at(points) raised CartesianOnlyError, which suggested
+# graph operations or building an allocentric Cartesian environment instead
 bins = polar_env.bin_at(points)
 assert bins[0] == bins[1] >= 0  # one direction, one bin
 assert bins[2] == -1  # beyond the 40 cm surround
