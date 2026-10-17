@@ -282,3 +282,20 @@ def test_html_draws_the_scale_bar(animation, tmp_path):
         )
         pages[scale_bar] = path.read_text()
     assert pages[True] != pages[False]
+
+
+def test_napari_dry_run_checks_the_inputs_a_real_run_checks(animation):
+    """A multi-field call without a layout fails the same way in a dry run."""
+    _available("napari")
+    env, fields, times = animation
+    sequences = [list(fields), list(fields)]
+    with pytest.raises(ValueError, match="requires 'layout'"):
+        env.animate_fields(sequences, frame_times=times, backend="napari", dry_run=True)
+    result = env.animate_fields(
+        sequences,
+        frame_times=times,
+        backend="napari",
+        layout="horizontal",
+        dry_run=True,
+    )
+    assert result is None

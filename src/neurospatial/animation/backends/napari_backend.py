@@ -3043,14 +3043,6 @@ def render_napari(
             "  uv add napari[all]"
         )
 
-    if dry_run:
-        n_frames = len(fields[0]) if _is_multi_field_input(fields) else len(fields)  # type: ignore[arg-type]
-        _emit_status(
-            f"Napari dry run: {n_frames:,} frames at {fps} fps. No viewer was "
-            "opened. To proceed, call again with dry_run=False."
-        )
-        return None
-
     # Detect if fields is a 2D array (memmap-friendly path)
     # This skips validation/multi-field detection which require list iteration
     fields_is_array = isinstance(fields, np.ndarray) and fields.ndim == 2
@@ -3087,7 +3079,12 @@ def render_napari(
             sample_rate_hz=sample_rate_hz,
             max_playback_fps=max_playback_fps,
             frame_times=frame_times,
+            dry_run=dry_run,
         )
+
+    if dry_run:
+        _report_napari_dry_run(len(fields), fps)
+        return None
 
     # Single-field viewer (original behavior)
     # At this point, fields is either:
@@ -3330,6 +3327,14 @@ def render_napari(
     return viewer
 
 
+def _report_napari_dry_run(n_frames: int, fps: int) -> None:
+    """Report a napari dry run, after the inputs were checked."""
+    _emit_status(
+        f"Napari dry run: {n_frames:,} frames at {fps} fps. No viewer was "
+        "opened. To proceed, call again with dry_run=False."
+    )
+
+
 def _render_multi_field_napari(
     env: Environment,
     field_sequences: list[list[NDArray[np.float64]]],
@@ -3353,7 +3358,8 @@ def _render_multi_field_napari(
     sample_rate_hz: float | None = None,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
     frame_times: NDArray[np.float64] | None = None,
-) -> napari.Viewer:
+    dry_run: bool = False,
+) -> napari.Viewer | None:
     """Render multiple field sequences in a single napari viewer.
 
     Creates separate image layers for each field sequence, arranged according
@@ -3448,6 +3454,10 @@ def _render_multi_field_napari(
                 f"Number of layer_names ({len(layer_names)}) must match "
                 f"number of sequences ({n_sequences})"
             )
+
+    if dry_run:
+        _report_napari_dry_run(sequence_lengths[0], fps)
+        return None
 
     from neurospatial.animation.rendering import compute_global_colormap_range
 
