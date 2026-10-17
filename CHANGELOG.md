@@ -1243,6 +1243,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   sparse adjacency lookup instead of a Python loop: 1,000,000 steps on a
   90,000-bin grid take 0.04 s instead of 0.49 s. The counts are unchanged.
 
+- `nearest_bin` and `interpolate(mode="nearest")` resolve a point that lies
+  equally close to several bins by measuring only the bins near that point,
+  instead of every bin: for points on the cell corners of a 10,000-bin grid
+  this is about 100 times faster and no longer allocates an array the size
+  of points × bins. The chosen bin (the lowest-numbered tied bin) is
+  unchanged.
+
 ### Fixed
 
 - `apply_transform` accepts a rotation by an angle so small that its sine is

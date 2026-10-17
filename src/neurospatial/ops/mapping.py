@@ -168,6 +168,46 @@ def _validate_nearest_options(
     return tie_break
 
 
+def _lowest_tied_index(
+    bin_centers: NDArray[np.float64],
+    kdtree: cKDTree,
+    points: NDArray[np.float64],
+    nearest: NDArray[np.float64],
+) -> NDArray[np.int64]:
+    """Lowest index among the centers equidistant (within 1e-10) to each point.
+
+    Only the centers in a ball just wider than each point's nearest distance
+    can tie, so their distances are computed instead of all centers'.
+
+    Parameters
+    ----------
+    bin_centers : ndarray, shape (n_bins, n_dims)
+    kdtree : scipy.spatial.cKDTree
+        Tree over ``bin_centers``.
+    points : ndarray, shape (n_points, n_dims)
+    nearest : ndarray, shape (n_points,)
+        Distance from each point to its nearest center, from ``kdtree``.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_points,)
+    """
+    # The margin covers the tie tolerance and rounding differences between
+    # the tree's distances and np.linalg.norm.
+    radius = nearest * (1.0 + 1e-12) + 2e-10
+    candidates = kdtree.query_ball_point(
+        points, radius, workers=-1, return_sorted=False
+    )
+    counts = np.fromiter(map(len, candidates), dtype=np.intp, count=len(points))
+    index = np.concatenate(candidates).astype(np.int64)
+    row = np.repeat(np.arange(len(points)), counts)
+    starts = np.r_[0, np.cumsum(counts)[:-1]]
+    distance = np.linalg.norm(bin_centers[index] - points[row], axis=1)
+    row_min = np.minimum.reduceat(distance, starts)
+    tied = np.abs(distance - row_min[row]) < 1e-10
+    return np.minimum.reduceat(np.where(tied, index, np.iinfo(np.int64).max), starts)
+
+
 def _nearest_bin_query(
     bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
@@ -226,15 +266,11 @@ def _nearest_bin_query(
             # cKDTree only returns max_neighbors candidates above. For exact ties
             # involving more candidates, compute all-center distances only for
             # rows where a tie was detected.
-            tied_rows = np.count_nonzero(is_tied, axis=1) > 1
-            if np.any(tied_rows):
-                all_distances = np.linalg.norm(
-                    bin_centers[None, :, :] - points[tied_rows, None, :],
-                    axis=2,
+            tied_rows = np.flatnonzero(np.count_nonzero(is_tied, axis=1) > 1)
+            if tied_rows.size:
+                bin_indices[tied_rows] = _lowest_tied_index(
+                    bin_centers, kdtree, points[tied_rows], distances[tied_rows]
                 )
-                min_distances = np.min(all_distances, axis=1, keepdims=True)
-                all_tied = np.abs(all_distances - min_distances) < 1e-10
-                bin_indices[tied_rows] = np.argmax(all_tied, axis=1).astype(np.int64)
 
     else:
         raise ValueError(
