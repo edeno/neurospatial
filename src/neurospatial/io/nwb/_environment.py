@@ -158,7 +158,7 @@ def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
 def read_environment(
     nwbfile: NWBFile,
     name: str = DEFAULT_ENVIRONMENT_NAME,
-) -> Environment:
+) -> Environment[Any]:
     """Decode a saved NWB binning and Arena record without a layout builder.
 
     Every stored binning capability is retained, including geometric lookup,
@@ -177,6 +177,9 @@ def read_environment(
     -------
     Environment
         Restored environment, including its original coordinate system.
+        Cartesian or egocentric polar, as stored; static type checkers see
+        ``Environment[Any]`` because the stored record decides. Check
+        ``env.coordinate_kind`` before calling Cartesian-only methods.
 
     Raises
     ------

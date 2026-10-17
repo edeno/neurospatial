@@ -35,11 +35,8 @@ from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry import Arena
+    from neurospatial.geometry import Arena, Binning
     from neurospatial.layout.base import LayoutEngine
-
-PolygonType = type[shapely.geometry.Polygon]
-
 
 # A spatial environment has very few dimensions (1-D linear tracks, 2-D open
 # fields, occasionally 3-D). A column count above this, *combined with* more
@@ -61,7 +58,7 @@ def _owned_copy(value: Any) -> Any:
 
 def _from_bins(
     cls: type[Environment[Any]],
-    binning: object,
+    binning: Binning,
     *,
     name: str = "",
     units: str | None = None,
@@ -851,7 +848,7 @@ def _from_graph(
 
 def _from_polygon(
     cls: type[Environment[Any]],
-    polygon: PolygonType,
+    polygon: shapely.Polygon,
     *,
     bin_size: float | Sequence[float],
     name: str = "",

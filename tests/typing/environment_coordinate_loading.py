@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import numpy as np
     from numpy.typing import NDArray
+    from shapely.geometry import Polygon
     from typing_extensions import assert_type
 
     from neurospatial import Environment
+    from neurospatial.geometry import Binning, CartesianSystem
     from neurospatial.io import from_dict, from_file
 
     def _shared(env: Environment, values: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -18,6 +20,18 @@ if TYPE_CHECKING:
         assert_type(Environment.from_file(path), Environment[Any])
         assert_type(from_dict(data), Environment[Any])
         assert_type(from_file(path), Environment[Any])
+
+    def _check_nwb_loading(nwbfile: Any) -> None:
+        # The stored record decides the coordinate system.
+        assert_type(Environment.from_nwb(nwbfile), Environment[Any])
+
+    def _check_explicit_factories(binning: Binning, outline: Polygon) -> None:
+        # from_bins and from_polygon build Cartesian environments.
+        assert_type(Environment.from_bins(binning), Environment[CartesianSystem])
+        assert_type(
+            Environment.from_polygon(outline, bin_size=2.0),
+            Environment[CartesianSystem],
+        )
 
     def _check_shared(values: NDArray[np.float64]) -> None:
         polar = Environment.from_polar_egocentric(

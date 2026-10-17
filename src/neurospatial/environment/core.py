@@ -143,7 +143,6 @@ if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.animation.overlays import OverlayProtocol
-    from neurospatial.environment._factories import PolygonType
     from neurospatial.geometry import Arena, ClipMapping, DiffusionGeometry
     from neurospatial.layout import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
@@ -2688,7 +2687,7 @@ class Environment(Generic[_C]):
     @keyword_hint()
     def from_bins(
         cls,
-        binning: object,
+        binning: Binning,
         *,
         name: str = "",
         units: str | None = None,
@@ -2700,11 +2699,13 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        binning : neurospatial.binning.Binning or registered provider
+        binning : neurospatial.binning.Binning
             Bin centers, measures and ordered neighbor pairs, with an explicit
             supported locator. KnownFaces enables finite-volume operations;
             MissingFaces explicitly refuses them. Shapes are required for exact
             clipping. Centers and sizes alone cannot establish these capabilities.
+            An object from another package with an installed snapshot adapter
+            is converted to a Binning first.
         name : str, default=""
             Environment name.
         units, frame : str or None, optional
@@ -3502,7 +3503,7 @@ class Environment(Generic[_C]):
     @keyword_hint("bin_size")
     def from_polygon(
         cls,
-        polygon: PolygonType,
+        polygon: shapely.Polygon,
         *,
         bin_size: float | Sequence[float],
         name: str = "",
@@ -3909,6 +3910,10 @@ class Environment(Generic[_C]):
         -------
         Environment
             The stored Environment, in its original coordinate system.
+            Static type checkers see ``Environment[Any]``: whether the
+            stored environment is Cartesian or egocentric polar is read from
+            the NWB record, so it is not known from the call. Check
+            ``env.coordinate_kind`` before calling Cartesian-only methods.
 
         Raises
         ------
@@ -4538,7 +4543,11 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Reconstructed Environment instance.
+            Reconstructed Environment instance, in its saved coordinate system.
+            Static type checkers see ``Environment[Any]``: whether the
+            stored environment is Cartesian or egocentric polar is read from
+            the file, so it is not known from the call. Check
+            ``env.coordinate_kind`` before calling Cartesian-only methods.
 
         Raises
         ------
@@ -4629,7 +4638,11 @@ class Environment(Generic[_C]):
         Returns
         -------
         Environment
-            Reconstructed instance.
+            Reconstructed instance, in its saved coordinate system.
+            Static type checkers see ``Environment[Any]``: whether the
+            stored environment is Cartesian or egocentric polar is read from
+            the dictionary, so it is not known from the call. Check
+            ``env.coordinate_kind`` before calling Cartesian-only methods.
 
         Examples
         --------

@@ -862,6 +862,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- Static type checkers accept `Environment.from_polygon(polygon, ...)` with a
+  shapely `Polygon`; it was annotated as taking the `Polygon` class itself.
+  `Environment.from_bins` is annotated as taking a `Binning`. `from_file`,
+  `from_dict` and `from_nwb` (and `neurospatial.io.from_file`, `from_dict`
+  and `neurospatial.io.nwb.read_environment`) keep the static type
+  `Environment[Any]`, because the stored data decides whether the
+  environment is Cartesian or polar; their docstrings now say so and point
+  to `env.coordinate_kind`.
+
 - The presets `Environment.open_field`, `Environment.linear_track` and
   `Environment.maze` are easy to find: the `from_samples` docstring, a new
   Presets section in the environments guide, the quickstart and Core Concepts

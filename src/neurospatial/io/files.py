@@ -232,7 +232,7 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
         raise
 
 
-def from_file(path: PathLike) -> Environment:
+def from_file(path: PathLike) -> Environment[Any]:
     """Load binning and Arena data without running a layout builder.
 
     Version 2 files retain their bins with an explicitly unknown Arena. Version 1
@@ -251,6 +251,9 @@ def from_file(path: PathLike) -> Environment:
     -------
     Environment
         Reconstructed Environment instance.
+        Cartesian or egocentric polar, as stored; static type checkers see
+        ``Environment[Any]`` because the stored data decides. Check
+        ``env.coordinate_kind`` before calling Cartesian-only methods.
 
     Raises
     ------
@@ -785,7 +788,7 @@ def to_dict(env: Environment) -> dict[str, Any]:
     return metadata
 
 
-def from_dict(data: dict[str, Any]) -> Environment:
+def from_dict(data: dict[str, Any]) -> Environment[Any]:
     """Decode bins and Arena without rebuilding; v2 Arenas remain unknown.
 
     Version 1 dictionaries must be recreated with a factory and saved again.
@@ -799,6 +802,9 @@ def from_dict(data: dict[str, Any]) -> Environment:
     -------
     Environment
         Reconstructed Environment instance.
+        Cartesian or egocentric polar, as stored; static type checkers see
+        ``Environment[Any]`` because the stored data decides. Check
+        ``env.coordinate_kind`` before calling Cartesian-only methods.
 
     Examples
     --------
