@@ -1049,4 +1049,4 @@ def _from_nwb(
     # ImportError propagates unchanged.
     from neurospatial.io.nwb import read_environment
 
-    return cast("Environment", read_environment(nwbfile, name=name))
+    return read_environment(nwbfile, name=name)

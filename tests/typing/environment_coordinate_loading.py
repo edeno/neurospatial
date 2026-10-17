@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.geometry import Binning, CartesianSystem
     from neurospatial.io import from_dict, from_file
+    from neurospatial.io.nwb import read_environment
 
     def _shared(env: Environment, values: NDArray[np.float64]) -> NDArray[np.float64]:
         return env.smooth(values, bandwidth=1.0)
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     def _check_nwb_loading(nwbfile: Any) -> None:
         # The stored record decides the coordinate system.
         assert_type(Environment.from_nwb(nwbfile), Environment[Any])
+        assert_type(read_environment(nwbfile), Environment[Any])
 
     def _check_explicit_factories(binning: Binning, outline: Polygon) -> None:
         # from_bins and from_polygon build Cartesian environments.
