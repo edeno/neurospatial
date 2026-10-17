@@ -195,15 +195,42 @@ def _warn_outline_crossings(
     )
 
 
+def _not_a_grid(call: str, binning: Binning) -> str:
+    """Explain that only rectangular grids are rebinned, naming these bins."""
+    return _format_error(
+        f"{call} works on rectangular grids, and these {binning.kind!r} bins "
+        "have no grid edges.",
+        why="Why: rebinning merges or redraws the cells of a rectangular grid "
+        "from its edges. Hexagons, track segments and mesh triangles do not "
+        "tile into larger cells of the same shape, and a layout label alone "
+        "does not say where grid edges are.",
+        fix="build the environment again at the new size with the factory "
+        "that made it, for example Environment.from_samples(positions, "
+        f"bin_size=..., layout={binning.kind!r}) for samples, or smooth "
+        "fields at a coarser scale with env.smooth(field, bandwidth=...)",
+    )
+
+
 def _rebin_resolution(
     binning: Binning, arena: Arena, bin_size: float | tuple[float, ...]
 ) -> tuple[_Derivation, RebinCheck]:
     """Construct new bins over the retained arena, preserving lattice frame."""
     spec = binning.grid_spec
-    if spec is None:
+    if spec is None and binning.rectilinear is not None:
         raise NotImplementedError(
-            "rebin(bin_size=...) needs a supported stored binning specification. Recreate a rectangular grid with a factory or supply GridBinningSpec in from_bins; a layout name or provenance is insufficient."
+            _format_error(
+                "rebin(bin_size=...) redraws a grid from its origin and cell "
+                "size, which these rectangular bins do not record.",
+                why="Why: bins built with from_bins without a grid "
+                "specification carry their cells but not the lattice they "
+                "came from, so a new lattice cannot be aligned to it.",
+                fix="merge whole cells with rebin(factor), such as rebin(2), or "
+                "build the grid again with from_samples, from_polygon or "
+                "from_grid_mask at the new size",
+            )
         )
+    if spec is None:
+        raise NotImplementedError(_not_a_grid("rebin(bin_size=...)", binning))
     dims = len(spec.origin)
     raw = np.asarray(bin_size)
     if raw.dtype.kind not in "iuf" or raw.ndim > 1:
@@ -396,10 +423,18 @@ def _rebin_factor(
             atol=0.0,
         )
     ):
+        if grid is None:
+            raise NotImplementedError(_not_a_grid("rebin(factor)", binning))
         raise NotImplementedError(
-            "rebin() requires a uniform rectilinear grid; descriptive layout "
-            "names cannot establish cell geometry. Supply uniform grid data "
-            "or use subset() for spatial cropping."
+            _format_error(
+                "rebin(factor) merges blocks of equal cells, but this grid's "
+                "cells are not all the same size.",
+                why="Why: merging unequal cells would give coarse bins of "
+                "different sizes, so occupancy and rates per bin would not be "
+                "comparable.",
+                fix="build the grid again at the coarser size, for example "
+                "Environment.from_grid_mask(mask, grid_edges=coarser_edges)",
+            )
         )
 
     # Parse factor

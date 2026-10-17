@@ -191,7 +191,7 @@ def test_missing_spec_unknown_arena_and_mutually_exclusive_arguments():
         parent.rebin()
     explicit = replace(parent._binning, grid_spec=None)
     explicit = replace(explicit, faces=KnownFaces(parent._binning.faces.build()))
-    with pytest.raises(NotImplementedError, match="specification"):
+    with pytest.raises(NotImplementedError, match="do not record"):
         Environment.from_bins(explicit, arena=parent.arena).rebin(bin_size=2)
     with pytest.raises(NotImplementedError, match="known arena"):
         Environment.from_bins(
@@ -232,7 +232,7 @@ def test_legacy_payload_does_not_infer_spec_from_provenance():
     data["binning"].pop("grid_spec")
     restored = Environment.from_dict(data)
     assert restored._binning.grid_spec is None
-    with pytest.raises(NotImplementedError, match="specification"):
+    with pytest.raises(NotImplementedError, match="do not record"):
         restored.rebin(bin_size=2)
 
 

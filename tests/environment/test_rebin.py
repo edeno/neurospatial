@@ -397,8 +397,11 @@ class TestRebinValidation:
                 "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 20), (0, 20)]
             )
         )
-        with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+        with pytest.raises(
+            NotImplementedError, match="works on rectangular grids"
+        ) as caught:
             env.rebin(factor=2)
+        assert "layout='Hexagonal'" in str(caught.value).split("Fix:")[1]
 
     def test_rebin_invalid_factor_raises(self):
         """Invalid factor values raise ValueError."""

@@ -412,7 +412,7 @@ def test_shared_geometry_mismatch_is_not_hidden_by_public_ingress():
 
 def test_descriptive_kind_cannot_grant_regular_grid_rebinning():
     env = Environment.from_bins(_nearest(kind="RegularGrid"))
-    with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+    with pytest.raises(NotImplementedError, match="have no grid edges"):
         env.rebin(1)
 
 
@@ -431,7 +431,7 @@ def test_nonuniform_cells_are_supported_without_regular_grid_rebinning():
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, [1, 2])
     np.testing.assert_array_equal(env.bin_at([[0.5, 0.5], [2.5, 0.5]]), [0, 1])
-    with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+    with pytest.raises(NotImplementedError, match="not all the same size"):
         env.rebin(1)
 
 
@@ -451,7 +451,7 @@ def test_nearly_uniform_variable_measures_are_not_reinterpreted_as_native_cells(
     )
     env = Environment.from_bins(source)
     np.testing.assert_array_equal(env.bin_sizes, np.diff(edges[0]))
-    with pytest.raises(NotImplementedError, match=r"uniform|measure"):
+    with pytest.raises(NotImplementedError, match="not all the same size"):
         env.rebin(1)
 
 

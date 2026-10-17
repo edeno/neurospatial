@@ -203,7 +203,7 @@ class TestRebin:
 
     def test_rebin_requires_uniform_grid_cells(self, graph_env: Environment) -> None:
         """A track graph cannot establish rectangular cells for factor rebinning."""
-        with pytest.raises(NotImplementedError, match="uniform rectilinear grid"):
+        with pytest.raises(NotImplementedError, match="works on rectangular grids"):
             graph_env.rebin(factor=2)
 
     def test_rebin_factor_wrong_dimensions(self, medium_2d_env: Environment) -> None:
