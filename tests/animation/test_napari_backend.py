@@ -689,23 +689,19 @@ def test_env_scale_caches_correct_values(simple_env):
 
     scale = _EnvScale(simple_env)
 
-    # Check bounds match environment
-    (x_min, x_max), (y_min, y_max) = simple_env.dimension_ranges
-    assert scale.x_min == x_min
-    assert scale.x_max == x_max
-    assert scale.y_min == y_min
-    assert scale.y_max == y_max
+    # The image grid is the full grid: its edges, not the active extent.
+    x_edges, y_edges = simple_env.grid_edges
+    assert (scale.x_min, scale.x_max) == (x_edges[0], x_edges[-1])
+    assert (scale.y_min, scale.y_max) == (y_edges[0], y_edges[-1])
 
     # Check grid shape matches
     n_x, n_y = simple_env.grid_shape
     assert scale.n_x == n_x
     assert scale.n_y == n_y
 
-    # Check scale factors are computed correctly
-    expected_x_scale = (n_x - 1) / (x_max - x_min) if (x_max - x_min) > 0 else 1.0
-    expected_y_scale = (n_y - 1) / (y_max - y_min) if (y_max - y_min) > 0 else 1.0
-    assert scale.x_scale == pytest.approx(expected_x_scale)
-    assert scale.y_scale == pytest.approx(expected_y_scale)
+    # Pixels per environment unit: one pixel per grid cell.
+    assert scale.x_scale == pytest.approx(n_x / (x_edges[-1] - x_edges[0]))
+    assert scale.y_scale == pytest.approx(n_y / (y_edges[-1] - y_edges[0]))
 
 
 def test_env_scale_from_env_returns_none_for_none():

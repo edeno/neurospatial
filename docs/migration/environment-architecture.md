@@ -565,7 +565,8 @@ instead of cutting them off or leaving extra space around them.
 | Hexagonal | the range the tiling was asked to cover (data or `dimension_ranges=`), which cut off the outer hexagons | the hexagons' extent, corners included |
 | Triangular mesh | the bounds of the triangle centroids | the mesh boundary's bounds |
 | Track (`linear_track`, `maze`, `from_graph`) | the bounds of the bin centers, half a bin short at each end | the centerline the bins cover, end to end (the width is not included) |
-| Rectangular grid (including `from_polygon`, masks and images), polar | the grid's extent | unchanged |
+| Rectangular grid (including `from_polygon`, masks and images), polar | the whole grid, inactive border cells included | the active cells (unchanged when every border row and column has an active cell) |
+| Grid subsets | the whole grid the subset keeps (`grid_edges`) | the cells the subset keeps |
 | Subsets of hexagonal, mesh and clipped polygon cells (`env.clip(...)`) | kept cells' extent plus 5% on each side | kept cells' extent |
 | Track subsets | kept bin centers' extent | the centerline the kept bins cover |
 
@@ -578,12 +579,12 @@ A mesh subset bounds only the triangles it keeps, so a subset of one corner of
 an arena no longer reports the extent of the whole arena. The same rule applies
 when an `arena=` passed to `from_layout`, `from_grid_mask` or `from_pixel_mask`
 removes bins. `Environment.from_bins` bounds triangular-mesh bins by their
-triangles' vertices rather than every stored mesh point. Grid subsets keep the
-full grid's extent because they keep its whole lattice, matching
-`env.grid_edges`.
+triangles' vertices rather than every stored mesh point. A grid subset still
+keeps the whole lattice in `env.grid_edges` and `env.grid_shape`, which is
+what napari draws, but its `dimension_ranges` is the cells it keeps.
 
 Code that reads `dimension_ranges` as a number changes with it on hexagonal,
-mesh and track environments: the automatic scale of
+mesh, track and grid-subset environments: the automatic scale of
 `neurospatial.ops.spatial_basis`, the "bandwidth spans the environment"
 warning, `simulate_trajectory_sinusoidal` (now oscillates over the track's
 full length), the uniform field placement of `simulate_session`, axis limits,

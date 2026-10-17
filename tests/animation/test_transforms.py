@@ -472,18 +472,27 @@ class TestBuildEnvToNapariMatrix:
         assert_allclose(matrix_result, expected, rtol=1e-10)
 
 
+@pytest.fixture
+def coarse_env() -> Environment:
+    """A 7 x 7 grid over 10 x 10 units: 0.7 pixels per unit."""
+    return Environment.from_grid_mask(
+        np.ones((7, 7), dtype=bool), grid_edges=(np.linspace(0.0, 10.0, 8),) * 2
+    )
+
+
 class TestTransformIntegerDtypeFraction:
     """Integer-dtyped inputs must not truncate fractional pixel results."""
 
     def test_transform_coords_integer_dtype_keeps_fraction(
-        self, simple_env: Environment
+        self, coarse_env: Environment
     ) -> None:
         """Integer coords return float64, not int-truncated, pixel positions."""
         from neurospatial.animation.transforms import transform_coords_for_napari
 
-        # In simple_env the x/y scale is ~0.909, so coord 3 maps to a
-        # fractional pixel (~2.727 col). With integer-dtyped input the old code
-        # inherited the int dtype and truncated to 2.
+        simple_env = coarse_env
+        # At 0.7 pixels per unit, coord 3 maps to a fractional pixel
+        # (col 3 * 0.7 - 0.5 = 1.6). With integer-dtyped input the old code
+        # inherited the int dtype and truncated it.
         coords_int = np.array([[3, 3]], dtype=np.int64)
         result = transform_coords_for_napari(coords_int, simple_env)
 
@@ -498,11 +507,12 @@ class TestTransformIntegerDtypeFraction:
         assert not np.allclose(result, np.trunc(expected))
 
     def test_transform_direction_integer_dtype_float_result(
-        self, simple_env: Environment
+        self, coarse_env: Environment
     ) -> None:
         """Integer direction returns float64 with the scaled (dr, dc)."""
         from neurospatial.animation.transforms import transform_direction_for_napari
 
+        simple_env = coarse_env
         direction_int = np.array([[1, 1]], dtype=np.int64)
         result = transform_direction_for_napari(direction_int, simple_env)
 
@@ -526,3 +536,64 @@ class TestTransformIntegerDtypeFraction:
 
         assert result.dtype == np.float64
         assert_allclose(result, np.array([[-1.0, 1.0]]))
+
+
+class TestPixelGridIsTheFullGrid:
+    """Napari pixels sit on the full grid's cells, whatever the active extent."""
+
+    def test_a_grid_subset_maps_cell_centers_to_their_pixels(self) -> None:
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            build_env_to_napari_matrix,
+            transform_coords_for_napari,
+        )
+
+        # 5 x 4 cells of 2 x 3 units; keep only the left two columns.
+        grid = Environment.from_grid_mask(
+            np.ones((5, 4), dtype=bool),
+            grid_edges=(np.arange(0.0, 11.0, 2.0), np.arange(0.0, 13.0, 3.0)),
+        )
+        subset = grid.subset(mask=grid.bin_centers[:, 0] < 4.0)
+        # The subset reports its kept cells, but the image still spans the grid.
+        assert subset.dimension_ranges == ((0.0, 4.0), (0.0, 12.0))
+        scale = EnvScale.from_env(subset)
+        assert scale is not None
+        assert (scale.n_x, scale.n_y) == (5, 4)
+        assert scale.pixel_size == (3.0, 2.0)
+
+        # Each kept bin center lands on the center of its image pixel: column
+        # = x index, row = flipped y index (row 0 is the top, max y).
+        x_index = (subset.bin_centers[:, 0] // 2.0).astype(int)
+        y_index = (subset.bin_centers[:, 1] // 3.0).astype(int)
+        expected = np.column_stack((3 - y_index, x_index)).astype(float)
+        assert_allclose(
+            transform_coords_for_napari(subset.bin_centers, scale), expected
+        )
+        # The affine form agrees.
+        matrix = build_env_to_napari_matrix(scale)
+        homogeneous = np.column_stack((subset.bin_centers, np.ones(subset.n_bins)))
+        assert_allclose((homogeneous @ matrix.T)[:, :2], expected)
+        # Grid corners land on pixel edges.
+        corners = np.array([[0.0, 12.0], [10.0, 0.0]])
+        assert_allclose(
+            transform_coords_for_napari(corners, scale), [[-0.5, -0.5], [3.5, 4.5]]
+        )
+
+    def test_a_hexagonal_environment_has_no_pixel_grid(self) -> None:
+        """Napari draws no raster for hexagons, so there is no pixel mapping."""
+        from neurospatial.animation.transforms import (
+            EnvScale,
+            reset_transform_warning,
+            transform_coords_for_napari,
+        )
+
+        hexes = Environment.from_samples(
+            np.random.default_rng(0).uniform(0, 30, (500, 2)),
+            bin_size=4.0,
+            layout="Hexagonal",
+        )
+        assert EnvScale.from_env(hexes) is None
+        reset_transform_warning()
+        with pytest.warns(UserWarning, match="not rasters"):
+            swapped = transform_coords_for_napari(np.array([[1.0, 2.0]]), hexes)
+        assert_allclose(swapped, [[2.0, 1.0]])

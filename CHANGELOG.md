@@ -737,9 +737,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   longer reports the extent of the whole mesh, and a track subset bounds the
   centerline its kept bins cover. `apply_transform` reports the extent of the
   transformed cells rather than the box around the transformed ranges, which
-  was wider after a rotation. Grid and polar environments, and grid
-  subsets, keep the extent of their grid. Readers of `dimension_ranges`
-  change with it on hexagonal, mesh and track environments: plot limits,
+  was wider after a rotation. Grids report the extent of their active cells:
+  a grid subset reports the cells it keeps rather than the whole lattice it
+  keeps in `grid_edges`, and a grid whose border rows or columns are all
+  inactive reports its active cells. Napari draws a grid field over the full
+  lattice, so its overlay and scale-bar mapping now read `grid_edges` and
+  `grid_shape`, with each pixel centered on its cell (overlays used to be
+  stretched by up to half a pixel). Readers of `dimension_ranges` change
+  with it on hexagonal, mesh, track and grid-subset environments: plot limits,
   `env.info()`, the automatic scale of `ops.spatial_basis`, the "bandwidth
   spans the environment" warning, `simulate_trajectory_sinusoidal` (it now
   oscillates over the track's full length), the uniform field placement of
@@ -784,12 +789,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   used to be refused, now build environments normally.
 
 - `Binning` has a `dimension_ranges` field: the `(low, high)` extent of each
-  axis the bins' cells cover.
-  `env.binning.dimension_ranges` equals `env.dimension_ranges`, and
-  `Environment.from_bins` uses the field when it is set, so
-  `Environment.from_bins(env.binning)` keeps the ranges. When it is `None`,
-  the range comes from the cells (grid, outline, cell shapes or a track's
-  centerline).
+  axis the bins' cells cover. `env.binning.dimension_ranges` equals
+  `env.dimension_ranges`, so `Environment.from_bins(env.binning)` keeps the
+  ranges. An environment computes the ranges from the cells (grid, outline,
+  cell shapes or a track's centerline); only bins without cells, such as
+  point bins, use the value set on the `Binning`.
 
 - `subset()` and `rebin()` accept `name=` like `clip()` and
   `apply_transform()`.

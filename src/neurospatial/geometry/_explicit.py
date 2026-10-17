@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import itertools
 from dataclasses import replace
 from typing import Literal
 
@@ -16,11 +17,13 @@ from neurospatial.geometry._binning import (
     SpatialBins,
     TrackLinearization,
 )
+from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import (
     HexagonShapes,
     Outline,
     TriangleShapes,
 )
+from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon import PolygonCells
 from neurospatial.geometry._track import track_cell_ends
@@ -43,19 +46,16 @@ def cell_extent(
     Returns
     -------
     tuple of (float, float), or None
-        Grid extent for grids (full lattice, including inactive cells),
-        otherwise the extent of the cells themselves (see
-        :func:`component_extent`). None for an empty binning.
+        The extent of the cells themselves: the active cells of a grid (not
+        its inactive border), or the cells described by an outline, shapes or
+        a track (see :func:`component_extent`). None for an empty binning.
     """
-    if binning.rectilinear is not None:
-        return tuple(
-            (float(edge[0]), float(edge[-1])) for edge in binning.rectilinear.edges
-        )
-    if binning.grid_frame is not None:
-        corners = binning.grid_frame.corners()
-        return tuple((float(axis.min()), float(axis.max())) for axis in corners.T)
     if binning.bins.n_bins == 0:
         return None
+    if binning.rectilinear is not None:
+        return _active_grid_extent(binning.rectilinear)
+    if binning.grid_frame is not None:
+        return _active_framed_extent(binning.grid_frame)
     extent = component_extent(
         outline=binning.outline,
         shapes=binning.shapes,
@@ -67,6 +67,42 @@ def cell_extent(
     return tuple(
         (float(a), float(b))
         for a, b in zip(centers.min(axis=0), centers.max(axis=0), strict=True)
+    )
+
+
+def _active_box(grid: RectilinearGrid) -> list[tuple[float, float]]:
+    """Per-axis edges that bound the active cells of a rectangular grid."""
+    mask = np.asarray(grid.active_mask, dtype=bool)
+    box = []
+    for axis, edge in enumerate(grid.edges):
+        others = tuple(other for other in range(mask.ndim) if other != axis)
+        active = np.flatnonzero(mask.any(axis=others))
+        box.append((float(edge[active[0]]), float(edge[active[-1] + 1])))
+    return box
+
+
+def _active_grid_extent(grid: RectilinearGrid) -> tuple[tuple[float, float], ...]:
+    """Extent of the active cells of an axis-aligned grid."""
+    return tuple(_active_box(grid))
+
+
+def _active_framed_extent(frame: FramedGrid) -> tuple[tuple[float, float], ...]:
+    """Extent of the active cells of a rotated, reflected or sheared grid."""
+    grid = frame.source
+    mask = np.asarray(grid.active_mask, dtype=bool)
+    cells = np.argwhere(mask)
+    corners = np.array(list(itertools.product((0, 1), repeat=mask.ndim)))
+    source = np.stack(
+        [
+            np.asarray(edge)[cells[:, axis][:, None] + corners[None, :, axis]]
+            for axis, edge in enumerate(grid.edges)
+        ],
+        axis=-1,
+    ).reshape(-1, mask.ndim)
+    world = frame.to_world(source)
+    return tuple(
+        (float(low), float(high))
+        for low, high in zip(world.min(axis=0), world.max(axis=0), strict=True)
     )
 
 
@@ -128,7 +164,7 @@ def component_extent(
 
 
 def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
-    """Return the binning's own ``dimension_ranges``, else its cell extent.
+    """Return the extent of the binning's cells, else its declared ranges.
 
     Parameters
     ----------
@@ -138,13 +174,12 @@ def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:
     Returns
     -------
     tuple of (float, float), or None
-        ``binning.dimension_ranges`` when the binning records it; otherwise
-        the extent of its cells (see :func:`cell_extent`), or None for bins
-        without cells.
+        The extent of the cells (see :func:`cell_extent`). Bins without cells,
+        such as explicit point bins, keep ``binning.dimension_ranges``, which
+        is None unless declared.
     """
-    if binning.dimension_ranges is not None:
-        return binning.dimension_ranges
-    return cell_extent(binning, shapeless="none")
+    extent = cell_extent(binning, shapeless="none")
+    return binning.dimension_ranges if extent is None else extent
 
 
 def prepare_bins(binning: object) -> Binning:

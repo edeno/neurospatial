@@ -3153,14 +3153,12 @@ def render_napari(
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
     # Scale is (time, y, x) for shape (time, height, width, channels)
     layer_scale: tuple[float, float, float] | None = None
-    if len(env.grid_shape) == 2 and env.dimension_ranges is not None:
-        n_x, n_y = env.grid_shape
-        (x_min, x_max), (y_min, y_max) = env.dimension_ranges
-        # After transposition: image is (n_y, n_x) so scale is (y_scale, x_scale)
-        y_scale = (y_max - y_min) / n_y if n_y > 0 else 1.0
-        x_scale = (x_max - x_min) / n_x if n_x > 0 else 1.0
+    # The image has one pixel per cell of the full grid (grid_edges and
+    # grid_shape), not of the active cells' extent (dimension_ranges).
+    pixel_grid = _EnvScale.from_env(env)
+    if pixel_grid is not None:
         # Scale for (time, height, width): time=1 (no scaling)
-        layer_scale = (1.0, y_scale, x_scale)
+        layer_scale = (1.0, *pixel_grid.pixel_size)
 
     # Add image layer (RGB - no contrast_limits needed)
     viewer.add_image(
@@ -3481,12 +3479,12 @@ def _render_multi_field_napari(
     # Compute scale for napari (converts pixels to environment units)
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
     layer_scale: tuple[float, float, float] | None = None
-    if len(env.grid_shape) == 2 and env.dimension_ranges is not None:
-        n_x, n_y = env.grid_shape
-        (x_min, x_max), (y_min, y_max) = env.dimension_ranges
-        y_scale = (y_max - y_min) / n_y if n_y > 0 else 1.0
-        x_scale = (x_max - x_min) / n_x if n_x > 0 else 1.0
-        layer_scale = (1.0, y_scale, x_scale)
+    # The image has one pixel per cell of the full grid (grid_edges and
+    # grid_shape), not of the active cells' extent (dimension_ranges).
+    pixel_grid = _EnvScale.from_env(env)
+    if pixel_grid is not None:
+        # Scale for (time, height, width): time=1 (no scaling)
+        layer_scale = (1.0, *pixel_grid.pixel_size)
 
     # Add image layers
     for renderer, name in zip(lazy_renderers, layer_names, strict=True):

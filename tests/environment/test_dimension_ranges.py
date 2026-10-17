@@ -92,7 +92,7 @@ def test_track_subset_bounds_the_kept_stretches_of_centerline(built_environment)
 def _expected_extent(kind: str, env: Environment) -> np.ndarray:
     """The extent of the cells, computed from their geometry."""
     if kind in {"grid8", "grid4", "polygon", "mask", "pixels", "polar", "polar_open"}:
-        return np.array([(edge[0], edge[-1]) for edge in env.grid_edges])
+        return _active_cell_bounds(env.binning.rectilinear)
     if kind == "track":
         nodes = np.array([(0, 0), (6, 0), (6, 6), (12, 0)], dtype=float)
         return np.column_stack((nodes.min(axis=0), nodes.max(axis=0)))
@@ -158,15 +158,36 @@ def test_a_subset_never_exceeds_its_parent(built_environment, request, seed):
         _assert_within(parent.subset(mask=keep).dimension_ranges, ranges, scale)
 
 
+def _active_cell_bounds(grid) -> np.ndarray:
+    """Bounds of a grid's active cells, from the grid edges and mask."""
+    cells = np.argwhere(grid.active_mask)
+    return np.array(
+        [
+            (edge[cells[:, d].min()], edge[cells[:, d].max() + 1])
+            for d, edge in enumerate(grid.edges)
+        ]
+    )
+
+
 @pytest.mark.parametrize("built_environment", ["grid8", "polygon"], indirect=True)
-def test_grid_subset_keeps_the_grid_extent(built_environment):
-    # A grid subset keeps its full lattice (inactive cells included), so its
-    # extent is the lattice's, matching grid_edges.
+def test_grid_subset_reports_its_kept_cells_not_the_lattice(built_environment):
+    # A grid subset keeps its whole lattice (grid_edges), but its extent is
+    # that of the cells it keeps.
     child = built_environment.subset(mask=_keep_first_quarter(built_environment))
     np.testing.assert_array_equal(
-        child.dimension_ranges,
-        [(edge[0], edge[-1]) for edge in child.grid_edges],
+        child.dimension_ranges, _active_cell_bounds(child.binning.rectilinear)
     )
+    lattice = np.array([(edge[0], edge[-1]) for edge in child.grid_edges])
+    assert not np.array_equal(np.asarray(child.dimension_ranges), lattice)
+
+
+def test_grid_with_an_inactive_border_reports_its_active_cells():
+    mask = np.zeros((6, 5), dtype=bool)
+    mask[1:4, 2:5] = True
+    env = Environment.from_grid_mask(
+        mask, grid_edges=(np.arange(7.0) * 2.0, np.arange(6.0) * 2.0)
+    )
+    np.testing.assert_array_equal(env.dimension_ranges, [(2.0, 8.0), (4.0, 10.0)])
 
 
 @pytest.mark.parametrize("built_environment", ["mesh"], indirect=True)

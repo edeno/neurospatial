@@ -471,10 +471,10 @@ class Binning:
     independent of solver availability: only ``faces`` grants that capability.
 
     ``dimension_ranges`` is the ``(low, high)`` extent of each coordinate
-    axis that the bins' cells cover: the full lattice of a grid, the outline
-    or cell shapes otherwise, and the stretch of centerline a track's bins
-    cover. When it is None, an environment computes that extent from the
-    cells, or reports no range for bins without cells. An environment's
+    axis that the bins' cells cover: a grid's active cells, the outline or
+    cell shapes otherwise, and the stretch of centerline a track's bins
+    cover. An environment computes that extent from the cells; only bins
+    without cells keep a declared value (or None). An environment's
     binning carries the environment's ``dimension_ranges``.
     """
 

@@ -253,9 +253,13 @@ def test_subset_plot_bounds_include_whole_retained_cells(
         keep[-1] = True
     child = parent.subset(mask=keep)
     if child._binning.rectilinear is not None:
+        # The retained cells, not the whole lattice the subset keeps.
         grid = child._binning.rectilinear
-        low = np.array([axis[0] for axis in grid.edges])
-        high = np.array([axis[-1] for axis in grid.edges])
+        cells = np.argwhere(grid.active_mask)
+        low = np.array([edge[cells[:, d].min()] for d, edge in enumerate(grid.edges)])
+        high = np.array(
+            [edge[cells[:, d].max() + 1] for d, edge in enumerate(grid.edges)]
+        )
     else:
         shapes = child._binning.shapes
         if hasattr(shapes, "radius"):
