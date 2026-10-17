@@ -294,9 +294,9 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "SpatialRateResult": ("encoding.spatial", "SpatialRateResult"),
     "SpatialRatesResult": ("encoding.spatial", "SpatialRatesResult"),
     "decode_position": ("decoding.posterior", "decode_position"),
-    "DecodingResult": ("decoding._result", "DecodingResult"),
+    "DecodingResult": ("decoding", "DecodingResult"),
     "peri_event_histogram": ("events.alignment", "peri_event_histogram"),
-    "PeriEventResult": ("events._core", "PeriEventResult"),
+    "PeriEventResult": ("events", "PeriEventResult"),
 }
 
 
