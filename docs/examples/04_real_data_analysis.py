@@ -118,24 +118,62 @@ print(f"Tracking gaps > {max_gap:g} s: {np.count_nonzero(np.diff(times) > max_ga
 # are analysis regions that we choose, not measured reward-well boundaries.
 #
 # `track_width` is the full width of the track around its centerline. A
-# position farther than half of it from every segment is off the track and gets
-# no bin. This archive does not record the maze's width, and the head position
-# sits up to about 20 cm from the centerline, so we pass 41 cm, which keeps
-# every tracked sample. For your own maze, pass the measured corridor width so
-# that reflections and tracking jumps off the track are excluded.
+# position farther than half of it from every segment is off the track: it
+# gets no bin and adds no occupancy or spikes. For your own maze, start from
+# the measured corridor width plus the tracking error, then check where the
+# excluded samples are, as below. This archive does not record the maze's
+# width, so we first measure how far the tracked head is from the centerline.
 
 # %%
 graph = recording["track_graph"]
+endpoint_nodes = sorted(node for node in graph if graph.degree(node) == 1)
+centerline_only = Environment.from_graph(
+    graph,
+    edge_order=recording["linear_edge_order"],
+    edge_spacing=recording["linear_edge_spacing"],
+    bin_size=2.0,
+)
+# to_linear projects every position onto the centerline, however far off it.
+projected = centerline_only.linear_to_nd(centerline_only.to_linear(positions))
+off_centerline = np.linalg.norm(positions - projected, axis=1)
+arm_end_xy = np.array([graph.nodes[node]["pos"] for node in endpoint_nodes])
+near_arm_end = (
+    np.min(np.linalg.norm(positions[:, None] - arm_end_xy[None], axis=2), axis=1)
+    < 20.0
+)
+beyond_corridor = off_centerline > 7.5  # outside a 15 cm corridor
+print(
+    f"Head positions more than 7.5 cm from the centerline: {beyond_corridor.mean():.1%}"
+)
+print(
+    "Of those, within 20 cm of an arm end: "
+    f"{(beyond_corridor & near_arm_end).sum() / beyond_corridor.sum():.0%}"
+)
+print(f"Farthest head position from the centerline: {off_centerline.max():.1f} cm")
+
+# %% [markdown]
+# A 15 cm corridor would leave 16% of the samples off the track, three
+# quarters of them near the arm ends. The archive's centerline stops at the
+# end of each arm, short of the reward wells, and the head is over the wells
+# while the rat waits for reward. Those samples are the arm-end visits that
+# section 4 counts, so excluding them would remove the visits we want to
+# study. We therefore pass a footprint of 41 cm, which reaches the reward
+# wells past the ends of the centerline; on this archive it excludes no
+# sample. This is a choice for this archive's centerline, not a measured
+# corridor width: with your own maze, extend the graph to the reward wells and
+# pass the measured width, so that reflections and tracking jumps off the
+# track are excluded.
+
+# %%
 env = Environment.from_graph(
     graph,
     edge_order=recording["linear_edge_order"],
     edge_spacing=recording["linear_edge_spacing"],
     bin_size=2.0,
-    track_width=41.0,  # cm; keeps every head position in this archive
+    track_width=41.0,  # cm; reaches the reward wells past the arm ends
     name="J16 maze",
 )
 env = env.with_metadata(units="cm")
-endpoint_nodes = sorted(node for node in graph if graph.degree(node) == 1)
 arm_end_radius_cm = 8.0
 arm_end_names = []
 regions = Regions(env.regions.values())
