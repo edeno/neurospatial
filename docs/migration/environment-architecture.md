@@ -1135,8 +1135,10 @@ measured in the autocorrelogram's image layout, which reflected the field
 lattice about 45°. It is now the lattice angle in the environment's frame:
 radians from +x (East) counterclockwise toward +y (North), in [0, π/3),
 because a hexagonal lattice repeats every 60°. `orientation_std` is in
-radians too. `GridCellModel(grid_orientation=...)` takes the same angle, so a
-simulated grid cell is reported with the orientation it was given:
+radians too. `peak_coords` columns are now x then y offsets; earlier
+versions returned them y first, so swap the columns of any saved values.
+`GridCellModel(grid_orientation=...)` takes the same angle, so a simulated
+grid cell is reported with the orientation it was given:
 
 <!-- docs-test: run -->
 ```python
@@ -1152,7 +1154,8 @@ arena = Environment.from_samples(open_field, bin_size=2.0, units="cm")
 cell = GridCellModel(arena, grid_spacing=30.0, grid_orientation=np.radians(20.0))
 autocorr = spatial_autocorrelation(arena, cell.firing_rate(arena.bin_centers))
 properties = grid_properties(autocorr, autocorrelation_pixel_size(arena))
-# Before: properties.orientation was about 10 (degrees, reflected about 45°)
+# Before: the lattice sat at 50° (grid_orientation set the plane waves), and
+# properties.orientation reported it reflected about 45°, in degrees
 assert abs(np.degrees(properties.orientation) - 20.0) < 2.0
 ```
 

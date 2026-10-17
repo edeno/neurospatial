@@ -415,8 +415,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   angle reflected about 45°. It was also in degrees. Orientation is now the
   angle of the field lattice in the environment's frame, in radians from +x
   (East) counterclockwise toward +y (North), in [0, π/3): a hexagonal
-  lattice repeats every π/3. `orientation_std` is in radians too, and
-  `peak_coords` columns are offsets along x and y. Convert old values with
+  lattice repeats every π/3. `orientation_std` is in radians too.
+  `peak_coords` columns are now offsets along x then y, as documented; they
+  used to come out y first, so code that read `peak_coords[:, 0]` as the x
+  offset was reading y. Convert old orientation values with
   `np.radians((90 - old) % 60)`; this is approximate, because old values
   also averaged in a spare peak that could lie on the second ring of fields
   (see Fixed), so they were off by up to about 5°. The migration page has
