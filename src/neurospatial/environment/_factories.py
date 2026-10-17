@@ -289,6 +289,11 @@ def _from_samples(
             )
         )
 
+    # An infinite coordinate is not a position in the arena: treat it as a
+    # missing sample, like NaN, which the layouts already leave out.
+    if np.isinf(positions).any():
+        positions = np.where(np.isinf(positions), np.nan, positions)
+
     # Warn on a likely-transposed positions array before building the grid.
     # The classic footgun is np.array([x, y]) -- shape (n_dims, n_samples) --
     # instead of column-stacking, so `positions` is transposed and silently

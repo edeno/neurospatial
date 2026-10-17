@@ -508,6 +508,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
     meshes) or on a grid with unequal cells says why and how to rebuild at
     the new size, without the old "descriptive layout names" wording.
 
+- An infinite coordinate in the positions given to `from_samples`,
+  `open_field` or `environment_from_position` is treated as a missing sample,
+  like NaN, which these factories already leave out. It used to raise
+  `Requested binning overflows` (grids) or `OverflowError` (hexagons).
+
 - Every lookup of a region by name raises `RegionNotFoundError` with the
   closest existing name, for example `Fix: pass region_name='reward'` for
   `env.bins_in_region("rewrd")`. This covers `env.regions[name]`,
