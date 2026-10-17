@@ -351,14 +351,20 @@ def _from_samples(
     layout_type = find_layout_type(layout)
 
     # Only a regular grid and a hexagonal tiling are built from samples.
-    if layout_type not in (LayoutType.REGULAR_GRID, LayoutType.HEXAGONAL):
+    tiled = (LayoutType.REGULAR_GRID, LayoutType.HEXAGONAL)
+    if layout_type not in tiled:
+        others = [
+            name
+            for name in list_available_layouts()
+            if name not in {kind.value for kind in tiled}
+        ]
         raise ValueError(
             _format_error(
                 f"{factory}() cannot build layout={layout_str!r}; it supports "
                 "layout='RegularGrid' and layout='Hexagonal'.",
                 why=(
                     "Why: only those layouts are tiled from position samples. "
-                    f"Other layouts ({', '.join(list_available_layouts())}) "
+                    f"Other layouts ({', '.join(others)}) "
                     "are built from their own inputs."
                 ),
                 fix=(

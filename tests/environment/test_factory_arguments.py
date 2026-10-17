@@ -379,6 +379,10 @@ def test_layout_without_sample_tiling_is_refused(factory, layout, positions):
     message = str(caught.value)
     assert "layout='RegularGrid' and layout='Hexagonal'" in message
     assert "Environment.from_layout" in message.split("Fix:")[1]
+    # The supported layouts are not listed again among the other layouts.
+    others = message.split("Other layouts (")[1].split(")")[0].split(", ")
+    assert layout in others
+    assert not {"RegularGrid", "Hexagonal"} & set(others)
 
 
 def test_from_layout_refuses_an_unbuilt_engine():
