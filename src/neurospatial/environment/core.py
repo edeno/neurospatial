@@ -37,6 +37,7 @@ from neurospatial.environment._cartesian import (
 from neurospatial.environment._clipping import _clip
 from neurospatial.environment._combine import _combine
 from neurospatial.environment._factories import (
+    _OPEN_FIELD_OPTION_DEFAULTS,
     _from_bins,
     _from_graph,
     _from_grid_mask,
@@ -47,7 +48,6 @@ from neurospatial.environment._factories import (
     _from_samples,
     _linear_track,
     _maze,
-    _open_field,
 )
 from neurospatial.environment._fields import (
     _compute_gaussian_kernel,
@@ -3156,7 +3156,7 @@ class Environment(Generic[_C]):
         >>> env.is_linearized_track
         False
         """
-        return _open_field(
+        return _from_samples(
             cls,
             positions,
             bin_size=bin_size,
@@ -3174,6 +3174,8 @@ class Environment(Generic[_C]):
             close_gaps=close_gaps,
             add_boundary_bins=add_boundary_bins,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
+            factory="open_field",
+            defaults=_OPEN_FIELD_OPTION_DEFAULTS,
         )
 
     @classmethod
