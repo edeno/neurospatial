@@ -15,10 +15,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import PathPatch
-from matplotlib.path import Path as MplPath
 from numpy.typing import NDArray
 
 from .core import Region, Regions
@@ -75,6 +72,9 @@ def plot_regions(
     * Legend labels default to the region name.
 
     """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path as MplPath
 
     if region_names is None:
         region_names = tuple(regions.keys())

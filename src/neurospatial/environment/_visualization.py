@@ -9,10 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 import matplotlib
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from matplotlib.collections import PatchCollection
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
@@ -134,6 +132,8 @@ def _plot_grid_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on grid layout using pcolormesh."""
+    import matplotlib.pyplot as plt
+
     grid, frame = require_grid_context(
         binning, "plot_field()", fix="supply rectangular cells"
     )
@@ -187,6 +187,9 @@ def _plot_polygon_field(
     **kwargs: Any,
 ) -> Any:
     """Render exact polygon rings with the standard missing-value colors."""
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PatchCollection
+
     shapes = binning.shapes
     assert isinstance(shapes, PolygonCells)
     cmap_obj = plt.get_cmap(cmap).copy()
@@ -213,6 +216,8 @@ def _plot_hex_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on hexagonal layout using PatchCollection."""
+    from matplotlib.collections import PatchCollection
+
     shapes = binning.shapes
     if not isinstance(shapes, HexagonShapes):
         raise RuntimeError("Hexagonal field plotting requires hexagon cell shapes.")
@@ -254,6 +259,8 @@ def _plot_trimesh_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field on triangular mesh layout using tripcolor."""
+    import matplotlib.pyplot as plt
+
     shapes = binning.shapes
     if not isinstance(shapes, TriangleShapes):
         raise RuntimeError("Mesh field plotting requires triangular cell shapes.")
@@ -322,6 +329,8 @@ def _plot_scatter_field(
     **kwargs: Any,
 ) -> Any:
     """Plot field using scatter plot (fallback for unknown layouts)."""
+    import matplotlib.pyplot as plt
+
     bin_centers = binning.bins.centers
     n_bins = len(bin_centers)
     # Filter NaN values if nan_color is None
@@ -488,6 +497,8 @@ def _plot_field(
     **kwargs: Any,
 ) -> matplotlib.axes.Axes:
     """Draw a bin-valued field with the renderer that matches the cell shapes."""
+    import matplotlib.pyplot as plt
+
     n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
     linearization = binning.linearization
     is_linearized_track = linearization is not None

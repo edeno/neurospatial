@@ -55,7 +55,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 import shapely
 from numpy.typing import NDArray
 from shapely import points
@@ -65,6 +64,8 @@ from .._constants import POINT_REGION_TOLERANCE
 from .core import Region, Regions
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from ..ops.transforms import SpatialTransform
 
 
@@ -308,6 +309,8 @@ def regions_containing_points(
     - If `region_names` contains names not found in `regions`, they are silently ignored.
 
     """
+    import pandas as pd
+
     transformed_pts = _prepare_points(pts, transform)
     n_points = transformed_pts.shape[0]
 

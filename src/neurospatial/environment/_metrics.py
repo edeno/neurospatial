@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 import numpy as np
-import pandas as pd
 
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._composition import bridge_values, composition_view
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def _copy_export(value: Any) -> Any:
@@ -27,6 +29,8 @@ def _copy_export(value: Any) -> Any:
 
 def _copy_attributes(frame: pd.DataFrame) -> pd.DataFrame:
     """Detach frame buffers, labels and nested object-column values."""
+    import pandas as pd
+
     result = frame.copy(deep=True)
     result.index = frame.index.copy(deep=True)
     result.columns = frame.columns.copy(deep=True)
@@ -41,6 +45,8 @@ def _copy_attributes(frame: pd.DataFrame) -> pd.DataFrame:
 
 def _bin_attributes(graph: nx.Graph) -> pd.DataFrame:
     """Node attributes of the graph, one row per bin, positions split by axis."""
+    import pandas as pd
+
     node_attrs = []
     for node_id in graph.nodes():
         attrs = graph.nodes[node_id].copy()
@@ -61,6 +67,8 @@ def _bin_attributes(graph: nx.Graph) -> pd.DataFrame:
 
 def _edge_attributes(graph: nx.Graph, binning: Binning) -> pd.DataFrame:
     """Edge attributes in bin-pair order, vectors oriented from source to target."""
+    import pandas as pd
+
     edge_attrs = []
     centers = binning.bins.centers
     graph_orientation = {
@@ -96,6 +104,8 @@ def _edge_attributes(graph: nx.Graph, binning: Binning) -> pd.DataFrame:
 
 def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
     """Export retained navigation bridge data as an independent table."""
+    import pandas as pd
+
     columns = [
         "source_component",
         "source_local_bin",

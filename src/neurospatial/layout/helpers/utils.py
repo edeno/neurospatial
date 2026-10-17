@@ -14,7 +14,6 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 import matplotlib
-import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
@@ -402,6 +401,8 @@ def _generic_graph_plot(
         If `graph` is empty or None, or if a 3D plot is attempted on a 2D `ax`.
 
     """
+    import matplotlib.pyplot as plt
+
     if graph is None or graph.number_of_nodes() == 0:
         raise ValueError("Graph is empty or None. Cannot plot an empty graph.")
 

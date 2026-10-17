@@ -561,6 +561,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- `from neurospatial import Environment` no longer imports
+  `matplotlib.pyplot` or `pandas`; they load when you first plot or ask for a
+  table. The import takes about 0.27 s instead of 0.42 s, which helps
+  scripts and worker processes that only bin positions.
+
 - Renaming an environment no longer discards its cached analyses: on a
   3,586-bin open field, the first `compute_spatial_rate` call after
   `with_metadata(name=...)` takes 0.51 s instead of 0.88 s.
