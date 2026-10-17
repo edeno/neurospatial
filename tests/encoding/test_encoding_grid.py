@@ -529,3 +529,48 @@ def test_pixel_size_refuses_what_the_autocorrelogram_refuses(case) -> None:
         "spatial_autocorrelation()", "autocorrelation_pixel_size()"
     )
     assert str(pixel_error.value) == expected
+
+
+class TestGridMetricsOnHexagonalMaps:
+    """Grid orientation and scale of synthetic hexagonal rate maps."""
+
+    SPACING = 30.0  # cm between neighboring firing fields
+
+    @classmethod
+    def _hexagonal(cls, n_cells, angle_deg, phase):
+        from neurospatial.encoding.grid import spatial_autocorrelation
+
+        edges = np.linspace(0.0, 2.0 * n_cells, n_cells + 1)  # 2 cm cells
+        mask = np.ones((n_cells, n_cells), dtype=bool)
+        env = Environment.from_grid_mask(mask, grid_edges=(edges, edges))
+        wavenumber = 4 * np.pi / (np.sqrt(3) * cls.SPACING)
+        rate = np.zeros(env.n_bins)
+        for offset in (0.0, 60.0, 120.0):
+            angle = np.radians(angle_deg + offset)
+            direction = np.array([np.cos(angle), np.sin(angle)])
+            rate += np.cos(wavenumber * (env.bin_centers - phase) @ direction)
+        rate = np.exp(0.3 * (rate - 3.0))
+        return env, rate, spatial_autocorrelation(env, rate)
+
+    CASES = (
+        (0.0, (0.0, 0.0)),
+        (12.0, (7.0, 11.0)),
+        (25.0, (3.0, -5.0)),
+        (41.0, (13.0, 2.0)),
+        (53.0, (21.0, 17.0)),
+        (33.0, (9.0, 26.0)),
+    )
+
+    @pytest.mark.parametrize("n_cells", [59, 60, 61])
+    def test_orientation_reads_the_first_ring_of_peaks(self, n_cells) -> None:
+        from neurospatial.encoding.grid import grid_properties
+
+        for angle, phase in self.CASES:
+            properties = grid_properties(self._hexagonal(n_cells, angle, phase)[2], 2.0)
+            # The field lattice lies 30 degrees from the wave directions.
+            # grid_properties measures angles in image convention, from the
+            # map's second axis (columns) toward its first, so an axis-0 = x
+            # map reports the lattice angle reflected about 45 degrees.
+            expected = (90.0 - (angle + 30.0)) % 60.0
+            error = abs(properties.orientation - expected) % 60.0
+            assert min(error, 60.0 - error) < 2.5

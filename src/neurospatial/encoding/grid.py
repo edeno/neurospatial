@@ -1530,9 +1530,12 @@ def grid_properties(
     distances_to_use = distances_pixels[: min(n_peaks, len(distances_pixels))]
     scale = float(np.median(distances_to_use)) * bin_size
 
-    # Compute orientation from peak angles. peak_coords is now (x, y),
-    # so arctan2(y, x) reads peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
-    angles_rad = np.arctan2(peak_coords[:, 1], peak_coords[:, 0])
+    # Compute orientation from the angles of the same n_peaks nearest peaks
+    # as the scale: the extra peak detected as a spare can lie on the second
+    # ring, at another angle. peak_coords is (x, y), so arctan2(y, x) reads
+    # peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
+    ring = peak_coords[: min(n_peaks, len(peak_coords))]
+    angles_rad = np.arctan2(ring[:, 1], ring[:, 0])
     angles_deg = np.degrees(angles_rad) % 360
     orientations = angles_deg % 60
 

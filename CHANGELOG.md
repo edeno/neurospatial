@@ -649,6 +649,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   raises the same `NotImplementedError`, naming
   `spatial_autocorrelation_radial`.
 
+- `grid_properties()` averaged the orientation over every detected peak,
+  including the spare one it detects beyond `n_peaks`, which can lie on the
+  second ring of fields at another angle. Orientation was off by about 5°
+  on synthetic hexagonal maps; it now uses the same `n_peaks` nearest peaks
+  as the scale and is within about 1-2°.
+
 - `SpatialRateResult.grid_properties()` converted pixels to distance with
   the smallest cell *area*, so its `scale` was in the wrong units (off by a
   factor of the cell width, e.g. 4× for 4 cm cells). It now uses
