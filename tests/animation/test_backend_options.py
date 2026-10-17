@@ -5,8 +5,11 @@ closest name, and an option only another backend uses is ignored with one
 warning whose suggested call works.
 """
 
+import base64
 import inspect
+import re
 import shutil
+import subprocess
 import warnings
 from pathlib import Path
 
@@ -267,21 +270,104 @@ def test_frame_times_reach_backends_that_align_time_series(
     np.testing.assert_array_equal(received["frame_times"], times)
 
 
-def test_html_draws_the_scale_bar(animation, tmp_path):
+def _png_width(png: bytes) -> int:
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    return int.from_bytes(png[16:20], "big")
+
+
+def test_html_frames_are_the_scale_bar_renders(animation, tmp_path):
+    """The embedded frame is the shared renderer's frame with a scale bar."""
+    from neurospatial.animation.rendering import (
+        compute_global_colormap_range,
+        render_field_to_image_bytes,
+    )
+
     env, fields, times = animation
-    pages = {}
-    for scale_bar in (False, True):
-        path = tmp_path / f"scale_bar_{scale_bar}.html"
-        env.animate_fields(
-            fields[:1],
-            frame_times=times[:1],
-            backend="html",
-            save_path=str(path),
-            dpi=30,
-            scale_bar=scale_bar,
+    vmin, vmax = compute_global_colormap_range([fields[0]], None, None)
+    path = tmp_path / "scale_bar.html"
+    env.animate_fields(
+        fields[:1],
+        frame_times=times[:1],
+        backend="html",
+        save_path=str(path),
+        dpi=30,
+        scale_bar=True,
+    )
+    (frame,) = re.findall(r"iVBORw0KGgo[A-Za-z0-9+/=]+", path.read_text())
+    embedded = base64.b64decode(frame)
+    with_bar, without_bar = (
+        render_field_to_image_bytes(
+            env, fields[0], "viridis", vmin, vmax, 30, scale_bar=scale_bar
         )
-        pages[scale_bar] = path.read_text()
-    assert pages[True] != pages[False]
+        for scale_bar in (True, False)
+    )
+    assert embedded == with_bar
+    assert embedded != without_bar
+
+
+def _time_series_overlay():
+    from neurospatial.animation.overlays import TimeSeriesOverlay
+
+    samples = np.linspace(0.0, 0.2, 50)
+    return TimeSeriesOverlay(data=np.sin(samples * 30.0), times=samples)
+
+
+def _video_width(path: Path) -> int:
+    if shutil.which("ffprobe") is None:
+        pytest.skip("ffprobe is required to read the video size")
+    output = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return int(output.stdout.strip())
+
+
+@pytest.mark.parametrize("backend", ["video", "widget"])
+def test_time_series_overlay_adds_a_panel_column(
+    animation, tmp_path, monkeypatch, backend
+):
+    """Frames with a time-series overlay are wider: the panel is drawn."""
+    _available(backend)
+    env, fields, times = animation
+    shown = []
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.widget_backend.display", shown.append
+    )
+    widths = {}
+    for with_overlay in (False, True):
+        overlays = [_time_series_overlay()] if with_overlay else None
+        path = tmp_path / f"panel_{with_overlay}.mp4"
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            env.animate_fields(
+                fields,
+                frame_times=times,
+                backend=backend,
+                save_path=str(path) if backend == "video" else None,
+                overlays=overlays,
+                dpi=50,
+                **({"n_workers": 1} if backend == "video" else {}),
+            )
+        assert not any("tight_layout" in str(w.message) for w in record)
+        if backend == "video":
+            widths[with_overlay] = _video_width(path)
+        else:
+            image = shown[-1].children[2]
+            widths[with_overlay] = _png_width(image.value)
+    assert widths[True] > widths[False]
 
 
 def test_napari_dry_run_checks_the_inputs_a_real_run_checks(animation):
