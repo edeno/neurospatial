@@ -22,7 +22,7 @@ from numpy.typing import ArrayLike, NDArray
 from scipy import sparse
 from typing_extensions import Self
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._affine import _apply_transform
@@ -4840,6 +4840,10 @@ class Environment(Generic[_C]):
         region_membership : Bins-by-regions membership table.
 
         """
+        if region_name not in self.regions:
+            raise RegionNotFoundError(
+                region_name, available=list(self.regions), argument="region_name"
+            )
         mask = region_bin_mask(
             self.regions[region_name],
             binning=self._binning,

@@ -83,8 +83,13 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         Requested region name; ``None`` reports a missing name with guidance.
     available : list of str, optional
         Available region names, used to suggest a close match.
-    argument : str, default "region_name"
-        Calling function's argument name, shown in the corrected call.
+    argument : str or None, default "region_name"
+        Calling function's argument name, shown in the corrected call. None
+        for a lookup by key, such as ``env.regions[name]``, which suggests
+        the corrected name alone.
+    in_list : bool, default False
+        Whether ``argument`` takes a list of names, so the corrected call
+        shows a list.
 
     Examples
     --------
@@ -102,7 +107,8 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
         name: str | None,
         *,
         available: list[str] | None = None,
-        argument: str = "region_name",
+        argument: str | None = "region_name",
+        in_list: bool = False,
     ) -> None:
         if available:
             what = (
@@ -117,27 +123,34 @@ class RegionNotFoundError(KeyError, ValueError, NeurospatialError):
             if isinstance(name, str)
             else []
         )
+
+        def use(region: str) -> str:
+            if argument is None:
+                return f"use {region!r}"
+            value = f"[{region!r}]" if in_list else repr(region)
+            return f"pass {argument}={value}"
+
         if not isinstance(name, str):
-            what = f"{argument}={name!r} was not found; region names must be strings."
+            what = (
+                f"Region name {name!r} was not found; region names must be strings."
+                if argument is None
+                else f"{argument}={name!r} was not found; region names must be strings."
+            )
             suggested = available[0] if available else "home"
-            value = f"[{suggested!r}]" if argument == "end_regions" else repr(suggested)
             fix = (
-                f"pass {argument}={value}; if a new region is needed, create "
+                f"{use(suggested)}; if a new region is needed, create "
                 "regions = Regions(env.regions.values()); "
                 f"regions.add({suggested!r}, point=(x, y)); "
                 "env = env.with_regions(regions)"
             )
         elif matches:
-            value = (
-                f"[{matches[0]!r}]" if argument == "end_regions" else repr(matches[0])
-            )
-            fix = f"pass {argument}={value}"
+            fix = use(matches[0])
         else:
-            value = f"[{name!r}]" if argument == "end_regions" else repr(name)
+            then = "" if argument is None else f", then {use(name)}"
             fix = (
                 "create regions = Regions(env.regions.values()); "
                 f"regions.add({name!r}, point=(x, y)) (or polygon=...); "
-                f"env = env.with_regions(regions), then pass {argument}={value}."
+                f"env = env.with_regions(regions){then}."
             )
         super().__init__(_format_error(what, fix=fix))
         self.region_name = name

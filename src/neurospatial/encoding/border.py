@@ -18,6 +18,8 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import RegionNotFoundError
+
 if TYPE_CHECKING:
     from neurospatial import Environment
 
@@ -473,9 +475,11 @@ def compute_region_coverage(
     # Validate regions exist
     for region_name in regions:
         if region_name not in env.regions:
-            raise ValueError(
-                f"Region '{region_name}' not found. "
-                f"Available regions: {list(env.regions.keys())}"
+            raise RegionNotFoundError(
+                region_name,
+                available=list(env.regions),
+                argument="regions",
+                in_list=True,
             )
 
     # Compute coverage for each region

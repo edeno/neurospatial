@@ -217,7 +217,7 @@ def detect_region_visits(
     for label, name in enumerate(names):
         if name not in env.regions:
             raise RegionNotFoundError(
-                name, available=list(env.regions), argument="region_names"
+                name, available=list(env.regions), argument="region_names", in_list=True
             )
         mask = regions_to_mask(env, name)
         overlap = mask & (labels >= 0)

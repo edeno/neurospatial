@@ -23,6 +23,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial import Environment
 
+from neurospatial._exceptions import RegionNotFoundError
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.mapping import regions_to_mask
 
@@ -131,9 +132,8 @@ def region_reward_field(
     """
     # Validate region exists
     if region_name not in env.regions:
-        raise KeyError(
-            f"Region '{region_name}' not found in environment. "
-            f"Available regions: {list(env.regions.keys())}"
+        raise RegionNotFoundError(
+            region_name, available=list(env.regions), argument="region_name"
         )
 
     # Get region mask

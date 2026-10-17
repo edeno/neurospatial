@@ -10,7 +10,7 @@ import shapely
 import shapely.geometry.base
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._derive import select_bins
@@ -96,10 +96,8 @@ def _subset_mask(
         # Check all regions exist
         for name in region_names:
             if name not in regions:
-                available = list(regions.keys())
-                raise ValueError(
-                    f"Region '{name}' not found in environment. "
-                    f"Available regions: {available}"
+                raise RegionNotFoundError(
+                    name, available=list(regions), argument="region_names", in_list=True
                 )
 
         mask = np.zeros(n_bins, dtype=bool)

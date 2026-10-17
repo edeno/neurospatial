@@ -447,7 +447,7 @@ def test_regions_update_region_change_kind():
 def test_regions_update_region_nonexistent():
     """Test that updating a nonexistent region raises KeyError."""
     regs = Regions()
-    with pytest.raises(KeyError, match="Region 'nonexistent' does not exist"):
+    with pytest.raises(KeyError, match="Region 'nonexistent' not found"):
         regs.update_region("nonexistent", point=[1.0, 2.0])
 
 

@@ -2076,7 +2076,7 @@ def segment_trials(
         if region not in env.regions:
             available = list(env.regions.keys())
             raise RegionNotFoundError(
-                region, available=available, argument="end_regions"
+                region, available=available, argument="end_regions", in_list=True
             )
 
     # Prevent start_region from being in end_regions (typical neuroscience practice)

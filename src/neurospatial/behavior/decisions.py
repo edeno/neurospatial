@@ -72,6 +72,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import RegionNotFoundError
 from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
@@ -348,12 +349,8 @@ def decision_region_entry_time(
     >>> print(f"Entered decision region at t={entry_time:.2f}s")  # doctest: +SKIP
     """
     if region not in env.regions:
-        available = list(env.regions.keys())
-        raise ValueError(
-            f"Region '{region}' not found in environment. "
-            f"Available regions: {available}. "
-            "Create regions = Regions(env.regions.values()), add the region "
-            "with regions.add(...), then use env = env.with_regions(regions)."
+        raise RegionNotFoundError(
+            region, available=list(env.regions), argument="region"
         )
 
     # Get bins in the region
@@ -1054,18 +1051,17 @@ def compute_decision_analysis(
 
     # Validate regions exist
     if decision_region not in env.regions:
-        available = list(env.regions.keys())
-        raise ValueError(
-            f"Decision region '{decision_region}' not found in environment. "
-            f"Available regions: {available}."
+        raise RegionNotFoundError(
+            decision_region, available=list(env.regions), argument="decision_region"
         )
 
     for goal_region in goal_regions:
         if goal_region not in env.regions:
-            available = list(env.regions.keys())
-            raise ValueError(
-                f"Goal region '{goal_region}' not found in environment. "
-                f"Available regions: {available}."
+            raise RegionNotFoundError(
+                goal_region,
+                available=list(env.regions),
+                argument="goal_regions",
+                in_list=True,
             )
 
     # Get position bins

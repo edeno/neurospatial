@@ -438,6 +438,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Every lookup of a region by name raises `RegionNotFoundError` with the
+  closest existing name, for example `Fix: pass region_name='reward'` for
+  `env.bins_in_region("rewrd")`. This covers `env.regions[name]`,
+  `bins_in_region`, `subset(region_names=...)`, the `Regions` editing methods
+  (`remove`, `update_region`, `region_center`), `region_reward_field`,
+  `compute_region_coverage`, `decision_region_entry_time` and
+  `compute_decision_analysis`, which used to raise a bare `KeyError` or a
+  `ValueError` without a suggestion. `RegionNotFoundError` is both a
+  `KeyError` and a `ValueError`, so existing `except` blocks still catch it.
+
 - `spatial_autocorrelation` raises `NotImplementedError` instead of
   `ValueError` on tracks, meshes, 3-D grids and grids with fewer than half of
   their cells active, the type used for every environment whose geometry

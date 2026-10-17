@@ -169,9 +169,16 @@ def test_region_not_found_handles_missing_name():
 
 
 @pytest.mark.parametrize("name,available", [("hom", ["home"]), ("home", [])])
-def test_region_not_found_formats_end_regions_as_a_list(name, available):
-    exc = RegionNotFoundError(name, available=available, argument="end_regions")
+def test_region_not_found_formats_a_list_argument_as_a_list(name, available):
+    exc = RegionNotFoundError(
+        name, available=available, argument="end_regions", in_list=True
+    )
     assert "end_regions=['home']" in str(exc)
+
+
+def test_region_not_found_by_key_suggests_the_name_alone():
+    exc = RegionNotFoundError("rewrd", available=["reward", "home"], argument=None)
+    assert str(exc).endswith("Fix: use 'reward'")
 
 
 def test_no_import_cycle():
