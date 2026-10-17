@@ -5,8 +5,6 @@ This module verifies that all result class methods correctly handle JAX arrays:
 - _get_array_module() detects JAX arrays
 - plot() methods work with JAX array data
 - metric methods work with JAX array data
-
-TDD approach: Tests written first, implementation follows.
 """
 
 from __future__ import annotations
@@ -698,7 +696,7 @@ class TestNumpyJaxConsistency:
 
 
 # ==============================================================================
-# Test JAX array preservation through metric calls (Task 8.3)
+# Test JAX array preservation through metric calls
 # ==============================================================================
 
 

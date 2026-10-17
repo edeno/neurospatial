@@ -305,9 +305,9 @@ def animate_fields(
     save_path: str | None = None,
     overwrite: bool = False,
     overlays: list[OverlayProtocol] | None = None,
-    frame_times: NDArray[np.float64],  # REQUIRED - no default
-    speed: float = DEFAULT_SPEED,  # NEW: replaces fps in public API
-    max_playback_fps: int = MAX_PLAYBACK_FPS,  # NEW: advanced knob with strong default
+    frame_times: NDArray[np.float64],
+    speed: float = DEFAULT_SPEED,
+    max_playback_fps: int = MAX_PLAYBACK_FPS,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig

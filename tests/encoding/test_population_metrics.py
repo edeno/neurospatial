@@ -351,7 +351,7 @@ class TestPopulationCoverage:
             population_coverage(simple_env, firing_rates, max_mean_rate=-1.0)
 
     def test_n_jobs_parity(self, simple_env: Environment) -> None:
-        """population_coverage(n_jobs=2) equals n_jobs=1 on the same input (Task 2.3)."""
+        """population_coverage(n_jobs=2) equals n_jobs=1 on the same input."""
         n_bins = simple_env.n_bins
         # A handful of neurons with distinct place fields.
         rng = np.random.default_rng(7)

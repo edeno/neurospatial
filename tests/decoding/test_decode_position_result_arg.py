@@ -1,4 +1,4 @@
-"""decode_position accepts a SpatialRatesResult directly (Task 1.4f).
+"""decode_position accepts a SpatialRatesResult directly.
 
 Passing a population rate result object (anything exposing ``firing_rates``)
 should be equivalent to passing its ``firing_rates`` array, removing the

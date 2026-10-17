@@ -1,7 +1,4 @@
-"""Tests for trajectory metrics module.
-
-Following TDD: Tests written FIRST, then implementation.
-"""
+"""Tests for trajectory metrics module."""
 
 import numpy as np
 import pytest

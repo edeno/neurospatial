@@ -3,9 +3,8 @@
 This module tests the public API entry point for track graph annotation,
 including TrackGraphResult and annotate_track_graph().
 
-Task 3.1: Tests for TrackGraphResult import and to_environment method
-Task 3.2: Tests for annotate_track_graph entry point
-Task 3.3: Tests for module exports from annotation package
+Covered: importing TrackGraphResult and its to_environment method, the
+annotate_track_graph entry point, and the annotation package exports.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ import numpy as np
 import pytest
 
 # -----------------------------------------------------------------------------
-# Task 3.3: Tests for module exports from neurospatial.annotation
+# Tests for module exports from neurospatial.annotation
 # -----------------------------------------------------------------------------
 
 
@@ -59,7 +58,7 @@ class TestModuleExports:
 
 
 # -----------------------------------------------------------------------------
-# Task 3.1: Tests for TrackGraphResult import from track_graph.py
+# Tests for TrackGraphResult import from track_graph.py
 # -----------------------------------------------------------------------------
 
 
@@ -231,7 +230,7 @@ class TestTrackGraphResultToEnvironment:
 
 
 # -----------------------------------------------------------------------------
-# Task 3.2: Tests for annotate_track_graph entry point
+# Tests for annotate_track_graph entry point
 # -----------------------------------------------------------------------------
 
 
@@ -647,7 +646,7 @@ class TestAnnotateTrackGraphCalibration:
 
 
 # -----------------------------------------------------------------------------
-# Task 3.4: End-to-End Integration Tests
+# End-to-End Integration Tests
 # -----------------------------------------------------------------------------
 
 

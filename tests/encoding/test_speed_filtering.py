@@ -1,4 +1,4 @@
-"""Tests for speed filtering in the batch/single encode path (Task 2.6).
+"""Tests for speed filtering in the batch/single encode path.
 
 A firing rate map is spike_counts (numerator) / occupancy (denominator) per
 bin. A ``min_speed`` filter MUST apply ONE shared per-interval speed gate to

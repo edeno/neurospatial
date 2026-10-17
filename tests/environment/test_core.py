@@ -1275,7 +1275,7 @@ class TestEnvironment3D:
 class TestPositionsParameterNaming:
     """Tests for standardized 'positions' parameter naming.
 
-    Task 2.5: Verify that from_samples() uses 'positions' instead of 'data_samples'
+    Verify that from_samples() uses 'positions' instead of 'data_samples'
     for consistency with trajectory analysis methods like occupancy() and
     compute_spatial_rate().
     """

@@ -3,9 +3,7 @@
 This module tests the view binning layer that converts spike trains
 and gaze data to spike counts and view occupancy arrays.
 
-TDD approach: Tests written first, implementation follows.
-
-Task 4.6: Implement binning layer for view encoding
+The binning layer:
 - Create helper to compute view occupancy (time viewing each spatial bin)
 - Support gaze models: "fixed_distance", "ray_cast", "boundary"
 - Convert (spike_times, times, positions, headings, gaze_model) -> (spike_counts, occupancy)

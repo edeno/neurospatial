@@ -1,7 +1,4 @@
-"""Tests for trial segmentation functions.
-
-Following TDD: Tests written FIRST, then implementation.
-"""
+"""Tests for trial segmentation functions."""
 
 import numpy as np
 import pytest

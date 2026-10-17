@@ -4,8 +4,6 @@ This module tests the extended functionality of distance_field() including:
 - Euclidean metric computation using bin_centers
 - Cutoff parameter for both geodesic and Euclidean modes
 - Backward compatibility with existing geodesic-only behavior
-
-Tests follow TDD - written BEFORE implementation.
 """
 
 import networkx as nx

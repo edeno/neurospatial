@@ -1,7 +1,5 @@
 """
 Tests for distance utility methods: distance_to() and rings().
-
-Following TDD - these tests are written BEFORE implementation.
 """
 
 import numpy as np

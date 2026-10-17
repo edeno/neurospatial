@@ -3,8 +3,6 @@
 Tests for coordinate transformations between allocentric and egocentric
 reference frames, heading computation utilities, and egocentric polar
 environment creation.
-
-TDD: These tests are written BEFORE implementation to define expected behavior.
 """
 
 import numpy as np

@@ -365,7 +365,6 @@ class TestGradientOperator:
         rng = np.random.default_rng(42)
         field = rng.random(env.n_bins)
 
-        # Import gradient function (will fail initially - this is TDD RED phase)
         from neurospatial.ops.calculus import gradient
 
         # Compute gradient
@@ -454,7 +453,6 @@ class TestDivergenceOperator:
         rng = np.random.default_rng(42)
         edge_field = rng.random(n_edges)
 
-        # Import divergence function (will fail initially - this is TDD RED phase)
         from neurospatial.ops.calculus import divergence
 
         # Compute divergence

@@ -1,7 +1,4 @@
-"""Tests for spatial decision analysis module.
-
-Following TDD: Tests written FIRST, then implementation.
-"""
+"""Tests for spatial decision analysis module."""
 
 import numpy as np
 import pytest

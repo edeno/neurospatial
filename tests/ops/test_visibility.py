@@ -2,8 +2,6 @@
 
 Tests for visibility/gaze computation including field of view dataclass,
 viewshed analysis, and cue visibility checking.
-
-TDD: These tests are written BEFORE implementation to define expected behavior.
 """
 
 from unittest.mock import patch

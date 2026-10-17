@@ -3,8 +3,6 @@
 This module tests the public API dataclass (TimeSeriesOverlay) and its
 internal data container (TimeSeriesData), including validation, conversion,
 and window extraction functionality.
-
-Following TDD: These tests are written BEFORE implementation.
 """
 
 from __future__ import annotations

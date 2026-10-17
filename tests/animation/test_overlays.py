@@ -1875,7 +1875,7 @@ class TestConvertOverlaysToData:
 
 
 # =============================================================================
-# Task 3.2: Pipeline Integration Tests
+# Pipeline Integration Tests
 # =============================================================================
 
 

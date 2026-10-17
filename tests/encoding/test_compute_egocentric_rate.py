@@ -3,7 +3,7 @@
 This module tests the compute_egocentric_rate(None) function for computing egocentric
 firing rate maps for object-vector cells.
 
-Task 5.7: Implement compute_egocentric_rate(None) function
+compute_egocentric_rate():
 - Accept single spike_times array
 - Accept object_positions array
 - Support distance_range and bin count parameters

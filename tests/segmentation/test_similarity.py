@@ -1,7 +1,4 @@
-"""Tests for trajectory similarity and goal-directed run detection.
-
-Following TDD: Write tests FIRST, watch them fail, then implement.
-"""
+"""Tests for trajectory similarity and goal-directed run detection."""
 
 from __future__ import annotations
 

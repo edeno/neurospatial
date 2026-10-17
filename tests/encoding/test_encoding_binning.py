@@ -3,9 +3,7 @@
 This module tests the binning layer that converts spike trains to
 spike counts and occupancy arrays.
 
-TDD approach: Tests written first, implementation follows.
-
-Task 2.7: Implement binning layer for spatial encoding
+The binning layer:
 - Create helper to convert (env, spike_times, times, positions) -> (spike_counts, occupancy)
 - Spike counts shape: (n_neurons, n_bins)
 - Occupancy shape: (n_bins,)
@@ -592,7 +590,7 @@ class TestSpikeInterpolationRegression:
 
 
 # ==============================================================================
-# Test warn_on_drop: spike-drop warnings (Task 0.1)
+# Test warn_on_drop: spike-drop warnings
 # ==============================================================================
 
 

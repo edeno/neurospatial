@@ -3,7 +3,7 @@
 This module tests the compute_view_rate() function for computing spatial
 view fields from spike trains and trajectory data.
 
-Task 4.7: Implement compute_view_rate() function
+compute_view_rate():
 - Accept single spike_times array
 - Support gaze_model parameter
 - Support view_distance parameter
@@ -1432,7 +1432,7 @@ class TestComputeViewRatesSignature:
 
 
 # =============================================================================
-# Tests for gaze_offsets parameter (Task 8.4)
+# Tests for gaze_offsets parameter
 # =============================================================================
 
 

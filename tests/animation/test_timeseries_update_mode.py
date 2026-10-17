@@ -2,8 +2,6 @@
 
 This module tests the update_mode feature that controls when the time series
 dock widget updates during animation playback.
-
-Following TDD: These tests are written BEFORE implementation.
 """
 
 from __future__ import annotations

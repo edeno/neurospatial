@@ -1,4 +1,4 @@
-"""Tests for neurospatial.encoding.grid module (TDD RED phase).
+"""Tests for neurospatial.encoding.grid module.
 
 These tests verify that all grid cell functions are importable from the new
 encoding.grid location after the module reorganization.

@@ -1,7 +1,4 @@
-"""Tests for scale bar visualization utilities.
-
-Tests follow TDD approach - written before implementation.
-"""
+"""Tests for scale bar visualization utilities."""
 
 import matplotlib.pyplot as plt
 import numpy as np

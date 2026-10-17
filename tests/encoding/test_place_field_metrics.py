@@ -1,7 +1,5 @@
 """
 Tests for place field metrics.
-
-Following TDD: Tests written FIRST before implementation.
 """
 
 from __future__ import annotations

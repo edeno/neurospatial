@@ -1,7 +1,7 @@
 """Tests for egocentric rate computation result classes.
 
 This test module covers ObjectVectorRateResult and ObjectVectorRatesResult
-dataclass definitions, following TDD for Task 5.1.
+dataclass definitions.
 """
 
 from __future__ import annotations

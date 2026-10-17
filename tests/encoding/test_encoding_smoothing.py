@@ -2,8 +2,6 @@
 
 This module tests the shared smoothing functions that will be used by
 encoding result computation functions (compute_spatial_rate, etc.).
-
-Following TDD approach: tests written before implementation.
 """
 
 from __future__ import annotations

@@ -6,8 +6,6 @@ This module tests the shared infrastructure for encoding result classes:
 - HasOccupancy protocol
 - HasEnvironment protocol
 - SpatialResultMixin: Shared methods for spatial result classes
-
-TDD approach: Tests written first, implementation follows.
 """
 
 from __future__ import annotations

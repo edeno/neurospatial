@@ -3,7 +3,7 @@
 This module tests ViewRateResult and ViewRatesResult dataclasses
 defined in encoding/view.py for spatial view cell analysis.
 
-Task 4.1: Result class definitions
+Result classes:
 - ViewRateResult dataclass (frozen=True)
 - ViewRatesResult dataclass (frozen=True)
 """
@@ -74,7 +74,7 @@ def batch_firing_rates(simple_env: Environment, n_neurons: int) -> np.ndarray:
 
 
 # ==============================================================================
-# ViewRateResult Tests - Task 4.1
+# ViewRateResult Tests
 # ==============================================================================
 
 
@@ -198,7 +198,7 @@ class TestViewRateResultFields:
 
 
 # ==============================================================================
-# ViewRatesResult Tests - Task 4.1
+# ViewRatesResult Tests
 # ==============================================================================
 
 
@@ -522,7 +522,7 @@ class TestViewRatesResultEdgeCases:
 
 
 # ==============================================================================
-# ViewRateResult Convenience Methods Tests - Task 4.2
+# ViewRateResult Convenience Methods Tests
 # ==============================================================================
 
 
@@ -780,7 +780,7 @@ class TestViewRateResultViewSpatialInformation:
 
 
 # ==============================================================================
-# ViewRateResult Classification Tests - Task 4.3
+# ViewRateResult Classification Tests
 # ==============================================================================
 
 
@@ -949,7 +949,7 @@ class TestViewRateResultIsViewCell:
 
 
 # ==============================================================================
-# ViewRatesResult Batch Methods Tests - Task 4.4
+# ViewRatesResult Batch Methods Tests
 # ==============================================================================
 
 
@@ -1399,7 +1399,7 @@ class TestViewRatesResultClassify:
 
 
 # ==============================================================================
-# ViewRatesResult.summary_table() Tests - Task 4.5
+# ViewRatesResult.summary_table() Tests
 # ==============================================================================
 
 

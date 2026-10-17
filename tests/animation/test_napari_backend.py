@@ -902,7 +902,7 @@ def test_playback_widget_scrubbing_updates_immediately():
 
 
 # ============================================================================
-# Array Input Tests (Task 2.1: render_napari accepts 2D arrays)
+# Array Input Tests (render_napari accepts 2D arrays)
 # ============================================================================
 
 
@@ -1275,7 +1275,7 @@ class TestMultiscaleDisabled:
 
 
 class TestSpeedBasedAPI:
-    """Test render_napari() speed-based API (Task 5.1).
+    """Test render_napari() speed-based API.
 
     The new API uses speed multiplier (e.g., 0.5× = half speed) instead of
     raw fps. This matches how scientists think about playback speed.
@@ -1409,7 +1409,7 @@ class TestSpeedBasedAPI:
 
 
 class TestSpeedControlWidgetSignature:
-    """Test _add_speed_control_widget() new signature (Task 5.2).
+    """Test _add_speed_control_widget() new signature.
 
     The widget should accept speed-based parameters to enable showing
     speed multipliers instead of raw fps values.
@@ -1499,7 +1499,7 @@ class TestSpeedControlWidgetSignature:
 
 
 class TestSpeedSliderImplementation:
-    """Test speed-based slider implementation (Task 5.3).
+    """Test speed-based slider implementation.
 
     The widget should show speed multiplier (e.g., 0.5×) as the primary control,
     with fps shown as secondary info.

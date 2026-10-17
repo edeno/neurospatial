@@ -979,7 +979,7 @@ def test_none_overlay_data_is_always_pickle_safe(
 
 
 # =============================================================================
-# Test: Video Overlay Rendering in Video Export Backend (Task 4.2)
+# Test: Video Overlay Rendering in Video Export Backend
 # =============================================================================
 
 
@@ -1442,7 +1442,7 @@ class TestVideoFrameRenderer:
 
 
 # =============================================================================
-# Test: Widget Backend Video Overlay Support (Task 4.3)
+# Test: Widget Backend Video Overlay Support
 # =============================================================================
 
 
@@ -1498,7 +1498,7 @@ class TestWidgetBackendVideoOverlay:
 
 
 # =============================================================================
-# Test: HTML Backend Video Overlay Warning (Task 4.3)
+# Test: HTML Backend Video Overlay Warning
 # =============================================================================
 
 

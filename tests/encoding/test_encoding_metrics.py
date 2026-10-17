@@ -2,8 +2,6 @@
 
 This module tests the shared spatial information and sparsity computations
 that will be used by result classes (SpatialRateResult, etc.).
-
-Following TDD approach: tests written before implementation.
 """
 
 from __future__ import annotations
@@ -22,8 +20,6 @@ from neurospatial.encoding._metrics import (
     sparsity,
     spatial_information,
 )
-
-# batch_grid_scores import is done locally in tests to allow TDD (tests first)
 
 # =============================================================================
 # Test Fixtures

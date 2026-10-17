@@ -4,9 +4,7 @@ This module tests the spatial encoding result classes:
 - SpatialRateResult: Single-neuron spatial rate map result
 - SpatialRatesResult: Multi-neuron spatial rate map result
 
-TDD approach: Tests written first, implementation follows.
-
-Task 2.1: Result class definitions
+Result classes:
 - SpatialRateResult dataclass (frozen=True)
 - SpatialRatesResult dataclass (frozen=True)
 - Inherit from SpatialResultMixin for shared methods
@@ -78,7 +76,7 @@ def occupancy(simple_env: Environment) -> NDArray[np.float64]:
 
 
 class TestSpatialRateResultDefinition:
-    """Tests for SpatialRateResult class definition (Task 2.1)."""
+    """Tests for SpatialRateResult class definition."""
 
     def test_class_is_frozen(
         self,
@@ -128,7 +126,7 @@ class TestSpatialRateResultMixinMethods:
 
 
 class TestSpatialRatesResultDefinition:
-    """Tests for SpatialRatesResult class definition (Task 2.1)."""
+    """Tests for SpatialRatesResult class definition."""
 
     def test_class_is_frozen(
         self,
@@ -352,7 +350,7 @@ class TestSpatialModuleExports:
 
 
 # ==============================================================================
-# Test SpatialRateResult convenience methods (Task 2.2)
+# Test SpatialRateResult convenience methods
 # ==============================================================================
 
 
@@ -704,7 +702,7 @@ class TestSpatialRateResultSparsity:
 
 
 # ==============================================================================
-# Test SpatialRateResult cell type metrics (Task 2.3)
+# Test SpatialRateResult cell type metrics
 # ==============================================================================
 
 
@@ -1296,7 +1294,7 @@ class TestSpatialRateResultRegionCoverage:
 
 
 # ==============================================================================
-# Test SpatialRatesResult batch methods (Task 2.4)
+# Test SpatialRatesResult batch methods
 # ==============================================================================
 
 
@@ -1700,7 +1698,7 @@ class TestSpatialRatesResultSparsity:
 
 
 # ==============================================================================
-# Test SpatialRatesResult batch metrics (Task 2.5)
+# Test SpatialRatesResult batch metrics
 # ==============================================================================
 
 
@@ -2276,12 +2274,12 @@ class TestSpatialRatesResultClassify:
 
 
 # ==============================================================================
-# Test SpatialRatesResult.summary_table() (Task 2.6)
+# Test SpatialRatesResult.summary_table()
 # ==============================================================================
 
 
 class TestSpatialRatesResultSummaryTable:
-    """Tests for SpatialRatesResult.summary_table() method (Task 1.3)."""
+    """Tests for SpatialRatesResult.summary_table() method."""
 
     def test_has_summary_table_method(
         self,
@@ -2776,14 +2774,14 @@ class TestSpatialRatesResultSummaryTable:
 
 
 # ==============================================================================
-# Test summary_table() / label_cell_types() double-recompute avoidance (Task 2.3)
+# Test summary_table() / label_cell_types() double-recompute avoidance
 # ==============================================================================
 
 
 class TestSummaryTableScoreRecompute:
     """summary_table() must compute grid/border scores exactly once.
 
-    Regression: before the Task 2.3 fix, summary_table() computed grid and
+    Regression: before the fix, summary_table() computed grid and
     border scores TWICE per call (once for the score columns, once inside
     label_cell_types()). These tests pin the call count to exactly 1.
     """
@@ -2817,7 +2815,7 @@ class TestSummaryTableScoreRecompute:
 
         assert mock_grid.call_count == 1, (
             f"batch_grid_scores called {mock_grid.call_count} times, "
-            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+            "expected exactly 1 (regression: was 2 before the fix)"
         )
 
     def test_summary_table_computes_border_score_once(
@@ -2849,7 +2847,7 @@ class TestSummaryTableScoreRecompute:
 
         assert mock_border.call_count == 1, (
             f"batch_border_scores called {mock_border.call_count} times, "
-            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+            "expected exactly 1 (regression: was 2 before the fix)"
         )
 
 
@@ -3014,7 +3012,7 @@ class TestLabelCellTypesPrecomputedScores:
 
 
 # ==============================================================================
-# Test compute_spatial_rate() function (Task 2.8)
+# Test compute_spatial_rate() function
 # ==============================================================================
 
 
@@ -3097,7 +3095,7 @@ def place_cell_spikes(
 
 
 class TestComputeSpatialRateFunction:
-    """Tests for compute_spatial_rate() function (Task 2.8)."""
+    """Tests for compute_spatial_rate() function."""
 
     def test_function_is_importable(self) -> None:
         """compute_spatial_rate should be importable from encoding.spatial."""
@@ -3724,12 +3722,12 @@ def multiple_place_cell_spikes(
 
 
 # ==============================================================================
-# Test compute_spatial_rates() function (Task 2.9)
+# Test compute_spatial_rates() function
 # ==============================================================================
 
 
 class TestComputeSpatialRatesFunction:
-    """Tests for compute_spatial_rates() function (Task 2.9)."""
+    """Tests for compute_spatial_rates() function."""
 
     def test_function_is_importable(self) -> None:
         """compute_spatial_rates should be importable from encoding.spatial."""
@@ -4820,7 +4818,7 @@ class TestSpatialRateNaNPositionHandling:
 
 
 # ==============================================================================
-# Test compute_spatial_rates() float32 dtype option (Task 2.5)
+# Test compute_spatial_rates() float32 dtype option
 # ==============================================================================
 
 

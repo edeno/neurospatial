@@ -3,7 +3,7 @@
 This module tests DirectionalRateResult and DirectionalRatesResult dataclasses
 defined in encoding/directional.py for head direction cell analysis.
 
-Task 3.1: Result class definitions (no Environment dependency, only bin_centers)
+The result classes need no Environment, only bin_centers.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def batch_firing_rates(n_neurons: int, n_bins: int) -> np.ndarray:
 
 
 # ==============================================================================
-# DirectionalRateResult Tests - Task 3.1
+# DirectionalRateResult Tests
 # ==============================================================================
 
 
@@ -138,7 +138,7 @@ class TestDirectionalRateResultFields:
 
 
 # ==============================================================================
-# DirectionalRatesResult Tests - Task 3.1
+# DirectionalRatesResult Tests
 # ==============================================================================
 
 
@@ -375,7 +375,7 @@ class TestDirectionalRatesResultEdgeCases:
 
 
 # ==============================================================================
-# DirectionalRateResult Convenience Methods Tests - Task 3.2
+# DirectionalRateResult Convenience Methods Tests
 # ==============================================================================
 
 
@@ -769,7 +769,7 @@ class TestDirectionalRateResultPeakFiringRate:
 
 
 # ==============================================================================
-# DirectionalRateResult Tuning Metrics Tests - Task 3.3
+# DirectionalRateResult Tuning Metrics Tests
 # ==============================================================================
 
 
@@ -1230,7 +1230,7 @@ class TestDirectionalRateResultRayleighPvalue:
 
 
 # ==============================================================================
-# DirectionalRateResult Classification Methods Tests - Task 3.4
+# DirectionalRateResult Classification Methods Tests
 # ==============================================================================
 
 
@@ -1596,7 +1596,7 @@ class TestDirectionalRateResultInterpretation:
 
 
 # ==============================================================================
-# DirectionalRatesResult Batch Methods Tests - Task 3.5
+# DirectionalRatesResult Batch Methods Tests
 # ==============================================================================
 
 
@@ -2263,7 +2263,7 @@ class TestDirectionalRatesResultPeakFiringRates:
 
 
 # ==============================================================================
-# DirectionalRatesResult.summary_table() Tests - Task 3.6
+# DirectionalRatesResult.summary_table() Tests
 # ==============================================================================
 
 
@@ -2780,7 +2780,7 @@ class TestDirectionalRatesResultSummaryTable:
 
 
 # ==============================================================================
-# compute_directional_rate() Tests - Task 3.8
+# compute_directional_rate() Tests
 # ==============================================================================
 
 
@@ -3199,7 +3199,7 @@ class TestComputeDirectionalRateInputValidation:
 
 
 # ==============================================================================
-# compute_directional_rates() Tests - Task 3.9
+# compute_directional_rates() Tests
 # ==============================================================================
 
 

@@ -1,7 +1,5 @@
 """Tests for VTE (Vicarious Trial and Error) metrics module.
 
-Following TDD: Tests written FIRST, then implementation.
-
 VTE is characterized by:
 - Head sweeping (looking back and forth between options)
 - Pausing/slowing at decision points

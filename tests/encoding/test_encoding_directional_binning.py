@@ -3,9 +3,7 @@
 This module tests the directional binning layer that converts spike trains
 and head direction data to spike counts and occupancy arrays.
 
-TDD approach: Tests written first, implementation follows.
-
-Task 3.7: Implement binning layer for directional encoding
+The binning layer:
 - Create helper to convert (spike_times, times, headings, bin_size) -> (spike_counts, occupancy)
 - Handle circular binning (0 to 2π)
 - Support `angle_unit` parameter for input conversion

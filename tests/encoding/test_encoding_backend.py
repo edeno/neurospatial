@@ -5,8 +5,6 @@ This module tests the backend selection infrastructure:
 - is_jax_available: Check if JAX is available on current platform
 - SUPPORTED_BACKENDS: List of valid backend names
 
-TDD approach: Tests written first, implementation follows.
-
 Design requirements:
 - "numpy" (default) works everywhere, including Windows
 - "jax" requires JAX installation (Linux/macOS only)

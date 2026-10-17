@@ -15,7 +15,7 @@ from neurospatial.animation.overlays import PositionOverlay
 
 
 class TestComputePlaybackFps:
-    """Test _compute_playback_fps() helper function (Task 1.2)."""
+    """Test _compute_playback_fps() helper function."""
 
     def test_normal_case_30hz_realtime(self):
         """Test 30 Hz data at real-time speed (not capped since below MAX_PLAYBACK_FPS=60)."""
@@ -918,7 +918,7 @@ class TestArrayPreservation:
     def test_napari_backend_receives_array_not_list(self):
         """Test that napari backend receives 2D array without list conversion.
 
-        This is the core test for Task 1.1: arrays should pass through to
+        This is the core test: arrays should pass through to
         napari backend unchanged to enable memmap efficiency.
         """
         from neurospatial.animation.core import animate_fields

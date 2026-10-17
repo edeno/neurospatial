@@ -1,7 +1,4 @@
-"""Tests for goal-directed navigation metrics module.
-
-Following TDD: Tests written FIRST, then implementation.
-"""
+"""Tests for goal-directed navigation metrics module."""
 
 import numpy as np
 import pytest
