@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from itertools import product
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -193,6 +193,26 @@ class FramedGrid(ReadOnlyState):
         )
 
 
+def _underflow_error(
+    matrix: NDArray[np.floating[Any]], other: NDArray[np.floating[Any]] | None = None
+) -> NDArray[np.float64]:
+    """Absolute roundoff of products whose results fall below the normal range.
+
+    Relative roundoff (``eps * |value|``) vanishes for subnormal and zero
+    entries, such as the sine of a tiny rotation angle, but a multiply or
+    divide there still rounds by up to ``smallest_subnormal`` in absolute
+    terms. Inverting the stored inverse ``B`` moves those absolute errors
+    through ``dA = A dB A``, so each entry is bounded by the operation count
+    times ``smallest_subnormal`` times ``(|A| J |A|)``, with ``J`` all ones.
+    With ``other``, it bounds the product ``matrix @ other`` instead.
+    """
+    floor = 16 * len(matrix) * np.finfo(np.float64).smallest_subnormal
+    left = np.abs(matrix).sum(axis=1)
+    right = (np.abs(matrix) if other is None else np.abs(other)).sum(axis=0)
+    error: NDArray[np.float64] = floor * (1.0 + np.outer(left, right))
+    return error
+
+
 def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64]]:
     """Recover stored axes/frame and propagated matrix roundoff; no builder."""
     if isinstance(locator, TransformedLocator):
@@ -203,9 +223,11 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
             np.abs(matrix) @ np.abs(locator.inverse) @ np.abs(matrix)
         )
         inverse_error += 4 * np.spacing(np.abs(matrix))
+        inverse_error += _underflow_error(matrix)
         error = (np.abs(matrix) + inverse_error) @ parent_error
         error += inverse_error @ np.abs(base.forward)
         error += rounding * (np.abs(matrix) @ np.abs(base.forward))
+        error += _underflow_error(matrix, base.forward)
         return FramedGrid(base.source, matrix @ base.forward), error
     if isinstance(locator, SubsetLocator):
         base, error = frame_from_locator(locator.base)

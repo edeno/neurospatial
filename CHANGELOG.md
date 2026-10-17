@@ -873,6 +873,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `apply_transform` accepts a rotation by an angle so small that its sine is
+  below the normal floating-point range (about 1e-308), such as 2e-313
+  radians. The check that the stored grid frame matches the transform used
+  only relative rounding errors, which vanish for such tiny values, so it
+  refused the environment it had just built. Its error bound now also counts
+  the absolute rounding of these tiny products.
+
 - A grid environment that went through a chain of scalings and translations
   no longer refuses its own inverse transform. Each step mapped the cell edges
   and, separately, the stored bin centers; after a few steps the two disagreed

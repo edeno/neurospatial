@@ -37,7 +37,11 @@ from neurospatial.geometry._face_normals import (
     _unit_rows,
     geometric_normals,
 )
-from neurospatial.geometry._grid_frame import FramedGrid, frame_from_locator
+from neurospatial.geometry._grid_frame import (
+    FramedGrid,
+    _underflow_error,
+    frame_from_locator,
+)
 from neurospatial.geometry._locators import (
     HexLocator,
     Locator,
@@ -622,7 +626,7 @@ def _locator_geometry(
     rounding = 16 * (n_dims + 1) * np.finfo(np.float64).eps
     matrix_error = rounding * (
         np.abs(matrix) @ np.abs(locator.inverse) @ np.abs(matrix)
-    )
+    ) + _underflow_error(matrix)
     linear_error = matrix_error[:-1, :-1]
     shift_error = matrix_error[:-1, -1]
     # First-order relative determinant sensitivity is tr(A^-1 dA).
