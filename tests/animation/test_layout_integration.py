@@ -39,9 +39,6 @@ def test_hexagonal_layout_with_video_backend(tmp_path):
         name="hexagonal_test",
     )
 
-    # Clear cache for pickle-ability (required for parallel rendering)
-    env.clear_cache()
-
     # Generate random fields (10 frames for speed)
     rng = np.random.default_rng(42)
     n_frames = 10

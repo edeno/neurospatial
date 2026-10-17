@@ -2895,9 +2895,6 @@ class TestTimeSeriesIntegration:
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_integration.mp4"
 
-        # Clear cache for parallel rendering
-        simple_env.clear_cache()
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = simple_env.animate_fields(
@@ -2952,8 +2949,6 @@ class TestTimeSeriesIntegration:
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_stacked.mp4"
 
-        simple_env.clear_cache()
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = simple_env.animate_fields(
@@ -3000,8 +2995,6 @@ class TestTimeSeriesIntegration:
 
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_grouped.mp4"
-
-        simple_env.clear_cache()
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -3052,8 +3045,6 @@ class TestTimeSeriesIntegration:
 
         frame_times = np.linspace(0, 10, 20)
         save_path = tmp_path / "test_normalized.mp4"
-
-        simple_env.clear_cache()
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")

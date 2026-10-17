@@ -289,9 +289,6 @@ class TestVideoExportIntegration:
         """
         output_path = tmp_path / "output_with_video.mp4"
 
-        # Clear cache for pickle safety
-        video_test_env.clear_cache()
-
         # Create frame times
         n_frames = len(video_test_fields)
         frame_times = np.linspace(0, 1.0, n_frames)
@@ -337,9 +334,6 @@ class TestVideoExportIntegration:
         serial_path = tmp_path / "serial_output.mp4"
         parallel_path = tmp_path / "parallel_output.mp4"
 
-        # Clear cache for pickle safety
-        video_test_env.clear_cache()
-
         # Create frame times
         n_frames = len(video_test_fields)
         frame_times = np.linspace(0, 1.0, n_frames)
@@ -353,9 +347,6 @@ class TestVideoExportIntegration:
             n_workers=1,
             frame_times=frame_times,
         )
-
-        # Clear cache again before parallel
-        video_test_env.clear_cache()
 
         # Parallel rendering
         video_test_env.animate_fields(
@@ -418,9 +409,6 @@ class TestVideoExportIntegration:
         below_path = tmp_path / "below.mp4"
         above_path = tmp_path / "above.mp4"
 
-        # Clear cache
-        video_test_env.clear_cache()
-
         # Create frame times
         n_frames = len(video_test_fields)
         frame_times = np.linspace(0, 1.0, n_frames)
@@ -434,9 +422,6 @@ class TestVideoExportIntegration:
             n_workers=1,
             frame_times=frame_times,
         )
-
-        # Clear cache
-        video_test_env.clear_cache()
 
         # Render with z_order="above"
         video_test_env.animate_fields(
