@@ -8,6 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
+from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial.environment._cache import KDTREE, AnalysisCache
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._locators import NearestBinLocator
@@ -74,6 +75,8 @@ def _centers_tree(cache: AnalysisCache, binning: Binning) -> cKDTree:
 
     A nearest-center locator over exactly these centers, in bin order, already
     searches them with a KD-tree. Reusing it keeps one tree per environment.
+    Both use ``KDTREE_LEAF_SIZE``: queries are exact, but the leaf size decides
+    which of several equidistant centers a single-neighbor query returns.
     """
     centers = binning.bins.centers
     locator = binning.locator
@@ -84,4 +87,4 @@ def _centers_tree(cache: AnalysisCache, binning: Binning) -> cKDTree:
         and np.array_equal(locator.centers, centers)
     ):
         return locator.kdtree(cache)
-    return cKDTree(centers)
+    return cKDTree(centers, leafsize=KDTREE_LEAF_SIZE)

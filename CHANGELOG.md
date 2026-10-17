@@ -399,6 +399,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- On a track, `bin_at` and `nearest_bin(tie_break="closest_center")` search
+  one KD-tree, so a position exactly equidistant from two or more bin centers
+  goes to the same bin in both. `bin_at` used a tree of its own and could pick
+  another of the equidistant bins; for such positions its answer can differ
+  from earlier versions. Every other position gets the same bin as before.
+
 - A track graph attribute that cannot be saved at all, such as a function or
   a lock, is refused when the track environment is built, with a `TypeError`
   naming the node or edge and the attribute. It used to fail later, when the

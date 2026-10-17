@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 from shapely.geometry import Polygon
 
+from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._hex_lookup import _points_to_hex_bin_ind
 from neurospatial.geometry._regular_lookup import _points_to_regular_grid_bin_ind
@@ -307,9 +308,6 @@ _DEGENERATE_RCOND = 1000 * np.finfo(np.float64).eps
 _OVERLAP_RTOL = 1e-9
 # Query points per batch of candidate-triangle tests.
 _QUERY_CHUNK = 65_536
-# Leaf size of the nearest-bin KD-tree. Queries are exact, so the leaf size
-# only changes speed and which of several equidistant centers k=1 returns.
-_LEAF_SIZE = 10
 
 
 class _TriangleIndex(NamedTuple):
@@ -583,7 +581,7 @@ class NearestBinLocator(ReadOnlyState):
     def kdtree(self, indexes: LookupIndexes | None = None) -> cKDTree:
         """Return the KD-tree over ``centers``, kept in ``indexes`` when given."""
         return _lookup_index(
-            self, indexes, lambda: cKDTree(self.centers, leafsize=_LEAF_SIZE)
+            self, indexes, lambda: cKDTree(self.centers, leafsize=KDTREE_LEAF_SIZE)
         )
 
     def locate(

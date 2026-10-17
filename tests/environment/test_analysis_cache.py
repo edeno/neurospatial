@@ -517,3 +517,23 @@ def test_track_lookups_share_one_kdtree(first, monkeypatch):
         )
 
     assert len(calls) == 1
+
+
+def test_track_lookups_resolve_equidistant_points_alike():
+    """bin_at and nearest_bin search one tree, so ties go to the same bin."""
+    import networkx as nx
+
+    corners = {0: (0.0, 0.0), 1: (40.0, 0.0), 2: (40.0, 40.0), 3: (0.0, 40.0)}
+    graph = nx.Graph()
+    for node, position in corners.items():
+        graph.add_node(node, pos=position)
+    for u, v in [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2)]:
+        length = float(np.hypot(*np.subtract(corners[u], corners[v])))
+        graph.add_edge(u, v, distance=length)
+    env = Environment.from_graph(graph, edge_order=list(graph.edges), bin_size=1.0)
+    # Points on a half-unit lattice are often equidistant from several centers.
+    points = np.round(np.random.default_rng(0).uniform(0, 40, (5000, 2)) * 2) / 2
+
+    nearest = env.nearest_bin(points, tie_break="closest_center", max_distance=np.inf)
+
+    np.testing.assert_array_equal(env.bin_at(points), nearest)
