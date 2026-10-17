@@ -586,8 +586,7 @@ what napari draws, but its `dimension_ranges` is the cells it keeps.
 Code that reads `dimension_ranges` as a number changes with it on hexagonal,
 mesh, track and grid-subset environments: the automatic scale of
 `neurospatial.ops.spatial_basis`, the "bandwidth spans the environment"
-warning, `simulate_trajectory_sinusoidal` (now oscillates over the track's
-full length), the uniform field placement of `simulate_session`, axis limits,
+warning, the uniform field placement of `simulate_session`, axis limits,
 `env.info()`, and the extent that animation overlays and an uncalibrated
 video are drawn over. To keep the old numbers, pass them yourself, for
 example the bin-center bounds:

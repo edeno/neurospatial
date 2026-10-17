@@ -747,8 +747,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   stretched by up to half a pixel). Readers of `dimension_ranges` change
   with it on hexagonal, mesh, track and grid-subset environments: plot limits,
   `env.info()`, the automatic scale of `ops.spatial_basis`, the "bandwidth
-  spans the environment" warning, `simulate_trajectory_sinusoidal` (it now
-  oscillates over the track's full length), the uniform field placement of
+  spans the environment" warning, the uniform field placement of
   `simulate_session`, and the extent animation overlays and an uncalibrated
   video are drawn over. The same
   applies to the bins an `arena=` removes in `Environment.from_layout`,
@@ -844,6 +843,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   1.2 s. Occupancy values are unchanged.
 
 ### Fixed
+
+- `simulate_trajectory_sinusoidal` runs over the whole length of the track,
+  in linear position. It used the x range of the track's coordinates, so a
+  bent track was shortened to its horizontal extent: an L-shaped 120 + 80 cm
+  track oscillated over 120 cm instead of 200 cm.
 
 - `PlaceCellModel(metric="euclidean")` on an egocentric polar environment
   measures the distance between places in the animal's plane,

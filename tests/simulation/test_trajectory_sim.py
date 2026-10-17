@@ -247,6 +247,38 @@ class TestSimulateTrajectorysinusoidal:
         second = positions[n_per_period : 2 * n_per_period, 0]
         np.testing.assert_allclose(first, second, atol=1e-6)
 
+    def test_oscillates_over_the_whole_length_of_a_bent_track(self):
+        """On a 120 + 80 cm L-shaped track the motion spans 200 cm of track.
+
+        The positions are linear positions along the track, so their range
+        is the track length, not the x extent of the bend (120 cm).
+        """
+        from neurospatial import Environment
+
+        track = Environment.linear_track(
+            node_positions=[(0.0, 0.0), (120.0, 0.0), (120.0, 80.0)],
+            bin_size=2.0,
+            track_width=10.0,
+            units="cm",
+        )
+        positions, _ = simulate_trajectory_sinusoidal(
+            track,
+            duration=8.0,
+            sampling_frequency=100.0,
+            speed=20.0,
+            period=8.0,
+            pause_at_peaks=False,
+        )
+        assert positions.min() == pytest.approx(0.0, abs=1e-3)
+        assert positions.max() == pytest.approx(200.0, abs=1e-3)
+        # The default period runs the track there and back at the speed.
+        positions, times = simulate_trajectory_sinusoidal(
+            track, duration=1.0, speed=20.0
+        )
+        np.testing.assert_allclose(
+            positions[:, 0], 100.0 + 100.0 * np.sin(2 * np.pi * times / 20.0)
+        )
+
     def test_seed_has_no_effect(self, linear_track_env):
         """`seed` is a documented no-op: output is identical regardless of seed."""
         kw = {

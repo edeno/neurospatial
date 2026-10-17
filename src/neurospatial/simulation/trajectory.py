@@ -509,7 +509,8 @@ def simulate_trajectory_sinusoidal(
     Returns
     -------
     positions : NDArray[np.float64], shape (n_time, 1)
-        1D position coordinates.
+        Linear positions along the track (``env.to_linear`` coordinates),
+        oscillating between the two ends of the binned track.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds.
 
@@ -548,11 +549,13 @@ def simulate_trajectory_sinusoidal(
         msg = "Sinusoidal trajectory only works for 1D environments (env.is_linearized_track must be True)"
         raise ValueError(msg)
 
-    # Get track length
-    if env.dimension_ranges is None:
-        msg = "Environment dimension_ranges must be set for sinusoidal trajectory"
-        raise ValueError(msg)
-    range_min, range_max = env.dimension_ranges[0]
+    # The motion runs along the track, in linear position: from the start of
+    # the first bin to the end of the last one.
+    linearization = env.binning.linearization
+    assert linearization is not None  # is_linearized_track
+    edges = np.asarray(linearization.grid_edges[0])
+    active = np.flatnonzero(linearization.active_mask)
+    range_min, range_max = float(edges[active[0]]), float(edges[active[-1] + 1])
     track_length = range_max - range_min
 
     # Compute period if not provided
