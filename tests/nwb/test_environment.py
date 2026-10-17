@@ -2472,3 +2472,33 @@ def test_finite_volume_ops_survive_nwb_round_trip(hexagonal_env_from_nwb, operat
         return heat_kernel_wavelet_basis(env, centers=np.array([0]))
 
     np.testing.assert_array_equal(evaluate(loaded), evaluate(original))
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "reason"),
+    [
+        ("labels", {"start", "reward"}, "set value"),
+        ("baseline", float("nan"), "non-finite number"),
+    ],
+    ids=["set", "nan"],
+)
+def test_nwb_writer_names_a_json_only_track_attribute(empty_nwb, key, value, reason):
+    import networkx as nx
+
+    from neurospatial import Environment
+    from neurospatial.io.nwb import write_environment
+
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(10.0, 0.0))
+    graph.add_edge(0, 1, distance=10.0)
+    graph.nodes[0][key] = value
+    track = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
+
+    with pytest.raises(
+        ValueError, match=f"track graph node 0 attribute '{key}'"
+    ) as error:
+        write_environment(empty_nwb, track)
+
+    assert reason in str(error.value)
+    assert "environment" not in empty_nwb.scratch

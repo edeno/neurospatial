@@ -140,6 +140,22 @@ def decode(
         raise ValueError(f"invalid {name} payload at {prefix}: {exc}") from exc
 
 
+class _UnsupportedJSONValueError(ValueError):
+    """A metadata value JSON cannot store.
+
+    Parameters
+    ----------
+    message : str
+        The full error message.
+    reason : str
+        What the offending value is, e.g. ``"set value"``.
+    """
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 def _json_safe(value: Any) -> Any:
     """Normalize metadata containers and NumPy scalars for JSON storage."""
     if isinstance(value, np.ndarray):
@@ -151,15 +167,17 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     if isinstance(value, float) and not np.isfinite(value):
-        raise ValueError(
+        raise _UnsupportedJSONValueError(
             "cannot save non-finite scalar metadata as JSON.\n"
-            "Fix: use finite values or None for missing graph metadata."
+            "Fix: use finite values or None for missing graph metadata.",
+            reason="non-finite number",
         )
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    raise ValueError(
+    raise _UnsupportedJSONValueError(
         f"cannot save metadata value of type {type(value).__name__}.\n"
-        "Fix: store only JSON-compatible scalar values and sequences in graph attributes."
+        "Fix: store only JSON-compatible scalar values and sequences in graph attributes.",
+        reason=f"{type(value).__name__} value",
     )
 
 
@@ -336,11 +354,11 @@ def _refuse_json_attributes(graph: nx.Graph) -> None:
     for element, key, value in graph_attribute_items(graph):
         try:
             _json_safe(value)
-        except ValueError as exc:
-            reason = str(exc).split("\n", 1)[0].removeprefix("cannot save ")
+        except _UnsupportedJSONValueError as exc:
             raise ValueError(
-                f"cannot save track graph {element} attribute {key!r} "
-                f"({reason.rstrip('.')}).\n"
+                f"cannot save track graph {element} attribute {key!r}: its "
+                f"value ({type(value).__name__}) is or contains a {exc.reason}, "
+                "which JSON cannot store.\n"
                 "Why: to_file, to_dict and NWB store the track graph as JSON, "
                 "which holds finite numbers, strings, booleans, None and lists "
                 "of them; pickle can still send this environment to worker "

@@ -46,17 +46,20 @@ def test_unpicklable_attribute_is_refused_at_construction(where, key, value, ele
     assert message.splitlines()[-1].startswith(f"Fix: remove {key!r}")
 
 
-@pytest.mark.parametrize(
-    ("where", "key", "value", "element"),
+JSON_ONLY = pytest.mark.parametrize(
+    ("where", "key", "value", "element", "reason"),
     [
-        ("edge", "recorded", np.datetime64("2020-01-01"), "edge (0, 1)"),
-        ("node", "labels", {"start", "reward"}, "node 0"),
-        ("metadata", "baseline", float("nan"), "metadata"),
+        ("edge", "recorded", np.datetime64("2020-01-01"), "edge (0, 1)", "date value"),
+        ("node", "labels", {"start", "reward"}, "node 0", "set value"),
+        ("metadata", "baseline", float("nan"), "metadata", "non-finite number"),
     ],
     ids=["datetime", "set", "nan"],
 )
+
+
+@JSON_ONLY
 def test_json_only_refusal_names_the_attribute_and_keeps_pickle(
-    where, key, value, element, tmp_path
+    where, key, value, element, reason, tmp_path
 ):
     env = _track(where, key, value)
 
@@ -67,6 +70,7 @@ def test_json_only_refusal_names_the_attribute_and_keeps_pickle(
             write()
         message = str(error.value)
         assert f"track graph {element} attribute {key!r}" in message
+        assert f"value ({type(value).__name__}) is or contains a {reason}" in message
         assert "JSON" in message
 
 
