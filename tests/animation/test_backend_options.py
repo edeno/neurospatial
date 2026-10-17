@@ -324,7 +324,9 @@ def test_html_frames_are_the_scale_bar_renders(animation, tmp_path):
         dpi=30,
         scale_bar=True,
     )
-    (frame,) = re.findall(r"iVBORw0KGgo[A-Za-z0-9+/=]+", path.read_text())
+    (frame,) = re.findall(
+        r"iVBORw0KGgo[A-Za-z0-9+/=]+", path.read_text(encoding="utf-8")
+    )
     embedded = base64.b64decode(frame)
     with_bar, without_bar = (
         render_field_to_image_bytes(
