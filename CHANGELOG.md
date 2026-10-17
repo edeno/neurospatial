@@ -799,6 +799,157 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 - Derived environments no longer repeat the warning about unrecognized units.
 
+- **Breaking:** Cartesian and egocentric polar factories now return one public
+  `Environment` class. Use `env.coordinate_kind` for coordinate meaning and
+  `Environment.from_polar_egocentric(...)` instead of the removed
+  `EgocentricPolarEnvironment.create(...)`. Radius remains in length units and
+  angle in radians; polar Cartesian-only calls still refuse, including unbound
+  calls. Factory-inferred static types preserve those restrictions. Supported
+  dictionary, file and NWB records retain their coordinate semantics.
+
+- Points in discarded subset bins map to `-1` rather than a nearby retained bin.
+  Non-uniform scaling of hexagonal or mesh environments and general affine maps
+  disable finite-volume smoothing with an explanation. Tracks refuse
+  non-similarity transforms; rebuild them from transformed graph nodes instead.
+
+- Environment files and dictionaries now use `Environment-v3`; NWB environment
+  records use schema `3.0`. They preserve Arena, walls, exact cells and clip
+  mappings without rebuilding layouts. Version 2/`2.0` remains readable with an
+  explicitly unknown Arena. Version 1/`1.x` must be recreated with a factory.
+- Polygon-aware lookup excludes points outside the declared domain and in its
+  holes. Linear occupancy subdivides entry, exit and re-entry intervals on
+  exact polygon support, and refuses unresolved physical-wall crossings.
+  Default encoding and occupancy retain their existing interval-allocation
+  conventions.
+- Rebinning preserves the original arena and selects coarse bins by center,
+  including inferred mask holes. Physical walls remain closed; coarse cells
+  that cannot represent them are refused.
+
+- Point lookup consistently rejects incorrect coordinate widths, including
+  hexagonal inputs with extra columns and empty or non-finite grid queries.
+
+- `Environment.bin_sizes` now returns an owned, read-only array, like
+  `bin_centers`.
+
+- Rewrite all nine tutorials around spatial neuroscience questions, using
+  simple technical English, explanations of analysis choices, figure
+  interpretation, and instructions for using recorded data. Update the shared
+  catalog and keep example-data setup separate from the main analysis.
+
+- Consolidate the 27 feature-oriented notebooks into nine standalone task
+  tutorials covering environments, rate maps, behavior, real data, simulation,
+  held-out decoding, events, visualization and NWB. Combine the J16 neural and
+  maze analyses, add executable specialized recipes in the user guide, and
+  update catalog, links, mirrored outputs and full-collection CI.
+
+- **Breaking:** `env.smooth` now defaults to `mode="average"`, preserving the
+  units and level of a rate map. Pass `mode="density"` explicitly to retain
+  the previous count-to-density default; kernel constructors are unchanged.
+- **Breaking:** field detection and population coverage now default to no
+  map-mean exclusion (`max_mean_rate=np.inf`). Pass `max_mean_rate=10.0` to
+  retain the previous filter. Its unweighted spatial-bin mean is not a
+  recording-time mean or a cell-type verdict. Coverage displays report maps
+  with segmented fields rather than asserting cell identity.
+
+- Review all 27 tutorials for coherent workflows, current APIs, valid geometry,
+  observed support, independent simulation randomness and calibrated scientific
+  language. Correct rate-map and direction labels, add held-out decoding,
+  preserve real-data transition endpoints/gaps, and make desktop viewers and
+  long video exports opt-in. Refresh worked outputs and align prerequisite links.
+
+- Directional place fields, decode summaries, batch scores, behavior metrics
+  and run bins, assembly results and trajectory-fit results now own read-only
+  copies of their array fields, including after pickle/deepcopy. Directional
+  mappings also prevent replacing entries. **Behavior change:** copy arrays
+  before editing values. Decode-summary xarray exports remain editable copies.
+- Rate and peri-event results store read-only copies of their arrays. This
+  covers spatial, directional, view and object-vector results (single-unit
+  and population) and both peri-event results. Editing an array a result was
+  built from no longer changes it, and editing a result's arrays in place, for
+  example `rates.firing_rates /= peak`, raises instead of silently changing
+  what the result reports. **Breaking:** copy before modifying values:
+  `normalized = np.array(rates.firing_rates) / peak`. `to_xarray()` and
+  `to_dataframe()` return editable copies; editing a `to_xarray()` Dataset
+  used to edit the result.
+- `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
+  on environments built with `from_polygon`, `from_grid_mask` and
+  `from_pixel_mask`, and on grid environments read from NWB. They previously
+  required a `RegularGrid` layout. Inactive cells behave as on masked
+  `from_samples` environments.
+- Polar environments no longer define the twelve Cartesian methods. Accessing
+  one raises `CartesianOnlyError`, both a `NotImplementedError` and an
+  `AttributeError`, with the same message. `hasattr` reports them as absent and
+  type checkers flag the call. Refusals inside shared methods name the call
+  that was made.
+- **Behavior change:** an environment's geometry is read-only once built:
+  its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
+  and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
+  edits, so such edits used to return stale results silently. Build a new
+  environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
+  Factories copy array inputs, so the caller's own arrays stay writable and
+  later edits to them do not reach the environment.
+- Layout setup synchronizes restored geometry and invalidates all environment
+  caches. The polar layout builds physical distances and circular seams before
+  environment initialization, and records its `circular_angle` build option.
+- Layout engines, including a polar layout with annular-sector cells, supply
+  their own finite-volume cell faces. Dense kernels, spectral diffusion,
+  smoothness bases, gradients and divergence all use that one capability, and
+  the diffusion consumers share one validated operator snapshot. Numerical
+  schemes are unchanged.
+- **Behavior change:** `compute_diffusion_kernels` rejects directed graphs and
+  multigraphs, whose reciprocal or parallel edges were summed into doubled
+  conductances. Collapse them first with `nx.Graph(graph)`.
+
+- Extend rate-result `analysis_settings` and `spatial_support` to directional,
+  view and object-vector analyses, preserving exact retained intervals and
+  family settings through indexing, tables and NetCDF-compatible xarray exports.
+  Shared binning preparation keeps counts, occupancy and provenance aligned.
+- **Behavior change:** view and smoothed object-vector encoders now use the same
+  unit-aware physical bandwidth default as spatial encoding. Polar results
+  inherit the supplied environment's distance units; angular smoothing retains
+  its existing units and defaults.
+
+- **Behavior change:** spatial encoding defaults to a 5 cm smoothing bandwidth
+  in declared metric units (0.05 m / 50 mm), or 2.5 median graph-edge lengths
+  for unspecified/custom units. Explicit bandwidths retain their coordinate
+  units; bandwidths spanning the environment warn about lost spatial tuning.
+- Align unit-indexed metadata by identity in spike containers and population
+  results. Reject missing, duplicate or conflicting metadata identities; an
+  unnamed default RangeIndex retains positional interpretation.
+
+- **Breaking:** video and HTML animation exports default to `overwrite=False`, refusing existing outputs before rendering or dry-run estimates. HTML checks its default filename and nonempty frames directory before creating directories; ffmpeg uses `-n` unless overwrite is explicit. Environment saves share the same paired-target check and corrected-call wording.
+
+- **Breaking:** rate summary tables lead with rate/information, place classification last, and carry estimator, physical units, direction frame and resolved classification thresholds in `DataFrame.attrs`. Singular/population columns match; constant `method` is no longer a summary column, and labels are documented as heuristic screens.
+
+- **Breaking:** population rate summaries name `n_units` and `max_peak_firing_rate` explicitly. Shared occupancy remains seconds observed once; singular summaries add cheap family metrics and stay safe for all-NaN maps without computing grid/border scores.
+
+- **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
+
+- **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
+
+- **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.
+
+- **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
+
+- **Breaking:** standardize required trajectory pairs as `(times, positions)` in `approach_rate`, `compute_decision_analysis`, `compute_goal_directed_metrics`, `compute_path_efficiency`, `compute_pre_decision_metrics`, `compute_vte_session`, `compute_vte_trial`, `extract_pre_decision_window`, `goal_bias`, `head_sweep_from_positions`, `instantaneous_goal_alignment`, `mean_square_displacement`, `pre_decision_heading_stats`, `pre_decision_speed_stats`, `segment_by_velocity`, `time_efficiency`, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`. Place `env` first in `compute_region_coverage`, `field_shape_metrics`, `rate_map_coherence`, `map_points_to_bins`, `shuffle_place_fields_circular_2d` and `calibrate_video`. Rename the spike parameters on `bin_spikes_in_time`, `population_peri_event_histogram`, `restrict_spike_trains` and `validate_simulation` to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
+
+- **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.
+
+- **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
+
+- **Breaking:** default `ObjectVectorCellModel` to allocentric direction tuning without headings, which changes simulated spikes, without an error, for code that relied on heading-relative tuning. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
+
+- Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
+
+- Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
+
+- `Environment.combine`, and `subset` and loading of a combined environment,
+  check component overlap only for cells whose bounding boxes intersect instead
+  of every pair of cells. Combining two 1 m square arenas at 2 cm bins takes
+  about 2 s instead of 21 s; the overlap check for two 1 m arenas at 1 cm bins
+  takes 0.9 s instead of 141 s. The same overlaps, contacts and error messages
+  are reported.
+
 ### Added
 
 - `Environment.with_track_width(width)` gives a track its measured full width
@@ -867,6 +1018,190 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   edge attribute that measures length (`"distance"` by default; `None` counts
   edges). `Environment.distance_between` now calls it, so the two always
   agree.
+
+- Expose detached, read-only `env.binning` snapshots and public coordinate,
+  diffusion-geometry, diffusion-accuracy, MRF-basis and Gaussian-kernel
+  operations. Environment owns analysis caches; numerical consumers use public
+  operations or explicit geometry. Existing public geometry imports remain
+  stable while owned data and codecs move into an independent `geometry/`
+  package with enforced dependency rules.
+
+- Preserve linear interpolation and movement time fractions after rotating,
+  reflecting or shearing Cartesian 2-D/3-D grids. Planar grids use exact QuadMesh
+  plots/animation updates. Planar linear spike counts and dwell share bounded
+  source-plane ownership, including paths along inactive-cell boundaries.
+  Napari raster helpers explicitly refuse framed grids.
+
+- Certify new affine numerical transforms from stored physical normals and flux
+  distances. Unequal scaling along retained orthogonal grid axes can preserve
+  diffusion, smoothing, gradients and divergence; skew faces refuse with a
+  geometric reason. Existing approximate-mesh similarity behavior is preserved.
+
+- Retain 2-D/3-D source grid frames through affine transforms and whole-bin
+  subsets, without exposing source axes as world-aligned grid edges. Reflected
+  and deformed hexagons retain exact polygon cells. New binning codec version 3
+  stores the frame and reads earlier versions 1 and 2; partial clipping uses
+  exact polygon cells rather than a tensor grid.
+
+- Add optional owned `FaceNormals` data to `Binning`, in authoritative neighbor
+  pair order. Native Cartesian grids and planar hexagon/triangle cells capture
+  physical directions; subsets, clipping, physical walls and affine transforms
+  preserve their alignment. Normals survive copying and JSON/NWB storage, but
+  enable new numerical transforms only with the source/target face certificate.
+  Codec version 2 introduced normals; current version 3 also stores grid frames
+  and reads legacy versions 1 and 2. Older readers reject the new nested version.
+
+- Ray casting and cue line of sight now intersect declared physical walls,
+  including holes and internal barriers. Analysis crops no longer occlude
+  physical rays. **Breaking:** use `boundary_source="analysis"` explicitly for
+  analysis-cell boundaries when physical walls are unknown. No wall hit within
+  the search distance returns NaN. View encoding, shuffle tests and simulation
+  forward and record the choice; wall hits use observer-side cell ownership.
+  Stored frames retain bounded boundary-contact behavior after transforms.
+  Viewshed bin coverage remains sampled; unsupported wall/owner geometry refuses.
+
+- Border scores now use declared physical footprint rings and internal walls
+  by default, with wall-length coverage and distances to actual walls.
+  **Breaking:** explicitly choose `boundary_source="analysis"` for the legacy
+  boundary-bin approximation when only analysis geometry is available. Result,
+  population and classification methods propagate the choice. Summary tables
+  explain unavailable wall metrics without dropping other metrics. Physical
+  coverage requires exact planar cells and polygonal wall geometry.
+
+- Add `Environment.rebin(bin_size=...)` for rectangular grids, rebuilding over
+  the retained arena with an owned `GridBinningSpec` separate from provenance.
+  Grid axes and anchor survive crops, clipping, affine transforms and JSON/NWB
+  storage; new sizes are physical lengths along those axes. Other families and
+  records without a specification refuse this mode. Integer-factor coarsening
+  keeps its truncation warning and now also accepts masked and polygon grids
+  with uniform rectangular cells. Fields and fitted models are not transferred.
+
+- Add `Environment.combine` for owned disjoint components, with stable keyed
+  bin sources, qualified regions and deterministic mutual-nearest-neighbor
+  bridges that respect known physical walls. Path-only bridges do not diffuse;
+  explicit geometric conductance couples certified child blocks. Exact lookup,
+  component geometry and bridge data survive copy, derivation and JSON/NWB
+  storage without live provider objects or bridge re-inference.
+  **Breaking:** remove `CompositeEnvironment`; use
+  `Environment.combine({"key": env, ...})` and the ordinary environment APIs.
+  Overlapping or uncertifiable support and incompatible declarations raise.
+
+- Add `Environment.with_metadata(...)` and `with_regions(...)` for immutable
+  environment values. Metadata replacements share geometry and start fresh
+  analysis caches. **Breaking:** assign units/frame/name at construction or use
+  a replacement; edit a standalone `Regions` builder, then publish it with
+  `with_regions`. Environment snapshots own caller data and protect geometry,
+  provenance, regions and cached numerical exports through copy and persistence.
+- Add `Environment.from_bins(...)` with public `neurospatial.binning` records,
+  explicit lookup and explicit face availability. `env.edge_pairs` preserves
+  supplied neighbor order and defines gradient/flux order. `to_networkx()`
+  returns an independent editable graph. Declared navigation path lengths are
+  preserved by rigid transforms and scaled by uniform scaling; other affine
+  maps require known paths or rebuilt distances.
+- Add installed `SnapshotAdapter` objects in the versioned
+  `neurospatial.snapshot_adapters.v1` entry-point group, plus
+  `neurospatial.testing.assert_environment_contract`. Custom providers must
+  convert into supported built-in data snapshots. Original custom saved records
+  require their adapter package; canonical resaves use built-in codecs.
+- Preserve hexagonal grid shape and active mask across explicit-bin construction
+  and persistence, keeping grid-based spatial autocorrelation available.
+
+- Add continuous Arena domains alongside spatial bins. Tracked positions,
+  grid masks and image masks remain direct inputs and infer computational
+  support without asserting physical walls. Optional polygons, explicit
+  internal walls and measured track widths describe known physical geometry.
+- Add `Environment.clip(polygon)` for exact planar cell intersections,
+  including holes and split bins, with a read-only immediate-parent
+  `clip_mapping`. Plotting and containment work without numerical certification;
+  smoothing and spatial operators require certified finite-volume geometry.
+  Clipping does not transfer fields or fitted models automatically.
+- Add explicit `time_allocation="linear"` to single-unit and population spatial
+  rate estimation. Spike counts and dwell time share exact retained entry,
+  exit and re-entry intervals; the default remains start allocation.
+
+- Plot actual positions directly on decoded posteriors with
+  `DecodingResult.plot(true_times=..., true_positions=..., max_gap=...)`.
+  Ground-truth alignment is shared with `error_against`, preserving tracking
+  gaps and missing observations without manual coordinate conversions.
+- Add `plot_peri_event_response` for a matching raster and PSTH. Both panels
+  reuse the result's original event cohort and complete half-open bins,
+  including exact boundary handling on the absolute recording clock.
+- Add `detect_region_visits` and `region_transitions`, with immutable visit and
+  transition records preserving region identity, original sample indices and
+  continuous observation runs. Partial visits retain observed-boundary flags;
+  entry-to-entry transitions include source dwell time and never cross missing
+  tracking, recording gaps or excluded epochs.
+
+- Peri-event results expose read-only `event_indices` identifying retained
+  events in the original input. Indexing a population preserves this cohort,
+  so rasters, PSTHs and event tables can share exposure filtering without
+  duplicating it. Hand-built results use `None` for unavailable provenance.
+
+- Check the complete notebook collection in CI, including paired source and
+  documentation parity, local links and an acyclic prerequisite graph. Generate
+  one shared catalog from notebook metadata for the repository and docs site.
+
+- Download and cache the real J16 bandit recording from
+  Zenodo (10.5281/zenodo.23020757), verifying its
+  pinned SHA-256 before loading numeric NPZ arrays without pickle. The real-data
+  tutorial fetches this archive explicitly and reuses it offline; data
+  instructions include the source, license and citation.
+
+- Select units by label with `sel(unit_id=...)` on `SpikeTrains` and every
+  population result (spatial, directional, view, object-vector and peri-event).
+  `[]` selects by position on all of them, so `spikes[i]` and `rates[i]` are
+  the same neuron. A label passed to `[]`, or a position out of range, raises
+  an error that names the `sel` call to use. **Breaking:** `SpikeTrains[...]`
+  used to look up a label; replace `st[unit_id]` with `st.sel(unit_id=unit_id)`.
+- Build a fitted decoder from hand-built rate maps, such as a simulation's
+  ground truth, with `BayesianDecoder.from_models(env, encoding_models,
+  unit_ids=..., spatial_support=..., dt=...)`. Without `unit_ids`, spike trains
+  pair with models by position. **Breaking:** the `BayesianDecoder` constructor
+  now takes configuration only. `encoding_models`, `unit_ids`,
+  `spatial_support`, `spike_window` and `analysis_settings` are read-only
+  attributes, set by `fit`, `from_rates` or `from_models`; replace
+  `BayesianDecoder(env, encoding_models=m, unit_ids=ids)` with
+  `BayesianDecoder.from_models(env, m, unit_ids=ids)`.
+  `dataclasses.replace(decoder, dt=...)` keeps the fitted models.
+  Changing fitted encoding settings (`method`, `bandwidth`, `min_occupancy`,
+  `penalty`, `rank`) with `replace` now raises; construct and fit a new decoder.
+  Prediction defaults remain replaceable. `from_rates` uses the rate result's
+  method, bandwidth and recorded encoding settings.
+- Add `Environment.get_divergence_operator()`, the cached finite-volume
+  divergence operator that `divergence(env, edge_field)` applies, alongside
+  `get_differential_operator()`.
+- Preserve spatial `analysis_settings` through population indexing, tables,
+  xarray/NetCDF and NWB schema 2.4, including selected/observed windows, gap,
+  speed and occupancy gates. Expose `spatial_support` on rate results and fitted
+  decoders. Legacy results identify unavailable settings as `None`.
+- Add runnable condition-comparison and held-out decoding workflows and a
+  scientific-task index linking recording import through analysis and export.
+
+- Add scientific invariants across layout transforms, coordinate-unit conversions, single/population estimation, labelled unit permutations and disk NWB round trips, covering grid, masked, hexagonal and graph layouts.
+
+- Give singular rate results the same metric tables and labeled xarray Dataset export as population results, including GAM slices, unit identity, frame and recording-window metadata. Shared table builders/classifiers retain the established statistics and thresholds without wrapping singular GAM results in artificial populations.
+
+- Preserve NWB units' per-unit `obs_intervals` and their shared acquisition `spike_window`, including subset selection and lazy-spike reads. Population analyses can use this intersection explicitly; absent coverage stays None and disjoint coverage stays an empty window.
+
+- Build fitted spatial decoders from `SpatialRatesResult` with `BayesianDecoder.from_rates`, carrying the environment, precision, unit identity, training support and analysis settings. Generated labels remain positional; caller-supplied labels align by identity, including direct constructors, indexing and dataclass replacement. Prediction excludes bins without supported training observations.
+
+- Accept `BayesianDecoder.fit(unit_ids=)` and preserve caller-supplied unit identity for prediction alignment. Labels supplied alongside a spike group must match its labels and order; the shared resolver rejects duplicates.
+
+- Snapshot all public namespace names and function signatures in one sorted, reviewable file, with a unified diff and explicit regeneration command for intentional API changes.
+
+- Give lazy root exports concrete static types for IDEs and type checkers, and verify each headline class/function with a CI typing contract without eager runtime imports.
+
+- Expose spatial rate computation/results, position decoding/results and peri-event histogram/results lazily at the root, alongside core spatial types and domain namespaces.
+
+- Add opt-in `criterion="shuffle"` to all five raw-array cell predicates, with explicit stream labels and p-value levels. Mode-specific keywords raise together when they would be ignored; result methods and batch classifiers remain threshold screens without retained inputs.
+
+- Add five raw-array circular-shift significance functions for place, head-direction, spatial-view and both object-vector frames. Shared valid-window masks, copied inputs and label-keyed random streams preserve recording coverage and seeded single/population agreement.
+
+- Add seeded circular spike-time shifts over joined valid recording windows. Shifts preserve retained spike counts and compressed-clock circular spacings without placing spikes in gaps.
+
+- Add `is_egocentric_object_vector_cell` for heading-relative tuning. **Breaking:** `is_object_vector_cell` now measures allocentric direction and no longer accepts `headings`; call `is_egocentric_object_vector_cell` for the previous heading-relative verdict; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.
+
+- Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Performance
 
@@ -1291,347 +1626,6 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Preserve physical diffusion faces on grids with small coordinate units;
   exactly nonzero axis displacements no longer disappear below an absolute
   `1e-9` cutoff. Diagonal navigation edges still carry no shared face area.
-
-### Added
-
-- Expose detached, read-only `env.binning` snapshots and public coordinate,
-  diffusion-geometry, diffusion-accuracy, MRF-basis and Gaussian-kernel
-  operations. Environment owns analysis caches; numerical consumers use public
-  operations or explicit geometry. Existing public geometry imports remain
-  stable while owned data and codecs move into an independent `geometry/`
-  package with enforced dependency rules.
-
-- Preserve linear interpolation and movement time fractions after rotating,
-  reflecting or shearing Cartesian 2-D/3-D grids. Planar grids use exact QuadMesh
-  plots/animation updates. Planar linear spike counts and dwell share bounded
-  source-plane ownership, including paths along inactive-cell boundaries.
-  Napari raster helpers explicitly refuse framed grids.
-
-- Certify new affine numerical transforms from stored physical normals and flux
-  distances. Unequal scaling along retained orthogonal grid axes can preserve
-  diffusion, smoothing, gradients and divergence; skew faces refuse with a
-  geometric reason. Existing approximate-mesh similarity behavior is preserved.
-
-- Retain 2-D/3-D source grid frames through affine transforms and whole-bin
-  subsets, without exposing source axes as world-aligned grid edges. Reflected
-  and deformed hexagons retain exact polygon cells. New binning codec version 3
-  stores the frame and reads earlier versions 1 and 2; partial clipping uses
-  exact polygon cells rather than a tensor grid.
-
-- Add optional owned `FaceNormals` data to `Binning`, in authoritative neighbor
-  pair order. Native Cartesian grids and planar hexagon/triangle cells capture
-  physical directions; subsets, clipping, physical walls and affine transforms
-  preserve their alignment. Normals survive copying and JSON/NWB storage, but
-  enable new numerical transforms only with the source/target face certificate.
-  Codec version 2 introduced normals; current version 3 also stores grid frames
-  and reads legacy versions 1 and 2. Older readers reject the new nested version.
-
-- Ray casting and cue line of sight now intersect declared physical walls,
-  including holes and internal barriers. Analysis crops no longer occlude
-  physical rays. **Breaking:** use `boundary_source="analysis"` explicitly for
-  analysis-cell boundaries when physical walls are unknown. No wall hit within
-  the search distance returns NaN. View encoding, shuffle tests and simulation
-  forward and record the choice; wall hits use observer-side cell ownership.
-  Stored frames retain bounded boundary-contact behavior after transforms.
-  Viewshed bin coverage remains sampled; unsupported wall/owner geometry refuses.
-
-- Border scores now use declared physical footprint rings and internal walls
-  by default, with wall-length coverage and distances to actual walls.
-  **Breaking:** explicitly choose `boundary_source="analysis"` for the legacy
-  boundary-bin approximation when only analysis geometry is available. Result,
-  population and classification methods propagate the choice. Summary tables
-  explain unavailable wall metrics without dropping other metrics. Physical
-  coverage requires exact planar cells and polygonal wall geometry.
-
-- Add `Environment.rebin(bin_size=...)` for rectangular grids, rebuilding over
-  the retained arena with an owned `GridBinningSpec` separate from provenance.
-  Grid axes and anchor survive crops, clipping, affine transforms and JSON/NWB
-  storage; new sizes are physical lengths along those axes. Other families and
-  records without a specification refuse this mode. Integer-factor coarsening
-  keeps its truncation warning and now also accepts masked and polygon grids
-  with uniform rectangular cells. Fields and fitted models are not transferred.
-
-- Add `Environment.combine` for owned disjoint components, with stable keyed
-  bin sources, qualified regions and deterministic mutual-nearest-neighbor
-  bridges that respect known physical walls. Path-only bridges do not diffuse;
-  explicit geometric conductance couples certified child blocks. Exact lookup,
-  component geometry and bridge data survive copy, derivation and JSON/NWB
-  storage without live provider objects or bridge re-inference.
-  **Breaking:** remove `CompositeEnvironment`; use
-  `Environment.combine({"key": env, ...})` and the ordinary environment APIs.
-  Overlapping or uncertifiable support and incompatible declarations raise.
-
-- Add `Environment.with_metadata(...)` and `with_regions(...)` for immutable
-  environment values. Metadata replacements share geometry and start fresh
-  analysis caches. **Breaking:** assign units/frame/name at construction or use
-  a replacement; edit a standalone `Regions` builder, then publish it with
-  `with_regions`. Environment snapshots own caller data and protect geometry,
-  provenance, regions and cached numerical exports through copy and persistence.
-- Add `Environment.from_bins(...)` with public `neurospatial.binning` records,
-  explicit lookup and explicit face availability. `env.edge_pairs` preserves
-  supplied neighbor order and defines gradient/flux order. `to_networkx()`
-  returns an independent editable graph. Declared navigation path lengths are
-  preserved by rigid transforms and scaled by uniform scaling; other affine
-  maps require known paths or rebuilt distances.
-- Add installed `SnapshotAdapter` objects in the versioned
-  `neurospatial.snapshot_adapters.v1` entry-point group, plus
-  `neurospatial.testing.assert_environment_contract`. Custom providers must
-  convert into supported built-in data snapshots. Original custom saved records
-  require their adapter package; canonical resaves use built-in codecs.
-- Preserve hexagonal grid shape and active mask across explicit-bin construction
-  and persistence, keeping grid-based spatial autocorrelation available.
-
-- Add continuous Arena domains alongside spatial bins. Tracked positions,
-  grid masks and image masks remain direct inputs and infer computational
-  support without asserting physical walls. Optional polygons, explicit
-  internal walls and measured track widths describe known physical geometry.
-- Add `Environment.clip(polygon)` for exact planar cell intersections,
-  including holes and split bins, with a read-only immediate-parent
-  `clip_mapping`. Plotting and containment work without numerical certification;
-  smoothing and spatial operators require certified finite-volume geometry.
-  Clipping does not transfer fields or fitted models automatically.
-- Add explicit `time_allocation="linear"` to single-unit and population spatial
-  rate estimation. Spike counts and dwell time share exact retained entry,
-  exit and re-entry intervals; the default remains start allocation.
-
-- Plot actual positions directly on decoded posteriors with
-  `DecodingResult.plot(true_times=..., true_positions=..., max_gap=...)`.
-  Ground-truth alignment is shared with `error_against`, preserving tracking
-  gaps and missing observations without manual coordinate conversions.
-- Add `plot_peri_event_response` for a matching raster and PSTH. Both panels
-  reuse the result's original event cohort and complete half-open bins,
-  including exact boundary handling on the absolute recording clock.
-- Add `detect_region_visits` and `region_transitions`, with immutable visit and
-  transition records preserving region identity, original sample indices and
-  continuous observation runs. Partial visits retain observed-boundary flags;
-  entry-to-entry transitions include source dwell time and never cross missing
-  tracking, recording gaps or excluded epochs.
-
-- Peri-event results expose read-only `event_indices` identifying retained
-  events in the original input. Indexing a population preserves this cohort,
-  so rasters, PSTHs and event tables can share exposure filtering without
-  duplicating it. Hand-built results use `None` for unavailable provenance.
-
-- Check the complete notebook collection in CI, including paired source and
-  documentation parity, local links and an acyclic prerequisite graph. Generate
-  one shared catalog from notebook metadata for the repository and docs site.
-
-- Download and cache the real J16 bandit recording from
-  Zenodo (10.5281/zenodo.23020757), verifying its
-  pinned SHA-256 before loading numeric NPZ arrays without pickle. The real-data
-  tutorial fetches this archive explicitly and reuses it offline; data
-  instructions include the source, license and citation.
-
-- Select units by label with `sel(unit_id=...)` on `SpikeTrains` and every
-  population result (spatial, directional, view, object-vector and peri-event).
-  `[]` selects by position on all of them, so `spikes[i]` and `rates[i]` are
-  the same neuron. A label passed to `[]`, or a position out of range, raises
-  an error that names the `sel` call to use. **Breaking:** `SpikeTrains[...]`
-  used to look up a label; replace `st[unit_id]` with `st.sel(unit_id=unit_id)`.
-- Build a fitted decoder from hand-built rate maps, such as a simulation's
-  ground truth, with `BayesianDecoder.from_models(env, encoding_models,
-  unit_ids=..., spatial_support=..., dt=...)`. Without `unit_ids`, spike trains
-  pair with models by position. **Breaking:** the `BayesianDecoder` constructor
-  now takes configuration only. `encoding_models`, `unit_ids`,
-  `spatial_support`, `spike_window` and `analysis_settings` are read-only
-  attributes, set by `fit`, `from_rates` or `from_models`; replace
-  `BayesianDecoder(env, encoding_models=m, unit_ids=ids)` with
-  `BayesianDecoder.from_models(env, m, unit_ids=ids)`.
-  `dataclasses.replace(decoder, dt=...)` keeps the fitted models.
-  Changing fitted encoding settings (`method`, `bandwidth`, `min_occupancy`,
-  `penalty`, `rank`) with `replace` now raises; construct and fit a new decoder.
-  Prediction defaults remain replaceable. `from_rates` uses the rate result's
-  method, bandwidth and recorded encoding settings.
-- Add `Environment.get_divergence_operator()`, the cached finite-volume
-  divergence operator that `divergence(env, edge_field)` applies, alongside
-  `get_differential_operator()`.
-- Preserve spatial `analysis_settings` through population indexing, tables,
-  xarray/NetCDF and NWB schema 2.4, including selected/observed windows, gap,
-  speed and occupancy gates. Expose `spatial_support` on rate results and fitted
-  decoders. Legacy results identify unavailable settings as `None`.
-- Add runnable condition-comparison and held-out decoding workflows and a
-  scientific-task index linking recording import through analysis and export.
-
-- Add scientific invariants across layout transforms, coordinate-unit conversions, single/population estimation, labelled unit permutations and disk NWB round trips, covering grid, masked, hexagonal and graph layouts.
-
-- Give singular rate results the same metric tables and labeled xarray Dataset export as population results, including GAM slices, unit identity, frame and recording-window metadata. Shared table builders/classifiers retain the established statistics and thresholds without wrapping singular GAM results in artificial populations.
-
-- Preserve NWB units' per-unit `obs_intervals` and their shared acquisition `spike_window`, including subset selection and lazy-spike reads. Population analyses can use this intersection explicitly; absent coverage stays None and disjoint coverage stays an empty window.
-
-- Build fitted spatial decoders from `SpatialRatesResult` with `BayesianDecoder.from_rates`, carrying the environment, precision, unit identity, training support and analysis settings. Generated labels remain positional; caller-supplied labels align by identity, including direct constructors, indexing and dataclass replacement. Prediction excludes bins without supported training observations.
-
-- Accept `BayesianDecoder.fit(unit_ids=)` and preserve caller-supplied unit identity for prediction alignment. Labels supplied alongside a spike group must match its labels and order; the shared resolver rejects duplicates.
-
-- Snapshot all public namespace names and function signatures in one sorted, reviewable file, with a unified diff and explicit regeneration command for intentional API changes.
-
-- Give lazy root exports concrete static types for IDEs and type checkers, and verify each headline class/function with a CI typing contract without eager runtime imports.
-
-- Expose spatial rate computation/results, position decoding/results and peri-event histogram/results lazily at the root, alongside core spatial types and domain namespaces.
-
-- Add opt-in `criterion="shuffle"` to all five raw-array cell predicates, with explicit stream labels and p-value levels. Mode-specific keywords raise together when they would be ignored; result methods and batch classifiers remain threshold screens without retained inputs.
-
-- Add five raw-array circular-shift significance functions for place, head-direction, spatial-view and both object-vector frames. Shared valid-window masks, copied inputs and label-keyed random streams preserve recording coverage and seeded single/population agreement.
-
-- Add seeded circular spike-time shifts over joined valid recording windows. Shifts preserve retained spike counts and compressed-clock circular spacings without placing spikes in gaps.
-
-- Add `is_egocentric_object_vector_cell` for heading-relative tuning. **Breaking:** `is_object_vector_cell` now measures allocentric direction and no longer accepts `headings`; call `is_egocentric_object_vector_cell` for the previous heading-relative verdict; each frame predicate forwards its encoder options and retains the existing information threshold and error behavior.
-
-- Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
-
-### Changed
-
-- **Breaking:** Cartesian and egocentric polar factories now return one public
-  `Environment` class. Use `env.coordinate_kind` for coordinate meaning and
-  `Environment.from_polar_egocentric(...)` instead of the removed
-  `EgocentricPolarEnvironment.create(...)`. Radius remains in length units and
-  angle in radians; polar Cartesian-only calls still refuse, including unbound
-  calls. Factory-inferred static types preserve those restrictions. Supported
-  dictionary, file and NWB records retain their coordinate semantics.
-
-- Points in discarded subset bins map to `-1` rather than a nearby retained bin.
-  Non-uniform scaling of hexagonal or mesh environments and general affine maps
-  disable finite-volume smoothing with an explanation. Tracks refuse
-  non-similarity transforms; rebuild them from transformed graph nodes instead.
-
-- Environment files and dictionaries now use `Environment-v3`; NWB environment
-  records use schema `3.0`. They preserve Arena, walls, exact cells and clip
-  mappings without rebuilding layouts. Version 2/`2.0` remains readable with an
-  explicitly unknown Arena. Version 1/`1.x` must be recreated with a factory.
-- Polygon-aware lookup excludes points outside the declared domain and in its
-  holes. Linear occupancy subdivides entry, exit and re-entry intervals on
-  exact polygon support, and refuses unresolved physical-wall crossings.
-  Default encoding and occupancy retain their existing interval-allocation
-  conventions.
-- Rebinning preserves the original arena and selects coarse bins by center,
-  including inferred mask holes. Physical walls remain closed; coarse cells
-  that cannot represent them are refused.
-
-- Point lookup consistently rejects incorrect coordinate widths, including
-  hexagonal inputs with extra columns and empty or non-finite grid queries.
-
-- `Environment.bin_sizes` now returns an owned, read-only array, like
-  `bin_centers`.
-
-- Rewrite all nine tutorials around spatial neuroscience questions, using
-  simple technical English, explanations of analysis choices, figure
-  interpretation, and instructions for using recorded data. Update the shared
-  catalog and keep example-data setup separate from the main analysis.
-
-- Consolidate the 27 feature-oriented notebooks into nine standalone task
-  tutorials covering environments, rate maps, behavior, real data, simulation,
-  held-out decoding, events, visualization and NWB. Combine the J16 neural and
-  maze analyses, add executable specialized recipes in the user guide, and
-  update catalog, links, mirrored outputs and full-collection CI.
-
-- **Breaking:** `env.smooth` now defaults to `mode="average"`, preserving the
-  units and level of a rate map. Pass `mode="density"` explicitly to retain
-  the previous count-to-density default; kernel constructors are unchanged.
-- **Breaking:** field detection and population coverage now default to no
-  map-mean exclusion (`max_mean_rate=np.inf`). Pass `max_mean_rate=10.0` to
-  retain the previous filter. Its unweighted spatial-bin mean is not a
-  recording-time mean or a cell-type verdict. Coverage displays report maps
-  with segmented fields rather than asserting cell identity.
-
-- Review all 27 tutorials for coherent workflows, current APIs, valid geometry,
-  observed support, independent simulation randomness and calibrated scientific
-  language. Correct rate-map and direction labels, add held-out decoding,
-  preserve real-data transition endpoints/gaps, and make desktop viewers and
-  long video exports opt-in. Refresh worked outputs and align prerequisite links.
-
-- Directional place fields, decode summaries, batch scores, behavior metrics
-  and run bins, assembly results and trajectory-fit results now own read-only
-  copies of their array fields, including after pickle/deepcopy. Directional
-  mappings also prevent replacing entries. **Behavior change:** copy arrays
-  before editing values. Decode-summary xarray exports remain editable copies.
-- Rate and peri-event results store read-only copies of their arrays. This
-  covers spatial, directional, view and object-vector results (single-unit
-  and population) and both peri-event results. Editing an array a result was
-  built from no longer changes it, and editing a result's arrays in place, for
-  example `rates.firing_rates /= peak`, raises instead of silently changing
-  what the result reports. **Breaking:** copy before modifying values:
-  `normalized = np.array(rates.firing_rates) / peak`. `to_xarray()` and
-  `to_dataframe()` return editable copies; editing a `to_xarray()` Dataset
-  used to edit the result.
-- `interpolate(mode="linear")` and `occupancy(time_allocation="linear")` work
-  on environments built with `from_polygon`, `from_grid_mask` and
-  `from_pixel_mask`, and on grid environments read from NWB. They previously
-  required a `RegularGrid` layout. Inactive cells behave as on masked
-  `from_samples` environments.
-- Polar environments no longer define the twelve Cartesian methods. Accessing
-  one raises `CartesianOnlyError`, both a `NotImplementedError` and an
-  `AttributeError`, with the same message. `hasattr` reports them as absent and
-  type checkers flag the call. Refusals inside shared methods name the call
-  that was made.
-- **Behavior change:** an environment's geometry is read-only once built:
-  its geometry attributes cannot be reassigned, `bin_centers`, `active_mask`
-  and `grid_edges` reject writes, and `connectivity` is frozen. Cached kernels and operators cannot see in-place
-  edits, so such edits used to return stale results silently. Build a new
-  environment (a factory, `subset`, `rebin` or `apply_transform`) instead.
-  Factories copy array inputs, so the caller's own arrays stay writable and
-  later edits to them do not reach the environment.
-- Layout setup synchronizes restored geometry and invalidates all environment
-  caches. The polar layout builds physical distances and circular seams before
-  environment initialization, and records its `circular_angle` build option.
-- Layout engines, including a polar layout with annular-sector cells, supply
-  their own finite-volume cell faces. Dense kernels, spectral diffusion,
-  smoothness bases, gradients and divergence all use that one capability, and
-  the diffusion consumers share one validated operator snapshot. Numerical
-  schemes are unchanged.
-- **Behavior change:** `compute_diffusion_kernels` rejects directed graphs and
-  multigraphs, whose reciprocal or parallel edges were summed into doubled
-  conductances. Collapse them first with `nx.Graph(graph)`.
-
-- Extend rate-result `analysis_settings` and `spatial_support` to directional,
-  view and object-vector analyses, preserving exact retained intervals and
-  family settings through indexing, tables and NetCDF-compatible xarray exports.
-  Shared binning preparation keeps counts, occupancy and provenance aligned.
-- **Behavior change:** view and smoothed object-vector encoders now use the same
-  unit-aware physical bandwidth default as spatial encoding. Polar results
-  inherit the supplied environment's distance units; angular smoothing retains
-  its existing units and defaults.
-
-- **Behavior change:** spatial encoding defaults to a 5 cm smoothing bandwidth
-  in declared metric units (0.05 m / 50 mm), or 2.5 median graph-edge lengths
-  for unspecified/custom units. Explicit bandwidths retain their coordinate
-  units; bandwidths spanning the environment warn about lost spatial tuning.
-- Align unit-indexed metadata by identity in spike containers and population
-  results. Reject missing, duplicate or conflicting metadata identities; an
-  unnamed default RangeIndex retains positional interpretation.
-
-- **Breaking:** video and HTML animation exports default to `overwrite=False`, refusing existing outputs before rendering or dry-run estimates. HTML checks its default filename and nonempty frames directory before creating directories; ffmpeg uses `-n` unless overwrite is explicit. Environment saves share the same paired-target check and corrected-call wording.
-
-- **Breaking:** rate summary tables lead with rate/information, place classification last, and carry estimator, physical units, direction frame and resolved classification thresholds in `DataFrame.attrs`. Singular/population columns match; constant `method` is no longer a summary column, and labels are documented as heuristic screens.
-
-- **Breaking:** population rate summaries name `n_units` and `max_peak_firing_rate` explicitly. Shared occupancy remains seconds observed once; singular summaries add cheap family metrics and stay safe for all-NaN maps without computing grid/border scores.
-
-- **Breaking:** NWB position, head-direction and units readers return frozen, non-iterable `NWBPosition`, `NWBHeadDirection` and `NWBUnits` holders. Position holders expose normalized declared physical units without a second scaling step or an assumed unit; eager/lazy reads retain their existing conversion and lifetime contracts.
-
-- **Breaking:** simulation validation and summary plotting each take a required `SimulationSession` with keyword-only `unit_ids` selection by label. The raw keyword validation form and row-index selection keywords are removed; unknown labels explain the available labels and corrected call.
-
-- **Breaking:** align `SimulationSession` attributes with analysis inputs: `spike_times`, integer `unit_ids`, and ground truth keyed by unit label. The frozen holder checks that spikes, labels and models align one-to-one; seeded trajectory, spike and duration behavior is unchanged.
-
-- **Breaking:** require tracking positions in spatial rate computation, decoder `fit`/`score`, and `decode_session(_summary)`. Session decoding always encodes tracking and no longer accepts `encoding_models=`; estimator predictions take only spikes and array timestamps and reuse the extracted gap-aware full/streamed model decoders.
-
-- **Breaking:** standardize required trajectory pairs as `(times, positions)` in `approach_rate`, `compute_decision_analysis`, `compute_goal_directed_metrics`, `compute_path_efficiency`, `compute_pre_decision_metrics`, `compute_vte_session`, `compute_vte_trial`, `extract_pre_decision_window`, `goal_bias`, `head_sweep_from_positions`, `instantaneous_goal_alignment`, `mean_square_displacement`, `pre_decision_heading_stats`, `pre_decision_speed_stats`, `segment_by_velocity`, `time_efficiency`, `heading_from_velocity`, `visibility_occupancy` and `generate_population_spikes`. Place `env` first in `compute_region_coverage`, `field_shape_metrics`, `rate_map_coherence`, `map_points_to_bins`, `shuffle_place_fields_circular_2d` and `calibrate_video`. Rename the spike parameters on `bin_spikes_in_time`, `population_peri_event_histogram`, `restrict_spike_trains` and `validate_simulation` to `spike_times`. Analysis entry points take explicit arrays rather than a `PositionLike` adapter.
-
-- **Breaking:** rename the phase-precession callable to `compute_phase_precession`, preserving the sibling `encoding.phase_precession` module for normal imports.
-
-- **Breaking:** rename place-field detection to `has_place_field`; `is_place_cell` now requires a classification criterion. Align free predicates, result methods and batch screens on read-only threshold defaults and inclusive cutoffs, make method thresholds keyword-only, rename spatial `classify(min_spatial_info=)` to `min_info`, and propagate invalid-input errors.
-
-- **Breaking:** default `ObjectVectorCellModel` to allocentric direction tuning without headings, which changes simulated spikes, without an error, for code that relied on heading-relative tuning. Set `direction_frame="egocentric"` to retain heading-relative behavior; model ground truth records the frame and missing-heading errors explain both choices.
-
-- Plot object-vector tuning in its recorded frame: allocentric zero points East and positive angles turn toward North; the corrected egocentric ahead/left orientation is retained. Frame-specific literature and direction conventions are explicit.
-
-- Rename object-vector results to `ObjectVectorRateResult` and `ObjectVectorRatesResult`, and their information accessor to `spatial_information()`. Removed names have no aliases; indexed population results preserve their frame.
-
-- `Environment.combine`, and `subset` and loading of a combined environment,
-  check component overlap only for cells whose bounding boxes intersect instead
-  of every pair of cells. Combining two 1 m square arenas at 2 cm bins takes
-  about 2 s instead of 21 s; the overlap check for two 1 m arenas at 1 cm bins
-  takes 0.9 s instead of 141 s. The same overlaps, contacts and error messages
-  are reported.
-
-### Fixed
 
 - Keep valid gaze hits on slanted physical walls during view encoding, using
   retained wall contact and parent-bin ownership to avoid crossing missing bins.
