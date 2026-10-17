@@ -299,10 +299,13 @@ basis = env.get_mrf_basis(np.ones(env.n_bins), rank=4)
 assert basis.B.shape == (env.n_bins, 4)
 ```
 
-Geometry and Gaussian exports have independent headers over immutable buffers;
-repeated reads reuse those buffers. Use `.copy()` for editable arrays or sparse
-matrices. MRF basis arrays are already independent and editable. Environment
-copies and restored files start with fresh private analysis caches.
+Geometry and Gaussian exports are new read-only objects over the cached,
+immutable arrays, so repeated reads do not copy them. Use `.copy()` for
+editable arrays or sparse matrices. MRF basis arrays are already independent
+and editable. All of these come from the environment's one analysis cache.
+`with_metadata` and `with_regions` share it, because their bins are the same;
+derived environments and restored files start with an empty one (see
+[Performance and caching](performance.md)).
 
 ## Add known geometry when available
 
