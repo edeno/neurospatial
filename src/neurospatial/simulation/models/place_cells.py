@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.spatial import cKDTree
 
 from neurospatial.environment import Environment
 from neurospatial.geometry._coordinates import require_cartesian
@@ -43,6 +44,10 @@ class PlaceCellModel:
 
         - 'euclidean': Straight-line distance (default). Fast but ignores
           barriers. Use for open field environments or when performance matters.
+          On an egocentric polar environment, ``center`` and positions are
+          ``(distance, angle)`` rows and the distance between them is measured
+          in the animal's plane, ``(d cos(angle), d sin(angle))``, so ``width``
+          is a length; a per-axis ``width`` is refused there.
         - 'geodesic': Path distance through environment connectivity graph.
           Biologically accurate for complex environments with barriers/walls.
           ~100x slower than euclidean.
@@ -204,15 +209,22 @@ class PlaceCellModel:
         else:
             self.center = np.asarray(center, dtype=np.float64)
 
+        # Distances are measured between places: on an egocentric polar
+        # environment, (distance, angle) rows are placed in the animal's plane.
+        self._embed = env.coordinate_system.cartesian_embedding
+        self._center_place = self._embed(self.center[None, :])[0]
+        polar = env.coordinate_kind == "polar"
+
         # Set width
         if width is None:
             # 3 bin spacings. Off a track ``env.bin_sizes`` is a per-bin volume
             # (an area in 2-D), not a length, so use the neighbour spacing.
+            places = self._embed(env.bin_centers)
             spacing = _typical_bin_spacing(
-                env.bin_centers,
+                places,
                 env.bin_sizes,
                 is_linearized_track=env.is_linearized_track,
-                tree=env.bin_center_tree(),
+                tree=cKDTree(places) if polar else env.bin_center_tree(),
             )
             if not np.isfinite(spacing):
                 raise ValueError(
@@ -243,6 +255,18 @@ class PlaceCellModel:
                 "at the field center."
             )
             raise ValueError(msg)
+
+        if polar and width_check.ndim > 0 and width_check.size > 1:
+            require_cartesian(
+                env.coordinate_system,
+                "PlaceCellModel(width=<one per axis>)",
+                why="A per-axis width scales distance and angle separately, but "
+                "the field is a Gaussian of the physical distance between places.",
+                fix="give one width in the environment's length units, for "
+                "example the distance-axis width",
+                example="neurospatial.simulation.PlaceCellModel(env, "
+                "center=center, width=float(width[0]))",
+            )
 
         # Validate width compatibility with distance metric
         if metric == "geodesic":
@@ -328,8 +352,13 @@ class PlaceCellModel:
         """
         # Compute distances
         if self.metric == "euclidean":
-            # Straight-line distance
-            distances = np.linalg.norm(positions - self.center, axis=1)
+            # Straight-line distance between places (in the animal's plane on
+            # an egocentric polar environment).
+            distances = np.linalg.norm(
+                self._embed(np.asarray(positions, dtype=np.float64))
+                - self._center_place,
+                axis=1,
+            )
 
         elif self.metric == "geodesic":
             # Graph-based distance (path through connectivity)

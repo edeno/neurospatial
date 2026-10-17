@@ -837,6 +837,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `PlaceCellModel(metric="euclidean")` on an egocentric polar environment
+  measures the distance between places in the animal's plane,
+  `(d cos(angle), d sin(angle))`, so `width` (and its default, three bin
+  spacings) is a length. It used to subtract `(distance, angle)` rows as if
+  centimeters and radians were one unit. A per-axis `width` on a polar
+  environment raises `CartesianOnlyError` with code that passes one width.
+
 - `neurospatial.testing.assert_environment_contract` works on a track built
   without `track_width`: it checks that position lookups refuse with the fix
   that names `track_width`, instead of failing on the refusal. A track with a

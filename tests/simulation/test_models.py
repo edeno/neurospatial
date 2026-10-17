@@ -977,3 +977,58 @@ def test_simulated_orientation_is_recovered_by_grid_properties(orientation_deg):
 
     error = abs(measured - grid_orientation) % (np.pi / 3)
     assert min(error, np.pi / 3 - error) < np.radians(2.0)
+
+
+class TestPolarPlaceCellModel:
+    """On an egocentric polar environment the field is a Gaussian of real distance."""
+
+    @pytest.fixture
+    def surround(self):
+        from neurospatial import Environment
+
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 40.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 8,
+            units="cm",
+        )
+
+    def test_rate_falls_off_with_the_distance_between_places(self, surround):
+        pc = PlaceCellModel(
+            surround, center=np.array([10.0, 0.0]), width=5.0, baseline_rate=0.0
+        )
+        rows = np.array([[10.0, 0.0], [10.0, 2 * np.pi], [10.0, np.pi], [5.0, 0.0]])
+        # 10 cm ahead, the same place a turn later, 10 cm behind (20 cm away),
+        # and 5 cm ahead (5 cm away).
+        expected = 20.0 * np.exp(-0.5 * (np.array([0.0, 0.0, 20.0, 5.0]) / 5.0) ** 2)
+        np.testing.assert_allclose(pc.firing_rate(rows), expected, atol=1e-9)
+
+    def test_default_width_is_three_bin_spacings_in_length_units(self, surround):
+        pc = PlaceCellModel(surround, center=np.array([10.0, 0.0]))
+        # Innermost-ring neighbours are 2.5 * 2 * sin(pi/16) apart; the median
+        # nearest-neighbour spacing of the placed centers is a length in cm.
+        places = surround.bin_centers[:, 0] * np.exp(1j * surround.bin_centers[:, 1])
+        gaps = np.abs(places[:, None] - places[None])
+        np.fill_diagonal(gaps, np.inf)
+        assert pc.width == pytest.approx(3.0 * np.median(gaps.min(axis=1)))
+
+    def test_per_axis_width_is_refused_with_a_working_alternative(self, surround):
+        import neurospatial
+        from neurospatial import CartesianOnlyError
+
+        center, width = np.array([10.0, 0.0]), np.array([5.0, 0.3])
+        with pytest.raises(CartesianOnlyError) as refused:
+            PlaceCellModel(surround, center=center, width=width)
+        example = refused.value.example
+        assert example is not None and example in str(refused.value)
+        model = eval(
+            example,
+            {
+                "neurospatial": neurospatial,
+                "env": surround,
+                "center": center,
+                "width": width,
+            },
+        )
+        assert model.width == 5.0
