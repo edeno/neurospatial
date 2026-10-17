@@ -87,10 +87,10 @@ processes.
 | 100,000 bins    | ~5 MB       |
 
 **Operations using KDTree**:
-- `env.nearest_bin(points)` - nearest-neighbor bin assignment
-- `env.interpolate(field, points, method="nearest")` - nearest-neighbor interpolation
+- `env.nearest_bin(positions)` - nearest-neighbor bin assignment
+- `env.interpolate(field, positions, mode="nearest")` - nearest-neighbor interpolation
 
-`env.bin_at(points)` and `env.contains(points)` use layout-specific geometric
+`env.bin_at(positions)` and `env.contains(positions)` use layout-specific geometric
 containment instead of nearest-neighbor assignment. Prefer those methods for
 tracking data when points outside the environment should return `-1` / `False`.
 
@@ -98,10 +98,10 @@ tracking data when points outside the environment should return `-1` / `False`.
 
 ```python
 # First nearest-neighbor query: builds KDTree
-bin_indices = env.nearest_bin(points)  # Slower (tree construction)
+bin_indices = env.nearest_bin(positions)  # Slower (tree construction)
 
 # Subsequent nearest-neighbor queries: use cached tree
-more_indices = env.nearest_bin(more_points)  # Fast
+more_indices = env.nearest_bin(more_positions)  # Fast
 
 # Clear the cache when you want to free memory
 env.clear_cache()
@@ -123,7 +123,7 @@ env.clear_cache()
 
 ```python
 # Uses cached KDTree
-bin_indices = env.nearest_bin(points)
+bin_indices = env.nearest_bin(positions)
 
 # Release the KDTree together with every other cached analysis
 env.clear_cache()

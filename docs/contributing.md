@@ -512,8 +512,8 @@ Example test:
 def test_environment_bin_at_maps_points_correctly():
     """Test that bin_at correctly maps points to bin indices."""
     env = Environment.from_samples(sample_data, bin_size=2.0)
-    points = np.array([[10.0, 10.0]])
-    bin_idx = env.bin_at(points)
+    positions = np.array([[10.0, 10.0]])
+    bin_idx = env.bin_at(positions)
     assert bin_idx.shape == (1,)
     assert 0 <= bin_idx[0] < env.n_bins
 ```

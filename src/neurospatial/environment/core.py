@@ -1232,7 +1232,7 @@ class Environment(Generic[_C]):
     @cartesian_only(
         why="Containment finds the cell around each Cartesian position.",
         fix=_KEEP_INSIDE,
-        example=_polar_bins_example("points"),
+        example=_polar_bins_example("positions"),
     )
     def bin_at(
         self: Environment[CartesianSystem], positions: NDArray[np.float64]
@@ -1395,10 +1395,10 @@ class Environment(Generic[_C]):
 
     @cartesian_only(
         why="It tests Cartesian positions against the arena boundary.",
-        fix="compare the distance and angle columns of the points with "
+        fix="compare the distance and angle columns of the positions with "
         "env.dimension_ranges",
         example="low, high = np.asarray(env.dimension_ranges).T; "
-        "((points >= low) & (points <= high)).all(axis=1)",
+        "((positions >= low) & (positions <= high)).all(axis=1)",
     )
     def contains(
         self: Environment[CartesianSystem], positions: NDArray[np.float64]
@@ -2055,8 +2055,8 @@ class Environment(Generic[_C]):
         why="It evaluates the field at Cartesian query positions.",
         fix=_KEEP_INSIDE + ", and a row with bin -1 gets NaN, not field[-1]",
         example="low, high = np.asarray(env.dimension_ranges).T; "
-        "inside = ((points >= low) & (points <= high)).all(axis=1); "
-        "bins = np.where(inside, env.nearest_bin(points), -1); "
+        "inside = ((positions >= low) & (positions <= high)).all(axis=1); "
+        "bins = np.where(inside, env.nearest_bin(positions), -1); "
         "np.where(bins >= 0, field[bins], np.nan)",
     )
     def interpolate(

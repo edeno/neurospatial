@@ -74,7 +74,7 @@ def _recording() -> dict[str, Any]:
 
 
 def _check_bins(env, result, names):
-    rows = names.get("points", names.get("positions"))
+    rows = names["positions"]
     expected = _containing_bins(env, rows)
     assert expected[-1] == -1 or expected[2] == -1  # the outside row has no bin
     np.testing.assert_array_equal(result, expected)
@@ -152,11 +152,11 @@ def _check_transitions(env, result, names):
 
 
 CHECKS = {
-    "bin_at": (lambda: {"points": POINTS}, _check_bins),
+    "bin_at": (lambda: {"positions": POINTS}, _check_bins),
     "bin_sequence": (lambda: {"positions": SAMPLES}, _check_bins),
     "bin_sequence_with_runs": (lambda: {"positions": SAMPLES}, _check_bins),
-    "contains": (lambda: {"points": POINTS}, _check_contains),
-    "interpolate": (lambda: {"points": POINTS}, _check_interpolate),
+    "contains": (lambda: {"positions": POINTS}, _check_contains),
+    "interpolate": (lambda: {"positions": POINTS}, _check_interpolate),
     "occupancy": (_recording, _check_occupancy),
     "rebin": (dict, _check_rebin),
     "subset": (dict, _check_mask(lambda centers: centers[:, 0] < 20.0)),
