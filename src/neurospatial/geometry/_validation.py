@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -81,48 +80,6 @@ def _active_indices(
     active = np.flatnonzero(mapping >= 0).astype(np.intp, copy=False)
     _equal(np.sort(mapping[active]), np.arange(count, dtype=np.intp), name)
     return active[np.argsort(mapping[active])]
-
-
-def _first_mismatch(
-    values: list[Any], expected: NDArray[Any], name: Callable[[int], str]
-) -> None:
-    """Name the first value that differs from its row of ``expected``.
-
-    Equivalent to ``np.array_equal(values[i], expected[i])`` for every row,
-    compared at once when the values form a numeric array of the same shape.
-    """
-    if len(expected) == 0:
-        return
-    try:
-        array = np.asarray(values)
-    except (TypeError, ValueError):
-        array = None
-    if (
-        array is not None
-        and array.dtype.kind in "biufc"
-        and array.shape == expected.shape
-    ):
-        rows = (array == expected).reshape(len(expected), -1).all(axis=1)
-        bad = np.flatnonzero(~rows)
-        index = int(bad[0]) if bad.size else None
-    else:
-        index = next(
-            (
-                i
-                for i, value in enumerate(values)
-                if not np.array_equal(value, expected[i])
-            ),
-            None,
-        )
-    if index is not None:
-        raise ValueError(f"{name(index)} does not match the binning geometry.")
-
-
-def _pair_keys(pairs: NDArray[np.intp], n_bins: int) -> NDArray[np.int64]:
-    """One integer per unordered pair, the same for ``(u, v)`` and ``(v, u)``."""
-    low = np.minimum(pairs[:, 0], pairs[:, 1]).astype(np.int64)
-    high = np.maximum(pairs[:, 0], pairs[:, 1]).astype(np.int64)
-    return low * max(n_bins, 1) + high
 
 
 def _gap(points: NDArray[np.float64]) -> float:

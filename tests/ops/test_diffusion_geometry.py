@@ -17,10 +17,10 @@ from scipy import linalg
 from shapely.geometry import Polygon
 
 from neurospatial import Environment, _constants
+from neurospatial.environment._cache import MRF_EIGENBASIS
 from neurospatial.environment._fields import (
     diffusion_eigenbasis,
     face_geometry,
-    mrf_eigenbasis,
 )
 from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
 from neurospatial.geometry._diffusion import (
@@ -33,8 +33,14 @@ from neurospatial.layout import create_layout
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
+from neurospatial.ops.diffusion import _MRFEigenbasis
 from neurospatial.ops.smoothing import compute_diffusion_kernels
 from neurospatial.ops.transforms import Affine2D
+
+
+def _mrf_holder(env):
+    """The environment's cached MRF eigenbasis holder, empty until first use."""
+    return env._cache.get(MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(env.n_bins))
 
 
 def _face_environment(scale=1.0):
@@ -117,7 +123,7 @@ def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     env.get_mrf_basis(np.ones(3), rank=3)
     old_geometry = env._diffusion_geometry
     old_diffusion_cache = diffusion_eigenbasis(env._cache)
-    old_mrf_cache = mrf_eigenbasis(env._cache, env.n_bins)
+    old_mrf_cache = _mrf_holder(env)
 
     env.clear_cache()
     np.testing.assert_allclose(
@@ -132,7 +138,7 @@ def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     )
     assert env._diffusion_geometry is not old_geometry
     assert diffusion_eigenbasis(env._cache) is not old_diffusion_cache
-    assert mrf_eigenbasis(env._cache, env.n_bins) is not old_mrf_cache
+    assert _mrf_holder(env) is not old_mrf_cache
     np.testing.assert_allclose(
         env.compute_kernel(bandwidth=1.0, mode="average"), before
     )

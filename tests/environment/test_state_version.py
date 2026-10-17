@@ -7,7 +7,14 @@ import pytest
 from environment_helpers import publish_environment
 
 from neurospatial import Environment
-from neurospatial.environment._fields import diffusion_eigenbasis, mrf_eigenbasis
+from neurospatial.environment._cache import MRF_EIGENBASIS
+from neurospatial.environment._fields import diffusion_eigenbasis
+from neurospatial.ops.diffusion import _MRFEigenbasis
+
+
+def _mrf_holder(env):
+    """The environment's cached MRF eigenbasis holder, empty until first use."""
+    return env._cache.get(MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(env.n_bins))
 
 
 @pytest.fixture(params=["dict", "file"])
@@ -47,7 +54,7 @@ class TestPublishedValueOwnership:
         env.nearest_bin(env.bin_centers)
         old_geometry = env._diffusion_geometry
         old_diffusion_cache = diffusion_eigenbasis(env._cache)
-        old_mrf_cache = mrf_eigenbasis(env._cache, env.n_bins)
+        old_mrf_cache = _mrf_holder(env)
         geometry = env._geometry
         cache, n_cached = env._cache, len(env._cache)
 
@@ -57,11 +64,11 @@ class TestPublishedValueOwnership:
         assert env._cache is cache and len(cache) == n_cached
         assert env._diffusion_geometry is old_geometry
         assert diffusion_eigenbasis(env._cache) is old_diffusion_cache
-        assert mrf_eigenbasis(env._cache, env.n_bins) is old_mrf_cache
+        assert _mrf_holder(env) is old_mrf_cache
         assert len(restored._cache) == 0
         assert restored._diffusion_geometry is not old_geometry
         assert diffusion_eigenbasis(restored._cache) is not old_diffusion_cache
-        assert mrf_eigenbasis(restored._cache, restored.n_bins) is not old_mrf_cache
+        assert _mrf_holder(restored) is not old_mrf_cache
         assert list(restored.connectivity.edges) == list(expected.connectivity.edges)
         np.testing.assert_array_equal(restored.bin_centers, expected.bin_centers)
         np.testing.assert_allclose(

@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from neurospatial.environment import _fields
+from neurospatial.environment._cache import MRF_EIGENBASIS
 from neurospatial.ops import diffusion as diff
 from neurospatial.ops.diffusion import (
     _DEFAULT_MAX_RANK,
@@ -66,7 +67,7 @@ def _fresh_holder(env):
 
 def _cached_holder(env):
     """The environment's current cached MRF eigenbasis holder."""
-    return _fields.mrf_eigenbasis(env._cache, env.n_bins)
+    return env._cache.get(MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(env.n_bins))
 
 
 # ---------------------------------------------------------------------------

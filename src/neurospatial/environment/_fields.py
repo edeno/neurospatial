@@ -362,11 +362,6 @@ def diffusion_eigenbasis(cache: AnalysisCache) -> _DiffusionEigenbasis:
     return cache.get(DIFFUSION_EIGENBASIS, _DiffusionEigenbasis)
 
 
-def mrf_eigenbasis(cache: AnalysisCache, n_bins: int) -> _MRFEigenbasis:
-    """The current global eigenbasis holder for the MRF penalty basis."""
-    return cache.get(MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(n_bins))
-
-
 def _compute_kernel(
     cache: AnalysisCache,
     binning: Binning,
