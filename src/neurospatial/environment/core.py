@@ -133,7 +133,7 @@ from neurospatial.ops import (
 )
 from neurospatial.ops.distance import geodesic_distance_between_points
 from neurospatial.ops.mapping import TieBreakStrategy
-from neurospatial.regions import Region, Regions
+from neurospatial.regions import Region, Regions, _snapshot_regions
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -581,7 +581,7 @@ class Environment(Generic[_C]):
         n_dims = self._binning.bins.n_dims
         if any(region.n_dims != n_dims for region in regions.values()):
             raise ValueError("Region coordinate dimensions must match the environment.")
-        return regions._snapshot()
+        return _snapshot_regions(regions)
 
     def with_regions(self, regions: Regions) -> Self:
         """Return a new environment owning a snapshot of a region collection.

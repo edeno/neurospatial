@@ -851,3 +851,8 @@ class Regions(MutableMapping[str, Region]):
         from .io import regions_from_json
 
         return regions_from_json(path)
+
+
+def _snapshot_regions(regions: Regions) -> Regions:
+    """Return an ordered, immutable copy of ``regions`` for an environment to own."""
+    return regions._snapshot()

@@ -18,6 +18,7 @@ from neurospatial.regions.io import _SCHEMA_TAG as _SCHEMA_TAG
 
 # --- core value objects ---------------------------------
 from .core import Region, Regions
+from .core import _snapshot_regions as _snapshot_regions
 
 # --- thin adapters --------------------------------------
 from .io import (
