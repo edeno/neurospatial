@@ -3381,7 +3381,12 @@ class Environment(Generic[_C]):
             The NetworkX graph defining the track segments. Nodes are expected
             to have a 'pos' attribute for their N-D coordinates.
             ``GraphLayout.build`` numbers ``edge_id`` by ``graph.edges()``
-            order; any ``edge_id`` on the input graph is ignored.
+            order; any ``edge_id`` on the input graph is ignored. The
+            environment keeps the graph's attributes, so each must be a
+            value pickle can store (an attribute holding a function or a lock
+            raises ``TypeError``); ``to_file``, ``to_dict`` and NWB export
+            also need JSON values: finite numbers, strings, booleans, None
+            and lists or dicts of them.
         edge_order : List[Tuple[Any, Any]]
             An ordered list of edge tuples (node1, node2) from `graph` that
             defines the 1D bin ordering.

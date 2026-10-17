@@ -21,6 +21,7 @@ from neurospatial.geometry._binning import (
     MissingFaces,
     SpatialBins,
     TrackLinearization,
+    graph_attribute_items,
 )
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
@@ -330,7 +331,27 @@ def _decode_grid(
     return RectilinearGrid(edges, shape, mask)
 
 
+def _refuse_json_attributes(graph: nx.Graph) -> None:
+    """Name the first track graph attribute that JSON cannot store."""
+    for element, key, value in graph_attribute_items(graph):
+        try:
+            _json_safe(value)
+        except ValueError as exc:
+            reason = str(exc).split("\n", 1)[0].removeprefix("cannot save ")
+            raise ValueError(
+                f"cannot save track graph {element} attribute {key!r} "
+                f"({reason.rstrip('.')}).\n"
+                "Why: to_file, to_dict and NWB store the track graph as JSON, "
+                "which holds finite numbers, strings, booleans, None and lists "
+                "of them; pickle can still send this environment to worker "
+                "processes.\n"
+                f"Fix: store {key!r} as one of those values, or remove it, "
+                "before building the environment."
+            ) from exc
+
+
 def _encode_track(obj: TrackLinearization, prefix: str) -> Payload:
+    _refuse_json_attributes(obj.graph)
     values: dict[str, NDArray[Any]] = {
         f"edges_{axis}": edge for axis, edge in enumerate(obj.grid_edges)
     }

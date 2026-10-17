@@ -399,6 +399,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- A track graph attribute that cannot be saved at all, such as a function or
+  a lock, is refused when the track environment is built, with a `TypeError`
+  naming the node or edge and the attribute. It used to fail later, when the
+  environment was pickled or written. Attributes that pickle can store but
+  JSON cannot (sets, dates, NaN) still build; `to_file`, `to_dict` and NWB
+  export refuse them with a `ValueError` that now names the attribute.
+
 - On a polar environment, wall geometry (`border_score`, view-cell rates with
   walls, `boundary_source=...`) and `time_allocation="linear"` rate maps raise
   `CartesianOnlyError` instead of `NotImplementedError`, like every other

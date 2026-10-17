@@ -347,6 +347,32 @@ labels = np.full(env.n_bins, "", dtype=object)  # or an array indexed by bin
 labels[0] = "start"
 ```
 
+## Track graph attributes must be saveable
+
+A track environment (`from_graph`, `linear_track`, `maze`) keeps the graph you
+built it from, and saves it with the environment. An attribute that cannot be
+saved at all, such as a function or a lock, is now refused when the
+environment is built, with a `TypeError` that names the node or edge and the
+attribute. Before, it failed later, when the environment was pickled for a
+worker process or written to a file.
+
+Attributes that pickle can store but JSON cannot, such as sets, dates or NaN,
+still build and still pickle. `to_file`, `to_dict` and NWB export refuse them
+with a `ValueError` that names the attribute. Store such values as numbers,
+strings or lists, or keep them outside the graph:
+
+<!-- docs-test: run -->
+```python
+import networkx as nx
+
+track = nx.Graph()
+track.add_node(0, pos=(0.0, 0.0))
+track.add_node(1, pos=(100.0, 0.0))
+# Before: track.add_edge(0, 1, distance=100.0, reward=lambda t: t > 5)
+track.add_edge(0, 1, distance=100.0, reward_after_s=5.0)
+linear = Environment.from_graph(track, [(0, 1)], edge_spacing=0.0, bin_size=4.0)
+```
+
 ## Derived environments keep their labels
 
 `subset`, `clip` and `rebin` describe the same arena in the same coordinates,

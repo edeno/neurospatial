@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+import pickle
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
@@ -11,6 +12,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._capabilities import (
     RectilinearGrid,
@@ -319,6 +321,50 @@ class _ReadOnlyTrackAttributes(dict[str, Any]):
         return type(self), (dict(self),)
 
 
+def graph_attribute_items(graph: nx.Graph) -> Iterator[tuple[str, Any, Any]]:
+    """Yield ``(element, key, value)`` for every graph, node and edge attribute.
+
+    ``element`` names where the attribute is, ``"metadata"`` for
+    ``graph.graph``, ``"node 3"`` or ``"edge (0, 1)"``, for error messages.
+    """
+    for key, value in graph.graph.items():
+        yield "metadata", key, value
+    for node, attributes in graph.nodes(data=True):
+        for key, value in attributes.items():
+            yield f"node {node!r}", key, value
+    for u, v, attributes in graph.edges(data=True):
+        for key, value in attributes.items():
+            yield f"edge ({u!r}, {v!r})", key, value
+
+
+def _refuse_unsaveable_attributes(graph: nx.Graph) -> None:
+    """Refuse attribute values that no environment format can store.
+
+    Pickle stores the most kinds of values of any format an environment is
+    written to, so a value pickle refuses (a lambda, a lock, an open file)
+    could never be saved or sent to a worker process.
+    """
+    for element, key, value in graph_attribute_items(graph):
+        try:
+            pickle.dumps(value)
+        except (pickle.PicklingError, TypeError, AttributeError) as exc:
+            raise TypeError(
+                _format_error(
+                    f"Track graph {element} attribute {key!r} holds a "
+                    f"{type(value).__name__} that cannot be saved ({exc}).",
+                    why=(
+                        "Why: the environment keeps the track graph, and neither "
+                        "pickle (used to send it to worker processes) nor "
+                        "to_file, to_dict or NWB can store this value."
+                    ),
+                    fix=(
+                        f"remove {key!r} from the graph, or store a number, "
+                        "string or list instead, before building the environment"
+                    ),
+                )
+            ) from exc
+
+
 @dataclass(frozen=True, eq=False)
 class TrackLinearization(ReadOnlyState):
     """Owned track geometry and its absolute linear coordinate system.
@@ -335,6 +381,12 @@ class TrackLinearization(ReadOnlyState):
         Full linear bin edges, including gaps.
     active_mask : ndarray of bool, shape (n_linear_bins,)
         Active linear cells in their original coordinate order.
+
+    Raises
+    ------
+    TypeError
+        If a graph, node or edge attribute holds a value that pickle cannot
+        store, such as a lambda or a lock.
     """
 
     graph: nx.Graph
@@ -344,6 +396,7 @@ class TrackLinearization(ReadOnlyState):
     active_mask: NDArray[np.bool_]
 
     def __post_init__(self) -> None:
+        _refuse_unsaveable_attributes(self.graph)
         graph = copy.deepcopy(self.graph)
         for node, attrs in graph.nodes(data=True):
             graph._node[node] = _ReadOnlyTrackAttributes(
