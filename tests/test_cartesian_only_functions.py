@@ -124,7 +124,7 @@ def _polar_regions_env(env: Environment) -> Environment:
         ),
         (lambda env: spatial_basis(env, n_features=6, rng=0), "spatial_basis()"),
         (
-            lambda env: graph_turn_sequence(env, np.array([0, 1, 9, 8]), 0, 8),
+            lambda env: graph_turn_sequence(env, np.array([0, 1, 9, 8])),
             "graph_turn_sequence()",
         ),
         (

@@ -17,7 +17,6 @@ from neurospatial.behavior import (
     distance_to_region,
     geodesic_voronoi_labels,
     goal_reward_field,
-    graph_turn_sequence,
     path_progress,
     shortest_path_length,
 )
@@ -58,9 +57,6 @@ def _calls(env, position_bins, target):
             env, position_bins, np.r_[target, target]
         ),
         "goal_reward_field": lambda: goal_reward_field(env, target),
-        "graph_turn_sequence": lambda: graph_turn_sequence(
-            env, position_bins, target, 0
-        ),
     }
 
 

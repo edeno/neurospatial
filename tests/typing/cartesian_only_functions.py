@@ -61,8 +61,8 @@ if TYPE_CHECKING:
         map_probabilities(cartesian, polar, values)  # type: ignore[arg-type]
         spatial_basis(cartesian)
         spatial_basis(polar)  # type: ignore[arg-type]
-        graph_turn_sequence(cartesian, bins, 0, 1)
-        graph_turn_sequence(polar, bins, 0, 1)  # type: ignore[arg-type]
+        graph_turn_sequence(cartesian, bins)
+        graph_turn_sequence(polar, bins)  # type: ignore[arg-type]
         detect_laps(bins, values, cartesian)
         detect_laps(bins, values, polar)  # type: ignore[arg-type]
 

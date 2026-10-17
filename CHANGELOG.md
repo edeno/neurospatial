@@ -267,8 +267,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Behavior functions that take bin targets check them the way the queries
   check `bins=`: `distance_to_region(target_bins=)`, `cost_to_goal(goal_bins=)`,
   `path_progress(start_bins=, goal_bins=)`, `geodesic_voronoi_labels`,
-  `distance_to_decision_boundary`, `goal_reward_field` and
-  `graph_turn_sequence`. Floats and booleans raise `TypeError` instead of being
+  `distance_to_decision_boundary` and `goal_reward_field`. Floats and
+  booleans raise `TypeError` instead of being
   truncated to bin indices, and out-of-range bins raise
   `BinIndexOutOfRangeError` (a `ValueError`). `-1`, the value `bin_at` gives
   a position outside the environment, is never accepted as a single target,
@@ -424,6 +424,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (see Fixed), so they were off by up to about 5°. The migration page has
   before-and-after values. A grid cell simulated with
   `GridCellModel(grid_orientation=θ)` is reported with orientation θ.
+
+- `graph_turn_sequence(env, position_bins)` no longer takes `start_bin` and
+  `end_bin`. They were documented as orienting the path but were never used:
+  the order of `position_bins` already sets the direction of travel, and the
+  result did not depend on them. Drop the two arguments from the call.
 
 ### Changed
 

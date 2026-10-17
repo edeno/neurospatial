@@ -1183,3 +1183,17 @@ earlier_grid_orientation = 0.0
 # Before: GridCellModel(env, grid_spacing=30.0, grid_orientation=earlier_grid_orientation)
 cell = GridCellModel(env, grid_spacing=30.0, grid_orientation=earlier_grid_orientation + np.pi / 6)
 ```
+
+## `graph_turn_sequence` takes the bins only
+
+`start_bin` and `end_bin` were never used: the order of the samples already
+sets the direction of travel. Drop them from the call:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.behavior import graph_turn_sequence
+
+position_bins = env.bin_at(positions)
+# Before: graph_turn_sequence(env, position_bins, start_bin, end_bin)
+turns = graph_turn_sequence(env, position_bins)
+```

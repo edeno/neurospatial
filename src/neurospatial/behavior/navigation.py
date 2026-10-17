@@ -969,8 +969,6 @@ def time_to_goal(
 def graph_turn_sequence(
     env: Environment[CartesianSystem],
     position_bins: NDArray[np.int_],
-    start_bin: int,
-    end_bin: int,
     *,
     min_samples_per_edge: int = 50,
 ) -> str:
@@ -984,9 +982,8 @@ def graph_turn_sequence(
     env : Environment
         Cartesian spatial environment (any layout type).
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along trajectory (single trial or segment).
-    start_bin, end_bin : int
-        Start and end bin indices to orient path direction.
+        Bin indices along trajectory (single trial or segment), in time
+        order. The order of the samples sets the direction of travel.
     min_samples_per_edge : int, default=50
         Minimum trajectory samples required on a transition to count.
 
@@ -1006,7 +1003,7 @@ def graph_turn_sequence(
     --------
     >>> for trial in trials:  # doctest: +SKIP
     ...     mask = (times >= trial.start_time) & (times <= trial.end_time)
-    ...     turn_seq = graph_turn_sequence(env, position_bins[mask], start_bin, end_bin)
+    ...     turn_seq = graph_turn_sequence(env, position_bins[mask])
     ...     print(f"Trial: {turn_seq}")  # "left" or "right"
 
     See Also
@@ -1025,17 +1022,6 @@ def graph_turn_sequence(
             "positions, for example Environment.from_samples(positions, bin_size=...)"
         ),
     )
-    from neurospatial.environment._targets import validate_target_bins
-
-    for bins, argument in ((start_bin, "start_bin"), (end_bin, "end_bin")):
-        validate_target_bins(
-            bins,
-            n_bins=env.n_bins,
-            coordinates=env.coordinate_system,
-            operation="graph_turn_sequence()",
-            argument=argument,
-        )
-
     consecutive_bins = np.column_stack([position_bins[:-1], position_bins[1:]])
     transition_counts = Counter(map(tuple, consecutive_bins))
 

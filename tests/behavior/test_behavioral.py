@@ -1453,8 +1453,6 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=straight_bin,
-        end_bin=left_bin,
         min_samples_per_edge=10,
     )
 
@@ -1502,8 +1500,6 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=straight_bin,
-        end_bin=right_bin,
         min_samples_per_edge=10,
     )
 
@@ -1552,8 +1548,6 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=path_bins[0],
-        end_bin=path_bins[-1],
         min_samples_per_edge=20,
     )
 
@@ -1593,8 +1587,6 @@ def test_graph_turn_sequence_straight(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=center_bin,
-        end_bin=straight_bin,
         min_samples_per_edge=10,
     )
 
@@ -1637,8 +1629,6 @@ def test_graph_turn_sequence_min_samples_filter(ymaze_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=center_bin,
-        end_bin=left_bin,
         min_samples_per_edge=50,
     )
 
@@ -1670,8 +1660,6 @@ def test_graph_turn_sequence_3d(simple_3d_env):
     turn_seq = graph_turn_sequence(
         env,
         position_bins,
-        start_bin=start_bin,
-        end_bin=end_bin,
         min_samples_per_edge=5,  # Lower threshold for 3D
     )
 
