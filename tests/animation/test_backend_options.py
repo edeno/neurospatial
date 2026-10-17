@@ -1,18 +1,20 @@
 """Every animation backend uses the options it is given, or refuses them.
 
-A dry run writes nothing on any backend, an option the chosen backend would
-ignore raises instead of changing nothing, and the suggested fix runs.
+A dry run writes nothing on any backend, a misspelled option raises with the
+closest name, and an option only another backend uses is ignored with one
+warning whose suggested call works.
 """
 
 import inspect
 import shutil
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation.core import _BACKEND_OPTIONS
+from neurospatial.animation.core import _BACKEND_CALLS, _BACKEND_OPTIONS
 
 BACKENDS = ["napari", "video", "html", "widget"]
 
@@ -120,71 +122,125 @@ def test_misspelled_option_names_the_closest_one_and_the_fix_runs(
     assert result is None
 
 
+def _ignore_warnings(record):
+    return [w for w in record if "backend ignores it" in str(w.message)]
+
+
 @pytest.mark.parametrize(
     ("backend", "option", "owner"),
     [
-        ("html", {"codec": "vp9"}, "video"),
-        ("napari", {"image_format": "jpeg"}, "html"),
-        ("widget", {"save_path": "out.html"}, "video"),
-        ("widget", {"scale_bar": True}, "napari"),
+        ("html", {"crf": 15}, "video"),
         ("video", {"embed": False}, "html"),
+        ("napari", {"image_format": "jpeg"}, "html"),
+        ("widget", {"scale_bar": True}, "napari"),
         ("video", {"title": "Session 1"}, "napari"),
     ],
 )
-def test_another_backends_option_is_refused_and_the_fix_runs(
+def test_another_backends_option_is_ignored_with_one_warning(
     animation, tmp_path, backend, option, owner
 ):
+    _available(backend)
     env, fields, times = animation
     (name,) = option
     save_path = {"video": "out.mp4", "html": "out.html"}.get(backend)
-    if name == "save_path":
-        save_path = option.pop(name)
-    with pytest.raises(ValueError, match=f"does not use the {name}= option") as error:
-        env.animate_fields(
+    with pytest.warns(UserWarning) as record:
+        result = env.animate_fields(
             fields,
             frame_times=times,
             backend=backend,
             save_path=save_path,
+            dry_run=True,
             **option,
         )
-    message = str(error.value)
-    assert f"pass backend={owner!r}" in message
+    assert result is None
+    (warning,) = _ignore_warnings(record)
+    message = str(warning.message)
+    assert f"{name} is used by the {owner}" in message
+    assert f"the {backend} backend ignores it" in message
+    assert "auto" not in message  # the caller named the backend
     assert list(tmp_path.iterdir()) == []
-    # The suggested backend uses the option.
+    # The suggested call uses the option, so it does not warn.
     _available(owner)
-    owner_path = {"video": "out.mp4", "html": "out.html"}.get(owner)
-    if name == "save_path":
-        option = {}
-        owner_path = "out.mp4"
-    result = env.animate_fields(
-        fields,
-        frame_times=times,
-        backend=owner,
-        save_path=owner_path,
-        dry_run=True,
-        **option,
-    )
-    assert result is None
+    call = _BACKEND_CALLS[owner]
+    assert f"pass {call}" in message
+    suggested = eval(f"dict({call})")
+    with warnings.catch_warnings(record=True) as again:
+        warnings.simplefilter("always")
+        env.animate_fields(
+            fields, frame_times=times, dry_run=True, **suggested, **option
+        )
+    assert _ignore_warnings(again) == []
 
 
-@pytest.mark.parametrize("backend", BACKENDS)
-def test_defaults_of_other_backends_options_are_accepted(animation, backend):
-    """Environment.animate_fields forwards its defaults to every backend."""
-    _available(backend)
+def test_several_ignored_options_share_one_warning(animation):
     env, fields, times = animation
-    save_path = {"video": "out.mp4", "html": "out.html"}.get(backend)
-    result = env.animate_fields(
-        fields,
-        frame_times=times,
-        backend=backend,
-        save_path=save_path,
-        codec="h264",
-        dpi=100,
-        image_format="png",
-        max_html_frames=500,
-        dry_run=True,
+    with pytest.warns(UserWarning) as record:
+        env.animate_fields(
+            fields,
+            frame_times=times,
+            backend="html",
+            crf=15,
+            preset="slow",
+            dry_run=True,
+        )
+    (warning,) = _ignore_warnings(record)
+    assert "crf is used by the video backend" in str(warning.message)
+    assert "preset is used by the video backend" in str(warning.message)
+
+
+@pytest.mark.parametrize(
+    ("n_frames", "reason"),
+    [(5, "there are 5 frames (10,000 or fewer)"), (10_001, "more than 10,000")],
+)
+def test_auto_says_which_backend_it_chose_and_why(
+    animation, monkeypatch, n_frames, reason
+):
+    """Outside Jupyter and without a file, auto picks napari for both counts."""
+    received = []
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.napari_backend.NAPARI_AVAILABLE", True
     )
-    assert result is None
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.napari_backend.render_napari",
+        lambda env, fields, **kwargs: received.append(kwargs),
+    )
+    env, _, _ = animation
+    fields = np.zeros((n_frames, env.n_bins))
+    times = np.arange(n_frames) / 30.0
+    with pytest.warns(UserWarning, match="embed is used by the html") as record:
+        env.animate_fields(fields, frame_times=times, embed=False)
+    message = str(_ignore_warnings(record)[0].message)
+    assert "backend='auto' chose 'napari' because" in message
+    assert reason in message
+    assert "pass backend='html', save_path='animation.html'" in message
+    assert "embed" not in received[0]
+
+
+def test_options_left_out_raise_no_warning(animation):
+    env, fields, times = animation
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        env.animate_fields(fields, frame_times=times, backend="html", dry_run=True)
+    assert _ignore_warnings(record) == []
+
+
+def test_video_crf_reaches_the_encoder_without_a_bitrate(animation, monkeypatch):
+    """Constant-quality encoding is not replaced by a default bitrate."""
+    received = {}
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.video_backend.render_video",
+        lambda env, fields, save_path, **kwargs: received.update(kwargs),
+    )
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.video_backend.check_ffmpeg_available",
+        lambda: True,
+    )
+    env, fields, times = animation
+    env.animate_fields(
+        fields, frame_times=times, backend="video", save_path="out.mp4", crf=15
+    )
+    assert received["crf"] == 15
+    assert "bitrate" not in received
 
 
 @pytest.mark.parametrize("backend", ["video", "widget"])

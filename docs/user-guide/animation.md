@@ -47,7 +47,7 @@ HTML's default `animation.html` is protected too. With `embed=False`, a
 nonempty `frames_dir` is also protected; an empty frames directory is usable.
 A refused call creates no new frames directory. The option applies to video
 and HTML exports; interactive napari/widget viewing writes no files, so those
-backends refuse `overwrite=True`.
+backends ignore `overwrite=` with a warning.
 Environment saves use the same rule for their paired `.json` and `.npz` files.
 
 ## Overview
@@ -169,10 +169,14 @@ env.animate_fields(
     backend="video",
     save_path="animation.mp4",
     codec="h264",  # or "h265", "vp9", "mpeg4"
-    bitrate=5000,  # kbps
+    crf=18,  # constant quality: lower is better, 18 is the default
     dpi=100,
 )
 ```
+
+By default the video encoder uses constant quality (`crf=18`), which keeps the
+image visually near-lossless and lets the bitrate follow the content. Pass
+`bitrate=` (kbps) only when you need a fixed bitrate; it replaces `crf`.
 
 ### Parallel Rendering
 
@@ -393,18 +397,21 @@ Some parameters apply only to some backends:
 | `scale_bar` | False | napari, video, html |
 | `title` | "Spatial Field Animation" | napari, html |
 | `n_workers` | None | video, html (`embed=False`) |
-| `codec`, `bitrate`, `crf`, `preset` | see video backend | video |
+| `codec`, `crf`, `preset`, `bitrate` | "h264", 18, "medium", None | video |
 | `image_format` | "png" | html, widget |
 | `max_html_frames`, `embed`, `frames_dir` | see HTML backend | html |
 | `cache_size`, `chunk_size`, `max_chunks`, `layout`, `layer_names` | see napari backend | napari |
 | `initial_cache_size`, `cache_limit` | see widget backend | widget |
 
-A backend refuses an option it does not use instead of ignoring it, so a call
-always renders what it asks for. A misspelled name raises `TypeError` with the
-closest option (`frame_label=` suggests `frame_labels=`). Another backend's
-option raises `ValueError` naming the backend that uses it, for example
-`codec="vp9"` with `backend="html"`. Options left at their defaults are
-accepted by every backend, so switching `backend=` needs no other change.
+A misspelled name that no backend accepts raises `TypeError` with the closest
+option (`frame_label=` suggests `frame_labels=`), so a typo cannot silently
+change nothing. An option that another backend uses is ignored with one
+`UserWarning`, for example `crf=15` with `backend="html"`: "crf is used by the
+video backend; the html backend ignores it", followed by the call that would
+use it. With `backend="auto"` the warning also says which backend was chosen
+and why, for example that there is no video or `.html` `save_path` and this is
+not a Jupyter session. Options you leave out use each backend's default, so
+one set of settings works when you switch `backend=`.
 
 ## Working with Large-Scale Data
 

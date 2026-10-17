@@ -1442,24 +1442,26 @@ glitched[10] = [np.inf, 50.0]  # a tracking glitch
 arena = Environment.from_samples(glitched, bin_size=4.0, units="cm")
 ```
 
-## Animation options a backend does not use raise
+## Misspelled animation options raise
 
 `env.animate_fields` used to pass every extra keyword to the backend, which
-ignored the ones it did not know. A misspelled option such as `frame_label=`
-or an option of another backend, such as `codec=` with `backend="html"`,
-silently changed nothing. Each backend now refuses an option it does not use:
-a misspelled name raises `TypeError` with the closest option, and another
-backend's option raises `ValueError` naming the backend that uses it. Options
-left at their defaults are still accepted by every backend.
+ignored the ones it did not know, so a misspelled option such as
+`frame_label=` silently changed nothing. A name that no backend accepts now
+raises `TypeError` with the closest option. An option that another backend
+uses, such as `crf=` with `backend="html"`, still does nothing, but now says
+so with one `UserWarning` that names the backend that uses it.
 
 - `fps=` raises; the playback rate comes from `frame_times` and `speed=`.
-- `overwrite=True` raises with the napari and widget backends, which write no
-  file, and `title=` raises with the video backend, which draws no title (use
-  `frame_labels=`).
-- `scale_bar=` raises with the widget backend. The HTML backend now draws it.
 - `contrast_limits`, `show_colorbar` and `colorbar_label` are removed; no
   backend used them. For a labeled color scale, plot one frame with
   `env.plot_field(field, colorbar_label=...)`.
+- `title=` with the video backend warns: video frames have no title (use
+  `frame_labels=`). `scale_bar=` with the widget backend warns; the HTML
+  backend now draws it.
+- Video export uses constant quality (`crf=18`) unless you pass `bitrate=`.
+  `Environment.animate_fields` used to send `bitrate=5000` on every call,
+  which replaced the encoder's constant-quality setting and any `crf=` you
+  passed.
 - `dry_run=True` now works with every backend and writes nothing. The HTML
   backend used to ignore it and write `animation.html`.
 

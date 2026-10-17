@@ -8,14 +8,11 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
-- `Environment.animate_fields` refuses an option the chosen backend does not
-  use instead of ignoring it. A misspelled option (`frame_label=`) raises
-  `TypeError` with the closest name; another backend's option (`codec=` with
-  `backend="html"`) raises `ValueError` naming the backend that uses it.
-  Options left at their defaults are accepted by every backend. This also
-  refuses `fps=` (use `speed=`), `overwrite=True` with napari or the widget,
-  `title=` with video and `scale_bar=` with the widget. The unused
-  `contrast_limits`, `show_colorbar` and `colorbar_label` options are removed.
+- `Environment.animate_fields` raises `TypeError` for an option that no
+  backend accepts, naming the closest option, instead of ignoring it: a
+  misspelled `frame_label=` used to change nothing. `fps=` raises too (use
+  `speed=`). The unused `contrast_limits`, `show_colorbar` and
+  `colorbar_label` options are removed.
 
 - `Environment.from_polar_egocentric` refuses an `angle_range` wider than one
   turn (2π) with a `ValueError` that shows a one-turn range. Angles a whole
@@ -870,6 +867,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   1.2 s. Occupancy values are unchanged.
 
 ### Fixed
+
+- `Environment.animate_fields` warns once when you pass an option the chosen
+  backend ignores, such as `crf=` with `backend="html"` or `overwrite=True`
+  with napari, naming the backend that uses it and the call that would. With
+  `backend="auto"` the warning says which backend was chosen and why.
+  Backend options left out use each backend's own default.
+
+- Video export uses constant-quality encoding (`crf=18`) by default, and
+  `crf=` reaches the encoder. `Environment.animate_fields` used to send
+  `bitrate=5000` on every call, which replaced constant quality, so `crf=`
+  was silently ignored. For a short test animation the default output is
+  visually the same (SSIM 0.9999 against the old encoding) and less than
+  half the size.
 
 - `Environment.animate_fields(..., dry_run=True)` writes nothing on every
   backend and returns `None` after reporting what it would render. The HTML

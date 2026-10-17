@@ -5305,24 +5305,24 @@ class Environment(Generic[_C]):
         frame_times: NDArray[np.float64],
         backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
         save_path: str | None = None,
-        overwrite: bool = False,
+        overwrite: bool | None = None,
         speed: float = 1.0,
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
         frame_labels: Sequence[str] | None = None,
-        title: str = "Spatial Field Animation",
-        dpi: int = 100,
-        codec: str = "h264",
-        bitrate: int = 5000,
+        title: str | None = None,
+        dpi: int | None = None,
+        codec: str | None = None,
+        bitrate: int | None = None,
         n_workers: int | None = None,
         dry_run: bool = False,
-        image_format: Literal["png", "jpeg"] = "png",
-        max_html_frames: int = 500,
+        image_format: Literal["png", "jpeg"] | None = None,
+        max_html_frames: int | None = None,
         overlays: list[OverlayProtocol] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
-        scale_bar: bool | ScaleBarConfig = False,
+        scale_bar: bool | ScaleBarConfig | None = None,
         **kwargs: Any,
     ) -> Any:
         """Animate spatial fields over time with multiple backend options.
@@ -5351,9 +5351,10 @@ class Environment(Generic[_C]):
             - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
             - .html: standalone HTML player (no dependencies)
             - None: display interactively (napari or widget depending on context)
-        overwrite : bool, default=False
-            Allow replacing existing video/HTML files and nonempty HTML frames
-            directories. By default, an existing target raises before rendering.
+        overwrite : bool, optional
+            Video and HTML backends: allow replacing existing files and
+            nonempty HTML frames directories. By default (False), an existing
+            target raises before rendering.
         speed : float, default=1.0
             Playback speed relative to real-time:
 
@@ -5375,18 +5376,20 @@ class Environment(Generic[_C]):
         frame_labels : Sequence[str], optional
             Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
             auto-generated as "Frame 1", "Frame 2", etc.
-        title : str, default="Spatial Field Animation"
-            Title of the napari window or the HTML page. Video frames and the
-            widget have no title; use ``frame_labels`` there.
-        dpi : int, default=100
-            Resolution for rendering frames (video, HTML and widget backends).
-            Higher values produce sharper images but larger file sizes.
-        codec : str, default="h264"
-            Video codec for MP4 export. Options: "h264", "h265", "vp9", "mpeg4".
-            Only used with video backend.
-        bitrate : int, default=5000
-            Video bitrate in kbps. Higher values produce better quality but larger
-            files. Only used with video backend.
+        title : str, optional
+            Napari and HTML backends: title of the window or the page (default
+            "Spatial Field Animation"). Video frames and the widget have no
+            title; use ``frame_labels`` there.
+        dpi : int, optional
+            Video, HTML and widget backends: resolution for rendering frames
+            (default 100). Higher values produce sharper images but larger
+            files.
+        codec : str, optional
+            Video backend: codec, "h264" (default), "h265", "vp9" or "mpeg4".
+        bitrate : int, optional
+            Video backend: constant bitrate in kbps. By default the encoder
+            uses constant quality (``crf=18``, visually near-lossless), which
+            adapts the bitrate to the content; passing ``bitrate`` replaces it.
         n_workers : int, optional
             Number of parallel workers for video rendering, and for HTML
             rendering with ``embed=False``. If None, uses CPU count / 2. Set
@@ -5397,12 +5400,13 @@ class Environment(Generic[_C]):
             count, and for video and HTML the estimated time or file size),
             then return None without writing a file, opening a viewer or
             displaying a widget. Works with every backend.
-        image_format : {"png", "jpeg"}, default="png"
-            Image format for HTML and widget frames. JPEG produces smaller
-            files but with lossy compression.
-        max_html_frames : int, default=500
-            Maximum number of frames allowed for HTML export. Prevents creating
-            huge files that crash browsers. Only used with HTML backend.
+        image_format : {"png", "jpeg"}, optional
+            HTML and widget backends: image format of the frames, "png"
+            (default) or "jpeg". JPEG produces smaller files but with lossy
+            compression.
+        max_html_frames : int, optional
+            HTML backend: maximum number of frames (default 500). Prevents
+            creating huge files that crash browsers.
         overlays : list of overlay objects, optional
             List of overlay objects to render on top of the spatial field animation.
             Supported types: PositionOverlay, BodypartOverlay, HeadDirectionOverlay, VideoOverlay.
@@ -5424,23 +5428,23 @@ class Environment(Generic[_C]):
             Alpha transparency for region overlays. Range: [0.0, 1.0] where
             0.0 is fully transparent and 1.0 is fully opaque. Only used when
             show_regions is True or a list. Default: 0.3.
-        scale_bar : bool or ScaleBarConfig, default=False
+        scale_bar : bool or ScaleBarConfig, optional
             Whether to add a scale bar to rendered frames. If True, uses default
             ScaleBarConfig with auto-calculated length. If ScaleBarConfig instance,
             uses provided configuration.
 
             - **napari backend**: Configures napari's native scale bar
             - **video and html backends**: Adds scale bar to each rendered frame
-            - **widget backend**: not supported; passing one raises ValueError
+            - **widget backend**: not supported; it is ignored with a warning
 
             Default: False (no scale bar).
         **kwargs : dict
-            Backend-specific parameters, listed below. Each backend refuses an
-            option it does not use instead of ignoring it: a misspelled name
-            raises ``TypeError`` with the closest option, and another backend's
-            option (``codec`` with ``backend="html"``, say) raises
-            ``ValueError``. Options left at the defaults shown in this
-            signature are accepted by every backend.
+            Backend-specific parameters, listed below. A name that no backend
+            accepts raises ``TypeError`` with the closest option. An option
+            that another backend uses (``crf`` with ``backend="html"``, say)
+            is ignored with one ``UserWarning`` that names the backend using
+            it; with ``backend="auto"`` the warning also says which backend
+            was chosen and why. Options left out use each backend's default.
 
             **Napari backend:**
             - ``layout`` : {"horizontal", "vertical", "grid"}, optional

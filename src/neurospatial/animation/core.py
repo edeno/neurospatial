@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._region_names import shown_region_names
 
 if TYPE_CHECKING:
@@ -27,9 +28,9 @@ MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
 MIN_PLAYBACK_FPS: int = 1  # Minimum usable playback
 DEFAULT_SPEED: float = 1.0  # Real-time by default
 
-# The caller options each backend uses. Environment.animate_fields forwards
-# every one of its options to the dispatcher, so an option a backend does not
-# use is dropped when it holds that method's default and refused otherwise.
+# The caller options each backend uses. A name in no backend's set is refused;
+# one that only other backends use is ignored with a warning. None means the
+# caller did not pass the option.
 _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
     "napari": frozenset(
         {
@@ -114,72 +115,119 @@ _SHARED_OPTIONS = frozenset(
 )
 
 
-def _is_default(value: object, default: object) -> bool:
-    """Whether ``value`` is ``default`` (same type and value, or the same flag)."""
-    if default is None or isinstance(default, bool):
-        return value is default
-    return type(value) is type(default) and value == default
+# A call that selects each backend, for advice; video always needs a file.
+_BACKEND_CALLS: dict[str, str] = {
+    "napari": "backend='napari'",
+    "video": "backend='video', save_path='animation.mp4'",
+    "html": "backend='html', save_path='animation.html'",
+    "widget": "backend='widget'",
+}
 
 
-def _forwarded_defaults() -> dict[str, Any]:
-    """Defaults of the options Environment.animate_fields forwards."""
-    import inspect
+def _auto_reason(backend: str, n_frames: int, save_path: str | None) -> str:
+    """Why ``backend="auto"`` picked ``backend`` for these inputs."""
+    if backend in ("video", "html"):
+        return f"save_path ends in {Path(str(save_path)).suffix!r}"
+    if backend == "widget":
+        return "this is a Jupyter session and save_path is not a video or .html file"
+    if n_frames > 10_000:
+        return f"there are {n_frames:,} frames, more than 10,000"
+    return (
+        "save_path is not a video or .html file, this is not a Jupyter "
+        f"session, and there are {n_frames:,} frames (10,000 or fewer)"
+    )
 
-    from neurospatial.environment import Environment
 
-    return {
-        name: parameter.default
-        for name, parameter in inspect.signature(
-            Environment.animate_fields
-        ).parameters.items()
-        if parameter.default is not inspect.Parameter.empty
-    }
+def _owners(name: str) -> list[str]:
+    """The backends that use option ``name``."""
+    return [kind for kind, names in _BACKEND_OPTIONS.items() if name in names]
 
 
-def _backend_options(backend: str, options: dict[str, Any]) -> dict[str, Any]:
-    """Return the options ``backend`` uses, refusing any other set option.
+def _chosen(backend: str, auto_reason: str | None) -> str:
+    """Say which backend ``auto`` chose and why; nothing when it was named."""
+    if auto_reason is None:
+        return ""
+    return (
+        f"backend='auto' chose {backend!r} because {auto_reason}; name a "
+        "backend to choose another. "
+    )
+
+
+def _backend_options(
+    backend: str, options: dict[str, Any], *, auto_reason: str | None = None
+) -> dict[str, Any]:
+    """Return the options ``backend`` uses, and warn about the others.
+
+    Parameters
+    ----------
+    backend : str
+        The backend that renders.
+    options : dict
+        The options the caller passed.
+    auto_reason : str, optional
+        Why ``backend="auto"`` chose ``backend``; None when it was named.
+
+    Returns
+    -------
+    dict
+        The options ``backend`` uses.
 
     Raises
     ------
     TypeError
         If an option is not an option of any backend; the message names the
-        closest option of ``backend``.
-    ValueError
-        If an option belongs to another backend and is not left at its
-        default.
+        closest valid option.
+
+    Warns
+    -----
+    UserWarning
+        Once, naming each option that another backend uses and this one
+        ignores.
     """
+    known = frozenset().union(*_BACKEND_OPTIONS.values())
+    for name in options:
+        if name not in known:
+            raise _unknown_option_error(backend, name, auto_reason)
     uses = _BACKEND_OPTIONS[backend]
-    defaults = _forwarded_defaults()
-    used: dict[str, Any] = {}
-    for name, value in options.items():
-        if name in uses:
-            used[name] = value
-        elif name in defaults and _is_default(value, defaults[name]):
-            continue
-        else:
-            raise _unused_option_error(backend, name)
-    return used
+    ignored = [name for name in options if name not in uses]
+    if ignored:
+        warnings.warn(
+            _ignored_options_message(backend, ignored, auto_reason),
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return {name: value for name, value in options.items() if name in uses}
 
 
-def _unused_option_error(backend: str, name: str) -> Exception:
-    """Explain an option ``backend`` would ignore, with the call that works."""
+def _ignored_options_message(
+    backend: str, ignored: list[str], auto_reason: str | None
+) -> str:
+    """Name each ignored option, the backend that uses it, and how to use it."""
+    lines = []
+    for name in ignored:
+        owners = _owners(name)
+        plural = "s" if len(owners) > 1 else ""
+        lines.append(
+            f"{name} is used by the {' and '.join(owners)} backend{plural}; "
+            f"the {backend} backend ignores it."
+        )
+    owners = list(dict.fromkeys(owner for name in ignored for owner in _owners(name)))
+    choices = " or ".join(_BACKEND_CALLS[owner] for owner in owners)
+    return (
+        _chosen(backend, auto_reason)
+        + "\n".join(lines)
+        + f"\nTo use {'them' if len(ignored) > 1 else 'it'}, pass {choices}; "
+        "otherwise remove " + ", ".join(f"{name}=" for name in ignored) + "."
+    )
+
+
+def _unknown_option_error(
+    backend: str, name: str, auto_reason: str | None
+) -> TypeError:
+    """Explain an option no backend has, with the closest valid name."""
     from difflib import get_close_matches
 
-    owners = [kind for kind, names in _BACKEND_OPTIONS.items() if name in names]
-    if owners:
-        return ValueError(
-            _format_error(
-                f"animate_fields(backend={backend!r}) does not use the {name}= option.",
-                why=(
-                    f"Why: {name} is an option of the {' and '.join(owners)} "
-                    f"backend{'s' if len(owners) > 1 else ''}; the {backend} "
-                    "backend would ignore it, so the animation would not be "
-                    "the one the call asks for."
-                ),
-                fix=f"remove {name}=..., or pass backend={owners[0]!r}",
-            )
-        )
-    valid = sorted(_BACKEND_OPTIONS[backend] | _SHARED_OPTIONS)
+    valid = sorted(frozenset().union(*_BACKEND_OPTIONS.values()) | _SHARED_OPTIONS)
     matches = get_close_matches(name, valid, n=1)
     if name == "fps":
         # The playback rate is derived, so the nearest name would mislead.
@@ -191,10 +239,11 @@ def _unused_option_error(backend: str, name: str) -> Exception:
     elif matches:
         fix = f"pass {matches[0]}= instead of {name}="
     else:
-        fix = f"remove {name}=...; the {backend} backend takes {', '.join(valid)}"
+        fix = f"remove {name}=...; the options are {', '.join(valid)}"
     return TypeError(
         _format_error(
-            f"animate_fields() got an unknown option {name!r} for backend={backend!r}.",
+            f"animate_fields() got an unknown option {name!r}. "
+            + _chosen(backend, auto_reason),
             why="Why: no backend has this option, and ignoring it would hide "
             "a misspelled option.",
             fix=fix,
@@ -303,14 +352,14 @@ def animate_fields(
     *,
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
-    overwrite: bool = False,
+    overwrite: bool | None = None,
     overlays: list[OverlayProtocol] | None = None,
     frame_times: NDArray[np.float64],
     speed: float = DEFAULT_SPEED,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
-    scale_bar: bool | Any = False,  # bool | ScaleBarConfig
+    scale_bar: bool | Any = None,  # bool | ScaleBarConfig
     **kwargs: Any,
 ) -> Any:
     """Main animation dispatcher.
@@ -610,8 +659,10 @@ def animate_fields(
             _validate_pickle_ability(overlay_data, n_workers=n_workers)
 
     # Auto-select backend
+    auto_reason = None
     if backend == "auto":
         backend = _select_backend(n_frames, save_path)
+        auto_reason = _auto_reason(backend, n_frames, save_path)
 
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)
@@ -646,17 +697,20 @@ def animate_fields(
                 why="Why: only the advertised rendering backends are supported.",
             )
         )
-    # Refuse options the chosen backend would ignore before any rendering.
+    # Refuse unknown options and warn about ignored ones before rendering.
+    # None means not passed: each backend then applies its own default.
+    passed = {
+        "save_path": save_path,
+        "overwrite": overwrite,
+        "show_regions": show_regions,
+        "region_alpha": region_alpha,
+        "scale_bar": scale_bar,
+        **kwargs,
+    }
     options = _backend_options(
         backend,
-        {
-            "save_path": save_path,
-            "overwrite": overwrite,
-            "show_regions": show_regions,
-            "region_alpha": region_alpha,
-            "scale_bar": scale_bar,
-            **kwargs,
-        },
+        {name: value for name, value in passed.items() if value is not None},
+        auto_reason=auto_reason,
     )
 
     # Route to backend with early validation
@@ -699,7 +753,7 @@ def animate_fields(
                 "  backend='widget' - Jupyter notebook widget"
             )
 
-        video_path = options.pop("save_path")
+        video_path = options.pop("save_path", None)
         if video_path is None:
             raise ValueError(
                 _format_error(
@@ -730,7 +784,7 @@ def animate_fields(
         return render_html(
             env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            options.pop("save_path"),
+            options.pop("save_path", None),
             overlay_data=overlay_data,
             fps=playback_fps,
             **options,

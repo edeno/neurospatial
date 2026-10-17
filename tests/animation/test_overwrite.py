@@ -147,10 +147,10 @@ def test_default_html_path_is_protected(animation_data, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("backend", ["napari", "widget"])
-def test_overwrite_is_refused_by_interactive_backends(
+def test_overwrite_is_ignored_with_a_warning_by_interactive_backends(
     animation_data, monkeypatch, backend
 ):
-    """Interactive backends write no file, so overwrite=True is refused."""
+    """Interactive backends write no file; overwrite=True warns and is dropped."""
     received = []
 
     def interactive(env, fields, **kwargs):
@@ -161,10 +161,6 @@ def test_overwrite_is_refused_by_interactive_backends(
         interactive,
     )
     env, fields, times = animation_data
-    with pytest.raises(ValueError, match="does not use the overwrite= option") as error:
+    with pytest.warns(UserWarning, match="overwrite is used by the video and html"):
         env.animate_fields(fields, frame_times=times, backend=backend, overwrite=True)
-    assert "backend='video'" in str(error.value)
-    assert received == []
-    # The default is not an instruction to the backend, and is not forwarded.
-    env.animate_fields(fields, frame_times=times, backend=backend)
     assert "overwrite" not in received[0]
