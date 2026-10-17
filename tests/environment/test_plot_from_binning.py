@@ -231,12 +231,8 @@ def _assert_mesh_artists(env, figure, operation):
             axes.lines[len(rings) :], env.connectivity.edges(), strict=True
         ):
             np.testing.assert_array_equal(line.get_xydata(), env.bin_centers[[u, v]])
-    assert axes.get_xlabel() == (
-        "X coordinate" if operation == "plot" else "X Position"
-    )
-    assert axes.get_ylabel() == (
-        "Y coordinate" if operation == "plot" else "Y Position"
-    )
+    assert axes.get_xlabel() == "X Position"
+    assert axes.get_ylabel() == "Y Position"
 
 
 @pytest.mark.slow
