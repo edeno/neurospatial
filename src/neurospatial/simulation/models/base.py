@@ -52,7 +52,8 @@ class NeuralModel(Protocol):
     **GridCell**
 
         - ``'grid_spacing'``: float - distance between grid peaks
-        - ``'grid_orientation'``: float - grid rotation in radians
+        - ``'grid_orientation'``: float - field lattice angle in radians,
+          from +x counterclockwise, modulo pi/3
         - ``'phase_offset'``: NDArray[np.float64] - spatial phase offset
         - ``'max_rate'``: float - peak firing rate in Hz
         - ``'baseline_rate'``: float - baseline firing rate in Hz

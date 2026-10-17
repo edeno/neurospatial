@@ -25,10 +25,11 @@ class GridCellModel:
         Distance between grid peaks in environment units (default: 50.0 cm).
         This is the characteristic spatial scale of the grid pattern.
     grid_orientation : float, optional
-        Rotation of grid in radians (default: 0.0): the angle of the first of
-        the three plane waves, from +x (East) toward +y (North). The field
-        lattice lies pi/6 from the waves, so ``grid_properties`` reports an
-        orientation of ``(grid_orientation + pi/6) % (pi/3)`` for this cell.
+        Orientation of the field lattice in radians (default: 0.0): the
+        direction from a firing field to a neighboring field, from +x (East)
+        counterclockwise toward +y (North). The lattice repeats every pi/3,
+        so values are equivalent modulo pi/3. ``grid_properties`` reports the
+        same angle for this cell's rate map.
         Different grid cells have different orientations, creating
         diverse representations across the population.
     phase_offset : NDArray[np.float64], shape (2,), optional
@@ -220,11 +221,15 @@ class GridCellModel:
            k = 4π / (√3 * grid_spacing)
 
         2. Compute three wave vectors at 60° intervals:
-           k_1 = k * [cos(θ), sin(θ)]
-           k_2 = k * [cos(θ + 60°), sin(θ + 60°)]
-           k_3 = k * [cos(θ + 120°), sin(θ + 120°)]
+           k_1 = k * [cos(α), sin(α)]
+           k_2 = k * [cos(α + 60°), sin(α + 60°)]
+           k_3 = k * [cos(α + 120°), sin(α + 120°)]
 
-           where θ = grid_orientation
+           where α = grid_orientation - 30°. A field sits where every
+           k_i · x is a multiple of 2π. The vector a of length grid_spacing at
+           angle α + 30° gives k_1 · a = k_2 · a = k |a| cos(30°) = 2π and
+           k_3 · a = 0, so the field lattice points along α + 30° =
+           grid_orientation (and every 60° from it).
 
         3. Compute grid pattern:
            g(x) = (1/3) * Σ cos(k_i · (x - phase_offset))
@@ -261,9 +266,11 @@ class GridCellModel:
         # k = 4π / (√3 * λ) where λ is grid spacing
         k_magnitude = (4.0 * np.pi) / (np.sqrt(3.0) * self.grid_spacing)
 
-        # Three wave vectors at 60° intervals, rotated by grid_orientation
+        # Three wave vectors at 60° intervals. The field lattice lies 30°
+        # from the first wave (see Notes), so the waves start at
+        # grid_orientation - 30° to put the lattice at grid_orientation.
         angles = np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0])  # 0°, 60°, 120°
-        angles += self.grid_orientation
+        angles += self.grid_orientation - np.pi / 6.0
 
         # Compute wave vectors: k_i = k_magnitude * [cos(angle_i), sin(angle_i)]
         wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
@@ -291,7 +298,8 @@ class GridCellModel:
         parameters : dict[str, Any]
             Contains:
             - 'grid_spacing': float - distance between peaks
-            - 'grid_orientation': float - grid rotation in radians
+            - 'grid_orientation': float - field lattice angle in radians,
+              from +x counterclockwise, modulo pi/3
             - 'phase_offset': NDArray - spatial phase offset
             - 'max_rate': float - peak firing rate
             - 'baseline_rate': float - baseline firing rate

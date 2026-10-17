@@ -267,7 +267,7 @@ def simulate_session(
         **Grid cell parameters** (cell_type='grid' or 'mixed'):
 
         - spacing : float - Grid spacing in environment units (maps to grid_spacing)
-        - orientation : float - Grid orientation angle in radians (maps to grid_orientation)
+        - orientation : float - Field lattice angle in radians from +x, modulo pi/3 (maps to grid_orientation)
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
 

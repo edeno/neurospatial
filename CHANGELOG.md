@@ -397,6 +397,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `subset` and the readers already did. The built-in engines pass; a custom
   engine whose binning fails the check is refused with a `ValueError`.
 
+- `GridCellModel(grid_orientation=θ)` (and `simulate_session(...,
+  orientation=θ)`) now means the angle of the field lattice: the direction
+  from a firing field to its neighbors, in radians from +x counterclockwise,
+  modulo π/3. This is the orientation `grid_properties` reports, so
+  simulating at θ and analysing the rate map returns θ. It used to set the
+  angle of the first of the three plane waves, which puts the lattice π/6
+  (30°) further counterclockwise, so simulated rate maps and spikes for a
+  given `grid_orientation` are rotated by π/6. To reproduce an earlier
+  simulation, pass `grid_orientation=old + np.pi / 6`.
+
 ### Changed
 
 - `spatial_autocorrelation` raises `NotImplementedError` instead of
@@ -673,9 +683,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (East) counterclockwise toward +y (North), in [0, π/3): a hexagonal
   lattice repeats every π/3. `orientation_std` is in radians too, and
   `peak_coords` columns are offsets along x and y. Convert old values with
-  `np.radians((90 - old) % 60)`. `GridCellModel(grid_orientation=θ)` sets
-  the angle of its plane waves; its field lattice, which `grid_properties`
-  reports, lies at `(θ + π/6) % (π/3)`.
+  `np.radians((90 - old) % 60)`. A grid cell simulated with
+  `GridCellModel(grid_orientation=θ)` is reported with orientation θ.
 
 - `grid_properties()` averaged the orientation over every detected peak,
   including the spare one it detects beyond `n_peaks`, which can lie on the

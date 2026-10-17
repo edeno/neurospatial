@@ -694,13 +694,9 @@ class TestGridCellModel:
 
         hex_rates = gc.firing_rate(hex_points)
 
-        # All hexagonal neighbors should have similar rates (hexagonal symmetry)
-        # Allow some tolerance due to numerical precision and grid structure
-        # Note: exact hexagonal symmetry depends on the phase relationship
-        mean_rate = np.mean(hex_rates)
-        for rate in hex_rates:
-            # Each point should be within reasonable range of mean
-            assert abs(rate - mean_rate) < 8.0  # Relaxed tolerance for grid structure
+        # grid_orientation=0 puts the field lattice along +x, so the six
+        # neighbors one spacing away at 0, 60, ..., 300 degrees are fields.
+        np.testing.assert_allclose(hex_rates, center_rate, rtol=1e-9)
 
     def test_grid_spacing_matches_parameter(self, simple_2d_env):
         """Test that distance between grid peaks matches grid_spacing."""
@@ -942,7 +938,11 @@ class TestGridCellModel:
         # Reference: original explicit-loop algorithm.
         rel_pos = positions - gc.phase_offset
         k_magnitude = (4.0 * np.pi) / (np.sqrt(3.0) * gc.grid_spacing)
-        angles = np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0]) + gc.grid_orientation
+        angles = (
+            np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0])
+            + gc.grid_orientation
+            - np.pi / 6.0
+        )
         wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
         grid_pattern = np.zeros(len(rel_pos))
         for k_vec in wave_vectors:
@@ -956,9 +956,9 @@ class TestGridCellModel:
         np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
 
 
-@pytest.mark.parametrize("grid_orientation", [0.0, 0.2, 0.5])
-def test_measured_orientation_is_the_lattice_angle(grid_orientation):
-    """grid_properties finds the field lattice pi / 6 from the model's waves."""
+@pytest.mark.parametrize("orientation_deg", [0.0, 10.0, 25.0, 50.0])
+def test_simulated_orientation_is_recovered_by_grid_properties(orientation_deg):
+    """Simulating at orientation theta and analysing returns theta."""
     from neurospatial import Environment
     from neurospatial.encoding.grid import (
         autocorrelation_pixel_size,
@@ -969,11 +969,11 @@ def test_measured_orientation_is_the_lattice_angle(grid_orientation):
 
     positions = np.random.default_rng(0).uniform(0, 120, (30000, 2))
     env = Environment.from_samples(positions, bin_size=2.0)
+    grid_orientation = np.radians(orientation_deg)
     model = GridCellModel(env, grid_spacing=30.0, grid_orientation=grid_orientation)
     autocorr = spatial_autocorrelation(env, model.firing_rate(env.bin_centers))
 
     measured = grid_properties(autocorr, autocorrelation_pixel_size(env)).orientation
 
-    expected = (grid_orientation + np.pi / 6) % (np.pi / 3)
-    error = abs(measured - expected) % (np.pi / 3)
+    error = abs(measured - grid_orientation) % (np.pi / 3)
     assert min(error, np.pi / 3 - error) < np.radians(2.0)
