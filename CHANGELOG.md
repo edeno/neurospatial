@@ -1250,6 +1250,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   of points × bins. The chosen bin (the lowest-numbered tied bin) is
   unchanged.
 
+- Every environment builds its read-only connectivity graph in one pass,
+  instead of building an ordinary graph, wrapping each attribute record and
+  checking the result again: on a 90,000-bin grid `from_grid_mask` takes
+  3.4 s instead of 4.6 s and `subset` 2.2 s instead of 3.2 s. The graph is
+  unchanged.
+
 ### Fixed
 
 - `apply_transform` accepts a rotation by an angle so small that its sine is

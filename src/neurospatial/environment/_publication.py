@@ -45,10 +45,6 @@ from neurospatial.geometry import (
 from neurospatial.geometry import grid_index as compute_grid_index
 from neurospatial.layout import _built_layout_data
 from neurospatial.layout.base import build_choices
-from neurospatial.layout.validation import (
-    GraphValidationError,
-    validate_connectivity_graph,
-)
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -259,22 +255,10 @@ def _published_graph(binning: Binning) -> _PublishedGraph:
     :func:`neurospatial.geometry.graph_from_binning`; each undirected
     edge keeps one attribute record shared by both directions.
     """
-    source = graph_from_binning(binning)
-    graph = _PublishedGraph()
-    graph.__dict__["graph"] = _ReadOnlyGraphAttributes(source.graph)
-    graph._node = {
-        node: _ReadOnlyGraphAttributes(attrs) for node, attrs in source._node.items()
-    }
-    frozen_edges: dict[int, _ReadOnlyGraphAttributes] = {}
-    adjacency: dict[Any, dict[Any, _ReadOnlyGraphAttributes]] = {}
-    for u, neighbors in source._adj.items():
-        row = adjacency[u] = {}
-        for v, attrs in neighbors.items():
-            frozen = frozen_edges.get(id(attrs))
-            if frozen is None:
-                frozen = frozen_edges[id(attrs)] = _ReadOnlyGraphAttributes(attrs)
-            row[v] = frozen
-    graph._adj = adjacency
+    graph = graph_from_binning(
+        binning, graph_class=_PublishedGraph, attributes=_ReadOnlyGraphAttributes
+    )
+    graph.__dict__["graph"] = _ReadOnlyGraphAttributes()
     nx.freeze(graph)
     graph._published = True
     return graph
@@ -517,18 +501,8 @@ def _publish(
     _validate_coordinates(coordinates, arena)
     validate_arena(arena, binning, polar=polar)
     binning = apply_walls(binning, arena)
+    # Built here from the validated bins, so its attributes need no check.
     graph = _published_graph(binning)
-    try:
-        validate_connectivity_graph(
-            graph,
-            n_dims=binning.bins.n_dims,
-            check_node_attrs=True,
-            check_edge_attrs=True,
-        )
-    except GraphValidationError as error:
-        raise ValueError(
-            f"Invalid connectivity graph from layout engine '{binning.kind}': {error}"
-        ) from error
     env = cls.__new__(cls)
     env._metadata = metadata
     env._provenance = provenance

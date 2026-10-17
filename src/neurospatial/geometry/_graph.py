@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, TypeVar
+
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
@@ -17,6 +20,8 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
 )
 from neurospatial.geometry._polygon_cells import ClippedLocator
+
+_G = TypeVar("_G", bound=nx.Graph)
 
 
 def _source_grid(locator: Locator) -> tuple[tuple[int, ...], NDArray[np.intp]] | None:
@@ -117,7 +122,12 @@ def _track_cell_segments(track: TrackLinearization) -> NDArray[np.intp] | None:
     return segments if cell == n_cells else None
 
 
-def graph_from_binning(binning: Binning) -> nx.Graph:
+def graph_from_binning(
+    binning: Binning,
+    *,
+    graph_class: type[_G] = nx.Graph,
+    attributes: Callable[..., dict[str, Any]] = dict,
+) -> _G:
     """Build navigation attributes without changing bin or neighbor-pair order.
 
     Graph vectors follow graph edge orientation, from the lower to the higher
@@ -126,21 +136,73 @@ def graph_from_binning(binning: Binning) -> nx.Graph:
     linear position (``pos_1D``) and track-graph edge (``source_edge_id``).
     Derivations preserving existing graph metadata keep that separate from
     this projection of newly constructed bin data.
+
+    ``graph_class`` is the (empty-constructible) graph type to fill, and
+    ``attributes`` makes each node's and edge's attribute mapping from keyword
+    arguments, once; an undirected edge shares one mapping in both directions,
+    as ``networkx`` stores it.
     """
     bins = binning.bins
     centers = bins.centers
-    graph = nx.Graph()
-    graph.add_nodes_from(
-        (
-            index,
-            {
-                "pos": tuple(center),
-                "source_grid_flat_index": index,
-                "original_grid_nd_index": (index,),
-            },
-        )
-        for index, center in enumerate(centers.tolist())
+    n_bins = bins.n_bins
+    # Track bins are indexed by their linear cells; other bins by the logical
+    # cells their locator records, else by their own index.
+    flat_indices: list[int] = list(range(n_bins))
+    nd_indices: list[tuple[int, ...]] = [(index,) for index in range(n_bins)]
+    track = binning.linearization
+    source = (
+        (track.active_mask.shape, np.flatnonzero(track.active_mask))
+        if isinstance(track, TrackLinearization)
+        else _source_grid(binning.locator)
     )
+    if source is not None:
+        shape, indices = source
+        flat_indices[: len(indices)] = indices.tolist()
+        nd_indices[: len(indices)] = [
+            tuple(row)
+            for row in np.column_stack(np.unravel_index(indices, shape)).tolist()
+        ]
+    linear: list[float] | None = None
+    if isinstance(track, TrackLinearization):
+        flat = np.flatnonzero(track.active_mask)
+        segments = _track_cell_segments(track)
+        if len(flat) == n_bins and segments is not None:
+            linear = get_centers(track.grid_edges[0])[flat].tolist()
+            edge_ids = segments[flat].tolist()
+
+    graph: _G = graph_class()
+    if linear is None:
+        graph._node = {
+            index: attributes(
+                pos=tuple(center),
+                source_grid_flat_index=flat_index,
+                original_grid_nd_index=nd_index,
+            )
+            for index, (center, flat_index, nd_index) in enumerate(
+                zip(centers.tolist(), flat_indices, nd_indices, strict=True)
+            )
+        }
+    else:
+        graph._node = {
+            index: attributes(
+                pos=tuple(center),
+                source_grid_flat_index=flat_index,
+                original_grid_nd_index=nd_index,
+                pos_1D=position,
+                source_edge_id=edge_id,
+            )
+            for index, (center, flat_index, nd_index, position, edge_id) in enumerate(
+                zip(
+                    centers.tolist(),
+                    flat_indices,
+                    nd_indices,
+                    linear,
+                    edge_ids,
+                    strict=True,
+                )
+            )
+        }
+
     # Graph nodes iterate in bin ID order. Keep each vector in that graph
     # orientation; edge_id links it to the explicit pair-array authority.
     low = np.minimum(bins.pairs[:, 0], bins.pairs[:, 1])
@@ -152,68 +214,33 @@ def graph_from_binning(binning: Binning) -> nx.Graph:
         raise ValueError(
             "Pair displacement exceeds floating-point range; recenter coordinates."
         ) from exc
-    distances = bins.pair_distances.tolist()
-    vector_rows = vectors.tolist()
+    columns = [
+        low.tolist(),
+        high.tolist(),
+        bins.pair_distances.tolist(),
+        vectors.tolist(),
+    ]
     if bins.n_dims == 2:
-        angles = np.arctan2(vectors[:, 1], vectors[:, 0]).tolist()
-        graph.add_edges_from(
-            (
-                u,
-                v,
-                {
-                    "distance": distance,
-                    "vector": tuple(vector),
-                    "edge_id": index,
-                    "angle_2d": angle,
-                },
+        columns.append(np.arctan2(vectors[:, 1], vectors[:, 0]).tolist())
+    # Neighbor dicts list nodes in bin order, then neighbors in pair order,
+    # as Graph.add_nodes_from and add_edges_from would insert them.
+    adjacency: dict[int, dict[int, dict[str, Any]]] = {
+        index: {} for index in range(n_bins)
+    }
+    for edge_id, (u, v, distance, vector, *angle) in enumerate(
+        zip(*columns, strict=True)
+    ):
+        data = (
+            attributes(
+                distance=distance,
+                vector=tuple(vector),
+                edge_id=edge_id,
+                angle_2d=angle[0],
             )
-            for index, (u, v, distance, vector, angle) in enumerate(
-                zip(
-                    low.tolist(),
-                    high.tolist(),
-                    distances,
-                    vector_rows,
-                    angles,
-                    strict=True,
-                )
-            )
+            if angle
+            else attributes(distance=distance, vector=tuple(vector), edge_id=edge_id)
         )
-    else:
-        graph.add_edges_from(
-            (
-                u,
-                v,
-                {"distance": distance, "vector": tuple(vector), "edge_id": index},
-            )
-            for index, (u, v, distance, vector) in enumerate(
-                zip(low.tolist(), high.tolist(), distances, vector_rows, strict=True)
-            )
-        )
-    # Track bins are indexed by their linear cells; other bins by the logical
-    # cells their locator records.
-    track = binning.linearization
-    source = (
-        (track.active_mask.shape, np.flatnonzero(track.active_mask))
-        if isinstance(track, TrackLinearization)
-        else _source_grid(binning.locator)
-    )
-    if source is not None:
-        shape, indices = source
-        nd_indices = np.column_stack(np.unravel_index(indices, shape)).tolist()
-        for index, (flat, nd_index) in enumerate(
-            zip(indices.tolist(), nd_indices, strict=True)
-        ):
-            graph.nodes[index].update(
-                source_grid_flat_index=flat,
-                original_grid_nd_index=tuple(nd_index),
-            )
-    if isinstance(track, TrackLinearization):
-        flat = np.flatnonzero(track.active_mask)
-        segments = _track_cell_segments(track)
-        if len(flat) == bins.n_bins and segments is not None:
-            linear = get_centers(track.grid_edges[0])[flat].tolist()
-            for index, (position, segment) in enumerate(
-                zip(linear, segments[flat].tolist(), strict=True)
-            ):
-                graph.nodes[index].update(pos_1D=position, source_edge_id=segment)
+        adjacency[u][v] = data
+        adjacency[v][u] = data
+    graph._adj = adjacency
     return graph
