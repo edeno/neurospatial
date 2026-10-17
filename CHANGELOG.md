@@ -837,6 +837,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `ops.spatial_basis` sizes its basis by the track length on a linearized
+  track. It used the geometric mean of the axis extents, which is zero for a
+  straight track (it raised "sigma values must be positive") and unrelated to
+  the length of a bent one: an L-shaped 200 cm track was sized as 98 cm.
+
 - On egocentric polar environments, a `(distance, angle)` row whose angle is a
   whole turn outside the angle range finds the bin of that direction. Before,
   `points=` queries, point regions and the polar lookups refused or skipped

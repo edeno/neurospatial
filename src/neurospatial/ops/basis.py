@@ -1083,6 +1083,9 @@ def spatial_basis(
     coverage : {"local", "medium", "global"}, default="medium"
         Spatial scale of basis functions:
 
+        Environment size is the track length on a linearized track and the
+        geometric mean of the axis extents (``dimension_ranges``) otherwise.
+
         - "local": Fine-grained (sigma ≈ 5% of environment size)
           Good for: Detailed place fields, small receptive fields
         - "medium": Moderate (sigma ≈ 10% of environment size)
@@ -1143,7 +1146,12 @@ def spatial_basis(
             "Ensure the environment was created with valid data."
         )
 
-    if env.n_dims == 1:
+    if env.is_linearized_track:
+        # A track's size is the length of centerline its bins cover; the
+        # bounding box of its centerline is flat for a straight track and
+        # unrelated to the length for a bent one.
+        extent = float(np.sum(env.bin_sizes))
+    elif env.n_dims == 1:
         min_val, max_val = dim_ranges[0]
         extent = max_val - min_val
     else:

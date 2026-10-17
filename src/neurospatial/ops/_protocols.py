@@ -158,6 +158,12 @@ class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
     @property
     def dimension_ranges(self) -> Sequence[tuple[float, float]] | None: ...
 
+    @property
+    def is_linearized_track(self) -> bool: ...
+
+    @property
+    def bin_sizes(self) -> NDArray[np.float64]: ...
+
 
 class WaveletBasisConsumer(BasisCentersConsumer, DiffusionGeometryConsumer, Protocol):
     """Diffusion geometry, cell faces and graph for heat-kernel wavelets."""
