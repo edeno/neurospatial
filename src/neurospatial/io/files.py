@@ -173,8 +173,11 @@ def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> Non
 
     Examples
     --------
-    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env.to_file("my_environment")  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> to_file(env, "my_environment")  # writes my_environment.json and .npz
 
     See Also
     --------
@@ -265,8 +268,14 @@ def from_file(path: PathLike) -> Environment[Any]:
 
     Examples
     --------
-    >>> env = from_file("my_environment")  # doctest: +SKIP
-    >>> print(env.n_bins)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> to_file(env, "my_environment")
+    >>> loaded = from_file("my_environment")
+    >>> np.array_equal(loaded.bin_centers, env.bin_centers)
+    True
 
     See Also
     --------
@@ -770,11 +779,14 @@ def to_dict(env: Environment) -> dict[str, Any]:
 
     Examples
     --------
-    >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
-    >>> env_dict = to_dict(env)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> import json
+    >>> env_dict = to_dict(env)
     >>> # Pass to another process or serialize to JSON
-    >>> import json  # doctest: +SKIP
-    >>> json_str = json.dumps(env_dict)  # doctest: +SKIP
+    >>> json_str = json.dumps(env_dict)
 
     See Also
     --------
@@ -808,8 +820,13 @@ def from_dict(data: dict[str, Any]) -> Environment[Any]:
 
     Examples
     --------
-    >>> env_dict = to_dict(env)  # doctest: +SKIP
-    >>> env_restored = from_dict(env_dict)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> x, y = np.meshgrid([0.0, 2.0, 4.0], [0.0, 2.0, 4.0])
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+    >>> env_restored = from_dict(to_dict(env))
+    >>> np.array_equal(env_restored.bin_centers, env.bin_centers)
+    True
 
     See Also
     --------
