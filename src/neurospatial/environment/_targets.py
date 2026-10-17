@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -20,6 +20,7 @@ from neurospatial.geometry import (
 )
 
 if TYPE_CHECKING:
+    from neurospatial._keyword_hint import Translate
     from neurospatial.geometry import Arena, Binning, LookupIndexes
     from neurospatial.regions import Regions
 
@@ -29,6 +30,62 @@ _COUNT_FIXES = {
     2: "pass two bins, a start and an end, as bins=[start, end], or two points, "
     "one row each, as points=[[x0, y0], [x1, y1]]",
 }
+
+
+TARGET_WHY = (
+    "Why: a query target is keyword-only and named by its kind, bins= for bin "
+    "indices or points= for coordinates, so a value passed by position or under "
+    "an earlier name cannot be matched to one."
+)
+REGION_TARGET_WHY = TARGET_WHY.replace(
+    "bins= for bin indices or points= for coordinates",
+    "bins= for bin indices, points= for coordinates or region= for a region name",
+)
+
+
+def former_targets(count: int, *, region: bool = False) -> Translate:
+    """Map the bins or points an earlier version took by position to keywords.
+
+    Earlier versions took a query's target by position and decided from its
+    type whether it was a bin index or a coordinate. The returned function
+    makes the same decision, for the suggested call only: integers become
+    ``bins=``, real numbers ``points=`` rows and, when ``region`` is True, a
+    string becomes ``region=``.
+
+    Parameters
+    ----------
+    count : int
+        Number of separate target arguments the earlier version took: 1 for
+        one bin, 2 for a start and an end.
+    region : bool, default=False
+        Whether the query also takes ``region=``.
+
+    Returns
+    -------
+    Translate
+        The ``translate`` argument of :func:`~neurospatial._keyword_hint.keyword_hint`.
+    """
+    kinds = (
+        "pass bin indices as bins=, coordinates as points= (one row per point) "
+        "or a region name as region="
+        if region
+        else "pass bin indices as bins= and coordinates as points= (one row per point)"
+    )
+
+    def translate(values: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
+        given = list(values.values())
+        if region and len(given) == 1 and isinstance(given[0], str):
+            return kinds, {"region": given[0]}
+        arrays = [np.asarray(value) for value in given]
+        if all(array.dtype.kind in "iu" for array in arrays):
+            bins = arrays[0].tolist() if count == 1 else [a.tolist() for a in arrays]
+            return kinds, {"bins": bins}
+        if all(array.dtype.kind == "f" for array in arrays):
+            rows = [row for a in arrays for row in np.atleast_2d(a).tolist()]
+            return kinds, {"points": rows}
+        return f"{kinds}; give every target the same way", None
+
+    return translate
 
 
 def coordinate_hint(

@@ -926,6 +926,29 @@ to_reward = env.distance_to(region="reward")
 assert np.array_equal(to_reward, env.distance_to(points=[[82.0, 77.0]]))
 ```
 
+An old call raises a `TypeError` that says which keyword applies to the
+value you passed and shows the corrected call. It makes the same guess the old
+call made, integers as bins and real numbers as points, so check that the
+suggestion means what you intended:
+
+<!-- docs-test: run -->
+```python
+from neurospatial import Regions
+
+positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))  # cm
+regions = Regions()
+regions.add("reward", point=(82.0, 77.0))
+env = Environment.from_samples(positions, bin_size=4.0, units="cm", regions=regions)
+try:
+    env.neighbors(12)
+except TypeError as error:
+    assert "env.neighbors(bins=12)" in str(error)
+try:
+    env.distance_to("reward")
+except TypeError as error:
+    assert "env.distance_to(region='reward')" in str(error)
+```
+
 What the old guesses did, and what happens now:
 
 | Call | Before | Now |
@@ -961,7 +984,8 @@ or one point; `path_between` and `distance_between` take two, the start and the
 end.
 
 `subset` selects bins with a boolean mask, so its keyword is `mask=`; `bins=`
-always means integer bin indices:
+always means integer bin indices. `env.subset(bins=west)` raises a `TypeError`
+that says to pass `mask=`:
 
 <!-- docs-test: run -->
 ```python
@@ -1359,6 +1383,20 @@ kernel = env.compute_kernel(bandwidth=5.0)
 fig, ax = plt.subplots()
 env.plot_field(smoothed, ax, cmap="magma")
 plt.close(fig)
+```
+
+An old positional call raises a `TypeError` that names the keyword and shows
+the corrected call:
+
+<!-- docs-test: run -->
+```python
+rate = np.random.default_rng(2).random(env.n_bins)  # Hz
+try:
+    env.smooth(rate, 5.0)
+except TypeError as error:
+    assert "pass bandwidth=5.0 by keyword, as in env.smooth(field, bandwidth=5.0)" in str(
+        error
+    )
 ```
 
 `to_nwb(nwbfile, "arena")` is now `to_nwb(nwbfile, name="arena")`, matching

@@ -98,7 +98,12 @@ from neurospatial.environment._regions import (
 )
 from neurospatial.environment._subset import _subset
 from neurospatial.environment._summary import _info, _repr, _repr_html
-from neurospatial.environment._targets import resolve_targets
+from neurospatial.environment._targets import (
+    REGION_TARGET_WHY,
+    TARGET_WHY,
+    former_targets,
+    resolve_targets,
+)
 from neurospatial.environment._trajectory import (
     BinSequenceWithRuns,
     _bin_sequence,
@@ -1397,6 +1402,11 @@ class Environment(Generic[_C]):
         indices = self._locate(positions)
         return np.asarray(indices != -1, dtype=np.bool_)
 
+    @keyword_hint(
+        former=("point1", "point2", "edge_weight"),
+        translate=former_targets(2),
+        why=TARGET_WHY,
+    )
     def distance_between(
         self,
         *,
@@ -2266,6 +2276,14 @@ class Environment(Generic[_C]):
         "Cartesian coordinates.",
         fix="keep the full polar environment and select bins with a boolean mask",
         example="near = env.bin_centers[:, 0] < 20.0; field[near]",
+    )
+    @keyword_hint(
+        former=("bins",),
+        translate=lambda values: (
+            "pass the boolean array of bins to keep as mask=",
+            {"mask": values["bins"]},
+        ),
+        why="Why: the boolean array of bins to keep is passed by keyword as mask=.",
     )
     def subset(
         self: Environment[CartesianSystem],
@@ -4018,6 +4036,7 @@ class Environment(Generic[_C]):
         """
         return _bin_center_of(self.bin_centers, bin_indices, self._coordinate_system)
 
+    @keyword_hint(former=("bin_index",), translate=former_targets(1), why=TARGET_WHY)
     def neighbors(
         self,
         *,
@@ -4106,6 +4125,11 @@ class Environment(Generic[_C]):
         sizes.setflags(write=False)
         return sizes
 
+    @keyword_hint(
+        former=("source_active_bin_idx", "target_active_bin_idx"),
+        translate=former_targets(2),
+        why=TARGET_WHY,
+    )
     def path_between(
         self,
         *,
@@ -4161,6 +4185,11 @@ class Environment(Generic[_C]):
         start, end = self._target_bins("path_between()", bins, points, count=2)
         return _path_between(self.connectivity, int(start), int(end))
 
+    @keyword_hint(
+        former=("targets",),
+        translate=former_targets(1, region=True),
+        why=REGION_TARGET_WHY,
+    )
     def distance_to(
         self,
         *,
@@ -4261,6 +4290,7 @@ class Environment(Generic[_C]):
             coordinates=self._coordinate_system,
         )
 
+    @keyword_hint(former=("source_bin",), translate=former_targets(1), why=TARGET_WHY)
     def reachable_from(
         self,
         *,
@@ -4415,6 +4445,7 @@ class Environment(Generic[_C]):
         """
         return _components(self.connectivity, largest_only=largest_only)
 
+    @keyword_hint(former=("center_bin",), translate=former_targets(1), why=TARGET_WHY)
     def rings(
         self,
         *,
@@ -4693,6 +4724,7 @@ class Environment(Generic[_C]):
 
         return from_dict(data)
 
+    @keyword_hint("name")
     def to_nwb(
         self,
         nwbfile: Any,
@@ -5055,6 +5087,9 @@ class Environment(Generic[_C]):
             coordinates=self._coordinate_system,
         )
 
+    @keyword_hint(
+        "show_regions", "layout_plot_kwargs", "regions_plot_kwargs", "scale_bar"
+    )
     def plot(
         self,
         ax: matplotlib.axes.Axes | None = None,
@@ -5135,6 +5170,7 @@ class Environment(Generic[_C]):
             **kwargs,
         )
 
+    @keyword_hint("layout_plot_kwargs")
     def plot_1d(
         self,
         ax: matplotlib.axes.Axes | None = None,
@@ -5187,6 +5223,16 @@ class Environment(Generic[_C]):
             self._binning, self.layout_type, ax, layout_plot_kwargs, **kwargs
         )
 
+    @keyword_hint(
+        "cmap",
+        "vmin",
+        "vmax",
+        "colorbar",
+        "colorbar_label",
+        "nan_color",
+        "rasterized",
+        "scale_bar",
+    )
     def plot_field(
         self,
         field: NDArray[np.float64],
@@ -5903,6 +5949,7 @@ class Environment(Generic[_C]):
             lambda: _edge_attributes(self.connectivity, self._binning),
         )
 
+    @keyword_hint("bandwidth")
     def compute_kernel(
         self,
         *,
@@ -6020,6 +6067,7 @@ class Environment(Generic[_C]):
             self._cache, self._binning, bandwidth, mode=mode, use_cache=cache
         )
 
+    @keyword_hint("bandwidth")
     def compute_gaussian_kernel(self, *, bandwidth: float) -> NDArray[np.float64]:
         """Return Gaussian weights between bin centers, ignoring walls.
 
@@ -6076,6 +6124,7 @@ class Environment(Generic[_C]):
         """
         return _diffusion_geometry_view(self._diffusion_geometry)
 
+    @keyword_hint("bandwidth")
     def diffusion_accuracy(self, *, bandwidth: float) -> float:
         """Return the relative numerical noise floor of diffuse() at a bandwidth.
 
@@ -6096,6 +6145,7 @@ class Environment(Generic[_C]):
             diffusion_eigenbasis(self._cache), self.n_bins, bandwidth
         )
 
+    @keyword_hint("bandwidth")
     def smooth(
         self,
         field: NDArray[np.float64],
@@ -6281,6 +6331,7 @@ class Environment(Generic[_C]):
         """
         return _smooth(self._cache, self._binning, field, bandwidth, mode=mode)
 
+    @keyword_hint("bandwidth")
     def diffuse(
         self,
         fields: Any,

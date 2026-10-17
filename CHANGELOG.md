@@ -299,8 +299,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `distance_between` used to return `inf` for a point outside the
   environment; it now raises. It also works on egocentric polar environments,
   where it used to raise `CartesianOnlyError`: the path length follows the
-  graph, and points are (distance, angle). A target passed by position raises
-  Python's `TypeError`.
+  graph, and points are (distance, angle). A target passed by position or
+  under its old name (`targets=`, `bin_index=`, `center_bin=`, ...) raises a
+  `TypeError` that says which keyword applies and shows the corrected call:
+  `env.neighbors(5)` suggests `env.neighbors(bins=5)`, and
+  `env.distance_to("reward")` suggests `env.distance_to(region="reward")`.
 
 - Behavior functions that take bin targets check them the way the queries
   check `bins=`: `distance_to_region(target_bins=)`, `cost_to_goal(goal_bins=)`,
@@ -489,8 +492,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `env.smooth(rate, bandwidth=5.0)`, not `env.smooth(rate, 5.0)`. In
   `plot`, `plot_1d` and `plot_field`, everything after the field and `ax` is
   keyword-only (`env.plot_field(rate, ax, cmap="magma")`), and `to_nwb` takes
-  `name=` by keyword, as `from_nwb` does. A positional call raises
-  `TypeError`. The migration page has before-and-after calls.
+  `name=` by keyword, as `from_nwb` does. A positional call raises a
+  `TypeError` that names the keyword and shows the corrected call, as the
+  factories do: `env.smooth(rate, 5.0)` suggests
+  `env.smooth(field, bandwidth=5.0)`. `env.subset(bins=mask)` says to pass
+  `mask=`. The migration page has before-and-after calls.
 
 - `env.animate_fields(overlay_trajectory=...)` is removed. No backend drew it
   (napari dropped it and the others ignored it), although the animation guide
