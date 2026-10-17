@@ -598,3 +598,12 @@ class TestRegionsContainingPoints:
         assert result[1] == []  # Boundary point excluded
         assert result[2] == []  # Boundary point excluded
         assert result[3] == []  # Exterior point excluded
+
+
+def test_regions_containing_points_takes_a_single_name():
+    """A string is one region name, not a list of its letters."""
+    poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    regions = Regions([Region(name="box1", data=poly, kind="polygon")])
+    df = regions_containing_points(np.array([[5.0, 5.0]]), regions, region_names="box1")
+    assert list(df.columns) == ["box1"]
+    assert bool(df.loc[0, "box1"])

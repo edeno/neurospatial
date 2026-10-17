@@ -314,6 +314,8 @@ def regions_containing_points(
     """
     import pandas as pd
 
+    if isinstance(region_names, str):
+        region_names = [region_names]  # one name, not its characters
     for name in region_names or ():
         if name not in regions:
             raise RegionNotFoundError(

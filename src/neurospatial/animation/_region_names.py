@@ -16,14 +16,15 @@ def shown_region_names(
 ) -> list[str]:
     """Return the names ``show_regions`` selects, in order.
 
-    ``True`` selects every region and ``False`` none. A list must name
+    ``True`` selects every region and ``False`` none. A string is one name. A
+    list must name
     regions of ``env``: an unknown name raises
     :class:`~neurospatial.RegionNotFoundError` with the closest name, instead
     of the region silently missing from the animation.
     """
     if isinstance(show_regions, bool):
         return list(env.regions) if show_regions else []
-    names = list(show_regions)
+    names = [show_regions] if isinstance(show_regions, str) else list(show_regions)
     for name in names:
         if name not in env.regions:
             raise RegionNotFoundError(

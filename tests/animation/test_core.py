@@ -1706,3 +1706,18 @@ class TestLargeSessionNapariConfig:
         # Just verify they're the right types
         assert isinstance(result.get("chunk_size"), int)
         assert isinstance(result.get("max_chunks"), int)
+
+
+def test_show_regions_string_is_one_region_name():
+    """``show_regions="goal"`` shows the goal, not regions named 'g', 'o', ..."""
+    from neurospatial.animation._region_names import shown_region_names
+
+    env = Environment.from_samples(
+        np.random.default_rng(0).random((50, 2)) * 10, bin_size=2.0
+    )
+    regions = Regions()
+    regions.add("goal", point=(5.0, 5.0))
+    env = env.with_regions(regions)
+    assert shown_region_names(env, "goal") == ["goal"]
+    assert shown_region_names(env, True) == ["goal"]
+    assert shown_region_names(env, False) == []

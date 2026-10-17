@@ -390,3 +390,23 @@ class TestPlotRegionsEdgeCases:
         # Should use color as facecolor
         assert len(ax.patches) == 1
         plt.close(fig)
+
+
+def test_misspelled_name_is_refused_before_a_figure_is_made():
+    regions = Regions([Region(name="box", data=box_polygon(), kind="polygon")])
+    plt.close("all")
+    with pytest.raises(RegionNotFoundError):
+        plot_regions(regions, region_names=["bx"])
+    assert plt.get_fignums() == []
+
+
+def test_a_single_name_is_one_region():
+    regions = Regions([Region(name="box", data=box_polygon(), kind="polygon")])
+    fig, ax = plt.subplots()
+    plot_regions(regions, ax=ax, region_names="box", add_legend=False)
+    assert len(ax.patches) == 1
+    plt.close(fig)
+
+
+def box_polygon():
+    return Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])

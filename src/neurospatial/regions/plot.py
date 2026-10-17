@@ -82,18 +82,20 @@ def plot_regions(
 
     if region_names is None:
         region_names = tuple(regions.keys())
-
-    if not region_names:
-        return  # nothing to draw
-
-    if ax is None:
-        ax = plt.gca()
+    elif isinstance(region_names, str):
+        region_names = (region_names,)  # one name, not its characters
 
     for name in region_names:
         if name not in regions:
             raise RegionNotFoundError(
                 name, available=list(regions), argument="region_names", in_list=True
             )
+
+    if not region_names:
+        return  # nothing to draw
+
+    if ax is None:
+        ax = plt.gca()
 
     for name in region_names:
         reg: Region = regions[name]
