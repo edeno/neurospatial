@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import warnings
 
+import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import box
@@ -16,6 +17,14 @@ from neurospatial.ops import AffineND
 _RNG = np.random.default_rng(0)
 _POSITIONS = _RNG.uniform(0.0, 100.0, size=(2000, 2))
 _ENV = Environment.from_samples(_POSITIONS, bin_size=4.0)
+_HEX = Environment.from_samples(_POSITIONS, bin_size=4.0, layout="Hexagonal")
+
+
+def _graph_without_positions() -> nx.Graph:
+    graph = nx.Graph()
+    graph.add_edge("home", "goal", distance=50.0)
+    return graph
+
 
 # (call, exception type, text the fix must contain)
 _MISTAKES = {
@@ -44,6 +53,61 @@ _MISTAKES = {
         "faces=KnownFaces(binning.faces.build())",
     ),
     "rebin(1.5)": (lambda: _ENV.rebin(1.5), ValueError, "rebin(2)"),
+    "linear_track(endpoints=[0, 200])": (
+        lambda: Environment.linear_track(endpoints=[0, 200], bin_size=2.0),
+        ValueError,
+        "endpoints=[(0, 0.0), (200, 0.0)]",
+    ),
+    "graph without pos": (
+        lambda: Environment.from_graph(
+            _graph_without_positions(), [("home", "goal")], bin_size=2.0
+        ),
+        ValueError,
+        "pos=(x, y)",
+    ),
+    "maze graph without pos": (
+        lambda: Environment.maze(
+            kind="t", track_graph=_graph_without_positions(), bin_size=2.0
+        ),
+        ValueError,
+        "pos=(x, y)",
+    ),
+    "bin_size of the wrong length": (
+        lambda: Environment.from_samples(_POSITIONS, bin_size=[4.0, 4.0, 4.0]),
+        ValueError,
+        "2 numbers, one per column",
+    ),
+    "hexagon bin_size per axis": (
+        lambda: Environment.from_samples(
+            _POSITIONS, bin_size=[4.0, 4.0], layout="Hexagonal"
+        ),
+        ValueError,
+        "bin_size=4",
+    ),
+    "flat dimension_ranges": (
+        lambda: Environment.from_samples(
+            _POSITIONS, bin_size=4.0, dimension_ranges=(0, 100)
+        ),
+        ValueError,
+        "dimension_ranges=[(",
+    ),
+    "reversed dimension_ranges": (
+        lambda: Environment.from_samples(
+            _POSITIONS, bin_size=4.0, dimension_ranges=[(100, 0), (0, 100)]
+        ),
+        ValueError,
+        "dimension_ranges=[(",
+    ),
+    "hexagonal rebin(2)": (
+        lambda: _HEX.rebin(2),
+        NotImplementedError,
+        "layout='Hexagonal'",
+    ),
+    "hexagonal rebin(bin_size=8)": (
+        lambda: _HEX.rebin(bin_size=8.0),
+        NotImplementedError,
+        "layout='Hexagonal'",
+    ),
     "apply_transform(np.eye(3))": (
         lambda: _ENV.apply_transform(np.eye(3)),
         TypeError,
@@ -81,3 +145,8 @@ def test_the_suggested_fixes_build_the_environment():
     np.testing.assert_array_equal(moved.bin_centers, _ENV.bin_centers)
     transposed = _POSITIONS.T
     assert Environment.from_samples(transposed.T, bin_size=4.0).n_dims == 2
+    track = Environment.linear_track(endpoints=[(0, 0.0), (200, 0.0)], bin_size=2.0)
+    assert track.n_bins == 100
+    ranges = [(0.0, 100.0), (0.0, 100.0)]
+    framed = Environment.from_samples(_POSITIONS, bin_size=4.0, dimension_ranges=ranges)
+    np.testing.assert_allclose(framed.dimension_ranges, ranges)

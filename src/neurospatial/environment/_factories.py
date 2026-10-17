@@ -155,6 +155,76 @@ def _changed(
     ]
 
 
+def _check_sample_bin_size(
+    bin_size: Any, n_dims: int, factory: str, hexagonal: bool
+) -> None:
+    """Refuse a bin_size whose length does not fit the layout's axes."""
+    try:
+        sizes = np.asarray(bin_size, dtype=float)
+    except (TypeError, ValueError):
+        return  # The numeric type check reports these.
+    if sizes.ndim == 0:
+        return
+    if hexagonal:
+        raise ValueError(
+            _format_error(
+                f"{factory}(layout='Hexagonal') takes one bin_size, the hexagon "
+                f"width, got {list(sizes.tolist())}.",
+                why="Why: a hexagonal tiling has the same width in every direction.",
+                fix=f"pass a single number, such as bin_size={float(sizes.flat[0]):g}",
+            )
+        )
+    if sizes.shape != (n_dims,):
+        raise ValueError(
+            _format_error(
+                f"{factory}() got {sizes.size} bin sizes for positions with "
+                f"{n_dims} column(s).",
+                why="Why: a sequence gives one bin size per spatial axis, in "
+                "the order of the columns of positions.",
+                fix=f"pass one number for square bins, such as "
+                f"bin_size={float(sizes.flat[0]):g}, or {n_dims} numbers, one per "
+                "column",
+            )
+        )
+
+
+def _check_dimension_ranges(
+    dimension_ranges: Any, positions: NDArray[np.float64], factory: str
+) -> None:
+    """Refuse dimension_ranges that are not one finite (low, high) per axis."""
+    n_dims = positions.shape[1]
+    finite = positions[np.all(np.isfinite(positions), axis=1)]
+    if len(finite):
+        low, high = finite.min(axis=0), finite.max(axis=0)
+    else:
+        low, high = np.zeros(n_dims), np.ones(n_dims)
+    example = ", ".join(
+        f"({lo:.4g}, {hi:.4g})" for lo, hi in zip(low, high, strict=True)
+    )
+    try:
+        ranges = np.asarray(dimension_ranges, dtype=float)
+    except (TypeError, ValueError):
+        ranges = None
+    valid = (
+        ranges is not None
+        and ranges.shape == (n_dims, 2)
+        and bool(np.all(np.isfinite(ranges)))
+        and bool(np.all(ranges[:, 0] < ranges[:, 1]))
+    )
+    if not valid:
+        raise ValueError(
+            _format_error(
+                f"{factory}() got dimension_ranges={dimension_ranges!r}, but "
+                f"positions has {n_dims} column(s).",
+                why="Why: dimension_ranges gives each spatial axis its "
+                "(minimum, maximum) extent, one finite pair per column of "
+                "positions, with the minimum first.",
+                fix=f"pass dimension_ranges=[{example}] (the extent of these "
+                "positions), or leave it out to use the extent of the samples",
+            )
+        )
+
+
 def diagonal_choice(n_dims: int, connect_diagonal_neighbors: bool) -> bool:
     """Return the diagonal-neighbor choice to build and record for a grid.
 
@@ -275,6 +345,12 @@ def _from_samples(
                 ),
             )
         )
+
+    _check_sample_bin_size(
+        bin_size, n_dims, factory, hexagonal=layout_type is LayoutType.HEXAGONAL
+    )
+    if dimension_ranges is not None:
+        _check_dimension_ranges(dimension_ranges, positions, factory)
 
     options: dict[str, Any] = {
         "bin_count_threshold": bin_count_threshold,
@@ -440,6 +516,49 @@ def _open_field(
     )
 
 
+def _track_points(values: Any, argument: str) -> list[tuple[float, ...]]:
+    """Read track waypoints as coordinate tuples, refusing bare numbers."""
+    try:
+        array = np.asarray(values, dtype=float)
+    except (TypeError, ValueError):
+        array = None
+    if array is not None and array.ndim == 2 and array.shape[1] >= 2:
+        return [tuple(float(c) for c in row) for row in array]
+    flat = np.ravel(array) if array is not None and array.ndim == 1 else None
+    example = (
+        "[" + ", ".join(f"({float(v):g}, 0.0)" for v in flat) + "]"
+        if flat is not None and flat.size
+        else "[(0.0, 0.0), (200.0, 0.0)]"
+    )
+    raise ValueError(
+        _format_error(
+            f"linear_track({argument}=...) takes (x, y) points, got {values!r}.",
+            why="Why: the track is drawn through these positions in the arena, "
+            "so each point needs a coordinate for every axis, in the units of "
+            "your positions.",
+            fix=f"pass {argument}={example} for a track along x, or the (x, y) "
+            "positions of the track's ends and corners",
+        )
+    )
+
+
+def _require_node_positions(graph: nx.Graph) -> None:
+    """Refuse a track graph whose nodes have no position."""
+    missing = [node for node in graph.nodes if "pos" not in graph.nodes[node]]
+    if missing:
+        raise ValueError(
+            _format_error(
+                f"{len(missing)} of {graph.number_of_nodes()} track-graph node(s) "
+                f"have no 'pos' attribute; the first is node {missing[0]!r}.",
+                why="Why: bins are laid out along each edge between the "
+                "positions of its two nodes, in the units of your positions.",
+                fix="give every node its (x, y) position, for example "
+                f"graph.add_node({missing[0]!r}, pos=(x, y)) or "
+                "nx.set_node_attributes(graph, {node: (x, y), ...}, name='pos')",
+            )
+        )
+
+
 def _linear_track(
     cls: type[Environment[Any]],
     *,
@@ -460,14 +579,14 @@ def _linear_track(
         )
 
     if endpoints is not None:
-        points = [tuple(float(c) for c in p) for p in endpoints]
+        points = _track_points(endpoints, "endpoints")
         if len(points) != 2:
             raise ValueError(
                 "`endpoints` must contain exactly two (x, y) points defining "
                 f"the ends of a straight track. Got {len(points)} point(s)."
             )
     elif node_positions is not None:
-        points = [tuple(float(c) for c in p) for p in node_positions]
+        points = _track_points(node_positions, "node_positions")
         if len(points) < 2:
             raise ValueError(
                 "`node_positions` must contain at least two (x, y) waypoints "
@@ -555,6 +674,7 @@ def _maze(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
+        _require_node_positions(track_graph)
         # Operate on a copy so the caller's graph is never mutated.
         graph = track_graph.copy()
         edge_order = list(graph.edges())
@@ -616,6 +736,7 @@ def _from_graph(
     track_width: float | None = None,
 ) -> Environment:
     """Implement Environment.from_graph using explicit construction inputs."""
+    _require_node_positions(graph)
     # A gap sits between consecutive edges, so a one-edge track has none.
     if (
         len(edge_order) == 1

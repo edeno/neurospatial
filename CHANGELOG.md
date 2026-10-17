@@ -493,7 +493,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
     factor that is not a whole number now raises `ValueError` suggesting
     `rebin(2)` or `rebin(bin_size=...)` with the matching size;
   - `env.apply_transform(np.eye(3))` raised `AttributeError`; a matrix now
-    raises `TypeError` saying to wrap it, `AffineND(matrix)`.
+    raises `TypeError` saying to wrap it, `AffineND(matrix)`;
+  - `linear_track(endpoints=[0, 200])` raised `'int' object is not
+    iterable`; it now shows the (x, y) points to pass;
+  - a track graph whose nodes lack `pos` (`from_graph`, `maze(track_graph=)`)
+    raised `KeyError: 'pos'`; it now names the node and how to set `pos`;
+  - a `bin_size` sequence whose length differs from the number of position
+    columns, or any sequence with `layout="Hexagonal"`, names the expected
+    length instead of an internal argument;
+  - `dimension_ranges` that is not one finite `(min, max)` pair per position
+    column raises `ValueError` showing the pairs for your positions. A
+    reversed pair such as `(100, 0)` used to build a grid silently;
+  - `rebin` on bins that are not a rectangular grid (hexagons, tracks,
+    meshes) or on a grid with unequal cells says why and how to rebuild at
+    the new size, without the old "descriptive layout names" wording.
 
 - Every lookup of a region by name raises `RegionNotFoundError` with the
   closest existing name, for example `Fix: pass region_name='reward'` for
