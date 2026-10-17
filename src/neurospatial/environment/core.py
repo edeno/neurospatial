@@ -4701,8 +4701,8 @@ class Environment(Generic[_C]):
     def to_nwb(
         self,
         nwbfile: Any,
-        name: str = "spatial_environment",
         *,
+        name: str = "spatial_environment",
         overwrite: bool = False,
     ) -> None:
         """Write Environment to NWB file scratch space.
@@ -5065,6 +5065,7 @@ class Environment(Generic[_C]):
     def plot(
         self,
         ax: matplotlib.axes.Axes | None = None,
+        *,
         show_regions: bool = False,
         layout_plot_kwargs: dict[str, Any] | None = None,
         regions_plot_kwargs: dict[str, Any] | None = None,
@@ -5137,6 +5138,7 @@ class Environment(Generic[_C]):
     def plot_1d(
         self,
         ax: matplotlib.axes.Axes | None = None,
+        *,
         layout_plot_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> matplotlib.axes.Axes | None:
@@ -5190,6 +5192,7 @@ class Environment(Generic[_C]):
         self,
         field: NDArray[np.float64],
         ax: matplotlib.axes.Axes | None = None,
+        *,
         cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -5912,8 +5915,8 @@ class Environment(Generic[_C]):
 
     def compute_kernel(
         self,
-        bandwidth: float,
         *,
+        bandwidth: float,
         mode: KernelMode = "density",
         cache: bool = True,
     ) -> NDArray[np.float64]:
@@ -6017,7 +6020,7 @@ class Environment(Generic[_C]):
             self._cache, self._binning, bandwidth, mode=mode, use_cache=cache
         )
 
-    def compute_gaussian_kernel(self, bandwidth: float) -> NDArray[np.float64]:
+    def compute_gaussian_kernel(self, *, bandwidth: float) -> NDArray[np.float64]:
         """Return Gaussian weights between bin centers, ignoring walls.
 
         Parameters
@@ -6073,7 +6076,7 @@ class Environment(Generic[_C]):
         """
         return _diffusion_geometry_view(self._diffusion_geometry)
 
-    def diffusion_accuracy(self, bandwidth: float) -> float:
+    def diffusion_accuracy(self, *, bandwidth: float) -> float:
         """Return the relative numerical noise floor of diffuse() at a bandwidth.
 
         Parameters
@@ -6096,8 +6099,8 @@ class Environment(Generic[_C]):
     def smooth(
         self,
         field: NDArray[np.float64],
-        bandwidth: float,
         *,
+        bandwidth: float,
         mode: KernelMode = "average",
     ) -> NDArray[np.float64]:
         """Apply diffusion kernel smoothing to a field.
@@ -6265,8 +6268,8 @@ class Environment(Generic[_C]):
     def diffuse(
         self,
         fields: Any,
-        bandwidth: float,
         *,
+        bandwidth: float,
         mode: KernelMode = "density",
         backend: Literal["numpy", "jax"] = "numpy",
     ) -> NDArray[np.float64]:

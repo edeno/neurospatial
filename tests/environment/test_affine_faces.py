@@ -68,9 +68,11 @@ def test_rotated_unequal_scaling_uses_independent_face_area_oracles(dims, reflec
         assert actual.distance[index] == pytest.approx(distance, rel=1e-12)
     np.testing.assert_array_equal(actual.A[~positive], 0.0)
     field = np.random.default_rng(417).uniform(size=env.n_bins)
-    result = child.diffuse(field * child.bin_sizes, 0.7, mode="density")
+    result = child.diffuse(field * child.bin_sizes, bandwidth=0.7, mode="density")
     assert result @ child.bin_sizes == pytest.approx(field @ child.bin_sizes, rel=1e-12)
-    np.testing.assert_allclose(child.smooth(np.ones(env.n_bins), 0.7), 1.0, atol=1e-12)
+    np.testing.assert_allclose(
+        child.smooth(np.ones(env.n_bins), bandwidth=0.7), 1.0, atol=1e-12
+    )
     flux = gradient(child, np.arange(env.n_bins, dtype=float))
     assert divergence(child, flux) @ child.bin_sizes == pytest.approx(0.0, abs=1e-12)
     loaded = from_dict(to_dict(child))
@@ -110,7 +112,7 @@ def test_skew_cells_refuse_all_numerical_consumers_but_retain_geometry(operation
     assert np.all(env.bin_at(env.bin_centers) == np.arange(env.n_bins))
     with pytest.raises(NotImplementedError, match=r"face [0-9]+"):
         if operation in ("smooth", "diffuse"):
-            getattr(env, operation)(np.ones(env.n_bins), 0.7)
+            getattr(env, operation)(np.ones(env.n_bins), bandwidth=0.7)
         elif operation == "gradient":
             gradient(env, np.ones(env.n_bins))
         else:
@@ -159,7 +161,7 @@ def test_bridge_free_combined_cells_retain_normal_authority(offset):
     moved = parent.apply_transform(affine(rotation @ np.diag([2.0, 3.0]) @ rotation.T))
     assert moved._binning.faces.available
     np.testing.assert_allclose(
-        moved.smooth(np.ones(moved.n_bins), 0.7), 1.0, atol=1e-12
+        moved.smooth(np.ones(moved.n_bins), bandwidth=0.7), 1.0, atol=1e-12
     )
     loaded = from_dict(to_dict(moved))
     np.testing.assert_array_equal(
@@ -290,6 +292,8 @@ def test_affine_isolated_cell_has_zero_flux_and_constant_field():
     )
     child = env.apply_transform(affine(np.array([[2.0, -3.0], [2.0, 3.0]])))
     assert child._binning.faces.available
-    np.testing.assert_allclose(child.smooth(np.array([3.0]), 0.7), [3.0], atol=1e-12)
+    np.testing.assert_allclose(
+        child.smooth(np.array([3.0]), bandwidth=0.7), [3.0], atol=1e-12
+    )
     assert gradient(child, np.array([3.0])).shape == (0,)
     np.testing.assert_array_equal(divergence(child, np.empty(0)), [0.0])

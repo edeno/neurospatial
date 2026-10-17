@@ -123,7 +123,9 @@ def test_rebinned_environment_round_trips(
         )
         assert set(restored.connectivity.edges()) == set(env.connectivity.edges())
         field = np.arange(env.n_bins, dtype=float)
-        np.testing.assert_allclose(restored.smooth(field, 1.0), env.smooth(field, 1.0))
+        np.testing.assert_allclose(
+            restored.smooth(field, bandwidth=1.0), env.smooth(field, bandwidth=1.0)
+        )
 
 
 @pytest.mark.parametrize("diagonal", [False, True])

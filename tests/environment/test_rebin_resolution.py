@@ -210,7 +210,7 @@ def test_new_resolution_nd_and_file_round_trip(tmp_path, dims):
     assert coarse.n_bins == 2**dims
     np.testing.assert_allclose(coarse.bin_sizes, 2**dims)
     np.testing.assert_allclose(
-        coarse.diffuse(np.ones(coarse.n_bins), 1, mode="average"), 1
+        coarse.diffuse(np.ones(coarse.n_bins), bandwidth=1, mode="average"), 1
     )
 
 

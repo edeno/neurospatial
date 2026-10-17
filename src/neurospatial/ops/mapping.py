@@ -634,7 +634,9 @@ def resample_field(
     return _smooth_pulled_back(
         resampled,
         outside_source,
-        lambda columns: np.asarray(dst_env.diffuse(columns, bandwidth, mode="average")),
+        lambda columns: np.asarray(
+            dst_env.diffuse(columns, bandwidth=bandwidth, mode="average")
+        ),
         n_components=geometry.n_components,
         labels=geometry.labels,
     )

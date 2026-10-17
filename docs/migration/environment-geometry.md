@@ -52,9 +52,9 @@ trees, matrix factorizations and bounded kernel caches.
 | --- | --- |
 | `env.coordinate_system` | Read the immutable Cartesian or polar coordinate descriptor. |
 | `env.get_diffusion_geometry()` | Obtain conductances, volumes and connected components for supported finite-volume geometry. |
-| `env.diffusion_accuracy(bandwidth)` | Query the current diffusion approximation's numerical noise floor. |
+| `env.diffusion_accuracy(bandwidth=...)` | Query the current diffusion approximation's numerical noise floor. |
 | `env.get_mrf_basis(occupancy, rank=...)` | Resolve an occupancy-supported MRF penalty basis using the environment's cached eigenbasis. |
-| `env.compute_gaussian_kernel(bandwidth)` | Obtain cached Gaussian weights without exposing the mutable cache. |
+| `env.compute_gaussian_kernel(bandwidth=...)` | Obtain cached Gaussian weights without exposing the mutable cache. |
 
 These operations do not grant missing geometric capabilities. Unsupported
 diffusion geometry still refuses with guidance. Polar coordinate descriptors

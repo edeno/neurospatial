@@ -33,14 +33,14 @@ def _restore(env, restoration):
 @pytest.mark.parametrize("mode", ["density", "transition", "average"])
 @pytest.mark.parametrize("cache", [False, True])
 def test_kernel_exports_do_not_change_later_kernels(env, restoration, mode, cache):
-    expected = env.compute_kernel(0.5, mode=mode, cache=cache).copy()
+    expected = env.compute_kernel(bandwidth=0.5, mode=mode, cache=cache).copy()
     env = _restore(env, restoration)
-    exported = env.compute_kernel(0.5, mode=mode, cache=cache)
+    exported = env.compute_kernel(bandwidth=0.5, mode=mode, cache=cache)
     exported[:] = 0.0
     exported.shape = (env.n_bins, env.n_bins, 1)
 
     np.testing.assert_array_equal(
-        env.compute_kernel(0.5, mode=mode, cache=cache), expected
+        env.compute_kernel(bandwidth=0.5, mode=mode, cache=cache), expected
     )
 
 
@@ -56,8 +56,8 @@ def test_kernel_exports_reuse_computation(env, monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(_fields, "heat_kernel_from_W", counted)
-    first = env.compute_kernel(0.5)
-    second = env.compute_kernel(0.5)
+    first = env.compute_kernel(bandwidth=0.5)
+    second = env.compute_kernel(bandwidth=0.5)
     assert len(calls) == 1
     assert first is not second
     np.testing.assert_array_equal(first, second)

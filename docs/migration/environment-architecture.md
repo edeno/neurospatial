@@ -936,7 +936,7 @@ positions = rng.uniform(0, 100, size=(2000, 2))  # cm
 env = Environment.from_samples(positions, bin_size=4.0, units="cm")
 rate = np.where(env.bin_centers[:, 0] < 70.0, 5.0, np.nan)  # Hz, east unvisited
 # Before: env.smooth(rate, 8.0) raised "Field contains NaN values"
-smoothed = env.smooth(rate, 8.0)
+smoothed = env.smooth(rate, bandwidth=8.0)
 assert np.allclose(smoothed[np.isfinite(smoothed)], 5.0)
 # Before: env.nearest_bin([[np.nan, 10.0]]) raised a SciPy error
 assert env.nearest_bin(np.array([[np.nan, 10.0]]))[0] == -1
@@ -1227,3 +1227,30 @@ rates = np.random.default_rng(1).random((3, env.n_bins))  # (n_units, n_bins), H
 # Before: np.stack([env.smooth(unit_rates, 5.0) for unit_rates in rates])
 smoothed = env.smooth(rates.T, bandwidth=5.0).T
 ```
+
+## Method options are keywords
+
+`Environment` methods take their data positionally and every option by
+keyword, like the factories. A bandwidth is an option, so name it; this also
+keeps a smoothing width from being read as some other number:
+
+<!-- docs-test: run -->
+```python
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+rate = np.random.default_rng(2).random(env.n_bins)  # Hz
+# Before: env.smooth(rate, 5.0)
+smoothed = env.smooth(rate, bandwidth=5.0)
+# Before: env.diffuse(counts, 5.0); env.compute_kernel(5.0)
+kernel = env.compute_kernel(bandwidth=5.0)
+# Before: env.plot_field(rate, ax, "magma")
+fig, ax = plt.subplots()
+env.plot_field(smoothed, ax, cmap="magma")
+plt.close(fig)
+```
+
+`to_nwb(nwbfile, "arena")` is now `to_nwb(nwbfile, name="arena")`, matching
+`Environment.from_nwb(nwbfile, name="arena")`.

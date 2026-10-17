@@ -900,9 +900,9 @@ class TestDiffusionKdeUnresolvedFarField:
         if backend == "jax":
             pytest.importorskip("jax")
         env, spike_counts, occupancy = half_visited_arena
-        dense = env.compute_kernel(bandwidth, mode="density") @ np.column_stack(
-            [spike_counts, occupancy]
-        )
+        dense = env.compute_kernel(
+            bandwidth=bandwidth, mode="density"
+        ) @ np.column_stack([spike_counts, occupancy])
         dense_rate = dense[:, 0] / dense[:, 1]
 
         if batch:
@@ -949,7 +949,7 @@ class TestDiffusionKdeUnresolvedFarField:
         env, spike_counts, occupancy = half_visited_arena
         visited = occupancy > 0
         raw_rate = np.where(visited, spike_counts / np.where(visited, occupancy, 1), 0)
-        average = env.compute_kernel(bandwidth, mode="average")
+        average = env.compute_kernel(bandwidth=bandwidth, mode="average")
         dense_rate = (average @ raw_rate) / (average @ visited.astype(float))
 
         kwargs = {"method": "binned", "bandwidth": bandwidth, "backend": backend}
@@ -1015,7 +1015,7 @@ class TestEigenbasisCacheReuse:
                 uniform_occupancy,
                 method="diffusion_kde",
                 bandwidth=2.0,
-                kernel=simple_env.compute_kernel(2.0, mode="density"),
+                kernel=simple_env.compute_kernel(bandwidth=2.0, mode="density"),
             )
 
 

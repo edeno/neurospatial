@@ -74,7 +74,7 @@ def test_nearest_only_bins_keep_explicit_lookup_and_refuse_cell_capabilities():
     )
     assert not env.arena.domain_known
     with pytest.raises(NotImplementedError, match=r"faces|finite-volume"):
-        env.compute_kernel(1.0)
+        env.compute_kernel(bandwidth=1.0)
     with pytest.raises(ValueError, match=r"cell|polygon|clip"):
         env.clip(box(-1, -1, 3, 4))
     with pytest.raises(ValueError, match=r"cell|linear"):
@@ -733,7 +733,9 @@ def test_variable_grid_physical_faces_are_separate_from_navigation_weights(
     elif history == "load":
         env = Environment.from_dict(env.to_dict())
     exported = env._binning
-    np.testing.assert_allclose(env.diffuse(np.ones(env.n_bins), 0.5, mode="average"), 1)
+    np.testing.assert_allclose(
+        env.diffuse(np.ones(env.n_bins), bandwidth=0.5, mode="average"), 1
+    )
     assert np.all(exported.bins.pair_distances > exported.faces.build().distance)
 
 
@@ -881,7 +883,9 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
         rectilinear=None,
     )
     env = Environment.from_bins(transformed)
-    np.testing.assert_allclose(env.diffuse(np.ones(env.n_bins), 0.5, mode="average"), 1)
+    np.testing.assert_allclose(
+        env.diffuse(np.ones(env.n_bins), bandwidth=0.5, mode="average"), 1
+    )
     with pytest.raises(ValueError, match=r"grid faces"):
         Environment.from_bins(
             replace(transformed, faces=KnownFaces(faces._replace(A=faces.A * 7)))

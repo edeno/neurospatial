@@ -21,8 +21,8 @@ def test_native_grid_faces_and_diffusion_scale_with_coordinate_units(scale):
     assert faces.A[0] == pytest.approx(scale, rel=1e-14, abs=0)
     assert faces.distance[0] == pytest.approx(scale, rel=1e-14, abs=0)
     np.testing.assert_allclose(
-        scaled.compute_kernel(0.5 * scale, mode="average"),
-        reference.compute_kernel(0.5, mode="average"),
+        scaled.compute_kernel(bandwidth=0.5 * scale, mode="average"),
+        reference.compute_kernel(bandwidth=0.5, mode="average"),
         rtol=1e-13,
         atol=1e-14,
     )
@@ -55,8 +55,8 @@ def test_tiny_native_grid_keeps_faces_and_diffusion_under_uniform_scaling():
     faces = face_geometry(transformed._cache, transformed._binning)
     assert faces.A[0] == pytest.approx(width * scale, rel=1e-14, abs=0)
     np.testing.assert_allclose(
-        transformed.compute_kernel(0.5 * width * scale, mode="average"),
-        env.compute_kernel(0.5 * width, mode="average"),
+        transformed.compute_kernel(bandwidth=0.5 * width * scale, mode="average"),
+        env.compute_kernel(bandwidth=0.5 * width, mode="average"),
         rtol=1e-13,
         atol=1e-14,
     )

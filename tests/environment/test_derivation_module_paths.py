@@ -23,7 +23,7 @@ def test_rebin_modes_preserve_annotations_walls_and_fresh_caches(mode):
         arena=OpenArena(box(0, 0, 6, 6), walls=(LineString([(2, 0), (2, 6)]),)),
     ).with_regions(regions)
     expected_regions = {name: region.to_dict() for name, region in regions.items()}
-    parent_kernel = parent.compute_kernel(0.5)
+    parent_kernel = parent.compute_kernel(bandwidth=0.5)
     parent.nearest_bin(np.array([[1.0, 1.0]]))
     parent.get_divergence_operator()
     assert len(parent._cache) > 0
@@ -51,4 +51,4 @@ def test_rebin_modes_preserve_annotations_walls_and_fresh_caches(mode):
         child.regions["goal"].metadata["reward"]["value"] = 0
     regions.update_region("goal", point=[0.5, 0.5])
     np.testing.assert_array_equal(child.regions["goal"].data, [5.5, 5.5])
-    np.testing.assert_array_equal(parent.compute_kernel(0.5), parent_kernel)
+    np.testing.assert_array_equal(parent.compute_kernel(bandwidth=0.5), parent_kernel)

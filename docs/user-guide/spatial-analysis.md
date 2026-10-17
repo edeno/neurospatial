@@ -717,9 +717,9 @@ for ax, data, title in zip(
 plt.show()
 ```
 
-**Migrating the default:** `env.smooth(field, bandwidth)` now uses `mode="average"`.
+**Migrating the default:** `env.smooth(field, bandwidth=...)` now uses `mode="average"`.
 To preserve the previous count-to-density operation, write
-`env.smooth(counts, bandwidth, mode="density")`. Use `mode="transition"` when
+`env.smooth(counts, bandwidth=..., mode="density")`. Use `mode="transition"` when
 smoothing per-bin counts, occupancy, or probability mass while keeping their sum.
 `compute_kernel` and the lower-level `diffuse` retain their existing defaults;
 select their mode explicitly when composing operators.

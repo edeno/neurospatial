@@ -77,7 +77,7 @@ def test_rotated_grid_noop_crop_preserves_cells_and_ownership(angle):
     # conservative two-point certificate; clipping must not relax that check.
     if not child._binning.faces.available:
         with pytest.raises(NotImplementedError, match="certified"):
-            child.compute_kernel(0.1)
+            child.compute_kernel(bandwidth=0.1)
     restored = Environment.from_dict(child.to_dict())
     np.testing.assert_array_equal(restored.bin_sizes, child.bin_sizes)
     np.testing.assert_array_equal(restored.bin_at(child.bin_centers), np.arange(400))

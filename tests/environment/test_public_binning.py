@@ -83,7 +83,9 @@ def test_from_bins_requires_explicit_faces_for_native_binning():
         replace(exported, faces=KnownFaces(exported.faces.build())), arena=env.arena
     )
     np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
-    np.testing.assert_array_equal(rebuilt.compute_kernel(0.5), env.compute_kernel(0.5))
+    np.testing.assert_array_equal(
+        rebuilt.compute_kernel(bandwidth=0.5), env.compute_kernel(bandwidth=0.5)
+    )
 
 
 @pytest.mark.parametrize("restore", ["direct", "copy", "pickle"])

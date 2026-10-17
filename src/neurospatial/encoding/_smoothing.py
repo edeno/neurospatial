@@ -145,7 +145,7 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
 
 def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float64]:
     """Compatibility wrapper for environment-owned Gaussian weights."""
-    return env.compute_gaussian_kernel(bandwidth)
+    return env.compute_gaussian_kernel(bandwidth=bandwidth)
 
 
 def smooth_rate_map(
@@ -765,7 +765,7 @@ def _resolution_floor(env: Environment, bandwidth: float) -> float:
     ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
     ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
     """
-    return _RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth)
+    return _RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth=bandwidth)
 
 
 def _resolved_density_mask(
@@ -870,7 +870,7 @@ def _diffusion_kde(
 
     # Smooth counts and occupancy in one matrix-free density-mode pass.
     stacked = np.column_stack([spike_counts, occupancy])  # (n_bins, 2)
-    smoothed = np.asarray(env.diffuse(stacked, bandwidth, mode="density"))
+    smoothed = np.asarray(env.diffuse(stacked, bandwidth=bandwidth, mode="density"))
     spike_density = smoothed[:, 0]
     occupancy_density = smoothed[:, 1]
 
@@ -1006,7 +1006,9 @@ def _binned_gate(
     n_components, labels = geometry.n_components, geometry.labels
     rates = np.atleast_2d(raw_rate)  # (n_neurons, n_bins)
     averaged = masked_diffusion_average(
-        lambda columns: np.asarray(env.diffuse(columns, bandwidth, mode="average")),
+        lambda columns: np.asarray(
+            env.diffuse(columns, bandwidth=bandwidth, mode="average")
+        ),
         rates.T,
         ~np.isnan(rates.T),
         labels,
@@ -1037,7 +1039,7 @@ def _diffusion_kde_batch(
     # columns, spike_counts.T) plus the shared occupancy as one extra column, so
     # all neurons + occupancy diffuse in a single matrix-free density-mode pass.
     cols = np.column_stack([spike_counts.T, occupancy])  # (n_bins, n_neurons + 1)
-    smoothed = np.asarray(env.diffuse(cols, bandwidth, mode="density"))
+    smoothed = np.asarray(env.diffuse(cols, bandwidth=bandwidth, mode="density"))
     spike_density = smoothed[:, :n_neurons].T  # (n_neurons, n_bins)
     occupancy_density = smoothed[:, n_neurons]  # (n_bins,)
 
@@ -1170,7 +1172,7 @@ def _smooth_rate_map_jax(
         # occupancy diffuse together in one density-mode pass, no (n, n) kernel.
         stacked = jnp.stack([spike_counts_j, occupancy_j], axis=1)  # (n_bins, 2)
         smoothed = jnp.asarray(
-            env.diffuse(stacked, bandwidth, mode="density", backend="jax")
+            env.diffuse(stacked, bandwidth=bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, 0]
         occupancy_density = smoothed[:, 1]
@@ -1258,7 +1260,7 @@ def _smooth_rate_maps_batch_jax(
             [spike_counts_j.T, occupancy_j[:, None]], axis=1
         )  # (n_bins, n_neurons + 1)
         smoothed = jnp.asarray(
-            env.diffuse(cols, bandwidth, mode="density", backend="jax")
+            env.diffuse(cols, bandwidth=bandwidth, mode="density", backend="jax")
         )
         spike_density = smoothed[:, :n_neurons].T
         occupancy_density = smoothed[:, n_neurons]

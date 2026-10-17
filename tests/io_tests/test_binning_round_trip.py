@@ -117,7 +117,8 @@ def test_loaded_environment_smooths_like_original(environment_round_trip, mode):
     loaded = restore()
     field = np.random.default_rng(14).uniform(0.1, 4.0, original.n_bins)
     np.testing.assert_array_equal(
-        loaded.smooth(field, 5.0, mode=mode), original.smooth(field, 5.0, mode=mode)
+        loaded.smooth(field, bandwidth=5.0, mode=mode),
+        original.smooth(field, bandwidth=5.0, mode=mode),
     )
 
 
@@ -125,7 +126,7 @@ def test_loaded_finite_volume_operators_match_original(environment_round_trip):
     original, restore = environment_round_trip
     loaded = restore()
     np.testing.assert_array_equal(
-        loaded.compute_kernel(2.0), original.compute_kernel(2.0)
+        loaded.compute_kernel(bandwidth=2.0), original.compute_kernel(bandwidth=2.0)
     )
     for method in ("get_differential_operator", "get_divergence_operator"):
         actual = getattr(loaded, method)().toarray()
@@ -165,7 +166,9 @@ def test_derived_from_loaded_environment(environment_round_trip, forbid_layout_b
         copied._binning.locator.locate(original.bin_centers), np.arange(original.n_bins)
     )
     field = np.arange(original.n_bins, dtype=float)
-    np.testing.assert_array_equal(copied.smooth(field, 2.0), loaded.smooth(field, 2.0))
+    np.testing.assert_array_equal(
+        copied.smooth(field, bandwidth=2.0), loaded.smooth(field, bandwidth=2.0)
+    )
     region_builder = Regions(copied.regions.values())
     region_builder.add("copy_only", point=tuple(original.bin_centers[-1]))
     copied = copied.with_regions(region_builder)
@@ -271,7 +274,7 @@ def test_missing_faces_reason_survives_public_round_trip(
         loaded = from_file(path)
     assert not loaded._binning.faces.available
     with pytest.raises(NotImplementedError) as caught:
-        loaded.smooth(np.ones(loaded.n_bins), 1.0)
+        loaded.smooth(np.ones(loaded.n_bins), bandwidth=1.0)
     assert reason in str(caught.value)
     assert "Fix:" in str(caught.value)
 

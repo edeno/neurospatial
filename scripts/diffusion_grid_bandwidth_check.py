@@ -124,8 +124,8 @@ def run(dim, bandwidths, bin_sizes):
             ed = np.median(
                 [d["distance"] for _, _, d in env.connectivity.edges(data=True)]
             )
-            k_dens = env.compute_kernel(bw, mode="density", cache=False)
-            k_tran = env.compute_kernel(bw, mode="transition", cache=False)
+            k_dens = env.compute_kernel(bandwidth=bw, mode="density", cache=False)
+            k_tran = env.compute_kernel(bandwidth=bw, mode="transition", cache=False)
             k_nld = nld_style_kernel(env, bw, face_adjacent_only=(dim > 1))
             s_dens, _ = measure_std_along_axis0(k_dens, centers, bin_sizes_arr, cb)
             s_tran, _ = measure_std_along_axis0(k_tran, centers, bin_sizes_arr, cb)

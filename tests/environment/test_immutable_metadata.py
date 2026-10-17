@@ -35,7 +35,7 @@ def test_metadata_rejects_assignment_and_deletion(name, value):
 
 def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch):
     env = _environment()
-    kernel = env.compute_kernel(0.5)
+    kernel = env.compute_kernel(bandwidth=0.5)
     operator = env._differential_operator_cached
     n_cached = len(env._cache)
 
@@ -56,7 +56,7 @@ def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch)
     assert updated._cache is env._cache
     assert len(env._cache) == n_cached
     assert updated._differential_operator_cached is operator
-    np.testing.assert_array_equal(updated.compute_kernel(0.5), kernel)
+    np.testing.assert_array_equal(updated.compute_kernel(bandwidth=0.5), kernel)
     np.testing.assert_array_equal(updated.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(updated.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(

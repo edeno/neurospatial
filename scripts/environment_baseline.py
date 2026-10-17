@@ -239,8 +239,8 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
         "geometry": lambda: env,
         "boundary_bins": lambda: env.boundary_bins,
         "ncomp": lambda: env._diffusion_geometry.n_components,
-        "smooth": lambda: env.smooth(x["field"], 3.0),
-        "diffuse": lambda: env.diffuse(x["field"], 3.0),
+        "smooth": lambda: env.smooth(x["field"], bandwidth=3.0),
+        "diffuse": lambda: env.diffuse(x["field"], bandwidth=3.0),
         "grad": lambda: gradient(env, x["field"]),
         "divgrad": lambda: divergence(env, gradient(env, x["field"])),
         "wavelet": lambda: heat_kernel_wavelet_basis(
@@ -320,7 +320,7 @@ def _probe(out: dict[str, np.ndarray], tag: str, env: Any, x: dict[str, Any]) ->
     }
     for mode in ("average", "transition", "density"):
         probes[f"kernel_{mode}"] = lambda mode=mode: env.compute_kernel(
-            3.0, mode=mode, cache=False
+            bandwidth=3.0, mode=mode, cache=False
         )
     for key, probe in probes.items():
         _record(out, f"{tag}/{key}", probe)

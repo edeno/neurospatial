@@ -57,7 +57,7 @@ def _handed_out(env):
             "diffusion.W.data": geometry.W.data,
             "diffusion.volumes": geometry.volumes,
             "diffusion.labels": geometry.labels,
-            "gaussian_kernel": env.compute_gaussian_kernel(1.0),
+            "gaussian_kernel": env.compute_gaussian_kernel(bandwidth=1.0),
         }
     )
     return arrays

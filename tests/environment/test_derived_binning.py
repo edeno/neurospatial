@@ -110,8 +110,8 @@ class TestCartesianDerivedGeometry:
         field = np.sin(np.arange(parent.n_bins))
         for mode in ("average", "transition", "density"):
             np.testing.assert_allclose(
-                child.smooth(field, 2.0, mode=mode),
-                parent.smooth(field, 2.0, mode=mode),
+                child.smooth(field, bandwidth=2.0, mode=mode),
+                parent.smooth(field, bandwidth=2.0, mode=mode),
                 rtol=1e-12,
                 atol=1e-12,
             )
@@ -152,8 +152,8 @@ class TestCartesianDerivedGeometry:
         np.testing.assert_array_equal(actual.bin_at(points), expected.bin_at(points))
         field = np.sin(np.arange(expected.n_bins))
         np.testing.assert_allclose(
-            actual.smooth(field, 2.0),
-            expected.smooth(field, 2.0),
+            actual.smooth(field, bandwidth=2.0),
+            expected.smooth(field, bandwidth=2.0),
             rtol=1e-10,
             atol=1e-12,
         )
@@ -173,9 +173,11 @@ def test_grid_subset_equals_mask_build(built_environment):
         connect_diagonal_neighbors=diagonal,
     )
     field = np.sin(np.arange(child.n_bins))
-    np.testing.assert_array_equal(child.smooth(field, 2.0), expected.smooth(field, 2.0))
     np.testing.assert_array_equal(
-        child.compute_kernel(2.0), expected.compute_kernel(2.0)
+        child.smooth(field, bandwidth=2.0), expected.smooth(field, bandwidth=2.0)
+    )
+    np.testing.assert_array_equal(
+        child.compute_kernel(bandwidth=2.0), expected.compute_kernel(bandwidth=2.0)
     )
     points = _queries(parent)
     np.testing.assert_array_equal(
@@ -244,11 +246,11 @@ def test_similarity_scales_smoothing(built_environment, angle, scale, offset):
     child = parent.apply_transform(transform)
     field = np.sin(np.arange(parent.n_bins)) + 2.0
     for mode in ("average", "transition", "density"):
-        expected = parent.smooth(field, 2.0, mode=mode)
+        expected = parent.smooth(field, bandwidth=2.0, mode=mode)
         if mode == "density":
             expected = expected / scale**parent._binning.bins.measure_dim
         np.testing.assert_allclose(
-            child.smooth(field, scale * 2.0, mode=mode),
+            child.smooth(field, bandwidth=scale * 2.0, mode=mode),
             expected,
             rtol=1e-10,
             atol=1e-11,
@@ -275,7 +277,10 @@ def test_axis_scaling_grid_equals_scaled_build(built_environment):
     )
     field = np.sin(np.arange(parent.n_bins))
     np.testing.assert_allclose(
-        child.smooth(field, 2.0), expected.smooth(field, 2.0), rtol=1e-12, atol=1e-12
+        child.smooth(field, bandwidth=2.0),
+        expected.smooth(field, bandwidth=2.0),
+        rtol=1e-12,
+        atol=1e-12,
     )
 
 
@@ -285,7 +290,7 @@ def test_axis_scaling_non_grid_refuses_smoothing(built_environment):
     transform = _affine(np.diag([2.0, 0.5]))
     child = parent.apply_transform(transform)
     with pytest.raises(NotImplementedError) as caught:
-        child.smooth(np.ones(child.n_bins), 2.0)
+        child.smooth(np.ones(child.n_bins), bandwidth=2.0)
     text = str(caught.value).lower()
     assert "axis" in text
     assert "right angle" in text
@@ -302,7 +307,7 @@ def test_shear_refuses_smoothing_and_scales_measures(built_environment):
     child = parent.apply_transform(transform)
     np.testing.assert_allclose(child.bin_sizes, parent.bin_sizes * 2.0)
     with pytest.raises(NotImplementedError) as caught:
-        child.smooth(np.ones(child.n_bins), 2.0)
+        child.smooth(np.ones(child.n_bins), bandwidth=2.0)
     text = str(caught.value).lower()
     assert "shear" in text or "affine" in text
     assert "right angle" in text
@@ -370,7 +375,9 @@ def test_noisy_landmark_similarity_fit_smooths_like_source(built_environment):
     field = np.sin(np.arange(parent.n_bins)) + 2.0
     # The same physical bandwidth, expressed in room units, smooths identically.
     np.testing.assert_allclose(
-        child.smooth(field, 2.0 * scale), parent.smooth(field, 2.0), rtol=1e-10
+        child.smooth(field, bandwidth=2.0 * scale),
+        parent.smooth(field, bandwidth=2.0),
+        rtol=1e-10,
     )
 
 
@@ -385,7 +392,7 @@ def test_noisy_landmark_affine_fit_refusal_reports_distortion_and_fix(
     singular = np.linalg.svd(transform.A[:2, :2], compute_uv=False)
     child = built_environment.apply_transform(transform)
     with pytest.raises(NotImplementedError) as caught:
-        child.smooth(np.ones(child.n_bins), 2.0)
+        child.smooth(np.ones(child.n_bins), bandwidth=2.0)
     message = str(caught.value)
     assert f"{100 * (singular[0] / singular[-1] - 1):.3g}%" in message
     assert "bandwidth" in message
@@ -574,13 +581,13 @@ def test_derived_round_trip(
         field = np.sin(np.arange(child.n_bins))
         for mode in ("average", "transition", "density"):
             np.testing.assert_array_equal(
-                loaded.smooth(field, 2.0, mode=mode),
-                child.smooth(field, 2.0, mode=mode),
+                loaded.smooth(field, bandwidth=2.0, mode=mode),
+                child.smooth(field, bandwidth=2.0, mode=mode),
             )
     else:
         assert loaded._binning.faces.reason == child._binning.faces.reason
         with pytest.raises(NotImplementedError):
-            loaded.smooth(np.ones(loaded.n_bins), 2.0)
+            loaded.smooth(np.ones(loaded.n_bins), bandwidth=2.0)
     copied = loaded.with_metadata()
     np.testing.assert_array_equal(copied.bin_at(points), child.bin_at(points))
     assert not copied.bin_centers.flags.writeable
@@ -692,12 +699,12 @@ def test_affine_triangle_shapes_survive_nested_subset_and_round_trip(
         if derivation == "reflection":
             assert current._binning.faces.available
             np.testing.assert_array_equal(
-                current.smooth(field, 2.0), child.smooth(field, 2.0)
+                current.smooth(field, bandwidth=2.0), child.smooth(field, bandwidth=2.0)
             )
         else:
             assert not current._binning.faces.available
             with pytest.raises(NotImplementedError, match="right angle"):
-                current.smooth(field, 2.0)
+                current.smooth(field, bandwidth=2.0)
 
 
 @pytest.mark.parametrize("built_environment", ["mesh", "mesh_boundary"], indirect=True)

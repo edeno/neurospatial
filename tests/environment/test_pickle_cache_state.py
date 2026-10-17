@@ -49,14 +49,15 @@ def test_derived_and_pickle_skip_transient_work_without_clearing_source(method):
     assert len(restored._cache) == 0
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(
-        restored.compute_kernel(0.5), _environment().compute_kernel(0.5)
+        restored.compute_kernel(bandwidth=0.5),
+        _environment().compute_kernel(bandwidth=0.5),
     )
 
 
 def test_pickle_size_does_not_grow_after_analysis():
     env = _environment()
     cold = pickle.dumps(env)
-    kernel = env.compute_kernel(0.5)
+    kernel = env.compute_kernel(bandwidth=0.5)
     env.get_differential_operator()
     env.get_divergence_operator()
     _ = env.boundary_bins
@@ -64,8 +65,10 @@ def test_pickle_size_does_not_grow_after_analysis():
     warm = pickle.dumps(env)
 
     assert len(warm) <= len(cold) + 1024
-    np.testing.assert_array_equal(env.compute_kernel(0.5), kernel)
-    np.testing.assert_array_equal(pickle.loads(warm).compute_kernel(0.5), kernel)
+    np.testing.assert_array_equal(env.compute_kernel(bandwidth=0.5), kernel)
+    np.testing.assert_array_equal(
+        pickle.loads(warm).compute_kernel(bandwidth=0.5), kernel
+    )
 
 
 @pytest.mark.parametrize("method", ["derived", "pickle"])
@@ -75,10 +78,10 @@ def test_computed_analyses_are_not_copied_or_pickled(method):
     env.get_divergence_operator()
     env.get_bin_attributes()
     env.get_edge_attributes()
-    env.compute_gaussian_kernel(1.0)
+    env.compute_gaussian_kernel(bandwidth=1.0)
     env.nearest_bin(env.bin_centers)
     _ = env.boundary_bins
-    env.diffuse(np.ones(env.n_bins), 1.0)
+    env.diffuse(np.ones(env.n_bins), bandwidth=1.0)
     env.get_mrf_basis(np.ones(env.n_bins), rank=3)
     populated = len(env._cache)
     assert populated >= 10

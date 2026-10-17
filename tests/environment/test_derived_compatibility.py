@@ -224,7 +224,10 @@ def test_custom_layout_migrates_to_owned_data_for_derivations_and_save(
     np.testing.assert_array_equal(child.bin_sizes, expected.bin_sizes)
     field = np.sin(np.arange(child.n_bins))
     np.testing.assert_allclose(
-        child.smooth(field, 5.0), expected.smooth(field, 5.0), rtol=1e-12, atol=1e-12
+        child.smooth(field, bandwidth=5.0),
+        expected.smooth(field, bandwidth=5.0),
+        rtol=1e-12,
+        atol=1e-12,
     )
     loaded = from_dict(to_dict(child))
     np.testing.assert_array_equal(loaded.bin_at(points), expected.bin_at(points))

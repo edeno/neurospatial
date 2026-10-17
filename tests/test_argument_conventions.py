@@ -62,3 +62,41 @@ def test_env_is_first():
             }:
                 offenders.append(function.__name__)
     assert not offenders, sorted(offenders)
+
+
+def test_environment_method_options_are_keyword_only():
+    """Environment methods take data positionally and every option by keyword.
+
+    A positional option with a default would let ``env.smooth(rate, 5.0)``
+    or ``env.distance_between(a, b, None)`` change meaning silently. The
+    optional arguments allowed by position are data or the Axes to draw on.
+    """
+    from neurospatial import Environment
+
+    optional_data = {
+        ("plot", "ax"),
+        ("plot_1d", "ax"),
+        ("plot_field", "ax"),
+        ("rebin", "factor"),
+        ("region_membership", "regions"),
+        ("transitions", "bins"),
+    }
+    # Options with no default value: still options, so still keywords.
+    required_options = {"bandwidth", "bin_size", "hops", "mode", "radius"}
+    offenders = []
+    for name in dir(Environment):
+        if name.startswith("_"):
+            continue
+        member = inspect.getattr_static(Environment, name)
+        function = getattr(member, "__func__", member)
+        if isinstance(member, property) or not callable(function):
+            continue
+        for parameter in inspect.signature(function).parameters.values():
+            if parameter.kind is not parameter.POSITIONAL_OR_KEYWORD:
+                continue
+            has_default = parameter.default is not parameter.empty
+            if (
+                has_default and (name, parameter.name) not in optional_data
+            ) or parameter.name in required_options:
+                offenders.append(f"{name}({parameter.name}=)")
+    assert not offenders, sorted(offenders)

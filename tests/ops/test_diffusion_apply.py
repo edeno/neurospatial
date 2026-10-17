@@ -91,7 +91,9 @@ def _dense_oracle(env, geom: str, case: dict) -> dict:
         return case["kernel_at_field"]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        kernel = env.compute_kernel(case["sigma"], mode=case["mode"], cache=False)
+        kernel = env.compute_kernel(
+            bandwidth=case["sigma"], mode=case["mode"], cache=False
+        )
     return {name: kernel @ case["fields"][name] for name in _ORACLE_FIELDS}
 
 
@@ -117,7 +119,7 @@ def test_apply_matches_dense_full_rank(geom, mode, cases_by_key):
     oracle = _dense_oracle(env, geom, case)
     for name in _ORACLE_FIELDS:
         field = case["fields"][name]
-        out = np.asarray(env.diffuse(field, sigma, mode=mode))
+        out = np.asarray(env.diffuse(field, bandwidth=sigma, mode=mode))
         ref = oracle[name]
         np.testing.assert_allclose(
             out, ref, rtol=1e-8, atol=1e-10, err_msg=f"{geom}/{mode}/{name}"
@@ -140,7 +142,7 @@ def test_apply_matches_dense_truncated(geom, mode, cases_by_key):
     oracle = _dense_oracle(env, geom, case)
     for name in _ORACLE_FIELDS:
         field = case["fields"][name]
-        out = np.asarray(env.diffuse(field, sigma, mode=mode))
+        out = np.asarray(env.diffuse(field, bandwidth=sigma, mode=mode))
         ref = oracle[name]
         rel = _m_norm_rel(out, ref, volumes)
         assert rel < _TRUNC_MNORM_TOL, f"{geom}/{mode}/{name}: M-norm {rel:.2e}"
@@ -160,10 +162,12 @@ def test_env_diffuse_is_linear():
         f1, f2 = fields["signed"], fields["nonneg"]
         for mode in MODES:
             for sigma in (2.0, 12.0):  # near-full-rank and truncated
-                lhs = np.asarray(env.diffuse(a * f1 + b * f2, sigma, mode=mode))
+                lhs = np.asarray(
+                    env.diffuse(a * f1 + b * f2, bandwidth=sigma, mode=mode)
+                )
                 rhs = a * np.asarray(
-                    env.diffuse(f1, sigma, mode=mode)
-                ) + b * np.asarray(env.diffuse(f2, sigma, mode=mode))
+                    env.diffuse(f1, bandwidth=sigma, mode=mode)
+                ) + b * np.asarray(env.diffuse(f2, bandwidth=sigma, mode=mode))
                 np.testing.assert_allclose(
                     lhs, rhs, rtol=1e-9, atol=1e-11, err_msg=f"{geom}/{mode}/{sigma}"
                 )
@@ -193,7 +197,9 @@ def test_compute_kernel_unchanged(geom, cases_by_key):
             case = cases_by_key[(geom, sigma_label, mode)]
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                kernel = env.compute_kernel(case["sigma"], mode=mode, cache=False)
+                kernel = env.compute_kernel(
+                    bandwidth=case["sigma"], mode=mode, cache=False
+                )
             for name in _ORACLE_FIELDS:
                 live = kernel @ case["fields"][name]
                 np.testing.assert_allclose(
@@ -228,20 +234,20 @@ def test_null_mode_retained(geom):
 
     ones = np.ones(env.n_bins)
     # average(1) == 1 (row-stochastic, null mode) and transition conserves mass.
-    avg_one = np.asarray(env.diffuse(ones, sigma, mode="average"))
+    avg_one = np.asarray(env.diffuse(ones, bandwidth=sigma, mode="average"))
     np.testing.assert_allclose(avg_one, 1.0, rtol=1e-9, atol=1e-9)
 
     # Σ_i M_i H_trunc[i, j] == M_j : a density kernel column integrates to 1 under
     # M, i.e. diffuse(delta_j, density) integrates (under M) to 1 exactly.
     rng = np.random.default_rng(0)
     counts = rng.random(env.n_bins)
-    dens = np.asarray(env.diffuse(counts, sigma, mode="density"))
+    dens = np.asarray(env.diffuse(counts, bandwidth=sigma, mode="density"))
     # count -> density conserves the M-integral of the input total.
     np.testing.assert_allclose(
         np.sum(volumes * dens), np.sum(counts), rtol=1e-9, atol=1e-9
     )
     # transition conserves the plain sum exactly.
-    trans = np.asarray(env.diffuse(counts, sigma, mode="transition"))
+    trans = np.asarray(env.diffuse(counts, bandwidth=sigma, mode="transition"))
     np.testing.assert_allclose(np.sum(trans), np.sum(counts), rtol=1e-9, atol=1e-9)
 
 
@@ -261,7 +267,7 @@ def test_grid_independence_preserved():
         point = np.zeros(env.n_bins)
         point[src] = 1.0
         # transition mode: mass-conserving, the diffused point is a probability.
-        col = np.asarray(env.diffuse(point, bandwidth, mode="transition"))
+        col = np.asarray(env.diffuse(point, bandwidth=bandwidth, mode="transition"))
         col = np.clip(col, 0.0, None)
         p = col / col.sum()
         x = env.bin_centers[:, 0]
@@ -281,7 +287,7 @@ def test_no_leakage_truncated():
     point = np.zeros(env.n_bins)
     point[src] = 1.0
     for mode in MODES:
-        out = np.asarray(env.diffuse(point, 8.0, mode=mode))  # truncated
+        out = np.asarray(env.diffuse(point, bandwidth=8.0, mode=mode))  # truncated
         other = out[labels != left]
         assert np.max(np.abs(other)) < 1e-12, f"{mode}: mass leaked across wall"
 
@@ -314,7 +320,7 @@ def test_denominator_support_no_spurious_nan():
     # Value matches the dense masked-average where the dense denominator >> tol.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        avg_kernel = env.compute_kernel(6.0, mode="average", cache=False)
+        avg_kernel = env.compute_kernel(bandwidth=6.0, mode="average", cache=False)
     rate_filled = np.where(valid, rate, 0.0)
     dense_num = avg_kernel @ rate_filled
     dense_den = avg_kernel @ valid.astype(float)
@@ -390,17 +396,17 @@ def test_env_diffuse_validation_raises():
     env, _ = _build_env("grid_2d")
     good = np.ones(env.n_bins)
     with pytest.raises(ValueError, match="bandwidth"):
-        env.diffuse(good, 0.0)
+        env.diffuse(good, bandwidth=0.0)
     with pytest.raises(ValueError, match="bandwidth"):
-        env.diffuse(good, -1.0)
+        env.diffuse(good, bandwidth=-1.0)
     with pytest.raises(ValueError, match="mode"):
-        env.diffuse(good, 5.0, mode="bogus")  # type: ignore[arg-type]
+        env.diffuse(good, bandwidth=5.0, mode="bogus")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="backend"):
-        env.diffuse(good, 5.0, backend="gpu")  # type: ignore[arg-type]
+        env.diffuse(good, bandwidth=5.0, backend="gpu")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match=r"got a 3-D array"):
-        env.diffuse(np.ones((env.n_bins, 2, 1)), 5.0)  # 3-D
+        env.diffuse(np.ones((env.n_bins, 2, 1)), bandwidth=5.0)  # 3-D
     with pytest.raises(ValueError, match="must be the first axis"):
-        env.diffuse(np.ones(env.n_bins + 1), 5.0)  # wrong leading dim
+        env.diffuse(np.ones(env.n_bins + 1), bandwidth=5.0)  # wrong leading dim
 
 
 def test_symmetric_eigenbasis_rank_below_n_components_raises():
@@ -439,7 +445,7 @@ def test_diffusion_kde_nonnegative():
     # Matches the dense-kernel KDE within the truncation tolerance.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        kernel = env.compute_kernel(8.0, mode="density", cache=False)
+        kernel = env.compute_kernel(bandwidth=8.0, mode="density", cache=False)
     dense_rate = np.clip((kernel @ spike_counts) / (kernel @ occupancy), 0.0, None)
     np.testing.assert_allclose(rate[finite], dense_rate[finite], rtol=1e-4, atol=1e-4)
 
@@ -495,20 +501,24 @@ def test_env_smooth_nonneg_within_tol():
         nonneg = fields["nonneg"]
         for mode in MODES:
             sigma = GEOMETRIES[geom][2]  # truncated
-            out = np.asarray(env.smooth(nonneg, sigma, mode=mode))
+            out = np.asarray(env.smooth(nonneg, bandwidth=sigma, mode=mode))
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                dense = env.compute_kernel(sigma, mode=mode, cache=False) @ nonneg
+                dense = (
+                    env.compute_kernel(bandwidth=sigma, mode=mode, cache=False) @ nonneg
+                )
             # Any negatives are bounded relative to the dense output (M-weighted).
             rel = _m_norm_rel(out, dense, volumes)
             assert rel < _TRUNC_MNORM_TOL, f"{geom}/{mode}: M-norm {rel:.2e}"
         # Linear on a signed field.
         signed = fields["signed"]
         a, b = 0.5, -1.3
-        lhs = np.asarray(env.smooth(a * signed + b * nonneg, 10.0, mode="average"))
-        rhs = a * np.asarray(env.smooth(signed, 10.0, mode="average")) + b * np.asarray(
-            env.smooth(nonneg, 10.0, mode="average")
+        lhs = np.asarray(
+            env.smooth(a * signed + b * nonneg, bandwidth=10.0, mode="average")
         )
+        rhs = a * np.asarray(
+            env.smooth(signed, bandwidth=10.0, mode="average")
+        ) + b * np.asarray(env.smooth(nonneg, bandwidth=10.0, mode="average"))
         np.testing.assert_allclose(lhs, rhs, rtol=1e-9, atol=1e-11)
 
 
@@ -521,10 +531,12 @@ def test_cache_grows_with_smaller_sigma():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    env.diffuse(fields["nonneg"], 10.0, mode="density")
+    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
     large = diffusion_eigenbasis(env._cache)
     rank_large_sigma = large.basis[1].shape[0]
-    env.diffuse(fields["nonneg"], 8.0, mode="density")  # smaller sigma -> more modes
+    env.diffuse(
+        fields["nonneg"], bandwidth=8.0, mode="density"
+    )  # smaller sigma -> more modes
     small = diffusion_eigenbasis(env._cache)
     rank_small_sigma = small.basis[1].shape[0]
     assert rank_small_sigma > rank_large_sigma, "smaller sigma must grow the basis"
@@ -537,8 +549,11 @@ def test_cache_grows_with_smaller_sigma():
     assert not any(array.flags.writeable for array in small.basis)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        dense = env.compute_kernel(8.0, mode="density", cache=False) @ fields["nonneg"]
-    out = np.asarray(env.diffuse(fields["nonneg"], 8.0, mode="density"))
+        dense = (
+            env.compute_kernel(bandwidth=8.0, mode="density", cache=False)
+            @ fields["nonneg"]
+        )
+    out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=8.0, mode="density"))
     assert _m_norm_rel(out, dense, env.bin_sizes) < _TRUNC_MNORM_TOL
 
 
@@ -548,9 +563,13 @@ def test_eigenbasis_single_basis_and_invalidated():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    env.diffuse(fields["nonneg"], 10.0, mode="density")
-    env.diffuse(fields["nonneg"], 10.0, mode="average")  # same sigma, different mode
-    env.diffuse(fields["nonneg"], 12.0, mode="transition")  # larger sigma -> slice
+    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
+    env.diffuse(
+        fields["nonneg"], bandwidth=10.0, mode="average"
+    )  # same sigma, different mode
+    env.diffuse(
+        fields["nonneg"], bandwidth=12.0, mode="transition"
+    )  # larger sigma -> slice
     holder = diffusion_eigenbasis(env._cache)
     # Exactly one persistent basis -- a single (Q, Lam) tuple, not a
     # {rank -> basis} accumulating dict.
@@ -563,7 +582,7 @@ def test_eigenbasis_single_basis_and_invalidated():
     assert env._geometry is geometry
     holder2 = diffusion_eigenbasis(env._cache)
     assert holder2.basis is None and not holder2.resolved and holder2 is not holder
-    env.diffuse(fields["nonneg"], 10.0, mode="density")
+    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
     assert id(diffusion_eigenbasis(env._cache).basis[0]) != basis_id
 
 
@@ -573,17 +592,19 @@ def test_compute_kernel_does_not_poison_apply_cache():
     env, source_coord = _build_env("hex")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    env.diffuse(fields["nonneg"], 10.0, mode="density")
+    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
     holder = diffusion_eigenbasis(env._cache)
     basis_shape = holder.basis[0].shape
     assert basis_shape[1] < env.n_bins  # truncated, not (n, n)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        env.compute_kernel(1.0, mode="density", cache=False)  # tiny sigma, dense expm
+        env.compute_kernel(
+            bandwidth=1.0, mode="density", cache=False
+        )  # tiny sigma, dense expm
     # The apply cache is untouched by compute_kernel.
     assert diffusion_eigenbasis(env._cache) is holder
-    env.diffuse(fields["nonneg"], 10.0, mode="average")
+    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="average")
     assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
 
 
@@ -598,7 +619,7 @@ def test_near_full_rank_diffuse_no_poison():
     # suppressed on this small env, which is below the warn threshold anyway).
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        out = np.asarray(env.diffuse(fields["nonneg"], 0.8, mode="density"))
+        out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=0.8, mode="density"))
     assert np.all(np.isfinite(out))
     # The transient dense basis is NOT cached.
     holder = diffusion_eigenbasis(env._cache)
@@ -609,12 +630,12 @@ def test_near_full_rank_diffuse_no_poison():
     # "dense" fast path (still transient, still not cached) and matches the first.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        out2 = np.asarray(env.diffuse(fields["nonneg"], 0.8, mode="density"))
+        out2 = np.asarray(env.diffuse(fields["nonneg"], bandwidth=0.8, mode="density"))
     np.testing.assert_allclose(out, out2, rtol=1e-10)
     assert diffusion_eigenbasis(env._cache).basis is None
 
     # A subsequent truncated call caches a bounded (< n) basis.
-    env.diffuse(fields["nonneg"], 10.0, mode="density")
+    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
     assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
 
 
@@ -632,15 +653,17 @@ def test_jax_backend_return_type_and_grad():
     fields = make_fields(env, src)
     field = jnp.asarray(fields["nonneg"])
 
-    out = env.diffuse(field, 8.0, mode="density", backend="jax")
+    out = env.diffuse(field, bandwidth=8.0, mode="density", backend="jax")
     assert isinstance(out, jax.Array)
     # Matches the NumPy backend.
-    out_np = np.asarray(env.diffuse(fields["nonneg"], 8.0, mode="density"))
+    out_np = np.asarray(env.diffuse(fields["nonneg"], bandwidth=8.0, mode="density"))
     np.testing.assert_allclose(np.asarray(out), out_np, rtol=1e-6, atol=1e-8)
 
     # jit + grad through the smoothing (the eigenbasis is a captured constant).
     def loss(x):
-        return jnp.sum(env.diffuse(x, 8.0, mode="density", backend="jax") ** 2)
+        return jnp.sum(
+            env.diffuse(x, bandwidth=8.0, mode="density", backend="jax") ** 2
+        )
 
     jitted = jax.jit(loss)(field)
     assert bool(jnp.isfinite(jitted))
@@ -697,7 +720,7 @@ def test_perf_large_grid(baseline):
     field = np.ones(env.n_bins)
     tracemalloc.start()
     t0 = time.perf_counter()
-    out = np.asarray(env.diffuse(field, PERF_SIGMA, mode="density"))
+    out = np.asarray(env.diffuse(field, bandwidth=PERF_SIGMA, mode="density"))
     apply_time = time.perf_counter() - t0
     _current, apply_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
@@ -715,7 +738,9 @@ def test_perf_large_grid(baseline):
     big = build_scaling_grid()
     assert big.n_bins >= 9000
     t0 = time.perf_counter()
-    out_big = np.asarray(big.diffuse(np.ones(big.n_bins), PERF_SIGMA, mode="density"))
+    out_big = np.asarray(
+        big.diffuse(np.ones(big.n_bins), bandwidth=PERF_SIGMA, mode="density")
+    )
     big_time = time.perf_counter() - t0
     assert np.all(np.isfinite(out_big))
     assert big_time < 120.0, f"10k-bin apply took {big_time:.1f}s"

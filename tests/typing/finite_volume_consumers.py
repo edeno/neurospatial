@@ -44,5 +44,5 @@ if TYPE_CHECKING:
         )
         assert_type(env.get_diffusion_geometry(), DiffusionGeometry)
         assert_type(env.get_mrf_basis(np.ones(env.n_bins)), MRFBasis)
-        assert_type(env.compute_gaussian_kernel(1.0), NDArray[np.float64])
-        assert_type(env.diffusion_accuracy(1.0), float)
+        assert_type(env.compute_gaussian_kernel(bandwidth=1.0), NDArray[np.float64])
+        assert_type(env.diffusion_accuracy(bandwidth=1.0), float)

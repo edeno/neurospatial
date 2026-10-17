@@ -39,7 +39,7 @@ def test_bound_and_unbound_transforms_preserve_the_same_geometry(n_dims):
             "session2",
         )
     np.testing.assert_array_equal(
-        bound.compute_kernel(0.5), unbound.compute_kernel(0.5)
+        bound.compute_kernel(bandwidth=0.5), unbound.compute_kernel(bandwidth=0.5)
     )
 
 

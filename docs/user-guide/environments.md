@@ -201,9 +201,9 @@ columns and `env.get_diffusion_geometry()` to inspect conductances, cell measure
 and connected diffusion components. These are independent read-only exports.
 The environment keeps its expensive geometry and eigenbasis caches private.
 
-`env.compute_gaussian_kernel(bandwidth)` returns unnormalized Gaussian weights
-that ignore walls; `env.diffuse(field, bandwidth)` respects the numerical boundary
-geometry. After diffusion, `env.diffusion_accuracy(bandwidth)` reports its relative
+`env.compute_gaussian_kernel(bandwidth=...)` returns unnormalized Gaussian weights
+that ignore walls; `env.diffuse(field, bandwidth=...)` respects the numerical boundary
+geometry. After diffusion, `env.diffusion_accuracy(bandwidth=...)` reports its relative
 noise floor. A spatial model can request a Markov random field smoothness basis
 with `env.get_mrf_basis(occupancy, rank=...)`.
 
@@ -219,10 +219,10 @@ env: Environment[CartesianSystem] = Environment.from_grid_mask(
 geometry = env.get_diffusion_geometry()
 assert geometry.W.shape == (9, 9)
 assert geometry.n_components == 1
-weights = env.compute_gaussian_kernel(1.0)
+weights = env.compute_gaussian_kernel(bandwidth=1.0)
 assert not weights.flags.writeable
-smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), 1.0)
-assert env.diffusion_accuracy(1.0) <= 1e-6
+smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), bandwidth=1.0)
+assert env.diffusion_accuracy(bandwidth=1.0) <= 1e-6
 basis = env.get_mrf_basis(np.ones(env.n_bins), rank=4)
 assert basis.B.shape == (env.n_bins, 4)
 ```

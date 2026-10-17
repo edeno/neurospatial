@@ -40,7 +40,9 @@ def test_polar_coordinate_state_is_owned(n_angle, circular, restore):
     assert env._angular_is_circular == circular
     restored = restore(env)
     assert restored._coordinate_system == expected
-    np.testing.assert_array_equal(restored.compute_kernel(0.8), env.compute_kernel(0.8))
+    np.testing.assert_array_equal(
+        restored.compute_kernel(bandwidth=0.8), env.compute_kernel(bandwidth=0.8)
+    )
 
 
 def test_native_face_recipe_contains_only_owned_data(built_environment):

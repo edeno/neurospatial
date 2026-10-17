@@ -273,7 +273,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
         )
     )
     geometry, published = env._geometry, env._binning
-    kernel = env.compute_kernel(1.0)
+    kernel = env.compute_kernel(bandwidth=1.0)
     cache, n_cached = env._cache, len(env._cache)
     layout = _source_layout(env)
     monkeypatch.setattr(layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
@@ -284,7 +284,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     assert env._geometry is geometry
     assert env._binning is published
     assert env._cache is cache and len(cache) == n_cached
-    np.testing.assert_array_equal(env.compute_kernel(1.0), kernel)
+    np.testing.assert_array_equal(env.compute_kernel(bandwidth=1.0), kernel)
 
 
 def test_faces_reject_changed_pair_order() -> None:

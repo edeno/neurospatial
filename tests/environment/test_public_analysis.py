@@ -122,17 +122,17 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
         return build(*args, **kwargs)
 
     monkeypatch.setattr(_fields, "_gaussian_kernel", counted)
-    first = env.compute_gaussian_kernel(1.0)
+    first = env.compute_gaussian_kernel(bandwidth=1.0)
     expected = first.copy()
-    second = env.compute_gaussian_kernel(1.0)
+    second = env.compute_gaussian_kernel(bandwidth=1.0)
     assert len(calls) == 1
     assert first is not second and np.shares_memory(first, second)
     with pytest.raises(ValueError):
         first[:] = 0
     first.shape = (env.n_bins, env.n_bins, 1)
-    np.testing.assert_array_equal(env.compute_gaussian_kernel(1.0), expected)
+    np.testing.assert_array_equal(env.compute_gaussian_kernel(bandwidth=1.0), expected)
     env.clear_cache()
-    rebuilt = env.compute_gaussian_kernel(1.0)
+    rebuilt = env.compute_gaussian_kernel(bandwidth=1.0)
     assert len(calls) == 2
     assert not np.shares_memory(rebuilt, second)
     np.testing.assert_array_equal(rebuilt, expected)
@@ -141,7 +141,7 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
 @pytest.mark.parametrize("bandwidth", [0.0, -1.0, np.nan, np.inf])
 def test_gaussian_rejects_nonpositive_or_nonfinite_bandwidth(bandwidth):
     with pytest.raises(ValueError, match="finite and positive"):
-        _grid().compute_gaussian_kernel(bandwidth)
+        _grid().compute_gaussian_kernel(bandwidth=bandwidth)
 
 
 def test_mrf_exports_are_independent_without_repeating_the_eigensolve(monkeypatch):
@@ -187,13 +187,13 @@ def test_accuracy_query_reports_resolution_without_building_a_basis(monkeypatch)
         return build(*args, **kwargs)
 
     monkeypatch.setattr(diffusion, "_symmetric_eigenbasis", counted)
-    conservative = env.diffusion_accuracy(1.0)
+    conservative = env.diffusion_accuracy(bandwidth=1.0)
     assert calls == []
-    env.diffuse(np.ones(env.n_bins), 1.0)
+    env.diffuse(np.ones(env.n_bins), bandwidth=1.0)
     assert calls
     n_calls = len(calls)
-    assert env.diffusion_accuracy(1.0) < conservative
-    assert env.diffusion_accuracy(2.0) == conservative
+    assert env.diffusion_accuracy(bandwidth=1.0) < conservative
+    assert env.diffusion_accuracy(bandwidth=2.0) == conservative
     assert len(calls) == n_calls
 
 
@@ -203,17 +203,17 @@ def test_derived_and_unpickled_environments_restore_analysis_with_independently_
 ):
     env = _grid()
     geometry = env.get_diffusion_geometry()
-    gaussian = env.compute_gaussian_kernel(1.0)
+    gaussian = env.compute_gaussian_kernel(bandwidth=1.0)
     if method == "derived":
         restored = env.subset(mask=np.ones(env.n_bins, dtype=bool))
     else:
         restored = pickle.loads(pickle.dumps(env))
     new_geometry = restored.get_diffusion_geometry()
-    new_gaussian = restored.compute_gaussian_kernel(1.0)
+    new_gaussian = restored.compute_gaussian_kernel(bandwidth=1.0)
     assert not np.shares_memory(new_geometry.W.data, geometry.W.data)
     assert not np.shares_memory(new_gaussian, gaussian)
     assert np.shares_memory(env.get_diffusion_geometry().W.data, geometry.W.data)
-    assert np.shares_memory(env.compute_gaussian_kernel(1.0), gaussian)
+    assert np.shares_memory(env.compute_gaussian_kernel(bandwidth=1.0), gaussian)
     for actual, wanted in zip(
         _geometry_arrays(new_geometry), _geometry_arrays(geometry), strict=True
     ):
@@ -231,9 +231,11 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
         bin_center_tree=env.bin_center_tree,
         binning=env.binning,
     )
-    np.testing.assert_array_equal(diffusion_kernel(host, 1.0), env.compute_kernel(1.0))
     np.testing.assert_array_equal(
-        _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(1.0)
+        diffusion_kernel(host, 1.0), env.compute_kernel(bandwidth=1.0)
+    )
+    np.testing.assert_array_equal(
+        _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(bandwidth=1.0)
     )
     np.testing.assert_array_equal(
         _diffusion_generator(

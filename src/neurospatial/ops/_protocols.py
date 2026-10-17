@@ -116,8 +116,8 @@ class FieldPlotConsumer(Protocol):
         self,
         field: NDArray[np.float64],
         ax: Axes | None = ...,
-        cmap: str = ...,
         *,
+        cmap: str = ...,
         colorbar: bool = ...,
     ) -> Axes: ...
 
@@ -198,5 +198,5 @@ class ResampleTargetConsumer(
     """
 
     def diffuse(
-        self, fields: Any, bandwidth: float, *, mode: KernelMode = ...
+        self, fields: Any, *, bandwidth: float, mode: KernelMode = ...
     ) -> NDArray[np.float64]: ...

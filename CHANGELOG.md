@@ -425,6 +425,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   before-and-after values. A grid cell simulated with
   `GridCellModel(grid_orientation=θ)` is reported with orientation θ.
 
+- `Environment` method options are keyword-only, as factory options already
+  were. `bandwidth` is keyword-only in `smooth`, `diffuse`, `compute_kernel`,
+  `compute_gaussian_kernel` and `diffusion_accuracy`: write
+  `env.smooth(rate, bandwidth=5.0)`, not `env.smooth(rate, 5.0)`. In
+  `plot`, `plot_1d` and `plot_field`, everything after the field and `ax` is
+  keyword-only (`env.plot_field(rate, ax, cmap="magma")`), and `to_nwb` takes
+  `name=` by keyword, as `from_nwb` does. A positional call raises
+  `TypeError`. The migration page has before-and-after calls.
+
 - A nonzero `edge_spacing` on a track with one edge (for example
   `Environment.linear_track(endpoints=..., edge_spacing=5.0)`) raises
   `ValueError`. A gap goes between consecutive edges, so the value used to be

@@ -472,4 +472,4 @@ plt.show()
 - `env.get_differential_operator()` - Cached differential operator method
 - `env.get_divergence_operator()` - Cached divergence operator that `divergence` applies
 - `neurospatial.ops.distance_field(graph, sources)` - Multi-source geodesic distances
-- `env.smooth(field, bandwidth)` - Gaussian smoothing on graph
+- `env.smooth(field, bandwidth=...)` - Gaussian smoothing on graph

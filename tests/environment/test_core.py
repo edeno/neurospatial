@@ -1294,14 +1294,14 @@ class TestCacheManagement:
             return original(W, volumes, bandwidth, **kwargs)
 
         monkeypatch.setattr(_fields, "heat_kernel_from_W", counted)
-        first = cache_test_env.compute_kernel(1.0, mode="density")
-        cache_test_env.compute_kernel(2.0, mode="density")
+        first = cache_test_env.compute_kernel(bandwidth=1.0, mode="density")
+        cache_test_env.compute_kernel(bandwidth=2.0, mode="density")
         np.testing.assert_array_equal(
-            cache_test_env.compute_kernel(1.0, mode="density"), first
+            cache_test_env.compute_kernel(bandwidth=1.0, mode="density"), first
         )
-        cache_test_env.compute_kernel(3.0, mode="density")  # drops 2.0
-        cache_test_env.compute_kernel(1.0, mode="density")
-        cache_test_env.compute_kernel(2.0, mode="density")
+        cache_test_env.compute_kernel(bandwidth=3.0, mode="density")  # drops 2.0
+        cache_test_env.compute_kernel(bandwidth=1.0, mode="density")
+        cache_test_env.compute_kernel(bandwidth=2.0, mode="density")
 
         assert built == [1.0, 2.0, 3.0, 2.0]
 
@@ -1321,8 +1321,10 @@ class TestCacheManagement:
             "bins": cache_test_env.get_bin_attributes(),
             "edges": cache_test_env.get_edge_attributes(),
             "nearest": cache_test_env.nearest_bin(points),
-            "kernel": cache_test_env.compute_kernel(1.0),
-            "smoothed": cache_test_env.smooth(np.ones(cache_test_env.n_bins), 1.0),
+            "kernel": cache_test_env.compute_kernel(bandwidth=1.0),
+            "smoothed": cache_test_env.smooth(
+                np.ones(cache_test_env.n_bins), bandwidth=1.0
+            ),
         }
         assert len(cache_test_env._cache) > 0
 
@@ -1347,10 +1349,10 @@ class TestCacheManagement:
             cache_test_env.nearest_bin(points), before["nearest"]
         )
         np.testing.assert_array_equal(
-            cache_test_env.compute_kernel(1.0), before["kernel"]
+            cache_test_env.compute_kernel(bandwidth=1.0), before["kernel"]
         )
         np.testing.assert_allclose(
-            cache_test_env.smooth(np.ones(cache_test_env.n_bins), 1.0),
+            cache_test_env.smooth(np.ones(cache_test_env.n_bins), bandwidth=1.0),
             before["smoothed"],
             rtol=0,
             atol=1e-12,

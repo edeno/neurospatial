@@ -93,7 +93,7 @@ def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():
     )
     left = env.bin_centers[:, 0] < 2
     assert all(left[u] == left[v] for u, v in env.connectivity.edges)
-    kernel = env.compute_kernel(1.0)
+    kernel = env.compute_kernel(bandwidth=1.0)
     assert np.all(kernel[np.ix_(left, ~left)] == 0)
     child = env.subset(mask=env.bin_centers[:, 1] < 2)
     assert _arena_record(child.arena) == _arena_record(arena)

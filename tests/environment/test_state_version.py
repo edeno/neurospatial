@@ -40,8 +40,8 @@ class TestPublishedValueOwnership:
         expected = Environment.from_grid_mask(
             grid[0], grid_edges=grid[1], connect_diagonal_neighbors=False
         )
-        env.compute_kernel(1.0)
-        env.diffuse(np.ones(env.n_bins), 1.0)
+        env.compute_kernel(bandwidth=1.0)
+        env.diffuse(np.ones(env.n_bins), bandwidth=1.0)
         env.get_mrf_basis(np.ones(env.n_bins), rank=3)
         env.get_differential_operator()
         env.nearest_bin(env.bin_centers)
@@ -119,7 +119,7 @@ class TestPublishedGeometryIsReadOnly:
         env = Environment.from_grid_mask(
             np.ones(3, dtype=bool), grid_edges=(np.arange(4.0),)
         )
-        env.compute_kernel(1.0)
+        env.compute_kernel(bandwidth=1.0)
         if target == "node":
             attrs, key, value = env.connectivity.nodes[0], "pos", (99.0,)
         elif target == "edge":
