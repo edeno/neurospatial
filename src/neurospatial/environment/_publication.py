@@ -556,9 +556,14 @@ def publish_layout(
     regions: Regions | None = None,
     arena: Arena | None = None,
     coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
-    within_arena: bool = False,
 ) -> _EnvironmentT:
     """Consume a built layout once and publish only its owned data.
+
+    Only the bins whose centers lie in a known Cartesian ``arena`` (strictly
+    inside a polygonal one) are kept. They are selected on the layout's
+    binning, as ``subset`` selects them, before the single publication, so
+    the recorded layout and build choices do not depend on whether the arena
+    dropped a bin.
 
     Parameters
     ----------
@@ -574,12 +579,6 @@ def publish_layout(
         Continuous domain. Omission infers one from the binning.
     coordinates : CartesianSystem or EgocentricPolarSystem or None, optional
         Coordinate meaning; ``None`` means Cartesian.
-    within_arena : bool, default=False
-        Keep only the bins whose centers lie in a known Cartesian ``arena``
-        (strictly inside a polygonal one). The bins are selected on the
-        layout's binning, as ``subset`` selects them, before the single
-        publication, so the recorded layout and build choices do not depend
-        on whether the arena dropped a bin.
 
     Returns
     -------
@@ -589,7 +588,7 @@ def publish_layout(
     binning, resolved = _built_layout_data(layout)
     coordinates = CartesianSystem() if coordinates is None else coordinates
     polar = isinstance(coordinates, EgocentricPolarSystem)
-    if within_arena and arena is not None and arena.domain_known and not polar:
+    if arena is not None and arena.domain_known and not polar:
         centers = binning.bins.centers
         domain = arena.polygonal_domain()
         keep = (

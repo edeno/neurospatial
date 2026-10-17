@@ -949,7 +949,6 @@ def _build_layout(
         metadata=metadata,
         regions=regions,
         arena=arena,
-        within_arena=True,
     )
 
 
@@ -992,7 +991,6 @@ def _from_layout(
         metadata=_declared_metadata(name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
-        within_arena=True,
     )
 
 

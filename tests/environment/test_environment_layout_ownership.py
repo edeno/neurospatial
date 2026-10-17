@@ -323,7 +323,6 @@ def test_publication_leaves_the_built_layout_unchanged(kind, params):
         layout,
         metadata=_publication._Metadata("", None, None),
         arena=arena,
-        within_arena=True,
     )
     if arena is not None:
         assert env.n_bins < layout.binning().bins.n_bins
