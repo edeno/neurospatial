@@ -21,12 +21,6 @@ basis : GLM spatial basis functions
 """
 
 # Alignment operations
-# Visibility operations - imported lazily to avoid circular imports
-# These modules depend on Environment, which creates a circular import when
-# ops/__init__.py is imported during Environment initialization.
-# Use direct imports: from neurospatial.ops.visibility import FieldOfView
-import importlib as _importlib
-
 from neurospatial.ops._linear_allocation import (
     _linear_grid_occupancy as _linear_grid_occupancy,
 )
@@ -170,37 +164,17 @@ from neurospatial.ops.transforms import (
     translate_3d,
 )
 
-
-def __getattr__(name: str):
-    """Lazy import for visibility module to avoid circular imports."""
-    _visibility_exports = {
-        "FieldOfView",
-        "ViewshedResult",
-        "compute_view_field",
-        "compute_viewed_location",
-        "compute_viewshed",
-        "compute_viewshed_trajectory",
-        "visibility_occupancy",
-        "visible_cues",
-    }
-    if name in _visibility_exports:
-        _visibility = _importlib.import_module("neurospatial.ops.visibility")
-        return getattr(_visibility, name)
-    msg = f"module 'neurospatial.ops' has no attribute {name!r}"
-    raise AttributeError(msg)
-
-
-def __dir__() -> list[str]:
-    """List module attributes, including lazily-exported names, for autocomplete.
-
-    Merges the eagerly-imported module globals with everything in ``__all__``
-    (which includes the lazily-loaded visibility exports) so interactive tools
-    and ``dir()`` list the lazily loaded public names too. The globals also hold
-    submodules and the ``_`` helpers shared with other neurospatial packages,
-    which interactive tools hide.
-    """
-    return sorted(set(globals()) | set(__all__))
-
+# Visibility operations
+from neurospatial.ops.visibility import (
+    FieldOfView,
+    ViewshedResult,
+    compute_view_field,
+    compute_viewed_location,
+    compute_viewshed,
+    compute_viewshed_trajectory,
+    visibility_occupancy,
+    visible_cues,
+)
 
 # The ``_`` names imported here are internal helpers shared with other
 # neurospatial packages; they are not public API.
