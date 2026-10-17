@@ -42,6 +42,7 @@ from neurospatial.encoding._spatial_counts import (
     prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
+from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.ops._boundaries import _wall_hit_bins
 from neurospatial.ops.visibility import compute_viewed_location
 
@@ -121,6 +122,15 @@ def _precompute_view_bins(
     physical hits at starts of selected positive-duration intervals require
     retained bins. Final samples and excluded intervals supply no exposure.
     """
+    require_cartesian(
+        env.coordinate_system,
+        "Viewed-location binning (compute_view_rate, compute_view_rates, "
+        "spatial_view_cell_significance)",
+        why="It casts gaze from the animal's allocentric positions and headings "
+        "and bins the viewed Cartesian locations.",
+        fix="compute view rates on the allocentric environment the positions "
+        "were recorded in",
+    )
     n_samples = len(positions)
 
     max_distance = 100.0

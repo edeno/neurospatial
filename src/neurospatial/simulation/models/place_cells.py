@@ -7,6 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment import Environment
+from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.mapping import _typical_bin_spacing
 
@@ -258,6 +259,13 @@ class PlaceCellModel:
         # Precompute distance field for geodesic metric
         self._distance_field: NDArray[np.float64] | None
         if metric == "geodesic":
+            require_cartesian(
+                env.coordinate_system,
+                "PlaceCellModel(metric='geodesic')",
+                why="It locates the field center and the animal's allocentric "
+                "Cartesian positions in the environment's bins.",
+                fix="simulate on the allocentric environment the animal moves in",
+            )
             # Find bin containing the center
             # Always use contains check first to avoid errors
             # Note: contains() returns ndarray, so we need [0] for single point

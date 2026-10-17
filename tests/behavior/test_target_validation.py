@@ -174,8 +174,7 @@ def test_polar_hint_names_a_polar_lookup():
     )
     with pytest.raises(TypeError) as caught:
         distance_to_region(np.arange(3), polar, target_bins=1.5)
-    assert "env.nearest_bin(points)" in str(caught.value)
-    assert "bin_at" not in str(caught.value)
+    assert "(distance, angle) rows, use env.bin_at(points)" in str(caught.value)
 
 
 def test_shortest_path_length_is_the_geodesic_distance_between_points(env):

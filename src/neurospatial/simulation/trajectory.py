@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment import Environment
+from neurospatial.geometry._coordinates import require_cartesian
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,13 @@ def simulate_trajectory_ou(
     simulate_trajectory_laps : Structured back-and-forth movement
     simulate_trajectory_sinusoidal : Simple periodic motion (1D)
     """
+    require_cartesian(
+        env.coordinate_system,
+        "simulate_trajectory_ou()",
+        why="It moves the animal with a velocity in Cartesian coordinates and "
+        "keeps it inside the environment's cells.",
+        fix="simulate on the allocentric environment the animal moves in",
+    )
     # Validate environment units
     if env.units is None:
         msg = (

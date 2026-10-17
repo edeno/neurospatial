@@ -77,6 +77,7 @@ from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _safe_gather
+from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -1045,6 +1046,13 @@ def compute_decision_analysis(
     """
     from neurospatial._validation import validate_times_positions
 
+    require_cartesian(
+        env.coordinate_system,
+        "compute_decision_analysis()",
+        why="It reads positions as the animal's allocentric positions, with "
+        "speeds and regions in the same Cartesian coordinates.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
     times, positions = validate_times_positions(
         times, positions, call="compute_decision_analysis"
     )

@@ -89,6 +89,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
 
@@ -239,6 +240,15 @@ class ObjectVectorCellModel:
         specific_object_index: int | None = None,
         metric: Literal["euclidean", "geodesic"] = "euclidean",
     ) -> None:
+        require_cartesian(
+            env.coordinate_system,
+            "ObjectVectorCellModel()",
+            why=(
+                "It models firing from the distance and direction to objects, "
+                "from the animal's allocentric Cartesian position."
+            ),
+            fix="simulate on the allocentric environment the animal moves in",
+        )
         if direction_frame not in ("allocentric", "egocentric"):
             raise ValueError(
                 _format_error(

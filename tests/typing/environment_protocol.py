@@ -23,7 +23,9 @@ if TYPE_CHECKING:
         polar: Environment[EgocentricPolarSystem],
         field: NDArray[np.float64],
     ) -> None:
-        _ = polar.bin_at  # type: ignore[misc]
+        _ = polar.interpolate  # type: ignore[misc]
+        assert_type(polar.bin_at(field[:, None]), NDArray[np.intp])
+        assert_type(polar.contains(field[:, None]), NDArray[np.bool_])
         assert_type(cartesian.smooth(field, bandwidth=1.0), NDArray[np.float64])
         assert_type(polar.smooth(field, bandwidth=1.0), NDArray[np.float64])
         assert_type(cartesian.diffuse(field, bandwidth=1.0), NDArray[np.float64])
@@ -72,8 +74,13 @@ if TYPE_CHECKING:
         assert_type(cartesian, Environment[CartesianSystem])
         assert_type(polar, Environment[EgocentricPolarSystem])
         cartesian.bin_at(points)
-        polar.bin_at(points)  # type: ignore[misc]
-        Environment.bin_at(polar, points)  # type: ignore[arg-type]
+        polar.bin_at(points)
+        Environment.bin_at(polar, points)
+        polar.occupancy(points[:, 0], points)
+        polar.bin_sequence(points[:, 0], points)
+        field = points[:, 0]
+        polar.interpolate(field, points)  # type: ignore[misc]
+        Environment.interpolate(polar, field, points)  # type: ignore[arg-type]
         _ = polar.apply_transform  # type: ignore[misc]
         assert_type(
             polar.with_metadata(name="copy"), Environment[EgocentricPolarSystem]

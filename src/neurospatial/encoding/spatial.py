@@ -3072,6 +3072,7 @@ default="diffusion_kde"
         bin_spike_train,
         compute_occupancy,
         prepare_linear_spatial_intervals,
+        require_allocentric,
         resolve_speed,
     )
     from neurospatial.encoding._validation import (
@@ -3156,6 +3157,8 @@ default="diffusion_kde"
         if time_allocation == "linear"
         else None
     )
+    if linear_intervals is None:
+        require_allocentric(env, "compute_spatial_rate()")
 
     time_support = _resolve_spatial_time_support(
         env,
@@ -3664,6 +3667,7 @@ default="diffusion_kde"
         _warn_if_population_silent,
         bin_spike_trains,
         prepare_linear_spatial_intervals,
+        require_allocentric,
         resolve_speed,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
@@ -3788,6 +3792,8 @@ default="diffusion_kde"
         if time_allocation == "linear"
         else None
     )
+    if linear_intervals is None:
+        require_allocentric(env, "compute_spatial_rates()")
 
     time_support = _resolve_spatial_time_support(
         env,
@@ -4575,6 +4581,9 @@ def compute_directional_place_fields(
         resolve_time_windows,
         run_time_bounds,
     )
+    from neurospatial.encoding._spatial_counts import require_allocentric
+
+    require_allocentric(env, "compute_directional_place_fields()")
 
     if len(direction_labels) != len(times):
         raise ValueError(

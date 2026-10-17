@@ -84,6 +84,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.geometry._locators import CallIndexes
 from neurospatial.ops.visibility import (
     FieldOfView,
@@ -225,6 +226,15 @@ class SpatialViewCellModel:
         fov: FieldOfView | None = None,
         boundary_source: Literal["physical", "analysis"] = "physical",
     ) -> None:
+        require_cartesian(
+            env.coordinate_system,
+            "SpatialViewCellModel()",
+            why=(
+                "It models firing from the allocentric Cartesian location the "
+                "animal looks at."
+            ),
+            fix="simulate on the allocentric environment the animal moves in",
+        )
         # Convert and validate preferred_view_location
         preferred_view_location = np.asarray(preferred_view_location, dtype=np.float64)
         if preferred_view_location.shape != (2,):

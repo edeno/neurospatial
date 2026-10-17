@@ -99,6 +99,7 @@ def _occupancy(
     *,
     binning: Binning,
     arena: Arena,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
     dimension_ranges: Sequence[tuple[float, float]] | None,
     cache: AnalysisCache,
     speed: NDArray[np.float64] | None = None,
@@ -156,6 +157,15 @@ def _occupancy(
     polygon_allocation = False
     grid = None
     if time_allocation == "linear":
+        require_cartesian(
+            coordinates,
+            "Environment.occupancy(time_allocation='linear')",
+            why="It splits each interval along the straight Cartesian path "
+            "between two samples, which is not straight in (distance, angle).",
+            fix="give each interval to the bin its first sample is in, with "
+            "time_allocation='start'",
+            example="env.occupancy(times, positions, time_allocation='start')",
+        )
         polygon_allocation = uses_polygon_allocation(binning, arena)
         if not polygon_allocation:
             grid = require_rectilinear(
@@ -419,7 +429,6 @@ def _transitions(
     graph: nx.Graph,
     binning: Binning,
     arena: Arena,
-    coordinates: CartesianSystem | EgocentricPolarSystem,
     cache: AnalysisCache,
     times: NDArray[np.float64] | None = None,
     positions: NDArray[np.float64] | None = None,
@@ -491,7 +500,6 @@ def _transitions(
             binning=binning,
             arena=arena,
             cache=cache,
-            coordinates=coordinates,
             times=times,
             positions=positions,
             lag=lag,
@@ -509,7 +517,6 @@ def _empirical_transitions(
     binning: Binning,
     arena: Arena,
     cache: AnalysisCache,
-    coordinates: CartesianSystem | EgocentricPolarSystem,
     times: NDArray[np.float64] | None = None,
     positions: NDArray[np.float64] | None = None,
     lag: int = 1,
@@ -622,21 +629,6 @@ def _empirical_transitions(
             )
 
         # Compute bin sequence from trajectory
-        require_cartesian(
-            coordinates,
-            "Environment.transitions(times=..., positions=...)",
-            why="It assigns each Cartesian position sample to the cell that "
-            "contains it.",
-            fix="find each sample's bin, with -1 outside env.dimension_ranges, "
-            "and count the steps whose two samples are both inside",
-            example="low, high = np.asarray(env.dimension_ranges).T; "
-            "inside = ((positions >= low) & (positions <= high)).all(axis=1); "
-            "bins = np.where(inside, env.nearest_bin(positions), -1); "
-            "keep = (bins[:-1] >= 0) & (bins[1:] >= 0); "
-            "counts = np.zeros((env.n_bins, env.n_bins)); "
-            "np.add.at(counts, (bins[:-1][keep], bins[1:][keep]), 1); "
-            "counts",
-        )
         bins = _bin_sequence(
             times,
             positions,

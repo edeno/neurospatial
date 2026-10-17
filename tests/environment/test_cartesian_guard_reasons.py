@@ -94,13 +94,14 @@ def test_refusal_names_the_runtime_subclass():
         pass
 
     env = _polar(RecordingRoom)
+    field = np.ones(env.n_bins)
     with pytest.raises(CartesianOnlyError) as bound:
-        env.bin_at(np.zeros((1, 2)))
+        env.interpolate(field, np.zeros((1, 2)))
     with pytest.raises(CartesianOnlyError) as unbound:
-        Environment.bin_at(env, np.zeros((1, 2)))
+        Environment.interpolate(env, field, np.zeros((1, 2)))
     assert str(bound.value).startswith(
-        "RecordingRoom.bin_at() does not work on a polar environment."
+        "RecordingRoom.interpolate() does not work on a polar environment."
     )
     assert str(unbound.value) == str(bound.value)
-    assert bound.value.operation == "RecordingRoom.bin_at()"
-    assert hasattr(env, "bin_at")
+    assert bound.value.operation == "RecordingRoom.interpolate()"
+    assert hasattr(env, "interpolate")

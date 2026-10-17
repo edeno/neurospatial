@@ -51,9 +51,8 @@ def coordinate_hint(
     rows = "(distance, angle) rows" if polar else "coordinate rows"
     if takes_points:
         return f"pass {rows} with points= instead, one row per point"
-    lookup = "env.nearest_bin(points)" if polar else "env.bin_at(points)"
     return (
-        f"pass integer bin indices; to find the bins of {rows}, use {lookup}, "
+        f"pass integer bin indices; to find the bins of {rows}, use env.bin_at(points), "
         "or give the rows with points= to a query such as env.distance_to"
     )
 

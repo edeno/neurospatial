@@ -333,6 +333,33 @@ def resolve_speed(
     return speed_full
 
 
+def require_allocentric(env: Environment, operation: str) -> None:
+    """Refuse a polar environment for rates estimated from the animal's positions.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the rates are binned in.
+    operation : str
+        The refused call, e.g. ``"compute_spatial_rate()"``.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    """
+    require_cartesian(
+        env.coordinate_system,
+        operation,
+        why="It reads positions as the animal's allocentric positions: spike "
+        "positions are interpolated between samples along each axis, which "
+        "does not follow an angle across its seam.",
+        fix="estimate rates on the allocentric environment the positions were "
+        "recorded in; for egocentric (distance, angle) maps use "
+        "neurospatial.encoding.compute_egocentric_rate",
+    )
+
+
 def _bin_spike_train_with_stats(
     env: Environment,
     spike_times: NDArray[np.float64],

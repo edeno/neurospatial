@@ -54,7 +54,10 @@ def test_common_class_restoration_keeps_polar_units_and_kernels(restore):
     assert result.units == "cm"
     assert result._coordinate_system == env._coordinate_system
     with pytest.raises(CartesianOnlyError):
-        result.bin_at(result.bin_centers)
+        result.interpolate(np.ones(result.n_bins), result.bin_centers)
+    np.testing.assert_array_equal(
+        result.bin_at(result.bin_centers), np.arange(env.n_bins)
+    )
     np.testing.assert_array_equal(result.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(
         result.compute_kernel(bandwidth=0.8), env.compute_kernel(bandwidth=0.8)

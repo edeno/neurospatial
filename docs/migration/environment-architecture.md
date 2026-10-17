@@ -977,11 +977,11 @@ interval is longer than `max_gap`. Timestamps in milliseconds trigger it: each
 ## Cartesian-only methods on polar environments
 
 An egocentric polar environment stores `(distance, angle)` bins around the
-animal. Methods that read positions as Cartesian `(x, y)`, such as `bin_at`,
-`contains`, `occupancy` and `subset`, still refuse it, but the refusal now
-happens when you call the method, not when you look it up:
+animal. Methods that read positions as Cartesian `(x, y)`, such as `subset`,
+`rebin`, `interpolate` and `apply_transform`, still refuse it, but the refusal
+now happens when you call the method, not when you look it up:
 
-- `hasattr(polar_env, "bin_at")` is `True` and `dir(polar_env)` lists the
+- `hasattr(polar_env, "subset")` is `True` and `dir(polar_env)` lists the
   method. Calling it raises `CartesianOnlyError`.
 - `CartesianOnlyError` is a `TypeError`, and it is importable as
   `neurospatial.CartesianOnlyError`. It is no longer an `AttributeError` or a
@@ -992,14 +992,26 @@ happens when you call the method, not when you look it up:
   `Environment.combine`.
 - The message says what was refused, why it needs Cartesian positions, and what
   to use on a polar environment. When a polar environment has an equivalent,
-  the message ends with the code, also in `error.example`. The suggested
-  lookups give `-1` for rows outside `env.dimension_ranges`;
-  `env.nearest_bin` alone would put them in the nearest edge bin.
+  the message ends with the code, also in `error.example`.
+
+## Polar environments look up `(distance, angle)` rows
+
+`bin_at`, `contains`, `occupancy`, `bin_sequence`, `bin_sequence_with_runs`
+and `transitions(times=..., positions=...)` work on an egocentric polar
+environment. Each row is `(distance, angle)`, the angle in radians, and a row
+gets the bin that contains it, or `-1` (`False`) outside the distance and angle
+ranges. The `points=` queries (`distance_to`, `neighbors`, ...) and point
+regions use the same lookup. An angle is a direction, so an angle a whole turn
+outside the angle range (for example `3.5` on `(-π, π)`) finds the same bin as
+the angle inside it, and `π` on a full circle is the bin at `-π`; before, such
+rows were outside. `occupancy(time_allocation="linear")` still refuses a polar
+environment, because a straight path between two samples is not straight in
+`(distance, angle)`.
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial import CartesianOnlyError, Environment
+from neurospatial import Environment
 
 polar_env = Environment.from_polar_egocentric(
     distance_range=(0.0, 40.0),  # cm from the animal
@@ -1008,21 +1020,23 @@ polar_env = Environment.from_polar_egocentric(
     angle_bin_size=np.pi / 4,
     units="cm",
 )
-points = np.array([[15.0, 0.3], [55.0, 0.0]])  # (distance, angle); 2nd is beyond 40 cm
-# Before: if hasattr(polar_env, "bin_at"): ...
-# Before: except (AttributeError, NotImplementedError):
-try:
-    bins = polar_env.bin_at(points)
-except CartesianOnlyError as error:
-    print(error)  # what, why, and the code to use on a polar environment
-    print(error.example)
-# To branch before calling, read the coordinate kind instead of hasattr
-if polar_env.coordinate_kind == "polar":
-    low, high = np.asarray(polar_env.dimension_ranges).T
-    inside = ((points >= low) & (points <= high)).all(axis=1)
-    bins = np.where(inside, polar_env.nearest_bin(points), -1)
-assert bins[1] == -1  # outside the surround, not the nearest edge bin
+points = np.array([[15.0, 0.3], [15.0, 0.3 + 2 * np.pi], [55.0, 0.0]])
+# Before: polar_env.bin_at(points) raised CartesianOnlyError, and the suggested
+# workaround compared the rows with dimension_ranges and used nearest_bin
+bins = polar_env.bin_at(points)
+assert bins[0] == bins[1] >= 0  # one direction, one bin
+assert bins[2] == -1  # beyond the 40 cm surround
 ```
+
+The analysis functions that read positions as the animal's allocentric
+positions keep refusing a polar environment, now with their own name in the
+message: `compute_spatial_rate`, `compute_spatial_rates`,
+`compute_directional_place_fields`, the view-rate functions,
+`compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
+`compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
+`simulate_trajectory_ou`, and the boundary, object-vector, spatial-view and
+geodesic place-cell models. For egocentric rate maps use
+`neurospatial.encoding.compute_egocentric_rate`.
 
 A polar environment now answers `component_keys`, `bin_sources` and
 `get_bridge_attributes()` like any environment that was not combined: an empty

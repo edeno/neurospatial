@@ -177,10 +177,11 @@ class TestFloatHintFollowsGeometry:
         polar = _LAYOUTS["polar"]()
         with pytest.raises(TypeError) as caught:
             polar.bin_center_of(1.5)
-        assert "env.nearest_bin(points)" in str(caught.value)
-        assert "bin_at" not in str(caught.value)
-        index = int(polar.nearest_bin(polar.bin_centers[[3]] + 0.01)[0])
-        assert index == 3  # the suggested lookup finds the bin
+        assert "(distance, angle) rows, use env.bin_at(points)" in str(caught.value)
+        # The suggested lookup finds the bin containing each row, including
+        # an angle given a whole turn outside the angle range.
+        points = polar.bin_centers[[3, 3]] + [[0.01, 0.01], [0.01, 0.01 + 2 * np.pi]]
+        np.testing.assert_array_equal(polar.bin_at(points), [3, 3])
 
     def test_cartesian_bin_center_of_points_to_bin_at(self, grid):
         with pytest.raises(TypeError, match=r"env\.bin_at\(points\)"):
@@ -190,12 +191,16 @@ class TestFloatHintFollowsGeometry:
 class TestOutOfRangeHintFollowsGeometry:
     """An out-of-range bin index names a lookup that works on the geometry."""
 
-    def test_polar_out_of_range_names_nearest_bin(self):
+    def test_polar_out_of_range_names_a_distance_angle_lookup(self):
         polar = _LAYOUTS["polar"]()
         with pytest.raises(BinIndexOutOfRangeError) as caught:
             polar.distance_to(bins=polar.n_bins)
-        assert "env.nearest_bin([[distance, angle]])" in str(caught.value)
-        assert "bin_at" not in str(caught.value)
+        suggestion = "int(env.bin_at([[distance, angle]])[0])"
+        assert suggestion in str(caught.value)
+        distance, angle = polar.bin_centers[5]
+        assert (
+            eval(suggestion, {"env": polar, "distance": distance, "angle": angle}) == 5
+        )
 
     def test_cartesian_out_of_range_names_bin_at(self, grid):
         with pytest.raises(BinIndexOutOfRangeError, match=r"env\.bin_at\(\[point\]\)"):

@@ -2,7 +2,9 @@
 
 Polar bin centers are ``(distance, angle)``. Averaging, differencing or
 clustering them as ``(x, y)`` returns plausible but wrong numbers, so these
-functions raise :class:`CartesianOnlyError` instead. Graph-based modes of the
+functions raise :class:`CartesianOnlyError` instead. So do the functions that
+read positions as the animal's allocentric positions, although
+``env.bin_at`` itself locates ``(distance, angle)`` rows. Graph-based modes of the
 same functions use physical edge distances and keep working.
 """
 
@@ -15,16 +17,25 @@ from shapely.geometry import box
 from neurospatial import Environment, compute_spatial_rate
 from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.behavior import (
+    Trial,
+    compute_decision_analysis,
+    compute_step_lengths,
+    compute_vte_session,
     detect_laps,
     detect_runs_between_regions,
     distance_to_region,
     graph_turn_sequence,
+    mean_square_displacement,
     path_progress,
     trajectory_similarity,
 )
+from neurospatial.decoding import decoding_error
 from neurospatial.encoding import (
     border_score,
+    compute_directional_place_fields,
     compute_field_emd,
+    compute_spatial_rates,
+    compute_view_rate,
     field_shape_metrics,
     field_shift_distance,
     rate_map_centroid,
@@ -39,6 +50,13 @@ from neurospatial.ops import (
     spatial_basis,
 )
 from neurospatial.regions import Regions
+from neurospatial.simulation import (
+    BoundaryCellModel,
+    ObjectVectorCellModel,
+    PlaceCellModel,
+    SpatialViewCellModel,
+    simulate_trajectory_ou,
+)
 
 
 @pytest.fixture(scope="module")
@@ -56,6 +74,11 @@ def _room() -> Environment:
     """Allocentric 2-D environment paired with the polar one."""
     x, y = np.meshgrid(np.arange(0.0, 20.0, 2.0), np.arange(0.0, 20.0, 2.0))
     return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=4.0)
+
+
+# Six (distance, angle) samples inside the 30 cm polar surround.
+_TIMES = np.arange(0.0, 3.0, 0.5)
+_POLAR_POSITIONS = np.column_stack((np.full(6, 10.0), np.linspace(-1.0, 1.0, 6)))
 
 
 def _rates(env: Environment) -> np.ndarray:
@@ -202,6 +225,101 @@ def _polar_regions_env(env: Environment) -> Environment:
                 time_allocation="linear",
             ),
             "time_allocation='linear'",
+        ),
+        (
+            lambda env: compute_spatial_rate(
+                env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS
+            ),
+            "compute_spatial_rate()",
+        ),
+        (
+            lambda env: compute_spatial_rates(
+                env, [np.array([0.5, 1.5])], _TIMES, _POLAR_POSITIONS
+            ),
+            "compute_spatial_rates()",
+        ),
+        (
+            lambda env: compute_directional_place_fields(
+                env,
+                np.array([0.5, 1.5]),
+                _TIMES,
+                _POLAR_POSITIONS,
+                np.array(["out"] * _TIMES.size, dtype=object),
+            ),
+            "compute_directional_place_fields()",
+        ),
+        (
+            lambda env: compute_view_rate(
+                env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS, np.zeros(6)
+            ),
+            "Viewed-location binning (compute_view_rate, compute_view_rates, "
+            "spatial_view_cell_significance)",
+        ),
+        (
+            lambda env: compute_decision_analysis(
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                decision_region="near",
+                goal_regions=["far"],
+            ),
+            "compute_decision_analysis()",
+        ),
+        (
+            lambda env: compute_vte_session(
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                decision_region="near",
+                trials=[Trial(0.0, 2.5, "near", "far", True)],
+            ),
+            "compute_vte_session()",
+        ),
+        (
+            lambda env: compute_step_lengths(
+                _POLAR_POSITIONS, metric="geodesic", env=env
+            ),
+            "compute_step_lengths(metric='geodesic')",
+        ),
+        (
+            lambda env: mean_square_displacement(
+                _TIMES, _POLAR_POSITIONS, metric="geodesic", env=env
+            ),
+            "mean_square_displacement(metric='geodesic')",
+        ),
+        (
+            lambda env: decoding_error(
+                _POLAR_POSITIONS, _POLAR_POSITIONS, env=env, metric="geodesic"
+            ),
+            "decoding_error(metric='geodesic')",
+        ),
+        (
+            lambda env: simulate_trajectory_ou(
+                env.with_metadata(units="cm"), 1.0, speed_units="cm", seed=0
+            ),
+            "simulate_trajectory_ou()",
+        ),
+        (lambda env: BoundaryCellModel(env), "BoundaryCellModel()"),
+        (
+            lambda env: ObjectVectorCellModel(
+                env,
+                object_positions=np.array([[10.0, 0.0]]),
+                preferred_distance=5.0,
+                distance_width=2.0,
+            ),
+            "ObjectVectorCellModel()",
+        ),
+        (
+            lambda env: SpatialViewCellModel(
+                env, preferred_view_location=np.array([10.0, 0.0])
+            ),
+            "SpatialViewCellModel()",
+        ),
+        (
+            lambda env: PlaceCellModel(
+                env, center=np.array([10.0, 0.0]), width=5.0, metric="geodesic"
+            ),
+            "PlaceCellModel(metric='geodesic')",
         ),
     ],
 )

@@ -14,6 +14,7 @@ from neurospatial.environment._fields import face_geometry
 from neurospatial.environment.core import (
     CARTESIAN_OPERATIONS,
 )
+from neurospatial.ops.transforms import AffineND
 
 
 class TestFromPolarEgocentricBasic:
@@ -763,10 +764,12 @@ class TestPolarCoordinateKindFlag:
 class TestPolarRaisesOnCartesianAssumingMethods:
     """Methods that interpret inputs as (x, y) must reject polar envs.
 
-    bin_at and distance_to(metric='euclidean') compute Euclidean operations
-    on bin_centers; running them against a polar env's (distance, angle) bin
-    centers produces silently wrong numbers. They should fail at the boundary
-    instead.
+    interpolate and distance_to(metric='euclidean') compute Cartesian
+    operations on bin_centers; running them against a polar env's (distance,
+    angle) bin centers produces silently wrong numbers. They should fail at
+    the boundary instead. Containment (bin_at, contains, occupancy, the bin
+    sequences) reads (distance, angle) rows and is tested in
+    test_polar_lookup.py.
 
     Methods that operate purely on the connectivity graph (path_between,
     reachable_from, neighbors, distance_between, distance_to(metric='geodesic'))
@@ -781,11 +784,6 @@ class TestPolarRaisesOnCartesianAssumingMethods:
             distance_bin_size=10.0,
             angle_bin_size=np.pi / 2,
         )
-
-    def test_bin_at_raises_on_polar_env(self, polar_env):
-        from_xy = np.array([[5.0, 5.0]])
-        with pytest.raises(CartesianOnlyError, match=r"polar.*bin_at|bin_at.*polar"):
-            polar_env.bin_at(from_xy)
 
     def test_distance_between_follows_the_polar_graph(self, polar_env):
         """Bins or (distance, angle) points give the graph path length."""
@@ -831,31 +829,6 @@ class TestPolarRaisesOnCartesianAssumingMethods:
             CartesianOnlyError, match=r"polar.*interpolate|interpolate.*polar"
         ):
             polar_env.interpolate(field, points, mode="nearest")
-
-    def test_occupancy_raises_on_polar_env(self, polar_env):
-        times = np.array([0.0, 1.0, 2.0])
-        positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
-        with pytest.raises(
-            CartesianOnlyError, match=r"polar.*occupancy|occupancy.*polar"
-        ):
-            polar_env.occupancy(times, positions)
-
-    def test_bin_sequence_raises_on_polar_env(self, polar_env):
-        times = np.array([0.0, 1.0, 2.0])
-        positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
-        with pytest.raises(
-            CartesianOnlyError, match=r"polar.*bin_sequence|bin_sequence.*polar"
-        ):
-            polar_env.bin_sequence(times, positions)
-
-    def test_bin_sequence_with_runs_raises_on_polar_env(self, polar_env):
-        times = np.array([0.0, 1.0, 2.0])
-        positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
-        with pytest.raises(
-            CartesianOnlyError,
-            match=r"polar.*bin_sequence_with_runs|bin_sequence_with_runs.*polar",
-        ):
-            polar_env.bin_sequence_with_runs(times, positions)
 
     def test_to_linear_raises_on_polar_env(self, polar_env):
         with pytest.raises(
@@ -912,9 +885,9 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         )
         assert type(restored) is type(polar_env)
         np.testing.assert_array_equal(restored.bin_centers, polar_env.bin_centers)
-        assert hasattr(restored, "bin_at")
+        assert hasattr(restored, "interpolate")
         with pytest.raises(CartesianOnlyError):
-            restored.bin_at(np.array([[5.0, 0.0]]))
+            restored.interpolate(np.ones(restored.n_bins), np.array([[5.0, 0.0]]))
 
     def test_unknown_attribute_preserves_standard_attribute_error(self, polar_env):
         with pytest.raises(AttributeError) as caught:
@@ -927,11 +900,12 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         "call, operation",
         [
             (
-                lambda env: env.transitions(
-                    times=np.array([0.0, 0.1]),
-                    positions=np.array([[5.0, 0.0], [5.0, 0.0]]),
+                lambda env: env.occupancy(
+                    np.array([0.0, 0.1]),
+                    np.array([[5.0, 0.0], [5.0, 0.0]]),
+                    time_allocation="linear",
                 ),
-                "Environment.transitions(times=..., positions=...)",
+                "Environment.occupancy(time_allocation='linear')",
             ),
             (
                 lambda env: env.distance_to(bins=[0], metric="euclidean"),
@@ -1047,13 +1021,6 @@ class TestPolarBoundaryGuardsExtended:
             distance_bin_size=10.0,
             angle_bin_size=np.pi / 2,
         )
-
-    def test_contains_raises_on_polar_env(self, polar_env):
-        """contains is the boolean partner of bin_at and is unavailable on polar."""
-        with pytest.raises(
-            CartesianOnlyError, match=r"polar.*contains|contains.*polar"
-        ):
-            polar_env.contains(np.array([[5.0, 5.0]]))
 
     def test_plot_field_relabels_polar_axes(self, polar_env):
         """plot_field on a polar env labels axes Distance / Angle (rad), not X/Y."""
@@ -1243,9 +1210,9 @@ class TestPolarTypeAndGeometry:
 
         # Cartesian-only methods are absent/clearly errored, not silently disabled.
         with pytest.raises(CartesianOnlyError):
-            polar_env.bin_at(np.array([[1.0, 1.0]]))
+            polar_env.interpolate(np.ones(polar_env.n_bins), np.array([[1.0, 1.0]]))
         with pytest.raises(CartesianOnlyError):
-            polar_env.contains(np.array([[1.0, 1.0]]))
+            polar_env.apply_transform(AffineND(np.eye(3)))
         with pytest.raises(CartesianOnlyError):
             polar_env.distance_to(bins=[0], metric="euclidean")
 
@@ -1293,6 +1260,15 @@ class TestPolarTypeAndGeometry:
 _POLAR_INHERITED_MEMBERS = {
     "nearest-bin lookup in stored radius/angle columns": {
         "nearest_bin",
+    },
+    "containment of (distance, angle) rows, angles wrapped to the range": {
+        "bin_at",
+        "bin_sequence",
+        "bin_sequence_with_runs",
+        "contains",
+        "occupancy",
+    },
+    "KD-tree over the stored (distance, angle) bin centers": {
         "bin_center_tree",
     },
     "combined-component records, empty on a native polar environment": {
@@ -1486,14 +1462,9 @@ def test_cartesian_operations_are_the_capability_methods():
     """The @cartesian_only decorators mark exactly these members and grid needs."""
     assert {
         "apply_transform",
-        "bin_at",
-        "bin_sequence",
-        "bin_sequence_with_runs",
         "clip",
-        "contains",
         "interpolate",
         "linear_to_nd",
-        "occupancy",
         "rebin",
         "subset",
         "to_linear",

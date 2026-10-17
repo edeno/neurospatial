@@ -205,28 +205,15 @@ def _read_only(cls: type, name: str) -> AttributeError:
     )
 
 
-def _polar_bins_example(rows: str) -> str:
-    """Code giving the bin of each polar row, with -1 for rows outside the ranges."""
-    return (
-        "low, high = np.asarray(env.dimension_ranges).T; "
-        f"inside = (({rows} >= low) & ({rows} <= high)).all(axis=1); "
-        f"np.where(inside, env.nearest_bin({rows}), -1)"
-    )
-
-
-_KEEP_INSIDE = (
-    "keep containment: rows outside env.dimension_ranges get -1, and "
-    "env.nearest_bin finds the bin of each row inside"
-)
-
-
 class Environment(Generic[_C]):
     """A discretized environment with owned coordinate meaning and connectivity.
 
     ``Environment`` is the central user-facing spatial type. Each instance
     declares whether ``bin_centers`` hold Cartesian ``(x, y[, z])`` positions
-    or egocentric ``(distance, angle)`` coordinates. Methods such as ``bin_at``,
-    ``contains`` and ``apply_transform`` require Cartesian positions. The
+    or egocentric ``(distance, angle)`` coordinates. Methods such as
+    ``apply_transform``, ``rebin`` and ``interpolate`` require Cartesian
+    positions; ``bin_at``, ``contains``, ``occupancy`` and the bin-sequence
+    methods read ``(distance, angle)`` rows on a polar environment. The
     shared ``distance_to`` method guards its Euclidean mode.
 
     Instances are created via factory classmethods on ``Environment``
@@ -1235,14 +1222,7 @@ class Environment(Generic[_C]):
         """
         return _get_bridge_attributes(self._binning)
 
-    @cartesian_only(
-        why="Containment finds the cell around each Cartesian position.",
-        fix=_KEEP_INSIDE,
-        example=_polar_bins_example("positions"),
-    )
-    def bin_at(
-        self: Environment[CartesianSystem], positions: NDArray[np.float64]
-    ) -> NDArray[np.intp]:
+    def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-dimensional points to bins using geometric containment.
 
         This method uses the layout-specific geometric logic to determine which
@@ -1256,7 +1236,10 @@ class Environment(Generic[_C]):
         ----------
         positions : NDArray[np.float64], shape (n_points, n_dims)
             Points to map, such as the animal's positions, in the
-            environment's coordinates.
+            environment's coordinates. On an egocentric polar environment
+            each row is ``(distance, angle)``, the angle in radians; an angle
+            a whole number of turns outside the angle range names the same
+            direction and finds the same bin.
 
         Returns
         -------
@@ -1271,6 +1254,9 @@ class Environment(Generic[_C]):
         ValueError
             If ``positions`` has a different dimensionality than the
             environment (e.g. 3-D points for a 2-D environment).
+        NotImplementedError
+            On a track built without ``track_width``: its centerline does not
+            say how far from the track a position is still on it.
 
         See Also
         --------
@@ -1399,23 +1385,15 @@ class Environment(Generic[_C]):
         """
         return center_tree(self._cache, self._binning)
 
-    @cartesian_only(
-        why="It tests Cartesian positions against the arena boundary.",
-        fix="compare the distance and angle columns of the positions with "
-        "env.dimension_ranges",
-        example="low, high = np.asarray(env.dimension_ranges).T; "
-        "((positions >= low) & (positions <= high)).all(axis=1)",
-    )
-    def contains(
-        self: Environment[CartesianSystem], positions: NDArray[np.float64]
-    ) -> NDArray[np.bool_]:
+    def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Check if N-dimensional continuous points fall within any active bin.
 
         Parameters
         ----------
         positions : NDArray[np.float64], shape (n_points, n_dims)
             Points to check, such as the animal's positions, in the
-            environment's coordinates.
+            environment's coordinates: ``(distance, angle)`` rows on an
+            egocentric polar environment, as for :meth:`bin_at`.
 
         Returns
         -------
@@ -1681,19 +1659,8 @@ class Environment(Generic[_C]):
             raise TypeError(msg)
         return linearization.linear_to_nd(linear_position)
 
-    @cartesian_only(
-        why="It assigns each Cartesian position sample to the cell that contains it.",
-        fix="compute egocentric occupancy from the allocentric recording: pass "
-        "the allocentric environment (room), the animal's positions and headings "
-        "and the object positions to neurospatial.encoding.compute_egocentric_rate. "
-        "Its distance_range, n_distance_bins and n_direction_bins set its own "
-        "polar bins, and result.occupancy is in seconds per bin",
-        example="neurospatial.encoding.compute_egocentric_rate(room, spike_times, "
-        "times, positions, headings, object_positions, distance_range=(0.0, 40.0), "
-        "n_distance_bins=4, n_direction_bins=8).occupancy",
-    )
     def occupancy(
-        self: Environment[CartesianSystem],
+        self,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -1715,7 +1682,10 @@ class Environment(Generic[_C]):
         times : NDArray[np.float64], shape (n_samples,)
             Timestamps in seconds. Must be monotonically increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions. An interval
+            Position coordinates matching environment dimensions, located as
+            :meth:`bin_at` does: on an egocentric polar environment, each
+            sample's ``(distance, angle)`` of the object or place the bins
+            describe, relative to the animal. An interval
             that starts at a sample outside the environment, or at a sample
             with a NaN coordinate (missing; see Missing data in the class
             Notes), adds no occupancy. With ``time_allocation='linear'`` an
@@ -1749,7 +1719,9 @@ class Environment(Generic[_C]):
 
             - 'start': Assign entire Δt to starting bin (fast, works on all layouts).
             - 'linear': Split Δt proportionally across bins traversed by
-              straight-line path (grid layouts with rectangular cells).
+              straight-line path (grid layouts with rectangular cells; not
+              polar environments, where a straight path is not straight in
+              ``(distance, angle)``).
         return_seconds : bool, default=True
             If True, return time in seconds (time-weighted occupancy).
             If False, return sample counts (unweighted, counts number of
@@ -1778,7 +1750,10 @@ class Environment(Generic[_C]):
             If ``times`` contains non-finite values (NaN or Inf). The error
             names ``times`` and the first offending index.
         NotImplementedError
-            If linear allocation lacks exact supported cell geometry.
+            If linear allocation lacks exact supported cell geometry, or the
+            environment is a track built without ``track_width``.
+        CartesianOnlyError
+            If ``time_allocation='linear'`` on a polar environment.
 
         See Also
         --------
@@ -1856,6 +1831,7 @@ class Environment(Generic[_C]):
             positions,
             binning=self._binning,
             arena=self._arena,
+            coordinates=self._coordinate_system,
             dimension_ranges=self.dimension_ranges,
             cache=self._cache,
             speed=speed,
@@ -1867,13 +1843,8 @@ class Environment(Generic[_C]):
             return_seconds=return_seconds,
         )
 
-    @cartesian_only(
-        why="It assigns each Cartesian position sample to the cell that contains it.",
-        fix=_KEEP_INSIDE,
-        example=_polar_bins_example("positions"),
-    )
     def bin_sequence(
-        self: Environment[CartesianSystem],
+        self,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -1894,7 +1865,9 @@ class Environment(Generic[_C]):
         times : NDArray[np.float64], shape (n_samples,)
             Timestamps in seconds. Should be monotonically increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
-            Position coordinates matching environment dimensions.
+            Position coordinates matching environment dimensions, located as
+            :meth:`bin_at` does: ``(distance, angle)`` rows on an egocentric
+            polar environment.
         dedup : bool, default=True
             If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
             If False, return a bin index for every retained sample.
@@ -1970,13 +1943,8 @@ class Environment(Generic[_C]):
         )
         return result.bins
 
-    @cartesian_only(
-        why="It assigns each Cartesian position sample to the cell that contains it.",
-        fix=_KEEP_INSIDE,
-        example=_polar_bins_example("positions"),
-    )
     def bin_sequence_with_runs(
-        self: Environment[CartesianSystem],
+        self,
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
@@ -2058,11 +2026,12 @@ class Environment(Generic[_C]):
         )
 
     @cartesian_only(
-        why="It evaluates the field at Cartesian query positions.",
-        fix=_KEEP_INSIDE + ", and a row with bin -1 gets NaN, not field[-1]",
-        example="low, high = np.asarray(env.dimension_ranges).T; "
-        "inside = ((positions >= low) & (positions <= high)).all(axis=1); "
-        "bins = np.where(inside, env.nearest_bin(positions), -1); "
+        why="Its nearest mode reads the nearest bin center and its linear mode "
+        "interpolates along Cartesian grid axes; neither is the cell that "
+        "contains a (distance, angle) row.",
+        fix="read the field in the bin that contains each row with env.bin_at; "
+        "a row with bin -1 is outside and gets NaN, not field[-1]",
+        example="bins = env.bin_at(positions); "
         "np.where(bins >= 0, field[bins], np.nan)",
     )
     def interpolate(
@@ -6571,7 +6540,6 @@ class Environment(Generic[_C]):
             graph=self.connectivity,
             binning=self._binning,
             arena=self._arena,
-            coordinates=self._coordinate_system,
             cache=self._cache,
             times=times,
             positions=positions,

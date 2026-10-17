@@ -181,9 +181,9 @@ class BinIndexOutOfRangeError(ValueError, NeurospatialError):
     n_bins : int
         Number of active bins.
     coordinate_kind : {"cartesian", "polar"}, default="cartesian"
-        The environment's coordinates, so the fix names a lookup that works
-        there: ``bin_at`` for Cartesian bins, ``nearest_bin`` with
-        (distance, angle) rows for egocentric polar bins.
+        The environment's coordinates, so the fix shows the rows ``bin_at``
+        takes there: a point for Cartesian bins, ``(distance, angle)`` for
+        egocentric polar bins.
     """
 
     def __init__(
@@ -198,7 +198,7 @@ class BinIndexOutOfRangeError(ValueError, NeurospatialError):
             f"{n_bins} bin(s); valid indices are [0, {n_bins})."
         )
         lookup = (
-            "int(env.nearest_bin([[distance, angle]])[0])"
+            "int(env.bin_at([[distance, angle]])[0])"
             if coordinate_kind == "polar"
             else "int(env.bin_at([point])[0])"
         )

@@ -250,9 +250,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
   `bins=` takes an int or an integer array. Floats and booleans raise
   `TypeError` and point to `points=`; `env.bin_center_of` refuses them too and
-  points to `env.bin_at` (`env.nearest_bin` on polar environments, where
-  `bin_at` is not available). `BinIndexOutOfRangeError` names the same
-  polar lookup on polar environments. `bin_center_of` also refuses a 2-D
+  points to `env.bin_at`, with `(distance, angle)` rows on polar environments.
+  `BinIndexOutOfRangeError` names the same lookup. `bin_center_of` also refuses a 2-D
   array of indices, for which it used to return an array of shape
   `(a, b, n_dims)`; pass a 1-D array. `points=` has shape `(n_points, n_dims)`, one row per
   point, in the same coordinates as `bin_centers` (distance and angle on a
@@ -296,9 +295,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   to build a mask from bin indices.
 
 - Cartesian-only methods stay visible on egocentric polar environments and
-  refuse when called. `hasattr(polar_env, "bin_at")` is now `True` and
-  `dir(polar_env)` lists `bin_at`, `contains`, `occupancy`, `subset` and the
-  other Cartesian-only methods; calling one raises `CartesianOnlyError`.
+  refuse when called. `hasattr(polar_env, "subset")` is now `True` and
+  `dir(polar_env)` lists `subset`, `rebin`, `interpolate` and the other
+  Cartesian-only methods; calling one raises `CartesianOnlyError`.
   `CartesianOnlyError` is now a `TypeError` (the operation does not apply to
   this kind of environment) and no longer an `AttributeError` or
   `NotImplementedError`; import it as `neurospatial.CartesianOnlyError`.
@@ -308,16 +307,35 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   error with one message layout: what was refused, why it needs Cartesian
   positions, and what works on a polar environment. That includes the
   Cartesian modes of shared methods (`distance_to(metric="euclidean")`,
-  `transitions(times=..., positions=...)`), analysis functions such as
+  `occupancy(time_allocation="linear")`), analysis functions such as
   `spatial_autocorrelation` and `field_shape_metrics`,
   `compute_egocentric_distance(metric="geodesic")` (it reported
   `Environment.bin_at()`), and `Environment.combine` (it raised a plain
   `TypeError`). A function that takes two environments names the polar one,
   for example `resample_field(dst_env=...)`. Where a polar environment has an
   equivalent, the message ends with the code to run instead, also available as
-  `error.example`. The lookups it suggests keep containment: rows outside
-  `env.dimension_ranges` get bin `-1` (or NaN from `interpolate`), never the
-  nearest edge bin.
+  `error.example`. The suggested code keeps containment: rows outside the
+  environment get bin `-1` (or NaN from `interpolate`), never the nearest
+  edge bin.
+
+- `bin_at`, `contains`, `occupancy`, `bin_sequence`, `bin_sequence_with_runs`
+  and `transitions(times=..., positions=...)` work on egocentric polar
+  environments, where they used to raise `CartesianOnlyError`. Each row is
+  `(distance, angle)` and gets the bin whose cell holds it, or `-1` outside
+  the distance and angle ranges, the same lookup the `points=` queries use.
+  `occupancy` gives each interval to the bin of its first sample, as on any
+  environment, so egocentric occupancy (seconds with the object at each
+  distance and direction) comes straight from per-sample `(distance, angle)`
+  rows; `time_allocation="linear"` still refuses polar environments.
+  `CARTESIAN_OPERATIONS` no longer lists these methods. Analysis functions
+  that read positions as the animal's allocentric positions and relied on
+  `bin_at` to refuse polar environments now refuse them with their own name:
+  `compute_spatial_rate`, `compute_spatial_rates`,
+  `compute_directional_place_fields`, the view-rate functions,
+  `compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
+  `compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
+  `simulate_trajectory_ou` (and so `simulate_session`), and the boundary,
+  object-vector, spatial-view and geodesic place-cell models.
 
 - Three `neurospatial.ops` functions that only renamed an `Environment`
   method are removed; call the method instead.
@@ -698,10 +716,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   every stored mesh point. The migration page has a table for each layout.
 
 - A `CartesianOnlyError` from a Cartesian-only method or property, such as
-  `bin_at`, `contains` or `occupancy`, names the class of the environment that
-  refused the call. On a subclass of `Environment`, `polar_env.bin_at(points)`
-  reports `MyEnvironment.bin_at() does not work on a polar environment.`, for
-  the bound call and for `Environment.bin_at(polar_env, points)` alike.
+  `subset`, `rebin` or `interpolate`, names the class of the environment that
+  refused the call. On a subclass of `Environment`,
+  `polar_env.interpolate(field, points)` reports
+  `MyEnvironment.interpolate() does not work on a polar environment.`, for the
+  bound call and for `Environment.interpolate(polar_env, field, points)` alike.
 
 - Derived environments no longer repeat the warning about unrecognized units.
 

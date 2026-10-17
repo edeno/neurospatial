@@ -191,7 +191,8 @@ storage to restore those, because `from_bins()` constructs Cartesian geometry.
 
 For nearest-center assignment, use `env.nearest_bin(positions)`. It reuses the
 environment's query tree and supports tie-breaking and distance limits.
-This is different from `bin_at()`, which checks Cartesian cell containment.
+This is different from `bin_at()`, which finds the cell that contains each
+position (on a polar environment, each `(distance, angle)` row).
 For compatibility, nearest-center queries on polar environments compare the
 stored radius and angle columns as ordinary Euclidean coordinates with mixed
 units. These values are not physical polar distances or containment tests.

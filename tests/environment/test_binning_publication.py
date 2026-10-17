@@ -19,7 +19,7 @@ from environment_helpers import (
     publish_environment,
 )
 
-from neurospatial import CartesianOnlyError, Environment
+from neurospatial import Environment
 from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._diffusion import (
     FaceGeometry,
@@ -143,30 +143,26 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     actual, actual_warnings = _lookup_with_warnings(env._binning.locator.locate, points)
     np.testing.assert_array_equal(actual, expected)
     assert actual_warnings == expected_warnings
-    if not env._is_polar:
-        if env.arena.domain_known:
-            inside = env.arena.contains(points)
-            # Qhull can choose either triangle at a shared edge, depending
-            # on preceding queries. Compare the same arena-filtered batch.
-            expected = np.full_like(expected, -1)
-            expected[inside], expected_warnings = _lookup_with_warnings(
-                env._binning.locator.locate, points[inside]
-            )
-        indices, bin_warnings = _lookup_with_warnings(env.bin_at, points)
-        np.testing.assert_array_equal(indices, expected)
-        assert bin_warnings == expected_warnings
-        if env.is_linearized_track and not env.arena.domain_known:
-            with pytest.raises(NotImplementedError, match="track_width"):
-                env.contains(points)
-        else:
-            contains, contains_warnings = _lookup_with_warnings(env.contains, points)
-            np.testing.assert_array_equal(contains, expected != -1)
-            assert contains_warnings == expected_warnings
-    else:
-        with pytest.raises(CartesianOnlyError):
-            env.bin_at(points)
-        with pytest.raises(CartesianOnlyError):
+    if env.arena.domain_known:
+        # Polar angles are wrapped into the angle range before the lookup.
+        query = env.arena.wrap_angles(points) if env._is_polar else points
+        inside = env.arena.contains(query)
+        # Qhull can choose either triangle at a shared edge, depending
+        # on preceding queries. Compare the same arena-filtered batch.
+        expected = np.full_like(expected, -1)
+        expected[inside], expected_warnings = _lookup_with_warnings(
+            env._binning.locator.locate, query[inside]
+        )
+    indices, bin_warnings = _lookup_with_warnings(env.bin_at, points)
+    np.testing.assert_array_equal(indices, expected)
+    assert bin_warnings == expected_warnings
+    if env.is_linearized_track and not env.arena.domain_known:
+        with pytest.raises(NotImplementedError, match="track_width"):
             env.contains(points)
+    else:
+        contains, contains_warnings = _lookup_with_warnings(env.contains, points)
+        np.testing.assert_array_equal(contains, expected != -1)
+        assert contains_warnings == expected_warnings
     np.testing.assert_array_equal(points, untouched)
     assert points.flags.writeable
     assert actual.dtype == np.intp
