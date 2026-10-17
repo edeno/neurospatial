@@ -20,6 +20,12 @@ if TYPE_CHECKING:
     from neurospatial.binning import Binning
     from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
     from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry._boundaries import (
+        _line_of_sight_clear,
+        analysis_interior,
+        boundary_geometry,
+        valid_observers,
+    )
     from neurospatial.ops import (
         compute_egocentric_distance,
         geodesic_rbf_basis,
@@ -31,11 +37,6 @@ if TYPE_CHECKING:
         resample_field,
         select_basis_centers,
         spatial_basis,
-    )
-    from neurospatial.ops._boundaries import (
-        analysis_interior,
-        boundary_geometry,
-        valid_observers,
     )
     from neurospatial.ops._protocols import (
         BasisCentersConsumer,
@@ -54,11 +55,7 @@ if TYPE_CHECKING:
     from neurospatial.ops.basis import _diffusion_generator
     from neurospatial.ops.mapping import _pull_back_nearest
     from neurospatial.ops.transforms import AffineND
-    from neurospatial.ops.visibility import (
-        ViewshedResult,
-        _line_of_sight_clear,
-        compute_viewshed,
-    )
+    from neurospatial.ops.visibility import ViewshedResult, compute_viewshed
 
     def _either_coordinate_system(
         env: Environment[CartesianSystem] | Environment[EgocentricPolarSystem],

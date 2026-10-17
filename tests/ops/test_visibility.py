@@ -819,7 +819,7 @@ class TestLineOfSightClear:
     def test_clear_line_of_sight(self):
         """Line of sight is clear in open environment."""
         from neurospatial import Environment
-        from neurospatial.ops.visibility import _line_of_sight_clear
+        from neurospatial.geometry._boundaries import _line_of_sight_clear
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -835,7 +835,7 @@ class TestLineOfSightClear:
     def test_blocked_line_of_sight(self):
         """Line of sight is blocked by obstacle."""
         from neurospatial import Environment
-        from neurospatial.ops.visibility import _line_of_sight_clear
+        from neurospatial.geometry._boundaries import _line_of_sight_clear
 
         # Create C-shaped environment
         rng = np.random.default_rng(42)

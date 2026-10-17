@@ -166,7 +166,7 @@ def test_independently_transformed_components_refuse_uncertified_contact():
 @pytest.mark.parametrize("restore", [False, True])
 @pytest.mark.parametrize("transformed", [False, True])
 def test_combined_rooms_retain_shared_physical_wall(restore, transformed):
-    from neurospatial.ops._boundaries import physical_walls
+    from neurospatial.geometry._boundaries import physical_walls
 
     rooms = [
         Environment.from_grid_mask(
@@ -193,7 +193,7 @@ def test_combined_rooms_retain_shared_physical_wall(restore, transformed):
 
 
 def test_combined_partial_wall_evidence_does_not_assert_unknown_child_outline():
-    from neurospatial.ops._boundaries import physical_walls
+    from neurospatial.geometry._boundaries import physical_walls
 
     known = Environment.from_grid_mask(
         np.ones((5, 5), dtype=bool),

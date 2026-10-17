@@ -87,6 +87,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._boundaries import _batch_line_of_sight_clear, _boundary_view
 from neurospatial.geometry._locators import CallIndexes
 from neurospatial.geometry._lookup import locate
 
@@ -595,43 +596,6 @@ def compute_viewed_location(
     return viewed
 
 
-def _boundary_view(
-    binning: Binning,
-    arena: Arena,
-    positions: NDArray[np.float64],
-    gaze_direction: NDArray[np.float64],
-    max_distance: float,
-    boundary_source: Literal["physical", "analysis"],
-    indexes: LookupIndexes,
-) -> NDArray[np.float64]:
-    """First wall each gaze ray reaches, shape (n_time, 2); NaN for none.
-
-    ``indexes`` keeps the locator's search structures for the computation.
-    """
-    from neurospatial.ops._boundaries import (
-        analysis_interior,
-        boundary_geometry,
-        physical_ray_hits,
-        ray_hits,
-        valid_observers,
-    )
-
-    walls = boundary_geometry(binning, arena, boundary_source)
-    origins = positions.copy()
-    origins[~valid_observers(binning, arena, positions, boundary_source, indexes)] = (
-        np.nan
-    )
-    if boundary_source == "physical":
-        return physical_ray_hits(arena, origins, gaze_direction, max_distance)
-    return ray_hits(
-        walls,
-        origins,
-        gaze_direction,
-        max_distance,
-        analysis_interior(binning, arena, indexes),
-    )
-
-
 def _ray_cast_to_boundary(
     env: BinningConsumer,
     origin: NDArray[np.float64],
@@ -677,124 +641,6 @@ def _ray_cast_to_boundary(
         boundary_source=boundary_source,
     )
     return None if not np.all(np.isfinite(viewed[0])) else viewed[0]
-
-
-def _line_of_sight_clear(
-    binning: Binning,
-    arena: Arena,
-    observer: NDArray[np.float64],
-    target: NDArray[np.float64],
-    n_samples: int = 20,
-    *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
-    indexes: LookupIndexes | None = None,
-) -> bool:
-    """Check if line of sight between observer and target is clear.
-
-    Parameters
-    ----------
-    binning : Binning
-        The environment's bins, from ``env.binning``.
-    arena : Arena
-        The environment's continuous domain, from ``env.arena``.
-    observer : NDArray[np.float64], shape (2,)
-        Observer position.
-    target : NDArray[np.float64], shape (2,)
-        Target position.
-    n_samples : int
-        Retained for compatibility; line-of-sight tests use exact intersections.
-
-    boundary_source : {'physical', 'analysis'}, default='physical'
-        Declared physical walls, or explicitly requested analysis-cell boundaries.
-        Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
-    indexes : LookupIndexes, optional
-        Search structures shared by the calls of one computation, such as one
-        line-of-sight check per timestep; None keeps them for this call only.
-
-    Returns
-    -------
-    bool
-        True if line of sight is clear (all points inside environment).
-    """
-    return bool(
-        _batch_line_of_sight_clear(
-            binning,
-            arena,
-            observer,
-            np.asarray(target).reshape(1, 2),
-            n_samples=n_samples,
-            boundary_source=boundary_source,
-            indexes=indexes,
-        )[0]
-    )
-
-
-def _batch_line_of_sight_clear(
-    binning: Binning,
-    arena: Arena,
-    observer: NDArray[np.float64],
-    targets: NDArray[np.float64],
-    n_samples: int = 20,
-    *,
-    boundary_source: Literal["physical", "analysis"] = "physical",
-    indexes: LookupIndexes | None = None,
-) -> NDArray[np.bool_]:
-    """Check line of sight between observer and multiple targets (vectorized).
-
-    Parameters
-    ----------
-    binning : Binning
-        The environment's bins, from ``env.binning``.
-    arena : Arena
-        The environment's continuous domain, from ``env.arena``.
-    observer : NDArray[np.float64], shape (2,)
-        Observer position.
-    targets : NDArray[np.float64], shape (n_targets, 2)
-        Target positions.
-    n_samples : int
-        Retained for compatibility; line-of-sight tests use exact intersections.
-
-    boundary_source : {'physical', 'analysis'}, default='physical'
-        Declared physical walls, or explicitly requested analysis-cell boundaries.
-        Physical mode requires exact supported wall geometry; missing analysis
-        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
-    indexes : LookupIndexes, optional
-        Search structures shared by the calls of one computation; None keeps
-        them for this call only.
-
-    Returns
-    -------
-    NDArray[np.bool_], shape (n_targets,)
-        True if line of sight is clear for each target.
-    """
-    from neurospatial.ops._boundaries import (
-        analysis_interior,
-        boundary_geometry,
-        clear_segments,
-        physical_clear_segments,
-        valid_observers,
-    )
-
-    walls = boundary_geometry(binning, arena, boundary_source)
-    observer = np.asarray(observer, dtype=np.float64)
-    targets = np.asarray(targets, dtype=np.float64)
-    if observer.shape != (2,) or targets.ndim != 2 or targets.shape[1] != 2:
-        raise ValueError(
-            "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
-        )
-    indexes = CallIndexes() if indexes is None else indexes
-    if not valid_observers(
-        binning, arena, observer.reshape(1, 2), boundary_source, indexes
-    )[0]:
-        return np.zeros(len(targets), dtype=bool)
-    return (
-        physical_clear_segments(arena, observer, targets)
-        if boundary_source == "physical"
-        else clear_segments(
-            walls, observer, targets, analysis_interior(binning, arena, indexes)
-        )
-    )
 
 
 def compute_viewshed(
@@ -914,7 +760,7 @@ def _viewshed(
     # Convert to allocentric
     ray_angles_allo = ray_angles_ego + heading
 
-    from neurospatial.ops._boundaries import (
+    from neurospatial.geometry._boundaries import (
         analysis_interior,
         boundary_geometry,
         physical_ray_hits,

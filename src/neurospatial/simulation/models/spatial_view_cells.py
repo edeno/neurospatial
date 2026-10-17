@@ -84,14 +84,10 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._boundaries import _boundary_view, _line_of_sight_clear
 from neurospatial.geometry._coordinates import require_cartesian
 from neurospatial.geometry._locators import CallIndexes
-from neurospatial.ops.visibility import (
-    FieldOfView,
-    _boundary_view,
-    _line_of_sight_clear,
-    compute_viewed_location,
-)
+from neurospatial.ops.visibility import FieldOfView, compute_viewed_location
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -362,7 +358,10 @@ class SpatialViewCellModel:
                 view_distance=self.view_distance,
             )
         else:
-            from neurospatial.ops._boundaries import boundary_geometry, search_distance
+            from neurospatial.geometry._boundaries import (
+                boundary_geometry,
+                search_distance,
+            )
 
             max_distance = search_distance(
                 boundary_geometry(binning, arena, self.boundary_source), positions

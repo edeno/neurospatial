@@ -244,7 +244,7 @@ def border_score(
     if metric not in ("geodesic", "euclidean"):
         raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
-    from neurospatial.ops._boundaries import boundary_geometry
+    from neurospatial.geometry._boundaries import boundary_geometry
 
     if boundary_source not in ("physical", "analysis"):
         raise ValueError("boundary_source must be 'physical' or 'analysis'.")

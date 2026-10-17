@@ -11,11 +11,30 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 from neurospatial._exceptions import CartesianOnlyError, _format_error
-from neurospatial.geometry._locators import CallIndexes
+from neurospatial.geometry._arena import (
+    _CombinedArena,
+    _feature_cap,
+    _mapped_geometry,
+    _TransformedArena,
+)
+from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._locators import (
+    CallIndexes,
+    RectilinearLocator,
+    SubsetLocator,
+    TransformedLocator,
+)
 from neurospatial.geometry._lookup import locate
+from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.geometry._polygon_cells import (
+    ClippedLocator,
+    PolygonCells,
+    _polygon_coordinate_errors,
+)
+from neurospatial.geometry._wall_frame import _wall_source_frame
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._arena import Arena, _TransformedArena
+    from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
     from neurospatial.geometry._locators import Locator, LookupIndexes
 
@@ -64,7 +83,6 @@ def boundary_geometry(
 
 def _analysis_boundary(binning: Binning, arena: Arena) -> shapely.Geometry:
     """Return retained cell edges restricted by the supplied planar domain."""
-    from neurospatial.geometry._polygon import materialize_cells
 
     try:
         domain = unary_union(materialize_cells(binning))
@@ -99,14 +117,6 @@ def _resolve_wall_contacts(
     cell and the wall is wider than that uncertainty and is never bridged by
     an inward search.
     """
-    import shapely
-
-    from neurospatial.geometry._arena import _feature_cap
-    from neurospatial.geometry._locators import RectilinearLocator, SubsetLocator
-    from neurospatial.geometry._polygon_cells import (
-        ClippedLocator,
-        _polygon_coordinate_errors,
-    )
 
     def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
         parent = locator
@@ -187,15 +197,6 @@ def _wall_hit_bins(
     the caller's initial lookup of the observer-side limit, shape ``(n_hits,)``.
     Shared affine frames are resolved in their stored cell-owner coordinates.
     """
-    import shapely
-    from shapely.ops import unary_union
-
-    from neurospatial.geometry._arena import _feature_cap, _TransformedArena
-    from neurospatial.geometry._composition import CombinedLocator
-    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-    from neurospatial.geometry._polygon import materialize_cells
-    from neurospatial.geometry._polygon_cells import ClippedLocator, PolygonCells
-    from neurospatial.geometry._wall_frame import _wall_source_frame
 
     def source_locator(
         locator: Locator, arena: Arena, centers: NDArray[np.float64]
@@ -299,11 +300,6 @@ def _physical_evidence(
     arena: Arena,
 ) -> tuple[list[shapely.Geometry], list[shapely.Geometry]]:
     """Explicit wall lines and asserted footprint polygons in the arena frame."""
-    from neurospatial.geometry._arena import (
-        _CombinedArena,
-        _mapped_geometry,
-        _TransformedArena,
-    )
 
     if isinstance(arena, _CombinedArena):
         lines: list[shapely.Geometry] = []
@@ -554,7 +550,6 @@ def _wall_frame(
     arena: Arena, query: NDArray[np.float64]
 ) -> tuple[Arena, NDArray[np.float64], list[_TransformedArena]]:
     """Use stored projection errors for contact in a shared physical-wall frame."""
-    from neurospatial.geometry._arena import _feature_cap, _TransformedArena
 
     frames = []
     error = None
@@ -703,3 +698,144 @@ def search_distance(walls: shapely.Geometry, positions: NDArray[np.float64]) -> 
             "Wall search extent exceeds coordinate precision; rescale positions."
         )
     return max(extent * 2, 1.0)
+
+
+def _boundary_view(
+    binning: Binning,
+    arena: Arena,
+    positions: NDArray[np.float64],
+    gaze_direction: NDArray[np.float64],
+    max_distance: float,
+    boundary_source: Literal["physical", "analysis"],
+    indexes: LookupIndexes,
+) -> NDArray[np.float64]:
+    """First wall each gaze ray reaches, shape (n_time, 2); NaN for none.
+
+    ``indexes`` keeps the locator's search structures for the computation.
+    """
+
+    walls = boundary_geometry(binning, arena, boundary_source)
+    origins = positions.copy()
+    origins[~valid_observers(binning, arena, positions, boundary_source, indexes)] = (
+        np.nan
+    )
+    if boundary_source == "physical":
+        return physical_ray_hits(arena, origins, gaze_direction, max_distance)
+    return ray_hits(
+        walls,
+        origins,
+        gaze_direction,
+        max_distance,
+        analysis_interior(binning, arena, indexes),
+    )
+
+
+def _line_of_sight_clear(
+    binning: Binning,
+    arena: Arena,
+    observer: NDArray[np.float64],
+    target: NDArray[np.float64],
+    n_samples: int = 20,
+    *,
+    boundary_source: Literal["physical", "analysis"] = "physical",
+    indexes: LookupIndexes | None = None,
+) -> bool:
+    """Check if line of sight between observer and target is clear.
+
+    Parameters
+    ----------
+    binning : Binning
+        The environment's bins, from ``env.binning``.
+    arena : Arena
+        The environment's continuous domain, from ``env.arena``.
+    observer : NDArray[np.float64], shape (2,)
+        Observer position.
+    target : NDArray[np.float64], shape (2,)
+        Target position.
+    n_samples : int
+        Retained for compatibility; line-of-sight tests use exact intersections.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+    indexes : LookupIndexes, optional
+        Search structures shared by the calls of one computation, such as one
+        line-of-sight check per timestep; None keeps them for this call only.
+
+    Returns
+    -------
+    bool
+        True if line of sight is clear (all points inside environment).
+    """
+    return bool(
+        _batch_line_of_sight_clear(
+            binning,
+            arena,
+            observer,
+            np.asarray(target).reshape(1, 2),
+            n_samples=n_samples,
+            boundary_source=boundary_source,
+            indexes=indexes,
+        )[0]
+    )
+
+
+def _batch_line_of_sight_clear(
+    binning: Binning,
+    arena: Arena,
+    observer: NDArray[np.float64],
+    targets: NDArray[np.float64],
+    n_samples: int = 20,
+    *,
+    boundary_source: Literal["physical", "analysis"] = "physical",
+    indexes: LookupIndexes | None = None,
+) -> NDArray[np.bool_]:
+    """Check line of sight between observer and multiple targets (vectorized).
+
+    Parameters
+    ----------
+    binning : Binning
+        The environment's bins, from ``env.binning``.
+    arena : Arena
+        The environment's continuous domain, from ``env.arena``.
+    observer : NDArray[np.float64], shape (2,)
+        Observer position.
+    targets : NDArray[np.float64], shape (n_targets, 2)
+        Target positions.
+    n_samples : int
+        Retained for compatibility; line-of-sight tests use exact intersections.
+
+    boundary_source : {'physical', 'analysis'}, default='physical'
+        Declared physical walls, or explicitly requested analysis-cell boundaries.
+        Physical mode requires exact supported wall geometry; missing analysis
+        bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+    indexes : LookupIndexes, optional
+        Search structures shared by the calls of one computation; None keeps
+        them for this call only.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (n_targets,)
+        True if line of sight is clear for each target.
+    """
+
+    walls = boundary_geometry(binning, arena, boundary_source)
+    observer = np.asarray(observer, dtype=np.float64)
+    targets = np.asarray(targets, dtype=np.float64)
+    if observer.shape != (2,) or targets.ndim != 2 or targets.shape[1] != 2:
+        raise ValueError(
+            "Line-of-sight observer must have shape (2,) and targets (n_targets, 2)."
+        )
+    indexes = CallIndexes() if indexes is None else indexes
+    if not valid_observers(
+        binning, arena, observer.reshape(1, 2), boundary_source, indexes
+    )[0]:
+        return np.zeros(len(targets), dtype=bool)
+    return (
+        physical_clear_segments(arena, observer, targets)
+        if boundary_source == "physical"
+        else clear_segments(
+            walls, observer, targets, analysis_interior(binning, arena, indexes)
+        )
+    )

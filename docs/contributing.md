@@ -406,7 +406,7 @@ Subsets preserve the parent arena, while affine transforms map its geometry
 with the bins. Exact lookup applies both the arena gate and locator ownership.
 
 Border and visibility consumers use shared planar wall evidence in
-`ops/_boundaries.py`. Physical mode reads asserted footprints and internal walls;
+`geometry/_boundaries.py`. Physical mode reads asserted footprints and internal walls;
 analysis mode is explicit. Analysis cuts never create physical walls. Boundary
 contacts and wall-hit bin ownership use retained source frames with locally
 bounded inverse rounding. Viewshed bin coverage remains sampled, while first
