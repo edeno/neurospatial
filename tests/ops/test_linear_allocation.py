@@ -8,7 +8,7 @@ import pytest
 
 from neurospatial.geometry._capabilities import RectilinearGrid
 from neurospatial.ops import _linear_allocation as _allocation
-from neurospatial.ops._linear_allocation import linear_grid_occupancy, ray_grid_pieces
+from neurospatial.ops._linear_allocation import _linear_grid_occupancy, ray_grid_pieces
 
 
 @pytest.fixture
@@ -66,10 +66,10 @@ def test_inactive_cells_drop_their_share():
     grid = RectilinearGrid(edges, (3, 1), active)
     positions = np.array([[0.5, 0.5], [2.5, 0.5]])
     bins = np.array([0, 1])  # active-bin ids of cells 0 and 2
-    seconds = linear_grid_occupancy(
+    seconds = _linear_grid_occupancy(
         2, grid, positions, np.array([4.0]), np.array([True]), bins, return_seconds=True
     )
-    counts = linear_grid_occupancy(
+    counts = _linear_grid_occupancy(
         2,
         grid,
         positions,
@@ -86,7 +86,7 @@ def test_inactive_cells_drop_their_share():
 def test_interval_inside_one_bin_and_invalid_intervals(unit_grid):
     positions = np.array([[0.2, 0.2], [0.8, 0.7], [3.5, 2.5]])
     bins = np.array([0, 0, 11])
-    occupancy = linear_grid_occupancy(
+    occupancy = _linear_grid_occupancy(
         12,
         unit_grid,
         positions,
@@ -125,7 +125,7 @@ def test_block_size_does_not_change_occupancy(monkeypatch, return_seconds):
     dt = rng.exponential(0.1, 399)
     valid = rng.random(399) < 0.9
     bins = np.full(400, -1, dtype=np.intp)  # every interval takes the traversal
-    whole = linear_grid_occupancy(
+    whole = _linear_grid_occupancy(
         int(active.sum()),
         grid,
         positions,
@@ -136,7 +136,7 @@ def test_block_size_does_not_change_occupancy(monkeypatch, return_seconds):
     )
     small = functools.partial(_allocation.crossing_blocks, max_crossings=5)
     monkeypatch.setattr(_allocation, "crossing_blocks", small)
-    blocked = linear_grid_occupancy(
+    blocked = _linear_grid_occupancy(
         int(active.sum()),
         grid,
         positions,

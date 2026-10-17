@@ -64,7 +64,7 @@ def validate_dt(dt: float) -> float:
     return dt
 
 
-def time_bin_rounding(
+def _time_bin_rounding(
     windows: NDArray[np.float64],
     dt: float,
     *,
@@ -92,7 +92,7 @@ def time_bin_rounding(
     return rounding
 
 
-def time_bins_in_windows(
+def _time_bins_in_windows(
     windows: NDArray[np.float64], dt: float
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Tile each ``[start, stop)`` window with whole bins of width ``dt``.
@@ -121,7 +121,7 @@ def time_bins_in_windows(
     # Rounding error of the edges is a few ulp of the timestamps' magnitude.
     # If that is not small against dt, the edges cannot be represented to bin
     # precision, so refuse instead of inventing or merging bins.
-    rounding = time_bin_rounding(windows, dt)
+    rounding = _time_bin_rounding(windows, dt)
     ratio = (stop - start) / dt
     # A shortfall below the rounding allowance is rounding, not a partial bin.
     # After the precision check the allowance is at most ~0.01, so it can
@@ -136,7 +136,7 @@ def time_bins_in_windows(
     return left, right
 
 
-def count_spikes_in_time_bins(
+def _count_spikes_in_time_bins(
     spike_trains: Sequence[NDArray[np.float64]],
     left: NDArray[np.float64],
     right: NDArray[np.float64],
@@ -289,7 +289,7 @@ def bin_spikes_in_time(
         elif t_stop <= t_start:
             raise ValueError(f"t_stop ({t_stop}) must be > t_start ({t_start}).")
         windows = np.array([[t_start, t_stop]], dtype=np.float64)
-    left, right = time_bins_in_windows(windows, dt)
+    left, right = _time_bins_in_windows(windows, dt)
     if left.size == 0:
         longest = float(np.max(np.diff(windows, axis=1), initial=0.0))
         raise ValueError(
@@ -299,7 +299,7 @@ def bin_spikes_in_time(
                 why="Why: each analyzed window must contain at least one full time bin.",
             )
         )
-    counts = count_spikes_in_time_bins(trains, left, right)
+    counts = _count_spikes_in_time_bins(trains, left, right)
     bin_centers = left + dt / 2.0
     if orient == "neuron_x_time":
         counts = counts.T

@@ -18,12 +18,12 @@ from neurospatial.ops import diffusion as diff
 from neurospatial.ops.diffusion import (
     _DEFAULT_MAX_RANK,
     MRFBasis,
-    MRFEigenbasis,
+    _ensure_global_modes,
+    _MRFEigenbasis,
     _null_mode_mask,
+    _select_live_basis,
+    _symmetric_conjugate,
     _symmetric_eigenbasis,
-    ensure_global_modes,
-    select_live_basis,
-    symmetric_conjugate,
 )
 
 
@@ -38,7 +38,7 @@ def _geometry(env):
 def _full_eigs(env):
     """Full (Q, Lam, mode_comp) for an env -- the selector's cached inputs."""
     W, volumes, _n_components, labels = _geometry(env)
-    S = symmetric_conjugate(W, volumes)
+    S = _symmetric_conjugate(W, volumes)
     Lam, Q = _symmetric_eigenbasis(S, None)
     mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
     return Q, Lam, mode_comp, volumes, labels
@@ -61,7 +61,7 @@ def _non_null_eigs_sorted(Lam, mode_comp, live_comp):
 
 def _fresh_holder(env):
     """A pristine empty resolver holder, as the analysis cache starts it."""
-    return MRFEigenbasis.empty(env.n_bins)
+    return _MRFEigenbasis.empty(env.n_bins)
 
 
 def _cached_holder(env):
@@ -320,7 +320,7 @@ def test_fill_selection_is_scale_invariant():
     Lam = np.array([0.0, 1e-13])  # Fiedler eigenvalue below any absolute cutoff
     mode_comp = np.array([0, 0], dtype=np.intp)
 
-    basis = select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=2)
+    basis = _select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=2)
 
     assert basis.n_live_components == 1
     assert basis.B.shape == (2, 2)  # intercept + the tiny-eigenvalue fill
@@ -364,7 +364,7 @@ def test_null_absent_from_eigenbasis_raises():
     Lam = np.array([1.0])
     mode_comp = np.array([0], dtype=np.intp)
     with pytest.raises(ValueError, match="null"):
-        select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=1)
+        _select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=1)
 
 
 def test_clipped_fill_eigenvalue_raises():
@@ -379,7 +379,7 @@ def test_clipped_fill_eigenvalue_raises():
     Lam = np.array([0.0, 0.0])
     mode_comp = np.array([0, 0], dtype=np.intp)
     with pytest.raises(ValueError, match="nonpositive"):
-        select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=2)
+        _select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=2)
 
 
 def test_growth_continues_until_null_covered(open_field_env, monkeypatch):
@@ -400,7 +400,7 @@ def test_growth_continues_until_null_covered(open_field_env, monkeypatch):
             return holder, (q_full[:, sel], lam_full[sel], mc_full[sel])
         return holder, (q_full, lam_full, mc_full)  # growth exposes the full basis
 
-    monkeypatch.setattr(_fields, "ensure_global_modes", fake_ensure)
+    monkeypatch.setattr(_fields, "_ensure_global_modes", fake_ensure)
 
     basis = env.get_mrf_basis(occ, rank=5)  # must NOT raise
 
@@ -422,7 +422,7 @@ def test_insufficient_fill_modes_raises():
     mode_comp = np.array([0], dtype=np.intp)
 
     with pytest.raises(ValueError, match="fill"):
-        select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=2)
+        _select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=2)
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +522,7 @@ def test_holder_resets_on_clear_cache(sparse_regime_env):
 
 
 def test_selector_is_pure(open_field_env, monkeypatch):
-    """select_live_basis never eigensolves -- it only masks cached modes."""
+    """_select_live_basis never eigensolves -- it only masks cached modes."""
     Q, Lam, mode_comp, volumes, labels = _full_eigs(open_field_env)
     occ = np.ones(open_field_env.n_bins)
 
@@ -535,7 +535,7 @@ def test_selector_is_pure(open_field_env, monkeypatch):
 
     monkeypatch.setattr(diff, "_symmetric_eigenbasis", counting)
 
-    basis = select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=10)
+    basis = _select_live_basis(Q, Lam, mode_comp, volumes, labels, occ, rank=10)
     assert calls["n"] == 0
     assert isinstance(basis, MRFBasis)
 
@@ -543,10 +543,10 @@ def test_selector_is_pure(open_field_env, monkeypatch):
 def test_mode_component_recovery(two_component_env):
     """mode_comp[m] equals the W-component of every nonzero row of Q[:, m]."""
     _W, volumes, _nc, labels = _geometry(two_component_env)
-    S = symmetric_conjugate(volumes=volumes, W=_W)
+    S = _symmetric_conjugate(volumes=volumes, W=_W)
     holder = _fresh_holder(two_component_env)
 
-    grown, (Q, _Lam, mode_comp) = ensure_global_modes(holder, S, labels, 6)
+    grown, (Q, _Lam, mode_comp) = _ensure_global_modes(holder, S, labels, 6)
     assert holder.G == 0 and Q.shape[1] == grown.G  # replaced, never edited
 
     for m in range(Q.shape[1]):

@@ -28,7 +28,7 @@ from neurospatial.layout import (
     TriangularMeshLayout,
     create_layout,
 )
-from neurospatial.layout.engines._polar import PolarGridLayout
+from neurospatial.layout.engines._polar import _PolarGridLayout
 
 
 def _grid():
@@ -117,7 +117,7 @@ def test_face_building_stays_lazy_without_native_builder(monkeypatch):
 
 
 def test_polar_provenance_cannot_change_published_faces():
-    source = PolarGridLayout()
+    source = _PolarGridLayout()
     source.build(
         active_mask=np.ones((2, 2), dtype=bool),
         grid_edges=(np.arange(3.0), np.linspace(-np.pi, np.pi, 3)),
@@ -136,7 +136,7 @@ def test_polar_faces_come_from_the_layout_not_its_parameters():
     With two angular bins, a circular ring's two sectors share both of their
     radial sides, so that face has twice the radial width.
     """
-    source = PolarGridLayout()
+    source = _PolarGridLayout()
     source.build(
         active_mask=np.ones((2, 2), dtype=bool),
         grid_edges=(np.arange(1.0, 4.0), np.linspace(-np.pi, np.pi, 3)),
@@ -216,7 +216,7 @@ def test_layout_without_binning_is_refused_before_copying():
         HexagonalLayout,
         GraphLayout,
         TriangularMeshLayout,
-        PolarGridLayout,
+        _PolarGridLayout,
     ],
 )
 def test_unbuilt_layout_refuses_binning(layout_type):

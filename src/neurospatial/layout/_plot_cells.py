@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 
-def plot_binning(
+def _plot_binning(
     binning: Binning,
     connectivity: nx.Graph,
     dimension_ranges: Sequence[tuple[float, float]] | None,

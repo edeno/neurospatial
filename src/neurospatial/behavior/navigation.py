@@ -589,13 +589,13 @@ def path_progress(
             ),
         )
 
-    from neurospatial.environment import validate_sample_targets
+    from neurospatial.environment import _validate_sample_targets
 
     n_samples = len(position_bins)
     # A single start or goal applies to every sample.
     start_bins, goal_bins = (
         np.broadcast_to(
-            validate_sample_targets(
+            _validate_sample_targets(
                 bins,
                 n_samples=n_samples,
                 n_bins=env.n_bins,
@@ -752,9 +752,9 @@ def distance_to_region(
             ),
         )
 
-    from neurospatial.environment import validate_sample_targets
+    from neurospatial.environment import _validate_sample_targets
 
-    targets, per_sample = validate_sample_targets(
+    targets, per_sample = _validate_sample_targets(
         target_bins,
         n_samples=len(position_bins),
         n_bins=env.n_bins,
@@ -859,10 +859,10 @@ def cost_to_goal(
     --------
     distance_to_region : Simple geometric distance
     """
-    from neurospatial.environment import validate_sample_targets
+    from neurospatial.environment import _validate_sample_targets
     from neurospatial.ops.distance import distance_field
 
-    goals, per_sample = validate_sample_targets(
+    goals, per_sample = _validate_sample_targets(
         goal_bins,
         n_samples=len(position_bins),
         n_bins=env.n_bins,
@@ -1932,7 +1932,7 @@ def instantaneous_goal_alignment(
     times, positions = validate_times_positions(
         times, positions, call="instantaneous_goal_alignment"
     )
-    from neurospatial.ops import velocity_heading_and_speed
+    from neurospatial.ops import _velocity_heading_and_speed
 
     goal = np.asarray(goal)
 
@@ -1942,7 +1942,7 @@ def instantaneous_goal_alignment(
     if len(positions) < 2:
         return np.full(len(positions), np.nan)
 
-    velocity_heading, speed = velocity_heading_and_speed(
+    velocity_heading, speed = _velocity_heading_and_speed(
         times,
         positions,
         interval_mask=interval_mask,

@@ -2,7 +2,7 @@
 
 Per-unit spike trains have different lengths and do not fit a rectangular
 array. ``SpikeTrains`` must duck-type as a spike group for the spike-input adapter
-(:func:`as_spike_trains_with_ids`) via the **iterate-yields-trains** branch:
+(:func:`_as_spike_trains_with_ids`) via the **iterate-yields-trains** branch:
 
 - it is NOT a ``collections.abc.Mapping`` (so the adapter iterates it),
 - it exposes a non-callable ``.index`` property (the unit ids), and
@@ -25,8 +25,8 @@ import pytest
 from neurospatial import Environment
 from neurospatial.encoding import SpikeTrains, compute_spatial_rates
 from neurospatial.encoding._spikes import (
+    _as_spike_trains_with_ids,
     _looks_like_spike_group,
-    as_spike_trains_with_ids,
 )
 
 
@@ -284,7 +284,7 @@ def test_adapter_extracts_actual_trains_and_ids(trains: list[np.ndarray]) -> Non
     unit_ids = np.array([7, 8, 9])
     st = SpikeTrains(trains, unit_ids=unit_ids)
 
-    extracted_trains, extracted_ids = as_spike_trains_with_ids(st)
+    extracted_trains, extracted_ids = _as_spike_trains_with_ids(st)
 
     np.testing.assert_array_equal(extracted_ids, unit_ids)
     assert len(extracted_trains) == len(trains)
@@ -299,7 +299,7 @@ def test_adapter_handles_nan_bearing_trains() -> None:
     trains = [np.array([0.1, np.nan, 0.3]), np.array([0.2])]
     st = SpikeTrains(trains, unit_ids=np.array([4, 5]))
 
-    extracted_trains, extracted_ids = as_spike_trains_with_ids(st)
+    extracted_trains, extracted_ids = _as_spike_trains_with_ids(st)
 
     np.testing.assert_array_equal(extracted_ids, np.array([4, 5]))
     np.testing.assert_array_equal(extracted_trains[0], trains[0])

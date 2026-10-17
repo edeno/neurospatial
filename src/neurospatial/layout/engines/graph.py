@@ -17,7 +17,7 @@ from neurospatial.geometry import (
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
-from neurospatial.layout._plotting import plot_track, plot_track_linear
+from neurospatial.layout._plotting import _plot_track_linear, plot_track
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
@@ -231,7 +231,7 @@ class GraphLayout(_KDTreeMixin):
             The axes on which the 1D layout is plotted.
 
         """
-        return plot_track_linear(
+        return _plot_track_linear(
             ax,
             title=self.layout_type,
             linearization=self.linearization(),

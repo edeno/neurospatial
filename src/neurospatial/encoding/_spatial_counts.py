@@ -40,10 +40,10 @@ from neurospatial._intervals import (
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops import (
-    RetainedLinearInterval,
-    polygon_linear_occupancy,
-    source_grid,
-    uses_polygon_allocation,
+    _polygon_linear_occupancy,
+    _RetainedLinearInterval,
+    _source_grid,
+    _uses_polygon_allocation,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +67,7 @@ class LinearSpatialIntervals:
     """Owned fractional support prepared once for a spatial encoding call."""
 
     support: TimeSupport
-    pieces: tuple[RetainedLinearInterval, ...]
+    pieces: tuple[_RetainedLinearInterval, ...]
     occupancy: NDArray[np.float64]
 
 
@@ -137,7 +137,7 @@ def prepare_linear_spatial_intervals(
     if positions.shape != (len(times), 2):
         raise ValueError("linear spatial encoding needs (n_samples, 2) positions.")
     # This checks known nonmaterializable Arena support before any cell work.
-    uses_polygon_allocation(binning, arena)
+    _uses_polygon_allocation(binning, arena)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     if interval_mask is None:
         mask = interval_valid_mask(
@@ -156,7 +156,7 @@ def prepare_linear_spatial_intervals(
             )
     finite = np.all(np.isfinite(positions), axis=1)
     mask &= finite[:-1] & finite[1:] & (np.diff(times) > 0)
-    pieces, occupancy = polygon_linear_occupancy(
+    pieces, occupancy = _polygon_linear_occupancy(
         binning, arena, times, positions, mask, return_seconds=True
     )
     runs: list[list[float]] = []
@@ -465,7 +465,7 @@ def _bin_spike_train_with_stats(
     if grid_frame is not None:
         # Use the same retained source planes and half-open ownership as
         # fractional dwell allocation, including paths along a hole edge.
-        locator, source_positions = source_grid(grid_frame, spike_positions)
+        locator, source_positions = _source_grid(grid_frame, spike_positions)
         spike_bins = locator.locate(source_positions)
         if env.arena.domain_known:
             spike_bins[~env.arena.contains(spike_positions)] = -1

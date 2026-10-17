@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ScaleBarConfig",
-    "add_scale_bar_to_axes",
-    "compute_nice_length",
-    "format_scale_label",
+    "_add_scale_bar_to_axes",
+    "_compute_nice_length",
+    "_format_scale_label",
 ]
 
 
@@ -86,7 +86,7 @@ class ScaleBarConfig:
     show_label: bool = True
 
 
-def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
+def _compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
     """Compute aesthetically pleasing scale bar length using 1-2-5 rule.
 
     Calculates a "nice" length that is approximately `target_fraction` of the
@@ -113,16 +113,16 @@ def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
 
     Examples
     --------
-    >>> compute_nice_length(100)
+    >>> _compute_nice_length(100)
     20.0
 
-    >>> compute_nice_length(50)
+    >>> _compute_nice_length(50)
     10.0
 
-    >>> compute_nice_length(73)
+    >>> _compute_nice_length(73)
     10.0
 
-    >>> compute_nice_length(0.5)
+    >>> _compute_nice_length(0.5)
     0.1
     """
     # Validate extent
@@ -150,7 +150,7 @@ def compute_nice_length(extent: float, target_fraction: float = 0.2) -> float:
     return float(nice * magnitude)
 
 
-def format_scale_label(length: float, units: str | None) -> str:
+def _format_scale_label(length: float, units: str | None) -> str:
     """Format scale bar label text.
 
     Formats the length value with optional units, using integer display
@@ -170,16 +170,16 @@ def format_scale_label(length: float, units: str | None) -> str:
 
     Examples
     --------
-    >>> format_scale_label(10, "cm")
+    >>> _format_scale_label(10, "cm")
     '10 cm'
 
-    >>> format_scale_label(10.0, "cm")
+    >>> _format_scale_label(10.0, "cm")
     '10 cm'
 
-    >>> format_scale_label(2.5, "cm")
+    >>> _format_scale_label(2.5, "cm")
     '2.5 cm'
 
-    >>> format_scale_label(10, None)
+    >>> _format_scale_label(10, None)
     '10'
     """
     # Integer if whole number
@@ -213,7 +213,7 @@ def _auto_contrast_color(ax: matplotlib.axes.Axes) -> str:
     return "white" if luminance < 0.5 else "black"
 
 
-def add_scale_bar_to_axes(
+def _add_scale_bar_to_axes(
     ax: matplotlib.axes.Axes,
     extent: float,
     units: str | None = None,
@@ -247,20 +247,20 @@ def add_scale_bar_to_axes(
     >>> fig, ax = plt.subplots()  # doctest: +SKIP
     >>> ax.set_xlim(0, 100)  # doctest: +SKIP
     >>> ax.set_ylim(0, 100)  # doctest: +SKIP
-    >>> artist = add_scale_bar_to_axes(ax, extent=100, units="cm")  # doctest: +SKIP
+    >>> artist = _add_scale_bar_to_axes(ax, extent=100, units="cm")  # doctest: +SKIP
     >>> plt.close(fig)  # doctest: +SKIP
     """
     if config is None:
         config = ScaleBarConfig()
 
     # Calculate length if not specified
-    length = compute_nice_length(extent) if config.length is None else config.length
+    length = _compute_nice_length(extent) if config.length is None else config.length
 
     # Determine color
     color = _auto_contrast_color(ax) if config.color is None else config.color
 
     # Format label
-    label = format_scale_label(length, units) if config.show_label else ""
+    label = _format_scale_label(length, units) if config.show_label else ""
 
     # Position mapping to matplotlib loc codes
     loc_map = {

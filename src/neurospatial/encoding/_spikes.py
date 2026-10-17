@@ -172,7 +172,7 @@ def _looks_like_spike_group(obj: Any) -> bool:
     return index is not None and not callable(index)
 
 
-def as_spike_trains_with_ids(
+def _as_spike_trains_with_ids(
     spike_times: Any,
 ) -> tuple[list[NDArray[np.float64]], NDArray[Any] | None]:
     """Coerce spike input to canonical trains AND surface unit ids when present.
@@ -223,8 +223,8 @@ def as_spike_trains_with_ids(
     Plain sequence input carries no ids:
 
     >>> import numpy as np
-    >>> from neurospatial.encoding._spikes import as_spike_trains_with_ids
-    >>> trains, ids = as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
+    >>> from neurospatial.encoding._spikes import _as_spike_trains_with_ids
+    >>> trains, ids = _as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
     >>> len(trains), ids
     (2, None)
     """

@@ -1270,7 +1270,7 @@ def _build_video_napari_affine(
     if isinstance(video_data.reader, np.ndarray):
         video_h, video_w = video_data.reader.shape[1:3]
     else:
-        # VideoReader provides frame_size_px as (width, height)
+        # _VideoReader provides frame_size_px as (width, height)
         video_w, video_h = video_data.reader.frame_size_px
 
     # Build video→env matrix based on env_bounds

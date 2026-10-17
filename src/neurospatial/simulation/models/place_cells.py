@@ -9,7 +9,7 @@ from scipy.spatial import cKDTree
 
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
-from neurospatial.ops import typical_bin_spacing
+from neurospatial.ops import _typical_bin_spacing
 from neurospatial.ops.distance import distance_field
 
 
@@ -220,7 +220,7 @@ class PlaceCellModel:
             # 3 bin spacings. Off a track ``env.bin_sizes`` is a per-bin volume
             # (an area in 2-D), not a length, so use the neighbour spacing.
             places = self._embed(env.bin_centers)
-            spacing = typical_bin_spacing(
+            spacing = _typical_bin_spacing(
                 places,
                 env.bin_sizes,
                 is_linearized_track=env.is_linearized_track,

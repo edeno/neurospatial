@@ -774,6 +774,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `neurospatial.ops.KernelMode` names the values `mode=` accepts in
+  `Environment.compute_kernel`, `smooth` and `diffuse`
+  (`"transition"`, `"density"`, `"average"`), for type annotations in your
+  own analysis code.
+
+- `neurospatial.layout.ScaleBarConfig` is the scale-bar settings class that
+  `Environment.plot(scale_bar=...)` accepts. It is the same class as
+  `neurospatial.animation.ScaleBarConfig`, now importable without the
+  animation package.
+
 - `neurospatial.encoding.autocorrelation_pixel_size(env)` gives the side, in
   the environment's units, of the square pixels of `spatial_autocorrelation`.
   Pass it as `bin_size` to `grid_scale` and `grid_properties`.

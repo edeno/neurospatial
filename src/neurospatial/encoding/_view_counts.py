@@ -41,7 +41,7 @@ from neurospatial.encoding._spatial_counts import (
     count_spikes_by_frame,
     prepare_frame_binning,
 )
-from neurospatial.encoding._validation import validate_times as _validate_times
+from neurospatial.encoding._validation import _validate_times as _validate_times
 from neurospatial.geometry import require_cartesian, wall_hit_bins
 from neurospatial.ops.visibility import compute_viewed_location
 

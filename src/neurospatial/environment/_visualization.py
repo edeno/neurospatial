@@ -26,10 +26,10 @@ from neurospatial.geometry import (
     require_grid_context,
 )
 from neurospatial.layout import (
-    hexagon_patches,
-    plot_binning,
-    plot_track_linear,
-    polygon_patches,
+    _hexagon_patches,
+    _plot_binning,
+    _plot_track_linear,
+    _polygon_patches,
 )
 from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.regions import Regions
@@ -93,7 +93,7 @@ def _add_scale_bar_if_requested(
         return
 
     from neurospatial.layout import ScaleBarConfig as _ScaleBarConfig
-    from neurospatial.layout import add_scale_bar_to_axes
+    from neurospatial.layout import _add_scale_bar_to_axes
 
     config = scale_bar if isinstance(scale_bar, _ScaleBarConfig) else _ScaleBarConfig()
 
@@ -119,7 +119,7 @@ def _add_scale_bar_if_requested(
                 stacklevel=_external_stacklevel(),
             )
         else:
-            add_scale_bar_to_axes(ax, extent_x, units, config)
+            _add_scale_bar_to_axes(ax, extent_x, units, config)
 
 
 # Helper functions for layout-specific rendering
@@ -200,7 +200,7 @@ def _plot_polygon_field(
     cmap_obj = plt.get_cmap(cmap).copy()
     cmap_obj.set_bad(nan_color or "none")
     collection = PatchCollection(
-        polygon_patches(shapes), cmap=cmap_obj, rasterized=rasterized, **kwargs
+        _polygon_patches(shapes), cmap=cmap_obj, rasterized=rasterized, **kwargs
     )
     collection.set_array(np.ma.masked_invalid(field))
     collection.set_clim(vmin, vmax)
@@ -239,7 +239,7 @@ def _plot_hex_field(
 
     # Create collection
     collection = PatchCollection(
-        hexagon_patches(shapes, shapes.centers[drawn]),
+        _hexagon_patches(shapes, shapes.centers[drawn]),
         cmap=cmap,
         rasterized=rasterized,
         **kwargs,
@@ -420,7 +420,7 @@ def _plot(
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
 
-    ax = plot_binning(
+    ax = _plot_binning(
         binning,
         connectivity,
         binning.dimension_ranges,
@@ -469,7 +469,7 @@ def _plot_1d(
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
     linearization = binning.linearization
     if linearization is not None:
-        ax = plot_track_linear(
+        ax = _plot_track_linear(
             ax=ax,
             title=layout_type,
             linearization=linearization,

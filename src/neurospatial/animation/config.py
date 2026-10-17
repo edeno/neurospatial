@@ -3,7 +3,7 @@
 This module configures napari's built-in scale bar
 (:func:`configure_napari_scale_bar`) so it keeps the environment's units. The
 matplotlib scale bar and its "nice" 1-2-5 length rule live in
-``neurospatial.layout._scale_bar``, below the environment, so that
+``neurospatial.layout``, below the environment, so that
 ``Environment.plot`` can draw them; this module re-exports
 ``ScaleBarConfig``, ``add_scale_bar_to_axes``, ``compute_nice_length`` and
 ``format_scale_label`` for the animation backends.
@@ -28,9 +28,15 @@ from typing import TYPE_CHECKING
 from neurospatial._logging import logger
 from neurospatial.layout import (
     ScaleBarConfig,
-    add_scale_bar_to_axes,
-    compute_nice_length,
-    format_scale_label,
+)
+from neurospatial.layout import (
+    _add_scale_bar_to_axes as add_scale_bar_to_axes,
+)
+from neurospatial.layout import (
+    _compute_nice_length as compute_nice_length,
+)
+from neurospatial.layout import (
+    _format_scale_label as format_scale_label,
 )
 
 if TYPE_CHECKING:

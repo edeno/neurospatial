@@ -12,7 +12,7 @@ from neurospatial.layout._labels import canonical_label
 from neurospatial.layout.base import LayoutEngine
 
 
-def built_layout_data(
+def _built_layout_data(
     layout: LayoutEngine,
 ) -> tuple[Binning, Mapping[str, Any]]:
     """Take a built layout's binning once, with its build choices.

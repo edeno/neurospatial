@@ -1389,7 +1389,7 @@ def compute_view_rate(
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
-        validate_env_argument,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -1398,7 +1398,7 @@ def compute_view_rate(
         require_allocentric_view,
     )
 
-    validate_env_argument(
+    _validate_env_argument(
         env,
         context="compute_view_rate",
         arguments="spike_times, times, positions, headings",
@@ -1563,7 +1563,7 @@ def compute_view_rates(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
@@ -1832,9 +1832,9 @@ def _compute_view_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_argument,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -1843,7 +1843,7 @@ def _compute_view_rates(
         require_allocentric_view,
     )
 
-    validate_env_argument(
+    _validate_env_argument(
         env,
         context="compute_view_rates",
         arguments="spike_times, times, positions, headings",
@@ -1876,7 +1876,7 @@ def _compute_view_rates(
 
     # Normalize spike times to canonical list-of-arrays format, surfacing the
     # unit labels a spike group (e.g. a pynapple TsGroup) carries.
-    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
+    spike_times_list, extracted_unit_ids = _as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
     # Resolve and validate per-unit identity labels (defaults to arange). A
@@ -2281,7 +2281,7 @@ def spatial_view_cell_significance(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Sample timestamps in seconds, sorted and aligned with the raw coordinates.
 
@@ -2409,9 +2409,9 @@ def spatial_view_cell_significance(
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_argument,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -2421,7 +2421,7 @@ def spatial_view_cell_significance(
         require_allocentric_view,
     )
 
-    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
     times = np.array(times, dtype=np.float64, copy=True)
     positions = np.array(positions, dtype=np.float64, copy=True)
@@ -2454,7 +2454,7 @@ def spatial_view_cell_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    validate_env_argument(
+    _validate_env_argument(
         env,
         context="spatial_view_cell_significance",
         arguments="spike_times, times, positions, headings",

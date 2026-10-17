@@ -393,7 +393,7 @@ class TestEnvironmentFromPosition:
         def record(cls, positions, **options):
             received.update(options)
 
-        monkeypatch.setattr(neurospatial.environment, "build_from_samples", record)
+        monkeypatch.setattr(neurospatial.environment, "_from_samples", record)
         not_options = {"nwbfile", "processing_module", "position_name"}
         names = [
             name

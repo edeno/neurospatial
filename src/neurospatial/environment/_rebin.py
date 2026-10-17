@@ -36,7 +36,7 @@ from neurospatial.geometry import (
     prepare_bins,
     transform_binning,
 )
-from neurospatial.layout import built_layout_data
+from neurospatial.layout import _built_layout_data
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
@@ -688,7 +688,7 @@ def _rebin_factor(
         connect_diagonal_neighbors=connect_diagonal,
         grid_spec=binning.grid_spec,
     )
-    coarse, _ = built_layout_data(cast("LayoutEngine", layout))
+    coarse, _ = _built_layout_data(cast("LayoutEngine", layout))
     derivation = _Derivation(
         # The coarse bins keep the source's layout label.
         replace(coarse, kind=binning.kind),

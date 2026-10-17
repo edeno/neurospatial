@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry import FramedGrid
 
 
-def source_grid(
+def _source_grid(
     frame: FramedGrid, positions: NDArray[np.float64]
 ) -> tuple[RectilinearLocator, NDArray[np.float64]]:
     """Recover source edge planes only within bounded projection roundoff."""
@@ -54,7 +54,7 @@ def source_grid(
 
 
 @dataclass(frozen=True)
-class RetainedLinearInterval:
+class _RetainedLinearInterval:
     """A half-open fraction of one observation interval assigned to one bin."""
 
     sample_index: int
@@ -220,7 +220,7 @@ def _advance_wall_contact(
     return False, None
 
 
-def uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
+def _uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
     """Use exact planar cells, retaining the native allocator for matching N-D masks."""
     if binning.grid_frame is not None:
         return True
@@ -273,7 +273,7 @@ def retained_linear_intervals(
     positions: NDArray[np.float64],
     valid_mask: NDArray[np.bool_],
     indexes: LookupIndexes | None = None,
-) -> tuple[RetainedLinearInterval, ...]:
+) -> tuple[_RetainedLinearInterval, ...]:
     """Split observation-valid intervals by exact cells and known Arena support.
 
     Parameters
@@ -295,7 +295,7 @@ def retained_linear_intervals(
 
     Returns
     -------
-    tuple of RetainedLinearInterval
+    tuple of _RetainedLinearInterval
         Positive parameter spans in sample order. Fractions refer to the full
         original interval; dropped support is never renormalized. Midpoint
         lookup resolves shared-boundary ownership with the environment's bin
@@ -327,7 +327,7 @@ def retained_linear_intervals(
     domain = arena.polygonal_domain() if arena.domain_known else None
     walls = arena.walls
     if frame is not None:
-        source_locator, positions = source_grid(frame, positions)
+        source_locator, positions = _source_grid(frame, positions)
         cells = cells_from_locator(source_locator)
         source = wall_source_frame(binning.locator, arena, binning.bins.centers)
         if source is not None and all(
@@ -390,7 +390,7 @@ def retained_linear_intervals(
         if np.all(delta == 0):
             owner = int(owner_of(start[None, :])[0])
             if owner >= 0:
-                retained.append(RetainedLinearInterval(int(index), 0.0, 1.0, owner))
+                retained.append(_RetainedLinearInterval(int(index), 0.0, 1.0, owner))
             continue
         segment = LineString([start, stop])
         if len(wall_segments):
@@ -421,14 +421,14 @@ def retained_linear_intervals(
         ):
             if owner >= 0:
                 retained.append(
-                    RetainedLinearInterval(
+                    _RetainedLinearInterval(
                         int(index), float(left), float(right), int(owner)
                     )
                 )
     return tuple(retained)
 
 
-def polygon_linear_occupancy(
+def _polygon_linear_occupancy(
     binning: Binning,
     arena: Arena,
     times: NDArray[np.float64],
@@ -437,7 +437,7 @@ def polygon_linear_occupancy(
     *,
     return_seconds: bool,
     indexes: LookupIndexes | None = None,
-) -> tuple[tuple[RetainedLinearInterval, ...], NDArray[np.float64]]:
+) -> tuple[tuple[_RetainedLinearInterval, ...], NDArray[np.float64]]:
     """Split valid intervals on exact cells and add up each bin's share.
 
     Parameters
@@ -464,7 +464,7 @@ def polygon_linear_occupancy(
 
     Returns
     -------
-    pieces : tuple of RetainedLinearInterval
+    pieces : tuple of _RetainedLinearInterval
         The retained pieces, in sample order.
     occupancy : ndarray of float64, shape (n_bins,)
         Seconds (or proportional counts) in each bin. Dropped support is
@@ -474,7 +474,7 @@ def polygon_linear_occupancy(
     normalizers = np.ones(len(dt))
     frame = binning.grid_frame
     if frame is not None and binning.bins.n_dims != 2 and not return_seconds:
-        _, source_positions = source_grid(frame, positions)
+        _, source_positions = _source_grid(frame, positions)
         samples = np.flatnonzero(valid_mask)
         normalizers[samples] = 0.0
         starts, stops = source_positions[samples], source_positions[samples + 1]
@@ -509,13 +509,13 @@ def _retained_box_intervals(
     positions: NDArray[np.float64],
     valid_mask: NDArray[np.bool_],
     indexes: LookupIndexes,
-) -> tuple[RetainedLinearInterval, ...]:
+) -> tuple[_RetainedLinearInterval, ...]:
     """Partition N-D combined box trajectories at cell and domain planes."""
     frame = binning.grid_frame
     if frame is None:
         boxes = cell_boxes(binning.locator)
     else:
-        source_locator, positions = source_grid(frame, positions)
+        source_locator, positions = _source_grid(frame, positions)
         boxes = cell_boxes(source_locator)
 
     def domain_boxes(arena):
@@ -579,7 +579,7 @@ def _retained_box_intervals(
         for left, right, index in zip(fractions[:-1], fractions[1:], bins, strict=True):
             if index >= 0 and right > left:
                 intervals.append(
-                    RetainedLinearInterval(
+                    _RetainedLinearInterval(
                         int(sample), float(left), float(right), int(index)
                     )
                 )

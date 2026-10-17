@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment import _publication
-from neurospatial.environment._publication import Provenance, declared_metadata
+from neurospatial.environment._publication import _declared_metadata, _Provenance
 from neurospatial.geometry import (
     CartesianSystem,
     CombinedLocator,
@@ -77,12 +77,12 @@ def _from_bins(
         snapshot = replace(snapshot, kind=member.value)
     if arena is None and snapshot.outline is not None:
         arena = OpenArena(snapshot.outline.geometry, physical_footprint_known=False)
-    result = _publication.publish(
+    result = _publication._publish(
         cls,
         snapshot,
         coordinates=CartesianSystem(),
-        provenance=Provenance({}),
-        metadata=declared_metadata(cls, name=name, units=units, frame=frame),
+        provenance=_Provenance({}),
+        metadata=_declared_metadata(cls, name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
     )
@@ -249,7 +249,7 @@ def diagonal_choice(n_dims: int, connect_diagonal_neighbors: bool) -> bool:
     return bool(connect_diagonal_neighbors) if n_dims >= 2 else False
 
 
-def build_from_samples(
+def _from_samples(
     cls: type[Environment[Any]],
     positions: NDArray[np.float64],
     *,
@@ -518,7 +518,7 @@ def _open_field(
     connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.open_field: from_samples that fills holes by default."""
-    return build_from_samples(
+    return _from_samples(
         cls,
         positions,
         bin_size=bin_size,
@@ -979,7 +979,7 @@ def _build_layout(
     layout_params = _owned_copy(layout_params)
     if arena is not None:
         arena = own_arena(arena)
-    metadata = declared_metadata(cls, name=name, units=units, frame=frame)
+    metadata = _declared_metadata(cls, name=name, units=units, frame=frame)
     layout_instance = create_layout(kind=kind, **layout_params)
     return _publication.publish_layout(
         cls,
@@ -1027,7 +1027,7 @@ def _from_layout(
     return _publication.publish_layout(
         cls,
         layout,
-        metadata=declared_metadata(cls, name=name, units=units, frame=frame),
+        metadata=_declared_metadata(cls, name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
         within_arena=True,

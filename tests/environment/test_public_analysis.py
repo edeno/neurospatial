@@ -114,14 +114,14 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
     from neurospatial.environment import _fields
 
     env = _grid()
-    build = _fields.gaussian_kernel
+    build = _fields._gaussian_kernel
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(1)
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(_fields, "gaussian_kernel", counted)
+    monkeypatch.setattr(_fields, "_gaussian_kernel", counted)
     first = env.compute_gaussian_kernel(bandwidth=1.0)
     expected = first.copy()
     second = env.compute_gaussian_kernel(bandwidth=1.0)

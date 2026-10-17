@@ -294,14 +294,16 @@ class TestVideoCallbackCaching:
     """Tests verifying file-based video uses caching for layer.data updates."""
 
     def test_video_reader_has_lru_cache(self) -> None:
-        """VideoReader should use LRU caching to avoid redundant disk reads."""
+        """_VideoReader should use LRU caching to avoid redundant disk reads."""
 
-        from neurospatial.animation._video_io import VideoReader
+        from neurospatial.animation._video_io import _VideoReader
 
-        # Check that VideoReader's __getitem__ or a get method uses caching
+        # Check that _VideoReader's __getitem__ or a get method uses caching
         # The cache is applied via functools.lru_cache in convert_to_data()
         # We verify by checking the class has caching-related attributes
-        assert hasattr(VideoReader, "__getitem__") or hasattr(VideoReader, "_get_frame")
+        assert hasattr(_VideoReader, "__getitem__") or hasattr(
+            _VideoReader, "_get_frame"
+        )
 
     def test_video_overlay_cache_size_configurable(self) -> None:
         """VideoOverlay should have configurable cache_size parameter."""

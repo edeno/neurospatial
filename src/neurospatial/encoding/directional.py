@@ -2175,7 +2175,7 @@ def compute_directional_rates(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
@@ -2325,7 +2325,7 @@ def compute_directional_rates(
     from neurospatial.encoding._directional_counts import (
         prepare_directional_binning,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,
@@ -2348,7 +2348,7 @@ def compute_directional_rates(
 
     # Normalize spike times to canonical list-of-arrays format, surfacing the
     # unit labels a spike group (e.g. a pynapple TsGroup) carries.
-    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
+    spike_times_list, extracted_unit_ids = _as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
     # Resolve and validate per-unit identity labels (defaults to arange). A
@@ -2901,7 +2901,7 @@ def head_direction_cell_significance(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``.
+        ``_as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Sample timestamps in seconds, sorted and aligned with the raw coordinates.
 
@@ -3013,13 +3013,13 @@ def head_direction_cell_significance(
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,
     )
 
-    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
     times = np.array(times, dtype=np.float64, copy=True)
     headings = np.array(headings, dtype=np.float64, copy=True)

@@ -12,7 +12,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.stats import validate_circular_shift_settings
+from neurospatial.stats import _validate_circular_shift_settings
 from neurospatial.stats.shuffle import ShuffleTestResult, shuffle_spike_times_circular
 
 _SHUFFLE_DEFAULTS = MappingProxyType(
@@ -71,7 +71,7 @@ def run_shuffle_test(
     rng: np.random.Generator | int | None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Recompute observed/null statistics using a random stream per unit label."""
-    validate_circular_shift_settings(n_shuffles, min_shift)
+    _validate_circular_shift_settings(n_shuffles, min_shift)
     entropy = _entropy(rng)
     streams = [
         shuffle_spike_times_circular(

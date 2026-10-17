@@ -318,15 +318,17 @@ def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
     from neurospatial.environment import _publication
 
     original = _four_connected_grid()
-    setup = _publication.publish
+    setup = _publication._publish
     calls = []
 
     def counting_setup(cls, binning, **kwargs):
         calls.append(cls)
         return setup(cls, binning, **kwargs)
 
-    monkeypatch.setattr(_publication, "publish", counting_setup)
-    monkeypatch.setattr(neurospatial.environment, "publish", counting_setup)
+    monkeypatch.setattr(_publication, "_publish", counting_setup)
+    # io imports _publish from neurospatial.environment inside its reader, at
+    # call time, so the package's binding must be patched as well.
+    monkeypatch.setattr(neurospatial.environment, "_publish", counting_setup)
 
     with patch.object(
         _publication, "validate_components", wraps=_publication.validate_components
@@ -527,12 +529,12 @@ def test_two_polar_sectors_diffuse_at_the_physical_angular_rate(circular):
 @pytest.mark.parametrize("diagonal", [False, True])
 def test_polar_layout_builds_physical_geometry(circular, diagonal):
     """Edges, lengths, faces and areas match closed-form annular-sector geometry."""
-    from neurospatial.layout.engines._polar import PolarGridLayout
+    from neurospatial.layout.engines._polar import _PolarGridLayout
 
     n_r, n_t, dr, dt = 3, 4, 2.0, np.pi / 2
     r_edges = 1.0 + dr * np.arange(n_r + 1)
     t_edges = np.linspace(-np.pi, np.pi, n_t + 1)
-    layout = PolarGridLayout()
+    layout = _PolarGridLayout()
     layout.build(
         active_mask=np.ones((n_r, n_t), dtype=bool),
         grid_edges=(r_edges, t_edges),
@@ -564,10 +566,10 @@ def test_polar_layout_builds_physical_geometry(circular, diagonal):
 
 def test_masked_polar_layout_preserves_active_bin_indices():
     """Seams join active bins only, using their renumbered graph indices."""
-    from neurospatial.layout.engines._polar import PolarGridLayout
+    from neurospatial.layout.engines._polar import _PolarGridLayout
 
     mask = np.array([[True, False, True, True], [False, True, True, True]])
-    layout = PolarGridLayout()
+    layout = _PolarGridLayout()
     layout.build(
         active_mask=mask,
         grid_edges=(np.arange(3.0) * 2, np.linspace(-np.pi, np.pi, 5)),
@@ -588,15 +590,15 @@ def test_masked_polar_layout_preserves_active_bin_indices():
 
 def test_polar_rebuild_refreshes_active_bin_mapping():
     """Reusing a layout with a new mask must rebuild seam and lookup indices."""
-    from neurospatial.layout.engines._polar import PolarGridLayout
+    from neurospatial.layout.engines._polar import _PolarGridLayout
 
     edges = (np.arange(3.0) * 2, np.linspace(-np.pi, np.pi, 5))
-    layout = PolarGridLayout()
+    layout = _PolarGridLayout()
     layout.build(active_mask=np.ones((2, 4), dtype=bool), grid_edges=edges)
     mask = np.array([[True, False, True, True], [False, True, True, True]])
     layout.build(active_mask=mask, grid_edges=edges)
 
-    expected = PolarGridLayout()
+    expected = _PolarGridLayout()
     expected.build(active_mask=mask, grid_edges=edges)
     assert list(layout.connectivity.edges()) == list(expected.connectivity.edges())
     np.testing.assert_array_equal(

@@ -445,9 +445,9 @@ def _restore_environment(
     """Decode authoritative binning and Arena data without a layout builder."""
     from neurospatial.environment import (
         Environment,
-        Provenance,
-        declared_metadata,
-        publish,
+        _declared_metadata,
+        _Provenance,
+        _publish,
     )
     from neurospatial.geometry import (
         Arena,
@@ -556,12 +556,12 @@ def _restore_environment(
             coordinates = EgocentricPolarSystem(
                 arena.circular if isinstance(arena, EgocentricSurround) else True
             )
-        env = publish(
+        env = _publish(
             Environment,
             binning,
             coordinates=coordinates,
-            provenance=Provenance(params, derivations),
-            metadata=declared_metadata(
+            provenance=_Provenance(params, derivations),
+            metadata=_declared_metadata(
                 Environment,
                 name=metadata["name"],
                 units=metadata.get("units"),

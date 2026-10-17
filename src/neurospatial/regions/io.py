@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 # --------------------------------------------------------------------------
 # 1.  Generic JSON <--> Regions round-trip
 # --------------------------------------------------------------------------
-SCHEMA_TAG = "Regions-v1"
+_SCHEMA_TAG = "Regions-v1"
 
 
 def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> None:
@@ -48,7 +48,7 @@ def regions_to_json(regions: Regions, path: str | Path, *, indent: int = 2) -> N
 
     """
     payload = {
-        "format": SCHEMA_TAG,
+        "format": _SCHEMA_TAG,
         "regions": [reg.to_dict() for reg in regions.values()],
     }
     # Ensure the parent directory exists before writing
@@ -72,7 +72,7 @@ def regions_from_json(path: str | Path) -> Regions:
 
     """
     blob = json.loads(Path(path).read_text())
-    if blob.get("format") != SCHEMA_TAG:
+    if blob.get("format") != _SCHEMA_TAG:
         warnings.warn(
             f"Unrecognised format tag {blob.get('format')!r}; attempting best-effort load",
             category=UserWarning,

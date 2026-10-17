@@ -507,7 +507,7 @@ class TestVideoOverlayWithFilePath:
 
     def test_with_string_path(self, tmp_path):
         """Test VideoOverlay with string file path (deferred existence check)."""
-        # Note: For file paths, existence check happens during VideoReader creation,
+        # Note: For file paths, existence check happens during _VideoReader creation,
         # not during VideoOverlay construction (lazy loading)
         video_path = str(tmp_path / "nonexistent.mp4")
 

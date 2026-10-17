@@ -64,7 +64,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
 
 # Import internal utilities from canonical location
-from neurospatial.stats._utils import ensure_rng
+from neurospatial.stats._utils import _ensure_rng
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -77,7 +77,7 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-def validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None:
+def _validate_circular_shift_settings(n_shuffles: int, min_shift: float) -> None:
     """Reject invalid counts and offsets before allocating shuffle output."""
     problems = []
     if (
@@ -157,7 +157,7 @@ def shuffle_spike_times_circular(
     >>> [len(train) for train in draws]
     [3, 3, 3]
     """
-    validate_circular_shift_settings(n_shuffles, min_shift)
+    _validate_circular_shift_settings(n_shuffles, min_shift)
     try:
         normalized = as_intervals(windows, name="windows")
     except ValueError as exc:
@@ -208,7 +208,7 @@ def shuffle_spike_times_circular(
         total,
         n_shuffles=n_shuffles,
         min_shift=min_shift,
-        generator=ensure_rng(rng),
+        generator=_ensure_rng(rng),
     )
 
 
@@ -294,7 +294,7 @@ def shuffle_time_bins(
     --------
     shuffle_time_bins_coherent : Coherent shuffle (same permutation for all neurons)
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_time_bins = spike_counts.shape[0]
 
     for _ in range(n_shuffles):
@@ -465,7 +465,7 @@ def shuffle_cell_identity(
     shuffle_place_fields_circular : Circular shift of place fields
     shuffle_time_bins : Temporal order shuffle
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_neurons = spike_counts.shape[1]
 
     if encoding_models.shape[0] != n_neurons:
@@ -551,7 +551,7 @@ def shuffle_place_fields_circular(
     shuffle_place_fields_circular_2d : 2D circular shift for 2D environments
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_neurons, n_bins = encoding_models.shape
 
     # Pre-compute column indices for vectorized roll
@@ -666,7 +666,7 @@ def shuffle_place_fields_circular_2d(
             f"bins (masked grid). Consider using shuffle_place_fields_circular "
             f"for masked environments."
         )
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_neurons = encoding_models.shape[0]
 
     # Pre-compute indices for vectorized 2D roll
@@ -779,7 +779,7 @@ def shuffle_posterior_circular(
         effect mitigation
     shuffle_place_fields_circular : Circular shift of place fields
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_time_bins, n_bins = posterior.shape
 
     # Pre-compute column indices for vectorized roll
@@ -892,7 +892,7 @@ def shuffle_posterior_weighted_circular(
     shuffle_posterior_circular : Standard circular shift without edge restriction
     shuffle_place_fields_circular : Circular shift of place fields
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_time_bins, n_bins = posterior.shape
 
     # Handle empty posterior
@@ -1370,7 +1370,7 @@ def shuffle_trials(
     shuffle_time_bins : Shuffle temporal order of spike counts.
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping.
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_samples = len(trial_labels)
 
     for _ in range(n_shuffles):
@@ -1440,7 +1440,7 @@ def shuffle_spikes_isi(
     shuffle_time_bins : Shuffle temporal order of binned spike counts.
     generate_poisson_surrogates : Generate Poisson surrogate spike trains.
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
 
     # Handle edge cases
     if len(spike_times) <= 1:

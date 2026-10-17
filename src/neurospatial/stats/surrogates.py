@@ -50,7 +50,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 # Import internal utilities from canonical location
-from neurospatial.stats._utils import ensure_rng
+from neurospatial.stats._utils import _ensure_rng
 
 
 def generate_poisson_surrogates(
@@ -116,7 +116,7 @@ def generate_poisson_surrogates(
     generate_inhomogeneous_poisson_surrogates : Time-varying rate surrogates
     generate_jittered_spikes : Temporal jitter surrogates
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_time_bins, n_neurons = spike_counts.shape
 
     # Handle empty spike counts
@@ -211,7 +211,7 @@ def generate_inhomogeneous_poisson_surrogates(
     """
     from scipy.ndimage import uniform_filter1d
 
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_time_bins, n_neurons = spike_counts.shape
 
     # Handle empty spike counts
@@ -310,7 +310,7 @@ def generate_jittered_spikes(
     generate_poisson_surrogates : Rate-matched surrogates (destroys all timing)
     neurospatial.stats.shuffle.shuffle_spikes_isi : ISI-preserving shuffle
     """
-    generator = ensure_rng(rng)
+    generator = _ensure_rng(rng)
     n_spikes = len(spike_times)
 
     # Handle empty spike array

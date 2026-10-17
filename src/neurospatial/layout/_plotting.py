@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     )
 
 
-def polygon_patches(shapes: PolygonCells) -> list[Any]:
+def _polygon_patches(shapes: PolygonCells) -> list[Any]:
     """Build compound paths whose interior rings remain unfilled."""
     from matplotlib.patches import PathPatch
     from matplotlib.path import Path
@@ -65,7 +65,7 @@ def plot_polygon_cells(
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     collection = PatchCollection(
-        polygon_patches(shapes), cmap=cmap, alpha=alpha, **kwargs
+        _polygon_patches(shapes), cmap=cmap, alpha=alpha, **kwargs
     )
     collection.set_array(np.ones(len(shapes.polygons)))
     ax.add_collection(collection)
@@ -193,7 +193,7 @@ def plot_polygon_grid(
     return ax
 
 
-def hexagon_patches(
+def _hexagon_patches(
     shapes: HexagonShapes, centers: NDArray[np.float64]
 ) -> list[RegularPolygon]:
     """Build one hexagon patch per center, with the cells' radius and orientation.
@@ -250,7 +250,9 @@ def plot_hexagons(
         ax.scatter(
             shapes.centers[:, 0], shapes.centers[:, 1], s=1, label="hexagonal grid"
         )
-        collection = PatchCollection(hexagon_patches(shapes, shapes.centers), **hex_kws)
+        collection = PatchCollection(
+            _hexagon_patches(shapes, shapes.centers), **hex_kws
+        )
         ax.add_collection(collection)
         ax.plot(
             shapes.centers[:, 0],
@@ -417,7 +419,7 @@ def plot_track(
     return ax
 
 
-def plot_track_linear(
+def _plot_track_linear(
     ax: Axes | None = None,
     *,
     title: str,

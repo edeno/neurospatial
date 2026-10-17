@@ -3077,12 +3077,12 @@ default="diffusion_kde"
         resolve_speed,
     )
     from neurospatial.encoding._validation import (
-        validate_env_argument,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
-    validate_env_argument(
+    _validate_env_argument(
         env, context="compute_spatial_rate", arguments="spike_times, times, positions"
     )
     if time_allocation not in ("start", "linear"):
@@ -3109,11 +3109,11 @@ default="diffusion_kde"
     # stay unset (None); for ratio methods bandwidth/min_occupancy resolve to
     # their historical defaults so existing behavior is byte-identical.
     from neurospatial.encoding._smoothing import (
+        _validate_spatial_method_params,
         validate_pooled,
-        validate_spatial_method_params,
     )
 
-    penalty, rank = validate_spatial_method_params(
+    penalty, rank = _validate_spatial_method_params(
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -3366,7 +3366,7 @@ def compute_spatial_rates(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
+        ``_as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
         group must equal the group's index.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds. For pynapple tracking,
@@ -3675,14 +3675,14 @@ default="diffusion_kde"
         require_linear_allocation,
         resolve_speed,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_argument,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
-    validate_env_argument(
+    _validate_env_argument(
         env, context="compute_spatial_rates", arguments="spike_times, times, positions"
     )
     if time_allocation not in ("start", "linear"):
@@ -3728,11 +3728,11 @@ default="diffusion_kde"
     # below returns before any smoothing and stamps bandwidth=None on the result);
     # for ratio methods this restores the historical defaults byte-for-byte.
     from neurospatial.encoding._smoothing import (
+        _validate_spatial_method_params,
         validate_pooled,
-        validate_spatial_method_params,
     )
 
-    penalty, rank = validate_spatial_method_params(
+    penalty, rank = _validate_spatial_method_params(
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -3754,7 +3754,7 @@ default="diffusion_kde"
     # unit ids the spikes object carries (a spike group, e.g. a
     # pynapple-TsGroup-like). Plain-array/sequence inputs return `None` ids, so
     # the trains are byte-for-byte identical to `as_spike_trains(spike_times)`.
-    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
+    spike_times_list, extracted_unit_ids = _as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
     # Resolve and validate per-unit identity labels (defaults to arange). A
@@ -5586,7 +5586,7 @@ def place_cell_significance(
           labels): its index becomes the result's ``unit_ids``
 
         All formats are coerced to per-neuron spike trains via
-        ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
+        ``_as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
         group must equal the group's index.
     times : ndarray, shape (n_samples,)
         Sample timestamps in seconds, sorted and aligned with the raw coordinates.
@@ -5777,9 +5777,9 @@ def place_cell_significance(
         _spatial_interval_mask,
         resolve_speed,
     )
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
-        validate_env_argument,
+        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
@@ -5792,7 +5792,7 @@ def place_cell_significance(
                 fix="pass method='diffusion_kde', 'gaussian_kde' or 'binned'",
             )
         )
-    trains, input_ids = as_spike_trains_with_ids(spike_times)
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
     trains = [np.array(train, dtype=np.float64, copy=True) for train in trains]
     times = np.array(times, dtype=np.float64, copy=True)
     positions = np.array(positions, dtype=np.float64, copy=True)
@@ -5828,7 +5828,7 @@ def place_cell_significance(
         spike_window=resolved_spike_window,
         unit_ids=ids,
     )
-    validate_env_argument(
+    _validate_env_argument(
         env,
         context="place_cell_significance",
         arguments="spike_times, times, positions",

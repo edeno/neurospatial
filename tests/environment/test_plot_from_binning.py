@@ -429,7 +429,7 @@ def test_drawn_hexagons_are_the_environment_cells():
     from shapely.geometry import Polygon as ShapelyPolygon
 
     from neurospatial.geometry._polygon import materialize_cells
-    from neurospatial.layout._plotting import hexagon_patches
+    from neurospatial.layout._plotting import _hexagon_patches
 
     env = Environment.from_layout(
         create_layout(
@@ -438,7 +438,7 @@ def test_drawn_hexagons_are_the_environment_cells():
     )
     shapes = env.binning.shapes
     cells = materialize_cells(env.binning)
-    patches = hexagon_patches(shapes, shapes.centers)
+    patches = _hexagon_patches(shapes, shapes.centers)
     assert len(patches) == env.n_bins
     for patch, cell in zip(patches, cells, strict=True):
         drawn = ShapelyPolygon(patch.get_verts())

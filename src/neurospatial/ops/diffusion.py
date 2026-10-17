@@ -56,8 +56,8 @@ if TYPE_CHECKING:
     from neurospatial.ops._types import KernelMode
 
 # Public entry points. The eigenbasis/apply-path functions below
-# (apply_heat_operator, diffusion_apply, heat_kernel_rank,
-# component_support_mask) are internal
+# (apply_heat_operator, _diffusion_apply, heat_kernel_rank,
+# _component_support_mask) are internal
 # machinery imported explicitly by the smoothing consumers, not `import *` API.
 __all__ = [
     "MRFBasis",
@@ -67,18 +67,18 @@ __all__ = [
 
 # Defaults for the truncated eigenbasis apply-path (``env.diffuse`` only; the
 # dense ``compute_kernel`` path is untouched). Drop heat-kernel modes whose
-# weight ``exp(-t*lambda)`` is below ``HEAT_KERNEL_RANK_TOL``; once the resolved
+# weight ``exp(-t*lambda)`` is below ``_HEAT_KERNEL_RANK_TOL``; once the resolved
 # rank would exceed ``_HEAT_KERNEL_DENSE_FRACTION * n_bins`` a truncated ``eigsh``
 # no longer beats a dense ``eigh``, so fall back to a transient dense basis.
 # ``_HEAT_KERNEL_RANK_START`` is the first probe size for the adaptive search.
-HEAT_KERNEL_RANK_TOL = 1e-6
+_HEAT_KERNEL_RANK_TOL = 1e-6
 _HEAT_KERNEL_DENSE_FRACTION = 0.5
 _HEAT_KERNEL_RANK_START = 32
 # Relative accuracy of an untruncated (full-basis) apply: float64 roundoff in
 # the eigenbasis product, measured near 1e-14 of the largest output.
 _FULL_BASIS_APPLY_RTOL = 1e-13
 
-# MRF penalty-basis resolver constant (consumed by ``select_live_basis`` and the
+# MRF penalty-basis resolver constant (consumed by ``_select_live_basis`` and the
 # ``Environment.get_mrf_basis`` glue). ``_DEFAULT_MAX_RANK`` is the requested-rank
 # cap ``R`` used when ``rank is None``. It lives here (not in the encoding tier)
 # because the pure selector below returns ``MRFBasis`` and must not import from a
@@ -91,7 +91,7 @@ _DEFAULT_MAX_RANK = 250
 class MRFBasis(NamedTuple):
     """Reduced-rank penalty basis for the penalized-Poisson GAM.
 
-    Produced by :func:`select_live_basis` (and ``Environment.get_mrf_basis``);
+    Produced by :func:`_select_live_basis` (and ``Environment.get_mrf_basis``);
     consumed by the penalized-Poisson fit. ``B`` and ``d`` are float64 in
     **live-bin order**; ``live_bins`` (np.intp) maps that order back to
     ``env.n_bins`` order. The column layout is fixed: ``B[:, :n_live_components]``
@@ -129,7 +129,7 @@ def _frozen(array: NDArray[Any]) -> NDArray[Any]:
 
 
 @dataclass(frozen=True, eq=False)
-class DiffusionEigenbasis:
+class _DiffusionEigenbasis:
     """Truncated heat-kernel eigenbasis of one geometry, replaced as it grows.
 
     A holder is never edited. Resolving a new bandwidth returns a new holder,
@@ -158,16 +158,16 @@ class DiffusionEigenbasis:
         key: tuple[float, float],
         rank: int | Literal["dense"],
         basis: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None,
-    ) -> DiffusionEigenbasis:
+    ) -> _DiffusionEigenbasis:
         """Return a holder that also records ``rank`` for ``key``."""
-        return DiffusionEigenbasis(
+        return _DiffusionEigenbasis(
             self.basis if basis is None else basis,
             MappingProxyType({**self.resolved, key: rank}),
         )
 
 
 @dataclass(frozen=True, eq=False)
-class MRFEigenbasis:
+class _MRFEigenbasis:
     """Global eigenmodes of one geometry for the MRF basis, replaced as it grows.
 
     Attributes
@@ -189,7 +189,7 @@ class MRFEigenbasis:
     G: int
 
     @classmethod
-    def empty(cls, n_bins: int) -> MRFEigenbasis:
+    def empty(cls, n_bins: int) -> _MRFEigenbasis:
         """Return a holder with no modes for ``n_bins`` bins."""
         return cls(
             _frozen(np.zeros((n_bins, 0))),
@@ -210,7 +210,7 @@ _DIFFUSE_DENOM_EPS = 1e-12
 # apply's noise floor (``env.diffusion_accuracy``) relative to the largest value
 # in its W-component. A ratio of two smoothed values at a resolved bin then has
 # an error of at most about 1/1000 = 0.1% of its value.
-RESOLUTION_MARGIN = 1e3
+_RESOLUTION_MARGIN = 1e3
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +370,7 @@ def heat_kernel_from_W(
 # materializes an (n, n) kernel. ``compute_kernel`` (which returns an actual
 # matrix) keeps the dense ``expm`` path above and does NOT touch this cache.
 # ---------------------------------------------------------------------------
-def symmetric_conjugate(
+def _symmetric_conjugate(
     W: scipy.sparse.spmatrix, volumes: NDArray[np.float64]
 ) -> scipy.sparse.csr_matrix:
     """Symmetric conjugate ``S = M^{-1/2}(D - W)M^{-1/2}`` (symmetric PSD, sparse).
@@ -479,7 +479,7 @@ def _symmetric_eigenbasis(
     Parameters
     ----------
     S : scipy.sparse.spmatrix, shape (n_bins, n_bins)
-        Symmetric conjugate from :func:`symmetric_conjugate`.
+        Symmetric conjugate from :func:`_symmetric_conjugate`.
     rank : int or None
         Number of smallest modes to return; ``None`` returns the full basis.
 
@@ -532,22 +532,22 @@ def _symmetric_eigenbasis(
 
 # ---------------------------------------------------------------------------
 # MRF penalty-basis resolver. Reuses the symmetric eigensolver above
-# without modifying it. A cached GLOBAL resolver (``ensure_global_modes`` and
-# the environment's cached ``MRFEigenbasis``) owns the eigensolve and grows on demand; a
-# PURE selector (``select_live_basis``) consumes the cached modes and only masks
+# without modifying it. A cached GLOBAL resolver (``_ensure_global_modes`` and
+# the environment's cached ``_MRFEigenbasis``) owns the eigensolve and grows on demand; a
+# PURE selector (``_select_live_basis``) consumes the cached modes and only masks
 # by occupancy. The split keeps the eigensolve behind the cache so a repeat call
 # at the same-or-smaller rank / same live support never re-solves *while it stays
 # in the sparse (persisted) regime* (a near-full-rank dense solve is transient).
 # ---------------------------------------------------------------------------
-def ensure_global_modes(
-    holder: MRFEigenbasis,
+def _ensure_global_modes(
+    holder: _MRFEigenbasis,
     S: scipy.sparse.spmatrix,
     labels: NDArray[np.int_],
     needed_G: int,
     *,
     dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
 ) -> tuple[
-    MRFEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]]
+    _MRFEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]]
 ]:
     """Return the holder to keep and ``(Q, Lam, mode_comp)`` with ``needed_G`` modes.
 
@@ -567,10 +567,10 @@ def ensure_global_modes(
 
     Parameters
     ----------
-    holder : MRFEigenbasis
+    holder : _MRFEigenbasis
         The environment's cached modes (see ``environment._fields``).
     S : scipy.sparse.spmatrix, shape (n, n)
-        Symmetric conjugate from :func:`symmetric_conjugate`.
+        Symmetric conjugate from :func:`_symmetric_conjugate`.
     labels : NDArray[np.int_], shape (n,)
         W-component label per bin.
     needed_G : int
@@ -580,7 +580,7 @@ def ensure_global_modes(
 
     Returns
     -------
-    holder : MRFEigenbasis
+    holder : _MRFEigenbasis
         The holder to keep: ``holder`` itself, or a grown replacement.
     modes : tuple of ndarray
         ``Q`` (shape ``(n, G)``, component-local eigenvectors as columns in
@@ -602,11 +602,11 @@ def ensure_global_modes(
     mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
     if dense:  # transient-dense policy: never persist an (n, n) basis
         return holder, (Q, Lam, mode_comp)
-    grown = MRFEigenbasis(_frozen(Q), _frozen(Lam), _frozen(mode_comp), Q.shape[1])
+    grown = _MRFEigenbasis(_frozen(Q), _frozen(Lam), _frozen(mode_comp), Q.shape[1])
     return grown, (grown.Q, grown.Lam, grown.mode_comp)
 
 
-def validate_occupancy(occupancy: NDArray[np.float64]) -> None:
+def _validate_occupancy(occupancy: NDArray[np.float64]) -> None:
     """Reject non-finite or negative occupancy before the live/dead split.
 
     Occupancy is time (or samples) per active bin, so it must be finite and
@@ -635,7 +635,7 @@ def validate_occupancy(occupancy: NDArray[np.float64]) -> None:
         )
 
 
-def live_components(
+def _live_components(
     labels: NDArray[np.int_], occupancy: NDArray[np.float64]
 ) -> NDArray[np.intp]:
     """W-components with strictly-positive total occupancy (``sum(o) > 0``)."""
@@ -644,18 +644,18 @@ def live_components(
     return np.flatnonzero(comp_occ > 0.0).astype(np.intp)
 
 
-def target_live_rank(
+def _target_live_rank(
     labels: NDArray[np.int_], occupancy: NDArray[np.float64], rank: int | None
 ) -> int:
     """Effective rank ``r_eff = max(n_live_components, min(n_live_bins, R))``."""
-    live = live_components(labels, occupancy)
+    live = _live_components(labels, occupancy)
     n_live_components = int(live.size)
     n_live_bins = int(np.isin(labels, live).sum())
     R = _DEFAULT_MAX_RANK if rank is None else int(rank)
     return max(n_live_components, min(n_live_bins, R))
 
 
-def null_mode_indices(
+def _null_mode_indices(
     Q: NDArray[np.float64],
     mode_comp: NDArray[np.intp],
     volumes: NDArray[np.float64],
@@ -726,10 +726,10 @@ def _null_mode_mask(
 ) -> NDArray[np.bool_]:
     """Mark each live component's structural null; raise if any is absent.
 
-    Thin raising wrapper over :func:`null_mode_indices` for the selector, which
+    Thin raising wrapper over :func:`_null_mode_indices` for the selector, which
     (unlike the growth loop) has no opportunity to grow the eigenbasis.
     """
-    is_null, missing = null_mode_indices(Q, mode_comp, volumes, labels, live_comp)
+    is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live_comp)
     if missing.size:
         raise ValueError(
             f"component(s) {missing.tolist()}: constant null mode not present in "
@@ -739,7 +739,7 @@ def _null_mode_mask(
     return is_null
 
 
-def select_live_basis(
+def _select_live_basis(
     Q: NDArray[np.float64],
     Lam: NDArray[np.float64],
     mode_comp: NDArray[np.intp],
@@ -766,7 +766,7 @@ def select_live_basis(
     Parameters
     ----------
     Q : NDArray[np.float64], shape (n_bins, G)
-        Component-local eigenvectors (from :func:`ensure_global_modes`).
+        Component-local eigenvectors (from :func:`_ensure_global_modes`).
     Lam : NDArray[np.float64], shape (G,)
         Eigenvalues ascending, non-negative.
     mode_comp : NDArray[np.intp], shape (G,)
@@ -785,8 +785,8 @@ def select_live_basis(
     MRFBasis
         The reduced-rank penalty basis in live-bin order.
     """
-    validate_occupancy(occupancy)
-    live_comp = live_components(labels, occupancy)  # live = sum(occupancy) > 0
+    _validate_occupancy(occupancy)
+    live_comp = _live_components(labels, occupancy)  # live = sum(occupancy) > 0
     n_live_components = int(live_comp.size)
     live_bins = np.flatnonzero(np.isin(labels, live_comp)).astype(np.intp)
     if live_bins.size == 0:  # zero total occupancy -> the empty basis
@@ -815,7 +815,7 @@ def select_live_basis(
     fill_idx = np.flatnonzero(np.isin(mode_comp, live_comp) & ~is_null)[:n_fill]
     if fill_idx.size != n_fill:
         raise ValueError(
-            f"select_live_basis needs {n_fill} fill mode(s) but only "
+            f"_select_live_basis needs {n_fill} fill mode(s) but only "
             f"{fill_idx.size} non-null live mode(s) are present in the "
             f"{Q.shape[1]}-mode eigenbasis. Grow the eigenbasis to full rank "
             "before selecting (Environment.get_mrf_basis does this)."
@@ -1006,19 +1006,19 @@ def _warn_large_dense_basis(n: int) -> None:
         )
 
 
-def resolve_basis(
-    holder: DiffusionEigenbasis,
+def _resolve_basis(
+    holder: _DiffusionEigenbasis,
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
     n_components: int,
     sigma: float,
     *,
-    tol: float = HEAT_KERNEL_RANK_TOL,
+    tol: float = _HEAT_KERNEL_RANK_TOL,
     dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
-) -> tuple[DiffusionEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64]]]:
+) -> tuple[_DiffusionEigenbasis, tuple[NDArray[np.float64], NDArray[np.float64]]]:
     """Return the holder to keep and ``(Q, Lam)`` for ``sigma``.
 
-    ``holder`` is the environment's cached :class:`DiffusionEigenbasis`; it is
+    ``holder`` is the environment's cached :class:`_DiffusionEigenbasis`; it is
     never changed. It holds ONE truncated basis -- the max rank requested so
     far, strictly below ``dense_fraction * n`` -- plus the resolved rank per
     ``(sigma, tol)`` so repeat calls at a bandwidth (every neuron) skip the
@@ -1057,7 +1057,7 @@ def resolve_basis(
             return holder.with_rank(key, r), (Qc[:, :r], Lamc[:r])
 
     # Otherwise probe (and possibly grow the single cached basis).
-    S = symmetric_conjugate(W, volumes)
+    S = _symmetric_conjugate(W, volumes)
     rank, eigvals, eigvecs = _adaptive_symmetric_basis(
         S, sigma, tol=tol, dense_fraction=dense_fraction, n_components=n_components
     )
@@ -1085,15 +1085,15 @@ def _transient_dense_basis(
 
     Does NOT warn (the caller warns once, when the bandwidth first resolves to
     "dense"). Returns ``(Q, Lam)`` -- eigenvectors first -- matching
-    :func:`resolve_basis` (``_symmetric_eigenbasis`` returns ``(eigvals,
+    :func:`_resolve_basis` (``_symmetric_eigenbasis`` returns ``(eigvals,
     eigvecs)``, so swap).
     """
-    S = symmetric_conjugate(W, volumes)
+    S = _symmetric_conjugate(W, volumes)
     eigvals, eigvecs = _symmetric_eigenbasis(S, rank=None)
     return eigvecs, eigvals
 
 
-def diffusion_apply(
+def _diffusion_apply(
     basis: tuple[NDArray[np.float64], NDArray[np.float64]],
     volumes: NDArray[np.float64],
     fields: NDArray[np.float64],
@@ -1105,7 +1105,7 @@ def diffusion_apply(
     """Matrix-free application of the mode operator to a 2-D field batch.
 
     Applies the requested ``mode`` (:func:`_apply_modes`) with a basis resolved
-    by :func:`resolve_basis`, never materializing an ``(n, n)`` kernel. For
+    by :func:`_resolve_basis`, never materializing an ``(n, n)`` kernel. For
     ``backend="jax"`` the apply runs in ``jax.numpy`` (the cached NumPy
     eigenbasis is cast to ``jnp``), so ``jit`` / ``grad`` / GPU still work; the
     eigenbasis **build** stays NumPy (``scipy``).
@@ -1154,17 +1154,17 @@ def diffusion_apply(
     )
 
 
-def diffusion_apply_rtol(
-    holder: DiffusionEigenbasis, n_bins: int, sigma: float
+def _diffusion_apply_rtol(
+    holder: _DiffusionEigenbasis, n_bins: int, sigma: float
 ) -> float:
     """Relative accuracy of an apply at ``sigma``, from its resolved rank."""
-    rank = holder.resolved.get((float(sigma), HEAT_KERNEL_RANK_TOL))
+    rank = holder.resolved.get((float(sigma), _HEAT_KERNEL_RANK_TOL))
     if rank == "dense" or (isinstance(rank, int) and rank >= n_bins):
         return _FULL_BASIS_APPLY_RTOL
-    return HEAT_KERNEL_RANK_TOL
+    return _HEAT_KERNEL_RANK_TOL
 
 
-def component_support_mask(
+def _component_support_mask(
     labels: NDArray[np.int_], n_components: int, valid: NDArray[np.bool_]
 ) -> NDArray[np.bool_]:
     """Bins whose ``W``-component contains at least one valid input bin.
@@ -1200,7 +1200,7 @@ def component_support_mask(
     return support.reshape(*lead, valid.shape[-1])
 
 
-def above_component_floor(
+def _above_component_floor(
     labels: NDArray[np.int_],
     n_components: int,
     values: NDArray[np.float64],
@@ -1231,7 +1231,7 @@ def above_component_floor(
     return np.asarray(flat > floor * component_max[:, labels]).reshape(values.shape)
 
 
-def masked_diffusion_average(
+def _masked_diffusion_average(
     apply_average: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     values: NDArray[np.float64],
     valid: NDArray[np.bool_],
@@ -1249,9 +1249,9 @@ def masked_diffusion_average(
     weights are smoothed together in one batch, ``[values | weights]``.
 
     A bin is NaN when its connected ``W``-component holds no valid bin (exact
-    and truncation-proof; see :func:`component_support_mask`) or, when
+    and truncation-proof; see :func:`_component_support_mask`) or, when
     ``floor`` is given, when its smoothed weight is at most ``floor`` times the
-    largest weight in its component (see :func:`above_component_floor`). Far
+    largest weight in its component (see :func:`_above_component_floor`). Far
     from every valid bin both smoothed sums approach the apply's truncation
     noise, so their ratio would be noise too. The numerator is never floored,
     so signed fields keep their sign; the denominator is floored at
@@ -1287,10 +1287,10 @@ def masked_diffusion_average(
     )
     numerator = smoothed[:, :n_fields].T
     weights = smoothed[:, n_fields:].T
-    support = component_support_mask(labels, n_components, valid.T)
+    support = _component_support_mask(labels, n_components, valid.T)
     if floor is not None:
         relative = floor() if callable(floor) else floor
-        support &= above_component_floor(labels, n_components, weights, relative)
+        support &= _above_component_floor(labels, n_components, weights, relative)
     denominator = np.maximum(weights, _DIFFUSE_DENOM_EPS)
     with np.errstate(divide="ignore", invalid="ignore"):
         averaged = np.where(support, numerator / denominator, np.nan)

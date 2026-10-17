@@ -313,9 +313,9 @@ def goal_reward_field(
     region_reward_field : Reward fields from spatial regions
     neurospatial.distance_field : Compute distance maps
     """
-    from neurospatial.environment import validate_target_bins
+    from neurospatial.environment import _validate_target_bins
 
-    goal_bins_list = validate_target_bins(
+    goal_bins_list = _validate_target_bins(
         goal_bins,
         n_bins=env.n_bins,
         coordinates=env.coordinate_system,

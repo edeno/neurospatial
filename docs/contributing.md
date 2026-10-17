@@ -115,11 +115,13 @@ review imports by hand.
 
 A package imports another package's names from that package's `__init__`
 (for example `from neurospatial.geometry import Binning`), never from its `_`
-modules, and reads an `Environment` only through public members. Each package
-`__init__` exports what the others need; names outside `__all__` are shared
-internals, not public API. `geometry/` imports its own modules at module level
-and has no import cycle: shared records sit in the lower modules
-(`_locators`, `_polygon_cells`, `_binning`), operations above them.
+modules, and reads an `Environment` only through public members. An internal
+helper that another package needs keeps its leading underscore where it is
+defined, and the package `__init__` re-exports it under that name
+(`from neurospatial.ops import _ensure_global_modes`); only `__all__` names are
+public API. `geometry` is wholly internal, so its names carry no underscore.
+`geometry/` has no import cycles: when two modules need each other, move the
+shared definition to a lower module.
 
 `neurospatial.binning` and `neurospatial.arena` are the public import paths
 for geometry records. Importing them does not load layout engines,
@@ -127,12 +129,12 @@ for geometry records. Importing them does not load layout engines,
 
 #### One publisher
 
-`environment/_publication.py:publish` is the only code that creates an
+`environment/_publication.py:_publish` is the only code that creates an
 `Environment`; `Environment()` itself always raises E1006. Funnelling every
 factory, derivation and reader through one function means validation runs in
 one place, and an environment cannot exist in a half-built state. The three
 entry points are `publish_layout` for a built layout engine, `publish_derived`
-for `subset`, `clip`, `rebin`, `apply_transform` and `combine`, and `publish`
+for `subset`, `clip`, `rebin`, `apply_transform` and `combine`, and `_publish`
 itself for `from_bins` and the file, dict and NWB readers, which decode stored
 geometry without replaying build parameters.
 
@@ -145,7 +147,7 @@ assigned, and equality is by identity, so cached analyses and
 `env.to_networkx()` returns an editable copy. `with_metadata` and
 `with_regions` return a new object over the same geometry and cache.
 
-The build record (`Provenance`) only describes how the bins were built, as
+The build record (`_Provenance`) only describes how the bins were built, as
 scalar choices such as `bin_size`, and the derivations applied since
 (`env.derivations`). It never holds input data: an engine
 declares its data arguments once, with `@capture_build_params(data=(...))` on

@@ -545,9 +545,9 @@ def fit_linear_trajectory(
 
     # method == "sample"
     # Set up RNG using shared helper for consistency
-    from neurospatial.stats import ensure_rng
+    from neurospatial.stats import _ensure_rng
 
-    rng_gen = ensure_rng(rng)
+    rng_gen = _ensure_rng(rng)
 
     # Sample positions from posterior using cumulative sum approach
     # This is numerically stable for peaky posteriors

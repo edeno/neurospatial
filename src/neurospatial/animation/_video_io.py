@@ -1,6 +1,6 @@
 """Video I/O utilities for neurospatial animations.
 
-This module provides the VideoReader class for lazy-loading video frames
+This module provides the _VideoReader class for lazy-loading video frames
 with LRU caching, designed for efficient memory usage during animation
 rendering.
 """
@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 class VideoReaderProtocol(Protocol):
     """Protocol defining the interface for video frame readers.
 
-    This protocol enables type-safe handling of both VideoReader instances
+    This protocol enables type-safe handling of both _VideoReader instances
     and pre-loaded numpy arrays in VideoData. Classes implementing this
     protocol must provide frame count, frame dimensions, and indexed access.
 
@@ -80,7 +80,7 @@ class VideoReaderProtocol(Protocol):
 
 
 class CacheInfo(NamedTuple):
-    """Cache statistics for VideoReader.
+    """Cache statistics for _VideoReader.
 
     Attributes
     ----------
@@ -100,7 +100,7 @@ class CacheInfo(NamedTuple):
     currsize: int
 
 
-class VideoReader:
+class _VideoReader:
     """Lazy-loading video reader with LRU caching.
 
     Provides efficient, memory-conscious access to video frames through
@@ -151,12 +151,12 @@ class VideoReader:
 
     Examples
     --------
-    >>> reader = VideoReader("video.mp4", cache_size=50)  # doctest: +SKIP
+    >>> reader = _VideoReader("video.mp4", cache_size=50)  # doctest: +SKIP
     >>> frame = reader[0]  # Load first frame  # doctest: +SKIP
     >>> print(frame.shape)  # (height, width, 3)  # doctest: +SKIP
 
     >>> # With crop and downsample
-    >>> reader = VideoReader(  # doctest: +SKIP
+    >>> reader = _VideoReader(  # doctest: +SKIP
     ...     "video.mp4",
     ...     crop=(100, 100, 200, 200),  # x, y, width, height
     ...     downsample=2,
@@ -442,7 +442,7 @@ class VideoReader:
         )
 
     def close(self) -> None:
-        """Release resources held by the VideoReader.
+        """Release resources held by the _VideoReader.
 
         Shuts down the prefetch thread pool executor if active. Safe to call
         multiple times. After closing, the reader can still be used but
@@ -450,7 +450,7 @@ class VideoReader:
 
         Examples
         --------
-        >>> reader = VideoReader("video.mp4")  # doctest: +SKIP
+        >>> reader = _VideoReader("video.mp4")  # doctest: +SKIP
         >>> frame = reader[0]  # doctest: +SKIP
         >>> reader.close()  # Release resources  # doctest: +SKIP
         """
@@ -458,17 +458,17 @@ class VideoReader:
             self._prefetch_executor.shutdown(wait=False)
             self._prefetch_executor = None
 
-    def __enter__(self) -> VideoReader:
+    def __enter__(self) -> _VideoReader:
         """Enter context manager.
 
         Returns
         -------
-        VideoReader
+        _VideoReader
             Self for use in with statement.
 
         Examples
         --------
-        >>> with VideoReader("video.mp4") as reader:  # doctest: +SKIP
+        >>> with _VideoReader("video.mp4") as reader:  # doctest: +SKIP
         ...     frame = reader[0]
         ...     # Resources automatically released on exit
         """

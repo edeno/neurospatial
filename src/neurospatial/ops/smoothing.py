@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry import CoordinateSystem
 
 
-def gaussian_kernel(
+def _gaussian_kernel(
     bin_centers: NDArray[np.float64],
     coordinates: CoordinateSystem,
     bandwidth: float,

@@ -1,7 +1,8 @@
 """Trajectory adapters on owned geometry and explicit sampled data.
 
 Includes time allocation, occupancy, run extraction and the inputs of the
-transition estimators in :mod:`neurospatial.ops._transitions`. Environment
+transition estimators that ``neurospatial.ops`` shares (``_count_transitions``,
+``_diffusion_transitions``, ``_random_walk_transitions``). Environment
 exposes thin entry points; Cartesian coordinate operations are guarded.
 
 Index-dtype convention: every array of bin indices an Environment returns
@@ -41,13 +42,15 @@ from neurospatial.geometry import (
     require_rectilinear,
 )
 from neurospatial.ops import (
-    count_transitions,
-    diffusion_transitions,
-    linear_grid_occupancy,
-    polygon_linear_occupancy,
-    random_walk_transitions,
-    source_grid,
-    uses_polygon_allocation,
+    _count_transitions,
+    _linear_grid_occupancy,
+    _polygon_linear_occupancy,
+    _random_walk_transitions,
+    _source_grid,
+    _uses_polygon_allocation,
+)
+from neurospatial.ops import (
+    _diffusion_transitions as _diffusion_transition_matrix,
 )
 
 if TYPE_CHECKING:
@@ -164,7 +167,7 @@ def _occupancy(
             "time_allocation='start'",
             example="env.occupancy(times, positions, time_allocation='start')",
         )
-        polygon_allocation = uses_polygon_allocation(binning, arena)
+        polygon_allocation = _uses_polygon_allocation(binning, arena)
         if not polygon_allocation:
             grid = require_rectilinear(
                 binning,
@@ -191,7 +194,7 @@ def _occupancy(
     # correctly flagged the same sample as -1.
     bin_indices = locate(binning, arena, positions, cache)
     if time_allocation == "linear" and n_dims != 2 and binning.grid_frame is not None:
-        source_locator, source_positions = source_grid(binning.grid_frame, positions)
+        source_locator, source_positions = _source_grid(binning.grid_frame, positions)
         bin_indices = source_locator.locate(source_positions)
         if arena.domain_known:
             bin_indices[~arena.contains(positions)] = -1
@@ -232,7 +235,7 @@ def _occupancy(
 
     elif time_allocation == "linear":
         if polygon_allocation:
-            pieces, occupancy = polygon_linear_occupancy(
+            pieces, occupancy = _polygon_linear_occupancy(
                 binning,
                 arena,
                 times,
@@ -248,7 +251,7 @@ def _occupancy(
             retained_mask[[piece.sample_index for piece in pieces]] = True
         else:
             assert grid is not None
-            occupancy = linear_grid_occupancy(
+            occupancy = _linear_grid_occupancy(
                 n_bins,
                 grid,
                 positions,
@@ -476,7 +479,7 @@ def _transitions(
 
         # Dispatch to model-based method
         if method == "random_walk":
-            return random_walk_transitions(graph, normalize=normalize)
+            return _random_walk_transitions(graph, normalize=normalize)
         elif method == "diffusion":
             if bandwidth is None:
                 raise ValueError(
@@ -692,7 +695,7 @@ def _empirical_transitions(
         pair_ok &= (source_bins >= 0) & (target_bins >= 0)
         source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
 
-    return count_transitions(
+    return _count_transitions(
         source_bins,
         target_bins,
         n_bins,
@@ -716,6 +719,6 @@ def _diffusion_transitions(
             "Set normalize=True or use method='random_walk'."
         )
 
-    return diffusion_transitions(
+    return _diffusion_transition_matrix(
         _compute_kernel(cache, binning, bandwidth, mode="transition", use_cache=True)
     )

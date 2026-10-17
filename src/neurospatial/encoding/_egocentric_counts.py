@@ -61,8 +61,8 @@ from neurospatial.encoding._spatial_counts import (
     count_spikes_by_frame,
     prepare_frame_binning,
 )
-from neurospatial.encoding._validation import validate_times as _validate_times
-from neurospatial.ops import wrap_bearing
+from neurospatial.encoding._validation import _validate_times
+from neurospatial.ops import _wrap_bearing
 from neurospatial.ops.egocentric import compute_egocentric_bearing
 
 if TYPE_CHECKING:
@@ -255,7 +255,7 @@ def _compute_object_coords(
     # bearings_all: (n_time, n_objects)
     if headings is None:
         delta = object_positions[None, :, :] - positions[:, None, :]
-        bearings_all = wrap_bearing(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
+        bearings_all = _wrap_bearing(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
     else:
         bearings_all = compute_egocentric_bearing(positions, headings, object_positions)
 

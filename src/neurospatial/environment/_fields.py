@@ -38,24 +38,23 @@ from neurospatial.geometry import (
     require_grid_context,
 )
 from neurospatial.ops import (
-    HEAT_KERNEL_RANK_TOL,
-    RESOLUTION_MARGIN,
-    DiffusionEigenbasis,
-    MRFEigenbasis,
-    diffusion_apply,
-    ensure_global_modes,
-    gaussian_kernel,
-    heat_kernel_from_W,
-    live_components,
-    masked_diffusion_average,
-    null_mode_indices,
-    resolve_basis,
-    select_live_basis,
-    symmetric_conjugate,
-    target_live_rank,
-    validate_occupancy,
+    _HEAT_KERNEL_RANK_TOL,
+    _RESOLUTION_MARGIN,
+    _diffusion_apply,
+    _DiffusionEigenbasis,
+    _ensure_global_modes,
+    _gaussian_kernel,
+    _live_components,
+    _masked_diffusion_average,
+    _MRFEigenbasis,
+    _null_mode_indices,
+    _resolve_basis,
+    _select_live_basis,
+    _symmetric_conjugate,
+    _target_live_rank,
+    _validate_occupancy,
 )
-from neurospatial.ops.diffusion import MRFBasis
+from neurospatial.ops.diffusion import MRFBasis, heat_kernel_from_W
 
 if TYPE_CHECKING:
     from neurospatial.geometry import Arena
@@ -64,12 +63,12 @@ if TYPE_CHECKING:
 # Smoothing a field with NaN (missing) bins leaves a bin NaN when its smoothed
 # support -- the share of its smoothing weight on observed bins -- is at most
 # this fraction of the largest support in its connected part. The truncated
-# operator reproduces the heat kernel to HEAT_KERNEL_RANK_TOL (1e-6) of its
+# operator reproduces the heat kernel to _HEAT_KERNEL_RANK_TOL (1e-6) of its
 # largest output, so above a support 1e3 times that the averaged value is
 # accurate to about 0.1% of the field's largest magnitude in the component
 # (not of each value: a 1000:1 field can be off by ~1% at its low end); below
 # it the ratio is truncation noise.
-MISSING_SUPPORT_FLOOR = RESOLUTION_MARGIN * HEAT_KERNEL_RANK_TOL
+MISSING_SUPPORT_FLOOR = _RESOLUTION_MARGIN * _HEAT_KERNEL_RANK_TOL
 
 
 def _interpolate(
@@ -358,14 +357,14 @@ def diffusion_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeome
     )
 
 
-def diffusion_eigenbasis(cache: AnalysisCache) -> DiffusionEigenbasis:
+def diffusion_eigenbasis(cache: AnalysisCache) -> _DiffusionEigenbasis:
     """The current truncated-eigenbasis holder for :func:`_diffuse`, empty at first."""
-    return cache.get(DIFFUSION_EIGENBASIS, DiffusionEigenbasis)
+    return cache.get(DIFFUSION_EIGENBASIS, _DiffusionEigenbasis)
 
 
-def mrf_eigenbasis(cache: AnalysisCache, n_bins: int) -> MRFEigenbasis:
+def mrf_eigenbasis(cache: AnalysisCache, n_bins: int) -> _MRFEigenbasis:
     """The current global eigenbasis holder for the MRF penalty basis."""
-    return cache.get(MRF_EIGENBASIS, lambda: MRFEigenbasis.empty(n_bins))
+    return cache.get(MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(n_bins))
 
 
 def _compute_kernel(
@@ -549,14 +548,14 @@ def _diffuse(
     # the apply itself runs on the resolved, read-only basis without it.
     basis = cache.update(
         DIFFUSION_EIGENBASIS,
-        DiffusionEigenbasis,
-        lambda holder: resolve_basis(
+        _DiffusionEigenbasis,
+        lambda holder: _resolve_basis(
             holder, W, volumes, n_components, float(bandwidth)
         ),
     )
 
     def apply(columns: Any) -> Any:
-        return diffusion_apply(
+        return _diffusion_apply(
             basis, volumes, columns, float(bandwidth), mode, backend=backend
         )
 
@@ -606,7 +605,7 @@ def _diffuse(
             result = np.empty_like(fields_2d)
         else:
             result = apply(np.where(missing, 0.0, fields_2d))
-        result[:, holed] = masked_diffusion_average(
+        result[:, holed] = _masked_diffusion_average(
             apply,
             fields_2d[:, holed],
             ~missing[:, holed],
@@ -640,18 +639,18 @@ def _mrf_basis(
     rank: int | None,
 ) -> MRFBasis:
     """Reduced-rank MRF smoothness basis covering the occupied support."""
-    validate_occupancy(occupancy)  # fail fast, before the eigensolve
+    _validate_occupancy(occupancy)  # fail fast, before the eigensolve
     _W, volumes, n_components, labels = diffusion_geometry(cache, binning)
-    S = symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
-    live = live_components(labels, occupancy)
+    S = _symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
+    live = _live_components(labels, occupancy)
     n_live_components = int(live.size)
-    r_eff = target_live_rank(labels, occupancy, rank)
+    r_eff = _target_live_rank(labels, occupancy, rank)
     n_fill = r_eff - n_live_components
 
     def grow(
-        holder: MRFEigenbasis,
+        holder: _MRFEigenbasis,
     ) -> tuple[
-        MRFEigenbasis,
+        _MRFEigenbasis,
         tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]],
     ]:
         """Grow the cached modes until they cover the occupied support."""
@@ -661,14 +660,14 @@ def _mrf_basis(
         # Floor ``G`` at ``n_components`` to keep the first solve legal.
         G = max(holder.G, r_eff, n_components)
         while True:  # grow until every live null is present AND enough fills
-            holder, modes = ensure_global_modes(holder, S, labels, G)
+            holder, modes = _ensure_global_modes(holder, S, labels, G)
             Q, _, mode_comp = modes
             # Verify the structural null the selector requires is actually present
             # for every live component (its numerical null can sort AFTER one of
             # its positive modes when both are near machine-epsilon), and count
             # the non-null fill-eligible live modes -- using the same overlap
-            # criterion select_live_basis uses, so the two never disagree.
-            is_null, missing = null_mode_indices(Q, mode_comp, volumes, labels, live)
+            # criterion _select_live_basis uses, so the two never disagree.
+            is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live)
             n_fill_available = int((np.isin(mode_comp, live) & ~is_null).sum())
             covered = missing.size == 0
             if (covered and n_fill_available >= n_fill) or Q.shape[1] >= S.shape[0]:
@@ -678,9 +677,9 @@ def _mrf_basis(
     # Growth replaces the cached modes under their lock, so concurrent
     # requests share one eigensolve.
     Q, Lam, mode_comp = cache.update(
-        MRF_EIGENBASIS, lambda: MRFEigenbasis.empty(binning.bins.n_bins), grow
+        MRF_EIGENBASIS, lambda: _MRFEigenbasis.empty(binning.bins.n_bins), grow
     )
-    return select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)
+    return _select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)
 
 
 def _compute_gaussian_kernel(
@@ -712,7 +711,7 @@ def _compute_gaussian_kernel(
                 UserWarning,
                 stacklevel=_external_stacklevel(),
             )
-        kernel = gaussian_kernel(bin_centers, coordinates, bandwidth)
+        kernel = _gaussian_kernel(bin_centers, coordinates, bandwidth)
         kernel.setflags(write=False)
         return kernel
 

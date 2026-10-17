@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 __all__ = ["divergence", "gradient"]
 
 
-def compute_differential_operator(
+def _compute_differential_operator(
     faces: FaceGeometry, n_bins: int
 ) -> sparse.csc_matrix:
     """Build an oriented inverse-distance operator from explicit face data."""
@@ -47,7 +47,7 @@ def compute_differential_operator(
     )
 
 
-def compute_divergence_operator(
+def _compute_divergence_operator(
     faces: FaceGeometry, differential_operator: sparse.csc_matrix
 ) -> sparse.csc_matrix:
     """Build the negative volume-weighted adjoint of the gradient."""

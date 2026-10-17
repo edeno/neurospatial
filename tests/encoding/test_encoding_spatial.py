@@ -5142,8 +5142,8 @@ class TestComputeSpatialRatesThroughputContract:
             env, times, positions, spikes = _make_batch_inputs(n_neurons)
             with patch.object(
                 _fields,
-                "resolve_basis",
-                wraps=_fields.resolve_basis,
+                "_resolve_basis",
+                wraps=_fields._resolve_basis,
             ) as resolve_spy:
                 compute_spatial_rates(
                     env,

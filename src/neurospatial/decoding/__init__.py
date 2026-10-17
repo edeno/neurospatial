@@ -162,14 +162,14 @@ with numerical stability considerations for log-domain computation.
 """
 
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
+from neurospatial.decoding._time_bins import (
+    _count_spikes_in_time_bins as _count_spikes_in_time_bins,
+)
+from neurospatial.decoding._time_bins import _time_bin_rounding as _time_bin_rounding
+from neurospatial.decoding._time_bins import (
+    _time_bins_in_windows as _time_bins_in_windows,
+)
 from neurospatial.decoding._time_bins import bin_spikes_in_time
-from neurospatial.decoding._time_bins import (
-    count_spikes_in_time_bins as count_spikes_in_time_bins,
-)
-from neurospatial.decoding._time_bins import time_bin_rounding as time_bin_rounding
-from neurospatial.decoding._time_bins import (
-    time_bins_in_windows as time_bins_in_windows,
-)
 from neurospatial.decoding.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
@@ -215,8 +215,8 @@ from neurospatial.decoding.trajectory import (
 # Public API exports
 # =============================================================================
 
-# Names imported here but not listed in ``__all__`` are shared with other
-# neurospatial packages. They are internal, not public API.
+# The ``_`` names imported here are internal helpers shared with other
+# neurospatial packages; they are not public API.
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Immutable fit/predict estimator
     "BayesianDecoder",

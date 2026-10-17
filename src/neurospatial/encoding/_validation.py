@@ -9,7 +9,7 @@ each surfaced length errors with a slightly different message style.
 
 This module centralizes:
 
-- ``validate_times`` — monotonic-non-decreasing + min-length check on a
+- ``_validate_times`` — monotonic-non-decreasing + min-length check on a
   timestamp array (previously duplicated byte-for-byte in
   ``_view_counts.py`` and ``_egocentric_counts.py``).
 - ``validate_trajectory`` — joint length + dimensionality check on
@@ -35,15 +35,15 @@ from neurospatial._validation import (
 from neurospatial.environment import Environment
 
 __all__ = [
+    "_validate_env_argument",
+    "_validate_times",
     "validate_classifier_trajectory",
-    "validate_env_argument",
     "validate_spike_times",
-    "validate_times",
     "validate_trajectory",
 ]
 
 
-def validate_env_argument(env: object, *, context: str, arguments: str) -> None:
+def _validate_env_argument(env: object, *, context: str, arguments: str) -> None:
     """Raise ``TypeError`` if ``env`` is not an environment.
 
     Public ``compute_*_rate(s)`` and ``decode_position`` entry points use
@@ -136,7 +136,7 @@ def _time_problems(times: NDArray[np.float64]) -> list[tuple[str, str]]:
     return problems
 
 
-def validate_times(times: NDArray[np.float64], *, context: str) -> None:
+def _validate_times(times: NDArray[np.float64], *, context: str) -> None:
     """Check finite, non-decreasing timestamps with at least two samples.
 
     Parameters

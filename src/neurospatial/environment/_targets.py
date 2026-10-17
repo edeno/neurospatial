@@ -161,7 +161,7 @@ def validate_bin_indices(
     return indices.astype(np.intp, copy=False)
 
 
-def validate_target_bins(
+def _validate_target_bins(
     bins: object,
     *,
     n_bins: int,
@@ -207,7 +207,7 @@ def validate_target_bins(
     )
 
 
-def validate_sample_targets(
+def _validate_sample_targets(
     bins: object,
     *,
     n_samples: int,
@@ -264,7 +264,7 @@ def validate_sample_targets(
                 "with -1 for samples that have no target",
             )
         )
-    targets = validate_target_bins(
+    targets = _validate_target_bins(
         bins,
         n_bins=n_bins,
         coordinates=coordinates,

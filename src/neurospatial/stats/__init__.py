@@ -20,7 +20,7 @@ Imports
 >>> from neurospatial.stats.surrogates import generate_inhomogeneous_poisson_surrogates
 """
 
-from neurospatial.stats._utils import ensure_rng as ensure_rng
+from neurospatial.stats._utils import _ensure_rng as _ensure_rng
 from neurospatial.stats.circular import (
     CircularBasisResult,
     circular_basis,
@@ -36,8 +36,8 @@ from neurospatial.stats.circular import (
     rayleigh_test,
     wrap_angle,
 )
-from neurospatial.stats.circular import to_radians as to_radians
-from neurospatial.stats.circular import validate_paired_input as validate_paired_input
+from neurospatial.stats.circular import _to_radians as _to_radians
+from neurospatial.stats.circular import _validate_paired_input as _validate_paired_input
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     compute_shuffle_pvalue,
@@ -54,7 +54,7 @@ from neurospatial.stats.shuffle import (
     shuffle_trials,
 )
 from neurospatial.stats.shuffle import (
-    validate_circular_shift_settings as validate_circular_shift_settings,
+    _validate_circular_shift_settings as _validate_circular_shift_settings,
 )
 from neurospatial.stats.surrogates import (
     generate_inhomogeneous_poisson_surrogates,
@@ -62,8 +62,8 @@ from neurospatial.stats.surrogates import (
     generate_poisson_surrogates,
 )
 
-# Names imported here but not listed in ``__all__`` are shared with other
-# neurospatial packages. They are internal, not public API.
+# The ``_`` names imported here are internal helpers shared with other
+# neurospatial packages; they are not public API.
 __all__ = [  # noqa: RUF022
     # Core circular statistics
     "rayleigh_test",

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.geometry import DiffusionGeometry, FaceGeometry
-    from neurospatial.ops import DiffusionEigenbasis, KernelMode, MRFEigenbasis
+    from neurospatial.ops import KernelMode, _DiffusionEigenbasis, _MRFEigenbasis
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")
@@ -250,8 +250,8 @@ KDTREE: CacheKey[cKDTree] = CacheKey("kdtree")
 EMBEDDED_KDTREE: CacheKey[tuple[NDArray[Any], cKDTree]] = CacheKey("embedded_kdtree")
 FACE_GEOMETRY: CacheKey[FaceGeometry] = CacheKey("face_geometry")
 DIFFUSION_GEOMETRY: CacheKey[DiffusionGeometry] = CacheKey("diffusion_geometry")
-DIFFUSION_EIGENBASIS: CacheKey[DiffusionEigenbasis] = CacheKey("diffusion_eigenbasis")
-MRF_EIGENBASIS: CacheKey[MRFEigenbasis] = CacheKey("mrf_eigenbasis")
+DIFFUSION_EIGENBASIS: CacheKey[_DiffusionEigenbasis] = CacheKey("diffusion_eigenbasis")
+MRF_EIGENBASIS: CacheKey[_MRFEigenbasis] = CacheKey("mrf_eigenbasis")
 DIFFERENTIAL_OPERATOR: CacheKey[sparse.csc_matrix] = CacheKey("differential_operator")
 DIVERGENCE_OPERATOR: CacheKey[sparse.csc_matrix] = CacheKey("divergence_operator")
 BOUNDARY_BINS: CacheKey[NDArray[Any]] = CacheKey("boundary_bins")

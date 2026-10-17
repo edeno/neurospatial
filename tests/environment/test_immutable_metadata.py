@@ -44,7 +44,7 @@ def test_metadata_replacement_reuses_geometry_without_republication(monkeypatch)
 
     from neurospatial.environment import _publication
 
-    monkeypatch.setattr(_publication, "publish", fail)
+    monkeypatch.setattr(_publication, "_publish", fail)
     updated = env.with_metadata(name="comparison", units="m", frame=None)
     assert type(updated) is type(env)
     assert updated is not env

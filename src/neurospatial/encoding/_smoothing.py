@@ -68,10 +68,10 @@ from numpy.typing import ArrayLike, NDArray
 # estimate) and proceeds.
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops import (
-    RESOLUTION_MARGIN,
-    above_component_floor,
-    component_support_mask,
-    masked_diffusion_average,
+    _RESOLUTION_MARGIN,
+    _above_component_floor,
+    _component_support_mask,
+    _masked_diffusion_average,
 )
 
 if TYPE_CHECKING:
@@ -601,7 +601,7 @@ def validate_pooled(pooled: Any, method: str) -> None:
         )
 
 
-def validate_spatial_method_params(
+def _validate_spatial_method_params(
     method: str,
     *,
     bandwidth: float | None,
@@ -762,10 +762,10 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
 def _resolution_floor(env: Environment, bandwidth: float) -> float:
     """Fraction of its component maximum below which a smoothed value is noise.
 
-    ``RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
+    ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
     ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
     """
-    return RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth=bandwidth)
+    return _RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth=bandwidth)
 
 
 def _resolved_density_mask(
@@ -803,8 +803,8 @@ def _resolved_density_mask(
     """
     geometry = env.get_diffusion_geometry()
     n_components, labels = geometry.n_components, geometry.labels
-    support = component_support_mask(labels, n_components, occupancy > 0)
-    resolved = above_component_floor(
+    support = _component_support_mask(labels, n_components, occupancy > 0)
+    resolved = _above_component_floor(
         labels, n_components, occupancy_density, _resolution_floor(env, bandwidth)
     )
     return support & resolved
@@ -988,7 +988,7 @@ def _binned_gate(
 ) -> NDArray[np.float64]:
     """Masked diffusion average of a (possibly NaN) intensive rate.
 
-    The shared :func:`~neurospatial.ops.diffusion.masked_diffusion_average`
+    The shared :func:`~neurospatial.ops._masked_diffusion_average`
     over the rate's valid (finite) bins, so NaN bins contribute no weight and an
     interior NaN is interpolated rather than propagating. It is
     **sign-preserving**; the ``binned`` firing-rate wrappers clip the output.
@@ -997,7 +997,7 @@ def _binned_gate(
     approach the truncated apply's noise, and their ratio is noise (it reached
     295,658 Hz from raw rates of at most 50 Hz). Bins whose smoothed weight is
     below :func:`_resolution_floor` of the largest in their component are
-    therefore NaN (see :func:`~neurospatial.ops.diffusion.above_component_floor`);
+    therefore NaN (see :func:`~neurospatial.ops._above_component_floor`);
     elsewhere the result matches the dense masked average.
 
     Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
@@ -1005,7 +1005,7 @@ def _binned_gate(
     geometry = env.get_diffusion_geometry()
     n_components, labels = geometry.n_components, geometry.labels
     rates = np.atleast_2d(raw_rate)  # (n_neurons, n_bins)
-    averaged = masked_diffusion_average(
+    averaged = _masked_diffusion_average(
         lambda columns: np.asarray(
             env.diffuse(columns, bandwidth=bandwidth, mode="average")
         ),

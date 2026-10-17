@@ -266,13 +266,13 @@ warn_on_drop
         cannot change its predictions. Reuses the core
         :func:`~neurospatial.decoding._time_bins.validate_dt` so ``dt`` semantics
         cannot drift from the decode entry points, and the encoder's
-        :func:`~neurospatial.encoding._smoothing.validate_spatial_method_params`
+        :func:`~neurospatial.encoding._validate_spatial_method_params`
         so ``method`` / ``bandwidth`` / ``min_occupancy`` / ``penalty`` / ``rank``
         errors mirror ``compute_spatial_rate`` exactly (one validator, no
         duplicate allow-set).
         """
         from neurospatial.decoding._time_bins import validate_dt
-        from neurospatial.encoding import validate_spatial_method_params
+        from neurospatial.encoding import _validate_spatial_method_params
 
         # Config domain: dt (shared core validator) and dtype.
         validate_dt(self.dt)
@@ -299,7 +299,7 @@ warn_on_drop
         # Method-specific validation, reusing the encoder's validator so the
         # mutual-exclusivity + value-domain errors are byte-identical to
         # compute_spatial_rate's. fill_value is not a decoder param (pass None).
-        validate_spatial_method_params(
+        _validate_spatial_method_params(
             self.method,
             bandwidth=self.bandwidth,
             min_occupancy=self.min_occupancy,
@@ -664,11 +664,11 @@ warn_on_drop
         from neurospatial._intervals import resolve_time_windows
         from neurospatial._results import resolve_unit_ids
         from neurospatial.decoding.session import _fit_encoding_model
-        from neurospatial.encoding import as_spike_trains_with_ids
+        from neurospatial.encoding import _as_spike_trains_with_ids
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
-        trains, extracted_ids = as_spike_trains_with_ids(spike_times)
+        trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
         resolved_ids = resolve_unit_ids(
             unit_ids,
             len(trains),
@@ -721,9 +721,9 @@ warn_on_drop
         otherwise by position, which requires one train per fitted unit.
         """
         from neurospatial._results import resolve_unit_ids
-        from neurospatial.encoding import as_spike_trains_with_ids
+        from neurospatial.encoding import _as_spike_trains_with_ids
 
-        trains, input_ids = as_spike_trains_with_ids(spike_times)
+        trains, input_ids = _as_spike_trains_with_ids(spike_times)
         n_models = self._check_fitted().shape[0]
         if input_ids is not None:
             labels = resolve_unit_ids(

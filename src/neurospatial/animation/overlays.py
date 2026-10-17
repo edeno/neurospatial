@@ -2449,10 +2449,10 @@ class VideoOverlay:
             reader: NDArray[np.uint8] | Any = self.source
             n_video_frames = self.source.shape[0]
         else:
-            # File path - create VideoReader
-            from neurospatial.animation._video_io import VideoReader
+            # File path - create _VideoReader
+            from neurospatial.animation._video_io import _VideoReader
 
-            reader = VideoReader(
+            reader = _VideoReader(
                 self.source,
                 cache_size=self.cache_size,
                 downsample=self.downsample,
@@ -2760,7 +2760,7 @@ class VideoData:
     For pickle-safety with parallel rendering:
 
     - Pre-loaded arrays (NDArray[np.uint8]) are pickle-safe
-    - VideoReader instances implement pickle protocol (drops cache on pickle)
+    - _VideoReader instances implement pickle protocol (drops cache on pickle)
     """
 
     frame_indices: NDArray[np.int_]
@@ -2803,7 +2803,7 @@ class VideoData:
             frame: NDArray[np.uint8] = self.reader[video_frame_idx]
             return frame
         else:
-            # VideoReader case - uses subscript access
+            # _VideoReader case - uses subscript access
             result: NDArray[np.uint8] = self.reader[video_frame_idx]
             return result
 

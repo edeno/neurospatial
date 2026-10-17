@@ -1,7 +1,7 @@
 """Region membership tables for Environment.
 
 Which bins a region covers is decided by
-:func:`neurospatial.geometry._region_bins.region_bin_mask`; this module only
+:func:`neurospatial.geometry.region_bin_mask`; this module only
 arranges that rule's answers for the region methods.
 """
 

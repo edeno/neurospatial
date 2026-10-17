@@ -56,10 +56,10 @@ from numpy.typing import NDArray
 
 from neurospatial._results import ResultMixin
 from neurospatial.stats import (
+    _to_radians,
+    _validate_paired_input,
     circular_linear_correlation,
     mean_resultant_length,
-    to_radians,
-    validate_paired_input,
 )
 
 if TYPE_CHECKING:
@@ -588,10 +588,10 @@ def compute_phase_precession(
     # Convert to arrays and radians if needed
     positions = np.asarray(positions, dtype=np.float64)
     phases = np.asarray(phases, dtype=np.float64)
-    phases = to_radians(phases, angle_unit)
+    phases = _to_radians(phases, angle_unit)
 
     # Validate paired inputs (handles length mismatch, NaN removal)
-    positions, phases = validate_paired_input(
+    positions, phases = _validate_paired_input(
         positions, phases, "positions", "phases", min_samples=min_spikes
     )
 

@@ -40,7 +40,7 @@ from neurospatial.geometry import (
     validate_components,
 )
 from neurospatial.geometry import grid_index as compute_grid_index
-from neurospatial.layout import built_layout_data
+from neurospatial.layout import _built_layout_data
 from neurospatial.layout.base import build_choices
 from neurospatial.layout.validation import (
     GraphValidationError,
@@ -202,7 +202,7 @@ def _published_graph(binning: Binning) -> _PublishedGraph:
     """Build the frozen navigation graph an environment publishes for ``binning``.
 
     Nodes, attributes and edge orientation follow
-    :func:`neurospatial.geometry._graph.graph_from_binning`; each undirected
+    :func:`neurospatial.geometry.graph_from_binning`; each undirected
     edge keeps one attribute record shared by both directions.
     """
     source = graph_from_binning(binning)
@@ -237,7 +237,7 @@ def editable_graph(graph: nx.Graph) -> nx.Graph:
 class _PublishedGeometry(Generic[_CoordinatesT]):
     """The geometry an environment publishes, replaced whole and never edited.
 
-    :func:`publish` builds it once. The binning owns the bins, lookup, faces,
+    :func:`_publish` builds it once. The binning owns the bins, lookup, faces,
     ``dimension_ranges``, clip mapping and track linearization; the graph and
     grid index are derived from it at publication.
 
@@ -263,7 +263,7 @@ class _PublishedGeometry(Generic[_CoordinatesT]):
 
 
 @dataclass(frozen=True, init=False)
-class Provenance:
+class _Provenance:
     """How the bins were built: scalar build choices and the derivations since.
 
     Provenance is descriptive. Geometry and behavior come from the owned
@@ -307,7 +307,7 @@ class Provenance:
         return dict(self.choices)
 
 
-def declared_metadata(
+def _declared_metadata(
     cls: type[Environment[Any]],
     *,
     name: str = "",
@@ -353,12 +353,12 @@ def _validate_coordinates(
         )
 
 
-def publish(
+def _publish(
     cls: type[_EnvironmentT],
     binning: Binning,
     *,
     coordinates: CartesianSystem | EgocentricPolarSystem,
-    provenance: Provenance,
+    provenance: _Provenance,
     metadata: _Metadata,
     regions: Regions | None = None,
     arena: Arena | None = None,
@@ -380,7 +380,7 @@ def publish(
         set, are the environment's; otherwise they come from the cells.
     coordinates : CartesianSystem or EgocentricPolarSystem
         Meaning of the bin coordinates.
-    provenance : Provenance
+    provenance : _Provenance
         Build choices and derivation history.
     metadata : _Metadata
         Name, units and frame.
@@ -483,7 +483,7 @@ def publish_layout(
     Environment
         A new instance of ``cls``.
     """
-    binning, resolved = built_layout_data(layout)
+    binning, resolved = _built_layout_data(layout)
     coordinates = CartesianSystem() if coordinates is None else coordinates
     polar = isinstance(coordinates, EgocentricPolarSystem)
     if within_arena and arena is not None and arena.domain_known and not polar:
@@ -496,11 +496,11 @@ def publish_layout(
         )
         if not np.all(keep):
             binning = select_bins(binning, keep)
-    return publish(
+    return _publish(
         cls,
         binning,
         coordinates=coordinates,
-        provenance=Provenance(resolved),
+        provenance=_Provenance(resolved),
         metadata=metadata,
         regions=regions,
         arena=arena,
@@ -575,13 +575,13 @@ def publish_derived(
     )
     inherited = parent._provenance
     history = inherited.derivations if derivation.continues_history else ()
-    provenance = Provenance(
+    provenance = _Provenance(
         inherited.build_params
         if derivation.build_params is None
         else derivation.build_params,
         (*history, derivation.step),
     )
-    return publish(
+    return _publish(
         type(parent),
         derivation.binning,
         coordinates=parent._geometry.coordinates,

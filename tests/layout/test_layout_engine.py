@@ -598,9 +598,9 @@ class TestBuildChoices:
 
     def test_subclass_build_record_wins_over_its_parent_build(self):
         """A subclass that calls super().build() records its own choices."""
-        from neurospatial.layout.engines._polar import PolarGridLayout
+        from neurospatial.layout.engines._polar import _PolarGridLayout
 
-        layout = PolarGridLayout()
+        layout = _PolarGridLayout()
         layout.build(
             active_mask=np.ones((2, 4), dtype=bool),
             grid_edges=(np.arange(3.0), np.linspace(-np.pi, np.pi, 5)),

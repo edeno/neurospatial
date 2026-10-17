@@ -154,7 +154,7 @@ except ImportError:
 # =============================================================================
 
 
-def to_radians(
+def _to_radians(
     angles: NDArray[np.float64],
     angle_unit: Literal["rad", "deg"],
 ) -> NDArray[np.float64]:
@@ -399,7 +399,7 @@ def _validate_circular_input(
     return angles, weights
 
 
-def validate_paired_input(
+def _validate_paired_input(
     arr1: NDArray[np.float64],
     arr2: NDArray[np.float64],
     name1: str,
@@ -625,7 +625,7 @@ def rayleigh_test(
     """
     # Convert to radians if needed
     angles = np.asarray(angles, dtype=np.float64)
-    angles = to_radians(angles, angle_unit)
+    angles = _to_radians(angles, angle_unit)
 
     # Validate input (handles NaN drop + Inf + min samples) and co-filter
     # weights so angle/weight alignment survives NaN removal. Weight
@@ -773,10 +773,10 @@ def circular_linear_correlation(
     # Convert to arrays and radians if needed
     angles = np.asarray(angles, dtype=np.float64)
     linear_values = np.asarray(linear_values, dtype=np.float64)
-    angles = to_radians(angles, angle_unit)
+    angles = _to_radians(angles, angle_unit)
 
     # Validate paired inputs (handles length mismatch, NaN removal)
-    angles, linear_values = validate_paired_input(
+    angles, linear_values = _validate_paired_input(
         angles, linear_values, "angles", "linear_values", min_samples=3
     )
 
@@ -956,11 +956,11 @@ def circular_circular_correlation(
     # Convert to radians if needed
     angles1 = np.asarray(angles1, dtype=np.float64)
     angles2 = np.asarray(angles2, dtype=np.float64)
-    angles1 = to_radians(angles1, angle_unit)
-    angles2 = to_radians(angles2, angle_unit)
+    angles1 = _to_radians(angles1, angle_unit)
+    angles2 = _to_radians(angles2, angle_unit)
 
     # Validate paired inputs (handles NaN removal and length check)
-    angles1, angles2 = validate_paired_input(
+    angles1, angles2 = _validate_paired_input(
         angles1, angles2, "angles1", "angles2", min_samples=5
     )
 
@@ -1056,7 +1056,7 @@ def circular_mean(
     True
     """
     angles = np.asarray(angles, dtype=np.float64)
-    angles = to_radians(angles, angle_unit)
+    angles = _to_radians(angles, angle_unit)
 
     if len(angles) == 0:
         return np.nan
@@ -1126,7 +1126,7 @@ def circular_variance(
     True
     """
     angles = np.asarray(angles, dtype=np.float64)
-    angles = to_radians(angles, angle_unit)
+    angles = _to_radians(angles, angle_unit)
 
     if weights is not None:
         # Co-filter NaN angles with their paired weights (same rule as the
@@ -1183,7 +1183,7 @@ def mean_resultant_length(
     True
     """
     angles = np.asarray(angles, dtype=np.float64)
-    angles = to_radians(angles, angle_unit)
+    angles = _to_radians(angles, angle_unit)
 
     if weights is not None:
         # Co-filter NaN angles with their paired weights (same rule as the
@@ -1420,7 +1420,7 @@ def circular_basis(
     """
     # Convert to radians if needed
     angles = np.asarray(angles, dtype=np.float64).ravel()
-    angles_rad = to_radians(angles, angle_unit)
+    angles_rad = _to_radians(angles, angle_unit)
 
     # Compute sin/cos components
     sin_component = np.sin(angles_rad)

@@ -16,7 +16,7 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     NearestBinLocator,
 )
-from neurospatial.ops import nearest_bin_query, validate_nearest_options
+from neurospatial.ops import _nearest_bin_query, _validate_nearest_options
 from neurospatial.ops.mapping import TieBreakStrategy
 
 
@@ -41,7 +41,7 @@ def nearest_bin(
     NaN. A point with an infinite coordinate is outside: bin ``-1`` and
     distance ``inf``. Only finite points are queried.
     """
-    resolved = validate_nearest_options(tie_break, max_distance, max_distance_factor)
+    resolved = _validate_nearest_options(tie_break, max_distance, max_distance_factor)
     if isinstance(coordinates, EgocentricPolarSystem):
         centers, tree = cache.get(
             EMBEDDED_KDTREE, lambda: _embedded_tree(binning, coordinates)
@@ -55,7 +55,7 @@ def nearest_bin(
         rows = np.asarray(rows)
         if rows.ndim == 2 and rows.shape[1] == binning.bins.n_dims:
             rows = coordinates.cartesian_embedding(rows.astype(np.float64))
-        return nearest_bin_query(
+        return _nearest_bin_query(
             centers,
             tree,
             rows,

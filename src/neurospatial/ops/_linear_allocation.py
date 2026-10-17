@@ -215,7 +215,7 @@ def ray_grid_pieces(
     return interval[keep][order], cell[keep][order], time[keep][order]
 
 
-def linear_grid_occupancy(
+def _linear_grid_occupancy(
     n_bins: int,
     grid: RectilinearGrid,
     positions: NDArray[np.float64],
@@ -295,7 +295,7 @@ def _accumulate_block(
     valid : ndarray of intp, shape (n_block,)
         Indices of the block's valid intervals, increasing.
     grid, positions, dt, bin_indices, return_seconds
-        As for :func:`linear_grid_occupancy`.
+        As for :func:`_linear_grid_occupancy`.
     """
     start_bin, end_bin = bin_indices[valid], bin_indices[valid + 1]
     # Both endpoints in one active bin: the whole interval belongs to it.

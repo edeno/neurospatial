@@ -399,14 +399,14 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     expected = pickle.loads(pickle.dumps(env)).smooth(field, bandwidth=4.0)
     applying = threading.Event()
     cleared = threading.Event()
-    original = _fields.diffusion_apply
+    original = _fields._diffusion_apply
 
     def apply_after_clear(*args, **kwargs):
         applying.set()
         assert cleared.wait(timeout=60), "clear_cache() did not return"
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(_fields, "diffusion_apply", apply_after_clear)
+    monkeypatch.setattr(_fields, "_diffusion_apply", apply_after_clear)
     smoothed: list[np.ndarray] = []
     smoothing = threading.Thread(
         target=lambda: smoothed.append(env.smooth(field, bandwidth=4.0)), daemon=True
@@ -424,7 +424,7 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     assert not clearing.is_alive(), "clear_cache() deadlocked"
     assert not smoothing.is_alive(), "smoothing deadlocked"
     np.testing.assert_array_equal(smoothed[0], expected)
-    monkeypatch.setattr(_fields, "diffusion_apply", original)
+    monkeypatch.setattr(_fields, "_diffusion_apply", original)
     np.testing.assert_array_equal(env.smooth(field, bandwidth=4.0), expected)
 
 

@@ -17,7 +17,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
-from neurospatial.decoding._time_bins import count_spikes_in_time_bins
+from neurospatial.decoding._time_bins import _count_spikes_in_time_bins
 
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
@@ -409,7 +409,7 @@ def _prepare_session_decode(
 ]:
     """Normalize spike inputs/models and tile bins inside observed runs."""
     from neurospatial.decoding._time_bins import validate_dt
-    from neurospatial.encoding import as_spike_trains_with_ids, validate_times
+    from neurospatial.encoding import _as_spike_trains_with_ids, _validate_times
 
     # Validate dt up front, BEFORE the grid math below builds the decode time
     # grid directly (bypassing bin_spikes_in_time's own guard). Without this,
@@ -424,7 +424,7 @@ def _prepare_session_decode(
     dtype = _validate_session_dtype(dtype)
 
     # Normalize array timestamps and spike groups at the boundary.
-    trains, _ = as_spike_trains_with_ids(spike_times)
+    trains, _ = _as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
     if times_arr.ndim != 1:
         raise ValueError(
@@ -432,7 +432,7 @@ def _prepare_session_decode(
             f"got shape {times_arr.shape}."
         )
     # Require finite, sorted timestamps before constructing observed runs.
-    validate_times(times_arr, context=context)
+    _validate_times(times_arr, context=context)
 
     # Decode window — computed ONCE and reused for both the out-of-window drop
     # check and the time-grid construction so they agree exactly.
@@ -444,7 +444,7 @@ def _prepare_session_decode(
         _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
     from neurospatial._intervals import TimeSupport, interval_valid_mask
-    from neurospatial.decoding._time_bins import time_bins_in_windows
+    from neurospatial.decoding._time_bins import _time_bins_in_windows
 
     # Decode bins exist only where the recording was observed: the gap, epochs and
     # spike_window gates. The speed and out-of-bounds gates restrict only the
@@ -457,7 +457,7 @@ def _prepare_session_decode(
         times_arr, observed, epochs=epochs, spike_window=spike_window, max_gap=max_gap
     )
     runs = recording_support.runs
-    bin_left, bin_right = time_bins_in_windows(runs, dt)
+    bin_left, bin_right = _time_bins_in_windows(runs, dt)
     if bin_left.size == 0:
         longest = float(np.max(np.diff(runs, axis=1), initial=0.0))
         raise ValueError(
@@ -498,20 +498,20 @@ def _fit_encoding_model(
 ]:
     """Fit supported rate maps independently of the prediction time bins."""
     from neurospatial._validation import validate_times_positions
-    from neurospatial.encoding import as_spike_trains_with_ids
+    from neurospatial.encoding import _as_spike_trains_with_ids
     from neurospatial.encoding.spatial import compute_spatial_rates
 
     times_arr, positions = validate_times_positions(times, positions, call=context)
     dtype = _validate_session_dtype(dtype)
-    trains, _ = as_spike_trains_with_ids(spike_times)
+    trains, _ = _as_spike_trains_with_ids(spike_times)
     # Mirror the encoder's method-specific validation (mutual exclusivity +
     # value domains) at the decoder boundary, reusing the SAME validator so
     # the errors are identical. fill_value is not a decoder-exposed param, so
     # it is passed as None here (the golden-path 0.0 fill for ratio methods is
     # applied in the compute_spatial_rates call below, never for glm).
-    from neurospatial.encoding import validate_spatial_method_params
+    from neurospatial.encoding import _validate_spatial_method_params
 
-    penalty, rank = validate_spatial_method_params(
+    penalty, rank = _validate_spatial_method_params(
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -679,7 +679,7 @@ def _decode_with_models(
         decode_kwargs.get("prior"), spatial_support, env.n_bins, len(bin_left)
     )
     firing_rates = models_on_support(firing_rates, spatial_support)
-    counts = count_spikes_in_time_bins(trains, bin_left, bin_right)
+    counts = _count_spikes_in_time_bins(trains, bin_left, bin_right)
     centers = bin_left + dt / 2.0
     return decode_position(
         env, counts, firing_rates, dt, times=centers, dtype=dtype, **decode_kwargs
@@ -935,7 +935,7 @@ def _decode_with_models_summary(
     #
     # NOTE: the real per-block counts produced by the streamed binning below are
     # intentionally NOT routed through _validate_inputs. They come straight from
-    # count_spikes_in_time_bins on float spike times, so they are non-negative int64 by
+    # _count_spikes_in_time_bins on float spike times, so they are non-negative int64 by
     # construction (cannot be fractional, negative, or NaN) — the value checks
     # _validate_inputs performs are already guaranteed, so the exemption is
     # deliberate, not an oversight.
@@ -995,7 +995,7 @@ def _decode_with_models_summary(
         stop = min(start + block, n_time)
         lo, hi = bin_left[start], bin_right[stop - 1]
         block_trains = [s[(s >= lo) & (s < hi)] for s in trains]
-        counts_block = count_spikes_in_time_bins(
+        counts_block = _count_spikes_in_time_bins(
             block_trains, bin_left[start:stop], bin_right[start:stop]
         )
 

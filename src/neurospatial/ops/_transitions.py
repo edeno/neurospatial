@@ -20,7 +20,7 @@ def _row_normalize(
     return normalizer @ matrix
 
 
-def count_transitions(
+def _count_transitions(
     source_bins: NDArray[np.intp],
     target_bins: NDArray[np.intp],
     n_bins: int,
@@ -78,7 +78,7 @@ def count_transitions(
     return transition_matrix
 
 
-def random_walk_transitions(
+def _random_walk_transitions(
     graph: nx.Graph, *, normalize: bool
 ) -> scipy.sparse.csr_matrix:
     """Return the transitions of a walk that moves to a uniform random neighbor.
@@ -104,7 +104,7 @@ def random_walk_transitions(
     return transition_matrix
 
 
-def diffusion_transitions(
+def _diffusion_transitions(
     transition_kernel: NDArray[np.float64] | scipy.sparse.spmatrix,
 ) -> scipy.sparse.csr_matrix:
     """Return the row-stochastic heat-diffusion transitions.

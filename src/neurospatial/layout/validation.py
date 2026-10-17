@@ -279,7 +279,7 @@ def validate_connectivity_graph(
 
     See Also
     --------
-    neurospatial.environment._publication.publish : Calls this validator
+    neurospatial.environment._publish : Calls this validator
     """
     # Validate graph type
     if not isinstance(graph, nx.Graph):

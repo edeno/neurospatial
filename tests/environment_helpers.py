@@ -12,9 +12,9 @@ import numpy as np
 import neurospatial.environment
 from neurospatial import Environment
 from neurospatial.environment import _publication
-from neurospatial.environment._publication import Provenance, _Metadata
+from neurospatial.environment._publication import _Metadata, _Provenance
 from neurospatial.geometry._coordinates import CartesianSystem
-from neurospatial.layout._construction import built_layout_data
+from neurospatial.layout._construction import _built_layout_data
 
 
 def publish_binning(
@@ -40,11 +40,11 @@ def publish_binning(
         binning = replace(binning, kind=layout_type)
     if dimension_ranges is not None:
         binning = replace(binning, dimension_ranges=tuple(dimension_ranges))
-    return _publication.publish(
+    return _publication._publish(
         cls,
         binning,
         coordinates=CartesianSystem() if coordinates is None else coordinates,
-        provenance=Provenance(dict(build_params or {}), derivations),
+        provenance=_Provenance(dict(build_params or {}), derivations),
         metadata=_Metadata(name, units, frame),
         **kwargs,
     )
@@ -83,7 +83,7 @@ def publish_environment(
             **kwargs,
         )
     if layout_type_used is not None:
-        binning, build_params = built_layout_data(layout)
+        binning, build_params = _built_layout_data(layout)
         return publish_binning(
             binning,
             layout_type=layout_type_used,
@@ -108,16 +108,17 @@ def publish_environment(
 def record_publications(monkeypatch):
     """Record every environment the publisher returns while patched."""
     published = []
-    original = _publication.publish
+    original = _publication._publish
 
     def recording(*args, **kwargs):
         env = original(*args, **kwargs)
         published.append(env)
         return env
 
-    monkeypatch.setattr(_publication, "publish", recording)
-    # Readers outside the environment package call the package's export.
-    monkeypatch.setattr(neurospatial.environment, "publish", recording)
+    monkeypatch.setattr(_publication, "_publish", recording)
+    # io imports _publish from neurospatial.environment inside its reader, at
+    # call time, so the package's binding must be patched as well.
+    monkeypatch.setattr(neurospatial.environment, "_publish", recording)
     return published
 
 
