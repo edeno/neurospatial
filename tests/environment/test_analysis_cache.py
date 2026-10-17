@@ -392,18 +392,27 @@ def test_threads_on_an_environment_and_its_copies_share_one_computation(
 def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     env, monkeypatch
 ):
-    """Clearing while a smoothing call holds the eigenbasis returns at once."""
+    """Clearing while a smoothing call holds the eigenbasis returns at once.
+
+    Every wait shares one short deadline, so a deadlock fails the test in
+    seconds instead of after a chain of long timeouts.
+    """
     from neurospatial.environment import _fields
 
     field = np.linspace(0.0, 1.0, env.n_bins)
     expected = pickle.loads(pickle.dumps(env)).smooth(field, bandwidth=4.0)
+    deadline = time.monotonic() + 20.0
+
+    def remaining() -> float:
+        return max(0.0, deadline - time.monotonic())
+
     applying = threading.Event()
     cleared = threading.Event()
     original = _fields._diffusion_apply
 
     def apply_after_clear(*args, **kwargs):
         applying.set()
-        assert cleared.wait(timeout=60), "clear_cache() did not return"
+        cleared.wait(timeout=remaining())
         return original(*args, **kwargs)
 
     monkeypatch.setattr(_fields, "_diffusion_apply", apply_after_clear)
@@ -412,16 +421,15 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
         target=lambda: smoothed.append(env.smooth(field, bandwidth=4.0)), daemon=True
     )
     smoothing.start()
-    assert applying.wait(timeout=60), "smoothing never started"
+    assert applying.wait(timeout=remaining()), "smoothing never started"
 
     clearing = threading.Thread(
         target=lambda: (env.clear_cache(), cleared.set()), daemon=True
     )
     clearing.start()
-    clearing.join(timeout=60)
-    smoothing.join(timeout=60)
-
-    assert not clearing.is_alive(), "clear_cache() deadlocked"
+    clearing.join(timeout=remaining())
+    assert not clearing.is_alive(), "clear_cache() blocked while smoothing ran"
+    smoothing.join(timeout=remaining())
     assert not smoothing.is_alive(), "smoothing deadlocked"
     np.testing.assert_array_equal(smoothed[0], expected)
     monkeypatch.setattr(_fields, "_diffusion_apply", original)
