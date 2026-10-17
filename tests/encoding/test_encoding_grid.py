@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from scipy import ndimage
 
 from neurospatial import Environment
 
@@ -532,7 +533,13 @@ def test_pixel_size_refuses_what_the_autocorrelogram_refuses(case) -> None:
 
 
 class TestGridMetricsOnHexagonalMaps:
-    """Grid orientation and scale of synthetic hexagonal rate maps."""
+    """Grid score, scale and orientation of synthetic hexagonal rate maps.
+
+    The metrics measure lags from the zero-lag pixel. An even-sized grid's
+    autocorrelogram has zero lag at index n // 2 and one more negative lag
+    than positive; an odd-sized one is symmetric. A grid cell's score must
+    not depend on which of the two the arena gives.
+    """
 
     SPACING = 30.0  # cm between neighboring firing fields
 
@@ -574,3 +581,52 @@ class TestGridMetricsOnHexagonalMaps:
             expected = (90.0 - (angle + 30.0)) % 60.0
             error = abs(properties.orientation - expected) % 60.0
             assert min(error, 60.0 - error) < 2.5
+
+    def test_score_has_no_even_odd_offset(self) -> None:
+        from neurospatial.encoding.grid import grid_score
+
+        # Scores rise smoothly with arena size, so compare an even grid with
+        # the mean of its odd neighbors: a parity offset shows as a jump.
+        jumps = [
+            grid_score(self._hexagonal(60, angle, phase)[2])
+            - (
+                grid_score(self._hexagonal(59, angle, phase)[2])
+                + grid_score(self._hexagonal(61, angle, phase)[2])
+            )
+            / 2
+            for angle, phase in self.CASES
+        ]
+
+        assert abs(np.mean(jumps)) < 0.02
+
+    @pytest.mark.parametrize("n_cells", [59, 60, 61])
+    def test_score_and_scale_are_correct_on_both_parities(self, n_cells) -> None:
+        from neurospatial.encoding.grid import grid_properties
+
+        for angle, phase in self.CASES:
+            properties = grid_properties(self._hexagonal(n_cells, angle, phase)[2], 2.0)
+            # Well above the 0.4 grid-cell threshold; a perfect lattice on a
+            # 120 cm arena scores about 1.
+            assert properties.score > 0.8
+            assert abs(properties.scale - self.SPACING) < 2.0  # one 2 cm pixel
+
+    @pytest.mark.parametrize("n_cells", [60, 61])
+    def test_shuffled_map_scores_low(self, n_cells) -> None:
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+
+        env, rate, _ = self._hexagonal(n_cells, 12.0, (0.0, 0.0))
+        shuffled = np.random.default_rng(14).permutation(rate)
+
+        assert abs(grid_score(spatial_autocorrelation(env, shuffled))) < 0.3
+
+    @pytest.mark.parametrize("n_cells", [10, 11])
+    def test_rotation_keeps_the_zero_lag_pixel_in_place(self, n_cells) -> None:
+        from neurospatial.encoding.grid import _zero_lag_centered
+
+        lags = np.zeros((n_cells, n_cells))
+        lags[n_cells // 2, n_cells // 2] = 1.0  # zero lag, as fftshift places it
+        centered = _zero_lag_centered(lags)
+        rotated = ndimage.rotate(centered, 180, reshape=False, order=1)
+
+        assert centered.shape[0] % 2 == 1
+        np.testing.assert_allclose(rotated, centered, atol=1e-12)

@@ -649,6 +649,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   raises the same `NotImplementedError`, naming
   `spatial_autocorrelation_radial`.
 
+- Grid scores change on every grid. `grid_score` rotated the
+  autocorrelogram about the array center, `(n - 1) / 2`, while zero lag sits
+  at `n // 2`, so on an even-sized map every rotation was half a pixel off
+  zero lag; on an odd-sized map the annulus and the peaks used by
+  `grid_scale` and `grid_properties` were centered half a pixel off. Scores
+  therefore jumped between even and odd arenas (about 0.1 for the same
+  hexagonal cell). The metrics now drop an even axis's most negative lag,
+  which has no positive partner, and measure everything about the zero-lag
+  pixel. Hexagonal maps score higher, mostly on even-sized grids (median
+  +0.09 over 30 random `from_samples` arenas; a perfect synthetic
+  autocorrelogram scores 1.52 instead of 1.40); noise and shuffled maps
+  change by a median of about 0.01-0.02 either way.
+
 - `grid_properties()` averaged the orientation over every detected peak,
   including the spare one it detects beyond `n_peaks`, which can lie on the
   second ring of fields at another angle. Orientation was off by about 5°

@@ -800,7 +800,10 @@ def grid_score(
     ----------
     autocorr_2d : NDArray[np.float64], shape (height, width)
         2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
-        Should be centered (zero lag at center).
+        Zero lag at index ``n // 2`` along each axis, where
+        ``scipy.fft.fftshift`` puts it. An even axis's first entry, the most
+        negative lag, has no positive partner and is not used, so rotations
+        are about the zero-lag pixel.
     inner_radius_fraction : float, optional
         Inner radius of annular region as fraction of image semi-axis.
         Default is 0.2 (20% of half-width). Must be in (0, 1).
@@ -904,13 +907,16 @@ def grid_score(
     if not np.all(np.isfinite(autocorr_2d)):
         return np.nan
 
+    # Radii are fractions of half the map's smaller side, as before centering.
+    semi_axis = min(autocorr_2d.shape) / 2
+
+    # Rotate about zero lag: an odd map centered on it, so ndimage.rotate's
+    # center ((n - 1) / 2) and the annulus center are the zero-lag pixel.
+    autocorr_2d = _zero_lag_centered(autocorr_2d)
     height, width = autocorr_2d.shape
 
     # Create annular mask (ring region between inner and outer radii)
-    center_y, center_x = height / 2, width / 2
-
-    # Use minimum of height/width for radius calculation (handle non-square)
-    semi_axis = min(height, width) / 2
+    center_y, center_x = (height - 1) / 2, (width - 1) / 2
 
     inner_radius = inner_radius_fraction * semi_axis
     outer_radius = outer_radius_fraction * semi_axis
@@ -1162,6 +1168,27 @@ def periodicity_score(
     return float(score)
 
 
+def _zero_lag_centered(autocorr_2d: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Center an autocorrelogram on its zero-lag pixel.
+
+    Parameters
+    ----------
+    autocorr_2d : ndarray of float64, shape (n_0, n_1)
+        Lag map with zero lag at index ``n // 2`` along each axis, as
+        ``scipy.fft.fftshift`` and :func:`spatial_autocorrelation` place it.
+
+    Returns
+    -------
+    ndarray of float64
+        View with every axis of odd length and zero lag at its middle index
+        ``(n - 1) / 2``. An even axis loses its first entry, the most
+        negative lag, which has no positive partner.
+    """
+    return autocorr_2d[
+        tuple(slice(1, None) if n % 2 == 0 else slice(None) for n in autocorr_2d.shape)
+    ]
+
+
 def _find_autocorr_peaks(
     autocorr_2d: NDArray[np.float64],
     *,
@@ -1198,8 +1225,9 @@ def _find_autocorr_peaks(
     """
     from skimage.feature import peak_local_max
 
+    autocorr_2d = _zero_lag_centered(autocorr_2d)
     height, width = autocorr_2d.shape
-    center_y, center_x = height / 2, width / 2
+    center_y, center_x = (height - 1) / 2, (width - 1) / 2
 
     # Determine center exclusion radius
     if exclude_center_radius is None:

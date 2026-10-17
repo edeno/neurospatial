@@ -267,12 +267,14 @@ class TestGridScore:
 
         score = grid_score(autocorr)
 
-        # Perfect hexagonal pattern. Observed score for this synthetic
-        # Gaussian-peak autocorrelogram is ~1.40; bracket it as 0.4 < score < 1.5
-        # (well above the 0.3 literature threshold and below the +2 theoretical
-        # maximum) so a regression that under- or over-scores hex symmetry fails.
-        assert 0.4 < score < 1.5, (
-            f"Expected grid score in (0.4, 1.5) for perfect hexagonal pattern, "
+        # Perfect hexagonal pattern. Rotated about its zero-lag pixel, this
+        # synthetic Gaussian-peak autocorrelogram scores ~1.52 (1.40 when the
+        # rotation center sat half a pixel off zero lag); bracket it as
+        # 0.4 < score < 1.8, well above the 0.3 literature threshold and below
+        # the +2 theoretical maximum, so a regression that under- or
+        # over-scores hex symmetry fails.
+        assert 0.4 < score < 1.8, (
+            f"Expected grid score in (0.4, 1.8) for perfect hexagonal pattern, "
             f"got {score}"
         )
 
