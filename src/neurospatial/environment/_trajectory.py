@@ -27,6 +27,7 @@ from numpy.typing import NDArray
 from neurospatial._intervals import (
     as_intervals,
     interval_valid_mask,
+    observed_interval_mask,
     start_allocated_occupancy,
     warn_excluded_intervals,
 )
@@ -320,14 +321,8 @@ def _bin_sequence(
             f"Got positions.shape[1] = {positions.shape[1]}"
         )
 
-    resolved_epochs = as_intervals(epochs, name="epochs")
-    mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
-    warn_excluded_intervals(
-        times,
-        mask,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        result="the bin sequence is empty",
+    mask = observed_interval_mask(
+        times, max_gap=max_gap, epochs=epochs, result="the bin sequence is empty"
     )
     sample_valid = np.zeros(times.size, dtype=bool)
     sample_valid[:-1] |= mask
@@ -618,13 +613,10 @@ def _empirical_transitions(
             max_gap=None,
             epochs=None,
         ).bins
-        resolved_epochs = as_intervals(epochs, name="epochs")
-        mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
-        warn_excluded_intervals(
+        mask = observed_interval_mask(
             times,
-            mask,
             max_gap=max_gap,
-            epochs=resolved_epochs,
+            epochs=epochs,
             result="the transition matrix is empty",
         )
 

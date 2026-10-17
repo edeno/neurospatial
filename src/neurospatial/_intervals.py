@@ -484,12 +484,17 @@ def start_allocated_occupancy(
 
 
 def observed_interval_mask(
-    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
+    times: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    epochs: Any,
+    result: str = "the result is empty or NaN rather than a measurement",
 ) -> NDArray[np.bool_]:
     """Per-interval validity for position-only analyses (gap and epochs gates).
 
     ``epochs`` is the raw user argument; it is normalized here with
-    ``as_intervals(epochs, name="epochs")``.
+    ``as_intervals(epochs, name="epochs")``. ``result`` names what an empty
+    selection produces in the warning, as in `warn_excluded_intervals`.
 
     Returns
     -------
@@ -498,7 +503,9 @@ def observed_interval_mask(
     times = np.asarray(times, dtype=np.float64)
     resolved_epochs = as_intervals(epochs, name="epochs")
     mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
-    warn_excluded_intervals(times, mask, max_gap=max_gap, epochs=resolved_epochs)
+    warn_excluded_intervals(
+        times, mask, max_gap=max_gap, epochs=resolved_epochs, result=result
+    )
     return mask
 
 
