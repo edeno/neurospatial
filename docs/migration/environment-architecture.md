@@ -1213,3 +1213,17 @@ position_bins = env.bin_at(positions)
 # Before: graph_turn_sequence(env, position_bins, start_bin, end_bin)
 turns = graph_turn_sequence(env, position_bins)
 ```
+
+## Smoothing several fields at once
+
+`env.smooth` now takes a batch of fields with bins first, shape
+`(n_bins, n_fields)`, as `env.diffuse` does. Population rate arrays are
+stored `(n_units, n_bins)`, so transpose them on the way in and out. Passing
+the rate result itself raises `TypeError` with this call:
+
+<!-- docs-test: run -->
+```python
+rates = np.random.default_rng(1).random((3, env.n_bins))  # (n_units, n_bins), Hz
+# Before: np.stack([env.smooth(unit_rates, 5.0) for unit_rates in rates])
+smoothed = env.smooth(rates.T, bandwidth=5.0).T
+```

@@ -257,16 +257,16 @@ class TestSmooth:
         rng = np.random.default_rng(42)
         field_wrong = rng.random(medium_2d_env.n_bins + 10)
 
-        with pytest.raises(ValueError, match=r"Field shape.*must match n_bins"):
+        with pytest.raises(ValueError, match=r"bins, which must be the first axis"):
             medium_2d_env.smooth(field_wrong, bandwidth=2.0)
 
-    def test_smooth_2d_field_raises(self, medium_2d_env):
-        """Test that 2-D field raises ValueError."""
+    def test_smooth_3d_field_raises(self, medium_2d_env):
+        """A field batch has two axes at most: bins, then fields."""
         rng = np.random.default_rng(42)
-        field_2d = rng.random((medium_2d_env.n_bins, 3))
+        field_3d = rng.random((medium_2d_env.n_bins, 3, 2))
 
-        with pytest.raises(ValueError, match=r"Field must be 1-D array"):
-            medium_2d_env.smooth(field_2d, bandwidth=2.0)
+        with pytest.raises(ValueError, match=r"\(n_bins,\) or \(n_bins, n_fields\)"):
+            medium_2d_env.smooth(field_3d, bandwidth=2.0)
 
     def test_smooth_negative_bandwidth_raises(self, medium_2d_env):
         """Test that negative bandwidth raises ValueError."""

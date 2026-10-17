@@ -6108,11 +6108,15 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        field : NDArray[np.float64], shape (n_bins,)
-            Field values per bin to smooth. Must be a 1-D array with length
-            equal to n_bins. NaN marks a missing bin, such as an unvisited
-            bin of a rate map, and is accepted with ``mode='average'``; see
-            Missing bins below. Must not contain Inf.
+        field : NDArray[np.float64], shape (n_bins,) or (n_bins, n_fields)
+            Field values per bin to smooth, bins first as in :meth:`diffuse`;
+            a 2-D batch smooths each column as one field. Population rate
+            arrays are stored ``(n_units, n_bins)``, so pass
+            ``rates.firing_rates.T`` and transpose the result back; an array
+            with bins on the second axis is refused with that fix, and so is
+            a rate result itself. NaN marks a missing bin, such as an
+            unvisited bin of a rate map, and is accepted with
+            ``mode='average'``; see Missing bins below. Must not contain Inf.
         bandwidth : float
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
@@ -6142,12 +6146,14 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        smoothed : NDArray[np.float64], shape (n_bins,)
+        smoothed : NDArray[np.float64], shape matching ``field``
             Smoothed field values. NaN where too little of a bin's smoothing
             weight falls on observed bins (see Missing bins below).
 
         Raises
         ------
+        TypeError
+            If field is a rate result rather than its array of rates.
         ValueError
             If field has wrong shape, wrong dimensionality, contains Inf,
             contains NaN with ``mode='transition'`` or ``'density'``,
@@ -6287,8 +6293,12 @@ class Environment(Generic[_C]):
         Parameters
         ----------
         fields : NDArray[np.float64], shape (n_bins,) or (n_bins, n_fields)
-            Field(s) to smooth, indexed by bin. A 1-D field is smoothed and
-            returned 1-D; a 2-D batch smooths every column in one pass. NaN
+            Field(s) to smooth, indexed by bin first, as in :meth:`smooth`. A
+            1-D field is smoothed and returned 1-D; a 2-D batch smooths every
+            column in one pass. An array with bins on the second axis, such
+            as population rates ``(n_units, n_bins)``, is refused with the
+            fix ``fields.T``, and a rate result is refused with the array to
+            pass. NaN
             marks a missing bin: in ``mode='average'`` each column is averaged
             over its own observed bins, as described under Missing bins in
             :meth:`smooth`, and columns without NaN are unchanged; the other
@@ -6318,6 +6328,8 @@ class Environment(Generic[_C]):
 
         Raises
         ------
+        TypeError
+            If ``fields`` is a rate result rather than its array of rates.
         ValueError
             If ``bandwidth`` is not positive, ``mode`` is invalid, ``backend`` is
             invalid, or ``fields`` is not 1-D/2-D with leading dim ``n_bins``;
@@ -6326,7 +6338,8 @@ class Environment(Generic[_C]):
 
         See Also
         --------
-        smooth : 1-D smoothing with input validation (delegates here).
+        smooth : Smoothing with input validation, default ``mode='average'``
+            (delegates here).
         compute_kernel : Build the DENSE kernel matrix (kept for callers that
             genuinely need the ``(n, n)`` matrix; uses the dense ``expm`` path).
 

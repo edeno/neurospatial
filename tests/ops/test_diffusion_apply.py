@@ -397,9 +397,9 @@ def test_env_diffuse_validation_raises():
         env.diffuse(good, 5.0, mode="bogus")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="backend"):
         env.diffuse(good, 5.0, backend="gpu")  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match=r"1-D|2-D"):
+    with pytest.raises(ValueError, match=r"got a 3-D array"):
         env.diffuse(np.ones((env.n_bins, 2, 1)), 5.0)  # 3-D
-    with pytest.raises(ValueError, match="n_bins"):
+    with pytest.raises(ValueError, match="must be the first axis"):
         env.diffuse(np.ones(env.n_bins + 1), 5.0)  # wrong leading dim
 
 

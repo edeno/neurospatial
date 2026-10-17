@@ -438,6 +438,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.smooth` takes the same field layout as `env.diffuse`: one field of
+  shape `(n_bins,)` or a batch of shape `(n_bins, n_fields)`, one column per
+  field. It used to refuse any 2-D array. An array with its bins on the
+  second axis, such as population rates `(n_units, n_bins)`, is refused by
+  both with `Fix: pass field.T` (or `fields.T`) instead of a bare shape
+  error, and passing a `SpatialRateResult` or `SpatialRatesResult` raises
+  `TypeError` naming the array to smooth:
+  `env.smooth(result.firing_rates.T, bandwidth=...).T`.
+
 - Common construction mistakes now say what failed, why and how to fix it,
   instead of surfacing an internal error:
   - a transposed `positions` array of shape `(n_dims, n_samples)` in

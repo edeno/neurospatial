@@ -396,6 +396,67 @@ def _compute_kernel(
     return cast("NDArray[np.float64]", kernel.copy())
 
 
+def _field_batch(fields: Any, n_bins: int, operation: str, argument: str) -> Any:
+    """Check a field or batch of fields indexed by bin first.
+
+    Returns the input as an array of shape ``(n_bins,)`` or
+    ``(n_bins, n_fields)``; a rate result or a ``(n_fields, n_bins)`` batch is
+    refused with the corrected call.
+    """
+    if hasattr(fields, "firing_rate") or hasattr(fields, "firing_rates"):
+        call = (
+            "env.smooth(result.firing_rates.T, bandwidth=...).T, which keeps "
+            "each unit's rates in a column"
+            if hasattr(fields, "firing_rates")
+            else "env.smooth(result.firing_rate, bandwidth=...)"
+        )
+        raise TypeError(
+            _format_error(
+                f"{operation} takes an array of values per bin, got a "
+                f"{type(fields).__name__}.",
+                why="Why: it returns an array, so it smooths the rates "
+                "themselves; a rate result also holds occupancy and settings "
+                "that a smoothed copy would no longer match.",
+                fix=f"pass the rates: {call}; smooth's default mode='average' "
+                "is the one for rates. To smooth while estimating the rates, "
+                "pass bandwidth= to compute_spatial_rate instead",
+            )
+        )
+    ndim = int(np.ndim(fields))
+    shape = np.shape(fields)
+    if ndim not in (1, 2):
+        raise ValueError(
+            _format_error(
+                f"{operation} takes fields of shape (n_bins,) or "
+                f"(n_bins, n_fields), got a {ndim}-D array of shape {shape}.",
+                why="Why: each row holds one bin's value in every field.",
+                fix="reshape the values to (n_bins, n_fields), one column per field",
+            )
+        )
+    if shape[0] != n_bins:
+        transposed = ndim == 2 and shape[1] == n_bins
+        raise ValueError(
+            _format_error(
+                f"{operation} got fields of shape {shape}, but this environment "
+                f"has {n_bins} bins, which must be the first axis.",
+                why="Why: fields are indexed by bin first, one column per field; "
+                + (
+                    "an array of shape (n_fields, n_bins), as population rates "
+                    "are stored, has its bins on the second axis."
+                    if transposed
+                    else "the values must come from an environment with the same bins."
+                ),
+                fix=(
+                    f"pass {argument}.T and transpose the result back"
+                    if transposed
+                    else "compute the field on this environment, or map it here "
+                    "with neurospatial.ops.resample_field"
+                ),
+            )
+        )
+    return fields
+
+
 def _smooth(
     cache: AnalysisCache,
     binning: Binning,
@@ -404,30 +465,18 @@ def _smooth(
     *,
     mode: KernelMode = "average",
 ) -> NDArray[np.float64]:
-    """Validate one bin-valued field and smooth it matrix-free."""
+    """Validate bin-valued fields and smooth them matrix-free."""
     n_bins = binning.bins.n_bins
+    field = _field_batch(field, n_bins, "smooth()", "field")
     field = np.asarray(field, dtype=np.float64)
-
-    # Check field dimensionality
-    if field.ndim != 1:
-        raise ValueError(
-            f"Field must be 1-D array (got {field.ndim}-D array). "
-            f"Expected shape (n_bins,) = ({n_bins},), got shape {field.shape}."
-        )
-
-    # Check field shape matches n_bins
-    if field.shape[0] != n_bins:
-        raise ValueError(
-            f"Field shape {field.shape} must match n_bins={n_bins}. "
-            f"Expected shape (n_bins,) = ({n_bins},), got ({field.shape[0]},)."
-        )
 
     # NaN marks a missing bin and is handled by _diffuse; infinity is invalid.
     if np.any(np.isinf(field)):
         raise ValueError(
             "Field contains infinite values. "
-            f"Found {np.sum(np.isinf(field))} infinite values out of {len(field)} bins. "
-            "Infinite values are not supported in smoothing operations."
+            f"Found {np.sum(np.isinf(field))} infinite values out of {field.size} "
+            "field values. Infinite values are not supported in smoothing "
+            "operations."
         )
 
     # Validate bandwidth
@@ -481,21 +530,11 @@ def _diffuse(
 
     # Coerce to 2-D (n_bins, n_fields); a 1-D field is squeezed back on
     # return. np.ndim / np.shape avoid forcing a JAX array to NumPy.
+    n_bins = binning.bins.n_bins
+    fields = _field_batch(fields, n_bins, "diffuse()", "fields")
     if backend == "numpy":
         fields = np.asarray(fields, dtype=np.float64)
-    ndim = int(np.ndim(fields))
-    if ndim not in (1, 2):
-        raise ValueError(
-            f"fields must be 1-D (n_bins,) or 2-D (n_bins, n_fields), got "
-            f"{ndim}-D array."
-        )
-    shape = np.shape(fields)
-    n_bins = binning.bins.n_bins
-    if shape[0] != n_bins:
-        raise ValueError(
-            f"fields leading dimension {shape[0]} must match n_bins={n_bins}."
-        )
-    was_1d = ndim == 1
+    was_1d = np.ndim(fields) == 1
     fields_2d = fields.reshape(-1, 1) if was_1d else fields
 
     W, volumes, n_components, labels = diffusion_geometry(cache, binning)
