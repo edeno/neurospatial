@@ -356,7 +356,6 @@ def _bin_sequence(
 
     # Apply deduplication if requested
     deduplicated_bins: NDArray[np.intp]
-    deduplicated_indices: NDArray[np.int_]
 
     # Recording breaks always split repeats. Outside-sample gaps retain
     # the plain sequence's legacy dedup behavior, and split the run view.
@@ -377,12 +376,7 @@ def _bin_sequence(
         ]
         change_points = bin_change | gap_change | recording_change
 
-    if dedup:
-        deduplicated_bins = bin_indices[change_points]
-        deduplicated_indices = original_indices[change_points]
-    else:
-        deduplicated_bins = bin_indices
-        deduplicated_indices = original_indices
+    deduplicated_bins = bin_indices[change_points] if dedup else bin_indices
 
     if len(deduplicated_bins) == 0:
         return BinSequenceWithRuns(
@@ -400,19 +394,11 @@ def _bin_sequence(
     # extent from start to end (inclusive) covers only original-array
     # indices that are actually in this run — outside samples do not
     # leak into run_lengths anymore.
-    change_positions = np.where(change_points)[0]
-    if dedup:
-        run_starts = deduplicated_indices
-        run_ends_indexer = (
-            np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
-        )
-        run_ends = original_indices[run_ends_indexer]
-    else:
-        run_starts = original_indices[change_positions]
-        run_ends_indexer = (
-            np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
-        )
-        run_ends = original_indices[run_ends_indexer]
+    change_positions = np.flatnonzero(change_points)
+    run_starts = original_indices[change_positions]
+    run_ends = original_indices[
+        np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+    ]
 
     # Convert (start, end) to (start, length) for the public API. ``end``
     # is inclusive, so length = end - start + 1 is always >= 1.
