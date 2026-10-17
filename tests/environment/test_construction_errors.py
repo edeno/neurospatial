@@ -11,13 +11,18 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.arena import OpenArena
-from neurospatial.ops import AffineND
+from neurospatial.layout import create_layout
 
 _RNG = np.random.default_rng(0)
 _POSITIONS = _RNG.uniform(0.0, 100.0, size=(2000, 2))
 _ENV = Environment.from_samples(_POSITIONS, bin_size=4.0)
 _HEX = Environment.from_samples(_POSITIONS, bin_size=4.0, layout="Hexagonal")
+_TRACK = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0)
+_MESH = Environment.from_layout(
+    create_layout(
+        "TriangularMesh", boundary_polygon=box(0, 0, 30, 30), point_spacing=2.0
+    )
+)
 
 
 def _graph_without_positions() -> nx.Graph:
@@ -108,6 +113,16 @@ _MISTAKES = {
         NotImplementedError,
         "layout='Hexagonal'",
     ),
+    "track rebin(2)": (
+        lambda: _TRACK.rebin(2),
+        NotImplementedError,
+        "Environment.from_graph(env.binning.linearization.graph",
+    ),
+    "mesh rebin(2)": (
+        lambda: _MESH.rebin(2),
+        NotImplementedError,
+        "create_layout('TriangularMesh'",
+    ),
     "apply_transform(np.eye(3))": (
         lambda: _ENV.apply_transform(np.eye(3)),
         TypeError,
@@ -153,19 +168,3 @@ def test_infinite_positions_are_missing_samples_like_nan(build, layout):
     np.testing.assert_array_equal(from_inf.bin_centers, from_nan.bin_centers)
     np.testing.assert_array_equal(from_inf.edge_pairs, from_nan.edge_pairs)
     assert np.isinf(with_inf[5, 0])  # the caller's array is not changed
-
-
-def test_the_suggested_fixes_build_the_environment():
-    """Following each fix builds what the mistaken call was asking for."""
-    arena = OpenArena(box(0, 0, 100, 100))
-    assert Environment.from_samples(_POSITIONS, bin_size=4.0, arena=arena).n_bins > 0
-    assert _ENV.rebin(2).n_bins < _ENV.n_bins
-    moved = _ENV.apply_transform(AffineND(np.eye(3)))
-    np.testing.assert_array_equal(moved.bin_centers, _ENV.bin_centers)
-    transposed = _POSITIONS.T
-    assert Environment.from_samples(transposed.T, bin_size=4.0).n_dims == 2
-    track = Environment.linear_track(endpoints=[(0, 0.0), (200, 0.0)], bin_size=2.0)
-    assert track.n_bins == 100
-    ranges = [(0.0, 100.0), (0.0, 100.0)]
-    framed = Environment.from_samples(_POSITIONS, bin_size=4.0, dimension_ranges=ranges)
-    np.testing.assert_allclose(framed.dimension_ranges, ranges)

@@ -12,6 +12,7 @@ the published result to report source bins and barriers the new bins lose.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
@@ -195,28 +196,40 @@ def _warn_outline_crossings(
     )
 
 
-def _not_a_grid(call: str, binning: Binning) -> str:
-    """Explain that only rectangular grids are rebinned, naming these bins."""
-    return _format_error(
-        f"{call} works on rectangular grids, and these {binning.kind!r} bins "
-        "have no grid edges.",
-        why="Why: rebinning merges or redraws the cells of a rectangular grid "
-        "from its edges. Hexagons, track segments and mesh triangles do not "
-        "tile into larger cells of the same shape, and a layout label alone "
-        "does not say where grid edges are.",
-        fix="build the environment again at the new size with the factory "
-        "that made it, for example Environment.from_samples(positions, "
-        f"bin_size=..., layout={binning.kind!r}) for samples, or smooth "
-        "fields at a coarser scale with env.smooth(field, bandwidth=...)",
-    )
+def refuse_unsupported_rebin(
+    binning: Binning,
+    arena: Arena,
+    layout_parameters: Mapping[str, Any],
+    *,
+    factor: object,
+    bin_size: object,
+) -> None:
+    """Refuse a rebin these bins cannot take, with a call that works on them.
 
-
-def _rebin_resolution(
-    binning: Binning, arena: Arena, bin_size: float | tuple[float, ...]
-) -> tuple[_Derivation, RebinCheck]:
-    """Construct new bins over the retained arena, preserving lattice frame."""
-    spec = binning.grid_spec
-    if spec is None and binning.rectilinear is not None:
+    Factor rebinning merges whole cells of a rectangular grid; size rebinning
+    redraws a grid from its recorded lattice. Bins without either get advice
+    for their own kind: the factory that rebuilds them at the new size, or
+    ``env.smooth`` for a coarser scale.
+    """
+    call = "rebin(bin_size=...)" if bin_size is not None else "rebin(factor)"
+    needs_lattice = bin_size is not None
+    if (binning.grid_spec if needs_lattice else binning.rectilinear) is not None:
+        return
+    size = _requested_size(layout_parameters, binning, factor, bin_size)
+    if not needs_lattice and binning.grid_spec is not None:
+        # A clipped grid keeps its lattice but not whole rectangular cells.
+        target = f"env.rebin(bin_size={size:g})" if size else "env.rebin(bin_size=...)"
+        raise NotImplementedError(
+            _format_error(
+                "rebin(factor) merges blocks of whole grid cells, and clipping "
+                "cut these cells to the arena outline.",
+                why="Why: a cut cell cannot be merged with its neighbors into "
+                "a larger rectangle.",
+                fix=f"give the new cell size instead, which redraws the grid "
+                f"and cuts it to the same outline: {target}",
+            )
+        )
+    if needs_lattice and binning.rectilinear is not None:
         raise NotImplementedError(
             _format_error(
                 "rebin(bin_size=...) redraws a grid from its origin and cell "
@@ -224,13 +237,93 @@ def _rebin_resolution(
                 why="Why: bins built with from_bins without a grid "
                 "specification carry their cells but not the lattice they "
                 "came from, so a new lattice cannot be aligned to it.",
-                fix="merge whole cells with rebin(factor), such as rebin(2), or "
-                "build the grid again with from_samples, from_polygon or "
-                "from_grid_mask at the new size",
+                fix="merge whole cells with a factor instead: env.rebin(2)",
             )
         )
-    if spec is None:
-        raise NotImplementedError(_not_a_grid("rebin(bin_size=...)", binning))
+    rebuild = _rebuild_call(binning, arena, size)
+    smooth = (
+        f"; or smooth fields at that scale instead: env.smooth(field, "
+        f"bandwidth={size:g})"
+        if size
+        else ""
+    )
+    raise NotImplementedError(
+        _format_error(
+            f"{call} works on rectangular grids, and these {binning.kind!r} bins "
+            "have no grid edges.",
+            why="Why: rebinning merges or redraws the cells of a rectangular "
+            "grid. Hexagons, track segments and mesh triangles do not tile "
+            "into larger cells of the same shape.",
+            fix=f"{rebuild}{smooth}",
+        )
+    )
+
+
+# The recorded build option that sets the cell size of each native kind.
+_SIZE_OPTION = {
+    "Hexagonal": "hexagon_width",
+    "Graph": "bin_size",
+    "TriangularMesh": "point_spacing",
+}
+
+
+def _requested_size(
+    layout_parameters: Mapping[str, Any],
+    binning: Binning,
+    factor: object,
+    bin_size: object,
+) -> float | None:
+    """The new cell size the call asks for, when it is one known number."""
+    if bin_size is not None:
+        sizes = np.ravel(np.asarray(bin_size, dtype=float))
+        return float(sizes[0]) if sizes.size and np.all(sizes == sizes[0]) else None
+    factors = np.ravel(np.asarray(factor, dtype=float))
+    current = layout_parameters.get(_SIZE_OPTION.get(str(binning.kind), "bin_size"))
+    if (
+        isinstance(current, (int, float))
+        and factors.size
+        and np.all(factors == factors[0])
+    ):
+        return float(current) * float(factors[0])
+    return None
+
+
+def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
+    """Advice that rebuilds bins of this kind at ``size``, as code when known."""
+    new = f"{size:g}" if size else "..."
+    linearization = binning.linearization
+    if linearization is not None:
+        width = getattr(arena, "width", None)
+        track_width = "" if width is None else f", track_width={float(width):g}"
+        spacing = linearization.edge_spacing
+        return (
+            "build the track again at the new bin size: "
+            "Environment.from_graph(env.binning.linearization.graph, "
+            "list(env.binning.linearization.edge_order), "
+            f"bin_size={new}, edge_spacing={spacing!r}{track_width})"
+        )
+    if binning.kind == "Hexagonal":
+        return (
+            "build the hexagons again from the positions you built them from: "
+            f"Environment.from_samples(positions, bin_size={new}, "
+            "layout='Hexagonal')"
+        )
+    if binning.kind == "TriangularMesh" and arena.polygonal_domain() is not None:
+        return (
+            "build the mesh again at the new spacing: from neurospatial.layout "
+            "import create_layout; Environment.from_layout(create_layout("
+            "'TriangularMesh', boundary_polygon=env.arena.polygonal_domain(), "
+            f"point_spacing={new}))"
+        )
+    return "build the bins again at the new size with the factory or layout engine that made them"
+
+
+def _rebin_resolution(
+    binning: Binning, arena: Arena, bin_size: float | tuple[float, ...]
+) -> tuple[_Derivation, RebinCheck]:
+    """Construct new bins over the retained arena, preserving lattice frame."""
+    spec = binning.grid_spec
+    assert spec is not None  # refuse_unsupported_rebin refuses bins without one
     dims = len(spec.origin)
     raw = np.asarray(bin_size)
     if raw.dtype.kind not in "iuf" or raw.ndim > 1:
@@ -423,8 +516,7 @@ def _rebin_factor(
             atol=0.0,
         )
     ):
-        if grid is None:
-            raise NotImplementedError(_not_a_grid("rebin(factor)", binning))
+        assert grid is not None  # refuse_unsupported_rebin refuses bins without one
         raise NotImplementedError(
             _format_error(
                 "rebin(factor) merges blocks of equal cells, but this grid's "
@@ -432,8 +524,9 @@ def _rebin_factor(
                 why="Why: merging unequal cells would give coarse bins of "
                 "different sizes, so occupancy and rates per bin would not be "
                 "comparable.",
-                fix="build the grid again at the coarser size, for example "
-                "Environment.from_grid_mask(mask, grid_edges=coarser_edges)",
+                fix="build the grid again with even cells at the coarser size, "
+                "for example with Environment.from_grid_mask and its "
+                "grid_edges",
             )
         )
 

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -25,67 +29,94 @@ def env() -> Environment:
     return arena.with_regions(regions)
 
 
-def _lookups(env: Environment) -> dict[str, object]:
-    """Each call with the misspelled name 'rewrd' and the fix it should give."""
+def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
+    """Each lookup as a call taking the name, its misspelling and the fix.
+
+    ``folder`` receives the animation the ``show_regions`` lookup writes.
+    """
     times = np.arange(10) / 30.0
     positions = np.full((10, 2), 15.0)
     bins = env.bin_at(positions)
     builder = Regions(env.regions.values())
     return {
-        "env.regions[...]": (lambda: env.regions["rewrd"], "use 'reward'"),
+        "env.regions[...]": (
+            lambda value: env.regions[value],
+            "rewrd",
+            "use 'reward'",
+        ),
         "bins_in_region": (
-            lambda: env.bins_in_region("rewrd"),
+            lambda value: env.bins_in_region(value),
+            "rewrd",
             "pass region_name='reward'",
         ),
-        "region_mask": (lambda: env.region_mask("rewrd"), "pass regions='reward'"),
+        "region_mask": (
+            lambda value: env.region_mask(value),
+            "rewrd",
+            "pass regions='reward'",
+        ),
         "distance_to": (
-            lambda: env.distance_to(region="rewrd"),
+            lambda value: env.distance_to(region=value),
+            "rewrd",
             "pass region='reward'",
         ),
         "subset": (
-            lambda: env.subset(region_names=["rewrd"]),
+            lambda value: env.subset(region_names=value),
+            ["rewrd"],
             "pass region_names=['reward']",
         ),
-        "Regions.remove": (lambda: builder.remove("rewrd"), "use 'reward'"),
+        "Regions.remove": (
+            lambda value: builder.remove(value),
+            "rewrd",
+            "use 'reward'",
+        ),
         "Regions.update_region": (
-            lambda: builder.update_region("rewrd", point=(1.0, 1.0)),
+            lambda value: builder.update_region(value, point=(1.0, 1.0)),
+            "rewrd",
             "use 'reward'",
         ),
         "Regions.region_center": (
-            lambda: builder.region_center("rewrd"),
+            lambda value: builder.region_center(value),
+            "rewrd",
             "use 'reward'",
         ),
         "region_reward_field": (
-            lambda: region_reward_field(env, "rewrd"),
+            lambda value: region_reward_field(env, value),
+            "rewrd",
             "pass region_name='reward'",
         ),
         "compute_region_coverage": (
-            lambda: compute_region_coverage(env, bins, regions=["rewrd"]),
+            lambda value: compute_region_coverage(env, bins, regions=value),
+            ["rewrd"],
             "pass regions=['reward']",
         ),
         "decision_region_entry_time": (
-            lambda: decision_region_entry_time(bins, times, env, region="rewrd"),
+            lambda value: decision_region_entry_time(bins, times, env, region=value),
+            "rewrd",
             "pass region='reward'",
         ),
         "regions_containing_points": (
-            lambda: regions_containing_points(
-                positions, env.regions, region_names=["rewrd"]
+            lambda value: regions_containing_points(
+                positions, env.regions, region_names=value
             ),
+            ["rewrd"],
             "pass region_names=['reward']",
         ),
         "animate_fields(show_regions=)": (
-            lambda: env.animate_fields(
+            lambda value: env.animate_fields(
                 np.zeros((2, env.n_bins)),
                 frame_times=np.array([0.0, 0.1]),
                 backend="html",
-                show_regions=["rewrd"],
+                save_path=str(folder / "animation.html"),
+                show_regions=value,
             ),
+            ["rewrd"],
             "pass show_regions=['reward']",
         ),
         "compute_decision_analysis": (
-            lambda: compute_decision_analysis(
-                env, times, positions, decision_region="home", goal_regions=["rewrd"]
+            lambda value: compute_decision_analysis(
+                env, times, positions, decision_region="reward", goal_regions=value
             ),
+            ["rewrd"],
             "pass goal_regions=['reward']",
         ),
     }
@@ -109,21 +140,28 @@ _CALLS = [
 ]
 
 
-def test_every_lookup_is_checked(env):
-    assert sorted(_lookups(env)) == sorted(_CALLS)
-
-
 @pytest.mark.parametrize("call", _CALLS)
-def test_misspelled_region_name_suggests_the_closest_name(env, call):
-    lookup, fix = _lookups(env)[call]
+def test_misspelled_region_name_suggests_the_closest_name(env, call, tmp_path):
+    lookup, misspelled, fix = _lookups(env, tmp_path)[call]
     with pytest.raises(RegionNotFoundError) as caught:
-        lookup()
+        lookup(misspelled)
     message = str(caught.value)
     assert "Region 'rewrd' not found" in message
     assert message.endswith(f"Fix: {fix}")
     # Callers that catch either built-in type keep working.
     assert isinstance(caught.value, KeyError)
     assert isinstance(caught.value, ValueError)
+
+
+@pytest.mark.parametrize("call", _CALLS)
+def test_suggested_name_resolves(env, call, tmp_path):
+    """Passing the name the fix suggests finds the region."""
+    lookup, misspelled, _ = _lookups(env, tmp_path)[call]
+    with pytest.raises(RegionNotFoundError) as caught:
+        lookup(misspelled)
+    fix = str(caught.value).splitlines()[-1]
+    suggestion = fix.removeprefix("Fix: ").split("=", 1)[-1].removeprefix("use ")
+    lookup(ast.literal_eval(suggestion))
 
 
 @pytest.mark.parametrize("render", ["html", "napari", "parallel"])

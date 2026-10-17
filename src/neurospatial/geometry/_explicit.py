@@ -133,7 +133,7 @@ def prepare_bins(binning: object) -> Binning:
                 fix="build the faces first: from dataclasses import replace; "
                 "from neurospatial.binning import KnownFaces; "
                 "binning = replace(binning, faces=KnownFaces(binning.faces.build())); "
-                "then Environment.from_bins(binning, arena=env.arena)",
+                "Environment.from_bins(binning, arena=env.arena)",
             )
         )
     _check_binning(binning)

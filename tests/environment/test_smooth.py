@@ -410,11 +410,11 @@ def test_rate_result_is_refused_with_the_array_to_pass(population):
     spikes = np.sort(rng.uniform(0, times[-1], 200))
     if population:
         result = compute_spatial_rates(env, [spikes, spikes], times, positions)
-        expected = "env.smooth(result.firing_rates.T, bandwidth=...).T"
+        expected = "env.smooth(result.firing_rates.T, bandwidth=10.0).T"
         rates = result.firing_rates.T
     else:
         result = compute_spatial_rate(env, spikes, times, positions)
-        expected = "env.smooth(result.firing_rate, bandwidth=...)"
+        expected = "env.smooth(result.firing_rate, bandwidth=10.0)"
         rates = result.firing_rate
 
     for smoothing in (env.smooth, env.diffuse):

@@ -186,8 +186,8 @@ def _snapshot_provider(provider: object, role: _SnapshotRole) -> object:
 
         name = type(provider).__name__
         fix = (
-            "wrap the polygon: from neurospatial.arena import OpenArena; then "
-            "pass arena=OpenArena(polygon)"
+            "wrap the polygon in an OpenArena (from neurospatial.arena import "
+            "OpenArena) and pass arena=OpenArena(polygon)"
             if isinstance(provider, BaseGeometry)
             else "build the arena with a class from neurospatial.arena, for "
             "example arena=OpenArena(polygon) for a polygonal boundary, or "

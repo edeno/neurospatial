@@ -396,7 +396,9 @@ def _compute_kernel(
     return cast("NDArray[np.float64]", kernel.copy())
 
 
-def _field_batch(fields: Any, n_bins: int, operation: str, argument: str) -> Any:
+def _field_batch(
+    fields: Any, n_bins: int, operation: str, argument: str, bandwidth: float
+) -> Any:
     """Check a field or batch of fields indexed by bin first.
 
     Returns the input as an array of shape ``(n_bins,)`` or
@@ -405,10 +407,10 @@ def _field_batch(fields: Any, n_bins: int, operation: str, argument: str) -> Any
     """
     if hasattr(fields, "firing_rate") or hasattr(fields, "firing_rates"):
         call = (
-            "env.smooth(result.firing_rates.T, bandwidth=...).T, which keeps "
-            "each unit's rates in a column"
+            f"env.smooth(result.firing_rates.T, bandwidth={bandwidth!r}).T, "
+            "which keeps each unit's rates in a column"
             if hasattr(fields, "firing_rates")
-            else "env.smooth(result.firing_rate, bandwidth=...)"
+            else f"env.smooth(result.firing_rate, bandwidth={bandwidth!r})"
         )
         raise TypeError(
             _format_error(
@@ -447,7 +449,9 @@ def _field_batch(fields: Any, n_bins: int, operation: str, argument: str) -> Any
                     else "the values must come from an environment with the same bins."
                 ),
                 fix=(
-                    f"pass {argument}.T and transpose the result back"
+                    f"pass {argument}.T with the same options and transpose the "
+                    f"result back, such as env.{operation[:-2]}({argument}.T, "
+                    f"bandwidth={bandwidth!r}).T"
                     if transposed
                     else "compute the field on this environment, or map it here "
                     "with neurospatial.ops.resample_field"
@@ -467,7 +471,7 @@ def _smooth(
 ) -> NDArray[np.float64]:
     """Validate bin-valued fields and smooth them matrix-free."""
     n_bins = binning.bins.n_bins
-    field = _field_batch(field, n_bins, "smooth()", "field")
+    field = _field_batch(field, n_bins, "smooth()", "field", bandwidth)
     field = np.asarray(field, dtype=np.float64)
 
     # NaN marks a missing bin and is handled by _diffuse; infinity is invalid.
@@ -531,7 +535,7 @@ def _diffuse(
     # Coerce to 2-D (n_bins, n_fields); a 1-D field is squeezed back on
     # return. np.ndim / np.shape avoid forcing a JAX array to NumPy.
     n_bins = binning.bins.n_bins
-    fields = _field_batch(fields, n_bins, "diffuse()", "fields")
+    fields = _field_batch(fields, n_bins, "diffuse()", "fields", bandwidth)
     if backend == "numpy":
         fields = np.asarray(fields, dtype=np.float64)
     was_1d = np.ndim(fields) == 1

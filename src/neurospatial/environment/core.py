@@ -93,6 +93,7 @@ from neurospatial.environment._queries import (
 from neurospatial.environment._rebin import (
     _rebin_factor,
     _rebin_resolution,
+    refuse_unsupported_rebin,
     warn_rebin_losses,
 )
 from neurospatial.environment._regions import _region_membership
@@ -2322,6 +2323,13 @@ class Environment(Generic[_C]):
         """
         if (factor is None) == (bin_size is None):
             raise ValueError("Pass exactly one of factor or bin_size to rebin().")
+        refuse_unsupported_rebin(
+            self._binning,
+            self._arena,
+            self._provenance.build_params,
+            factor=factor,
+            bin_size=bin_size,
+        )
 
         if bin_size is not None:
             derivation, check = _rebin_resolution(self._binning, self._arena, bin_size)
