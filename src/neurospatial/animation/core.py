@@ -763,6 +763,16 @@ def animate_fields(
                 )
             )
 
+        if "crf" in options and "bitrate" in options:
+            warnings.warn(
+                f"bitrate={options['bitrate']!r} and crf={options['crf']!r} were "
+                "both passed; the video is encoded at the constant bitrate, so "
+                "crf is ignored. Pass only crf= for constant quality, or only "
+                "bitrate= for a fixed bitrate.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+
         # Validate environment pickle-ability for parallel rendering
         n_workers = options.get("n_workers")
         if n_workers and n_workers > 1:

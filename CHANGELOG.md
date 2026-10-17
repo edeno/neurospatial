@@ -892,7 +892,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `bitrate=5000` on every call, which replaced constant quality, so `crf=`
   was silently ignored. For a short test animation the default output is
   visually the same (SSIM 0.9999 against the old encoding) and less than
-  half the size.
+  half the size. Passing both `crf=` and `bitrate=` warns that the bitrate
+  wins and `crf` is ignored.
 
 - `Environment.animate_fields(..., dry_run=True)` writes nothing on every
   backend and returns `None` after reporting what it would render. The HTML

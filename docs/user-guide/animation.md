@@ -176,7 +176,8 @@ env.animate_fields(
 
 By default the video encoder uses constant quality (`crf=18`), which keeps the
 image visually near-lossless and lets the bitrate follow the content. Pass
-`bitrate=` (kbps) only when you need a fixed bitrate; it replaces `crf`.
+`bitrate=` (kbps) only when you need a fixed bitrate; it replaces `crf`, and
+passing both warns that `crf` is ignored.
 
 ### Parallel Rendering
 

@@ -246,6 +246,37 @@ def test_video_crf_reaches_the_encoder_without_a_bitrate(animation, monkeypatch)
     assert "bitrate" not in received
 
 
+def test_video_warns_that_bitrate_overrides_crf(animation, monkeypatch):
+    """With both, the encoder uses the bitrate; the caller is told crf is lost."""
+    received = {}
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.video_backend.render_video",
+        lambda env, fields, save_path, **kwargs: received.update(kwargs),
+    )
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.video_backend.check_ffmpeg_available",
+        lambda: True,
+    )
+    env, fields, times = animation
+    with pytest.warns(UserWarning, match="crf is ignored") as record:
+        env.animate_fields(
+            fields,
+            frame_times=times,
+            backend="video",
+            save_path="out.mp4",
+            crf=15,
+            bitrate=800,
+        )
+    assert len([w for w in record if "crf is ignored" in str(w.message)]) == 1
+    assert received["bitrate"] == 800
+    with warnings.catch_warnings(record=True) as alone:
+        warnings.simplefilter("always")
+        env.animate_fields(
+            fields, frame_times=times, backend="video", save_path="out.mp4", crf=15
+        )
+    assert not [w for w in alone if "crf is ignored" in str(w.message)]
+
+
 @pytest.mark.parametrize("backend", ["video", "widget"])
 def test_frame_times_reach_backends_that_align_time_series(
     animation, monkeypatch, backend
