@@ -547,8 +547,10 @@ assert track.bin_at(positions)[1] == -1  # before: the bin at x = 100
 
 `to_linear`, `linear_to_nd` and graph queries on bin indices (`bins=`) do not
 need the width. Simulated mazes from `neurospatial.simulation.mazes` pass
-their corridor width to their track, except the Sungod, honeycomb and small
-hex mazes, which have no single corridor width.
+their corridor width to their track. The Sungod, honeycomb and small hex
+mazes, whose corridors differ in width, pass the widest one: a sample within
+half of it from the centerline counts as on the track, so a narrow corridor
+can admit a few samples just outside its walls.
 
 ## `dimension_ranges` is the extent of the bins' cells
 

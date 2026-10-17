@@ -290,3 +290,62 @@ def make_star_graph(
             graph.add_edge(prev_node, endpoint_name, distance=last_dist)
 
     return graph
+
+
+def corridor_width(corridor: Polygon) -> float:
+    """Width of a straight corridor: the short side of its tightest rectangle.
+
+    Parameters
+    ----------
+    corridor : Polygon
+        An elongated corridor or arm, in cm.
+
+    Returns
+    -------
+    float
+        The corridor's width in cm.
+
+    Examples
+    --------
+    >>> from shapely.geometry import box
+    >>> corridor_width(box(0.0, 0.0, 50.0, 8.0))
+    8.0
+    """
+    corners = np.asarray(corridor.minimum_rotated_rectangle.exterior.coords)[:4]
+    sides = np.hypot(*(np.roll(corners, -1, axis=0) - corners).T)
+    return float(sides.min())
+
+
+def widest_corridor(
+    walkable: Polygon,
+    segments: Sequence[tuple[Sequence[float], Sequence[float]]],
+) -> float:
+    """Widest corridor along a track: twice the largest mid-segment clearance.
+
+    The clearance of a segment is the distance from its midpoint to the edge
+    of the walkable area, half the corridor's width there.
+
+    Parameters
+    ----------
+    walkable : Polygon
+        The area the animal can walk on, in cm.
+    segments : sequence of (start, end)
+        Track segments, each a pair of ``(x, y)`` points.
+
+    Returns
+    -------
+    float
+        The widest corridor width in cm.
+
+    Examples
+    --------
+    >>> from shapely.geometry import box
+    >>> widest_corridor(box(0.0, 0.0, 50.0, 8.0), [((0.0, 4.0), (50.0, 4.0))])
+    8.0
+    """
+    widths = []
+    for start, end in segments:
+        middle = Point((np.asarray(start) + np.asarray(end)) / 2)
+        if walkable.contains(middle):
+            widths.append(2.0 * walkable.boundary.distance(middle))
+    return float(max(widths))

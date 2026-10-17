@@ -27,8 +27,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (linear track, T, Y, W, plus, radial arm, repeated T and Y, crossword,
   Hamlet, Hampton Court and rat hexmaze) now pass it to their track, and
   `tmaze_alternation_session` builds 10 cm corridors. The Sungod, honeycomb
-  and small hex mazes have no single corridor width, so their tracks refuse
-  position lookups.
+  and small hex mazes have no single corridor width; their tracks take the
+  widest one (the widest arm, one platform, the widest corridor between
+  barriers), so a sample within half that width of the centerline counts as
+  on the track and a narrower corridor can admit a few samples just outside
+  its walls.
 
 - Pickle files of an `Environment` written by an earlier version can no longer
   be loaded. Pickle still works for passing an environment between processes

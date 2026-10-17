@@ -38,6 +38,7 @@ from shapely.ops import unary_union
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._geometry import corridor_width
 
 # Calibration: pixels to cm conversion for Sungod maze
 # Maze is ~1m x 1m, image extent is ~600 px across
@@ -166,7 +167,10 @@ def make_sungod_maze(
     MazeEnvironments
         Contains:
         - env_2d: 2D polygon-based environment
-        - env_track: 1D linearized track environment (if include_track=True)
+        - env_track: 1D linearized track environment (if include_track=True);
+          its ``track_width`` is the widest arm's width, so a sample within half
+          that width of the centerline is on the track, and a narrower arm can
+          admit a few samples just outside its walls
 
     Notes
     -----
@@ -359,12 +363,16 @@ def _create_sungod_track_graph(
     # Edge order for linearization
     edge_order = [("center", f"arm_{i}_end") for i in range(len(arm_endpoints))]
 
-    # Create the 1D environment
+    # Create the 1D environment. The arms differ in width, so the track takes
+    # the widest one: a sample within half that width of the centerline is
+    # on the track, which lets a narrower arm admit a few samples just outside
+    # its walls.
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=0.0,
         bin_size=bin_size,
+        track_width=max(corridor_width(arm) for arm in arm_polygons),
         name="sungod_maze_1d",
     )
     env_track = env_track.with_metadata(units="cm")
