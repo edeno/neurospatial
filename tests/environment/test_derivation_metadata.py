@@ -9,7 +9,7 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.geometry._arena import encode_arena
+from neurospatial.geometry._codecs import encode_arena
 from neurospatial.ops.transforms import translate
 from neurospatial.regions import Regions
 

@@ -8,7 +8,7 @@ import pytest
 from shapely.geometry import Point
 
 from neurospatial import Environment
-from neurospatial.geometry._arena import encode_arena
+from neurospatial.geometry._codecs import encode_arena
 from neurospatial.layout import create_layout
 
 

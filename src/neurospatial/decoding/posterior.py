@@ -56,7 +56,7 @@ def _same_arena(first: Arena, second: Arena) -> bool:
     """Compare continuous meaning independently of polygon ring storage order."""
     from shapely.ops import unary_union
 
-    from neurospatial.geometry._arena import encode_arena
+    from neurospatial.geometry._codecs import encode_arena
 
     if first is second:
         return True

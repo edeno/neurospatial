@@ -136,7 +136,7 @@ def test_nested_child_faces_cannot_disagree_with_child_measures():
 
 
 def test_nested_arena_depth_is_bounded():
-    from neurospatial.geometry._arena import decode_arena
+    from neurospatial.geometry._codecs import decode_arena
 
     meta = {
         "codec": "UnknownArena",

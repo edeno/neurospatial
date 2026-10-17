@@ -1,4 +1,8 @@
-"""Pure, versioned codecs for binning geometry and lookup data."""
+"""Pure, versioned codecs for binning geometry, lookup data and arenas.
+
+Unknown codec names fall back to installed snapshot adapters, whose decoded
+data is normalized back through these built-in codecs.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,8 @@ import copy
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib import metadata
 from itertools import pairwise
 from typing import Any, cast
 
@@ -13,8 +19,27 @@ import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import LineString, MultiPolygon, Polygon
+from shapely.geometry.base import BaseGeometry
 
+from neurospatial._exceptions import _format_error
+from neurospatial.geometry._adapters import (
+    _ENTRY_POINT_GROUP,
+    SnapshotAdapter,
+    _SnapshotRole,
+)
+from neurospatial.geometry._arena import (
+    Arena,
+    EgocentricSurround,
+    MaskArena,
+    OpenArena,
+    TrackArena,
+    UnknownArena,
+    _boolean,
+    _CombinedArena,
+    _error,
+    _TransformedArena,
+)
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
@@ -123,8 +148,6 @@ def decode(
     codec = _CODECS.get(name) if isinstance(name, str) else None
     if codec is None:
         if isinstance(name, str):
-            from neurospatial.geometry._adapters import _decode_snapshot
-
             return _decode_snapshot(meta, arrays, prefix)
         raise ValueError(
             f"cannot load {name!r}: no codec is registered for it.\n"
@@ -1051,8 +1074,6 @@ def _decode_binning(
 
 
 def _encode_combined(obj: CombinedLocator, prefix: str) -> Payload:
-    from neurospatial.geometry._arena import encode_arena
-
     entries = []
     arrays = _arrays(
         prefix,
@@ -1075,8 +1096,6 @@ def _encode_combined(obj: CombinedLocator, prefix: str) -> Payload:
 def _decode_combined(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> CombinedLocator:
-    from neurospatial.geometry._arena import decode_arena
-
     if prefix.count("/children/") > 32:
         raise ValueError(
             "Composition nesting exceeds 32 levels; flatten the components."
@@ -1197,3 +1216,379 @@ _CODECS: dict[str, Codec] = {
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
     "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }
+
+
+def _wkb(geometry: shapely.Geometry) -> NDArray[np.uint8]:
+    result: NDArray[np.uint8] = np.frombuffer(
+        shapely.to_wkb(geometry), dtype=np.uint8
+    ).copy()
+    return result
+
+
+def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
+    """Encode built-in arena data with local array keys, without I/O.
+
+    Parameters
+    ----------
+    arena : Arena
+        A supported immutable arena value.
+
+    Returns
+    -------
+    metadata : dict
+        JSON-compatible tagged data with codec version one.
+    arrays : dict of ndarray
+        Independent writable numerical arrays using local field names.
+    """
+    meta: dict[str, Any] = {"codec": type(arena).__name__, "codec_version": 1}
+    arrays: dict[str, NDArray[Any]] = {}
+    if type(arena) is _CombinedArena:
+        entries = []
+        for index, child in enumerate(arena.children):
+            entry, values = encode_arena(child)
+            entries.append(entry)
+            arrays.update(
+                {f"children/{index}/{key}": value for key, value in values.items()}
+            )
+        meta["children"] = entries
+    elif type(arena) is UnknownArena:
+        meta.update(n_dims=arena.n_dims, coordinate_kind=arena.coordinate_kind)
+    elif type(arena) is OpenArena:
+        meta.update(
+            n_walls=len(arena.walls),
+            physical_footprint_known=arena.physical_footprint_known,
+        )
+        arrays["polygon_wkb"] = _wkb(arena.polygon)
+        arrays.update(
+            {f"walls_wkb_{i}": _wkb(wall) for i, wall in enumerate(arena.walls)}
+        )
+    elif type(arena) is MaskArena:
+        meta.update(
+            n_dims=arena.n_dims, physical_footprint_known=arena.physical_footprint_known
+        )
+        arrays.update(
+            {f"edges_{axis}": edge.copy() for axis, edge in enumerate(arena.edges)}
+        )
+        arrays["active_mask"] = arena.active_mask.copy()
+    elif type(arena) is TrackArena:
+        meta["width"] = arena.width
+        arrays["segments"] = arena.segments.copy()
+    elif type(arena) is EgocentricSurround:
+        meta.update(
+            distance_range=list(arena.distance_range),
+            angle_range=list(arena.angle_range),
+            circular=arena.circular,
+        )
+    elif type(arena) is _TransformedArena:
+        base_meta, base_arrays = encode_arena(arena.base)
+        meta["base"] = base_meta
+        arrays["forward"] = arena.forward.copy()
+        arrays.update({f"base/{key}": value for key, value in base_arrays.items()})
+    else:
+        raise _error(
+            f"Cannot encode unregistered arena type {type(arena).__name__!r}.",
+            "use a built-in arena type with a supported codec",
+        )
+    return meta, arrays
+
+
+def _count(meta: Mapping[str, Any], name: str, *, minimum: int = 0) -> int:
+    value = meta[name]
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise _error(
+            f"{name} must be an integer >= {minimum}.", "restore valid arena metadata"
+        )
+    return int(value)
+
+
+def _read_wkb(arrays: Mapping[str, NDArray[Any]], name: str) -> shapely.Geometry:
+    data = np.asarray(arrays[name])
+    if data.ndim != 1 or data.dtype != np.uint8:
+        raise _error(
+            f"{name} must be a one-dimensional uint8 WKB array.",
+            "restore valid arena geometry bytes",
+        )
+    return cast("shapely.Geometry", shapely.from_wkb(data.tobytes()))
+
+
+def _check_arena_nesting(meta: Mapping[str, Any]) -> None:
+    """Bound composite nesting without limiting valid affine histories."""
+    stack: list[tuple[object, int, bool]] = [(meta, 0, False)]
+    active: set[int] = set()
+    while stack:
+        value, depth, leaving = stack.pop()
+        if leaving:
+            active.remove(id(value))
+            continue
+        if depth > 32:
+            raise ValueError("Arena nesting exceeds 32 levels; flatten the domains.")
+        if not isinstance(value, Mapping):
+            continue
+        if id(value) in active:
+            raise ValueError("Cyclic arena metadata cannot describe a valid domain.")
+        active.add(id(value))
+        stack.append((value, depth, True))
+        if value.get("codec") == "_CombinedArena":
+            children = value.get("children", ())
+            if isinstance(children, (list, tuple)):
+                stack.extend((child, depth + 1, False) for child in children)
+        elif value.get("codec") == "_TransformedArena":
+            stack.append((value.get("base", {}), depth, False))
+
+
+def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) -> Arena:
+    """Validate and own an arena payload, without builders or I/O.
+
+    Parameters
+    ----------
+    meta : mapping
+        Tagged arena metadata produced by :func:`encode_arena`.
+    arrays : mapping of ndarray
+        Local arrays; all published array buffers are copied.
+
+    Returns
+    -------
+    Arena
+        Validated immutable geometry with protected owned arrays.
+
+    Raises
+    ------
+    ValueError
+        If a codec/version is unknown or stored geometry is malformed.
+    """
+    _check_arena_nesting(meta)
+    try:
+        kind = meta.get("codec")
+        if isinstance(kind, str) and kind not in {
+            "UnknownArena",
+            "OpenArena",
+            "MaskArena",
+            "TrackArena",
+            "EgocentricSurround",
+            "_TransformedArena",
+            "_CombinedArena",
+        }:
+            snapshot = _decode_snapshot(meta, arrays, "")
+            if not isinstance(snapshot, Arena):
+                raise ValueError("The installed adapter must decode an arena snapshot.")
+            return snapshot
+        if _count(meta, "codec_version", minimum=1) != 1:
+            raise _error(
+                "Unsupported arena codec version.",
+                "read this record with a version that supports its arena codec",
+            )
+        kind = meta["codec"]
+        if kind == "_CombinedArena":
+            return _CombinedArena(
+                tuple(
+                    decode_arena(
+                        entry,
+                        {
+                            key.removeprefix(f"children/{index}/"): value
+                            for key, value in arrays.items()
+                            if key.startswith(f"children/{index}/")
+                        },
+                    )
+                    for index, entry in enumerate(meta["children"])
+                )
+            )
+        if kind == "UnknownArena":
+            return UnknownArena(
+                _count(meta, "n_dims", minimum=1),
+                coordinate_kind=meta["coordinate_kind"],
+            )
+        if kind == "OpenArena":
+            return OpenArena(
+                cast("Polygon | MultiPolygon", _read_wkb(arrays, "polygon_wkb")),
+                walls=tuple(
+                    cast("LineString", _read_wkb(arrays, f"walls_wkb_{i}"))
+                    for i in range(_count(meta, "n_walls"))
+                ),
+                physical_footprint_known=_boolean(
+                    meta["physical_footprint_known"], "physical_footprint_known"
+                ),
+            )
+        if kind == "MaskArena":
+            return MaskArena(
+                tuple(
+                    arrays[f"edges_{axis}"]
+                    for axis in range(_count(meta, "n_dims", minimum=1))
+                ),
+                arrays["active_mask"],
+                physical_footprint_known=_boolean(
+                    meta["physical_footprint_known"], "physical_footprint_known"
+                ),
+            )
+        if kind == "TrackArena":
+            return TrackArena(arrays["segments"], meta["width"])
+        if kind == "EgocentricSurround":
+            return EgocentricSurround(
+                meta["distance_range"],
+                meta["angle_range"],
+                _boolean(meta["circular"], "circular"),
+            )
+        if kind == "_TransformedArena":
+            base_arrays = {
+                key.removeprefix("base/"): value
+                for key, value in arrays.items()
+                if key.startswith("base/")
+            }
+            return _TransformedArena(
+                decode_arena(meta["base"], base_arrays), arrays["forward"]
+            )
+        raise _error(
+            f"Unknown arena codec {kind!r}.",
+            "install a version supporting this required arena codec",
+        )
+    except (KeyError, TypeError, shapely.errors.GEOSException) as exc:
+        raise _error(
+            f"Malformed arena payload: {exc}.", "restore a complete valid arena record"
+        ) from exc
+
+
+def _arena_types() -> tuple[type[Any], ...]:
+    return (
+        UnknownArena,
+        OpenArena,
+        MaskArena,
+        TrackArena,
+        EgocentricSurround,
+        _TransformedArena,
+        _CombinedArena,
+    )
+
+
+@lru_cache(maxsize=1)
+def _snapshot_adapters() -> tuple[SnapshotAdapter, ...]:
+    """Discover installed objects once, rejecting ambiguous declarations."""
+
+    reserved = set(_CODECS) | {kind.__name__ for kind in _arena_types()}
+    adapters: list[SnapshotAdapter] = []
+    names: set[str] = set()
+    providers: set[tuple[type[Any], str]] = set()
+    entries = metadata.entry_points(group=_ENTRY_POINT_GROUP)
+    for entry in sorted(entries, key=lambda item: (item.name, item.value)):
+        try:
+            adapter = entry.load()
+        except ImportError as exc:
+            raise ValueError(
+                f"Cannot import snapshot adapter entry point {entry.value!r}. "
+                "Install its package and required dependencies."
+            ) from exc
+        if not isinstance(adapter, SnapshotAdapter):
+            raise TypeError(
+                f"Snapshot entry point {entry.value!r} must expose a "
+                "SnapshotAdapter object, rather than a class or factory."
+            )
+        if adapter.name in reserved:
+            raise ValueError(
+                f"Snapshot adapter {adapter.name!r} conflicts with a built-in codec. "
+                "Choose a globally unique adapter name."
+            )
+        if adapter.name in names:
+            raise ValueError(
+                f"duplicate snapshot adapter name {adapter.name!r}. "
+                "Rename the adapter or remove the conflicting installed package."
+            )
+        provider_role = (adapter.provider_type, adapter.role)
+        if provider_role in providers:
+            raise ValueError(
+                "duplicate snapshot adapter for provider "
+                f"{adapter.provider_type.__module__}.{adapter.provider_type.__qualname__} "
+                f"and role {adapter.role!r}. Keep one installed adapter per provider role."
+            )
+        names.add(adapter.name)
+        providers.add(provider_role)
+        adapters.append(adapter)
+    return tuple(adapters)
+
+
+def _normalize_snapshot(value: object, role: _SnapshotRole) -> object:
+    """Validate an adapter result and rebuild owned canonical data records."""
+    if role == "arena":
+        if type(value) not in _arena_types():
+            raise ValueError("snapshot adapters must return a built-in arena record.")
+        meta, arrays = encode_arena(cast("Arena", value))
+        return decode_arena(meta, arrays)
+
+    expected = {
+        "locator": _LOCATOR_TYPES,
+        "track": (TrackLinearization,),
+        "binning": (Binning,),
+    }
+    if type(value) not in expected[role]:
+        raise ValueError(f"snapshot adapters must return a built-in {role} record.")
+    meta, arrays = encode(value, "snapshot")
+    return decode(meta, arrays, "snapshot")
+
+
+def _snapshot_provider(provider: object, role: _SnapshotRole) -> object:
+    """Convert a registered external provider to owned built-in scientific data."""
+    for adapter in _snapshot_adapters():
+        if type(provider) is adapter.provider_type and role == adapter.role:
+            return _normalize_snapshot(adapter.snapshot(provider), role)
+    if role == "arena":
+        name = type(provider).__name__
+        fix = (
+            "wrap the polygon in an OpenArena (from neurospatial.arena import "
+            "OpenArena) and pass arena=OpenArena(polygon)"
+            if isinstance(provider, BaseGeometry)
+            else "build the arena with a class from neurospatial.arena, for "
+            "example arena=OpenArena(polygon) for a polygonal boundary, or "
+            f"install the package that converts {name} to one"
+        )
+        raise TypeError(
+            _format_error(
+                f"arena= takes an arena from neurospatial.arena (OpenArena, "
+                f"MaskArena, TrackArena or UnknownArena, not a subclass), got "
+                f"{name}.",
+                why="Why: the environment stores its arena as data it can "
+                "save, transform and use to test containment, and no installed "
+                f"converter turns a {name} into that data.",
+                fix=fix,
+            )
+        )
+    hint = (
+        " A layout engine instead supplies its geometry from a binning() "
+        "method that returns a Binning."
+        if role == "binning"
+        else ""
+    )
+    raise TypeError(
+        f"No installed snapshot adapter for {type(provider).__name__} "
+        f"with role {role!r}. Install the provider's adapter package or supply "
+        f"supported built-in snapshot data.{hint}"
+    )
+
+
+def _decode_snapshot(
+    meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> object:
+    """Read an installed custom format and return only built-in snapshot data."""
+    name = meta.get("codec")
+    for adapter in _snapshot_adapters():
+        if adapter.name != name:
+            continue
+        version = meta.get("codec_version")
+        if type(version) is not int or version != adapter.version:
+            raise ValueError(
+                f"Cannot load {name!r} codec version {version!r}; the installed "
+                f"adapter supports version {adapter.version}. Install an adapter "
+                "package supporting the saved version."
+            )
+        detached_meta = copy.deepcopy(dict(meta))
+        detached_arrays = {
+            key: np.array(value, copy=True) for key, value in arrays.items()
+        }
+        try:
+            value = adapter.decode(detached_meta, detached_arrays, prefix)
+            return _normalize_snapshot(value, adapter.role)
+        except (KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
+            raise ValueError(
+                f"invalid {name} snapshot payload at {prefix}: {exc}"
+            ) from exc
+    raise ValueError(
+        f"cannot load {name!r}: no codec or installed snapshot adapter is "
+        "registered for it. Fix: install the package providing this snapshot "
+        "adapter, then load the original record and save canonical built-in data."
+    )

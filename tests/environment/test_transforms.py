@@ -23,7 +23,7 @@ from numpy.testing import assert_allclose
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.geometry._arena import encode_arena
+from neurospatial.geometry._codecs import encode_arena
 from neurospatial.regions import Regions
 
 

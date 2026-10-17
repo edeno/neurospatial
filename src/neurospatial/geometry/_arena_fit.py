@@ -18,9 +18,9 @@ from neurospatial.geometry._arena import (
     UnknownArena,
     _CombinedArena,
     _TransformedArena,
-    encode_arena,
 )
 from neurospatial.geometry._binning import KnownFaces, SpatialBins
+from neurospatial.geometry._codecs import encode_arena
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals

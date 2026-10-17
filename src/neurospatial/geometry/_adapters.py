@@ -1,24 +1,19 @@
-"""Registry of installed snapshot adapters and normalization of their data.
+"""Declaration of an installed snapshot adapter.
 
 Adapters are objects declared in the ``neurospatial.snapshot_adapters.v1``
 entry-point group. Publication retains their normalized data, never their
-provider objects or callbacks. Saved normalized records use built-in codecs.
+provider objects or callbacks. Saved normalized records use built-in codecs;
+``_codecs`` discovers installed adapters and normalizes their data.
 ``SnapshotAdapter`` is public as ``neurospatial.extensions.SnapshotAdapter``.
 """
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from functools import lru_cache
-from importlib import metadata
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
-import numpy as np
 from numpy.typing import NDArray
-
-from neurospatial._exceptions import _format_error
 
 __all__ = ["SnapshotAdapter"]
 
@@ -82,169 +77,3 @@ class SnapshotAdapter:
             raise TypeError("SnapshotAdapter.provider_type must be a Python type.")
         if not callable(self.snapshot) or not callable(self.decode):
             raise TypeError("SnapshotAdapter.snapshot and decode must be callable.")
-
-
-def _arena_types() -> tuple[type[Any], ...]:
-    from neurospatial.geometry._arena import (
-        EgocentricSurround,
-        MaskArena,
-        OpenArena,
-        TrackArena,
-        UnknownArena,
-        _CombinedArena,
-        _TransformedArena,
-    )
-
-    return (
-        UnknownArena,
-        OpenArena,
-        MaskArena,
-        TrackArena,
-        EgocentricSurround,
-        _TransformedArena,
-        _CombinedArena,
-    )
-
-
-@lru_cache(maxsize=1)
-def _snapshot_adapters() -> tuple[SnapshotAdapter, ...]:
-    """Discover installed objects once, rejecting ambiguous declarations."""
-    from neurospatial.geometry._codecs import _CODECS
-
-    reserved = set(_CODECS) | {kind.__name__ for kind in _arena_types()}
-    adapters: list[SnapshotAdapter] = []
-    names: set[str] = set()
-    providers: set[tuple[type[Any], str]] = set()
-    entries = metadata.entry_points(group=_ENTRY_POINT_GROUP)
-    for entry in sorted(entries, key=lambda item: (item.name, item.value)):
-        try:
-            adapter = entry.load()
-        except ImportError as exc:
-            raise ValueError(
-                f"Cannot import snapshot adapter entry point {entry.value!r}. "
-                "Install its package and required dependencies."
-            ) from exc
-        if not isinstance(adapter, SnapshotAdapter):
-            raise TypeError(
-                f"Snapshot entry point {entry.value!r} must expose a "
-                "SnapshotAdapter object, rather than a class or factory."
-            )
-        if adapter.name in reserved:
-            raise ValueError(
-                f"Snapshot adapter {adapter.name!r} conflicts with a built-in codec. "
-                "Choose a globally unique adapter name."
-            )
-        if adapter.name in names:
-            raise ValueError(
-                f"duplicate snapshot adapter name {adapter.name!r}. "
-                "Rename the adapter or remove the conflicting installed package."
-            )
-        provider_role = (adapter.provider_type, adapter.role)
-        if provider_role in providers:
-            raise ValueError(
-                "duplicate snapshot adapter for provider "
-                f"{adapter.provider_type.__module__}.{adapter.provider_type.__qualname__} "
-                f"and role {adapter.role!r}. Keep one installed adapter per provider role."
-            )
-        names.add(adapter.name)
-        providers.add(provider_role)
-        adapters.append(adapter)
-    return tuple(adapters)
-
-
-def _normalize_snapshot(value: object, role: _SnapshotRole) -> object:
-    """Validate an adapter result and rebuild owned canonical data records."""
-    if role == "arena":
-        from neurospatial.geometry._arena import Arena, decode_arena, encode_arena
-
-        if type(value) not in _arena_types():
-            raise ValueError("snapshot adapters must return a built-in arena record.")
-        meta, arrays = encode_arena(cast("Arena", value))
-        return decode_arena(meta, arrays)
-
-    from neurospatial.geometry._binning import Binning, TrackLinearization
-    from neurospatial.geometry._codecs import _LOCATOR_TYPES, decode, encode
-
-    expected = {
-        "locator": _LOCATOR_TYPES,
-        "track": (TrackLinearization,),
-        "binning": (Binning,),
-    }
-    if type(value) not in expected[role]:
-        raise ValueError(f"snapshot adapters must return a built-in {role} record.")
-    meta, arrays = encode(value, "snapshot")
-    return decode(meta, arrays, "snapshot")
-
-
-def _snapshot_provider(provider: object, role: _SnapshotRole) -> object:
-    """Convert a registered external provider to owned built-in scientific data."""
-    for adapter in _snapshot_adapters():
-        if type(provider) is adapter.provider_type and role == adapter.role:
-            return _normalize_snapshot(adapter.snapshot(provider), role)
-    if role == "arena":
-        from shapely.geometry.base import BaseGeometry
-
-        name = type(provider).__name__
-        fix = (
-            "wrap the polygon in an OpenArena (from neurospatial.arena import "
-            "OpenArena) and pass arena=OpenArena(polygon)"
-            if isinstance(provider, BaseGeometry)
-            else "build the arena with a class from neurospatial.arena, for "
-            "example arena=OpenArena(polygon) for a polygonal boundary, or "
-            f"install the package that converts {name} to one"
-        )
-        raise TypeError(
-            _format_error(
-                f"arena= takes an arena from neurospatial.arena (OpenArena, "
-                f"MaskArena, TrackArena or UnknownArena, not a subclass), got "
-                f"{name}.",
-                why="Why: the environment stores its arena as data it can "
-                "save, transform and use to test containment, and no installed "
-                f"converter turns a {name} into that data.",
-                fix=fix,
-            )
-        )
-    hint = (
-        " A layout engine instead supplies its geometry from a binning() "
-        "method that returns a Binning."
-        if role == "binning"
-        else ""
-    )
-    raise TypeError(
-        f"No installed snapshot adapter for {type(provider).__name__} "
-        f"with role {role!r}. Install the provider's adapter package or supply "
-        f"supported built-in snapshot data.{hint}"
-    )
-
-
-def _decode_snapshot(
-    meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
-) -> object:
-    """Read an installed custom format and return only built-in snapshot data."""
-    name = meta.get("codec")
-    for adapter in _snapshot_adapters():
-        if adapter.name != name:
-            continue
-        version = meta.get("codec_version")
-        if type(version) is not int or version != adapter.version:
-            raise ValueError(
-                f"Cannot load {name!r} codec version {version!r}; the installed "
-                f"adapter supports version {adapter.version}. Install an adapter "
-                "package supporting the saved version."
-            )
-        detached_meta = copy.deepcopy(dict(meta))
-        detached_arrays = {
-            key: np.array(value, copy=True) for key, value in arrays.items()
-        }
-        try:
-            value = adapter.decode(detached_meta, detached_arrays, prefix)
-            return _normalize_snapshot(value, adapter.role)
-        except (KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
-            raise ValueError(
-                f"invalid {name} snapshot payload at {prefix}: {exc}"
-            ) from exc
-    raise ValueError(
-        f"cannot load {name!r}: no codec or installed snapshot adapter is "
-        "registered for it. Fix: install the package providing this snapshot "
-        "adapter, then load the original record and save canonical built-in data."
-    )

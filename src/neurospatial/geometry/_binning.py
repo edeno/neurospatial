@@ -274,8 +274,6 @@ class MissingFaces:
 
     def missing_error(self, operation: str) -> NotImplementedError:
         """Name the operation, missing geometry and supported recovery."""
-        from neurospatial._exceptions import _format_error
-
         return NotImplementedError(
             _format_error(
                 f"{operation} needs finite-volume cell geometry. {self.reason}",
