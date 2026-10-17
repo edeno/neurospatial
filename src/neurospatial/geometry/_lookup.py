@@ -74,14 +74,18 @@ def locate(
 TRACK_WIDTH_FIX = (
     "build the track with its measured full width, in the units of the "
     "positions, by passing track_width= to Environment.linear_track, "
-    "Environment.maze or Environment.from_graph; for this track, with width "
-    "its full width: "
+    "Environment.maze or Environment.from_graph. To give this environment, "
+    "including a subset or a transformed track, a width while keeping its "
+    "bins, with width its full width: "
 )
 TRACK_WIDTH_EXAMPLE = (
-    "Environment.from_graph(env.binning.linearization.graph, "
-    "list(env.binning.linearization.edge_order), "
-    "bin_size=env.layout_parameters['bin_size'], "
-    "edge_spacing=env.binning.linearization.edge_spacing, track_width=width, "
+    "from dataclasses import replace; "
+    "from neurospatial.arena import TrackArena; "
+    "from neurospatial.binning import KnownFaces; "
+    "g = env.binning.linearization.graph; "
+    "centerline = np.array([[g.nodes[u]['pos'], g.nodes[v]['pos']] for u, v in g.edges]); "
+    "binning = replace(env.binning, faces=KnownFaces(env.binning.faces.build())); "
+    "Environment.from_bins(binning, arena=TrackArena(centerline, width=width), "
     "name=env.name, units=env.units, frame=env.frame, regions=env.regions)"
 )
 

@@ -124,12 +124,33 @@ def _widthless_track() -> dict[str, Any]:
 
 
 _TRACK_WIDTH_CODE = (
-    "Environment.from_graph(env.binning.linearization.graph, "
-    "list(env.binning.linearization.edge_order), "
-    "bin_size=env.layout_parameters['bin_size'], "
-    "edge_spacing=env.binning.linearization.edge_spacing, track_width=width, "
+    "from dataclasses import replace; "
+    "from neurospatial.arena import TrackArena; "
+    "from neurospatial.binning import KnownFaces; "
+    "g = env.binning.linearization.graph; "
+    "centerline = np.array([[g.nodes[u]['pos'], g.nodes[v]['pos']] for u, v in g.edges]); "
+    "binning = replace(env.binning, faces=KnownFaces(env.binning.faces.build())); "
+    "Environment.from_bins(binning, arena=TrackArena(centerline, width=width), "
     "name=env.name, units=env.units, frame=env.frame, regions=env.regions)"
 )
+
+
+def _widthless_track_subset() -> dict[str, Any]:
+    names = _widthless_track()
+    env = names["env"]
+    names["env"] = env.subset(mask=env.bin_centers[:, 0] < 30.0)
+    return names
+
+
+def _widthless_track_transformed() -> dict[str, Any]:
+    from neurospatial.ops.transforms import AffineND
+
+    names = _widthless_track()
+    rotation = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
+    names["env"] = names["env"].apply_transform(AffineND(rotation))
+    names["positions"] = names["positions"] @ rotation[:2, :2].T + rotation[:2, 2]
+    names["width"] = 20.0  # the track doubled in size
+    return names
 
 
 def _mesh() -> dict[str, Any]:
@@ -408,6 +429,11 @@ CASES: dict[str, Case] = {
         lambda n: n["env"].occupancy(np.arange(3) * 0.1, n["positions"]),
         _TRACK_WIDTH_CODE,
     ),
+    "bin_at on a subset of a track without track_width": Case(
+        _widthless_track_subset,
+        lambda n: n["env"].bin_at(n["positions"]),
+        _TRACK_WIDTH_CODE,
+    ),
     "points= on a track without track_width": Case(
         _widthless_track,
         lambda n: n["env"].distance_to(points=n["positions"][:1]),
@@ -454,16 +480,32 @@ def test_suggested_coarser_bins_are_coarser():
         assert rebuilt.layout_type == names["env"].layout_type
 
 
-def test_suggested_track_rebuild_keeps_the_bins_and_drops_off_track_positions():
-    names = _widthless_track()
+@pytest.mark.parametrize(
+    "build",
+    [_widthless_track, _widthless_track_subset, _widthless_track_transformed],
+    ids=["native", "subset", "transformed"],
+)
+def test_suggested_track_rebuild_keeps_the_bins_and_drops_off_track_positions(
+    build,
+):
+    names = build()
     env = names["env"]
     rebuilt = _run(_TRACK_WIDTH_CODE, names)
+    # The same bins as the refused environment, subset or transform included.
     np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
+    np.testing.assert_array_equal(rebuilt.bin_sizes, env.bin_sizes)
+    assert rebuilt.is_linearized_track
     assert (rebuilt.name, rebuilt.units, rebuilt.frame) == (
         env.name,
         env.units,
         env.frame,
     )
+    np.testing.assert_array_equal(
+        rebuilt.bin_at(rebuilt.bin_centers), np.arange(rebuilt.n_bins)
+    )
     bins = rebuilt.bin_at(names["positions"])
-    # Within 5 cm of the centerline: a bin; 350 cm off the track: none.
-    assert (bins[:2] >= 0).all() and bins[2] == -1
+    # The last position is 350 cm off the track: no bin.
+    assert bins[-1] == -1
+    if build is not _widthless_track_subset:
+        # Within half the width of the centerline: a bin.
+        assert (bins[:2] >= 0).all()
