@@ -507,13 +507,13 @@ def pre_decision_heading_stats(
         times, positions, call="pre_decision_heading_stats"
     )
     from neurospatial._intervals import observed_interval_mask
-    from neurospatial.ops.egocentric import _velocity_heading_and_speed
+    from neurospatial.ops import velocity_heading_and_speed
 
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if len(positions) < 2:
         return np.nan, np.nan, np.nan
 
-    headings, speed = _velocity_heading_and_speed(
+    headings, speed = velocity_heading_and_speed(
         times,
         positions,
         interval_mask=interval_mask,
@@ -750,7 +750,7 @@ def geodesic_voronoi_labels(
     >>> # labels[i] == 0 means bin i is closer to left goal
     >>> # labels[i] == 1 means bin i is closer to right goal
     """
-    from neurospatial.environment._targets import validate_target_bins
+    from neurospatial.environment import validate_target_bins
     from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = validate_target_bins(
@@ -816,7 +816,7 @@ def distance_to_decision_boundary(
     ... )  # doctest: +SKIP
     >>> commitment_mask = distances > 20.0  # Committed to a goal  # doctest: +SKIP
     """
-    from neurospatial.environment._targets import validate_target_bins
+    from neurospatial.environment import validate_target_bins
     from neurospatial.ops.distance import distance_field
 
     goal_bins_arr = validate_target_bins(

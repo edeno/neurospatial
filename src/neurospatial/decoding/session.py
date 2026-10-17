@@ -409,8 +409,7 @@ def _prepare_session_decode(
 ]:
     """Normalize spike inputs/models and tile bins inside observed runs."""
     from neurospatial.decoding._time_bins import validate_dt
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
-    from neurospatial.encoding._validation import validate_times
+    from neurospatial.encoding import as_spike_trains_with_ids, validate_times
 
     # Validate dt up front, BEFORE the grid math below builds the decode time
     # grid directly (bypassing bin_spikes_in_time's own guard). Without this,
@@ -499,7 +498,7 @@ def _fit_encoding_model(
 ]:
     """Fit supported rate maps independently of the prediction time bins."""
     from neurospatial._validation import validate_times_positions
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding import as_spike_trains_with_ids
     from neurospatial.encoding.spatial import compute_spatial_rates
 
     times_arr, positions = validate_times_positions(times, positions, call=context)
@@ -510,7 +509,7 @@ def _fit_encoding_model(
     # the errors are identical. fill_value is not a decoder-exposed param, so
     # it is passed as None here (the golden-path 0.0 fill for ratio methods is
     # applied in the compute_spatial_rates call below, never for glm).
-    from neurospatial.encoding._smoothing import validate_spatial_method_params
+    from neurospatial.encoding import validate_spatial_method_params
 
     penalty, rank = validate_spatial_method_params(
         method,

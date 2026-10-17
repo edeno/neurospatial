@@ -40,7 +40,7 @@ from neurospatial.geometry import (
     validate_components,
 )
 from neurospatial.geometry import grid_index as compute_grid_index
-from neurospatial.layout._construction import built_layout_data
+from neurospatial.layout import built_layout_data
 from neurospatial.layout.base import build_choices
 from neurospatial.layout.validation import (
     GraphValidationError,
@@ -263,7 +263,7 @@ class _PublishedGeometry(Generic[_CoordinatesT]):
 
 
 @dataclass(frozen=True, init=False)
-class _Provenance:
+class Provenance:
     """How the bins were built: scalar build choices and the derivations since.
 
     Provenance is descriptive. Geometry and behavior come from the owned
@@ -358,7 +358,7 @@ def publish(
     binning: Binning,
     *,
     coordinates: CartesianSystem | EgocentricPolarSystem,
-    provenance: _Provenance,
+    provenance: Provenance,
     metadata: _Metadata,
     regions: Regions | None = None,
     arena: Arena | None = None,
@@ -380,7 +380,7 @@ def publish(
         set, are the environment's; otherwise they come from the cells.
     coordinates : CartesianSystem or EgocentricPolarSystem
         Meaning of the bin coordinates.
-    provenance : _Provenance
+    provenance : Provenance
         Build choices and derivation history.
     metadata : _Metadata
         Name, units and frame.
@@ -500,7 +500,7 @@ def publish_layout(
         cls,
         binning,
         coordinates=coordinates,
-        provenance=_Provenance(resolved),
+        provenance=Provenance(resolved),
         metadata=metadata,
         regions=regions,
         arena=arena,
@@ -575,7 +575,7 @@ def publish_derived(
     )
     inherited = parent._provenance
     history = inherited.derivations if derivation.continues_history else ()
-    provenance = _Provenance(
+    provenance = Provenance(
         inherited.build_params
         if derivation.build_params is None
         else derivation.build_params,

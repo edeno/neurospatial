@@ -38,10 +38,10 @@ from diffusion_fixtures import (
 from neurospatial.environment._fields import diffusion_eigenbasis
 from neurospatial.ops.diffusion import (
     _HEAT_KERNEL_DENSE_FRACTION,
-    _HEAT_KERNEL_RANK_TOL,
+    HEAT_KERNEL_RANK_TOL,
     _adaptive_symmetric_basis,
-    _symmetric_conjugate,
     component_support_mask,
+    symmetric_conjugate,
 )
 
 # Truncation tolerance for the M-weighted / dense-relative equivalence. The
@@ -220,13 +220,13 @@ def test_null_mode_retained(geom):
     volumes EXACTLY under truncation (mass conservation, linearity foundation)."""
     env, _ = _build_env(geom)
     W, volumes = _geometry(env)
-    S = _symmetric_conjugate(W, volumes)
+    S = symmetric_conjugate(W, volumes)
     n_components = env._diffusion_geometry.n_components
     sigma = GEOMETRIES[geom][2]  # sigma_large (truncated)
     rank, *_ = _adaptive_symmetric_basis(
         S,
         sigma,
-        tol=_HEAT_KERNEL_RANK_TOL,
+        tol=HEAT_KERNEL_RANK_TOL,
         dense_fraction=_HEAT_KERNEL_DENSE_FRACTION,
         n_components=n_components,
     )
@@ -417,7 +417,7 @@ def test_symmetric_eigenbasis_rank_below_n_components_raises():
 
     env, _ = build_grid_2d_split()  # 2 components
     W, volumes = _geometry(env)
-    S = _symmetric_conjugate(W, volumes)
+    S = symmetric_conjugate(W, volumes)
     with pytest.raises(ValueError, match="n_components"):
         _symmetric_eigenbasis(S, rank=1)  # rank 1 < 2 components
 
@@ -624,7 +624,7 @@ def test_near_full_rank_diffuse_no_poison():
     # The transient dense basis is NOT cached.
     holder = diffusion_eigenbasis(env._cache)
     assert holder.basis is None
-    assert holder.resolved[(0.8, _HEAT_KERNEL_RANK_TOL)] == "dense"
+    assert holder.resolved[(0.8, HEAT_KERNEL_RANK_TOL)] == "dense"
 
     # A SECOND call at the same near-full-rank bandwidth takes the memoized
     # "dense" fast path (still transient, still not cached) and matches the first.

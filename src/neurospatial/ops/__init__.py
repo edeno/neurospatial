@@ -27,6 +27,25 @@ basis : GLM spatial basis functions
 # Use direct imports: from neurospatial.ops.visibility import FieldOfView
 import importlib as _importlib
 
+from neurospatial.ops._linear_allocation import (
+    linear_grid_occupancy as linear_grid_occupancy,
+)
+from neurospatial.ops._polygon_allocation import (
+    RetainedLinearInterval as RetainedLinearInterval,
+)
+from neurospatial.ops._polygon_allocation import (
+    polygon_linear_occupancy as polygon_linear_occupancy,
+)
+from neurospatial.ops._polygon_allocation import source_grid as source_grid
+from neurospatial.ops._polygon_allocation import (
+    uses_polygon_allocation as uses_polygon_allocation,
+)
+from neurospatial.ops._transitions import count_transitions as count_transitions
+from neurospatial.ops._transitions import diffusion_transitions as diffusion_transitions
+from neurospatial.ops._transitions import (
+    random_walk_transitions as random_walk_transitions,
+)
+from neurospatial.ops._types import KernelMode as KernelMode
 from neurospatial.ops.alignment import (
     ProbabilityMappingParams,
     apply_similarity_transform,
@@ -46,10 +65,33 @@ from neurospatial.ops.basis import (
 
 # Calculus operations (gradient, divergence)
 from neurospatial.ops.calculus import (
-    divergence,
-    gradient,
+    compute_differential_operator as compute_differential_operator,
 )
+from neurospatial.ops.calculus import (
+    compute_divergence_operator as compute_divergence_operator,
+)
+from neurospatial.ops.calculus import divergence, gradient
+from neurospatial.ops.diffusion import HEAT_KERNEL_RANK_TOL as HEAT_KERNEL_RANK_TOL
+from neurospatial.ops.diffusion import RESOLUTION_MARGIN as RESOLUTION_MARGIN
+from neurospatial.ops.diffusion import DiffusionEigenbasis as DiffusionEigenbasis
 from neurospatial.ops.diffusion import MRFBasis
+from neurospatial.ops.diffusion import MRFEigenbasis as MRFEigenbasis
+from neurospatial.ops.diffusion import above_component_floor as above_component_floor
+from neurospatial.ops.diffusion import component_support_mask as component_support_mask
+from neurospatial.ops.diffusion import diffusion_apply as diffusion_apply
+from neurospatial.ops.diffusion import diffusion_apply_rtol as diffusion_apply_rtol
+from neurospatial.ops.diffusion import ensure_global_modes as ensure_global_modes
+from neurospatial.ops.diffusion import heat_kernel_from_W as heat_kernel_from_W
+from neurospatial.ops.diffusion import live_components as live_components
+from neurospatial.ops.diffusion import (
+    masked_diffusion_average as masked_diffusion_average,
+)
+from neurospatial.ops.diffusion import null_mode_indices as null_mode_indices
+from neurospatial.ops.diffusion import resolve_basis as resolve_basis
+from neurospatial.ops.diffusion import select_live_basis as select_live_basis
+from neurospatial.ops.diffusion import symmetric_conjugate as symmetric_conjugate
+from neurospatial.ops.diffusion import target_live_rank as target_live_rank
+from neurospatial.ops.diffusion import validate_occupancy as validate_occupancy
 
 # Distance operations
 from neurospatial.ops.distance import (
@@ -71,6 +113,10 @@ from neurospatial.ops.egocentric import (
     heading_from_body_orientation,
     heading_from_velocity,
 )
+from neurospatial.ops.egocentric import (
+    velocity_heading_and_speed as velocity_heading_and_speed,
+)
+from neurospatial.ops.egocentric import wrap_bearing as wrap_bearing
 
 # Graph operations
 from neurospatial.ops.graph import (
@@ -79,10 +125,12 @@ from neurospatial.ops.graph import (
 )
 
 # Point-to-bin mapping, region masks and field resampling
+from neurospatial.ops.mapping import TieBreakStrategy, regions_to_mask, resample_field
+from neurospatial.ops.mapping import nearest_bin_query as nearest_bin_query
+from neurospatial.ops.mapping import regions_mask as regions_mask
+from neurospatial.ops.mapping import typical_bin_spacing as typical_bin_spacing
 from neurospatial.ops.mapping import (
-    TieBreakStrategy,
-    regions_to_mask,
-    resample_field,
+    validate_nearest_options as validate_nearest_options,
 )
 
 # Normalize operations
@@ -93,10 +141,8 @@ from neurospatial.ops.normalize import (
 )
 
 # Smoothing operations
-from neurospatial.ops.smoothing import (
-    apply_kernel,
-    compute_diffusion_kernels,
-)
+from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
+from neurospatial.ops.smoothing import gaussian_kernel as gaussian_kernel
 
 # Transform operations
 from neurospatial.ops.transforms import (
@@ -152,6 +198,8 @@ def __dir__() -> list[str]:
     return sorted(set(globals()) | set(__all__))
 
 
+# Names imported here but not listed in ``__all__`` are shared with other
+# neurospatial packages. They are internal, not public API.
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
     "MRFBasis",

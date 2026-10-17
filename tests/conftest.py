@@ -1143,7 +1143,7 @@ def environment_round_trip(built_environment, request, tmp_path):
 @pytest.fixture
 def forbid_layout_builds(monkeypatch):
     """Forbid all built-in builders, including the internal polar subclass."""
-    from neurospatial.layout.engines._polar import _PolarGridLayout
+    from neurospatial.layout.engines._polar import PolarGridLayout
     from neurospatial.layout.engines.hexagonal import HexagonalLayout
     from neurospatial.layout.engines.image_mask import ImageMaskLayout
     from neurospatial.layout.engines.masked_grid import MaskedGridLayout
@@ -1155,7 +1155,7 @@ def forbid_layout_builds(monkeypatch):
         raise AssertionError("Loading geometry must not run a layout builder")
 
     for cls in (
-        _PolarGridLayout,
+        PolarGridLayout,
         GraphLayout,
         HexagonalLayout,
         ImageMaskLayout,

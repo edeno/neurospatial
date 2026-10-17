@@ -14,7 +14,7 @@ from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
 
-class _PolarGridLayout(MaskedGridLayout):
+class PolarGridLayout(MaskedGridLayout):
     """Masked grid over ``(distance, angle)`` whose cells are annular sectors.
 
     Storage, indexing and connectivity are the masked grid's, carrying the

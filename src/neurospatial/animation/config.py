@@ -26,7 +26,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from neurospatial._logging import logger
-from neurospatial.layout._scale_bar import (
+from neurospatial.layout import (
     ScaleBarConfig,
     add_scale_bar_to_axes,
     compute_nice_length,

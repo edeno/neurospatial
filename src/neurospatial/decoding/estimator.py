@@ -272,7 +272,7 @@ warn_on_drop
         duplicate allow-set).
         """
         from neurospatial.decoding._time_bins import validate_dt
-        from neurospatial.encoding._smoothing import validate_spatial_method_params
+        from neurospatial.encoding import validate_spatial_method_params
 
         # Config domain: dt (shared core validator) and dtype.
         validate_dt(self.dt)
@@ -664,7 +664,7 @@ warn_on_drop
         from neurospatial._intervals import resolve_time_windows
         from neurospatial._results import resolve_unit_ids
         from neurospatial.decoding.session import _fit_encoding_model
-        from neurospatial.encoding._spikes import as_spike_trains_with_ids
+        from neurospatial.encoding import as_spike_trains_with_ids
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
@@ -721,7 +721,7 @@ warn_on_drop
         otherwise by position, which requires one train per fitted unit.
         """
         from neurospatial._results import resolve_unit_ids
-        from neurospatial.encoding._spikes import as_spike_trains_with_ids
+        from neurospatial.encoding import as_spike_trains_with_ids
 
         trains, input_ids = as_spike_trains_with_ids(spike_times)
         n_models = self._check_fitted().shape[0]

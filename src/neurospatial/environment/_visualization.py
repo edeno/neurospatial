@@ -25,9 +25,9 @@ from neurospatial.geometry import (
     TriangleShapes,
     require_grid_context,
 )
-from neurospatial.layout._plot_cells import plot_binning
-from neurospatial.layout._plotting import (
+from neurospatial.layout import (
     hexagon_patches,
+    plot_binning,
     plot_track_linear,
     polygon_patches,
 )
@@ -38,7 +38,7 @@ from neurospatial.regions.plot import plot_regions
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
 
-    from neurospatial.layout._scale_bar import ScaleBarConfig
+    from neurospatial.layout import ScaleBarConfig
 
 
 # Minimum extent threshold for scale bar (avoids issues with very small extents)
@@ -92,8 +92,8 @@ def _add_scale_bar_if_requested(
     if not scale_bar:
         return
 
-    from neurospatial.layout._scale_bar import ScaleBarConfig as _ScaleBarConfig
-    from neurospatial.layout._scale_bar import add_scale_bar_to_axes
+    from neurospatial.layout import ScaleBarConfig as _ScaleBarConfig
+    from neurospatial.layout import add_scale_bar_to_axes
 
     config = scale_bar if isinstance(scale_bar, _ScaleBarConfig) else _ScaleBarConfig()
 

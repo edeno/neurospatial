@@ -230,13 +230,13 @@ def _holes(env: Environment) -> np.ndarray:
 def test_smoothing_without_nan_is_the_plain_operator(any_env, mode):
     from neurospatial.ops.diffusion import (
         DiffusionEigenbasis,
-        _resolve_basis,
         diffusion_apply,
+        resolve_basis,
     )
 
     field = np.sin(np.arange(any_env.n_bins) * 0.37)
     geometry = any_env.get_diffusion_geometry()
-    _, basis = _resolve_basis(
+    _, basis = resolve_basis(
         DiffusionEigenbasis(),
         geometry.W,
         geometry.volumes,

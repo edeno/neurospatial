@@ -453,10 +453,8 @@ class TestAnnotateTrackGraphVideoPath:
         video_file = tmp_path / "test.mp4"
         video_file.touch()
 
-        # Patch VideoReader at the source module
-        monkeypatch.setattr(
-            "neurospatial.animation._video_io.VideoReader", MockVideoReader
-        )
+        # Patch the VideoReader that annotation imports from neurospatial.animation
+        monkeypatch.setattr("neurospatial.animation.VideoReader", MockVideoReader)
 
         # Mock napari so the test runs in CI environments without the
         # optional `animation` extra installed; the IndexError we expect
@@ -483,10 +481,8 @@ class TestAnnotateTrackGraphVideoPath:
         video_file = tmp_path / "test.mp4"
         video_file.touch()
 
-        # Patch VideoReader at the source module
-        monkeypatch.setattr(
-            "neurospatial.animation._video_io.VideoReader", MockVideoReader
-        )
+        # Patch the VideoReader that annotation imports from neurospatial.animation
+        monkeypatch.setattr("neurospatial.animation.VideoReader", MockVideoReader)
 
         # Setup mocks for napari
         _setup_mocks(monkeypatch)

@@ -87,7 +87,7 @@ def test_large_clock_rounding_stays_below_excluded_stop(monkeypatch):
     t0 = 1e9
     monkeypatch.setattr(
         shuffle,
-        "_ensure_rng",
+        "ensure_rng",
         lambda _: SimpleNamespace(uniform=lambda *_: np.nextafter(1.0, 0.0)),
     )
     train = next(

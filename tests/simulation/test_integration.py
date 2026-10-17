@@ -10,7 +10,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.mapping import _typical_bin_spacing
+from neurospatial.ops.mapping import typical_bin_spacing
 from neurospatial.simulation import (
     boundary_cell_session,
     grid_cell_session,
@@ -252,7 +252,7 @@ class TestPlaceFieldDetectionAccuracy:
         spike_trains = session.spike_times
         ground_truth = session.ground_truth
         # Bin spacing (a length); env.bin_sizes holds bin areas in 2-D.
-        bin_size = _typical_bin_spacing(
+        bin_size = typical_bin_spacing(
             env.bin_centers,
             env.bin_sizes,
             is_linearized_track=env.is_linearized_track,

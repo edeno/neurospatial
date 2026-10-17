@@ -536,7 +536,7 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    from neurospatial.animation._video_io import VideoReader
+    from neurospatial.animation import VideoReader
 
     # Use the reader as a context manager so its resources (e.g. the prefetch
     # thread pool) are always released, even when frame_index is out of range.

@@ -282,10 +282,10 @@ def _regions_to_json(regions) -> str:
     if regions is None or len(regions) == 0:
         return "{}"
 
-    from neurospatial.regions.io import _SCHEMA_TAG
+    from neurospatial.regions import SCHEMA_TAG
 
     payload = {
-        "format": _SCHEMA_TAG,
+        "format": SCHEMA_TAG,
         "regions": [region.to_dict() for region in regions.values()],
     }
     return json.dumps(payload)
@@ -502,8 +502,7 @@ def environment_from_position(
 
     _require_pynwb()
 
-    from neurospatial.environment import Environment
-    from neurospatial.environment._factories import _from_samples
+    from neurospatial.environment import Environment, build_from_samples
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
@@ -524,7 +523,7 @@ def environment_from_position(
 
     # Bin the samples exactly as Environment.from_samples does, naming this
     # function in any error about the options.
-    return _from_samples(
+    return build_from_samples(
         Environment,
         positions,
         bin_size=bin_size,

@@ -40,16 +40,14 @@ from neurospatial.geometry import (
     require_cartesian,
     require_rectilinear,
 )
-from neurospatial.ops._linear_allocation import linear_grid_occupancy
-from neurospatial.ops._polygon_allocation import (
-    polygon_linear_occupancy,
-    source_grid,
-    uses_polygon_allocation,
-)
-from neurospatial.ops._transitions import (
+from neurospatial.ops import (
     count_transitions,
     diffusion_transitions,
+    linear_grid_occupancy,
+    polygon_linear_occupancy,
     random_walk_transitions,
+    source_grid,
+    uses_polygon_allocation,
 )
 
 if TYPE_CHECKING:

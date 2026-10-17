@@ -39,7 +39,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import require_cartesian
-from neurospatial.ops._polygon_allocation import (
+from neurospatial.ops import (
     RetainedLinearInterval,
     polygon_linear_occupancy,
     source_grid,

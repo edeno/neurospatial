@@ -38,6 +38,16 @@ from neurospatial.encoding._metrics import (
     spatial_coverage_single_cell,
     spatial_information,
 )
+from neurospatial.encoding._smoothing import (
+    validate_spatial_method_params as validate_spatial_method_params,
+)
+from neurospatial.encoding._spikes import (
+    as_spike_trains_with_ids as as_spike_trains_with_ids,
+)
+from neurospatial.encoding._validation import (
+    validate_env_argument as validate_env_argument,
+)
+from neurospatial.encoding._validation import validate_times as validate_times
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -127,6 +137,8 @@ from neurospatial.encoding.view import (
     spatial_view_cell_significance,
 )
 
+# Names imported here but not listed in ``__all__`` are shared with other
+# neurospatial packages. They are internal, not public API.
 __all__ = [  # noqa: RUF022 - organized by category
     "egocentric_object_vector_cell_significance",
     "object_vector_cell_significance",

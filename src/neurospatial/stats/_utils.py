@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 
-def _ensure_rng(
+def ensure_rng(
     rng: np.random.Generator | int | None,
 ) -> np.random.Generator:
     """Convert rng parameter to a Generator instance.

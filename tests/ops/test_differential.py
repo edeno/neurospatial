@@ -10,7 +10,7 @@ from environment_helpers import face_graph
 from scipy import sparse
 
 from neurospatial import Environment
-from neurospatial.ops.calculus import _compute_divergence_operator
+from neurospatial.ops.calculus import compute_divergence_operator
 
 
 def _diffusion_generator(env):
@@ -70,7 +70,7 @@ def test_get_divergence_operator_is_cached_and_applied_by_divergence(fv_env):
     np.testing.assert_array_equal(exported.toarray(), operator.toarray())
     np.testing.assert_allclose(
         operator.toarray(),
-        _compute_divergence_operator(
+        compute_divergence_operator(
             fv_env.binning.faces.build(), fv_env.get_differential_operator()
         ).toarray(),
     )
@@ -169,7 +169,7 @@ class TestDifferentialOperatorComputation:
 
         # Compute Laplacian from differential operator
         L_from_D = (
-            -_compute_divergence_operator(
+            -compute_divergence_operator(
                 env.binning.faces.build(), env.get_differential_operator()
             )
             @ D.T
@@ -234,7 +234,7 @@ class TestDifferentialOperatorComputation:
 
         # Finite-volume generator relationship should still hold
         L_from_D = (
-            -_compute_divergence_operator(
+            -compute_divergence_operator(
                 env.binning.faces.build(), env.get_differential_operator()
             )
             @ D.T
@@ -308,7 +308,7 @@ class TestDifferentialOperatorEdgeCases:
 
         # Finite-volume generator relationship should hold
         L_from_D = (
-            -_compute_divergence_operator(
+            -compute_divergence_operator(
                 env.binning.faces.build(), env.get_differential_operator()
             )
             @ D.T
@@ -326,7 +326,7 @@ class TestDifferentialOperatorEdgeCases:
 
         # Should still satisfy Finite-volume generator relationship
         L_from_D = (
-            -_compute_divergence_operator(
+            -compute_divergence_operator(
                 env.binning.faces.build(), env.get_differential_operator()
             )
             @ D.T
@@ -342,7 +342,7 @@ class TestDifferentialOperatorEdgeCases:
 
         D = env.get_differential_operator()
         L = (
-            -_compute_divergence_operator(
+            -compute_divergence_operator(
                 env.binning.faces.build(), env.get_differential_operator()
             )
             @ D.T

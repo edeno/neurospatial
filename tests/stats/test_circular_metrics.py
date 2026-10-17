@@ -18,23 +18,23 @@ from numpy.testing import assert_allclose
 
 
 class TestToRadians:
-    """Tests for _to_radians internal helper."""
+    """Tests for to_radians internal helper."""
 
     def test_radians_passthrough(self) -> None:
         """Radians input should pass through unchanged."""
-        from neurospatial.stats.circular import _to_radians
+        from neurospatial.stats.circular import to_radians
 
         angles = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
-        result = _to_radians(angles, "rad")
+        result = to_radians(angles, "rad")
         assert_allclose(result, angles)
 
     def test_degrees_conversion(self) -> None:
         """Degrees should be converted to radians."""
-        from neurospatial.stats.circular import _to_radians
+        from neurospatial.stats.circular import to_radians
 
         angles_deg = np.array([0, 90, 180, 270])
         expected = np.array([0, np.pi / 2, np.pi, 3 * np.pi / 2])
-        result = _to_radians(angles_deg, "deg")
+        result = to_radians(angles_deg, "deg")
         assert_allclose(result, expected)
 
 
@@ -145,36 +145,36 @@ class TestValidateCircularInput:
 
 
 class TestValidatePairedInput:
-    """Tests for _validate_paired_input internal helper."""
+    """Tests for validate_paired_input internal helper."""
 
     def test_mismatched_lengths_raises_error(self) -> None:
         """Mismatched array lengths should raise ValueError."""
-        from neurospatial.stats.circular import _validate_paired_input
+        from neurospatial.stats.circular import validate_paired_input
 
         arr1 = np.array([1.0, 2.0, 3.0])
         arr2 = np.array([1.0, 2.0])
         with pytest.raises(ValueError, match="must have same length"):
-            _validate_paired_input(arr1, arr2, "positions", "phases")
+            validate_paired_input(arr1, arr2, "positions", "phases")
 
     def test_nan_pairs_removed_with_warning(self) -> None:
         """NaN in either array should remove that pair with warning."""
-        from neurospatial.stats.circular import _validate_paired_input
+        from neurospatial.stats.circular import validate_paired_input
 
         arr1 = np.array([1.0, np.nan, 3.0, 4.0, 5.0])
         arr2 = np.array([1.0, 2.0, np.nan, 4.0, 5.0])
         with pytest.warns(UserWarning, match="Removed 2 pairs"):
-            result1, result2 = _validate_paired_input(arr1, arr2, "a", "b")
+            result1, result2 = validate_paired_input(arr1, arr2, "a", "b")
         assert len(result1) == 3
         assert len(result2) == 3
 
     def test_insufficient_pairs_after_nan_removal_raises_error(self) -> None:
         """Too few pairs after NaN removal should raise ValueError."""
-        from neurospatial.stats.circular import _validate_paired_input
+        from neurospatial.stats.circular import validate_paired_input
 
         arr1 = np.array([1.0, np.nan, np.nan])
         arr2 = np.array([np.nan, 2.0, 3.0])
         with pytest.raises(ValueError, match="at least 3 valid pairs"):
-            _validate_paired_input(arr1, arr2, "a", "b", min_samples=3)
+            validate_paired_input(arr1, arr2, "a", "b", min_samples=3)
 
 
 class TestRayleighTest:

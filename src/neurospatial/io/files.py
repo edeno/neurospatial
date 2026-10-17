@@ -443,9 +443,9 @@ def _restore_environment(
     legacy_arena: bool = False,
 ) -> Environment:
     """Decode authoritative binning and Arena data without a layout builder."""
-    from neurospatial.environment import Environment
-    from neurospatial.environment._publication import (
-        _Provenance,
+    from neurospatial.environment import (
+        Environment,
+        Provenance,
         declared_metadata,
         publish,
     )
@@ -560,7 +560,7 @@ def _restore_environment(
             Environment,
             binning,
             coordinates=coordinates,
-            provenance=_Provenance(params, derivations),
+            provenance=Provenance(params, derivations),
             metadata=declared_metadata(
                 Environment,
                 name=metadata["name"],

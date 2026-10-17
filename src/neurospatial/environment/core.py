@@ -48,10 +48,10 @@ from neurospatial.environment._factories import (
     _from_nwb,
     _from_pixel_mask,
     _from_polygon,
-    _from_samples,
     _linear_track,
     _maze,
     _open_field,
+    build_from_samples,
 )
 from neurospatial.environment._fields import (
     _compute_gaussian_kernel,
@@ -74,9 +74,9 @@ from neurospatial.environment._metrics import (
 from neurospatial.environment._polar import _create_polar_environment
 from neurospatial.environment._publication import (
     UNSET,
+    Provenance,
     _diffusion_geometry_view,
     _Metadata,
-    _Provenance,
     _PublishedGeometry,
     _Unset,
     editable_graph,
@@ -125,13 +125,14 @@ from neurospatial.geometry import (
     region_bin_mask,
 )
 from neurospatial.layout import LayoutType
-from neurospatial.ops.calculus import (
-    _compute_differential_operator,
-    _compute_divergence_operator,
+from neurospatial.ops import (
+    compute_differential_operator,
+    compute_divergence_operator,
+    diffusion_apply_rtol,
+    regions_mask,
 )
-from neurospatial.ops.diffusion import _diffusion_apply_rtol
 from neurospatial.ops.distance import geodesic_distance_between_points
-from neurospatial.ops.mapping import TieBreakStrategy, _regions_mask
+from neurospatial.ops.mapping import TieBreakStrategy
 from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
@@ -147,9 +148,9 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._factories import PolygonType
     from neurospatial.geometry import Arena, ClipMapping, DiffusionGeometry
-    from neurospatial.layout._scale_bar import ScaleBarConfig
+    from neurospatial.layout import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
-    from neurospatial.ops._types import KernelMode
+    from neurospatial.ops import KernelMode
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.ops.transforms import Affine2D, AffineND
 
@@ -259,7 +260,7 @@ class Environment(Generic[_C]):
 
     _metadata: _Metadata
     _regions: Regions
-    _provenance: _Provenance
+    _provenance: Provenance
     _geometry: _PublishedGeometry[_C]
     _cache: AnalysisCache
 
@@ -367,7 +368,7 @@ class Environment(Generic[_C]):
         expected = {
             "_metadata": _Metadata,
             "_regions": Regions,
-            "_provenance": _Provenance,
+            "_provenance": Provenance,
             "_geometry": _PublishedGeometry,
             "_cache": AnalysisCache,
         }
@@ -1012,7 +1013,7 @@ class Environment(Generic[_C]):
             faces = require_face_geometry(
                 self._cache, self._binning, "gradient/divergence"
             )
-            return _compute_differential_operator(faces, self.n_bins)
+            return compute_differential_operator(faces, self.n_bins)
 
         return self._cache.get(DIFFERENTIAL_OPERATOR, build)
 
@@ -1022,7 +1023,7 @@ class Environment(Generic[_C]):
             faces = require_face_geometry(
                 self._cache, self._binning, "gradient/divergence"
             )
-            return _compute_divergence_operator(
+            return compute_divergence_operator(
                 faces, self._differential_operator_cached
             )
 
@@ -3008,7 +3009,7 @@ class Environment(Generic[_C]):
            filling small unvisited areas within explored regions.
 
         """
-        return _from_samples(
+        return build_from_samples(
             cls,
             positions,
             bin_size=bin_size,
@@ -5068,7 +5069,7 @@ class Environment(Generic[_C]):
         bins_in_region : Bin indices for one named region.
         neurospatial.ops.mapping.regions_to_mask : Free-function form.
         """
-        return _regions_mask(
+        return regions_mask(
             regions,
             named_regions=self.regions,
             binning=self._binning,
@@ -6109,7 +6110,7 @@ class Environment(Generic[_C]):
             the more conservative truncation tolerance. This query does not
             build an eigenbasis.
         """
-        return _diffusion_apply_rtol(
+        return diffusion_apply_rtol(
             diffusion_eigenbasis(self._cache), self.n_bins, bandwidth
         )
 

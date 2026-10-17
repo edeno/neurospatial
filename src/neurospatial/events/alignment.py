@@ -19,9 +19,9 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain, resolve_time_windows
-from neurospatial.decoding._time_bins import (
-    _time_bin_rounding,
+from neurospatial.decoding import (
     count_spikes_in_time_bins,
+    time_bin_rounding,
     time_bins_in_windows,
 )
 from neurospatial.events._core import PeriEventResult, PopulationPeriEventResult
@@ -277,7 +277,7 @@ def _iter_peri_event_bin_edges(
 ) -> Iterator[NDArray[np.float64]]:
     """Yield the absolute bin edges shared by histogram counting and rasters."""
     windows = np.c_[event_times + window[0], event_times + window[1]]
-    _time_bin_rounding(
+    time_bin_rounding(
         windows,
         bin_size,
         context="peri-event bins",
@@ -585,7 +585,7 @@ def population_peri_event_histogram(
     """
     # Extract trains by unit label from a spike group (iterating a TsGroup
     # yields its keys, not its trains).
-    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+    from neurospatial.encoding import as_spike_trains_with_ids
 
     trains, extracted_ids = as_spike_trains_with_ids(spike_times)
 

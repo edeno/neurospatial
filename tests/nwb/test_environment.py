@@ -385,7 +385,7 @@ class TestEnvironmentFromPosition:
         """Each option reaches the from_samples implementation as passed."""
         import inspect
 
-        from neurospatial.environment import _factories
+        import neurospatial.environment
         from neurospatial.io.nwb import environment_from_position
 
         received = {}
@@ -393,7 +393,7 @@ class TestEnvironmentFromPosition:
         def record(cls, positions, **options):
             received.update(options)
 
-        monkeypatch.setattr(_factories, "_from_samples", record)
+        monkeypatch.setattr(neurospatial.environment, "build_from_samples", record)
         not_options = {"nwbfile", "processing_module", "position_name"}
         names = [
             name

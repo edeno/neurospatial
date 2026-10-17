@@ -36,7 +36,7 @@ from neurospatial.geometry import (
     prepare_bins,
     transform_binning,
 )
-from neurospatial.layout._construction import built_layout_data
+from neurospatial.layout import built_layout_data
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.engines.regular_grid import regular_grid_from_cells

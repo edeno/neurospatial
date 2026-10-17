@@ -67,8 +67,8 @@ from numpy.typing import ArrayLike, NDArray
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.ops.diffusion import (
-    _RESOLUTION_MARGIN,
+from neurospatial.ops import (
+    RESOLUTION_MARGIN,
     above_component_floor,
     component_support_mask,
     masked_diffusion_average,
@@ -762,10 +762,10 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
 def _resolution_floor(env: Environment, bandwidth: float) -> float:
     """Fraction of its component maximum below which a smoothed value is noise.
 
-    ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
+    ``RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
     ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
     """
-    return _RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth=bandwidth)
+    return RESOLUTION_MARGIN * env.diffusion_accuracy(bandwidth=bandwidth)
 
 
 def _resolved_density_mask(

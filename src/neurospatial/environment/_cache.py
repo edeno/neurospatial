@@ -23,8 +23,7 @@ if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.geometry import DiffusionGeometry, FaceGeometry
-    from neurospatial.ops._types import KernelMode
-    from neurospatial.ops.diffusion import DiffusionEigenbasis, MRFEigenbasis
+    from neurospatial.ops import DiffusionEigenbasis, KernelMode, MRFEigenbasis
 
 _T = TypeVar("_T")
 _R = TypeVar("_R")

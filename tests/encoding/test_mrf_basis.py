@@ -19,11 +19,11 @@ from neurospatial.ops.diffusion import (
     _DEFAULT_MAX_RANK,
     MRFBasis,
     MRFEigenbasis,
-    _ensure_global_modes,
     _null_mode_mask,
-    _symmetric_conjugate,
     _symmetric_eigenbasis,
+    ensure_global_modes,
     select_live_basis,
+    symmetric_conjugate,
 )
 
 
@@ -38,7 +38,7 @@ def _geometry(env):
 def _full_eigs(env):
     """Full (Q, Lam, mode_comp) for an env -- the selector's cached inputs."""
     W, volumes, _n_components, labels = _geometry(env)
-    S = _symmetric_conjugate(W, volumes)
+    S = symmetric_conjugate(W, volumes)
     Lam, Q = _symmetric_eigenbasis(S, None)
     mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
     return Q, Lam, mode_comp, volumes, labels
@@ -400,7 +400,7 @@ def test_growth_continues_until_null_covered(open_field_env, monkeypatch):
             return holder, (q_full[:, sel], lam_full[sel], mc_full[sel])
         return holder, (q_full, lam_full, mc_full)  # growth exposes the full basis
 
-    monkeypatch.setattr(_fields, "_ensure_global_modes", fake_ensure)
+    monkeypatch.setattr(_fields, "ensure_global_modes", fake_ensure)
 
     basis = env.get_mrf_basis(occ, rank=5)  # must NOT raise
 
@@ -543,10 +543,10 @@ def test_selector_is_pure(open_field_env, monkeypatch):
 def test_mode_component_recovery(two_component_env):
     """mode_comp[m] equals the W-component of every nonzero row of Q[:, m]."""
     _W, volumes, _nc, labels = _geometry(two_component_env)
-    S = _symmetric_conjugate(volumes=volumes, W=_W)
+    S = symmetric_conjugate(volumes=volumes, W=_W)
     holder = _fresh_holder(two_component_env)
 
-    grown, (Q, _Lam, mode_comp) = _ensure_global_modes(holder, S, labels, 6)
+    grown, (Q, _Lam, mode_comp) = ensure_global_modes(holder, S, labels, 6)
     assert holder.G == 0 and Q.shape[1] == grown.G  # replaced, never edited
 
     for m in range(Q.shape[1]):

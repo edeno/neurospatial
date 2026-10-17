@@ -9,9 +9,10 @@ from unittest import mock
 import networkx as nx
 import numpy as np
 
+import neurospatial.environment
 from neurospatial import Environment
 from neurospatial.environment import _publication
-from neurospatial.environment._publication import _Metadata, _Provenance
+from neurospatial.environment._publication import Provenance, _Metadata
 from neurospatial.geometry._coordinates import CartesianSystem
 from neurospatial.layout._construction import built_layout_data
 
@@ -43,7 +44,7 @@ def publish_binning(
         cls,
         binning,
         coordinates=CartesianSystem() if coordinates is None else coordinates,
-        provenance=_Provenance(dict(build_params or {}), derivations),
+        provenance=Provenance(dict(build_params or {}), derivations),
         metadata=_Metadata(name, units, frame),
         **kwargs,
     )
@@ -115,6 +116,8 @@ def record_publications(monkeypatch):
         return env
 
     monkeypatch.setattr(_publication, "publish", recording)
+    # Readers outside the environment package call the package's export.
+    monkeypatch.setattr(neurospatial.environment, "publish", recording)
     return published
 
 

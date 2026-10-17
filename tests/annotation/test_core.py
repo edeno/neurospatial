@@ -809,7 +809,7 @@ class TestLoadVideoFrame:
         """The VideoReader is closed after a successful frame load."""
         from pathlib import Path
 
-        import neurospatial.animation._video_io as video_io
+        import neurospatial.animation as animation
         from neurospatial.annotation.core import _load_video_frame
 
         video_file = Path(tmp_path / "test.mp4")
@@ -835,7 +835,7 @@ class TestLoadVideoFrame:
             def close(self):
                 closed["count"] += 1
 
-        monkeypatch.setattr(video_io, "VideoReader", FakeVideoReader)
+        monkeypatch.setattr(animation, "VideoReader", FakeVideoReader)
 
         frame = _load_video_frame(video_file, frame_index=0)
         assert frame.shape == (4, 4, 3)
@@ -845,7 +845,7 @@ class TestLoadVideoFrame:
         """The VideoReader is closed even when frame_index is out of range."""
         from pathlib import Path
 
-        import neurospatial.animation._video_io as video_io
+        import neurospatial.animation as animation
         from neurospatial.annotation.core import _load_video_frame
 
         video_file = Path(tmp_path / "test.mp4")
@@ -871,7 +871,7 @@ class TestLoadVideoFrame:
             def close(self):
                 closed["count"] += 1
 
-        monkeypatch.setattr(video_io, "VideoReader", FakeVideoReader)
+        monkeypatch.setattr(animation, "VideoReader", FakeVideoReader)
 
         with pytest.raises(IndexError, match="out of range"):
             _load_video_frame(video_file, frame_index=99)

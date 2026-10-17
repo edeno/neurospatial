@@ -26,6 +26,7 @@ subsample_frames, estimate_colormap_range_from_subset, large_session_napari_conf
     Frame selection, colormap estimation and settings for large sessions.
 """
 
+from neurospatial.animation._video_io import VideoReader as VideoReader
 from neurospatial.animation.calibration import calibrate_video
 from neurospatial.animation.config import ScaleBarConfig
 from neurospatial.animation.core import (
@@ -49,6 +50,8 @@ from neurospatial.animation.skeleton import (
     Skeleton,
 )
 
+# Names imported here but not listed in ``__all__`` are shared with other
+# neurospatial packages. They are internal, not public API.
 __all__: list[str] = [
     "MOUSE_SKELETON",
     "RAT_SKELETON",

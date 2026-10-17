@@ -97,7 +97,7 @@ def _estimate_typical_bin_spacing(
     return float(np.median(nn_dists[:, 1]))
 
 
-def _typical_bin_spacing(
+def typical_bin_spacing(
     bin_centers: NDArray[np.float64],
     bin_sizes: NDArray[np.float64],
     *,
@@ -134,7 +134,7 @@ def _typical_bin_spacing(
     return _estimate_typical_bin_spacing(tree, bin_centers)
 
 
-def _validate_nearest_options(
+def validate_nearest_options(
     tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"],
     max_distance: float | None,
     max_distance_factor: float | None,
@@ -168,7 +168,7 @@ def _validate_nearest_options(
     return tie_break
 
 
-def _nearest_bin_query(
+def nearest_bin_query(
     bin_centers: NDArray[np.float64],
     kdtree: cKDTree,
     points: NDArray[np.float64],
@@ -354,7 +354,7 @@ def regions_to_mask(
     Environment.region_membership : Bins-by-regions membership table.
     resample_field : Resample fields between different discretizations.
     """
-    return _regions_mask(
+    return regions_mask(
         regions,
         named_regions=env.regions,
         binning=env.binning,
@@ -363,7 +363,7 @@ def regions_to_mask(
     )
 
 
-def _regions_mask(
+def regions_mask(
     regions: str | list[str | Region] | Region | Regions,
     *,
     named_regions: Regions,

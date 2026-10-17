@@ -20,6 +20,7 @@ Imports
 >>> from neurospatial.stats.surrogates import generate_inhomogeneous_poisson_surrogates
 """
 
+from neurospatial.stats._utils import ensure_rng as ensure_rng
 from neurospatial.stats.circular import (
     CircularBasisResult,
     circular_basis,
@@ -35,6 +36,8 @@ from neurospatial.stats.circular import (
     rayleigh_test,
     wrap_angle,
 )
+from neurospatial.stats.circular import to_radians as to_radians
+from neurospatial.stats.circular import validate_paired_input as validate_paired_input
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
     compute_shuffle_pvalue,
@@ -50,12 +53,17 @@ from neurospatial.stats.shuffle import (
     shuffle_time_bins_coherent,
     shuffle_trials,
 )
+from neurospatial.stats.shuffle import (
+    validate_circular_shift_settings as validate_circular_shift_settings,
+)
 from neurospatial.stats.surrogates import (
     generate_inhomogeneous_poisson_surrogates,
     generate_jittered_spikes,
     generate_poisson_surrogates,
 )
 
+# Names imported here but not listed in ``__all__`` are shared with other
+# neurospatial packages. They are internal, not public API.
 __all__ = [  # noqa: RUF022
     # Core circular statistics
     "rayleigh_test",

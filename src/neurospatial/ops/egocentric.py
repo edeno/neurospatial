@@ -472,12 +472,12 @@ def compute_egocentric_bearing(
     bearing = np.arctan2(ego[..., 1], ego[..., 0])
 
     # Wrap to (-pi, pi]
-    bearing = _wrap_angle(bearing)
+    bearing = wrap_bearing(bearing)
 
     return bearing
 
 
-def _wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
+def wrap_bearing(angle: NDArray[np.float64]) -> NDArray[np.float64]:
     """Wrap angles to (-pi, pi].
 
     Parameters
@@ -734,7 +734,7 @@ def _validate_velocity_times(
     return times
 
 
-def _velocity_heading_and_speed(
+def velocity_heading_and_speed(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
@@ -904,7 +904,7 @@ def heading_from_velocity(
     positions = _validate_velocity_positions(positions)
     times = _validate_velocity_times(times, len(positions))
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
-    heading, speed = _velocity_heading_and_speed(
+    heading, speed = velocity_heading_and_speed(
         times, positions, interval_mask=interval_mask, bandwidth=bandwidth
     )
     in_run = np.r_[interval_mask, False] | np.r_[False, interval_mask]

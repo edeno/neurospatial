@@ -64,7 +64,7 @@ def validate_dt(dt: float) -> float:
     return dt
 
 
-def _time_bin_rounding(
+def time_bin_rounding(
     windows: NDArray[np.float64],
     dt: float,
     *,
@@ -121,7 +121,7 @@ def time_bins_in_windows(
     # Rounding error of the edges is a few ulp of the timestamps' magnitude.
     # If that is not small against dt, the edges cannot be represented to bin
     # precision, so refuse instead of inventing or merging bins.
-    rounding = _time_bin_rounding(windows, dt)
+    rounding = time_bin_rounding(windows, dt)
     ratio = (stop - start) / dt
     # A shortfall below the rounding allowance is rounding, not a partial bin.
     # After the precision check the allowance is at most ~0.01, so it can

@@ -88,11 +88,11 @@ def test_heading_from_velocity_rejects_bad_times(times):
 
 def test_velocity_heading_uses_actual_intervals():
     from neurospatial._intervals import observed_interval_mask
-    from neurospatial.ops.egocentric import _velocity_heading_and_speed
+    from neurospatial.ops.egocentric import velocity_heading_and_speed
 
     times = np.array([0.0, 0.1, 0.3])
     positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 4.0]])
-    headings, speed = _velocity_heading_and_speed(
+    headings, speed = velocity_heading_and_speed(
         times,
         positions,
         interval_mask=observed_interval_mask(times, max_gap=0.5, epochs=None),
@@ -105,10 +105,10 @@ def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
     from scipy.ndimage import gaussian_filter1d
 
     from neurospatial._intervals import observed_interval_mask
-    from neurospatial.ops.egocentric import _velocity_heading_and_speed
+    from neurospatial.ops.egocentric import velocity_heading_and_speed
 
     r = two_epoch_recording
-    headings, speed = _velocity_heading_and_speed(
+    headings, speed = velocity_heading_and_speed(
         r.times,
         r.positions,
         bandwidth=2.0,
@@ -1063,17 +1063,17 @@ class TestEgocentricDistance3DTargets:
 
 
 class TestWrapAngleAntipode:
-    """_wrap_angle keeps the antipode at +pi per the documented (-pi, pi]."""
+    """wrap_bearing keeps the antipode at +pi per the documented (-pi, pi]."""
 
     def test_wrap_angle_antipode_is_plus_pi(self):
         """+/- pi and odd multiples wrap to +pi; interior values are unchanged."""
-        from neurospatial.ops.egocentric import _wrap_angle
+        from neurospatial.ops.egocentric import wrap_bearing
 
-        antipodes = _wrap_angle(np.array([np.pi, -np.pi, 3 * np.pi, -3 * np.pi]))
+        antipodes = wrap_bearing(np.array([np.pi, -np.pi, 3 * np.pi, -3 * np.pi]))
         assert_allclose(antipodes, np.pi)
 
         interior = np.array([0.3, -1.2, 0.0, 2.0])
-        assert_allclose(_wrap_angle(interior), interior)
+        assert_allclose(wrap_bearing(interior), interior)
 
     def test_egocentric_bearing_directly_behind_is_plus_pi(self):
         """A target directly behind the animal returns bearing +pi, not -pi."""

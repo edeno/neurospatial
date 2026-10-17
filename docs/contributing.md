@@ -145,7 +145,7 @@ assigned, and equality is by identity, so cached analyses and
 `env.to_networkx()` returns an editable copy. `with_metadata` and
 `with_regions` return a new object over the same geometry and cache.
 
-The build record (`_Provenance`) only describes how the bins were built, as
+The build record (`Provenance`) only describes how the bins were built, as
 scalar choices such as `bin_size`, and the derivations applied since
 (`env.derivations`). It never holds input data: an engine
 declares its data arguments once, with `@capture_build_params(data=(...))` on
