@@ -673,7 +673,13 @@ class EgocentricSurround:
         return query
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
-        """Test native ``(distance, angle)`` positions, including window edges."""
+        """Test native ``(distance, angle)`` positions against the closed window.
+
+        The window includes its edges, while the bins are half-open: a row
+        exactly at the outer distance limit, or at the upper angle of a
+        partial window, is inside the window but in no bin, so
+        ``Environment.bin_at`` gives it ``-1``.
+        """
         query, finite = _query(positions, 2)
         selected = self.wrap_angles(query[finite])
         angles = selected[:, 1]

@@ -2156,7 +2156,10 @@ class VideoOverlay:
           RGB video frames pre-loaded into memory.
     calibration : VideoCalibration | None, optional
         Coordinate transform from video pixels to environment cm.
-        If None, video is displayed in pixel coordinates without transform.
+        If None, the video frame is stretched over ``env.dimension_ranges``,
+        the extent of the environment's active cells. On a subset, or a grid
+        whose border cells are inactive, that is smaller than the arena the
+        camera saw, so a video of the whole arena needs a calibration there.
         Created using calibrate_from_scale_bar() or calibrate_from_landmarks().
         Default is None.
     times : ndarray of shape (n_frames,), dtype float64, optional

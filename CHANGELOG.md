@@ -26,8 +26,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `Environment.linear_track(endpoints=[(0, 0), (200, 0)], bin_size=2.0,
   track_width=10.0)`; positions farther than half the width from the
   centerline then get bin `-1` and add no occupancy. The error message shows
-  the call that rebuilds the refused track with a width. `to_linear`,
-  `linear_to_nd` and graph queries on bin indices do not need the width. The
+  the call that rebuilds the refused track with a width. `linear_to_nd` and
+  graph queries on bin indices do not need the width. `to_linear` does not
+  either, because it projects every position onto the nearest point of the
+  centerline, however far off the track: drop off-track samples (bin `-1`
+  from `bin_at` on a track with a width) before using linear positions. The
   simulated mazes in `neurospatial.simulation.mazes` with a corridor width
   (linear track, T, Y, W, plus, radial arm, repeated T and Y, crossword,
   Hamlet, Hampton Court and rat hexmaze) now pass it to their track, and

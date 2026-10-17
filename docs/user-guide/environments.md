@@ -296,7 +296,9 @@ the width from every segment gets bin `-1`. A track built without a width has
 no footprint, so `bin_at`, `contains`, `occupancy`, the bin sequences,
 `points=` queries and point regions refuse with `NotImplementedError` and the
 code to rebuild it with a width; `to_linear`, `linear_to_nd` and the graph
-queries on bin indices still work.
+queries on bin indices still work. `to_linear` projects every position onto
+the centerline, however far off the track, so check `bin_at(positions) >= 0`
+on a track with a width before trusting linear positions.
 Egocentric polar environments similarly record their radial and angular
 analysis support without inferring physical walls.
 

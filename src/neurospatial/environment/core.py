@@ -1570,6 +1570,10 @@ class Environment(Generic[_C]):
         - **Only works for 1D environments** created with `Environment.from_graph()`
         - For N-D environments, use `bin_at()` to map positions to bins instead
         - Linear coordinates start at 0 and increase monotonically along the track
+        - Every position is projected onto the nearest point of the centerline,
+          however far off the track it is, with or without ``track_width``.
+          To exclude reflections and tracking jumps, build the track with
+          ``track_width`` and keep the samples with ``bin_at(positions) >= 0``.
 
         See Also
         --------

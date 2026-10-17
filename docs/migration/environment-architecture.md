@@ -545,8 +545,10 @@ positions = np.array([[100.0, 2.0], [100.0, 500.0]])  # on the track; 5 m away
 assert track.bin_at(positions)[1] == -1  # before: the bin at x = 100
 ```
 
-`to_linear`, `linear_to_nd` and graph queries on bin indices (`bins=`) do not
-need the width. Simulated mazes from `neurospatial.simulation.mazes` pass
+`linear_to_nd` and graph queries on bin indices (`bins=`) do not need the
+width. `to_linear` does not either, but it projects every position onto the
+centerline, however far off the track it is, so it is not a way around the
+refusal: keep only the samples `bin_at` puts on a track with a width. Simulated mazes from `neurospatial.simulation.mazes` pass
 their corridor width to their track. The Sungod, honeycomb and small hex
 mazes, whose corridors differ in width, pass the widest one: a sample within
 half of it from the centerline counts as on the track, so a narrow corridor

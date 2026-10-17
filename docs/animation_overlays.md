@@ -397,6 +397,10 @@ env.animate_fields(
 ## Video Overlay Coordinate Systems
 
 VideoOverlay requires calibration to align video pixels to environment coordinates.
+Without one, the video frame is stretched over `env.dimension_ranges`, the
+extent of the environment's active cells. On a subset (or a grid whose border
+cells are all inactive) that is smaller than the arena the camera recorded, so
+a video of the whole arena is squeezed onto the kept cells: calibrate it.
 
 ### Coordinate Spaces
 
