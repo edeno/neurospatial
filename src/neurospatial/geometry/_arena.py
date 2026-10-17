@@ -637,6 +637,14 @@ class EgocentricSurround:
                     "pass two ordered limits with nonnegative radial distances",
                 )
             object.__setattr__(self, name, (float(values[0]), float(values[1])))
+        low, high = self.angle_range
+        if high - low > 2 * np.pi and not np.isclose(
+            high - low, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0
+        ):
+            raise _error(
+                "angle_range spans more than one full turn (2π).",
+                "pass at most one turn; angles a whole turn apart name one direction",
+            )
         object.__setattr__(self, "circular", _boolean(self.circular, "circular"))
 
     def wrap_angles(self, positions: NDArray[np.float64]) -> NDArray[np.float64]:

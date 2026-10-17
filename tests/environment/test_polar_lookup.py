@@ -154,3 +154,26 @@ def test_bin_sequences_and_transitions_follow_bin_at():
     expected = np.zeros((env.n_bins, env.n_bins))
     np.add.at(expected, (bins[:-1][keep], bins[1:][keep]), 1)
     np.testing.assert_array_equal(counts, expected)
+
+
+def test_an_angle_range_of_more_than_one_turn_is_refused():
+    """Bins past the first turn could never hold a sample after wrapping."""
+    from neurospatial.geometry._arena import EgocentricSurround
+
+    with pytest.raises(ValueError, match="more than one full turn"):
+        Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            angle_range=(-np.pi, 2 * np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+        )
+    with pytest.raises(ValueError, match="more than one full turn"):
+        EgocentricSurround((0.0, 30.0), (0.0, 3 * np.pi), circular=False)
+    # Exactly one turn, anywhere on the circle, is a full circle.
+    full = Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=(np.pi / 2, np.pi / 2 + TURN),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 4,
+    )
+    assert full.n_bins == 24

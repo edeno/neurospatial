@@ -344,6 +344,23 @@ CASES: dict[str, Case] = {
         ),
     ),
     # track factories
+    "from_polar_egocentric with more than one turn": Case(
+        dict,
+        lambda n: Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            angle_range=(-np.pi, 2 * np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+        ),
+        f"angle_range=({-np.pi!r}, {-np.pi!r} + 2 * np.pi)",
+        kind="argument",
+        retry=lambda n, kw: Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+            **kw,
+        ),
+    ),
     "linear_track(endpoints=[0, 200])": Case(
         dict,
         lambda n: Environment.linear_track(endpoints=[0, 200], bin_size=2.0),

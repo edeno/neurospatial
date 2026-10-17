@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
+from neurospatial._exceptions import _format_error
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import declared_metadata
 from neurospatial.geometry._coordinates import EgocentricPolarSystem
@@ -49,6 +50,19 @@ def _create_polar_environment(
     full_circle = bool(
         np.isclose(angle_span, 2 * np.pi, rtol=8 * np.finfo(float).eps, atol=0.0)
     )
+    if angle_span > 2 * np.pi and not full_circle:
+        low = float(angle_range[0])
+        raise ValueError(
+            _format_error(
+                f"angle_range={angle_range!r} spans {angle_span:.6g} rad, more "
+                "than one full turn (2π).",
+                why="Why: an angle names a direction, so angles a whole turn "
+                "apart fall in the same bin and the bins past the first turn "
+                "would never hold a sample.",
+                fix=f"pass at most one turn, for example "
+                f"angle_range=({low!r}, {low!r} + 2 * np.pi)",
+            )
+        )
     if circular_angle is None:
         circular_angle = full_circle
     elif circular_angle and not full_circle:

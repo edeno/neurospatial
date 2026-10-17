@@ -8,6 +8,11 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.from_polar_egocentric` refuses an `angle_range` wider than one
+  turn (2π) with a `ValueError` that shows a one-turn range. Angles a whole
+  turn apart name one direction, so after angle wrapping the bins past the
+  first turn would never hold a sample; such a range used to be accepted.
+
 - A track built without `track_width` (`Environment.linear_track`,
   `Environment.maze`, `Environment.from_graph`) no longer assigns 2-D positions
   to bins. `bin_at`, `contains`, `occupancy`, `bin_sequence`,
