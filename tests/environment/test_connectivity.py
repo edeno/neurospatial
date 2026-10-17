@@ -136,7 +136,7 @@ class TestComponentsEdgeCases:
         assert comps[0][0] == 0
 
     def test_components_return_type(self):
-        """Test that components returns list of int32 arrays."""
+        """Test that components returns list of np.intp index arrays."""
         data = np.array([[0, 0], [0, 1], [10, 10]], dtype=np.float64)
         env = Environment.from_samples(data, bin_size=1.5)
 
@@ -145,7 +145,7 @@ class TestComponentsEdgeCases:
         assert isinstance(comps, list)
         for comp in comps:
             assert isinstance(comp, np.ndarray)
-            assert comp.dtype == np.int32
+            assert comp.dtype == np.intp
 
 
 # =============================================================================

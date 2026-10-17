@@ -4,14 +4,12 @@ Includes time allocation, occupancy, run extraction and the inputs of the
 transition estimators in :mod:`neurospatial.ops._transitions`. Environment
 exposes thin entry points; Cartesian coordinate operations are guarded.
 
-Index-dtype convention: point/region *index* arrays (``bin_at``,
-``bins_in_region``, ``boundary_bins``, ``nearest_bin``) are ``np.intp``
--- pointer-sized (64-bit on every platform, including Windows where ``np.int_``
-is 32-bit) and the dtype NumPy fancy-indexing returns. Trajectory *sequence*
-arrays (``bin_sequence``, ``BinSequenceWithRuns.bins``) stay compact
-``np.int32`` on purpose, and the ``run_starts`` / ``run_lengths`` offsets are
-``np.int64``. The split is intentional -- portability for indices, memory for
-long sequences -- so do not collapse them to one dtype.
+Index-dtype convention: every array of bin indices an Environment returns
+(``bin_at``, ``nearest_bin``, ``bins_in_region``, ``boundary_bins``,
+``bin_sequence``, ``BinSequenceWithRuns.bins``, ``components``, ``rings``) is
+``np.intp``, the dtype NumPy uses for indexing, so the result indexes a field
+directly on every platform. The ``run_starts`` / ``run_lengths`` sample
+offsets are ``np.int64``.
 """
 
 from __future__ import annotations
@@ -71,7 +69,7 @@ class BinSequenceWithRuns:
 
     Attributes
     ----------
-    bins : NDArray[np.int32], shape (n_runs,)
+    bins : NDArray[np.intp], shape (n_runs,)
         Bin index for each run. ``-1`` denotes runs of out-of-environment
         samples (matching ``Environment.bin_at`` semantics).
     run_starts : NDArray[np.int64], shape (n_runs,)
@@ -90,7 +88,7 @@ class BinSequenceWithRuns:
         the post-filter count of in-env samples.
     """
 
-    bins: NDArray[np.int32]
+    bins: NDArray[np.intp]
     run_starts: NDArray[np.int64]
     run_lengths: NDArray[np.int64]
 
@@ -330,14 +328,14 @@ def _bin_sequence(
     # Handle empty input
     if len(times) == 0:
         return BinSequenceWithRuns(
-            bins=np.array([], dtype=np.int32),
+            bins=np.array([], dtype=np.intp),
             run_starts=empty_int64,
             run_lengths=empty_int64,
         )
 
     # Map positions to bin indices
     # Use bin_at which returns -1 for points outside environment
-    bin_indices = locate(binning, arena, positions, cache).astype(np.int32)
+    bin_indices = locate(binning, arena, positions, cache).astype(np.intp)
 
     # Samples belong to a recording only if they touch a valid interval.
     if outside_value is None:
@@ -346,7 +344,7 @@ def _bin_sequence(
     bin_indices = bin_indices[sample_valid]
 
     # Apply deduplication if requested
-    deduplicated_bins: NDArray[np.int32]
+    deduplicated_bins: NDArray[np.intp]
     deduplicated_indices: NDArray[np.int_]
 
     # Recording breaks always split repeats. Outside-sample gaps retain
@@ -416,7 +414,7 @@ def _bin_sequence(
 
 
 def _transitions(
-    bins: NDArray[np.int32] | None = None,
+    bins: NDArray[np.intp] | None = None,
     *,
     graph: nx.Graph,
     binning: Binning,
@@ -505,7 +503,7 @@ def _transitions(
 
 
 def _empirical_transitions(
-    bins: NDArray[np.int32] | None = None,
+    bins: NDArray[np.intp] | None = None,
     *,
     graph: nx.Graph,
     binning: Binning,
@@ -527,7 +525,7 @@ def _empirical_transitions(
 
     Parameters
     ----------
-    bins : NDArray[np.int32], shape (n_samples,), optional
+    bins : NDArray[np.intp], shape (n_samples,), optional
         Precomputed bin sequence. If None, computed from times/positions.
         Cannot be provided together with times/positions.
         Must contain valid bin indices in range [0, n_bins). Outside values
@@ -668,7 +666,7 @@ def _empirical_transitions(
             f"bins must be an integer array, got dtype {bins.dtype}. "
             f"Ensure bin indices are integers before calling transitions()."
         )
-    bins = bins.astype(np.int32)
+    bins = bins.astype(np.intp)
 
     # Validate lag
     if lag < 1:

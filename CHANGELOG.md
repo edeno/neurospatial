@@ -455,6 +455,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Every `Environment` method that returns bin indices returns `np.intp`, the
+  dtype NumPy uses for indexing, as `bin_at` already did. `bin_sequence`,
+  `bin_sequence_with_runs(...).bins`, `components` and `rings` returned
+  `int32`, and `nearest_bin` was declared `int64`; all are now `np.intp`
+  (64-bit on 64-bit systems). The values are unchanged. `neighbors` and
+  `path_between` still return lists of Python ints.
+
 - `env.smooth` takes the same field layout as `env.diffuse`: one field of
   shape `(n_bins,)` or a batch of shape `(n_bins, n_fields)`, one column per
   field. It used to refuse any 2-D array. An array with its bins on the

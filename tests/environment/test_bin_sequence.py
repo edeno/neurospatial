@@ -29,7 +29,7 @@ class TestBinSequenceBasic:
         bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert bins.shape == (6,)
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
         # All bins should be valid (>= 0)
         assert np.all(bins >= 0)
 
@@ -72,7 +72,7 @@ class TestBinSequenceBasic:
         bins = env.bin_sequence(times, positions)
 
         assert bins.shape == (0,)
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
 
     def test_single_sample(self):
         """Test trajectory with single sample."""
@@ -476,7 +476,7 @@ class TestBinSequenceMultipleLayouts:
         bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert bins.shape == (50,)
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
 
     def test_polygon_layout(self):
         """Test bin_sequence on polygon layout."""
@@ -499,7 +499,7 @@ class TestBinSequenceMultipleLayouts:
         per_sample = env.bin_at(positions)
         runs = per_sample[np.r_[True, per_sample[1:] != per_sample[:-1]]]
         assert_array_equal(bins, runs)
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
 
 
 class TestBinSequenceEdgeCases:
@@ -534,7 +534,7 @@ class TestBinSequenceEdgeCases:
 
         # Should return empty array
         assert len(bins) == 0
-        assert bins.dtype == np.int32
+        assert bins.dtype == np.intp
 
     def test_rapid_bin_changes(self):
         """Test trajectory with rapid bin changes (no consecutive repeats)."""

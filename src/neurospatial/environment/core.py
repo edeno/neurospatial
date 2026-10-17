@@ -1310,7 +1310,7 @@ class Environment(Generic[_C]):
         return_dist: bool = False,
         max_distance: float | None = None,
         max_distance_factor: float | None = None,
-    ) -> NDArray[np.int64] | tuple[NDArray[np.int64], NDArray[np.float64]]:
+    ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]:
         """Find the nearest bin center for every point in stored coordinates.
 
         Parameters
@@ -1875,7 +1875,7 @@ class Environment(Generic[_C]):
         outside_value: int | None = -1,
         max_gap: float | None = 0.5,
         epochs: Any = None,
-    ) -> NDArray[np.int32]:
+    ) -> NDArray[np.intp]:
         """Map trajectory to sequence of bin indices.
 
         Converts a continuous trajectory (times and positions) into a discrete
@@ -1911,7 +1911,7 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        bins : NDArray[np.int32], shape (n_sequences,)
+        bins : NDArray[np.intp], shape (n_sequences,)
             Bin index at each retained time point (or deduplicated sequence).
             Values are in range [0, n_bins-1] for valid bins, or -1 for
             outside samples (when outside_value=-1).
@@ -4392,7 +4392,7 @@ class Environment(Generic[_C]):
         self,
         *,
         largest_only: bool = False,
-    ) -> list[NDArray[np.int32]]:
+    ) -> list[NDArray[np.intp]]:
         """Find connected components of the environment graph.
 
         A connected component is a maximal subset of bins where every pair
@@ -4409,7 +4409,7 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        components : list[NDArray[np.int32]]
+        components : list[NDArray[np.intp]]
             List of bin index arrays, one per component.
             Components are sorted by size (largest first).
             Each array contains the bin indices in that component.
@@ -4449,7 +4449,7 @@ class Environment(Generic[_C]):
         bins: int | Sequence[int] | NDArray[np.integer] | None = None,
         points: ArrayLike | None = None,
         hops: int,
-    ) -> list[NDArray[np.int32]]:
+    ) -> list[NDArray[np.intp]]:
         """Compute k-hop neighborhoods (BFS layers).
 
         This method performs breadth-first search (BFS) from the center bin,
@@ -4472,7 +4472,7 @@ class Environment(Generic[_C]):
 
         Returns
         -------
-        rings : list[NDArray[np.int32]], length hops+1
+        rings : list[NDArray[np.intp]], length hops+1
             List of bin index arrays, one per hop distance.
             rings[k] contains all bins exactly k hops from center.
             rings[0] is the center bin itself.
@@ -6416,7 +6416,7 @@ class Environment(Generic[_C]):
 
     def transitions(
         self,
-        bins: NDArray[np.int32] | None = None,
+        bins: NDArray[np.intp] | None = None,
         *,
         times: NDArray[np.float64] | None = None,
         positions: NDArray[np.float64] | None = None,
@@ -6443,7 +6443,7 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        bins : NDArray[np.int32], shape (n_samples,), optional
+        bins : NDArray[np.intp], shape (n_samples,), optional
             [Empirical mode] Precomputed bin sequence. If None, computed from
             times/positions. Must contain valid bin indices in range [0, n_bins).
             Outside values (-1) are not allowed.

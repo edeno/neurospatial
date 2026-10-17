@@ -4,7 +4,9 @@ import networkx as nx
 import numpy as np
 import pytest
 from shapely.geometry import Polygon as ShapelyPoly
+from shapely.geometry import box
 
+from neurospatial import Regions
 from neurospatial.environment import Environment
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import (
@@ -466,13 +468,9 @@ def test_located_bin_dtype_is_intp():
     """Layout index arrays are ``np.intp`` (portable), never int32/int_.
 
     Tripwire for the index-dtype convention documented in
-    ``neurospatial.environment._trajectory``: point/region *index* arrays are
-    ``np.intp``, while trajectory *sequence* arrays (``bin_sequence`` /
-    ``BinSequenceWithRuns``) deliberately stay ``int32`` (pinned in
-    ``tests/environment/test_bin_sequence.py``). On 64-bit ``np.intp`` equals
-    ``int64``, so this catches a regression to the narrower ``int32`` and
-    records intent; a true ``int_`` vs ``intp`` divergence is only observable
-    on a Windows test runner (where ``np.int_`` is 32-bit).
+    ``neurospatial.environment._trajectory``: every bin-index array is
+    ``np.intp``. On 64-bit ``np.intp`` equals ``int64``, so this catches a
+    regression to the narrower ``int32``.
     """
     rng = np.random.default_rng(0)
     data = rng.random((200, 2)) * 10
@@ -503,18 +501,34 @@ def test_located_bin_dtype_is_intp():
 
 
 def test_environment_index_surface_dtype_is_intp():
-    """The public index surface (``bin_at`` / ``boundary_bins``) is ``np.intp``.
+    """Every method that returns bin indices returns ``np.intp``.
 
-    ``bin_at`` normalizes whatever an arbitrary ``LayoutEngine`` returns to
-    ``np.intp`` at the Environment boundary, pinning the user-facing contract
+    One dtype means a result from any of them indexes a field the same way,
     independent of the layout.
     """
     rng = np.random.default_rng(0)
     env = Environment.open_field(rng.random((300, 2)) * 40, bin_size=4.0)
-    pts = np.array([[10.0, 10.0], [1e6, 1e6]])
-    assert env.bin_at(pts).dtype == np.intp
-    assert env.bin_at(pts)[-1] == -1  # geometric grid: outside -> -1 sentinel
-    assert env.boundary_bins.dtype == np.intp
+    pts = np.array([[10.0, 10.0], [1e6, 1e6], [np.nan, 1.0]])
+    times = np.arange(len(pts)) / 30.0
+    regions = Regions()
+    regions.add("corner", polygon=box(0.0, 0.0, 12.0, 12.0))
+    env = env.with_regions(regions)
+    assert env.bin_at(pts)[-2] == -1  # geometric grid: outside -> -1 sentinel
+    index_arrays = {
+        "bin_at": env.bin_at(pts),
+        "nearest_bin": env.nearest_bin(pts),
+        "nearest_bin finite": env.nearest_bin(pts[:1]),
+        "nearest_bin with distance": env.nearest_bin(pts, return_dist=True)[0],
+        "boundary_bins": env.boundary_bins,
+        "bins_in_region": env.bins_in_region("corner"),
+        "bin_sequence": env.bin_sequence(times, pts),
+        "bin_sequence_with_runs": env.bin_sequence_with_runs(times, pts).bins,
+        "components": env.components()[0],
+        "rings": env.rings(bins=0, hops=1)[1],
+        "edge_pairs": env.edge_pairs,
+    }
+    for name, indices in index_arrays.items():
+        assert indices.dtype == np.intp, name
 
 
 class TestBuildChoices:

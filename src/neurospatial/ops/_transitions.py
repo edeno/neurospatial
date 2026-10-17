@@ -21,8 +21,8 @@ def _row_normalize(
 
 
 def count_transitions(
-    source_bins: NDArray[np.int32],
-    target_bins: NDArray[np.int32],
+    source_bins: NDArray[np.intp],
+    target_bins: NDArray[np.intp],
     n_bins: int,
     *,
     graph: nx.Graph | None,
@@ -32,7 +32,7 @@ def count_transitions(
 
     Parameters
     ----------
-    source_bins, target_bins : ndarray of int32, shape (n_steps,)
+    source_bins, target_bins : ndarray of intp, shape (n_steps,)
         Bin of each step's start and end, all in ``[0, n_bins)``.
     n_bins : int
         Number of bins.

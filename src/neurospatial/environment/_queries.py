@@ -165,12 +165,12 @@ def _reachable_from(
     return reachable
 
 
-def _components(graph: nx.Graph, *, largest_only: bool) -> list[NDArray[np.int32]]:
+def _components(graph: nx.Graph, *, largest_only: bool) -> list[NDArray[np.intp]]:
     """Connected components of the graph as sorted bin arrays, largest first."""
     component_sets = nx.connected_components(graph)
 
     # Convert sets to arrays and sort by size (largest first)
-    components = [np.asarray(sorted(comp), dtype=np.int32) for comp in component_sets]
+    components = [np.asarray(sorted(comp), dtype=np.intp) for comp in component_sets]
     components.sort(key=len, reverse=True)
 
     # Return only largest if requested
@@ -180,7 +180,7 @@ def _components(graph: nx.Graph, *, largest_only: bool) -> list[NDArray[np.int32
     return components
 
 
-def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.int32]]:
+def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.intp]]:
     """Bins grouped by hop distance from ``center_bin``, up to ``hops``."""
     # Type validation for hops
     if not isinstance(hops, (int, np.integer)):
@@ -207,8 +207,8 @@ def _rings(graph: nx.Graph, center_bin: int, *, hops: int) -> list[NDArray[np.in
         rings_lists[dist].append(node)
 
     # Convert to numpy arrays
-    rings_arrays: list[NDArray[np.int32]] = [
-        np.array(ring, dtype=np.int32) for ring in rings_lists
+    rings_arrays: list[NDArray[np.intp]] = [
+        np.array(ring, dtype=np.intp) for ring in rings_lists
     ]
 
     return rings_arrays
