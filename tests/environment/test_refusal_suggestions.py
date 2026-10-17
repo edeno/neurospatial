@@ -202,6 +202,23 @@ def _three_edge_graph() -> dict[str, Any]:
 
 
 CASES: dict[str, Case] = {
+    # track operations on an environment that is not a track
+    "to_linear on a grid, a track instead": Case(
+        _sampled,
+        lambda n: n["env"].to_linear(n["positions"][:3]),
+        "Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], "
+        "bin_size=2.0, track_width=8.0)",
+    ),
+    "to_linear on a grid, bins instead": Case(
+        _sampled,
+        lambda n: n["env"].to_linear(n["positions"][:3]),
+        "env.bin_at(positions)",
+    ),
+    "linear_to_nd on a grid, bin centers instead": Case(
+        lambda: {**_sampled(), "bins": [0, 1]},
+        lambda n: n["env"].linear_to_nd(np.array([1.0])),
+        "env.bin_center_of(bins)",
+    ),
     # rebin on bins that are not an even rectangular grid
     "hexagonal rebin(2)": Case(
         _hexagons,

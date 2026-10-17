@@ -351,7 +351,7 @@ class TestLinearization:
 
         with pytest.raises(
             TypeError,
-            match="to_linear\\(\\) is only available for 1D environments",
+            match="to_linear\\(\\) needs a linearized track",
         ):
             medium_2d_env.to_linear(np.array([[0.0, 0.0]]))
 
@@ -361,7 +361,7 @@ class TestLinearization:
 
         with pytest.raises(
             TypeError,
-            match="linear_to_nd\\(\\) is only available for 1D environments",
+            match="linear_to_nd\\(\\) needs a linearized track",
         ):
             medium_2d_env.linear_to_nd(np.array([0.0]))
 

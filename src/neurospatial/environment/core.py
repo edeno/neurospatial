@@ -1490,8 +1490,8 @@ class Environment(Generic[_C]):
         Raises
         ------
         TypeError
-            If this environment is not 1D (does not support linearization).
-            Check `env.is_linearized_track` before calling this method.
+            If this environment is not a linearized track
+            (``env.is_linearized_track`` is False).
 
         Notes
         -----
@@ -1556,8 +1556,8 @@ class Environment(Generic[_C]):
         Raises
         ------
         TypeError
-            If this environment is not 1D (does not support linearization).
-            Check `env.is_linearized_track` before calling this method.
+            If this environment is not a linearized track
+            (``env.is_linearized_track`` is False).
 
         Notes
         -----

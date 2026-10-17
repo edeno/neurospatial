@@ -10,6 +10,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._targets import validate_bin_indices
 from neurospatial.geometry import (
@@ -21,6 +22,11 @@ from neurospatial.geometry import (
 )
 from neurospatial.ops.distance import distance_field
 
+_BUILD_A_TRACK = (
+    "Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], "
+    "bin_size=2.0, track_width=8.0)"
+)
+
 
 def _track_linearization(
     binning: Binning, operation: str, alternative: str
@@ -29,8 +35,16 @@ def _track_linearization(
     linearization = binning.linearization
     if linearization is None:
         raise TypeError(
-            f"{operation} is only available for 1D environments (GraphLayout). "
-            f"This environment is {binning.bins.n_dims}D. {alternative}"
+            _format_error(
+                f"{operation} needs a linearized track "
+                "(env.is_linearized_track is True), but this is a "
+                f"{binning.kind} environment, which has no track.",
+                why="Why: it measures positions along a track's centerline, "
+                "and only environments built from a track have one.",
+                fix=f"build the track, for example {_BUILD_A_TRACK}, or "
+                "Environment.maze(...) or Environment.from_graph(...) for "
+                f"other tracks; {alternative}",
+            )
         )
     return linearization
 
@@ -40,7 +54,7 @@ def _to_linear(binning: Binning, positions: NDArray[np.float64]) -> NDArray[np.f
     linearization = _track_linearization(
         binning,
         "to_linear()",
-        "Use bin_at() to map positions to bins for N-D environments.",
+        "on this environment, map positions to bins with env.bin_at(positions)",
     )
     return linearization.to_linear(positions)
 
@@ -52,7 +66,7 @@ def _linear_to_nd(
     linearization = _track_linearization(
         binning,
         "linear_to_nd()",
-        "Use bin_center_of() to get bin centers for N-D environments.",
+        "on this environment, get bin centers with env.bin_center_of(bins)",
     )
     return linearization.linear_to_nd(linear_position)
 
