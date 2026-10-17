@@ -399,6 +399,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `spatial_autocorrelation` raises `NotImplementedError` instead of
+  `ValueError` on tracks, meshes, 3-D grids and grids with fewer than half of
+  their cells active, the type used for every environment whose geometry
+  cannot run an analysis. Code that caught `ValueError` around it should
+  catch `NotImplementedError`; see the migration page. Rate-map
+  `grid_score()` and `summary_table()` still report NaN there.
+
 - On a track, `bin_at` and `nearest_bin(tie_break="closest_center")` search
   one KD-tree, so a position exactly equidistant from two or more bin centers
   goes to the same bin in both. `bin_at` used a tree of its own and could pick

@@ -1098,3 +1098,32 @@ arm = np.array([track.connectivity.nodes[b]["source_edge_id"] for b in range(tra
 east = track.bin_centers[:, 0] > 0
 assert set(arm[east]) == {1}
 ```
+
+## Grid analyses on layouts without square lags raise `NotImplementedError`
+
+The FFT autocorrelogram behind grid scores needs a 2-D grid of rectangular
+cells, one width along each axis. `spatial_autocorrelation` used to raise
+`ValueError` for tracks, meshes and sparse grids, and accepted hexagonal
+environments with wrong results. It now raises `NotImplementedError` for all
+of them, naming `spatial_autocorrelation_radial`, which works on every layout.
+Polar environments raise `CartesianOnlyError` (a `TypeError`), here and for
+wall-based measures such as `border_score`:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.encoding.grid import (
+    spatial_autocorrelation,
+    spatial_autocorrelation_radial,
+)
+
+track = Environment.linear_track(endpoints=[(0, 0), (100, 0)], bin_size=2.0, units="cm")
+rate = np.random.default_rng(1).random(track.n_bins)
+# Before: except ValueError:
+try:
+    autocorr = spatial_autocorrelation(track, rate)
+except NotImplementedError:
+    distances, correlations = spatial_autocorrelation_radial(track, rate)
+```
+
+Rate-map `grid_score()` and `summary_table()` report NaN on these
+environments, as before for tracks and meshes.
