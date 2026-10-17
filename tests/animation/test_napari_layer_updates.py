@@ -1,7 +1,6 @@
-"""Tests for removing deprecated layer.data assignments.
+"""Napari overlays update layers without reassigning large ``layer.data`` arrays.
 
-This test module verifies that no overlay does ``layer.data = large_array``
-in callbacks, ensuring only efficient update patterns remain:
+No overlay does ``layer.data = large_array`` in a frame callback:
 
 1. Video overlay:
    - In-memory: Uses native time dimension (no per-frame layer.data assignment)
@@ -15,8 +14,7 @@ in callbacks, ensuring only efficient update patterns remain:
    - Use native time dimension in Tracks/Points layers
    - No per-frame callbacks or layer.data assignments
 
-These tests ensure the in-memory video optimization remains in place and no
-regressions introduce expensive layer.data assignments.
+An expensive ``layer.data`` assignment per frame makes playback stutter.
 """
 
 from __future__ import annotations
@@ -336,17 +334,6 @@ class TestVideoCallbackCaching:
 class TestEventOverlayUpdatePattern:
     """Tests verifying event overlay uses efficient shown mask (not layer.data)."""
 
-    def test_event_overlay_callback_uses_shown_mask(self) -> None:
-        """Event overlay callback should use layer.shown, not layer.data."""
-        # This is a documentation test - the implementation uses shown mask
-        # Verified by code audit: napari_backend.py line 1741
-        #   points_layer.shown = shown
-        # NOT:
-        #   points_layer.data = new_data
-
-        # The shown mask is O(1) to update, while reassigning data would be O(N)
-        assert True  # Documented behavior
-
     def test_event_metadata_stores_shown_mask(self) -> None:
         """Event overlay should store shown mask in layer metadata for updates."""
         from neurospatial.animation.overlays import EventOverlay
@@ -467,50 +454,8 @@ class TestNativeTimeDimensionOverlays:
         assert data.data.shape[0] == 100  # n_frames
 
 
-# =============================================================================
-# Audit Summary Documentation Test
-# =============================================================================
-
-
-class TestLayerDataAuditSummary:
-    """Documentation test summarizing the layer.data audit findings.
-
-    This test serves as living documentation for the layer.data audit.
-    """
-
-    def test_audit_findings(self) -> None:
-        """Document layer.data assignment audit findings.
-
-        Layer Data Assignment Audit:
-
-        | Overlay Type    | Update Pattern           | layer.data Assignment? | Status       |
-        |-----------------|--------------------------|------------------------|--------------|
-        | Video (memory)  | Native 4D time dimension | NO                     | Optimized    |
-        | Video (file)    | Callback: layer.data=fr  | YES (necessary)        | Cached       |
-        | Events (decay)  | Callback: layer.shown=m  | NO                     | Efficient    |
-        | Events (instant)| Native 3D Points         | NO                     | Optimized    |
-        | Position        | Native Tracks layer      | NO                     | Native       |
-        | Bodypart        | Native Points layer      | NO                     | Native       |
-        | Head Direction  | Native Tracks layer      | NO                     | Native       |
-        | Skeleton        | Pre-computed Vectors     | NO                     | Pre-computed |
-
-        Key findings:
-        1. Only file-based video uses layer.data = frame (necessary for streaming)
-        2. File-based video is cached via LRU cache (configurable cache_size)
-        3. Events use efficient layer.shown mask updates (boolean array)
-        4. All other overlays use native time dimension or pre-computation
-        5. No deprecated layer.data = large_array patterns found
-
-        Conclusion: All layer.data assignments are either:
-        - Removed (in-memory video uses native 4D)
-        - Necessary (file-based video requires streaming with cache)
-        - Efficient (events use shown mask, not data reassignment)
-        """
-        assert True  # Documentation test
-
-
-class TestNoDeprecatedPatterns:
-    """Tests ensuring no deprecated layer.data patterns exist."""
+class TestEfficientUpdatePatterns:
+    """In-memory video and event callbacks keep their efficient update paths."""
 
     def test_in_memory_video_optimization_in_place(self) -> None:
         """Verify the in-memory video optimization is still in place.

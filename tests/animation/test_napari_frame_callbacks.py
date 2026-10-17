@@ -1,15 +1,11 @@
-"""Tests for the callback audit and migration.
+"""Napari overlays register a frame-change callback only when they need one.
 
-This test module verifies that callbacks connected to
-``viewer.dims.events.current_step`` are properly optimized:
+Callbacks connected to ``viewer.dims.events.current_step`` run on every frame:
 
 1. Video overlay: No callback for in-memory (uses native time), callback for file-based
 2. Event overlay: Callback for cumulative/decay modes (already efficient)
 3. Timeseries: Callback respects ``update_mode="on_pause"`` via PlaybackController
 4. Playback widget: Callback for frame info display (lightweight)
-
-These tests document the audit findings and ensure
-the optimization patterns remain in place.
 
 Requires qtpy for PlaybackController tests (QTimer-based debouncing).
 """
@@ -103,8 +99,8 @@ def mock_video_reader() -> MagicMock:
 # =============================================================================
 
 
-class TestVideoCallbackAudit:
-    """Tests verifying video callback behavior per the callback audit.
+class TestVideoFrameCallbacks:
+    """Video overlays register a frame callback only when streaming from a file.
 
     Expected behavior:
     - In-memory video: No callback registered (uses napari's native time dimension)
@@ -227,8 +223,8 @@ class TestVideoFrameCallbackRegistration:
 # =============================================================================
 
 
-class TestTimeseriesUpdateModeAudit:
-    """Tests verifying timeseries callback respects update_mode per the callback audit.
+class TestTimeseriesUpdateMode:
+    """Time-series callbacks respect the overlay update_mode.
 
     Expected behavior:
     - update_mode="live": Updates on every frame change (throttled)
@@ -290,16 +286,6 @@ class TestTimeseriesUpdateModeAudit:
         assert effective_mode == "on_pause"
 
 
-class TestEventOverlayCallbackAudit:
-    """Tests verifying event overlay callback efficiency per the callback audit.
-
-    Expected behavior:
-    - None/0 decay_frames (instant mode): Uses 3D Points layer (no per-frame callback)
-    - decay_frames > 0: Callback uses efficient layer.shown mask update
-    - decay_frames = None with cumulative persistence: Callback uses shown mask
-    """
-
-
 @_requires_qt
 class TestPlaybackControllerCallbackIntegration:
     """Tests verifying PlaybackController callback mechanism."""
@@ -357,15 +343,3 @@ class TestPlaybackControllerCallbackIntegration:
         # Note: mypy thinks this is unreachable after `assert is True` narrowing
         controller.pause()  # type: ignore[unreachable]
         assert not controller.is_playing
-
-
-# =============================================================================
-# Audit Documentation Tests
-# =============================================================================
-
-
-class TestCallbackAuditDocumentation:
-    """Tests documenting the callback audit findings.
-
-    These tests serve as living documentation for the callback audit results.
-    """
