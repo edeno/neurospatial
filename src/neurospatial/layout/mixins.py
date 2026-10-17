@@ -6,10 +6,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._capabilities import RectilinearGrid
-from neurospatial.geometry._locators import NearestBinLocator, RectilinearLocator
-from neurospatial.geometry._rebin_spec import GridBinningSpec
+from neurospatial.geometry import (
+    Binning,
+    GridBinningSpec,
+    NearestBinLocator,
+    RectilinearGrid,
+    RectilinearLocator,
+)
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_grid
 from neurospatial.layout.helpers.regular_grid import (

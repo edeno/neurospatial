@@ -352,7 +352,7 @@ class TestEnvironmentFromDataSamplesGrid:
         assert idx_active[0] != -1
 
         # Test a point known to be within the grid_edges but potentially inactive
-        # This depends on regular_grid_utils._points_to_regular_grid_bin_ind handling
+        # This depends on regular_grid_utils.points_to_regular_grid_bin_ind handling
         # For points outside ALL grid_edges, it should be -1.
         # For points inside grid_edges but in an inactive bin, it should also be -1.
         # The ValueError in ravel_multi_index typically happens if np.digitize gives out-of-bounds indices.

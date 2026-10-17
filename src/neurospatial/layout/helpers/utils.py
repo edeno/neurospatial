@@ -22,9 +22,7 @@ from numpy.typing import NDArray
 from scipy.spatial import KDTree
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import (
-    get_centers as get_centers,
-)
+from neurospatial.geometry import get_centers as get_centers
 
 
 def get_n_bins(

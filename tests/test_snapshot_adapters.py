@@ -26,10 +26,10 @@ from neurospatial.geometry._binning import (
 from neurospatial.geometry._codecs import (
     _decode_snapshot,
     _snapshot_adapters,
-    _snapshot_provider,
     decode,
     decode_arena,
     encode,
+    snapshot_provider,
 )
 from neurospatial.geometry._locators import (
     NearestBinLocator,
@@ -92,7 +92,7 @@ def _registry(monkeypatch):
 def test_locator_snapshot_owns_data_and_saves_as_a_builtin(_registry):
     _registry.append(_EntryPoint("lookup", _adapter()))
     provider = _ExternalLocator()
-    snapshot = _snapshot_provider(provider, "locator")
+    snapshot = snapshot_provider(provider, "locator")
     assert type(snapshot) is NearestBinLocator
     provider.centers[:] = 999
     np.testing.assert_array_equal(snapshot.centers, [[0, 0], [2, 0]])
@@ -142,7 +142,7 @@ def test_published_snapshot_does_not_retain_provider_or_returned_array_headers(
     _registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: value)))
     provider = _ExternalLocator()
     reference = weakref.ref(provider)
-    snapshot = _snapshot_provider(provider, "locator")
+    snapshot = snapshot_provider(provider, "locator")
     del provider
     assert reference() is None
     assert not np.shares_memory(snapshot.centers, value.centers)
@@ -218,7 +218,7 @@ def test_missing_installed_adapter_explains_package_requirement():
     with pytest.raises(ValueError, match=r"install.*package"):
         decode({"codec": "laboratory.lookup", "codec_version": 1}, {}, "old")
     with pytest.raises(TypeError, match="snapshot adapter"):
-        _snapshot_provider(_ExternalLocator(), "locator")
+        snapshot_provider(_ExternalLocator(), "locator")
 
 
 @pytest.mark.parametrize("duplicate", ["name", "provider_role"])
@@ -259,7 +259,7 @@ def test_each_supported_role_normalizes_a_builtin_record(_registry, role):
     _registry.append(
         _EntryPoint("adapter", _adapter(role=role, snapshot=lambda p: value))
     )
-    snapshot = _snapshot_provider(_ExternalLocator(), role)
+    snapshot = snapshot_provider(_ExternalLocator(), role)
     assert type(snapshot) is type(value)
     assert snapshot is not value
 
@@ -268,13 +268,13 @@ def test_each_supported_role_normalizes_a_builtin_record(_registry, role):
 def test_adapter_cannot_preserve_a_custom_runtime_object(_registry, result):
     _registry.append(_EntryPoint("lookup", _adapter(snapshot=lambda provider: result)))
     with pytest.raises(ValueError, match=r"built-in.*locator"):
-        _snapshot_provider(_ExternalLocator(), "locator")
+        snapshot_provider(_ExternalLocator(), "locator")
 
 
 def test_wrong_declared_role_is_not_accepted(_registry):
     _registry.append(_EntryPoint("lookup", _adapter(role="arena")))
     with pytest.raises(ValueError, match=r"built-in.*arena"):
-        _snapshot_provider(_ExternalLocator(), "arena")
+        snapshot_provider(_ExternalLocator(), "arena")
 
 
 @pytest.mark.parametrize(

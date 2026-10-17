@@ -8,10 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._components import HexagonShapes
-from neurospatial.geometry._explicit import component_extent
-from neurospatial.geometry._locators import HexLocator
+from neurospatial.geometry import Binning, HexagonShapes, HexLocator, component_extent
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_hexagons

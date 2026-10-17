@@ -334,14 +334,14 @@ def bridge_values(binning: Binning) -> dict[frozenset[int], float]:
     return result
 
 
-def _component_keys(binning: Binning) -> tuple[str, ...]:
+def composition_component_keys(binning: Binning) -> tuple[str, ...]:
     """Return stable component keys from retained composition data."""
 
     result = composition_view(binning.locator)
     return () if result is None else result[0].keys
 
 
-def _bin_sources(binning: Binning) -> tuple[tuple[str, int], ...] | None:
+def composition_bin_sources(binning: Binning) -> tuple[tuple[str, int], ...] | None:
     """Resolve retained component and local bin IDs in current bin order."""
 
     result = composition_view(binning.locator)

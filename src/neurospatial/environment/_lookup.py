@@ -10,9 +10,12 @@ from scipy.spatial import cKDTree
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial.environment._cache import EMBEDDED_KDTREE, KDTREE, AnalysisCache
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
-from neurospatial.geometry._locators import NearestBinLocator
+from neurospatial.geometry import (
+    Binning,
+    CartesianSystem,
+    EgocentricPolarSystem,
+    NearestBinLocator,
+)
 from neurospatial.ops.mapping import (
     TieBreakStrategy,
     _nearest_bin_query,

@@ -22,7 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment

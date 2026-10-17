@@ -113,6 +113,14 @@ storage or rendering (`to_file`, `to_nwb`, `animate_fields`, ...), which load
 those packages only when called. Nothing checks these layers automatically;
 review imports by hand.
 
+A package imports another package's names from that package's `__init__`
+(for example `from neurospatial.geometry import Binning`), never from its `_`
+modules, and reads an `Environment` only through public members. Each package
+`__init__` exports what the others need; names outside `__all__` are shared
+internals, not public API. `geometry/` imports its own modules at module level
+and has no import cycle: shared records sit in the lower modules
+(`_locators`, `_polygon_cells`, `_binning`), operations above them.
+
 `neurospatial.binning` and `neurospatial.arena` are the public import paths
 for geometry records. Importing them does not load layout engines,
 `environment.core` or Matplotlib.
@@ -230,7 +238,7 @@ the only record of the capability: it refuses polar environments when the
 member is called and feeds `CARTESIAN_OPERATIONS`. The member stays visible, so
 `hasattr` is True. A Cartesian-only mode of a shared method, or an analysis
 function in another package, refuses with
-`geometry._coordinates.require_cartesian(env.coordinate_system, operation,
+`neurospatial.geometry.require_cartesian(env.coordinate_system, operation,
 why=..., fix=...)`. Both raise `CartesianOnlyError`, a `TypeError`, with one
 message layout.
 Shared code asks the coordinate descriptor about lengths, axes and
@@ -428,8 +436,8 @@ They include a required Arena record. Version 2/`2.0` remains readable with an
 explicit `UnknownArena`, without inferring physical geometry from parameters,
 outlines or masks; a polar environment in such a record is refused because
 it has no stored `EgocentricSurround`. Version 1/`1.x` records are refused
-with recreation guidance. Pure codecs in `geometry/_codecs.py` and
-`geometry/_arena.py` store typed arrays and JSON metadata; polygon WKB bytes
+with recreation guidance. Pure codecs in `geometry/_codecs.py`, including the
+arena codec, store typed arrays and JSON metadata; polygon WKB bytes
 and offsets preserve ordered cells and holes. Shared snapshot references
 retain locator ownership without duplicating each record. Locator search
 structures are not stored; they are rebuilt from saved data. Standard NWB

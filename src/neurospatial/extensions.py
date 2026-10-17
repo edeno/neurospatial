@@ -8,6 +8,6 @@ The implementation lives in ``neurospatial.geometry``; this module is the
 public import path.
 """
 
-from neurospatial.geometry._adapters import SnapshotAdapter as SnapshotAdapter
+from neurospatial.geometry import SnapshotAdapter
 
 __all__ = ["SnapshotAdapter"]

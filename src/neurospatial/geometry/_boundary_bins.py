@@ -18,7 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._hex_lookup import _get_hex_grid_neighbor_deltas
+from neurospatial.geometry._hex_lookup import get_hex_grid_neighbor_deltas
 from neurospatial.geometry._locators import (
     HexLocator,
     RectilinearLocator,
@@ -156,7 +156,7 @@ def _hex_boundary_bins(
     rows, cols = np.divmod(cells, n_cols)
     # (parity, neighbor, (d_col, d_row)): odd rows are shifted right.
     deltas = np.array(
-        [_get_hex_grid_neighbor_deltas(False), _get_hex_grid_neighbor_deltas(True)]
+        [get_hex_grid_neighbor_deltas(False), get_hex_grid_neighbor_deltas(True)]
     )[rows % 2]
     neighbor_cols = cols[:, None] + deltas[..., 0]
     neighbor_rows = rows[:, None] + deltas[..., 1]

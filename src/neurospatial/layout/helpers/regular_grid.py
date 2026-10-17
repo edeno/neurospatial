@@ -13,7 +13,7 @@ This module provides a collection of helper functions used primarily by
   these active grid bins, allowing for orthogonal and diagonal connections
   (`_create_regular_grid_connectivity_graph`).
 - Mapping continuous N-D points to their corresponding discrete bin indices
-  within the grid, taking into account active areas (`_points_to_regular_grid_bin_ind`).
+  within the grid, taking into account active areas (`points_to_regular_grid_bin_ind`).
 
 The module also includes functions for inferring dimensional properties from
 data samples, which might be shared with or used by other utility modules.
@@ -32,9 +32,6 @@ from numpy.typing import NDArray
 from scipy import ndimage
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._regular_lookup import (
-    _points_to_regular_grid_bin_ind as _points_to_regular_grid_bin_ind,
-)
 from neurospatial.layout.helpers.utils import get_centers, get_n_bins
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in

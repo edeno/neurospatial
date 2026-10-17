@@ -25,7 +25,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment

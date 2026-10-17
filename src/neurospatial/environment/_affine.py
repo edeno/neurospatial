@@ -11,10 +11,7 @@ from shapely.geometry import Polygon
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment._publication import _Derivation
-from neurospatial.geometry._arena import Arena
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._derive import transform_binning
-from neurospatial.geometry._explicit import cell_extent
+from neurospatial.geometry import Arena, Binning, cell_extent, transform_binning
 from neurospatial.ops.transforms import Affine2D, AffineND
 from neurospatial.regions import Region, Regions
 

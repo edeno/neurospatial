@@ -15,14 +15,16 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.geometry._binning import (
+from neurospatial.geometry import (
     Binning,
+    CartesianSystem,
+    EgocentricPolarSystem,
+    HexagonShapes,
+    PolygonCells,
     TrackLinearization,
+    TriangleShapes,
     require_grid_context,
 )
-from neurospatial.geometry._components import HexagonShapes, TriangleShapes
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
-from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.layout._plot_cells import plot_binning
 from neurospatial.layout._plotting import (
     hexagon_patches,

@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Any
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._binning import Binning
+from neurospatial.geometry import Binning
 from neurospatial.layout._labels import canonical_label
 from neurospatial.layout.base import LayoutEngine
 
@@ -51,10 +51,9 @@ def built_layout_data(
     """
     produce = getattr(layout, "binning", None)
     if not callable(produce):
-        from neurospatial.geometry._codecs import _snapshot_provider
-        from neurospatial.geometry._explicit import prepare_bins
+        from neurospatial.geometry import prepare_bins, snapshot_provider
 
-        binning = prepare_bins(_snapshot_provider(layout, "binning"))
+        binning = prepare_bins(snapshot_provider(layout, "binning"))
         return replace(binning, kind=canonical_label(binning.kind)), {}
     binning = produce()
     if type(binning) is not Binning:

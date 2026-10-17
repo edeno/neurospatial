@@ -76,11 +76,11 @@ from scipy.signal import find_peaks
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ResultMixin
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.geometry import CartesianSystem
 
 __all__ = [
     # Dataclass

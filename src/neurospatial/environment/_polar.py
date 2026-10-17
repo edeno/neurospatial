@@ -9,7 +9,7 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import declared_metadata
-from neurospatial.geometry._coordinates import EgocentricPolarSystem
+from neurospatial.geometry import EgocentricPolarSystem
 from neurospatial.layout.engines._polar import _PolarGridLayout
 
 if TYPE_CHECKING:

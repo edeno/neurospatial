@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._locators import Locator
 
 
-def _wall_source_frame(
+def wall_source_frame(
     locator: Locator, arena: Arena, centers: NDArray[np.float64]
 ) -> (
     tuple[
@@ -41,7 +41,7 @@ def _wall_source_frame(
     if isinstance(locator, TransformedLocator) and isinstance(arena, _TransformedArena):
         if np.array_equal(locator.inverse, arena.inverse):
             original = (centers - arena.forward[:-1, -1]) @ arena.inverse[:-1, :-1].T
-            inner = _wall_source_frame(locator.base, arena.base, original)
+            inner = wall_source_frame(locator.base, arena.base, original)
             if inner is None:
                 return (
                     cells_from_locator(locator.base),
@@ -53,7 +53,7 @@ def _wall_source_frame(
             cells, walls, original, inverse, frames = inner
             return cells, walls, original, inverse @ locator.inverse, (arena, *frames)
     elif isinstance(locator, (SubsetLocator, ClippedLocator)):
-        inner = _wall_source_frame(locator.base, arena, centers)
+        inner = wall_source_frame(locator.base, arena, centers)
         if inner is not None:
             cells, walls, original, inverse, frames = inner
             if isinstance(locator, SubsetLocator):

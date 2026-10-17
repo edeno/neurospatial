@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING, Any
 import networkx as nx
 import numpy as np
 
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._composition import bridge_values, composition_view
+from neurospatial.geometry import Binning, bridge_values, composition_view
 
 if TYPE_CHECKING:
     import pandas as pd

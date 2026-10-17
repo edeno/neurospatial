@@ -9,9 +9,12 @@ from typing import TYPE_CHECKING, Any
 from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial._logging import log_environment_combine
 from neurospatial.environment._publication import _Derivation
-from neurospatial.geometry._arena import _CombinedArena
-from neurospatial.geometry._combine_geometry import BridgeKey, combine_binnings
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import (
+    BridgeKey,
+    _CombinedArena,
+    combine_binnings,
+    require_cartesian,
+)
 from neurospatial.layout import LayoutType
 from neurospatial.regions import Regions
 

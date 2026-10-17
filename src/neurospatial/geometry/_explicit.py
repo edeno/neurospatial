@@ -18,7 +18,7 @@ from neurospatial.geometry._binning import (
     TrackLinearization,
 )
 from neurospatial.geometry._capabilities import RectilinearGrid
-from neurospatial.geometry._codecs import _snapshot_provider
+from neurospatial.geometry._codecs import snapshot_provider
 from neurospatial.geometry._components import (
     HexagonShapes,
     Outline,
@@ -205,7 +205,7 @@ def prepare_bins(binning: object) -> Binning:
         If records or their shared geometry disagree.
     """
     if type(binning) is not Binning:
-        binning = _snapshot_provider(binning, "binning")
+        binning = snapshot_provider(binning, "binning")
     assert isinstance(binning, Binning)
     binning = _snapshot_binning(binning)
     if type(binning.faces) not in (KnownFaces, MissingFaces):

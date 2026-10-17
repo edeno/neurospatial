@@ -19,13 +19,13 @@ if TYPE_CHECKING:
     from scipy import sparse
     from scipy.spatial import cKDTree
 
-    from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._binning import Binning
-    from neurospatial.geometry._coordinates import (
+    from neurospatial.geometry import (
+        Arena,
+        Binning,
         CartesianSystem,
+        DiffusionGeometry,
         EgocentricPolarSystem,
     )
-    from neurospatial.geometry._diffusion import DiffusionGeometry
     from neurospatial.ops._types import KernelMode
     from neurospatial.ops.mapping import TieBreakStrategy
     from neurospatial.regions import Regions

@@ -57,7 +57,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree

@@ -77,7 +77,7 @@ from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _safe_gather
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment

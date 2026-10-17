@@ -415,9 +415,7 @@ def _primitive_geometry(
             )
             if isinstance(child.faces, KnownFaces):
                 KnownFaces(child.faces.faces)
-            _validate_components(
-                child, child.linearization is not None, coordinate_kind
-            )
+            validate_components(child, child.linearization is not None, coordinate_kind)
 
         certify_components(locator.children, locator.arenas, locator.keys)
         bins = locator.spatial_bins()
@@ -558,7 +556,7 @@ def _primitive_geometry(
     raise ValueError("locator needs supported stored geometry for consistency checks.")
 
 
-def _mapped_geometry(
+def mapped_geometry(
     points: NDArray[np.float64],
     error: NDArray[np.float64],
     matrix: NDArray[np.float64],
@@ -653,7 +651,7 @@ def _locator_geometry(
         if similarity
         else math.exp(float(logdet))
     )
-    geometry.centers, geometry.center_error = _mapped_geometry(
+    geometry.centers, geometry.center_error = mapped_geometry(
         geometry.centers, geometry.center_error, matrix, linear_error, shift_error
     )
     if geometry.grid_linear is not None:
@@ -685,7 +683,7 @@ def _locator_geometry(
         extent = np.max(
             np.abs(shapely.get_coordinates(geometry.polygons)), axis=0, keepdims=True
         )
-        _, vertex_error = _mapped_geometry(
+        _, vertex_error = mapped_geometry(
             extent,
             np.broadcast_to(geometry.polygon_error, extent.shape),
             matrix,
@@ -698,12 +696,12 @@ def _locator_geometry(
         ).polygons
     if geometry.points is not None:
         assert geometry.point_error is not None
-        geometry.points, geometry.point_error = _mapped_geometry(
+        geometry.points, geometry.point_error = mapped_geometry(
             geometry.points, geometry.point_error, matrix, linear_error, shift_error
         )
     if geometry.boundary is not None:
         coordinates = shapely.get_coordinates(geometry.boundary)
-        _, errors = _mapped_geometry(
+        _, errors = mapped_geometry(
             coordinates,
             np.full_like(coordinates, geometry.boundary_error),
             matrix,
@@ -940,7 +938,7 @@ def _validate_cell_faces(binning: Binning, geometry: _LocatorGeometry) -> None:
     _validate_face_distances(binning, geometry, f"{label}.distance")
 
 
-def _validate_components(
+def validate_components(
     binning: Binning,
     is_track: bool,
     coordinate_kind: Literal["cartesian", "polar"],

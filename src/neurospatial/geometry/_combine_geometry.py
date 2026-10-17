@@ -54,12 +54,12 @@ class _Piece:
     high: NDArray[np.float64]
 
 
-def _boxes(locator: Locator) -> list[NDArray[np.float64]]:
+def cell_boxes(locator: Locator) -> list[NDArray[np.float64]]:
     """Return parallelotope vertices in binary corner order, in active-bin order."""
     if isinstance(locator, CombinedLocator):
-        return [box for child in locator.children for box in _boxes(child.locator)]
+        return [box for child in locator.children for box in cell_boxes(child.locator)]
     if isinstance(locator, SubsetLocator):
-        boxes = _boxes(locator.base)
+        boxes = cell_boxes(locator.base)
         selected = np.flatnonzero(locator.parent_to_child >= 0)
         selected = selected[np.argsort(locator.parent_to_child[selected])]
         return [boxes[index] for index in selected]
@@ -67,7 +67,7 @@ def _boxes(locator: Locator) -> list[NDArray[np.float64]]:
         matrix = np.linalg.inv(locator.inverse)
         return [
             vertices @ matrix[:-1, :-1].T + matrix[:-1, -1]
-            for vertices in _boxes(locator.base)
+            for vertices in cell_boxes(locator.base)
         ]
     if not isinstance(locator, RectilinearLocator):
         raise ValueError("No stored rectilinear cells.")
@@ -126,17 +126,17 @@ def _partitioned(first: Binning, second: Binning) -> bool:
     )
 
 
-def _arena_pieces(arena: Arena) -> list[_Piece]:
+def arena_pieces(arena: Arena) -> list[_Piece]:
     """Use exact domains or conservative affine enclosures of balls/capsules."""
     if isinstance(arena, _CombinedArena):
-        return [piece for child in arena.children for piece in _arena_pieces(child)]
+        return [piece for child in arena.children for piece in arena_pieces(child)]
     if isinstance(arena, _TransformedArena):
         matrix = arena.forward
         linear, shift = matrix[:-1, :-1], matrix[:-1, -1]
         pieces = []
         from shapely.affinity import affine_transform
 
-        for piece in _arena_pieces(arena.base):
+        for piece in arena_pieces(arena.base):
             if piece.kind == "polygon":
                 polygon = affine_transform(
                     piece.data,
@@ -185,7 +185,7 @@ def _arena_pieces(arena: Arena) -> list[_Piece]:
             for poly in polygons
         ]
     if isinstance(arena, MaskArena):
-        boxes = _boxes(
+        boxes = cell_boxes(
             RectilinearLocator(
                 arena.edges, arena.active_mask.shape, arena.active_mask, None
             )
@@ -229,7 +229,7 @@ def _pieces(binning: Binning, arena: Arena) -> list[_Piece]:
                 for poly in polygons
             ]
     try:
-        boxes = _boxes(binning.locator)
+        boxes = cell_boxes(binning.locator)
     except ValueError:
         pass
     else:
@@ -251,7 +251,7 @@ def _pieces(binning: Binning, arena: Arena) -> list[_Piece]:
                 _Piece("ball", (center, radius), center - radius, center + radius)
                 for center in centers
             ]
-    return _arena_pieces(arena)
+    return arena_pieces(arena)
 
 
 def _boxes_overlap(a: NDArray[np.float64], b: NDArray[np.float64]) -> bool:

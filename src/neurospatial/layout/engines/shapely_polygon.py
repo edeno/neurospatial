@@ -10,8 +10,7 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._components import Outline
+from neurospatial.geometry import Binning, Outline
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_polygon_grid
 from neurospatial.layout.base import capture_build_params

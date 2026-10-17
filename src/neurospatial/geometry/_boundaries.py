@@ -14,8 +14,8 @@ from neurospatial._exceptions import CartesianOnlyError, _format_error
 from neurospatial.geometry._arena import (
     _CombinedArena,
     _feature_cap,
-    _mapped_geometry,
     _TransformedArena,
+    mapped_geometry,
 )
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._locators import (
@@ -31,7 +31,7 @@ from neurospatial.geometry._polygon_cells import (
     PolygonCells,
     _polygon_coordinate_errors,
 )
-from neurospatial.geometry._wall_frame import _wall_source_frame
+from neurospatial.geometry._wall_frame import wall_source_frame
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
@@ -183,7 +183,7 @@ def _resolve_wall_contacts(
     return bins
 
 
-def _wall_hit_bins(
+def wall_hit_bins(
     binning: Binning,
     arena: Arena,
     hits: NDArray[np.float64],
@@ -216,7 +216,7 @@ def _wall_hit_bins(
                 source_locator(locator.base, arena, centers), locator.parent_to_child
             )
         if isinstance(locator, ClippedLocator):
-            local = _wall_source_frame(locator, arena, centers)
+            local = wall_source_frame(locator, arena, centers)
             if local is not None:
                 return ClippedLocator(
                     source_locator(locator.base, arena, centers),
@@ -239,7 +239,7 @@ def _wall_hit_bins(
         return locator
 
     locator = source_locator(binning.locator, arena, binning.bins.centers)
-    frame = _wall_source_frame(binning.locator, arena, binning.bins.centers)
+    frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
     indexes = CallIndexes()
     if frame is None:
         if source == "physical":
@@ -312,8 +312,8 @@ def _physical_evidence(
     if isinstance(arena, _TransformedArena):
         lines, footprints = _physical_evidence(arena.base)
         return (
-            [_mapped_geometry(part, arena.forward) for part in lines],
-            [_mapped_geometry(part, arena.forward) for part in footprints],
+            [mapped_geometry(part, arena.forward) for part in lines],
+            [mapped_geometry(part, arena.forward) for part in footprints],
         )
     lines = list(arena.walls)
     footprints = []
@@ -700,7 +700,7 @@ def search_distance(walls: shapely.Geometry, positions: NDArray[np.float64]) -> 
     return max(extent * 2, 1.0)
 
 
-def _boundary_view(
+def boundary_view(
     binning: Binning,
     arena: Arena,
     positions: NDArray[np.float64],
@@ -730,7 +730,7 @@ def _boundary_view(
     )
 
 
-def _line_of_sight_clear(
+def line_of_sight_clear(
     binning: Binning,
     arena: Arena,
     observer: NDArray[np.float64],
@@ -769,7 +769,7 @@ def _line_of_sight_clear(
         True if line of sight is clear (all points inside environment).
     """
     return bool(
-        _batch_line_of_sight_clear(
+        batch_line_of_sight_clear(
             binning,
             arena,
             observer,
@@ -781,7 +781,7 @@ def _line_of_sight_clear(
     )
 
 
-def _batch_line_of_sight_clear(
+def batch_line_of_sight_clear(
     binning: Binning,
     arena: Arena,
     observer: NDArray[np.float64],

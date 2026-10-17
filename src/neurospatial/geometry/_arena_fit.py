@@ -28,7 +28,7 @@ from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import ClippedLocator, PolygonCells
 from neurospatial.geometry._validation import _polygon_area_allowance
-from neurospatial.geometry._wall_frame import _wall_source_frame
+from neurospatial.geometry._wall_frame import wall_source_frame
 
 if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning
@@ -187,7 +187,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     if not arena.walls:
         return binning
 
-    wall_frame = _wall_source_frame(binning.locator, arena, binning.bins.centers)
+    wall_frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
     if wall_frame is None:
         cells, wall_segments, centers = (
             materialize_cells(binning),

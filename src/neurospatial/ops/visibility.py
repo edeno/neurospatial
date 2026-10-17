@@ -87,14 +87,15 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._boundaries import _batch_line_of_sight_clear, _boundary_view
-from neurospatial.geometry._locators import CallIndexes
-from neurospatial.geometry._lookup import locate
+from neurospatial.geometry import (
+    CallIndexes,
+    batch_line_of_sight_clear,
+    boundary_view,
+    locate,
+)
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._binning import Binning
-    from neurospatial.geometry._locators import LookupIndexes
+    from neurospatial.geometry import Arena, Binning, LookupIndexes
     from neurospatial.ops._protocols import BinCentersConsumer, BinningConsumer
 
 __all__ = [
@@ -583,7 +584,7 @@ def compute_viewed_location(
 
     else:
         assert env is not None
-        viewed = _boundary_view(
+        viewed = boundary_view(
             env.binning,
             env.arena,
             positions,
@@ -760,7 +761,7 @@ def _viewshed(
     # Convert to allocentric
     ray_angles_allo = ray_angles_ego + heading
 
-    from neurospatial.geometry._boundaries import (
+    from neurospatial.geometry import (
         analysis_interior,
         boundary_geometry,
         physical_ray_hits,
@@ -885,7 +886,7 @@ def _viewshed(
             # Only check line of sight for cues in FOV (vectorized batch check)
             fov_indices = np.where(in_fov)[0]
             if len(fov_indices) > 0:
-                los_clear = _batch_line_of_sight_clear(
+                los_clear = batch_line_of_sight_clear(
                     binning,
                     arena,
                     position,
@@ -1075,7 +1076,7 @@ def visible_cues(
     fov_indices = np.where(in_fov)[0]
 
     if len(fov_indices) > 0:
-        los_clear = _batch_line_of_sight_clear(
+        los_clear = batch_line_of_sight_clear(
             env.binning,
             env.arena,
             position,

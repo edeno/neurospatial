@@ -17,7 +17,7 @@ from numpy.typing import ArrayLike
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 
@@ -143,7 +143,7 @@ def assert_environment_contract(
 
 def _assigns_positions(env: Environment | PolarEnvironment) -> bool:
     """Whether ``env`` maps positions to bins; a track needs its width for that."""
-    from neurospatial.geometry._lookup import require_track_width
+    from neurospatial.geometry import require_track_width
 
     try:
         require_track_width(env._binning, env._arena)

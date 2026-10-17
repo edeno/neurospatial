@@ -37,7 +37,7 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry import Binning
 
 # Type alias for file paths (supports both str and pathlib.Path)
 PathLike = str | Path
@@ -337,7 +337,7 @@ def _environment_payload(
     env: Environment,
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
-    from neurospatial.geometry._codecs import encode, encode_arena, graph_to_node_link
+    from neurospatial.geometry import encode, encode_arena, graph_to_node_link
 
     binning_meta, binning_arrays = encode(env.binning, "binning")
     arena_meta, arena_arrays = encode_arena(env.arena)
@@ -449,15 +449,20 @@ def _restore_environment(
         declared_metadata,
         publish,
     )
-    from neurospatial.geometry._arena import Arena, EgocentricSurround, UnknownArena
-    from neurospatial.geometry._binning import Binning, TrackLinearization
-    from neurospatial.geometry._codecs import decode, decode_arena
-    from neurospatial.geometry._context import grid_index
-    from neurospatial.geometry._coordinates import (
+    from neurospatial.geometry import (
+        Arena,
+        Binning,
         CartesianSystem,
         EgocentricPolarSystem,
+        EgocentricSurround,
+        HexLocator,
+        MeshLocator,
+        TrackLinearization,
+        UnknownArena,
+        decode,
+        decode_arena,
+        grid_index,
     )
-    from neurospatial.geometry._locators import HexLocator, MeshLocator
     from neurospatial.regions import Region, Regions
 
     try:
@@ -612,15 +617,15 @@ def _saved_label(binning: Binning, *, polar: bool) -> str:
     str
         The layout label.
     """
-    from neurospatial.geometry._composition import CombinedLocator
-    from neurospatial.geometry._locators import (
+    from neurospatial.geometry import (
+        ClippedLocator,
+        CombinedLocator,
         HexLocator,
         MeshLocator,
         RectilinearLocator,
         SubsetLocator,
         TransformedLocator,
     )
-    from neurospatial.geometry._polygon_cells import ClippedLocator
     from neurospatial.layout import LayoutType, find_layout_type
 
     if polar:

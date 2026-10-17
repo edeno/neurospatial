@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from scipy.stats import vonmises
 
 from neurospatial.environment import Environment
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 
 

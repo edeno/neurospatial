@@ -5,7 +5,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._rebin_spec import GridBinningSpec
+from neurospatial.geometry import GridBinningSpec
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.regular_grid import (

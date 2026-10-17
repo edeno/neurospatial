@@ -15,8 +15,8 @@ from shapely.geometry import Polygon
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial.geometry._arrays import ReadOnlyState
-from neurospatial.geometry._hex_lookup import _points_to_hex_bin_ind
-from neurospatial.geometry._regular_lookup import _points_to_regular_grid_bin_ind
+from neurospatial.geometry._hex_lookup import points_to_hex_bin_ind
+from neurospatial.geometry._regular_lookup import points_to_regular_grid_bin_ind
 
 _T = TypeVar("_T")
 
@@ -157,7 +157,7 @@ class RectilinearLocator(ReadOnlyState):
                 f"grid_edges has {len(self.edges)} and grid_shape has "
                 f"{len(self.shape)}. Points must match the grid's dimensionality."
             )
-        return _points_to_regular_grid_bin_ind(
+        return points_to_regular_grid_bin_ind(
             points=query_points,
             grid_edges=self.edges,
             grid_shape=self.shape,
@@ -297,7 +297,7 @@ class HexLocator(ReadOnlyState):
             raise ValueError(
                 f"Expected points of shape (M, 2), got {query_points.shape}."
             )
-        original_flat_indices = _points_to_hex_bin_ind(
+        original_flat_indices = points_to_hex_bin_ind(
             points=query_points,
             grid_offset_x=self.offset_x,
             grid_offset_y=self.offset_y,

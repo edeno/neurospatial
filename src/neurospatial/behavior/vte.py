@@ -78,7 +78,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 from neurospatial._results import ResultMixin
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 from neurospatial.stats.circular import wrap_angle
 
 __all__ = [

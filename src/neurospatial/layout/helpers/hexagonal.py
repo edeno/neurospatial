@@ -4,14 +4,14 @@ This module provides helper functions specifically for environments that use
 hexagonal tiling. These functions cover:
 - Generation of hexagonal grid coordinates (`_create_hex_grid`).
 - Conversion between Cartesian and hexagonal (cube/axial) coordinate systems
-  (`_cartesian_to_fractional_cube`, `_round_fractional_cube_to_integer_axial`,
-  `_axial_to_offset_bin_indices`).
+  (`cartesian_to_fractional_cube`, `round_fractional_cube_to_integer_axial`,
+  `axial_to_offset_bin_indices`).
 - Mapping continuous 2D points to discrete hexagonal bin indices
-  (`_points_to_hex_bin_ind`).
+  (`points_to_hex_bin_ind`).
 - Inferring active hexagonal bins based on data sample occupancy
   (`_infer_active_bins_from_hex_grid`).
 - Determining neighbor relationships in the hexagonal grid
-  (`_get_hex_grid_neighbor_deltas`).
+  (`get_hex_grid_neighbor_deltas`).
 - Constructing a connectivity graph for active hexagonal bins
   (`_create_hex_connectivity_graph`).
 
@@ -29,21 +29,9 @@ from numpy.typing import NDArray
 # Numerical stability constants
 # Minimum hex_radius to prevent division by zero and numerical instability.
 # Values below this threshold are too small for reliable hexagonal coordinate conversion.
-from neurospatial.geometry._hex_lookup import MIN_HEX_RADIUS as MIN_HEX_RADIUS
-from neurospatial.geometry._hex_lookup import (
-    _axial_to_offset_bin_indices as _axial_to_offset_bin_indices,
-)
-from neurospatial.geometry._hex_lookup import (
-    _cartesian_to_fractional_cube as _cartesian_to_fractional_cube,
-)
-from neurospatial.geometry._hex_lookup import (
-    _get_hex_grid_neighbor_deltas as _get_hex_grid_neighbor_deltas,
-)
-from neurospatial.geometry._hex_lookup import (
-    _points_to_hex_bin_ind as _points_to_hex_bin_ind,
-)
-from neurospatial.geometry._hex_lookup import (
-    _round_fractional_cube_to_integer_axial as _round_fractional_cube_to_integer_axial,
+from neurospatial.geometry import (
+    get_hex_grid_neighbor_deltas,
+    points_to_hex_bin_ind,
 )
 
 
@@ -214,7 +202,7 @@ def _infer_active_bins_from_hex_grid(
         bins are found to be active.
 
     """
-    bin_ind = _points_to_hex_bin_ind(
+    bin_ind = points_to_hex_bin_ind(
         points=positions,
         grid_offset_x=min_x,
         grid_offset_y=min_y,
@@ -308,7 +296,7 @@ def _create_hex_connectivity_graph(
         is_odd_row = (row_idx % 2) == 1
 
         # Get the neighbor deltas based on the row parity
-        neighbor_deltas = _get_hex_grid_neighbor_deltas(is_odd_row)
+        neighbor_deltas = get_hex_grid_neighbor_deltas(is_odd_row)
 
         # Find neighbors
         neighbors = []

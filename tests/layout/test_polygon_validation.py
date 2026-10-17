@@ -24,7 +24,7 @@ from neurospatial.geometry._polygon_cells import (
     ClippedLocator,
     PolygonCells,
 )
-from neurospatial.geometry._validation import _validate_components
+from neurospatial.geometry._validation import validate_components
 
 
 def _binning(polygons, *, pairs=(), known=False):
@@ -56,7 +56,7 @@ def _binning(polygons, *, pairs=(), known=False):
 
 
 def _publish(binning):
-    _validate_components(binning, False, "cartesian")
+    validate_components(binning, False, "cartesian")
 
 
 def _matrix(angle=0.0, offset=0.0):

@@ -13,29 +13,29 @@ from numpy.typing import NDArray
 from shapely.geometry import LineString
 from shapely.strtree import STRtree
 
-from neurospatial.geometry._arena import (
+from neurospatial.geometry import (
     Arena,
+    Binning,
+    CallIndexes,
+    LookupIndexes,
     MaskArena,
+    PolygonCells,
+    RectilinearLocator,
     UnknownArena,
     _CombinedArena,
     _TransformedArena,
+    arena_pieces,
+    cell_boxes,
+    cells_from_locator,
+    composition_view,
+    locate,
+    materialize_cells,
+    wall_source_frame,
 )
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._combine_geometry import _arena_pieces, _boxes
-from neurospatial.geometry._composition import composition_view
-from neurospatial.geometry._locators import (
-    CallIndexes,
-    LookupIndexes,
-    RectilinearLocator,
-)
-from neurospatial.geometry._lookup import locate
-from neurospatial.geometry._polygon import cells_from_locator, materialize_cells
-from neurospatial.geometry._polygon_cells import PolygonCells
-from neurospatial.geometry._wall_frame import _wall_source_frame
 from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._grid_frame import FramedGrid
+    from neurospatial.geometry import FramedGrid
 
 
 def source_grid(
@@ -227,7 +227,7 @@ def uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
     n_dims = binning.bins.n_dims
     if n_dims != 2 and composition_view(binning.locator) is not None:
         try:
-            _boxes(binning.locator)
+            cell_boxes(binning.locator)
         except ValueError as error:
             raise NotImplementedError(
                 "Linear allocation needs exact component cells; use time_allocation='start'."
@@ -329,7 +329,7 @@ def retained_linear_intervals(
     if frame is not None:
         source_locator, positions = source_grid(frame, positions)
         cells = cells_from_locator(source_locator)
-        source = _wall_source_frame(binning.locator, arena, binning.bins.centers)
+        source = wall_source_frame(binning.locator, arena, binning.bins.centers)
         if source is not None and all(
             shapely.equals(left, right)
             for left, right in zip(cells, source[0], strict=True)
@@ -513,10 +513,10 @@ def _retained_box_intervals(
     """Partition N-D combined box trajectories at cell and domain planes."""
     frame = binning.grid_frame
     if frame is None:
-        boxes = _boxes(binning.locator)
+        boxes = cell_boxes(binning.locator)
     else:
         source_locator, positions = source_grid(frame, positions)
-        boxes = _boxes(source_locator)
+        boxes = cell_boxes(source_locator)
 
     def domain_boxes(arena):
         if isinstance(arena, UnknownArena):
@@ -529,7 +529,7 @@ def _retained_box_intervals(
                 box @ matrix[:-1, :-1].T + matrix[:-1, -1]
                 for box in domain_boxes(arena.base)
             ]
-        pieces = _arena_pieces(arena)
+        pieces = arena_pieces(arena)
         if any(piece.kind != "box" for piece in pieces):
             raise NotImplementedError(
                 "Linear N-D allocation requires rectangular component domains; use start allocation."

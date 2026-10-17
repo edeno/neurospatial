@@ -32,13 +32,14 @@ from neurospatial._intervals import (
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._fields import _compute_kernel
-from neurospatial.geometry._binning import Binning, require_rectilinear
-from neurospatial.geometry._coordinates import (
+from neurospatial.geometry import (
+    Binning,
     CartesianSystem,
     EgocentricPolarSystem,
+    locate,
     require_cartesian,
+    require_rectilinear,
 )
-from neurospatial.geometry._lookup import locate
 from neurospatial.ops._linear_allocation import linear_grid_occupancy
 from neurospatial.ops._polygon_allocation import (
     polygon_linear_occupancy,
@@ -52,7 +53,7 @@ from neurospatial.ops._transitions import (
 )
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry import Arena
 
 
 @dataclass(frozen=True)

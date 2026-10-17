@@ -1522,7 +1522,7 @@ def _normalize_snapshot(value: object, role: _SnapshotRole) -> object:
     return decode(meta, arrays, "snapshot")
 
 
-def _snapshot_provider(provider: object, role: _SnapshotRole) -> object:
+def snapshot_provider(provider: object, role: _SnapshotRole) -> object:
     """Convert a registered external provider to owned built-in scientific data."""
     for adapter in _snapshot_adapters():
         if type(provider) is adapter.provider_type and role == adapter.role:

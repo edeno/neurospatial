@@ -23,21 +23,23 @@ from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created
 from neurospatial.arena import EgocentricSurround
 from neurospatial.environment._cache import AnalysisCache
-from neurospatial.geometry import _validation
-from neurospatial.geometry._arena_fit import (
+from neurospatial.geometry import (
+    Binning,
+    CartesianSystem,
+    DiffusionGeometry,
+    EgocentricPolarSystem,
+    GridIndex,
     apply_walls,
+    binning_ranges,
+    graph_from_binning,
     infer_arena,
+    own_arena,
+    own_binning,
+    select_bins,
     validate_arena,
+    validate_components,
 )
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._context import GridIndex
-from neurospatial.geometry._context import grid_index as compute_grid_index
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
-from neurospatial.geometry._derive import select_bins
-from neurospatial.geometry._diffusion import DiffusionGeometry
-from neurospatial.geometry._explicit import binning_ranges
-from neurospatial.geometry._graph import _graph_from_binning
-from neurospatial.geometry._ownership import own_arena, own_binning
+from neurospatial.geometry import grid_index as compute_grid_index
 from neurospatial.layout._construction import built_layout_data
 from neurospatial.layout.base import build_choices
 from neurospatial.layout.validation import (
@@ -200,10 +202,10 @@ def _published_graph(binning: Binning) -> _PublishedGraph:
     """Build the frozen navigation graph an environment publishes for ``binning``.
 
     Nodes, attributes and edge orientation follow
-    :func:`neurospatial.geometry._graph._graph_from_binning`; each undirected
+    :func:`neurospatial.geometry._graph.graph_from_binning`; each undirected
     edge keeps one attribute record shared by both directions.
     """
-    source = _graph_from_binning(binning)
+    source = graph_from_binning(binning)
     graph = _PublishedGraph()
     graph.__dict__["graph"] = _ReadOnlyGraphAttributes(source.graph)
     graph._node = {
@@ -403,7 +405,7 @@ def publish(
     # The published binning carries the environment's ranges, so the two
     # never disagree after a derivation or a read-back.
     binning = replace(binning, dimension_ranges=binning_ranges(binning))
-    _validation._validate_components(
+    validate_components(
         binning,
         binning.linearization is not None,
         "polar" if polar else "cartesian",

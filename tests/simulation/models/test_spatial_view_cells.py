@@ -677,7 +677,7 @@ class TestVectorizationEquivalence:
     @staticmethod
     def _reference_firing_rate(model, positions, headings):
         """Reference firing rate using the original per-timestep Python loops."""
-        from neurospatial.geometry._boundaries import _line_of_sight_clear
+        from neurospatial.geometry._boundaries import line_of_sight_clear
         from neurospatial.ops.egocentric import compute_egocentric_bearing
         from neurospatial.ops.visibility import compute_viewed_location
 
@@ -714,7 +714,7 @@ class TestVectorizationEquivalence:
                     if not model.fov.contains_angle(bearing):
                         response[i] = 0.0
                         continue
-                if not _line_of_sight_clear(
+                if not line_of_sight_clear(
                     model.env.binning,
                     model.env.arena,
                     positions[i],

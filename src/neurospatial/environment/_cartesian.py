@@ -6,7 +6,7 @@ import functools
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 

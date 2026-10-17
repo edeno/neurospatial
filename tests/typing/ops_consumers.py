@@ -21,9 +21,9 @@ if TYPE_CHECKING:
     from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._boundaries import (
-        _line_of_sight_clear,
         analysis_interior,
         boundary_geometry,
+        line_of_sight_clear,
         valid_observers,
     )
     from neurospatial.ops import (
@@ -110,10 +110,10 @@ if TYPE_CHECKING:
         boundary_geometry(binning, arena, "analysis")
         analysis_interior(binning, arena)(centers)
         valid_observers(binning, arena, centers, "physical")
-        _line_of_sight_clear(binning, arena, centers[0], centers[1])
+        line_of_sight_clear(binning, arena, centers[0], centers[1])
         _pull_back_nearest(values, centers, lambda points: points[:, 0].astype(int))
         _diffusion_generator(
             centers, env.bin_center_tree(), env.get_diffusion_geometry()
         )
         boundary_geometry(env, "analysis")  # type: ignore[call-arg, arg-type]
-        _line_of_sight_clear(env, centers[0], centers[1])  # type: ignore[call-arg, arg-type]
+        line_of_sight_clear(env, centers[0], centers[1])  # type: ignore[call-arg, arg-type]

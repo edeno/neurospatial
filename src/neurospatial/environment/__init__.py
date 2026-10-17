@@ -7,7 +7,7 @@ Use ``from neurospatial import Environment`` or this package's equivalent export
 
 from neurospatial.environment._trajectory import BinSequenceWithRuns
 from neurospatial.environment.core import Environment
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
+from neurospatial.geometry import CartesianSystem, EgocentricPolarSystem
 
 __all__ = [
     "BinSequenceWithRuns",

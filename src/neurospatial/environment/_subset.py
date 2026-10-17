@@ -12,14 +12,17 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial.environment._publication import _Derivation
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._derive import select_bins
-from neurospatial.geometry._region_bins import polygon_bin_mask, region_bin_mask
+from neurospatial.geometry import (
+    Binning,
+    polygon_bin_mask,
+    region_bin_mask,
+    select_bins,
+)
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.environment._cache import AnalysisCache
-    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry import Arena
 
 
 def _subset_mask(

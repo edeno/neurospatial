@@ -182,7 +182,7 @@ def _mapped(
     return result
 
 
-def _mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
+def mapped_geometry(geometry: Any, matrix: NDArray[np.float64]) -> Any:
     # Cell vertices use this same array arithmetic. A different affine
     # implementation can round their common vertices differently, inventing
     # slivers where a transformed arena boundary meets its cells.
@@ -777,7 +777,7 @@ class _TransformedArena(ReadOnlyState):
 
     @property
     def walls(self) -> tuple[LineString, ...]:
-        return tuple(_mapped_geometry(wall, self.forward) for wall in self.base.walls)
+        return tuple(mapped_geometry(wall, self.forward) for wall in self.base.walls)
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)
@@ -828,7 +828,7 @@ class _TransformedArena(ReadOnlyState):
         return (
             None
             if domain is None
-            else cast("Polygon | MultiPolygon", _mapped_geometry(domain, self.forward))
+            else cast("Polygon | MultiPolygon", mapped_geometry(domain, self.forward))
         )
 
     def domain_bounds(self) -> NDArray[np.float64] | None:

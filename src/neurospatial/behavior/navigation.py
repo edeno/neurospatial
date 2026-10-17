@@ -118,12 +118,12 @@ from numpy.typing import NDArray
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _positive_dt
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.behavior.segmentation import Trial
-    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.geometry import CartesianSystem
 
 
 __all__ = [  # noqa: RUF022

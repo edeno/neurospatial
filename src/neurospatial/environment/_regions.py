@@ -13,13 +13,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._region_bins import region_bin_mask
+from neurospatial.geometry import Binning, region_bin_mask
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.environment._cache import AnalysisCache
-    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry import Arena
 
 
 def _region_membership(

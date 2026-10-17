@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._targets import validate_bin_indices
-from neurospatial.geometry._coordinates import (
+from neurospatial.geometry import (
     CartesianSystem,
     EgocentricPolarSystem,
     require_cartesian,

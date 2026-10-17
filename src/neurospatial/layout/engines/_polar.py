@@ -7,7 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import Binning
+from neurospatial.geometry import Binning
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout.base import capture_build_params

@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._binning import Binning
+from neurospatial.geometry import Binning
 
 T = TypeVar("T")
 

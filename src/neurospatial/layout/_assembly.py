@@ -9,13 +9,20 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._binning import Binning, SpatialBins, TrackLinearization
-from neurospatial.geometry._capabilities import RectilinearGrid
-from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
-from neurospatial.geometry._face_normals import FaceNormals, geometric_normals
-from neurospatial.geometry._locators import Locator
-from neurospatial.geometry._native_faces import NativeFaces
-from neurospatial.geometry._rebin_spec import GridBinningSpec
+from neurospatial.geometry import (
+    Binning,
+    FaceNormals,
+    GridBinningSpec,
+    HexagonShapes,
+    Locator,
+    NativeFaces,
+    Outline,
+    RectilinearGrid,
+    SpatialBins,
+    TrackLinearization,
+    TriangleShapes,
+    geometric_normals,
+)
 
 
 def assemble_binning(

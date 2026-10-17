@@ -19,13 +19,10 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
-from neurospatial.geometry._coordinates import require_cartesian
-from neurospatial.geometry._locators import CallIndexes
-from neurospatial.geometry._region_bins import region_bin_mask
+from neurospatial.geometry import CallIndexes, region_bin_mask, require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry import Arena, Binning
     from neurospatial.ops._protocols import (
         RegionMaskConsumer,
         ResampleSourceConsumer,

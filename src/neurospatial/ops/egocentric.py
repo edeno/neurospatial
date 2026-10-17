@@ -77,9 +77,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
-from neurospatial.geometry._coordinates import require_cartesian
-from neurospatial.geometry._locators import CallIndexes
-from neurospatial.geometry._lookup import locate
+from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.ops._protocols import GraphLookupConsumer

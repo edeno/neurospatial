@@ -15,7 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._capabilities import RectilinearGrid
+    from neurospatial.geometry import RectilinearGrid
 
 # Ray direction components and segment lengths below this are treated as zero:
 # a segment shorter than this is a stationary sample, and a direction component

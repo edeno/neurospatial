@@ -27,14 +27,16 @@ from neurospatial.environment._cache import (
 )
 from neurospatial.environment._lookup import nearest_bin
 from neurospatial.environment._publication import _freeze_diffusion_geometry
-from neurospatial.geometry._binning import Binning, require_grid_context
-from neurospatial.geometry._composition import combined_diffusion
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
-from neurospatial.geometry._diffusion import (
+from neurospatial.geometry import (
+    Binning,
+    CartesianSystem,
     DiffusionGeometry,
+    EgocentricPolarSystem,
     FaceGeometry,
+    combined_diffusion,
+    locate,
+    require_grid_context,
 )
-from neurospatial.geometry._lookup import locate
 from neurospatial.ops.diffusion import (
     _HEAT_KERNEL_RANK_TOL,
     _RESOLUTION_MARGIN,
@@ -56,7 +58,7 @@ from neurospatial.ops.diffusion import (
 from neurospatial.ops.smoothing import _gaussian_kernel
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry import Arena
     from neurospatial.ops._types import KernelMode
 
 # Smoothing a field with NaN (missing) bins leaves a bin NaN when its smoothed

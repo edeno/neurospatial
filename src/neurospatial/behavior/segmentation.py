@@ -84,11 +84,11 @@ from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.geometry import CartesianSystem
 
 
 def _safe_gather(

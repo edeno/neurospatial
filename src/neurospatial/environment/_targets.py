@@ -12,14 +12,15 @@ from neurospatial._exceptions import (
     RegionNotFoundError,
     _format_error,
 )
-from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
-from neurospatial.geometry._lookup import locate
-from neurospatial.geometry._region_bins import region_bin_mask
+from neurospatial.geometry import (
+    CartesianSystem,
+    EgocentricPolarSystem,
+    locate,
+    region_bin_mask,
+)
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._binning import Binning
-    from neurospatial.geometry._locators import LookupIndexes
+    from neurospatial.geometry import Arena, Binning, LookupIndexes
     from neurospatial.regions import Regions
 
 _COUNT_WORDS = {1: "one bin", 2: "two bins, a start and an end"}

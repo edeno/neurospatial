@@ -814,12 +814,12 @@ class TestVisibilityOccupancy:
 
 
 class TestLineOfSightClear:
-    """Tests for _line_of_sight_clear helper function."""
+    """Tests for line_of_sight_clear helper function."""
 
     def test_clear_line_of_sight(self):
         """Line of sight is clear in open environment."""
         from neurospatial import Environment
-        from neurospatial.geometry._boundaries import _line_of_sight_clear
+        from neurospatial.geometry._boundaries import line_of_sight_clear
 
         rng = np.random.default_rng(42)
         positions_samples = rng.uniform(0, 100, (1000, 2))
@@ -828,14 +828,14 @@ class TestLineOfSightClear:
         observer = np.array([50.0, 50.0])
         target = np.array([60.0, 50.0])
 
-        assert _line_of_sight_clear(
+        assert line_of_sight_clear(
             env.binning, env.arena, observer, target, boundary_source="analysis"
         )
 
     def test_blocked_line_of_sight(self):
         """Line of sight is blocked by obstacle."""
         from neurospatial import Environment
-        from neurospatial.geometry._boundaries import _line_of_sight_clear
+        from neurospatial.geometry._boundaries import line_of_sight_clear
 
         # Create C-shaped environment
         rng = np.random.default_rng(42)
@@ -849,7 +849,7 @@ class TestLineOfSightClear:
         observer = np.array([20.0, 50.0])
         target = np.array([80.0, 50.0])
 
-        assert not _line_of_sight_clear(
+        assert not line_of_sight_clear(
             env.binning, env.arena, observer, target, boundary_source="analysis"
         )
 

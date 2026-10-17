@@ -9,7 +9,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.layout.helpers.regular_grid import _points_to_regular_grid_bin_ind
+from neurospatial.geometry import points_to_regular_grid_bin_ind
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ class TestPointsToBinIndReference:
         layout = env
 
         point = np.array([[5.0, 5.0]])
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             point,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,
@@ -70,7 +70,7 @@ class TestPointsToBinIndReference:
                 [19.0, 19.0],
             ]
         )
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             points,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,
@@ -95,7 +95,7 @@ class TestPointsToBinIndReference:
                 [5.0, 25.0],  # Above grid
             ]
         )
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             points,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,
@@ -118,7 +118,7 @@ class TestPointsToBinIndReference:
                 [5.0, 5.0],  # Valid point
             ]
         )
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             points,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,
@@ -141,7 +141,7 @@ class TestPointsToBinIndReference:
         # (upper right corner in L-shaped environment)
         point_in_inactive = np.array([[15.0, 15.0]])
 
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             point_in_inactive,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,
@@ -160,7 +160,7 @@ class TestPointsToBinIndReference:
         rng = np.random.default_rng(42)
         points = rng.uniform(-5, 25, (10000, 2))
 
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             points,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,
@@ -180,7 +180,7 @@ class TestPointsToBinIndReference:
         layout = env
 
         bin_centers = env.bin_centers
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             bin_centers,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,
@@ -206,7 +206,7 @@ class TestPointsToBinIndReference:
             ]
         )
 
-        result = _points_to_regular_grid_bin_ind(
+        result = points_to_regular_grid_bin_ind(
             points,
             grid_edges=layout.grid_edges,
             grid_shape=layout.grid_shape,

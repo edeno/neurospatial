@@ -27,11 +27,11 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import stats
 
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial import Environment
-    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.geometry import CartesianSystem
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [

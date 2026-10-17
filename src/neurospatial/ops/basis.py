@@ -102,14 +102,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     import networkx as nx
     from scipy import sparse
     from scipy.spatial import cKDTree
 
-    from neurospatial.geometry._diffusion import DiffusionGeometry
+    from neurospatial.geometry import DiffusionGeometry
     from neurospatial.ops._protocols import (
         BasisCentersConsumer,
         FieldPlotConsumer,

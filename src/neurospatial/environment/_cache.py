@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from scipy import sparse
     from scipy.spatial import cKDTree
 
-    from neurospatial.geometry._diffusion import DiffusionGeometry, FaceGeometry
+    from neurospatial.geometry import DiffusionGeometry, FaceGeometry
     from neurospatial.ops._types import KernelMode
     from neurospatial.ops.diffusion import DiffusionEigenbasis, MRFEigenbasis
 

@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._diffusion import FaceGeometry
+    from neurospatial.geometry import FaceGeometry
     from neurospatial.ops._protocols import (
         DivergenceConsumer,
         GradientConsumer,

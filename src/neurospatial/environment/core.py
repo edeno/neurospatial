@@ -112,16 +112,18 @@ from neurospatial.environment._visualization import (
     _plot_1d,
     _plot_field,
 )
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._boundary_bins import boundary_bins
-from neurospatial.geometry._composition import _bin_sources, _component_keys
-from neurospatial.geometry._coordinates import (
+from neurospatial.geometry import (
+    Binning,
     CartesianSystem,
     EgocentricPolarSystem,
+    boundary_bins,
+    composition_bin_sources,
+    composition_component_keys,
+    locate,
+    own_arena,
+    own_binning,
+    region_bin_mask,
 )
-from neurospatial.geometry._lookup import locate
-from neurospatial.geometry._ownership import own_arena, own_binning
-from neurospatial.geometry._region_bins import region_bin_mask
 from neurospatial.layout import LayoutType
 from neurospatial.ops.calculus import (
     _compute_differential_operator,
@@ -144,9 +146,7 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment._factories import PolygonType
-    from neurospatial.geometry._arena import Arena
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-    from neurospatial.geometry._polygon_cells import ClipMapping
+    from neurospatial.geometry import Arena, ClipMapping, DiffusionGeometry
     from neurospatial.layout._scale_bar import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import KernelMode
@@ -1204,7 +1204,7 @@ class Environment(Generic[_C]):
     @property
     def component_keys(self) -> tuple[str, ...]:
         """Stable combined component keys, or an empty tuple for a native environment."""
-        return _component_keys(self._binning)
+        return composition_component_keys(self._binning)
 
     @property
     def bin_sources(self) -> tuple[tuple[str, int], ...] | None:
@@ -1212,7 +1212,7 @@ class Environment(Generic[_C]):
 
         Subsets and clips retain original source IDs; split cells may repeat an ID.
         """
-        return _bin_sources(self._binning)
+        return composition_bin_sources(self._binning)
 
     def get_bridge_attributes(self) -> pd.DataFrame:
         """Return an independent table of retained automatic navigation bridges.

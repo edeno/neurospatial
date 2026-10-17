@@ -8,9 +8,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import Binning, TrackLinearization
-from neurospatial.geometry._explicit import component_extent
-from neurospatial.geometry._face_builders import track_junctions
+from neurospatial.geometry import (
+    Binning,
+    TrackLinearization,
+    component_extent,
+    project_1d_to_2d,
+    track_junctions,
+)
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_track, plot_track_linear
@@ -19,7 +23,6 @@ from neurospatial.layout.helpers.graph import (
     _create_graph_layout_connectivity_graph,
     _find_bin_for_linear_position,
     _get_graph_bins,
-    _project_1d_to_2d,
 )
 from neurospatial.layout.mixins import _KDTreeMixin
 from neurospatial.layout.validation import validate_connectivity_graph
@@ -124,7 +127,7 @@ class GraphLayout(_KDTreeMixin):
         )
 
         self.linear_bin_centers_ = linear_bin_centers[self.active_mask]
-        self.bin_centers = _project_1d_to_2d(
+        self.bin_centers = project_1d_to_2d(
             self.linear_bin_centers_,
             track_graph,
             edge_order,

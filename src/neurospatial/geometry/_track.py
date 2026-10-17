@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 Edge = tuple[Any, Any]
 
 
-def _project_1d_to_2d(
+def project_1d_to_2d(
     linear_position: NDArray[np.float64],
     graph: nx.Graph,
     edge_order: list[Edge],

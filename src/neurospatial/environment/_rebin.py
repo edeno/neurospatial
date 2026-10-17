@@ -25,15 +25,17 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._publication import _Derivation
-from neurospatial.geometry._arena import (
+from neurospatial.geometry import (
     Arena,
+    Binning,
+    KnownFaces,
+    NativeFaces,
+    SpatialBins,
+    apply_walls,
+    materialize_cells,
+    prepare_bins,
+    transform_binning,
 )
-from neurospatial.geometry._arena_fit import apply_walls
-from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
-from neurospatial.geometry._derive import transform_binning
-from neurospatial.geometry._explicit import prepare_bins
-from neurospatial.geometry._native_faces import NativeFaces
-from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.layout._construction import built_layout_data
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
@@ -42,7 +44,7 @@ from neurospatial.layout.helpers.utils import check_grid_size_safety
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry._coordinates import CartesianSystem
+    from neurospatial.geometry import CartesianSystem
 
 
 @dataclass(frozen=True)

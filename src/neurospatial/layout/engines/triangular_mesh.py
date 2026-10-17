@@ -12,10 +12,13 @@ from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry._binning import Binning
-from neurospatial.geometry._components import Outline, TriangleShapes
-from neurospatial.geometry._explicit import component_extent
-from neurospatial.geometry._locators import MeshLocator
+from neurospatial.geometry import (
+    Binning,
+    MeshLocator,
+    Outline,
+    TriangleShapes,
+    component_extent,
+)
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_triangles

@@ -544,7 +544,7 @@ def _bin_center_coords(
     if env is None:
         return {}
 
-    from neurospatial.geometry._coordinates import EgocentricPolarSystem
+    from neurospatial.geometry import EgocentricPolarSystem
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     # bin-center data IS present (env was given); a shape disagreement here is

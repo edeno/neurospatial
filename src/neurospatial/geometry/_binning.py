@@ -23,7 +23,7 @@ from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._locators import Locator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
-from neurospatial.geometry._track import _project_1d_to_2d
+from neurospatial.geometry._track import project_1d_to_2d
 
 if TYPE_CHECKING:
     from neurospatial.geometry._polygon_cells import ClipMapping, PolygonCells
@@ -435,7 +435,7 @@ class TrackLinearization(ReadOnlyState):
     ) -> NDArray[np.float64]:
         """Map ``(n_points,)`` absolute linear positions into track coordinates."""
 
-        return _project_1d_to_2d(
+        return project_1d_to_2d(
             linear_coordinates,
             self.graph,
             list(self.edge_order),

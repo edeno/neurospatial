@@ -325,10 +325,9 @@ def test_reading_constructs_the_environment_once(how, tmp_path, monkeypatch):
         return setup(cls, binning, **kwargs)
 
     monkeypatch.setattr(_publication, "publish", counting_setup)
-    from neurospatial.geometry import _validation
 
     with patch.object(
-        _validation, "_validate_components", wraps=_validation._validate_components
+        _publication, "validate_components", wraps=_publication.validate_components
     ) as component_check:
         restored = _round_trip(original, how, tmp_path)
     assert component_check.call_count == 1

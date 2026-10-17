@@ -42,8 +42,7 @@ from neurospatial.encoding._spatial_counts import (
     prepare_frame_binning,
 )
 from neurospatial.encoding._validation import validate_times as _validate_times
-from neurospatial.geometry._boundaries import _wall_hit_bins
-from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry import require_cartesian, wall_hit_bins
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
@@ -151,7 +150,7 @@ def _precompute_view_bins(
 
     max_distance = 100.0
     if gaze_model != "fixed_distance":
-        from neurospatial.geometry._boundaries import boundary_geometry, search_distance
+        from neurospatial.geometry import boundary_geometry, search_distance
 
         max_distance = search_distance(
             boundary_geometry(env.binning, env.arena, boundary_source), positions
@@ -179,7 +178,7 @@ def _precompute_view_bins(
         if gaze_model != "fixed_distance":
             origins = positions[valid_view_mask]
             valid_bins = env.bin_at(np.nextafter(valid_viewed, origins))
-            valid_bins = _wall_hit_bins(
+            valid_bins = wall_hit_bins(
                 env.binning,
                 env.arena,
                 valid_viewed,

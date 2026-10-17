@@ -117,7 +117,7 @@ def _track_cell_segments(track: TrackLinearization) -> NDArray[np.intp] | None:
     return segments if cell == n_cells else None
 
 
-def _graph_from_binning(binning: Binning) -> nx.Graph:
+def graph_from_binning(binning: Binning) -> nx.Graph:
     """Build navigation attributes without changing bin or neighbor-pair order.
 
     Graph vectors follow graph edge orientation, from the lower to the higher

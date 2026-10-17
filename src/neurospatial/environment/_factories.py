@@ -17,11 +17,14 @@ from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Provenance, declared_metadata
-from neurospatial.geometry._arena import OpenArena, TrackArena
-from neurospatial.geometry._composition import CombinedLocator
-from neurospatial.geometry._coordinates import CartesianSystem
-from neurospatial.geometry._explicit import prepare_bins
-from neurospatial.geometry._ownership import own_arena
+from neurospatial.geometry import (
+    CartesianSystem,
+    CombinedLocator,
+    OpenArena,
+    TrackArena,
+    own_arena,
+    prepare_bins,
+)
 from neurospatial.layout import LayoutType, find_layout_type
 from neurospatial.layout.factories import create_layout, list_available_layouts
 from neurospatial.layout.helpers.track_graphs import (
@@ -32,7 +35,7 @@ from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry._arena import Arena
+    from neurospatial.geometry import Arena
     from neurospatial.layout.base import LayoutEngine
 
 PolygonType = type[shapely.geometry.Polygon]
