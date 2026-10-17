@@ -355,6 +355,18 @@ def diffusion_eigenbasis(cache: AnalysisCache) -> _DiffusionEigenbasis:
     return cache.get(DIFFUSION_EIGENBASIS, _DiffusionEigenbasis)
 
 
+def _check_kernel_mode(mode: str) -> None:
+    """Refuse a diffusion-kernel mode other than the three defined ones."""
+    if mode not in ("transition", "density", "average"):
+        raise ValueError(
+            f"mode must be one of 'transition', 'density' or 'average' "
+            f"(got {mode!r}). Use 'transition' for mass-conserving smoothing of "
+            "extensive quantities, 'density' for count-to-density (KDE), or "
+            "'average' for volume-unbiased averaging of an intensive field "
+            "(rate map)."
+        )
+
+
 def _compute_kernel(
     cache: AnalysisCache,
     binning: Binning,
@@ -364,15 +376,7 @@ def _compute_kernel(
     use_cache: bool = True,
 ) -> NDArray[np.float64]:
     """Dense finite-volume diffusion kernel, optionally cached by bandwidth and mode."""
-    # Validate mode.
-    valid_modes = {"transition", "density", "average"}
-    if mode not in valid_modes:
-        raise ValueError(
-            f"mode must be one of {valid_modes} (got '{mode}'). "
-            "Use 'transition' for mass-conserving smoothing of extensive "
-            "quantities, 'density' for count-to-density (KDE), or 'average' "
-            "for volume-unbiased averaging of an intensive field (rate map)."
-        )
+    _check_kernel_mode(mode)
 
     # The kernel uses the cached diffusion geometry, whose cell measures
     # (the layout's bin sizes) are the mass matrix M used by every mode.
@@ -473,24 +477,7 @@ def _smooth(
             "operations."
         )
 
-    # Validate bandwidth
-    if bandwidth <= 0:
-        raise ValueError(
-            f"bandwidth must be positive (got {bandwidth}). "
-            "Bandwidth controls the spatial scale of smoothing."
-        )
-
-    # Validate mode
-    valid_modes = {"transition", "density", "average"}
-    if mode not in valid_modes:
-        raise ValueError(
-            f"mode must be one of {valid_modes} (got '{mode}'). "
-            "Use 'transition' for mass-conserving smoothing of extensive "
-            "data, 'density' for count-to-density, or 'average' for "
-            "volume-unbiased averaging of an intensive field."
-        )
-
-    # Apply the diffusion smoothing via the matrix-free apply-path. On a
+    # _diffuse checks mode and bandwidth. Apply the diffusion smoothing via the matrix-free apply-path. On a
     # NaN-free field this is a pure linear operator -- no clip / renorm -- so
     # smoothing a SIGNED field is preserved; a field with NaN is averaged over
     # its observed bins (mode="average" only). It reproduces the dense kernel to
@@ -509,11 +496,7 @@ def _diffuse(
     backend: Literal["numpy", "jax"] = "numpy",
 ) -> NDArray[np.float64]:
     """Validate a field batch and apply the cached truncated heat operator."""
-    if mode not in ("transition", "density", "average"):
-        raise ValueError(
-            f"mode must be one of {{'transition', 'density', 'average'}} "
-            f"(got '{mode}')."
-        )
+    _check_kernel_mode(mode)
     if backend not in ("numpy", "jax"):
         raise ValueError(f"backend must be 'numpy' or 'jax' (got '{backend}').")
     if not bandwidth > 0:
