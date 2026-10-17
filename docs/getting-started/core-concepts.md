@@ -13,6 +13,7 @@ neurospatial converts **continuous spatial coordinates** into **discrete bins** 
 
 ### Example: Continuous to Discrete
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
@@ -22,8 +23,9 @@ continuous_position = np.array([[10.5, 12.3]])
 
 # Create discretized environment
 env = Environment.from_samples(
-    positions=continuous_position,
-    bin_size=2.0  # 2 cm bins
+    continuous_position,
+    bin_size=2.0,  # 2 cm bins
+    units="cm",
 )
 
 # Map to discrete bin index
@@ -50,19 +52,35 @@ A **bin** is a discrete spatial unit with:
 
 **Active bins** are bins considered part of the environment. **Inactive bins** are excluded (e.g., walls, obstacles, or unvisited regions).
 
+<!-- docs-test: run -->
 ```python
+import numpy as np
+from neurospatial import Environment
+
+# Tracked positions (cm) from a 100 x 100 cm open field
+rng = np.random.default_rng(0)
+positions = rng.uniform(0.0, 100.0, size=(2000, 2))
+
 # By default, only bins that contain at least one sample are active
-env = Environment.from_samples(data, bin_size=2.0)
+env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 print(f"Visited bins: {env.n_bins}")
 
 # Require several samples before a bin counts as visited
-env_strict = Environment.from_samples(data, bin_size=2.0, bin_count_threshold=5)
+env_strict = Environment.from_samples(
+    positions, bin_size=2.0, units="cm", bin_count_threshold=5
+)
 print(f"Bins with at least 5 samples: {env_strict.n_bins}")
 
 # Keep every bin in the sampled extent, visited or not
-env_all = Environment.from_samples(data, bin_size=2.0, infer_active_bins=False)
+env_all = Environment.from_samples(
+    positions, bin_size=2.0, units="cm", infer_active_bins=False
+)
 print(f"All bins in the extent: {env_all.n_bins}")
 ```
+
+For an open arena, `Environment.open_field(positions, bin_size=2.0)` also
+fills interior holes, so a patch the animal happened not to visit stays part
+of the arena.
 
 ### Why Active/Inactive Matters
 
@@ -88,7 +106,9 @@ Every environment includes a **connectivity graph** (NetworkX `Graph`) that defi
 - **Edges**: Connect neighboring bins
 - **Attributes**: Store spatial metadata
 
+<!-- docs-test: run -->
 ```python
+# `env` is the 100 x 100 cm open field from the example above
 # Access the connectivity graph (a NetworkX Graph)
 G = env.connectivity
 
@@ -134,26 +154,33 @@ Graphs provide:
 
 Factory methods automatically choose the appropriate engine:
 
+<!-- docs-test: run -->
 ```python
+import numpy as np
+from shapely.geometry import Point
+from neurospatial import Environment
+
+rng = np.random.default_rng(0)
+positions = rng.uniform(0.0, 100.0, size=(2000, 2))  # cm
+
 # Regular grid (automatic)
-env_grid = Environment.from_samples(data, bin_size=2.0)
+env_grid = Environment.from_samples(positions, bin_size=2.0)
 
 # Hexagonal (explicit)
-env_hex = Environment.from_samples(
-    data, bin_size=2.0, layout="Hexagonal"
-)
+env_hex = Environment.from_samples(positions, bin_size=2.0, layout="Hexagonal")
 
-# Polygon-bounded (automatic)
-env_poly = Environment.from_polygon(polygon, bin_size=2.0)
+# Polygon-bounded (automatic): a circular arena of radius 40 cm
+arena_outline = Point(50.0, 50.0).buffer(40.0)
+env_poly = Environment.from_polygon(arena_outline, bin_size=2.0)
 
-# 1D linearized (automatic)
-env_1d = Environment.from_graph(
-    graph=graph,
-    edge_order=edge_order,
-    edge_spacing=0.0,
+# 1D linearized track (automatic)
+env_1d = Environment.linear_track(
+    endpoints=[(0.0, 0.0), (100.0, 0.0)],
     bin_size=2.0,
     track_width=10.0,  # full corridor width; needed to assign positions to bins
 )
+
+print(env_grid.layout_type, env_hex.layout_type, env_poly.layout_type, env_1d.layout_type)
 ```
 
 Layout engines are wired into `Environment` through a **protocol** (structural
@@ -171,9 +198,10 @@ Most environments are **N-dimensional** (typically 2D or 3D):
 - Spatial queries in original coordinate space
 - Multiple neighbors per bin (4-8 in 2D, 6-26 in 3D)
 
+<!-- docs-test: run -->
 ```python
-# 2D environment
-env_2d = Environment.from_samples(data_2d, bin_size=2.0)
+# 2D environment, from the tracked positions above
+env_2d = Environment.from_samples(positions, bin_size=2.0)
 print(f"Dimensionality: {env_2d.n_dims}D")
 print(f"Is 1D: {env_2d.is_linearized_track}")  # False
 
@@ -190,8 +218,16 @@ bin_idx = env_2d.bin_at(point_2d)[0]
 - Linearize complex 2D/3D geometries into 1D
 - Essential for track-based experiments (T-maze, plus maze, etc.)
 
+`Environment.linear_track()` and `Environment.maze()` (plus, T and W mazes)
+build the common tracks from their endpoints and junctions; see
+[presets](../user-guide/environments.md#presets). For any other track, pass a
+graph of the track's centerline to `Environment.from_graph()`:
+
+<!-- docs-test: run -->
 ```python
 import networkx as nx
+import numpy as np
+from neurospatial import Environment
 
 # Define track structure
 graph = nx.Graph()
@@ -233,14 +269,16 @@ position_2d_reconstructed = env_1d.linear_to_nd(position_1d)
 An environment's geometry, name, units, frame and named regions are read-only.
 Set labels when constructing it:
 
+<!-- docs-test: run -->
 ```python
-env = Environment.from_samples(data, bin_size=2.0, units="cm", frame="arena")
+env = Environment.from_samples(positions, bin_size=2.0, units="cm", frame="arena")
 ```
 
 Units describe the coordinates supplied; setting `units="cm"` does not convert
 pixels into centimeters. Calibrate coordinates before construction. To correct
 a declaration or rename an analysis, keep the returned environment:
 
+<!-- docs-test: run -->
 ```python
 renamed = env.with_metadata(name="session_1_checked")
 ```
@@ -257,6 +295,7 @@ analysis caches. It does not change `env` or rescale coordinates. Use factories,
 - Built with a mutable `Regions` collection and snapshotted by the environment
 - JSON serialization support
 
+<!-- docs-test: run -->
 ```python
 from shapely.geometry import Point
 from neurospatial import Regions
@@ -315,16 +354,22 @@ Environment()
 
 | Factory Method | Purpose |
 |----------------|---------|
-| `Environment.from_samples()` | Create from data points |
-| `Environment.from_graph()` | Create 1D linearized track |
+| `Environment.from_samples()` | Bin tracked positions |
+| `Environment.open_field()` | Open arena from tracked positions (fills interior holes) |
+| `Environment.linear_track()` | Linear or piecewise-linear track from its endpoints |
+| `Environment.maze()` | Plus, T or W maze from its junction and arm positions |
+| `Environment.from_graph()` | Any other track, from a graph of its centerline |
 | `Environment.from_polygon()` | Grid bounded by polygon |
 | `Environment.from_grid_mask()` | Pre-defined N-D boolean mask |
 | `Environment.from_pixel_mask()` | Binary image mask |
+| `Environment.from_polar_egocentric()` | Egocentric (distance, angle) bins around the animal |
+| `Environment.from_bins()` | Explicit bins you computed yourself |
 | `Environment.from_layout()` | A built layout engine (triangular mesh, your own engine) |
+| `Environment.combine()` | Join separate environments, such as two linked arenas |
 
 Factory methods ensure:
 
-- Proper initialization and fitting
+- Complete, validated geometry and connectivity
 - Correct layout engine selection
 - Validation of parameters
 - Sensible defaults

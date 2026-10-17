@@ -41,6 +41,74 @@ The inferred domain describes the active cells. An unvisited patch does not
 establish a physical wall. Inspect the support before interpreting missing
 occupancy as inaccessible space.
 
+## Presets for common apparatus { #presets }
+
+Three presets cover the usual apparatus. Each returns an ordinary
+`Environment`, so every analysis below works the same way on it.
+
+`open_field()` bins tracked positions like `from_samples()` but fills interior
+holes. A patch in the middle of the arena that the animal happened not to
+visit stays in the analysis, as an unvisited bin rather than a gap:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+rng = np.random.default_rng(0)
+positions = rng.uniform(0.0, 100.0, size=(5000, 2))  # 100 x 100 cm box
+# The animal never crossed an 8 cm patch in the center
+positions = positions[np.linalg.norm(positions - 50.0, axis=1) > 8.0]
+
+arena = Environment.open_field(positions, bin_size=5.0, units="cm")
+visited = Environment.from_samples(positions, bin_size=5.0, units="cm")
+
+center = np.array([[50.0, 50.0]])
+assert arena.contains(center).all()  # the patch is part of the arena
+assert not visited.contains(center).any()  # from_samples keeps only visited bins
+```
+
+`linear_track()` and `maze()` build tracks from their geometry, not from
+positions, and linearize them so place fields can be computed along the track.
+`linear_track()` takes the track's endpoints (or a list of corner positions for
+a bent track). `maze()` takes a plus, T or W maze from the positions of its
+center, junctions and arm ends. `track_width` is the full corridor width;
+positions farther from the centerline than half of it are outside the track:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+track = Environment.linear_track(
+    endpoints=[(0.0, 0.0), (180.0, 0.0)],
+    bin_size=2.0,
+    track_width=8.0,
+    units="cm",
+)
+assert track.is_linearized_track
+np.testing.assert_allclose(track.to_linear(np.array([[90.0, 2.0]])), [90.0])
+assert track.bin_at(np.array([[90.0, 20.0]]))[0] == -1  # 20 cm off the track
+
+plus_maze = Environment.maze(
+    kind="plus",
+    node_positions={
+        "center": (0.0, 0.0),
+        "north": (0.0, 50.0),
+        "south": (0.0, -50.0),
+        "east": (50.0, 0.0),
+        "west": (-50.0, 0.0),
+    },
+    bin_size=2.0,
+    track_width=8.0,
+    units="cm",
+)
+assert plus_maze.is_linearized_track
+```
+
+For any other track, build a NetworkX graph of the centerline and pass it to
+`from_graph()`.
+
 ## Start with a mask
 
 ### A grid in physical coordinates

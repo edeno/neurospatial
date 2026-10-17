@@ -2761,6 +2761,16 @@ class Environment(Generic[_C]):
         ``dilate``, ``fill_holes``, ``close_gaps``) only when sparse or noisy
         sampling leaves holes, gaps, or a ragged boundary in the active-bin mask.
 
+        For common apparatus, start from a preset instead:
+
+        - :meth:`open_field` -- an open arena from tracked positions; the same
+          binning with interior holes filled, so a briefly unvisited patch in
+          the middle of the arena stays in the analysis.
+        - :meth:`linear_track` -- a straight or piecewise-linear track from its
+          endpoints, linearized for 1-D place fields.
+        - :meth:`maze` -- a plus, T or W maze from the positions of its
+          junctions and arm ends.
+
         Parameters
         ----------
         positions : array, shape (n_samples, n_dims)
@@ -2843,6 +2853,9 @@ class Environment(Generic[_C]):
 
         See Also
         --------
+        open_field : Open-arena preset of this factory (fills interior holes).
+        linear_track : Linear or piecewise-linear track preset.
+        maze : Plus, T or W maze preset.
         from_polygon : Create environment with polygon-defined boundary.
         from_grid_mask : Create environment from pre-defined boolean mask.
         from_pixel_mask : Create environment from binary image mask.

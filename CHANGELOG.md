@@ -862,6 +862,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The presets `Environment.open_field`, `Environment.linear_track` and
+  `Environment.maze` are easy to find: the `from_samples` docstring, a new
+  Presets section in the environments guide, the quickstart and Core Concepts
+  point to them. Every Core Concepts example now runs as written (several used
+  undefined `data`, `polygon` and `graph` variables), and the quickstart's
+  example peak rate (about 12 Hz) matches what the code prints.
+
 - The `Environment` docstring examples run in the documentation tests. The
   skipped ones now execute on fixed example data, so they show real output:
   `from_dict` compares the round trip with `np.array_equal(env.bin_centers,
