@@ -199,6 +199,8 @@ def _interpolate_nearest(
             cache,
             binning,
             points,
+            # interpolate is Cartesian-only, so the centers are positions.
+            coordinates=CartesianSystem(),
             tie_break="lowest_index",
             return_dist=False,
             max_distance=None,

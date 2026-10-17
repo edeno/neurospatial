@@ -44,6 +44,10 @@ class CoordinateSystem(Protocol):
         """The ranges of the axes measured in length units."""
         ...
 
+    def cartesian_embedding(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Points in a Cartesian frame where Euclidean distance is physical distance."""
+        ...
+
     def fallback_lengths(self, env: CellLengthConsumer) -> NDArray[np.float64]:
         """Length scales when no connectivity edge has a positive distance."""
         ...
@@ -72,6 +76,10 @@ class CartesianSystem:
     ) -> Sequence[tuple[float, float]]:
         """Every axis is a length."""
         return dimension_ranges
+
+    def cartesian_embedding(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """The points themselves: Cartesian positions are already Cartesian."""
+        return points
 
     def fallback_lengths(self, env: CellLengthConsumer) -> NDArray[np.float64]:
         """Edge length of a cube with each bin's volume."""
@@ -136,6 +144,26 @@ class EgocentricPolarSystem:
     ) -> Sequence[tuple[float, float]]:
         """Only the distance axis is a length."""
         return dimension_ranges[:1]
+
+    def cartesian_embedding(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Place ``(distance, angle)`` rows in the animal's egocentric plane.
+
+        Parameters
+        ----------
+        points : ndarray, shape (n_points, 2)
+            ``(distance, angle)`` rows, angles in radians (0 = ahead,
+            +π/2 = left).
+
+        Returns
+        -------
+        ndarray, shape (n_points, 2)
+            ``(distance · cos(angle), distance · sin(angle))``: x ahead of the
+            animal and y to its left, in the distance units. Euclidean
+            distance between two rows is the physical distance between the
+            places they name, and angles a whole turn apart coincide.
+        """
+        distance, angle = points[:, 0], points[:, 1]
+        return np.column_stack((distance * np.cos(angle), distance * np.sin(angle)))
 
     def fallback_lengths(self, env: CellLengthConsumer) -> NDArray[np.float64]:
         """Radial bin widths from the polar grid's distance axis."""

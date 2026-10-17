@@ -9,8 +9,9 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
 from neurospatial._constants import KDTREE_LEAF_SIZE
-from neurospatial.environment._cache import KDTREE, AnalysisCache
+from neurospatial.environment._cache import EMBEDDED_KDTREE, KDTREE, AnalysisCache
 from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
 from neurospatial.geometry._locators import NearestBinLocator
 from neurospatial.ops.mapping import (
     TieBreakStrategy,
@@ -24,6 +25,7 @@ def nearest_bin(
     binning: Binning,
     points: NDArray[np.float64],
     *,
+    coordinates: CartesianSystem | EgocentricPolarSystem,
     tie_break: TieBreakStrategy | Literal["lowest_index", "closest_center"],
     return_dist: bool,
     max_distance: float | None,
@@ -31,17 +33,28 @@ def nearest_bin(
 ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]:
     """Find nearest bin centers with the environment's cached KD-tree.
 
+    Distances are physical: on an egocentric polar environment both the bin
+    centers and the points are first placed in the animal's Cartesian plane,
+    ``(distance · cos(angle), distance · sin(angle))``.
+
     A point with a NaN coordinate is a missing sample: bin ``-1`` and distance
     NaN. A point with an infinite coordinate is outside: bin ``-1`` and
     distance ``inf``. Only finite points are queried.
     """
     resolved = _validate_nearest_options(tie_break, max_distance, max_distance_factor)
-    centers = binning.bins.centers
-    tree = center_tree(cache, binning)
+    if isinstance(coordinates, EgocentricPolarSystem):
+        centers, tree = cache.get(
+            EMBEDDED_KDTREE, lambda: _embedded_tree(binning, coordinates)
+        )
+    else:
+        centers, tree = binning.bins.centers, center_tree(cache, binning)
 
     def query(
         rows: NDArray[np.float64],
     ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]:
+        rows = np.asarray(rows)
+        if rows.ndim == 2 and rows.shape[1] == binning.bins.n_dims:
+            rows = coordinates.cartesian_embedding(rows.astype(np.float64))
         return _nearest_bin_query(
             centers,
             tree,
@@ -69,6 +82,15 @@ def nearest_bin(
         else:
             bins[finite] = found
     return (bins, distances) if return_dist else bins
+
+
+def _embedded_tree(
+    binning: Binning, coordinates: EgocentricPolarSystem
+) -> tuple[NDArray[np.float64], cKDTree]:
+    """The bin centers in the egocentric Cartesian plane, and their KD-tree."""
+    embedded = coordinates.cartesian_embedding(binning.bins.centers)
+    embedded.setflags(write=False)
+    return embedded, cKDTree(embedded, leafsize=KDTREE_LEAF_SIZE)
 
 
 def center_tree(cache: AnalysisCache, binning: Binning) -> cKDTree:

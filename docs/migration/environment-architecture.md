@@ -1028,6 +1028,33 @@ assert bins[0] == bins[1] >= 0  # one direction, one bin
 assert bins[2] == -1  # beyond the 40 cm surround
 ```
 
+`nearest_bin` on a polar environment now measures the physical distance
+between places, in the environment's length units: it compares
+`(distance * cos(angle), distance * sin(angle))` positions in the animal's
+plane, not the raw `(distance, angle)` columns. It can therefore return a
+different bin than before, and `return_dist=True` distances and
+`max_distance` are lengths. It is still the nearest bin center, not the bin
+that contains the row; use `bin_at` for that.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+polar_env = Environment.from_polar_egocentric(
+    distance_range=(0.0, 40.0),
+    angle_range=(-np.pi, np.pi),
+    distance_bin_size=10.0,
+    angle_bin_size=np.pi / 4,
+    units="cm",
+)
+row = np.array([[10.2, 0.0]])  # 10.2 cm straight ahead
+# Before: nearest_bin compared cm and radians as one unit
+nearest, distance_cm = polar_env.nearest_bin(row, return_dist=True)
+containing = polar_env.bin_at(row)  # the 10-20 cm ring, ahead
+assert polar_env.bin_centers[containing[0], 0] == 15.0
+```
+
 The analysis functions that read positions as the animal's allocentric
 positions keep refusing a polar environment, now with their own name in the
 message: `compute_spatial_rate`, `compute_spatial_rates`,

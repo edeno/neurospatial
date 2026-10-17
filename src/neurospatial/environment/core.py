@@ -1303,20 +1303,23 @@ class Environment(Generic[_C]):
         max_distance: float | None = None,
         max_distance_factor: float | None = None,
     ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]:
-        """Find the nearest bin center for every point in stored coordinates.
+        """Find the nearest bin center for every point, by physical distance.
 
         Parameters
         ----------
         positions : ndarray, shape (n_points, n_dims)
             Coordinates to compare with bin centers, such as the animal's
-            positions, in the environment's stored coordinates.
+            positions, in the environment's stored coordinates:
+            ``(distance, angle)`` rows on an egocentric polar environment.
         tie_break : TieBreakStrategy or str, default=TieBreakStrategy.LOWEST_INDEX
             Select the lowest bin ID among ties, or use "closest_center" for
             the tree's nearest candidate.
         return_dist : bool, default=False
-            Also return Euclidean distances to the selected centers.
+            Also return the distances to the selected centers, in the
+            environment's length units.
         max_distance : float or None, optional
-            Maximum Euclidean distance; rejected points return bin ID -1.
+            Maximum distance, in length units; rejected points return bin
+            ID -1.
         max_distance_factor : float or None, optional
             Maximum distance as a multiple of typical center spacing. Cannot
             be combined with max_distance. Without either limit, the existing
@@ -1339,17 +1342,43 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        This compares Euclidean distance in stored coordinate columns and
-        reuses an environment-owned KD-tree. It does not test containment;
-        use bin_at() for Cartesian occupancy and trajectory assignment.
-        On polar environments, radius and angle are compared as raw columns
-        with mixed coordinate units. That is neither physical polar distance
-        nor containment.
+        This compares Euclidean distance and reuses an environment-owned
+        KD-tree. It does not test containment; use bin_at() for occupancy and
+        trajectory assignment. On an egocentric polar environment the bin
+        centers and the points are first placed in the animal's Cartesian
+        plane, ``(distance * cos(angle), distance * sin(angle))`` (x ahead,
+        y to the left), so the distance is the physical distance between the
+        two places, angles a whole turn apart coincide, and a point near the
+        animal can be nearest to any bin of the innermost ring.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> surround = Environment.from_polar_egocentric(
+        ...     distance_range=(0.0, 40.0),
+        ...     angle_range=(-np.pi, np.pi),
+        ...     distance_bin_size=10.0,
+        ...     angle_bin_size=np.pi / 4,
+        ... )
+        >>> bins, dist = surround.nearest_bin(
+        ...     np.array([[15.0, 0.4], [15.0, 0.4 + 2 * np.pi]]), return_dist=True
+        ... )
+        >>> bool(bins[0] == bins[1])
+        True
+        >>> center_distance, center_angle = surround.bin_centers[bins[0]]
+        >>> expected = np.hypot(
+        ...     15 * np.cos(0.4) - center_distance * np.cos(center_angle),
+        ...     15 * np.sin(0.4) - center_distance * np.sin(center_angle),
+        ... )
+        >>> bool(np.isclose(dist[0], expected))
+        True
         """
         return nearest_bin(
             self._cache,
             self._binning,
             positions,
+            coordinates=self._coordinate_system,
             tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
@@ -1357,7 +1386,12 @@ class Environment(Generic[_C]):
         )
 
     def bin_center_tree(self) -> cKDTree:
-        """Return the KD-tree over ``bin_centers`` that ``nearest_bin`` searches.
+        """Return the KD-tree over ``bin_centers``.
+
+        On Cartesian environments it is the tree ``nearest_bin`` searches. On
+        an egocentric polar environment it is over the stored
+        ``(distance, angle)`` columns, while ``nearest_bin`` searches the
+        centers' Cartesian embedding.
 
         The tree is built on first use and kept in the analysis cache: it is
         shared with relabelled copies and released by ``clear_cache()``. Use

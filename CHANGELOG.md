@@ -488,6 +488,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `nearest_bin` on an egocentric polar environment measures physical
+  distance. It places the bin centers and the `(distance, angle)` rows in the
+  animal's plane, `(distance * cos(angle), distance * sin(angle))`, before
+  comparing them, so its distances, `max_distance` and the default
+  far-point limit are in the environment's length units and angles a whole
+  turn apart name one direction. It used to compare the stored columns as if
+  centimeters and radians were one unit, and could return a bin on the other
+  side of the animal. Results change for polar environments only.
+  `bin_center_tree()` is still the tree over the stored columns.
+
 - Every `Environment` method that returns bin indices returns `np.intp`, the
   dtype NumPy uses for indexing, as `bin_at` already did. `bin_sequence`,
   `bin_sequence_with_runs(...).bins`, `components` and `rings` returned

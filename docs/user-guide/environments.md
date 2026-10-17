@@ -193,9 +193,12 @@ For nearest-center assignment, use `env.nearest_bin(positions)`. It reuses the
 environment's query tree and supports tie-breaking and distance limits.
 This is different from `bin_at()`, which finds the cell that contains each
 position (on a polar environment, each `(distance, angle)` row).
-For compatibility, nearest-center queries on polar environments compare the
-stored radius and angle columns as ordinary Euclidean coordinates with mixed
-units. These values are not physical polar distances or containment tests.
+On an egocentric polar environment, `nearest_bin` measures physical distance:
+it places the bin centers and the `(distance, angle)` rows in the animal's
+plane, `(distance * cos(angle), distance * sin(angle))`, before comparing
+them. Its distances and `max_distance` are in the environment's length units.
+It is still not a containment test: use `bin_at()` for the bin that holds a
+row.
 
 For a custom numerical analysis, use `env.coordinate_system` to interpret the
 columns and `env.get_diffusion_geometry()` to inspect conductances, cell measures

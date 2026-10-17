@@ -1258,7 +1258,7 @@ class TestPolarTypeAndGeometry:
 # is checked on a polar environment and listed here, or moved to
 # CartesianCoordinates if it reads bin centers as Cartesian coordinates.
 _POLAR_INHERITED_MEMBERS = {
-    "nearest-bin lookup in stored radius/angle columns": {
+    "nearest-bin lookup in the egocentric Cartesian embedding": {
         "nearest_bin",
     },
     "containment of (distance, angle) rows, angles wrapped to the range": {

@@ -247,6 +247,8 @@ _MISSING = object()
 _LOOKUP_INDEX = object()
 
 KDTREE: CacheKey[cKDTree] = CacheKey("kdtree")
+# The KD-tree over the bin centers' Cartesian embedding, for polar nearest_bin.
+EMBEDDED_KDTREE: CacheKey[tuple[NDArray[Any], cKDTree]] = CacheKey("embedded_kdtree")
 FACE_GEOMETRY: CacheKey[FaceGeometry] = CacheKey("face_geometry")
 DIFFUSION_GEOMETRY: CacheKey[DiffusionGeometry] = CacheKey("diffusion_geometry")
 DIFFUSION_EIGENBASIS: CacheKey[DiffusionEigenbasis] = CacheKey("diffusion_eigenbasis")
