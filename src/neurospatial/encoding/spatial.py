@@ -1131,9 +1131,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             - scale : float
                 Grid spacing in physical units (same as bin_size)
             - orientation : float
-                Grid orientation in degrees [0, 60)
+                Lattice angle in radians [0, pi/3), from +x (East)
+                counterclockwise toward +y (North), modulo pi/3
             - orientation_std : float
-                Standard deviation of orientation estimates
+                Standard deviation of orientation estimates, in radians
             - peak_coords : NDArray
                 Detected peak coordinates (n_peaks, 2)
             - n_peaks : int

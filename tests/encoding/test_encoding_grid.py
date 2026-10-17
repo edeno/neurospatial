@@ -6,6 +6,8 @@ encoding.grid location after the module reorganization.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import numpy as np
 import pytest
 from scipy import ndimage
@@ -190,7 +192,7 @@ class TestEncodingGridFunctionality:
 
         assert isinstance(props.orientation, float)
         assert isinstance(props.orientation_std, float)
-        assert 0.0 <= props.orientation < 60.0
+        assert 0.0 <= props.orientation < np.pi / 3
 
     def test_periodicity_score_runs(self) -> None:
         """periodicity_score should run and return float."""
@@ -575,12 +577,9 @@ class TestGridMetricsOnHexagonalMaps:
         for angle, phase in self.CASES:
             properties = grid_properties(self._hexagonal(n_cells, angle, phase)[2], 2.0)
             # The field lattice lies 30 degrees from the wave directions.
-            # grid_properties measures angles in image convention, from the
-            # map's second axis (columns) toward its first, so an axis-0 = x
-            # map reports the lattice angle reflected about 45 degrees.
-            expected = (90.0 - (angle + 30.0)) % 60.0
-            error = abs(properties.orientation - expected) % 60.0
-            assert min(error, 60.0 - error) < 2.5
+            expected = np.radians(angle + 30.0) % (np.pi / 3)
+            error = abs(properties.orientation - expected) % (np.pi / 3)
+            assert min(error, np.pi / 3 - error) < np.radians(2.5)
 
     def test_score_has_no_even_odd_offset(self) -> None:
         from neurospatial.encoding.grid import grid_score
@@ -630,3 +629,74 @@ class TestGridMetricsOnHexagonalMaps:
 
         assert centered.shape[0] % 2 == 1
         np.testing.assert_allclose(rotated, centered, atol=1e-12)
+
+
+class TestGridOrientationInEnvironmentFrame:
+    """Orientation is the lattice angle in the environment's allocentric frame.
+
+    Radians from +x (East) counterclockwise toward +y (North), modulo pi / 3,
+    the hexagonal period.
+    """
+
+    SPACING = 30.0
+
+    # (arena side or sides in cm, bin_size): square even and odd grids, and
+    # anisotropic grids of both parities.
+    GRIDS: ClassVar[dict[str, tuple[tuple[float, float], object]]] = {
+        "square-even": ((121.0, 121.0), 2.0),
+        "square-odd": ((120.0, 120.0), 2.0),
+        "anisotropic": ((120.0, 120.0), (2.0, 2.6)),
+        "anisotropic-mixed": ((118.0, 121.0), (2.6, 2.0)),
+    }
+
+    @classmethod
+    def _environment(cls, grid):
+        sides, bin_size = cls.GRIDS[grid]
+        positions = np.random.default_rng(15).uniform((0, 0), sides, (30000, 2))
+        return Environment.from_samples(positions, bin_size=bin_size)
+
+    @classmethod
+    def _lattice_rate(cls, env, lattice_deg):
+        # A field lattice at angle phi is the sum of plane waves 30 degrees off
+        # it: the lattice vectors are perpendicular to the wave vectors.
+        wavenumber = 4 * np.pi / (np.sqrt(3) * cls.SPACING)
+        rate = np.zeros(env.n_bins)
+        for offset in (-30.0, 30.0, 90.0):
+            angle = np.radians(lattice_deg + offset)
+            direction = np.array([np.cos(angle), np.sin(angle)])
+            rate += np.cos(wavenumber * (env.bin_centers - 4.0) @ direction)
+        return np.exp(0.3 * (rate - 3.0))
+
+    def test_grids_cover_both_parities_and_anisotropy(self) -> None:
+        shapes = {grid: self._environment(grid).grid_shape for grid in self.GRIDS}
+        widths = {
+            grid: [
+                np.median(np.diff(edge)) for edge in self._environment(grid).grid_edges
+            ]
+            for grid in self.GRIDS
+        }
+
+        assert shapes["square-even"][0] % 2 == 0 and shapes["square-odd"][0] % 2 == 1
+        assert len({n % 2 for n in shapes["anisotropic-mixed"]}) == 2
+        assert abs(widths["anisotropic"][1] / widths["anisotropic"][0] - 1) > 0.2
+
+    @pytest.mark.parametrize("grid", list(GRIDS))
+    @pytest.mark.parametrize("lattice_deg", [0.0, 10.0, 25.0, 50.0])
+    def test_orientation_matches_the_lattice_angle(self, grid, lattice_deg) -> None:
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            grid_properties,
+            spatial_autocorrelation,
+        )
+
+        env = self._environment(grid)
+        autocorr = spatial_autocorrelation(env, self._lattice_rate(env, lattice_deg))
+        properties = grid_properties(autocorr, autocorrelation_pixel_size(env))
+
+        period = np.pi / 3
+        assert 0.0 <= properties.orientation < period
+        error = abs(properties.orientation - np.radians(lattice_deg)) % period
+        assert min(error, period - error) < np.radians(2.0)
+        assert abs(properties.scale - self.SPACING) < 2 * autocorrelation_pixel_size(
+            env
+        )

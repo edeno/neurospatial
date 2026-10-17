@@ -95,10 +95,13 @@ __all__ = [
     "spatial_autocorrelation_radial",
 ]
 
-# Axis flip detection threshold for orientation consensus algorithm.
-# This is 1/4 of the 60° hexagonal periodicity. When angles cluster
-# near ±15° from the 0°/60° boundary, axis flip correction is applied.
-_AXIS_FLIP_THRESHOLD_DEG = 15.0
+# Hexagonal lattices repeat every 60 degrees, so orientation is an angle
+# modulo pi / 3 radians.
+_HEX_PERIOD = np.pi / 3
+# Axis flip detection threshold for the orientation consensus: a quarter of
+# the period. When angles cluster near +/-15 degrees of the 0 / 60 degree
+# boundary, the axis flip correction is applied.
+_AXIS_FLIP_THRESHOLD = _HEX_PERIOD / 4
 
 
 @dataclass(repr=False)
@@ -115,17 +118,19 @@ class GridProperties(ResultMixin):
         Grid spacing (distance between fields) in the same units as bin_size.
         Computed as median distance from center to 6 nearest peaks.
     orientation : float
-        Grid orientation in degrees, range [0, 60). The angle of the grid
-        relative to horizontal, normalized to the 60° periodicity of hexagonal
-        grids.
+        Grid orientation in radians, range [0, pi/3): the angle of the field
+        lattice in the environment's allocentric frame, from +x (East)
+        counterclockwise toward +y (North), modulo pi/3, the period of a
+        hexagonal lattice.
     orientation_std : float
-        Standard deviation of orientation estimates across the 6 peaks.
-        Lower values indicate more consistent/reliable orientation.
+        Standard deviation of the orientation estimates of the peaks, in
+        radians. Lower values indicate a more consistent orientation.
     peak_coords : NDArray[np.float64]
         Coordinates of detected peaks relative to autocorrelogram center,
         shape (n_peaks, 2) where columns are ``(x_offset, y_offset)`` in
-        bin-coordinate space (Cartesian). Typically 6 peaks for a
-        well-formed grid.
+        pixels of the autocorrelogram, along the environment's x and y
+        (axis 0 and axis 1 of the map). Typically 6 peaks for a well-formed
+        grid.
 
         .. note::
 
@@ -199,7 +204,7 @@ def spatial_autocorrelation(
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (height, width)
+    autocorr : NDArray[np.float64], shape (n_x, n_y)
         2D autocorrelation map with square pixels; each pixel side is
         :func:`autocorrelation_pixel_size`, the smaller cell width. Center
         corresponds to zero lag. Values in [-1, 1]. When the two cell widths
@@ -602,7 +607,7 @@ def _spatial_autocorrelation_fft(
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (height, width)
+    autocorr : NDArray[np.float64], shape (n_x, n_y)
         2D autocorrelation map.
 
     Raises
@@ -798,7 +803,7 @@ def grid_score(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
         Zero lag at index ``n // 2`` along each axis, where
         ``scipy.fft.fftshift`` puts it. An even axis's first entry, the most
@@ -1202,7 +1207,7 @@ def _find_autocorr_peaks(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D autocorrelation map with center at zero lag.
     min_distance : int, optional
         Minimum distance between peaks in pixels. Default is 5.
@@ -1217,10 +1222,9 @@ def _find_autocorr_peaks(
     Returns
     -------
     peak_coords : NDArray[np.float64], shape (n_peaks, 2)
-        Peak coordinates relative to center, as ``(x_offset, y_offset)``
-        in Cartesian convention (x = column offset; y = row offset, with
-        positive y pointing **down** to match the underlying image-array
-        coordinates the autocorrelogram was computed in). Sorted by
+        Peak coordinates relative to center, as ``(x_offset, y_offset)``:
+        axis 0 of the map runs along the environment's x and axis 1 along
+        y, as :func:`spatial_autocorrelation` lays it out. Sorted by
         distance from center (closest first).
     """
     from skimage.feature import peak_local_max
@@ -1260,11 +1264,10 @@ def _find_autocorr_peaks(
         return np.array([]).reshape(0, 2)
 
     # Convert to center-relative coordinates. ``peaks`` from
-    # ``peak_local_max`` is image-indexed (row, col); we reorder to the
-    # Cartesian ``(x, y) == (col_offset, row_offset)`` convention used
-    # everywhere else in the package.
-    peak_coords_image = peaks.astype(np.float64) - np.array([center_y, center_x])
-    peak_coords_relative = peak_coords_image[:, [1, 0]]
+    # ``peak_local_max`` is (axis 0, axis 1); the autocorrelogram's axis 0
+    # runs along the environment's x and axis 1 along y, as
+    # ``spatial_autocorrelation`` lays it out, so the offsets are (x, y).
+    peak_coords_relative = peaks.astype(np.float64) - np.array([center_y, center_x])
 
     # Compute distances from center (Euclidean — independent of axis order).
     distances = np.sqrt(
@@ -1307,7 +1310,7 @@ def grid_scale(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
         Should be centered (zero lag at center).
     bin_size : float
@@ -1428,9 +1431,11 @@ def grid_properties(
 
     Parameters
     ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
+    autocorr_2d : NDArray[np.float64], shape (n_x, n_y)
         2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
-        Should be centered (zero lag at center).
+        Zero lag at index ``n // 2`` along each axis; axis 0 runs along the
+        environment's x and axis 1 along y, so orientation is measured in
+        the environment's frame.
     bin_size : float
         Size of each spatial bin in physical units (e.g., cm).
         Used to convert pixel distances to physical distances.
@@ -1452,8 +1457,9 @@ def grid_properties(
         Dataclass containing:
         - score: Grid score [-2, 2]
         - scale: Grid spacing in physical units
-        - orientation: Grid orientation in degrees [0, 60)
-        - orientation_std: Standard deviation of orientation
+        - orientation: lattice angle in radians [0, pi/3), from +x (East)
+          counterclockwise toward +y (North), modulo pi/3
+        - orientation_std: Standard deviation of orientation, in radians
         - peak_coords: Detected peak coordinates (n_peaks, 2)
         - n_peaks: Number of peaks detected
 
@@ -1500,7 +1506,7 @@ def grid_properties(
     >>> # props = grid_properties(autocorr, bin_size=2.0)
     >>> # print(f"Score: {props.score:.2f}")
     >>> # print(f"Scale: {props.scale:.1f} cm")
-    >>> # print(f"Orientation: {props.orientation:.1f}° ± {props.orientation_std:.1f}°")
+    >>> # print(f"Orientation: {np.degrees(props.orientation):.1f} degrees")
     >>> # print(f"Detected {props.n_peaks} peaks")
 
     See Also
@@ -1563,27 +1569,29 @@ def grid_properties(
     # ring, at another angle. peak_coords is (x, y), so arctan2(y, x) reads
     # peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
     ring = peak_coords[: min(n_peaks, len(peak_coords))]
-    angles_rad = np.arctan2(ring[:, 1], ring[:, 0])
-    angles_deg = np.degrees(angles_rad) % 360
-    orientations = angles_deg % 60
+    orientations = np.arctan2(ring[:, 1], ring[:, 0]) % _HEX_PERIOD
 
     # Axis flip correction
-    dist_to_60 = 60 - orientations
-    adjusted = np.where(dist_to_60 < orientations, orientations - 60, orientations)
+    adjusted = np.where(
+        _HEX_PERIOD - orientations < orientations,
+        orientations - _HEX_PERIOD,
+        orientations,
+    )
 
-    n_positive = np.sum(adjusted > _AXIS_FLIP_THRESHOLD_DEG)
-    n_negative = np.sum(adjusted < -_AXIS_FLIP_THRESHOLD_DEG)
+    n_positive = np.sum(adjusted > _AXIS_FLIP_THRESHOLD)
+    n_negative = np.sum(adjusted < -_AXIS_FLIP_THRESHOLD)
 
     if n_positive > 0 and n_negative > 0:
         if n_positive > n_negative:
-            adjusted = np.where(adjusted < 0, adjusted + 60, adjusted)
+            adjusted = np.where(adjusted < 0, adjusted + _HEX_PERIOD, adjusted)
         else:
-            adjusted = np.where(adjusted > 0, adjusted - 60, adjusted)
+            adjusted = np.where(adjusted > 0, adjusted - _HEX_PERIOD, adjusted)
 
-    orientation = float(np.nanmean(adjusted)) % 60
+    orientation = float(np.nanmean(adjusted)) % _HEX_PERIOD
     orientation_std = float(np.nanstd(adjusted))
 
-    if np.abs(orientation - 60) < 0.1:
+    # A mean just below the period is orientation 0 (within 0.1 degree).
+    if _HEX_PERIOD - orientation < np.radians(0.1):
         orientation = 0.0
 
     return GridProperties(

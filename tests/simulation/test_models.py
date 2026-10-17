@@ -954,3 +954,26 @@ class TestGridCellModel:
         actual = gc.firing_rate(positions)
 
         np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("grid_orientation", [0.0, 0.2, 0.5])
+def test_measured_orientation_is_the_lattice_angle(grid_orientation):
+    """grid_properties finds the field lattice pi / 6 from the model's waves."""
+    from neurospatial import Environment
+    from neurospatial.encoding.grid import (
+        autocorrelation_pixel_size,
+        grid_properties,
+        spatial_autocorrelation,
+    )
+    from neurospatial.simulation.models.grid_cells import GridCellModel
+
+    positions = np.random.default_rng(0).uniform(0, 120, (30000, 2))
+    env = Environment.from_samples(positions, bin_size=2.0)
+    model = GridCellModel(env, grid_spacing=30.0, grid_orientation=grid_orientation)
+    autocorr = spatial_autocorrelation(env, model.firing_rate(env.bin_centers))
+
+    measured = grid_properties(autocorr, autocorrelation_pixel_size(env)).orientation
+
+    expected = (grid_orientation + np.pi / 6) % (np.pi / 3)
+    error = abs(measured - expected) % (np.pi / 3)
+    assert min(error, np.pi / 3 - error) < np.radians(2.0)

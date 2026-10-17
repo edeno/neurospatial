@@ -25,7 +25,10 @@ class GridCellModel:
         Distance between grid peaks in environment units (default: 50.0 cm).
         This is the characteristic spatial scale of the grid pattern.
     grid_orientation : float, optional
-        Rotation of grid in radians (default: 0.0).
+        Rotation of grid in radians (default: 0.0): the angle of the first of
+        the three plane waves, from +x (East) toward +y (North). The field
+        lattice lies pi/6 from the waves, so ``grid_properties`` reports an
+        orientation of ``(grid_orientation + pi/6) % (pi/3)`` for this cell.
         Different grid cells have different orientations, creating
         diverse representations across the population.
     phase_offset : NDArray[np.float64], shape (2,), optional

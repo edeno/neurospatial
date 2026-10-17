@@ -662,6 +662,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   autocorrelogram scores 1.52 instead of 1.40); noise and shuffled maps
   change by a median of about 0.01-0.02 either way.
 
+- Grid orientation values change. `grid_properties().orientation` (and
+  `SpatialRateResult.grid_properties()`) read the autocorrelogram as an
+  image, with its first axis as y, but `spatial_autocorrelation` puts the
+  environment's x on the first axis, so the reported angle was the lattice
+  angle reflected about 45°. It was also in degrees. Orientation is now the
+  angle of the field lattice in the environment's frame, in radians from +x
+  (East) counterclockwise toward +y (North), in [0, π/3): a hexagonal
+  lattice repeats every π/3. `orientation_std` is in radians too, and
+  `peak_coords` columns are offsets along x and y. Convert old values with
+  `np.radians((90 - old) % 60)`. `GridCellModel(grid_orientation=θ)` sets
+  the angle of its plane waves; its field lattice, which `grid_properties`
+  reports, lies at `(θ + π/6) % (π/3)`.
+
 - `grid_properties()` averaged the orientation over every detected peak,
   including the spare one it detects beyond `n_peaks`, which can lie on the
   second ring of fields at another angle. Orientation was off by about 5°

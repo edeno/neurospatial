@@ -667,32 +667,32 @@ class TestGridScale:
 class TestGridOrientationViaGridProperties:
     """Tests for grid orientation, accessed through ``GridProperties``.
 
-    The standalone ``grid_orientation`` function was folded into
-    :func:`grid_properties`. These tests pin the same
-    contract on ``grid_properties(...).orientation`` /
-    ``.orientation_std`` so the behavior is preserved.
+    Orientation is the lattice angle in radians, in the environment's
+    frame (axis 0 of the map along x, axis 1 along y), modulo pi / 3.
     """
 
     def test_orientation_anchor_horizontal_grid(self):
-        """Grid aligned with horizontal axis should have orientation in [0, 60)."""
+        """A grid aligned with an axis has orientation in [0, pi / 3)."""
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
         props = grid_properties(autocorr, bin_size=1.0)
 
         assert props.orientation >= 0.0
-        assert props.orientation < 60.0
-        assert props.orientation_std < 15.0
+        assert props.orientation < np.pi / 3
+        assert props.orientation_std < np.radians(15.0)
 
     def test_orientation_anchor_rotated_grid(self):
-        """Grid rotated by 30° should have orientation ~30°."""
+        """A lattice at 30 degrees from +x has orientation ~pi / 6."""
         from neurospatial.encoding.grid import grid_properties
 
         size = 100
         autocorr = np.zeros((size, size))
         center = size // 2
         radius = 20.0
-        y_grid, x_grid = np.ogrid[:size, :size]
+        # Axis 0 runs along x and axis 1 along y, as spatial_autocorrelation
+        # lays the map out.
+        x_grid, y_grid = np.ogrid[:size, :size]
 
         dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
         autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
@@ -707,8 +707,8 @@ class TestGridOrientationViaGridProperties:
         autocorr = autocorr / autocorr.max()
         props = grid_properties(autocorr, bin_size=1.0)
 
-        assert 20.0 < props.orientation < 40.0, (
-            f"Expected orientation ~30°, got {props.orientation}"
+        assert np.radians(20.0) < props.orientation < np.radians(40.0), (
+            f"Expected orientation ~pi / 6, got {props.orientation}"
         )
 
     def test_orientation_returns_nan_on_flat_input(self):
@@ -728,7 +728,7 @@ class TestGridOrientationViaGridProperties:
         autocorr = _create_hexagonal_autocorr()
         props = grid_properties(autocorr, bin_size=1.0)
 
-        assert 0.0 <= props.orientation < 60.0
+        assert 0.0 <= props.orientation < np.pi / 3
 
 
 class TestGridProperties:
@@ -766,7 +766,7 @@ class TestGridProperties:
         assert 30.0 < props.scale < 50.0
 
         # Orientation should be in valid range
-        assert 0.0 <= props.orientation < 60.0
+        assert 0.0 <= props.orientation < np.pi / 3
 
         # Should detect 6 peaks
         assert props.n_peaks >= 5  # Allow some tolerance
