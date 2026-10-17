@@ -13,6 +13,7 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
+from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Point, Polygon
 from shapely.ops import unary_union
 
@@ -134,8 +135,6 @@ def arena_pieces(arena: Arena) -> list[_Piece]:
         matrix = arena.forward
         linear, shift = matrix[:-1, :-1], matrix[:-1, -1]
         pieces = []
-        from shapely.affinity import affine_transform
-
         for piece in arena_pieces(arena.base):
             if piece.kind == "polygon":
                 polygon = affine_transform(

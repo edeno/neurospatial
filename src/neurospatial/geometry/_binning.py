@@ -418,6 +418,7 @@ class TrackLinearization(ReadOnlyState):
 
     def to_linear(self, data_points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` coordinates onto the track."""
+        # Imported on use: track_linearization loads pandas and matplotlib (~0.6 s).
         from track_linearization import get_linearized_position
 
         result = get_linearized_position(
