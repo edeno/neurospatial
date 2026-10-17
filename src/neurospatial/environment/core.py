@@ -815,11 +815,11 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> positions = np.random.default_rng(0).uniform(0, 20, (200, 2))
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> grid_edges = (np.arange(5) * 5.0,) * 2  # a 20 x 20 cm grid of 5 cm cells
+        >>> env = Environment.from_grid_mask(np.ones((4, 4), dtype=bool), grid_edges)
         >>> env.derivations
         ()
-        >>> env.subset(mask=np.arange(env.n_bins) < 4).rebin(2).derivations
+        >>> env.subset(mask=np.arange(env.n_bins) < 8).rebin(2).derivations
         ('subset', 'rebin')
         """
         return self._provenance.derivations
@@ -2207,25 +2207,36 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> # Create 10x10 grid (deterministic)
-        >>> rng = np.random.RandomState(42)
-        >>> data = rng.rand(1000, 2) * 100
-        >>> env = Environment.from_samples(data, bin_size=10.0)
-        >>> env.grid_shape  # May vary with random data
-        (11, 11)
+        >>> # A 100 x 100 cm arena of 10 cm cells
+        >>> grid_edges = (np.arange(11) * 10.0,) * 2
+        >>> env = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), grid_edges)
+        >>> env.grid_shape
+        (10, 10)
         >>>
-        >>> # Coarsen by factor 2 → ~5x5 grid (11 // 2 = 5)
+        >>> # Coarsen by factor 2: 20 cm cells
         >>> coarse = env.rebin(factor=2)
         >>> coarse.grid_shape
         (5, 5)
         >>>
-        >>> # Anisotropic coarsening with tuple (11 // 2 = 5, 11 // 5 = 2)
+        >>> # Anisotropic coarsening with tuple (10 // 2 = 5, 10 // 5 = 2)
         >>> coarse_aniso = env.rebin(factor=(2, 5))
         >>> coarse_aniso.grid_shape
         (5, 2)
-        >>>
-        >>> # Aggregate a field to the coarsened grid
-        >>> occupancy = np.random.rand(env.n_bins) * 100
+
+        A factor that does not divide the grid shape truncates the grid and warns:
+
+        >>> import warnings
+        >>> with warnings.catch_warnings(record=True) as caught:
+        ...     warnings.simplefilter("always")
+        ...     coarse_3 = env.rebin(factor=3)
+        >>> coarse_3.grid_shape
+        (3, 3)
+        >>> print(caught[0].message)
+        Grid shape (10, 10) is not evenly divisible by factor (3, 3). Grid will be truncated to (9, 9) before coarsening.
+
+        Aggregate a field to the coarsened grid:
+
+        >>> occupancy = np.random.default_rng(0).random(env.n_bins) * 100
         >>> coarse_indices = coarse.bin_at(env.bin_centers)
         >>> retained = coarse_indices >= 0
         >>> coarse_occupancy = np.bincount(
@@ -2575,7 +2586,10 @@ class Environment(Generic[_C]):
         >>> from neurospatial.ops.transforms import scale_2d
         >>> T = translate(50, 50) @ Affine2D(R) @ scale_2d(1.2)
         >>> env_aligned = env.apply_transform(T, name="aligned")
-        >>> env_aligned.n_bins == env.n_bins
+        >>> np.allclose(env_aligned.bin_centers, T(env.bin_centers))
+        True
+        >>> # Areas scale by the square of the 1.2 scale factor
+        >>> np.allclose(env_aligned.bin_sizes, env.bin_sizes * 1.2**2)
         True
 
         Cross-session alignment using landmarks:
@@ -2587,6 +2601,10 @@ class Environment(Generic[_C]):
         >>> landmarks_s2 = np.array([[5, 10], [95, 15], [90, 105], [0, 100]], float)
         >>> # Estimate rigid transform (rotation + translation)
         >>> T = estimate_transform(landmarks_s1, landmarks_s2, kind="rigid")
+        >>> # A rigid fit cannot absorb the stretch between sessions; check the
+        >>> # landmark residuals (cm) before trusting the alignment
+        >>> np.linalg.norm(T(landmarks_s1) - landmarks_s2, axis=1).round(1)
+        array([7., 7., 7., 7.])
         >>> # Transform the session 1 environment to session 2 coordinates
         >>> env_s1_aligned = env.apply_transform(
         ...     T, name="session1_in_s2_coords", frame="session2"
@@ -2610,8 +2628,13 @@ class Environment(Generic[_C]):
         >>> translation = translate_3d(10, 20, 30)
         >>> T_3d = translation @ rotation
         >>> env_3d_transformed = env_3d.apply_transform(T_3d)
-        >>> env_3d_transformed.n_dims
-        3
+        >>> # A rotation and translation preserve distances between bins
+        >>> def steps_3d(centers):
+        ...     return np.linalg.norm(np.diff(centers, axis=0), axis=1)
+        >>> np.allclose(
+        ...     steps_3d(env_3d_transformed.bin_centers), steps_3d(env_3d.bin_centers)
+        ... )
+        True
 
         With regions (regions are automatically transformed):
 
@@ -3754,17 +3777,17 @@ class Environment(Generic[_C]):
         >>> import numpy as np
         >>> from neurospatial import Environment
         >>> # Create a simple binary image (e.g., from thresholding camera frame)
-        >>> image_height, image_width = 480, 640
+        >>> image_height, image_width = 48, 64
         >>> mask = np.zeros((image_height, image_width), dtype=bool)
         >>> # Mark a rectangular region as active
-        >>> mask[100:400, 150:500] = True
+        >>> mask[10:40, 15:50] = True
         >>> env = Environment.from_pixel_mask(
         ...     image_mask=mask,
-        ...     pixel_size=0.5,  # Each pixel = 0.5cm
+        ...     pixel_size=5.0,  # Each pixel = 5 cm
         ...     name="arena_from_image",
         ... )
-        >>> env.n_dims
-        2
+        >>> env.n_bins  # one bin per active pixel
+        1050
 
         """
         return _from_pixel_mask(
@@ -6552,17 +6575,26 @@ class Environment(Generic[_C]):
         Transitions two samples apart, from an existing bin sequence:
 
         >>> bin_sequence = env.bin_sequence(times, positions)
-        >>> T_lag2 = env.transitions(bins=bin_sequence, lag=2, allow_teleports=True)
+        >>> T_lag2 = env.transitions(
+        ...     bins=bin_sequence, lag=2, allow_teleports=True, normalize=False
+        ... )
+        >>> # One count per pair of visits two steps apart
+        >>> int(T_lag2.sum()) == len(bin_sequence) - 2
+        True
 
         Model transitions need no trajectory. Each row is a probability
         distribution over the next bin:
 
         >>> T_random = env.transitions(method="random_walk")
         >>> T_diffusion = env.transitions(method="diffusion", bandwidth=5.0)
+        >>> bool(np.allclose(T_random.sum(axis=1), 1.0))
+        True
         >>> bool(np.allclose(T_diffusion.sum(axis=1), 1.0))
         True
         >>> # Compare the observed movement with the diffusion model
         >>> difference = (T_empirical - T_diffusion).toarray()
+        >>> difference.shape  # (from bin, to bin)
+        (121, 121)
 
         """
         return _transitions(
