@@ -537,6 +537,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `neurospatial.encoding.autocorrelation_pixel_size(env)` gives the side, in
+  the environment's units, of the square pixels of `spatial_autocorrelation`.
+  Pass it as `bin_size` to `grid_scale` and `grid_properties`.
+
 - `Environment.bin_center_tree()` returns the KD-tree over `bin_centers`
   that `nearest_bin` searches, built once and kept in the analysis cache.
   Use it for the `k` nearest bins with their distances.
@@ -621,14 +625,26 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   meshes and sparse grids raised `ValueError` before. Rate-map
   `summary_table()` reports a NaN `grid_score` on hexagonal environments.
 
-- `spatial_autocorrelation` also accepted rectangular grids whose cells do not
-  all have one width: uneven edges along an axis (possible through
-  `Environment.from_bins`) or cells that are wider than they are tall. The
-  FFT shifts the map one cell at a time, so its lags, and the grid score and
-  grid scale read from them, were in cell counts instead of distances. Such
-  grids now raise the same `NotImplementedError`, naming
-  `spatial_autocorrelation_radial`; widths may differ by rounding (one part
-  in a million of the cell width).
+- `spatial_autocorrelation` reported lags in cell steps. On a grid whose two
+  axes have different cell widths (a `from_polygon` grid of a 50 × 37 cm box
+  with `bin_size=3` has 2.94 × 2.85 cm cells; small arenas can differ by tens
+  of percent), rotating the autocorrelogram for the grid score and measuring
+  peak distances for the grid scale mixed the two widths, so both were
+  distorted. The autocorrelogram now has square pixels: lags along the wider
+  axis are interpolated onto the finer width whenever the two widths differ
+  by more than 1/100 of a cell across the grid. Grids fitted with
+  `from_samples`, whose widths differ by about 1e-4 of a cell, give the same
+  scores as before. On a 120 cm arena with 2 × 3 cm cells, a hexagonal
+  rate map with 30 cm spacing now scores 1.08 with scale 30.1 cm (it scored
+  -0.13 with scale 26.1 cm). A grid with uneven edges along one axis
+  (possible through `Environment.from_bins`) has no single lag per step and
+  raises the same `NotImplementedError`, naming
+  `spatial_autocorrelation_radial`.
+
+- `SpatialRateResult.grid_properties()` converted pixels to distance with
+  the smallest cell *area*, so its `scale` was in the wrong units (off by a
+  factor of the cell width, e.g. 4× for 4 cm cells). It now uses
+  `autocorrelation_pixel_size(env)`, the autocorrelogram's pixel side.
 
 - A position sample with a NaN coordinate is a missing sample in every
   per-sample query. `env.nearest_bin` gives it bin

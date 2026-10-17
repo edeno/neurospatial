@@ -86,6 +86,7 @@ __all__ = [
     # Dataclass
     "GridProperties",
     # Functions
+    "autocorrelation_pixel_size",
     "grid_properties",
     "grid_scale",
     "grid_score",
@@ -199,8 +200,13 @@ def spatial_autocorrelation(
     Returns
     -------
     autocorr : NDArray[np.float64], shape (height, width)
-        2D autocorrelation map with the same shape as the environment grid.
-        Center corresponds to zero lag. Values in [-1, 1].
+        2D autocorrelation map with square pixels; each pixel side is
+        :func:`autocorrelation_pixel_size`, the smaller cell width. Center
+        corresponds to zero lag. Values in [-1, 1]. When the two cell widths
+        are equal (to within 1/100 of a cell across the grid) the map has the
+        environment's grid shape; otherwise the lags along the wider axis are
+        interpolated onto the finer spacing, so the map can be larger along
+        that axis.
 
     Raises
     ------
@@ -208,10 +214,10 @@ def spatial_autocorrelation(
         If ``firing_rate.shape != (env.n_bins,)``.
         If all firing rates are NaN or constant.
     NotImplementedError
-        If ``env`` is not a regular 2D grid of square cells of one width with
-        at least half of them active, for example a hexagonal, mesh, track or
-        3D environment, or a grid with uneven or non-square cells (use
-        :func:`spatial_autocorrelation_radial` instead).
+        If ``env`` is not a regular 2D grid of rectangular cells, one width
+        along each axis, with at least half of them active, for example a
+        hexagonal, mesh, track or 3D environment, or a grid with uneven edges
+        (use :func:`spatial_autocorrelation_radial` instead).
     CartesianOnlyError
         If ``env`` is polar: a ``(distance, angle)`` grid is not a Cartesian
         lattice, so its 2D autocorrelogram and grid score are meaningless.
@@ -296,10 +302,15 @@ def spatial_autocorrelation(
                 "rectangular cells"
             )
         elif not _uniform_spacing(env.grid_edges):
-            widths = np.concatenate([np.diff(edge) for edge in env.grid_edges])
+            axis = next(
+                axis
+                for axis, edge in enumerate(env.grid_edges)
+                if not _uniform_spacing((edge,))
+            )
+            widths = np.diff(env.grid_edges[axis])
             found = (
-                "its cells are not all one width: widths range from "
-                f"{widths.min():.6g} to {widths.max():.6g}"
+                f"its cells along axis {axis} are not all one width: widths "
+                f"range from {widths.min():.6g} to {widths.max():.6g}"
             )
         else:
             found = (
@@ -307,13 +318,13 @@ def spatial_autocorrelation(
             )
         raise NotImplementedError(
             _format_error(
-                "spatial_autocorrelation() needs a regular 2D grid of square "
-                "cells of one width, with at least half of them active; "
-                f"{found}.",
+                "spatial_autocorrelation() needs a regular 2D grid of rectangular "
+                "cells, one width along each axis, with at least half of them "
+                f"active; {found}.",
                 why=(
                     "Why: the FFT shifts the rate map one cell at a time along "
-                    "rows and columns, and grid scores read those shifts as equal "
-                    "distances in every direction."
+                    "rows and columns, so each shift is one distance only when "
+                    "the cells along an axis share one width."
                 ),
                 fix=(
                     "use spatial_autocorrelation_radial(env, firing_rate), which "
@@ -322,7 +333,92 @@ def spatial_autocorrelation(
             )
         )
 
-    return _spatial_autocorrelation_fft(env, firing_rate)
+    autocorr = _spatial_autocorrelation_fft(env, firing_rate)
+    cell_widths = tuple(float(np.median(np.diff(edge))) for edge in env.grid_edges)
+    return _square_lags(autocorr, cell_widths)
+
+
+def autocorrelation_pixel_size(env: Environment) -> float:
+    """Physical side of the square pixels of :func:`spatial_autocorrelation`.
+
+    The autocorrelogram's pixels are square, with the smaller of the grid's
+    two cell widths as their side, so a distance in pixels times this size is
+    a distance in the environment's units. Pass it as ``bin_size`` to
+    :func:`grid_scale` and :func:`grid_properties`.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment with a regular 2D grid, as for
+        :func:`spatial_autocorrelation`.
+
+    Returns
+    -------
+    float
+        Pixel side in the environment's units, e.g. cm.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.grid import autocorrelation_pixel_size
+    >>> mask = np.ones((4, 5), dtype=bool)
+    >>> edges = (np.linspace(0.0, 12.0, 5), np.linspace(0.0, 10.0, 6))
+    >>> env = Environment.from_grid_mask(mask, grid_edges=edges)
+    >>> autocorrelation_pixel_size(env)
+    2.0
+    """
+    return min(float(np.median(np.diff(edge))) for edge in env.grid_edges)
+
+
+# Below this many pixels of accumulated lag error, treating the two cell widths
+# as one changes no lag by more than 1/100 of a cell, so the autocorrelogram is
+# used as computed. Grids fitted to a recorded range (from_samples) differ
+# between axes only by about 1e-5 to 1e-3 of a cell.
+_SQUARE_LAG_TOLERANCE = 0.01
+
+
+def _square_lags(
+    autocorr: NDArray[np.float64], widths: tuple[float, ...]
+) -> NDArray[np.float64]:
+    """Resample a lag map with per-axis cell widths onto square pixels.
+
+    Parameters
+    ----------
+    autocorr : ndarray of float64, shape (n_x, n_y)
+        Lag map in cell steps, zero lag at index ``n // 2`` along each axis.
+    widths : tuple of float
+        Physical cell width along each axis.
+
+    Returns
+    -------
+    ndarray of float64
+        Lag map with square pixels whose side is ``min(widths)``, zero lag at
+        the center. Returned unchanged when the two widths are equal to within
+        ``_SQUARE_LAG_TOLERANCE`` pixels across the map.
+    """
+    side = min(widths)
+    shape = autocorr.shape
+    error = max(
+        n * (width / side - 1.0) for n, width in zip(shape, widths, strict=True)
+    )
+    if error <= _SQUARE_LAG_TOLERANCE:
+        return autocorr
+    centers = [n // 2 for n in shape]
+    # Whole pixels of `side` that stay inside the map on both sides of zero lag.
+    reach = [
+        int(np.floor(min(c, n - 1 - c) * width / side + 1e-9))
+        for n, c, width in zip(shape, centers, widths, strict=True)
+    ]
+    coordinates = np.meshgrid(
+        *[
+            c + np.arange(-k, k + 1) * side / width
+            for c, k, width in zip(centers, reach, widths, strict=True)
+        ],
+        indexing="ij",
+    )
+    squared = ndimage.map_coordinates(autocorr, coordinates, order=1, mode="nearest")
+    return np.asarray(squared, dtype=np.float64)
 
 
 def spatial_autocorrelation_radial(
@@ -424,7 +520,8 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
     # edges: their rows are offset, so an FFT over them is not a 2D lag map.
     if len(env.grid_edges) != 2:
         return "graph"
-    # A lag of k cells is a distance only when every cell has the same width.
+    # A lag of k cells is a distance only when the cells along an axis share
+    # one width; the two axes may differ, and the lags are rescaled to them.
     if not _uniform_spacing(env.grid_edges):
         return "graph"
 
@@ -445,16 +542,19 @@ _SPACING_RTOL = 1e-6
 
 
 def _uniform_spacing(edges: tuple[NDArray[np.float64], ...]) -> bool:
-    """Whether every cell along every axis has the same width.
+    """Whether the cells along each axis share one width; axes may differ.
 
     Parameters
     ----------
     edges : tuple of ndarray
         Cell edges along each axis, ``env.grid_edges``.
     """
-    widths = np.concatenate([np.diff(edge) for edge in edges])
-    reference = float(np.median(widths))
-    return bool(np.max(np.abs(widths - reference)) <= _SPACING_RTOL * reference)
+    for edge in edges:
+        widths = np.diff(edge)
+        reference = float(np.median(widths))
+        if np.max(np.abs(widths - reference)) > _SPACING_RTOL * reference:
+            return False
+    return True
 
 
 def _spatial_autocorrelation_fft(

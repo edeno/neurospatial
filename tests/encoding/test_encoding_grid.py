@@ -290,8 +290,8 @@ class TestFFTAutocorrelationNeedsRectangularCells:
             spatial_autocorrelation(env, rate)
 
 
-class TestFFTAutocorrelationNeedsOneCellWidth:
-    """FFT lags are cell counts, so they are distances only for one cell width."""
+class TestFFTAutocorrelationLagsArePhysical:
+    """FFT lags are cell steps; each axis needs one width, and lags are rescaled."""
 
     @staticmethod
     def _grid(x_edges, y_edges):
@@ -331,21 +331,18 @@ class TestFFTAutocorrelationNeedsOneCellWidth:
             )
         )
 
-    @pytest.mark.parametrize(
-        "x_edges",
-        [
-            np.concatenate([np.arange(0.0, 20.0, 2.0), np.arange(20.0, 41.0, 4.0)]),
-            np.arange(0.0, 61.0, 3.0),
-        ],
-        ids=["uneven", "non-square"],
-    )
-    def test_cells_of_different_widths_are_refused(self, x_edges) -> None:
+    def test_uneven_edges_along_an_axis_are_refused(self) -> None:
         from neurospatial.encoding.grid import spatial_autocorrelation
 
+        x_edges = np.concatenate(
+            [np.arange(0.0, 20.0, 2.0), np.arange(20.0, 41.0, 4.0)]
+        )
         env = self._grid(x_edges, np.arange(0.0, 41.0, 2.0))
         rate = np.random.default_rng(5).random(env.n_bins)
 
-        with pytest.raises(NotImplementedError, match="not all one width") as error:
+        with pytest.raises(
+            NotImplementedError, match="along axis 0 are not all one width"
+        ) as error:
             spatial_autocorrelation(env, rate)
 
         assert "spatial_autocorrelation_radial" in str(error.value)
@@ -363,3 +360,88 @@ class TestFFTAutocorrelationNeedsOneCellWidth:
         autocorr = spatial_autocorrelation(env, rate)
 
         assert autocorr.shape == env.grid_shape
+
+    @pytest.mark.parametrize(
+        ("x_width", "y_width"), [(2.0, 2.0), (2.0, 3.0), (3.0, 2.0), (2.0, 2.6)]
+    )
+    def test_hexagonal_map_scores_high_with_its_physical_spacing(
+        self, x_width, y_width
+    ) -> None:
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            grid_properties,
+            spatial_autocorrelation,
+        )
+
+        x_edges = np.linspace(0.0, 120.0, round(120.0 / x_width) + 1)
+        y_edges = np.linspace(0.0, 120.0, round(120.0 / y_width) + 1)
+        env = self._grid(x_edges, y_edges)
+        spacing = 30.0  # cm between neighboring firing fields
+        wavenumber = 4 * np.pi / (np.sqrt(3) * spacing)
+        rate = np.zeros(env.n_bins)
+        for angle in 0.2 + np.array([0.0, np.pi / 3, 2 * np.pi / 3]):
+            direction = np.array([np.cos(angle), np.sin(angle)])
+            rate += np.cos(wavenumber * env.bin_centers @ direction)
+        rate = np.exp(0.3 * (rate - 3.0))
+
+        autocorr = spatial_autocorrelation(env, rate)
+        pixel = autocorrelation_pixel_size(env)
+        properties = grid_properties(autocorr, pixel)
+
+        assert pixel == min(x_width, y_width)
+        assert properties.score > 0.9
+        assert abs(properties.scale - spacing) < pixel
+
+    @pytest.mark.parametrize("bin_size", [5.0, 3.3, 2.0])
+    def test_from_samples_grids_get_a_grid_score(self, bin_size) -> None:
+        from neurospatial import compute_spatial_rate
+
+        stimulus = np.random.default_rng(7)
+        times = np.arange(6000) / 30.0
+        positions = stimulus.uniform(0.0, 50.0, size=(len(times), 2))
+        spike_times = np.sort(np.random.default_rng(8).uniform(0, times[-1], 300))
+        env = Environment.from_samples(positions, bin_size=bin_size)
+        # A fitted grid's two cell widths differ slightly.
+        widths = [np.diff(edge)[0] for edge in env.grid_edges]
+        assert widths[0] != widths[1]
+
+        result = compute_spatial_rate(env, spike_times, times, positions)
+
+        assert np.isfinite(result.grid_score())
+        assert np.isfinite(result.summary_table()["grid_score"]).all()
+
+    def test_from_polygon_grid_gets_a_grid_score(self) -> None:
+        from shapely.geometry import box
+
+        from neurospatial import compute_spatial_rate
+
+        env = Environment.from_polygon(box(0, 0, 50, 37), bin_size=3.0)
+        widths = [np.diff(edge)[0] for edge in env.grid_edges]
+        assert abs(widths[0] / widths[1] - 1.0) > 0.01
+        times = np.arange(6000) / 30.0
+        positions = np.random.default_rng(9).uniform([0, 0], [50, 37], (len(times), 2))
+        spike_times = np.sort(np.random.default_rng(10).uniform(0, times[-1], 300))
+
+        result = compute_spatial_rate(env, spike_times, times, positions)
+
+        assert np.isfinite(result.grid_score())
+
+    def test_result_grid_scale_is_in_length_units(self) -> None:
+        from neurospatial import compute_spatial_rate
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            grid_properties,
+            spatial_autocorrelation,
+        )
+
+        times = np.arange(6000) / 30.0
+        positions = np.random.default_rng(11).uniform(0, 80, (len(times), 2))
+        spike_times = np.sort(np.random.default_rng(12).uniform(0, times[-1], 400))
+        env = Environment.from_samples(positions, bin_size=4.0)
+        result = compute_spatial_rate(env, spike_times, times, positions)
+        expected = grid_properties(
+            spatial_autocorrelation(env, np.asarray(result.firing_rate)),
+            autocorrelation_pixel_size(env),
+        )
+
+        np.testing.assert_equal(result.grid_properties().scale, expected.scale)

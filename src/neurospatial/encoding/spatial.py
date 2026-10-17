@@ -1177,14 +1177,17 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> type(props).__name__
         'GridProperties'
         """
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            spatial_autocorrelation,
+        )
         from neurospatial.encoding.grid import grid_properties as gp_func
-        from neurospatial.encoding.grid import spatial_autocorrelation
 
         firing_rate = _to_numpy(self.firing_rate)
         autocorr = spatial_autocorrelation(self.env, firing_rate)
-        # Use minimum bin size for grid properties (typically same for isotropic grids)
-        bin_size = float(np.min(self.env.bin_sizes))
-        return gp_func(autocorr, bin_size=bin_size)
+        # The autocorrelogram's square pixel side, a length; ``env.bin_sizes``
+        # holds cell areas off a track.
+        return gp_func(autocorr, bin_size=autocorrelation_pixel_size(self.env))
 
     def border_score(
         self,
