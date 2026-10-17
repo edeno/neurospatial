@@ -670,7 +670,7 @@ def run_benchmark(
             frame_times=frame_times,
             overlays=overlays if overlays else None,
             backend="napari",
-            colormap="viridis",
+            cmap="viridis",
             title="Benchmark Session",
         )
 

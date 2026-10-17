@@ -280,7 +280,6 @@ class TestAnimateFieldsWithScaleBar:
             frame_times=frame_times,
             backend="napari",
             scale_bar=True,
-            show=False,
         )
 
         try:
