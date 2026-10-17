@@ -5338,7 +5338,6 @@ class Environment(Generic[_C]):
         vmin: float | None = None,
         vmax: float | None = None,
         frame_labels: Sequence[str] | None = None,
-        overlay_trajectory: NDArray[np.float64] | None = None,
         title: str = "Spatial Field Animation",
         dpi: int = 100,
         codec: str = "h264",
@@ -5406,10 +5405,6 @@ class Environment(Generic[_C]):
         frame_labels : Sequence[str], optional
             Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
             auto-generated as "Frame 1", "Frame 2", etc.
-        overlay_trajectory : NDArray[np.float64], optional
-            Trajectory to overlay on animation. Shape: (n_timepoints, n_dims).
-            For 2D environments: rendered as track line. For higher dimensions:
-            rendered as point cloud. Only supported by napari backend.
         title : str, default="Spatial Field Animation"
             Animation title shown in player controls or window title
         dpi : int, default=100
@@ -5694,7 +5689,6 @@ class Environment(Generic[_C]):
             vmin=vmin,
             vmax=vmax,
             frame_labels=frame_labels,
-            overlay_trajectory=overlay_trajectory,
             title=title,
             dpi=dpi,
             codec=codec,

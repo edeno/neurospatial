@@ -37,7 +37,6 @@ _NON_NAPARI_BACKEND_KWARGS = frozenset(
         "image_format",
         "max_html_frames",
         "n_workers",
-        "overlay_trajectory",
         "show",
         "show_colorbar",
     }

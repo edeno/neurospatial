@@ -434,6 +434,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `name=` by keyword, as `from_nwb` does. A positional call raises
   `TypeError`. The migration page has before-and-after calls.
 
+- `env.animate_fields(overlay_trajectory=...)` is removed. No backend drew it
+  (napari dropped it and the others ignored it), although the animation guide
+  said napari showed it as a track. Pass
+  `overlays=[PositionOverlay(positions=..., times=..., trail_length=...)]`
+  instead.
+
 - The coordinate argument of `bin_at`, `contains`, `nearest_bin`,
   `to_linear` and `interpolate` is named `positions`, the name analysis
   functions use (it was `points_nd`, `points` or `nd_position`). Only a call

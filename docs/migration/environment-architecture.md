@@ -1267,3 +1267,17 @@ that passes them by position is unchanged:
 bins = env.bin_at(positions=positions)
 nearest = env.nearest_bin(positions)
 ```
+
+## Draw the trajectory with an overlay
+
+`env.animate_fields(..., overlay_trajectory=positions)` is removed; no backend
+drew it. Use a position overlay, which every backend draws:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.animation import PositionOverlay
+
+# Before: env.animate_fields(fields, frame_times=..., overlay_trajectory=positions)
+path = PositionOverlay(positions=positions, times=times, trail_length=30)
+# env.animate_fields(fields, frame_times=frame_times, overlays=[path])
+```

@@ -124,26 +124,20 @@ env.animate_fields(
 
 ### Trajectory Overlays
 
-Overlay animal trajectory on spatial fields:
+Draw the animal's path with a `PositionOverlay`; it works on every backend
+(see [Animation overlays](../animation_overlays.md)):
 
 ```python
-# 2D trajectory (displays as napari "tracks" layer)
-trajectory_2d = np.array([[x1, y1], [x2, y2], ...])  # shape: (n_timepoints, 2)
+from neurospatial.animation import PositionOverlay
+
+# positions: (n_timepoints, n_dims) in the environment's units; times in seconds
+path = PositionOverlay(positions=positions, times=times, trail_length=30)
 
 env.animate_fields(
     fields,
     frame_times=frame_times,
     backend="napari",
-    overlay_trajectory=trajectory_2d
-)
-
-# Higher-dimensional positions (displays as napari "points" layer)
-trajectory_nd = np.array([[x, y, z], ...])  # shape: (n_timepoints, n_dims)
-env.animate_fields(
-    fields,
-    frame_times=frame_times,
-    backend="napari",
-    overlay_trajectory=trajectory_nd,
+    overlays=[path],
 )
 ```
 
