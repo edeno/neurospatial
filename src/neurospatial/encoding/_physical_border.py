@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 @dataclass(frozen=True)

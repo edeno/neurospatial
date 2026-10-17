@@ -121,8 +121,8 @@ from neurospatial.behavior.segmentation import _positive_dt
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
     from neurospatial.behavior.segmentation import Trial
+    from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
 
 

@@ -19,7 +19,7 @@ from neurospatial._intervals import as_intervals, intervals_contain
 from neurospatial.ops.mapping import regions_to_mask
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 __all__ = [
     "RegionTransition",

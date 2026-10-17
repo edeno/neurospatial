@@ -236,7 +236,7 @@ from neurospatial._exceptions import (
 
 if TYPE_CHECKING:
     # Concrete definitions for analyzers; PEP 562 still loads them lazily at runtime.
-    from neurospatial.decoding._result import DecodingResult as DecodingResult
+    from neurospatial.decoding import DecodingResult as DecodingResult
     from neurospatial.decoding.posterior import decode_position as decode_position
     from neurospatial.encoding.spatial import SpatialRateResult as SpatialRateResult
     from neurospatial.encoding.spatial import SpatialRatesResult as SpatialRatesResult
@@ -247,7 +247,7 @@ if TYPE_CHECKING:
         compute_spatial_rates as compute_spatial_rates,
     )
     from neurospatial.environment import Environment as Environment
-    from neurospatial.events._core import PeriEventResult as PeriEventResult
+    from neurospatial.events import PeriEventResult as PeriEventResult
     from neurospatial.events.alignment import (
         peri_event_histogram as peri_event_histogram,
     )

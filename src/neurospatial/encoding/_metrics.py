@@ -157,7 +157,7 @@ class BatchScoresResult(ReadOnlyArraysMixin, ResultMixin):
 
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 __all__ = [
     "batch_border_scores",

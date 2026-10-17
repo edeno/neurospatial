@@ -75,7 +75,7 @@ from neurospatial.ops import (
 )
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 __all__ = [
     "smooth_rate_map",

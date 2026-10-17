@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.simulation.models import NeuralModel
 
 

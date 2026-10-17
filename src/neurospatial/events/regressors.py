@@ -25,7 +25,7 @@ from neurospatial._exceptions import RegionNotFoundError
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 def time_to_nearest_event(

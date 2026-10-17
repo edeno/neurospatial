@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
     from shapely.geometry import Polygon
 
-    from neurospatial import Environment
     from neurospatial.annotation._boundary_inference import BoundaryConfig
+    from neurospatial.environment import Environment
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Regions
 

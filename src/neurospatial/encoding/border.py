@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import RegionNotFoundError
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 def border_score(

@@ -36,7 +36,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.geometry import Binning
 
 # Type alias for file paths (supports both str and pathlib.Path)

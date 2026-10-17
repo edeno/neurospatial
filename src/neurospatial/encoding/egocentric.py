@@ -73,8 +73,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
-    from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
+    from neurospatial.environment import Environment
     from neurospatial.geometry import EgocentricPolarSystem
 
     PolarEnvironment = Environment[EgocentricPolarSystem]

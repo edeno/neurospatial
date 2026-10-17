@@ -87,7 +87,7 @@ from neurospatial._validation import validate_finite
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
 
 

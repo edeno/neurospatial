@@ -75,9 +75,9 @@ if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
 
-    from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
     from neurospatial.encoding.grid import GridProperties
+    from neurospatial.environment import Environment
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 # ruff: noqa: RUF022 - intentionally grouped by category

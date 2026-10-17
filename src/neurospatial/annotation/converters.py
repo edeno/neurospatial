@@ -13,7 +13,7 @@ from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Region, Regions
 

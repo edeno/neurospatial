@@ -26,7 +26,7 @@ from numpy.typing import NDArray
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 
 def decoding_error(

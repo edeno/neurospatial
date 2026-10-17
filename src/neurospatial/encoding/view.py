@@ -104,8 +104,8 @@ if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
 
-    from neurospatial import Environment
     from neurospatial._typing import SpikeTrainsLike
+    from neurospatial.environment import Environment
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 

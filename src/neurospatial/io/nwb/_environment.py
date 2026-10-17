@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from pynwb import NWBFile
 
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
     from neurospatial.geometry import Arena
     from neurospatial.layout import LayoutType
     from neurospatial.regions import Regions

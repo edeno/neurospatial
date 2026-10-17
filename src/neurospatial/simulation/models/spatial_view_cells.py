@@ -93,7 +93,7 @@ from neurospatial.geometry import (
 from neurospatial.ops.visibility import FieldOfView, compute_viewed_location
 
 if TYPE_CHECKING:
-    from neurospatial import Environment
+    from neurospatial.environment import Environment
 
 __all__ = ["SpatialViewCellModel"]
 
