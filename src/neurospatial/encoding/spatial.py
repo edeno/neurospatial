@@ -3073,6 +3073,7 @@ default="diffusion_kde"
         compute_occupancy,
         prepare_linear_spatial_intervals,
         require_allocentric,
+        require_linear_allocation,
         resolve_speed,
     )
     from neurospatial.encoding._validation import (
@@ -3086,6 +3087,11 @@ default="diffusion_kde"
     )
     if time_allocation not in ("start", "linear"):
         raise ValueError("time_allocation must be 'start' or 'linear'.")
+    # Refuse polar before any default (such as the bandwidth) is resolved.
+    if time_allocation == "start":
+        require_allocentric(env, "compute_spatial_rate()")
+    else:
+        require_linear_allocation(env)
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3157,8 +3163,6 @@ default="diffusion_kde"
         if time_allocation == "linear"
         else None
     )
-    if linear_intervals is None:
-        require_allocentric(env, "compute_spatial_rate()")
 
     time_support = _resolve_spatial_time_support(
         env,
@@ -3668,6 +3672,7 @@ default="diffusion_kde"
         bin_spike_trains,
         prepare_linear_spatial_intervals,
         require_allocentric,
+        require_linear_allocation,
         resolve_speed,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
@@ -3682,6 +3687,11 @@ default="diffusion_kde"
     )
     if time_allocation not in ("start", "linear"):
         raise ValueError("time_allocation must be 'start' or 'linear'.")
+    # Refuse polar before any default (such as the bandwidth) is resolved.
+    if time_allocation == "start":
+        require_allocentric(env, "compute_spatial_rates()")
+    else:
+        require_linear_allocation(env)
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -3792,8 +3802,6 @@ default="diffusion_kde"
         if time_allocation == "linear"
         else None
     )
-    if linear_intervals is None:
-        require_allocentric(env, "compute_spatial_rates()")
 
     time_support = _resolve_spatial_time_support(
         env,
@@ -5825,6 +5833,9 @@ def place_cell_significance(
         context="place_cell_significance",
         arguments="spike_times, times, positions",
     )
+    from neurospatial.encoding._spatial_counts import require_allocentric
+
+    require_allocentric(env, "place_cell_significance()")
     validate_trajectory(
         times, positions=positions, context="place_cell_significance", n_dims=env.n_dims
     )

@@ -38,6 +38,7 @@ from neurospatial.encoding import (
     compute_view_rate,
     field_shape_metrics,
     field_shift_distance,
+    place_cell_significance,
     rate_map_centroid,
     spatial_autocorrelation,
 )
@@ -253,8 +254,7 @@ def _polar_regions_env(env: Environment) -> Environment:
             lambda env: compute_view_rate(
                 env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS, np.zeros(6)
             ),
-            "Viewed-location binning (compute_view_rate, compute_view_rates, "
-            "spatial_view_cell_significance)",
+            "compute_view_rate()",
         ),
         (
             lambda env: compute_decision_analysis(
@@ -331,6 +331,22 @@ def _polar_regions_env(env: Environment) -> Environment:
         (
             lambda env: distance_to_boundary(env, _POLAR_POSITIONS),
             "distance_to_boundary()",
+        ),
+        (
+            lambda env: compute_vte_session(
+                _polar_regions_env(env),
+                _TIMES,
+                _POLAR_POSITIONS,
+                decision_region="near",
+                trials=[],
+            ),
+            "compute_vte_session()",
+        ),
+        (
+            lambda env: place_cell_significance(
+                env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS
+            ),
+            "place_cell_significance()",
         ),
     ],
 )

@@ -1096,7 +1096,7 @@ assert polar_env.bin_centers[containing[0], 0] == 15.0
 The analysis functions that read positions as the animal's allocentric
 positions keep refusing a polar environment, now with their own name in the
 message: `compute_spatial_rate`, `compute_spatial_rates`,
-`compute_directional_place_fields`, the view-rate functions,
+`place_cell_significance`, `compute_directional_place_fields`, the view-rate functions,
 `compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
 `compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
 the `distance_to_reward` and `distance_to_boundary` event regressors,

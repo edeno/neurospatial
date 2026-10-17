@@ -1393,13 +1393,17 @@ def compute_view_rate(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_counts import prepare_view_binning
+    from neurospatial.encoding._view_counts import (
+        prepare_view_binning,
+        require_allocentric_view,
+    )
 
     validate_env_argument(
         env,
         context="compute_view_rate",
         arguments="spike_times, times, positions, headings",
     )
+    require_allocentric_view(env, "compute_view_rate()")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1834,13 +1838,17 @@ def _compute_view_rates(
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_counts import prepare_view_binning
+    from neurospatial.encoding._view_counts import (
+        prepare_view_binning,
+        require_allocentric_view,
+    )
 
     validate_env_argument(
         env,
         context="compute_view_rates",
         arguments="spike_times, times, positions, headings",
     )
+    require_allocentric_view(env, "compute_view_rates()")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -2410,6 +2418,7 @@ def spatial_view_cell_significance(
     from neurospatial.encoding._view_counts import (
         _precompute_view_bins,
         _view_observation_mask,
+        require_allocentric_view,
     )
 
     trains, input_ids = as_spike_trains_with_ids(spike_times)
@@ -2450,6 +2459,7 @@ def spatial_view_cell_significance(
         context="spatial_view_cell_significance",
         arguments="spike_times, times, positions, headings",
     )
+    require_allocentric_view(env, "spatial_view_cell_significance()")
     validate_trajectory(
         times,
         positions=positions,

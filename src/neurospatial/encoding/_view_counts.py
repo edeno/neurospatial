@@ -71,6 +71,31 @@ def _view_observation_mask(
     return mask
 
 
+def require_allocentric_view(env: Environment, operation: str) -> None:
+    """Refuse a polar environment for rates indexed by the viewed location.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the viewed locations are binned in.
+    operation : str
+        The refused call, e.g. ``"compute_view_rate()"``.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    """
+    require_cartesian(
+        env.coordinate_system,
+        operation,
+        why="It casts gaze from the animal's allocentric positions and headings "
+        "and bins the viewed Cartesian locations.",
+        fix="compute view rates on the allocentric environment the positions "
+        "were recorded in",
+    )
+
+
 def _precompute_view_bins(
     env: Environment,
     positions: NDArray[np.float64],
@@ -122,15 +147,6 @@ def _precompute_view_bins(
     physical hits at starts of selected positive-duration intervals require
     retained bins. Final samples and excluded intervals supply no exposure.
     """
-    require_cartesian(
-        env.coordinate_system,
-        "Viewed-location binning (compute_view_rate, compute_view_rates, "
-        "spatial_view_cell_significance)",
-        why="It casts gaze from the animal's allocentric positions and headings "
-        "and bins the viewed Cartesian locations.",
-        fix="compute view rates on the allocentric environment the positions "
-        "were recorded in",
-    )
     n_samples = len(positions)
 
     max_distance = 100.0

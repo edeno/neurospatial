@@ -125,13 +125,7 @@ def prepare_linear_spatial_intervals(
     NotImplementedError
         If the environment cannot publish exact planar cell and Arena support.
     """
-    require_cartesian(
-        env.coordinate_system,
-        "time_allocation='linear'",
-        why="It splits each straight Cartesian path between the cells it crosses.",
-        fix="compute rates on the allocentric environment the positions were "
-        "recorded in",
-    )
+    require_linear_allocation(env)
     binning, arena = env.binning, env.arena
     if env.n_dims != 2 or binning.bins.measure_dim != 2:
         raise NotImplementedError(
@@ -331,6 +325,28 @@ def resolve_speed(
     # a spike landing exactly on the final sample is gated consistently.
     speed_full[n_samples - 1] = interval_speed[-1]
     return speed_full
+
+
+def require_linear_allocation(env: Environment) -> None:
+    """Refuse a polar environment for linear time allocation.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment the paths are split in.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is polar.
+    """
+    require_cartesian(
+        env.coordinate_system,
+        "time_allocation='linear'",
+        why="It splits each straight Cartesian path between the cells it crosses.",
+        fix="compute rates on the allocentric environment the positions were "
+        "recorded in",
+    )
 
 
 def require_allocentric(env: Environment, operation: str) -> None:

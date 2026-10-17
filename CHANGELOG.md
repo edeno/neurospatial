@@ -355,7 +355,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `CARTESIAN_OPERATIONS` no longer lists these methods. Analysis functions
   that read positions as the animal's allocentric positions and relied on
   `bin_at` to refuse polar environments now refuse them with their own name:
-  `compute_spatial_rate`, `compute_spatial_rates`,
+  `compute_spatial_rate`, `compute_spatial_rates`, `place_cell_significance`,
   `compute_directional_place_fields`, the view-rate functions,
   `compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
   `compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
