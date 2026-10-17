@@ -700,9 +700,7 @@ def _maze(
         # any `edge_id` on the input graph is ignored.
         for u, v in graph.edges():
             if "distance" not in graph.edges[u, v]:
-                p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
-                p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
-                graph.edges[u, v]["distance"] = float(np.linalg.norm(p2 - p1))
+                add_edge_with_distance(graph, u, v)
     elif node_positions is not None:
         coordinates = _track_points(
             list(node_positions.values()),
