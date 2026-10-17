@@ -123,6 +123,31 @@ def _node_attributes(graph: nx.Graph):
     return {node: dict(data) for node, data in graph.nodes(data=True)}
 
 
+def _assert_same_edge_geometry(derived: nx.Graph, engine: nx.Graph) -> None:
+    """Edges match exactly; float attributes match to rounding.
+
+    The engine and the derived graph compute distances and angles separately
+    (scalar ``math.atan2`` against vectorized ``np.arctan2``), and NumPy's
+    SIMD paths may round the last bit differently on some CPUs.
+    """
+    derived_edges, engine_edges = _edge_attributes(derived), _edge_attributes(engine)
+    assert derived_edges.keys() == engine_edges.keys()
+    for edge, attributes in derived_edges.items():
+        expected = engine_edges[edge]
+        assert attributes.keys() == expected.keys(), edge
+        for key, value in attributes.items():
+            if isinstance(value, int):
+                assert value == expected[key], (edge, key)
+            else:
+                np.testing.assert_allclose(
+                    value,
+                    expected[key],
+                    rtol=1e-12,
+                    atol=1e-12,
+                    err_msg=f"{edge} {key}",
+                )
+
+
 def test_engine_has_only_build_and_binning() -> None:
     public = {name for name in dir(_RecordedGrid) if not name.startswith("_")}
     assert public == {"build", "binning"}
@@ -214,7 +239,7 @@ def test_non_grid_engine_matches_builtin_engine(kind, params) -> None:
 
     np.testing.assert_array_equal(env.bin_centers, source.bin_centers)
     assert _node_attributes(env.connectivity) == _node_attributes(source.connectivity)
-    assert _edge_attributes(env.connectivity) == _edge_attributes(source.connectivity)
+    _assert_same_edge_geometry(env.connectivity, source.connectivity)
     assert env.grid_shape == source.grid_shape
     np.testing.assert_array_equal(env.active_mask, source.active_mask)
     np.testing.assert_array_equal(
