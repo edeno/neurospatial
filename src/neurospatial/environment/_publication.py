@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -21,8 +22,10 @@ from scipy import sparse
 
 from neurospatial._exceptions import _format_error
 from neurospatial._logging import log_environment_created
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.arena import EgocentricSurround
 from neurospatial.environment._cache import AnalysisCache
+from neurospatial.environment._regions import _owned_regions
 from neurospatial.geometry import (
     Binning,
     CartesianSystem,
@@ -80,6 +83,57 @@ class _Metadata:
             if not isinstance(value, str) and not (key != "name" and value is None):
                 expected = "str" if key == "name" else "str or None"
                 raise TypeError(f"Environment.{key} must be a {expected}.")
+
+
+# Unit labels that tools reading ``units`` (scale bars, simulators) recognize.
+_UNITS_REGISTRY: frozenset[str] = frozenset({"cm", "m", "mm", "px", "pixels"})
+
+
+def _validate_units(value: object) -> None:
+    """Warn if ``value`` is not in :data:`_UNITS_REGISTRY`.
+
+    Called when constructing or replacing the units declaration. The
+    registry is intentionally small and advisory; the goal is to
+    catch typos (``"centimeters"``, ``"px "``) without preventing
+    legitimate free-form values.
+    """
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise TypeError(
+            f"Environment.units must be a str or None, got {type(value).__name__}."
+        )
+    if value not in _UNITS_REGISTRY:
+        warnings.warn(
+            f"Environment.units={value!r} is not in the standard "
+            f"registry {sorted(_UNITS_REGISTRY)}. Free-form strings "
+            "are allowed but may not be interpreted by tools that consume "
+            "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+            category=UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+
+
+def _replace_metadata(
+    metadata: _Metadata,
+    *,
+    name: str | _Unset,
+    units: str | None | _Unset,
+    frame: str | None | _Unset,
+) -> _Metadata:
+    """Return ``metadata`` with the labels a caller supplied replaced.
+
+    An omitted label (``UNSET``) is kept; ``None`` clears ``units`` or
+    ``frame``. Only newly declared units are checked against the registry.
+    """
+    replaced = _Metadata(
+        metadata.name if isinstance(name, _Unset) else name,
+        metadata.units if isinstance(units, _Unset) else units,
+        metadata.frame if isinstance(frame, _Unset) else frame,
+    )
+    if not isinstance(units, _Unset):
+        _validate_units(replaced.units)
+    return replaced
 
 
 def _freeze_diffusion_geometry(geometry: DiffusionGeometry) -> DiffusionGeometry:
@@ -308,7 +362,6 @@ class _Provenance:
 
 
 def _declared_metadata(
-    cls: type[Environment[Any]],
     *,
     name: str = "",
     units: str | None = None,
@@ -319,7 +372,7 @@ def _declared_metadata(
     Unrecognized units warn here, once per declaration; derived environments
     reuse their parent's record and do not warn again.
     """
-    cls._validate_units(units)
+    _validate_units(units)
     return _Metadata(name, units, frame)
 
 
@@ -351,6 +404,54 @@ def _validate_coordinates(
                 "EgocentricPolarSystem(arena.circular)",
             )
         )
+
+
+def _restored_state(state: object) -> dict[str, Any]:
+    """Validate an unpickled Environment state and re-own its records.
+
+    The geometry records mark their arrays read-only again as they are
+    unpickled; the arena and regions are snapshotted again here.
+
+    Raises
+    ------
+    TypeError
+        If ``state`` is not the state of an Environment pickled by this
+        version of neurospatial.
+    """
+    expected = {
+        "_metadata": _Metadata,
+        "_regions": Regions,
+        "_provenance": _Provenance,
+        "_geometry": _PublishedGeometry,
+        "_cache": AnalysisCache,
+    }
+    if (
+        not isinstance(state, dict)
+        or state.keys() != expected.keys()
+        or not all(isinstance(state[key], kind) for key, kind in expected.items())
+    ):
+        found = sorted(state) if isinstance(state, dict) else type(state).__name__
+        raise TypeError(
+            _format_error(
+                "This pickle does not hold an Environment saved by this "
+                f"version of neurospatial (its state is {found}).",
+                why=(
+                    "Why: pickle stores the class's private layout, which "
+                    "changes between versions; it only moves environments "
+                    "between processes running the same version."
+                ),
+                fix=(
+                    "save with env.to_file(path) and read with "
+                    "Environment.from_file(path), which work across versions"
+                ),
+            )
+        )
+    geometry: _PublishedGeometry = state["_geometry"]
+    return {
+        **state,
+        "_geometry": replace(geometry, arena=own_arena(geometry.arena)),
+        "_regions": _owned_regions(state["_regions"], geometry.binning.bins.n_dims),
+    }
 
 
 def _publish(
@@ -434,7 +535,9 @@ def _publish(
     env._geometry = _PublishedGeometry(
         binning, graph, compute_grid_index(binning), arena, coordinates
     )
-    env._regions = env._validate_regions(Regions() if regions is None else regions)
+    env._regions = _owned_regions(
+        Regions() if regions is None else regions, binning.bins.n_dims
+    )
     env._cache = AnalysisCache()
     log_environment_created(
         env_type=binning.kind,

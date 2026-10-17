@@ -198,6 +198,39 @@ def _warn_outline_crossings(
     )
 
 
+def _rebin(
+    binning: Binning,
+    arena: Arena,
+    connectivity: nx.Graph,
+    layout_parameters: Mapping[str, Any],
+    *,
+    factor: int | tuple[int, ...] | None,
+    bin_size: float | tuple[float, ...] | None,
+) -> tuple[_Derivation, RebinCheck]:
+    """Build the new bins for ``Environment.rebin`` and the check to run on them.
+
+    Exactly one of ``factor`` (integer coarsening of a rectangular grid) and
+    ``bin_size`` (a new physical bin size over the retained arena) is given.
+    Unsupported bins are refused before any bins are built.
+
+    Returns
+    -------
+    derivation : _Derivation
+        The new bins, to publish as a derivation of the source environment.
+    check : RebinCheck
+        Which source bins to check for loss once the new bins are published.
+    """
+    if (factor is None) == (bin_size is None):
+        raise ValueError("Pass exactly one of factor or bin_size to rebin().")
+    refuse_unsupported_rebin(
+        binning, arena, layout_parameters, factor=factor, bin_size=bin_size
+    )
+    if bin_size is not None:
+        return _rebin_resolution(binning, arena, bin_size)
+    assert factor is not None
+    return _rebin_factor(binning, connectivity, arena, factor)
+
+
 def refuse_unsupported_rebin(
     binning: Binning,
     arena: Arena,

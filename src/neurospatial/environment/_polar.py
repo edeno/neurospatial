@@ -91,6 +91,6 @@ def _create_polar_environment(
     return _publication.publish_layout(
         cls,
         cast("LayoutEngine", layout),
-        metadata=_declared_metadata(cls, name=name, units=units, frame=frame),
+        metadata=_declared_metadata(name=name, units=units, frame=frame),
         coordinates=EgocentricPolarSystem(circular_angle),
     )

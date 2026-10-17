@@ -12,13 +12,54 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import RegionNotFoundError, _format_error
 from neurospatial.geometry import Binning, region_bin_mask
-from neurospatial.regions import Regions
+from neurospatial.regions import Regions, _snapshot_regions
 
 if TYPE_CHECKING:
     from neurospatial.environment._cache import AnalysisCache
     from neurospatial.geometry import Arena
+
+
+def _owned_regions(regions: object, n_dims: int) -> Regions:
+    """Return an immutable snapshot of ``regions`` for an ``n_dims`` environment.
+
+    Raises
+    ------
+    TypeError
+        If ``regions`` is not a Regions collection.
+    ValueError
+        If a region's coordinates have a different dimension.
+    """
+    if not isinstance(regions, Regions):
+        raise TypeError("regions must be a Regions instance.")
+    if any(region.n_dims != n_dims for region in regions.values()):
+        raise ValueError("Region coordinate dimensions must match the environment.")
+    return _snapshot_regions(regions)
+
+
+def _bins_in_region(
+    region_name: str,
+    regions: Regions,
+    *,
+    binning: Binning,
+    arena: Arena,
+    cache: AnalysisCache,
+    include_boundary: bool,
+) -> NDArray[np.intp]:
+    """Indices of the bins the named region covers, in increasing order."""
+    if region_name not in regions:
+        raise RegionNotFoundError(
+            region_name, available=list(regions), argument="region_name"
+        )
+    mask = region_bin_mask(
+        regions[region_name],
+        binning=binning,
+        arena=arena,
+        include_boundary=include_boundary,
+        indexes=cache,
+    )
+    return np.flatnonzero(mask).astype(np.intp, copy=False)
 
 
 def _region_membership(

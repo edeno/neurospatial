@@ -4,13 +4,10 @@ from __future__ import annotations
 
 import copy as copy_module
 import logging
-import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from typing import (
     TYPE_CHECKING,
     Any,
-    ClassVar,
     Generic,
     Literal,
     TypeVar,
@@ -22,9 +19,8 @@ from numpy.typing import ArrayLike, NDArray
 from scipy import sparse
 from typing_extensions import Self
 
-from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
-from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._affine import _apply_transform
 from neurospatial.environment._cache import (
     BIN_ATTRIBUTES,
@@ -78,6 +74,8 @@ from neurospatial.environment._publication import (
     _Metadata,
     _Provenance,
     _PublishedGeometry,
+    _replace_metadata,
+    _restored_state,
     _Unset,
     editable_graph,
     publish_derived,
@@ -86,17 +84,18 @@ from neurospatial.environment._queries import (
     _bin_center_of,
     _components,
     _distance_to,
+    _linear_to_nd,
     _path_between,
     _reachable_from,
     _rings,
+    _to_linear,
 )
-from neurospatial.environment._rebin import (
-    _rebin_factor,
-    _rebin_resolution,
-    refuse_unsupported_rebin,
-    warn_rebin_losses,
+from neurospatial.environment._rebin import _rebin, warn_rebin_losses
+from neurospatial.environment._regions import (
+    _bins_in_region,
+    _owned_regions,
+    _region_membership,
 )
-from neurospatial.environment._regions import _region_membership
 from neurospatial.environment._subset import _subset
 from neurospatial.environment._summary import _info, _repr, _repr_html
 from neurospatial.environment._targets import resolve_targets
@@ -120,9 +119,7 @@ from neurospatial.geometry import (
     composition_bin_sources,
     composition_component_keys,
     locate,
-    own_arena,
     own_binning,
-    region_bin_mask,
 )
 from neurospatial.layout import LayoutType
 from neurospatial.ops import (
@@ -133,7 +130,7 @@ from neurospatial.ops import (
 )
 from neurospatial.ops.distance import geodesic_distance_between_points
 from neurospatial.ops.mapping import TieBreakStrategy
-from neurospatial.regions import Region, Regions, _snapshot_regions
+from neurospatial.regions import Region, Regions
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -365,37 +362,7 @@ class Environment(Generic[_C]):
             If ``state`` is not the state of an Environment pickled by this
             version of neurospatial.
         """
-        expected = {
-            "_metadata": _Metadata,
-            "_regions": Regions,
-            "_provenance": _Provenance,
-            "_geometry": _PublishedGeometry,
-            "_cache": AnalysisCache,
-        }
-        if (
-            not isinstance(state, dict)
-            or state.keys() != expected.keys()
-            or not all(isinstance(state[key], kind) for key, kind in expected.items())
-        ):
-            found = sorted(state) if isinstance(state, dict) else type(state).__name__
-            raise TypeError(
-                _format_error(
-                    "This pickle does not hold an Environment saved by this "
-                    f"version of neurospatial (its state is {found}).",
-                    why=(
-                        "Why: pickle stores the class's private layout, which "
-                        "changes between versions; it only moves environments "
-                        "between processes running the same version."
-                    ),
-                    fix=(
-                        "save with env.to_file(path) and read with "
-                        "Environment.from_file(path), which work across versions"
-                    ),
-                )
-            )
-        self.__dict__.update(state)
-        self._geometry = replace(self._geometry, arena=own_arena(self._geometry.arena))
-        self._regions = self._validate_regions(self._regions)
+        self.__dict__.update(_restored_state(state))
 
     @property
     def _binning(self) -> Binning:
@@ -498,35 +465,6 @@ class Environment(Generic[_C]):
             count=count,
         )
 
-    _UNITS_REGISTRY: ClassVar[frozenset[str]] = frozenset(
-        {"cm", "m", "mm", "px", "pixels"}
-    )
-
-    @classmethod
-    def _validate_units(cls, value: object) -> None:
-        """Warn if ``value`` is not in :attr:`_UNITS_REGISTRY`.
-
-        Called when constructing or replacing the units declaration. The
-        registry is intentionally small and advisory; the goal is to
-        catch typos (``"centimeters"``, ``"px "``) without preventing
-        legitimate free-form values.
-        """
-        if value is None:
-            return
-        if not isinstance(value, str):
-            raise TypeError(
-                f"Environment.units must be a str or None, got {type(value).__name__}."
-            )
-        if value not in cls._UNITS_REGISTRY:
-            warnings.warn(
-                f"Environment.units={value!r} is not in the standard "
-                f"registry {sorted(cls._UNITS_REGISTRY)}. Free-form strings "
-                "are allowed but may not be interpreted by tools that consume "
-                "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
-                category=UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-
     def _replace_value(self) -> Self:
         """Share published geometry and its analysis cache with a new instance."""
         result = type(self).__new__(type(self))
@@ -564,24 +502,11 @@ class Environment(Generic[_C]):
             Same concrete type and geometry. It shares this environment's
             analysis cache, so analyses computed on either are reused by both.
         """
-        metadata = _Metadata(
-            self.name if isinstance(name, _Unset) else name,
-            self.units if isinstance(units, _Unset) else units,
-            self.frame if isinstance(frame, _Unset) else frame,
-        )
-        if not isinstance(units, _Unset):
-            type(self)._validate_units(metadata.units)
         result = self._replace_value()
-        result._metadata = metadata
+        result._metadata = _replace_metadata(
+            self._metadata, name=name, units=units, frame=frame
+        )
         return result
-
-    def _validate_regions(self, regions: Regions) -> Regions:
-        if not isinstance(regions, Regions):
-            raise TypeError("regions must be a Regions instance.")
-        n_dims = self._binning.bins.n_dims
-        if any(region.n_dims != n_dims for region in regions.values()):
-            raise ValueError("Region coordinate dimensions must match the environment.")
-        return _snapshot_regions(regions)
 
     def with_regions(self, regions: Regions) -> Self:
         """Return a new environment owning a snapshot of a region collection.
@@ -599,7 +524,7 @@ class Environment(Generic[_C]):
             Same concrete type and geometry. It shares this environment's
             analysis cache, so analyses computed on either are reused by both.
         """
-        snapshot = self._validate_regions(regions)
+        snapshot = _owned_regions(regions, self.n_dims)
         result = self._replace_value()
         result._regions = snapshot
         return result
@@ -1599,15 +1524,7 @@ class Environment(Generic[_C]):
         array([50.])
 
         """
-        linearization = self._binning.linearization
-        if linearization is None:
-            msg = (
-                "to_linear() is only available for 1D environments (GraphLayout). "
-                f"This environment is {self.n_dims}D. "
-                "Use bin_at() to map positions to bins for N-D environments."
-            )
-            raise TypeError(msg)
-        return linearization.to_linear(positions)
+        return _to_linear(self._binning, positions)
 
     @cartesian_only(
         why="It maps positions along a track that Environment.from_graph built "
@@ -1669,15 +1586,7 @@ class Environment(Generic[_C]):
         array([[50.,  0.]])
 
         """
-        linearization = self._binning.linearization
-        if linearization is None:
-            msg = (
-                "linear_to_nd() is only available for 1D environments (GraphLayout). "
-                f"This environment is {self.n_dims}D. "
-                "Use bin_center_of() to get bin centers for N-D environments."
-            )
-            raise TypeError(msg)
-        return linearization.linear_to_nd(linear_position)
+        return _linear_to_nd(self._binning, linear_position)
 
     def occupancy(
         self,
@@ -2330,23 +2239,14 @@ class Environment(Generic[_C]):
         True
 
         """
-        if (factor is None) == (bin_size is None):
-            raise ValueError("Pass exactly one of factor or bin_size to rebin().")
-        refuse_unsupported_rebin(
+        derivation, check = _rebin(
             self._binning,
             self._arena,
+            self.connectivity,
             self._provenance.build_params,
             factor=factor,
             bin_size=bin_size,
         )
-
-        if bin_size is not None:
-            derivation, check = _rebin_resolution(self._binning, self._arena, bin_size)
-        else:
-            assert factor is not None
-            derivation, check = _rebin_factor(
-                self._binning, self.connectivity, self._arena, factor
-            )
         rebinned = publish_derived(self, derivation, name=name)
         warn_rebin_losses(self._binning, self._arena, rebinned, check)
         return rebinned
@@ -2775,16 +2675,14 @@ class Environment(Generic[_C]):
         ValueError
             If coordinates disagree, components overlap, or support cannot be certified.
         """
-        derivation = _combine(
+        return _combine(
             Environment,
             components,
             auto_bridge=auto_bridge,
             max_mnn_distance=max_mnn_distance,
             bridge_conductances=bridge_conductances,
+            name=name,
         )
-        # Units and frame come from the first component; all components share them.
-        first = next(iter(components.values()))
-        return publish_derived(first, derivation, name=name)
 
     @classmethod
     @keyword_hint()
@@ -4891,18 +4789,14 @@ class Environment(Generic[_C]):
         region_membership : Bins-by-regions membership table.
 
         """
-        if region_name not in self.regions:
-            raise RegionNotFoundError(
-                region_name, available=list(self.regions), argument="region_name"
-            )
-        mask = region_bin_mask(
-            self.regions[region_name],
+        return _bins_in_region(
+            region_name,
+            self.regions,
             binning=self._binning,
             arena=self._arena,
+            cache=self._cache,
             include_boundary=include_boundary,
-            indexes=self._cache,
         )
-        return np.flatnonzero(mask).astype(np.intp, copy=False)
 
     def region_membership(
         self,

@@ -13,11 +13,48 @@ from numpy.typing import NDArray
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._targets import validate_bin_indices
 from neurospatial.geometry import (
+    Binning,
     CartesianSystem,
     EgocentricPolarSystem,
+    TrackLinearization,
     require_cartesian,
 )
 from neurospatial.ops.distance import distance_field
+
+
+def _track_linearization(
+    binning: Binning, operation: str, alternative: str
+) -> TrackLinearization:
+    """Return the track linearization, or refuse ``operation`` off a track."""
+    linearization = binning.linearization
+    if linearization is None:
+        raise TypeError(
+            f"{operation} is only available for 1D environments (GraphLayout). "
+            f"This environment is {binning.bins.n_dims}D. {alternative}"
+        )
+    return linearization
+
+
+def _to_linear(binning: Binning, positions: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Project positions onto a track's centerline, as linear coordinates."""
+    linearization = _track_linearization(
+        binning,
+        "to_linear()",
+        "Use bin_at() to map positions to bins for N-D environments.",
+    )
+    return linearization.to_linear(positions)
+
+
+def _linear_to_nd(
+    binning: Binning, linear_position: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Map linear track coordinates back to positions on the centerline."""
+    linearization = _track_linearization(
+        binning,
+        "linear_to_nd()",
+        "Use bin_center_of() to get bin centers for N-D environments.",
+    )
+    return linearization.linear_to_nd(linear_position)
 
 
 def _bin_center_of(

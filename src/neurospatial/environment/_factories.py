@@ -82,7 +82,7 @@ def _from_bins(
         snapshot,
         coordinates=CartesianSystem(),
         provenance=_Provenance({}),
-        metadata=_declared_metadata(cls, name=name, units=units, frame=frame),
+        metadata=_declared_metadata(name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
     )
@@ -985,7 +985,7 @@ def _build_layout(
     layout_params = _owned_copy(layout_params)
     if arena is not None:
         arena = own_arena(arena)
-    metadata = _declared_metadata(cls, name=name, units=units, frame=frame)
+    metadata = _declared_metadata(name=name, units=units, frame=frame)
     layout_instance = create_layout(kind=kind, **layout_params)
     return _publication.publish_layout(
         cls,
@@ -1033,7 +1033,7 @@ def _from_layout(
     return _publication.publish_layout(
         cls,
         layout,
-        metadata=_declared_metadata(cls, name=name, units=units, frame=frame),
+        metadata=_declared_metadata(name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
         within_arena=True,

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import IncompatibleEnvironmentError
 from neurospatial._logging import log_environment_combine
-from neurospatial.environment._publication import _Derivation
+from neurospatial.environment._publication import _Derivation, publish_derived
 from neurospatial.geometry import (
     BridgeKey,
     _CombinedArena,
@@ -20,6 +20,7 @@ from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
+    from neurospatial.geometry import CartesianSystem
 
 
 def _combine(
@@ -29,13 +30,14 @@ def _combine(
     auto_bridge: bool,
     max_mnn_distance: float | None,
     bridge_conductances: Mapping[BridgeKey, float] | None,
-) -> _Derivation:
-    """Validate components and join their bins into one derivation.
+    name: str,
+) -> Environment[CartesianSystem]:
+    """Validate components and publish their joined bins as one environment.
 
     The result is published as a derivation of the first component, whose
-    units and frame every component shares. ``environment_type`` is the
-    ``Environment`` class, passed in because ``core`` imports this module;
-    every component must be an instance of it.
+    units and frame every component shares; ``name`` replaces its name.
+    ``environment_type`` is the ``Environment`` class, passed in because
+    ``core`` imports this module; every component must be an instance of it.
     """
     if not isinstance(components, Mapping) or not components:
         raise ValueError(
@@ -93,7 +95,7 @@ def _combine(
 
     # The components have no single parent: the history starts here and no
     # one layout's build choices describe the joined bins.
-    return _Derivation(
+    derivation = _Derivation(
         binning,
         "combine",
         build_params={},
@@ -101,3 +103,5 @@ def _combine(
         regions=regions,
         arena=_CombinedArena(arenas),
     )
+    # Units and frame come from the first component; all components share them.
+    return publish_derived(first, derivation, name=name)

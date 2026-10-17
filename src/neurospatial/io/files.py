@@ -562,7 +562,6 @@ def _restore_environment(
             coordinates=coordinates,
             provenance=_Provenance(params, derivations),
             metadata=_declared_metadata(
-                Environment,
                 name=metadata["name"],
                 units=metadata.get("units"),
                 frame=metadata.get("frame"),
