@@ -32,6 +32,7 @@ from neurospatial.geometry import (
     NativeFaces,
     SpatialBins,
     apply_walls,
+    get_centers,
     materialize_cells,
     prepare_bins,
     transform_binning,
@@ -64,6 +65,12 @@ class RebinCheck:
     considered: NDArray[np.bool_] | None
     lost_remedy: str
     crossing_remedy: str
+
+
+def _grid_centers(edges: tuple[NDArray[np.float64], ...]) -> NDArray[np.float64]:
+    """Centers of every cell of a grid, shape ``(n_cells, n_dims)``, C order."""
+    axes = np.meshgrid(*(get_centers(edge) for edge in edges), indexing="ij")
+    return np.column_stack([axis.ravel() for axis in axes])
 
 
 def warn_rebin_losses(
@@ -417,10 +424,7 @@ def _rebin_resolution(
         raise ValueError(
             "bin_size is too small at this coordinate precision; recenter coordinates or use larger bins."
         )
-    axes = [(edge[:-1] + edge[1:]) / 2 for edge in edges]
-    centers = np.column_stack(
-        [axis.ravel() for axis in np.meshgrid(*axes, indexing="ij")]
-    )
+    centers = _grid_centers(edges)
     mapped = centers @ spec.forward[:-1, :-1].T + spec.forward[:-1, -1]
     domain = arena.polygonal_domain()
     if domain is not None:
@@ -661,41 +665,18 @@ def _rebin_factor(
 
     # --- Compute new grid parameters ---
 
-    # Truncate grid edges if needed
-    truncated_edges = []
-    for edges, trunc_size in zip(grid_edges, truncated_shape, strict=True):
-        # Keep edges up to truncated_size + 1 (edges define bins)
-        truncated_edges.append(edges[: trunc_size + 1])
-
-    # Compute new coarsened edges
+    # Keep the edges of the truncated grid, then every factor-th of them.
     coarse_edges = tuple(
-        edges[::f] for edges, f in zip(truncated_edges, factor_tuple, strict=True)
+        edges[: size + 1 : f]
+        for edges, size, f in zip(
+            grid_edges, truncated_shape, factor_tuple, strict=True
+        )
     )
-
-    # New grid shape
     coarse_shape = tuple(len(edges) - 1 for edges in coarse_edges)
 
-    # --- Compute new bin centers from coarsened edges ---
-
-    # For each coarse bin, compute center from the coarse grid edges
-    # This avoids issues with active/inactive bins from the original grid
-
-    # Create bin centers from coarse edges using meshgrid
-    coarse_grid_centers = []
-    for edges in coarse_edges:
-        # Bin centers are midpoints between edges
-        centers = (edges[:-1] + edges[1:]) / 2
-        coarse_grid_centers.append(centers)
-
-    # Create meshgrid of bin centers
-    if n_dims == 1:
-        center_coords = [coarse_grid_centers[0]]
-    else:
-        center_grids = np.meshgrid(*coarse_grid_centers, indexing="ij")
-        center_coords = [grid.ravel() for grid in center_grids]
-
-    # Stack into (n_bins, n_dims)
-    coarse_bin_centers = np.column_stack(center_coords)
+    # Centers come from the coarse edges, not from the original grid's
+    # active bins.
+    coarse_bin_centers = _grid_centers(coarse_edges)
 
     # Finalize active cells before constructing the graph or publishing an
     # environment. The original arena remains the continuous authority. Its
