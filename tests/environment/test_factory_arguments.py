@@ -497,8 +497,15 @@ def test_long_values_are_named_by_type_in_the_advice(positions):
 
 
 def test_other_argument_errors_keep_their_python_message(positions):
-    with pytest.raises(TypeError, match="Did you mean 'bin_size'"):
+    # Python's own wording (including any "Did you mean" hint, which depends
+    # on the Python version) passes through the hint decorator unchanged.
+    undecorated = inspect.unwrap(Environment.__dict__["from_samples"].__func__)
+    with pytest.raises(TypeError) as expected:
+        undecorated(Environment, positions, bin_sizee=4.0)
+    with pytest.raises(TypeError) as caught:
         Environment.from_samples(positions, bin_sizee=4.0)
+    assert str(caught.value) == str(expected.value)
+    assert "bin_sizee" in str(caught.value)
     with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
         Environment.from_samples(positions)
     # A TypeError raised while the factory runs is not rewritten.
