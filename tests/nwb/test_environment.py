@@ -2487,11 +2487,13 @@ def test_nwb_writer_names_a_json_only_track_attribute(empty_nwb, key, value, rea
 
     from neurospatial import Environment
     from neurospatial.io.nwb import write_environment
+    from neurospatial.io.nwb._environment import DEFAULT_ENVIRONMENT_NAME
 
     graph = nx.Graph()
     graph.add_node(0, pos=(0.0, 0.0))
     graph.add_node(1, pos=(10.0, 0.0))
     graph.add_edge(0, 1, distance=10.0)
+    clean = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
     graph.nodes[0][key] = value
     track = Environment.from_graph(graph, [(0, 1)], edge_spacing=0.0, bin_size=2.0)
 
@@ -2501,4 +2503,7 @@ def test_nwb_writer_names_a_json_only_track_attribute(empty_nwb, key, value, rea
         write_environment(empty_nwb, track)
 
     assert reason in str(error.value)
-    assert "environment" not in empty_nwb.scratch
+    assert DEFAULT_ENVIRONMENT_NAME not in empty_nwb.scratch
+    # The same check sees a record the writer does store under that name.
+    write_environment(empty_nwb, clean)
+    assert DEFAULT_ENVIRONMENT_NAME in empty_nwb.scratch
