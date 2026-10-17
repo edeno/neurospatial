@@ -6,6 +6,8 @@ components to ensure consistent behavior and messaging.
 
 from __future__ import annotations
 
+import logging
+import sys
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Literal
 
@@ -13,6 +15,21 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from matplotlib.figure import Figure
+
+
+logger = logging.getLogger(__name__)
+
+
+def _emit_status(message: str) -> None:
+    """Emit a user-facing status/progress message.
+
+    Written to ``stderr`` so it is visible by default -- ``logger.info`` output
+    is silent unless the application configured logging, which silently hid the
+    dry-run estimate and render/encode progress in a plain notebook or script.
+    Also logged at INFO for callers that consume the module logger.
+    """
+    print(message, file=sys.stderr, flush=True)
+    logger.info(message)
 
 
 @contextmanager

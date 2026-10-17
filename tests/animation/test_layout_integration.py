@@ -153,7 +153,6 @@ def test_1d_graph_layout_with_html_backend(tmp_path):
         frame_times=frame_times,
         backend="html",
         save_path=str(output_path),
-        fps=10,
     )
 
     # Verify HTML file created

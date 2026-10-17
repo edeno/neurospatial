@@ -122,7 +122,6 @@ class TestNonGridEnvironmentSupport:
             overlays=[video_overlay],
             backend="video",
             save_path=str(output_path),
-            fps=10,
             n_workers=1,
         )
 
@@ -197,7 +196,6 @@ class TestNapariFreeOperation:
                 overlays=[video_overlay],
                 backend="video",
                 save_path=str(output_path),
-                fps=10,
                 n_workers=1,
             )
 

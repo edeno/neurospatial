@@ -617,7 +617,7 @@ env.animate_fields(
     region_alpha=0.4,
     backend="video",
     save_path="behavior_analysis.mp4",
-    title="Place Field Dynamics with Behavior",
+    frame_labels=[f"{t:.1f} s" for t in frame_times],
 )
 ```
 

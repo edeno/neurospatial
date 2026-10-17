@@ -122,20 +122,18 @@ class TestNapariVideoOverlay:
         - Layer has correct name pattern
         - Layer is an Image type
         """
-        import napari
 
-        viewer = napari.Viewer(show=False)
+        viewer = None
         try:
             # Create frame times
             n_frames = len(video_test_fields)
             frame_times = np.linspace(0, 1.0, n_frames)
 
             # Add field with video overlay
-            video_test_env.animate_fields(
+            viewer = video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
-                viewer=viewer,
                 frame_times=frame_times,
             )
 
@@ -151,7 +149,8 @@ class TestNapariVideoOverlay:
             )
 
         finally:
-            viewer.close()
+            if viewer is not None:
+                viewer.close()
 
     def test_video_spatial_alignment(
         self,
@@ -165,19 +164,17 @@ class TestNapariVideoOverlay:
         - Video layer has an affine transform
         - Transform positions video in environment coordinate space
         """
-        import napari
 
-        viewer = napari.Viewer(show=False)
+        viewer = None
         try:
             # Create frame times
             n_frames = len(video_test_fields)
             frame_times = np.linspace(0, 1.0, n_frames)
 
-            video_test_env.animate_fields(
+            viewer = video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
-                viewer=viewer,
                 frame_times=frame_times,
             )
 
@@ -206,7 +203,8 @@ class TestNapariVideoOverlay:
             )
 
         finally:
-            viewer.close()
+            if viewer is not None:
+                viewer.close()
 
     def test_video_temporal_sync(
         self,
@@ -220,19 +218,17 @@ class TestNapariVideoOverlay:
         - Initial frame is loaded
         - Frame changes when dims slider moves
         """
-        import napari
 
-        viewer = napari.Viewer(show=False)
+        viewer = None
         try:
             # Create frame times
             n_frames = len(video_test_fields)
             frame_times = np.linspace(0, 1.0, n_frames)
 
-            video_test_env.animate_fields(
+            viewer = video_test_env.animate_fields(
                 video_test_fields,
                 overlays=[video_overlay_16x16],
                 backend="napari",
-                viewer=viewer,
                 frame_times=frame_times,
             )
 
@@ -263,7 +259,8 @@ class TestNapariVideoOverlay:
                 assert video_layer.data is not None, "Video data should persist"
 
         finally:
-            viewer.close()
+            if viewer is not None:
+                viewer.close()
 
 
 # =============================================================================
@@ -305,7 +302,6 @@ class TestVideoExportIntegration:
             overlays=[video_overlay_array],
             backend="video",
             save_path=str(output_path),
-            fps=10,
             n_workers=1,  # Serial for reliability
             frame_times=frame_times,
         )
@@ -354,7 +350,6 @@ class TestVideoExportIntegration:
             overlays=[video_overlay_array],
             backend="video",
             save_path=str(serial_path),
-            fps=10,
             n_workers=1,
             frame_times=frame_times,
         )
@@ -368,7 +363,6 @@ class TestVideoExportIntegration:
             overlays=[video_overlay_array],
             backend="video",
             save_path=str(parallel_path),
-            fps=10,
             n_workers=2,
             frame_times=frame_times,
         )
@@ -437,7 +431,6 @@ class TestVideoExportIntegration:
             overlays=[overlay_below],
             backend="video",
             save_path=str(below_path),
-            fps=10,
             n_workers=1,
             frame_times=frame_times,
         )
@@ -451,7 +444,6 @@ class TestVideoExportIntegration:
             overlays=[overlay_above],
             backend="video",
             save_path=str(above_path),
-            fps=10,
             n_workers=1,
             frame_times=frame_times,
         )

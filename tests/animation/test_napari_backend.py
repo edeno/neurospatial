@@ -427,32 +427,6 @@ def test_render_napari_frame_labels(simple_env, simple_fields):
 
 
 @pytest.mark.napari
-def test_render_napari_gracefully_accepts_extra_params(simple_env, simple_fields):
-    """Test that render_napari accepts extra parameters gracefully (via **kwargs)."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer_class.return_value = mock_viewer
-
-        # Should not raise error even with video/html-specific params
-        viewer = render_napari(
-            simple_env,
-            simple_fields,
-            dpi=150,  # Video/HTML parameter
-            codec="h264",  # Video parameter
-            image_format="jpeg",  # HTML parameter
-        )
-
-        # Should still work
-        assert viewer is not None
-
-
-@pytest.mark.napari
 def test_render_napari_playback_controls(simple_env, simple_fields):
     """Test that playback controls are configured correctly."""
     pytest.importorskip("napari")
@@ -628,54 +602,25 @@ def test_spacebar_keyboard_shortcut(simple_env, simple_fields):
 
 
 # ============================================================================
-# Unknown kwargs warning test
+# Unknown keyword test
 # ============================================================================
 
 
 @pytest.mark.napari
-def test_render_napari_warns_on_unknown_kwargs(simple_env, simple_fields):
-    """Test that render_napari emits warning for unknown kwargs."""
+def test_render_napari_refuses_unknown_keywords(simple_env, simple_fields):
+    """An option render_napari does not take raises instead of being ignored."""
     pytest.importorskip("napari")
 
     from neurospatial.animation.backends.napari_backend import render_napari
 
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer_class.return_value = mock_viewer
-
-        # Should emit UserWarning about unknown kwargs
-        with pytest.warns(UserWarning, match="unknown keyword arguments"):
-            render_napari(
-                simple_env,
-                simple_fields,
-                unknown_param=42,
-                another_unknown="test",
-            )
-
-
-@pytest.mark.napari
-def test_render_napari_warning_lists_unknown_keys(simple_env, simple_fields):
-    """Test that unknown kwargs warning includes the key names."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    with patch(
-        "neurospatial.animation.backends.napari_backend.napari.Viewer"
-    ) as mock_viewer_class:
-        mock_viewer = _create_mock_viewer()
-        mock_viewer_class.return_value = mock_viewer
-
-        # Check that specific key names appear in warning (alphabetically sorted)
-        with pytest.warns(UserWarning, match="bar_param.*foo_param"):
-            render_napari(
-                simple_env,
-                simple_fields,
-                foo_param=1,
-                bar_param=2,
-            )
+    with (
+        patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class,
+        pytest.raises(TypeError, match="unknown_param"),
+    ):
+        render_napari(simple_env, simple_fields, unknown_param=42)
+    mock_viewer_class.assert_not_called()
 
 
 # ============================================================================
@@ -1440,8 +1385,8 @@ class TestSpeedBasedAPI:
             render_napari(env, fields, fps=30)
 
     @pytest.mark.napari
-    def test_render_napari_speed_not_in_unknown_kwargs_warning(self, env, fields):
-        """Test that speed/sample_rate_hz/max_playback_fps don't trigger unknown kwargs warning."""
+    def test_render_napari_takes_speed_parameters(self, env, fields):
+        """speed, sample_rate_hz and max_playback_fps are render_napari options."""
         pytest.importorskip("napari")
 
         from neurospatial.animation.backends.napari_backend import render_napari
@@ -1452,28 +1397,15 @@ class TestSpeedBasedAPI:
             mock_viewer = _create_mock_viewer()
             mock_viewer_class.return_value = mock_viewer
 
-            import warnings
-
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-
-                # These should NOT trigger unknown kwargs warning
-                render_napari(
-                    env,
-                    fields,
-                    speed=0.5,
-                    sample_rate_hz=30.0,
-                    max_playback_fps=60,
-                    fps=15,
-                )
-
-                # Check no "unknown keyword arguments" warning
-                unknown_kwarg_warnings = [
-                    x for x in w if "unknown keyword arguments" in str(x.message)
-                ]
-                assert len(unknown_kwarg_warnings) == 0, (
-                    f"Got unexpected warning: {unknown_kwarg_warnings}"
-                )
+            viewer = render_napari(
+                env,
+                fields,
+                speed=0.5,
+                sample_rate_hz=30.0,
+                max_playback_fps=60,
+                fps=15,
+            )
+            assert viewer is mock_viewer
 
 
 class TestSpeedControlWidgetSignature:

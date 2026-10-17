@@ -8,6 +8,15 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.animate_fields` refuses an option the chosen backend does not
+  use instead of ignoring it. A misspelled option (`frame_label=`) raises
+  `TypeError` with the closest name; another backend's option (`codec=` with
+  `backend="html"`) raises `ValueError` naming the backend that uses it.
+  Options left at their defaults are accepted by every backend. This also
+  refuses `fps=` (use `speed=`), `overwrite=True` with napari or the widget,
+  `title=` with video and `scale_bar=` with the widget. The unused
+  `contrast_limits`, `show_colorbar` and `colorbar_label` options are removed.
+
 - `Environment.from_polar_egocentric` refuses an `angle_range` wider than one
   turn (2π) with a `ValueError` that shows a one-turn range. Angles a whole
   turn apart name one direction, so after angle wrapping the bins past the
@@ -861,6 +870,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   1.2 s. Occupancy values are unchanged.
 
 ### Fixed
+
+- `Environment.animate_fields(..., dry_run=True)` writes nothing on every
+  backend and returns `None` after reporting what it would render. The HTML
+  backend ignored `dry_run` and wrote `animation.html` into the working
+  directory; napari opened a viewer and the widget displayed. The HTML backend
+  now also draws `scale_bar=`, which it ignored.
+
+- Time-series overlays are drawn by the video and widget backends of
+  `animate_fields`. Those backends never received the frame timestamps the
+  panels are aligned to, so the panels were silently left out.
 
 - Static type checkers accept `Environment.from_polygon(polygon, ...)` with a
   shapely `Polygon`; it was annotated as taking the `Polygon` class itself.

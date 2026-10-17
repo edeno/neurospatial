@@ -1429,40 +1429,34 @@ class TestAnimateFieldsSpeedBasedPlayback:
             call_kwargs = mock.call_args[1]
             assert call_kwargs.get("fps") == 15
 
-    def test_fps_kwarg_is_ignored(self):
-        """Test that fps in kwargs is overwritten by computed fps.
+    def test_fps_option_is_refused_with_the_speed_fix(self):
+        """The playback rate comes from frame_times and speed, so fps= raises.
 
-        The new API computes fps from frame_times and speed, so any
-        user-provided fps should be ignored/overwritten.
+        Ignoring it would play the animation at a rate the caller did not ask
+        for; the message says how to change the rate instead.
         """
         from neurospatial.animation.core import animate_fields
 
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
-
-        # Create 30 Hz data
         fields = [rng.random(env.n_bins) for _ in range(31)]
         frame_times = np.linspace(0, 1, 31)  # 30 Hz
 
-        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
-            mock.return_value = Path("test.html")
-
-            # Pass fps=100 in kwargs - should be ignored/overwritten
+        with (
+            patch("neurospatial.animation.backends.html_backend.render_html") as mock,
+            pytest.raises(TypeError, match="unknown option 'fps'") as error,
+        ):
             animate_fields(
                 env,
                 fields,
                 backend="html",
                 save_path="test.html",
                 frame_times=frame_times,
-                speed=1.0,
                 fps=100,
             )
-
-            call_kwargs = mock.call_args[1]
-            # fps should be 30 (computed from frame_times), not 100
-            # Since MAX_PLAYBACK_FPS=60, 30 Hz data is NOT capped (30 < 60)
-            assert call_kwargs.get("fps") == 30
+        mock.assert_not_called()
+        assert "speed=2.0" in str(error.value)
 
     def test_warning_emitted_when_speed_capped(self):
         """Test that UserWarning is emitted when speed is capped.
@@ -1542,7 +1536,7 @@ class TestAnimateFieldsSpeedBasedPlayback:
                 assert len(w) == 0
 
     def test_sample_rate_hz_passed_to_backend(self):
-        """Test that sample_rate_hz is passed to backend via kwargs (Task 3.2)."""
+        """The napari speed control receives the sample rate of frame_times."""
         from neurospatial.animation.core import animate_fields
 
         rng = np.random.default_rng(42)
@@ -1553,14 +1547,13 @@ class TestAnimateFieldsSpeedBasedPlayback:
         fields = [rng.random(env.n_bins) for _ in range(31)]
         frame_times = np.linspace(0, 1, 31)  # 30 Hz sample rate
 
-        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
-            mock.return_value = Path("test.html")
-
+        with patch(
+            "neurospatial.animation.backends.napari_backend.render_napari"
+        ) as mock:
             animate_fields(
                 env,
                 fields,
-                backend="html",
-                save_path="test.html",
+                backend="napari",
                 frame_times=frame_times,
             )
 
@@ -1569,7 +1562,7 @@ class TestAnimateFieldsSpeedBasedPlayback:
             assert call_kwargs["sample_rate_hz"] == pytest.approx(30.0, rel=0.01)
 
     def test_speed_passed_to_backend(self):
-        """Test that speed is passed to backend via kwargs (Task 3.2)."""
+        """The napari speed control receives the requested speed."""
         from neurospatial.animation.core import animate_fields
 
         rng = np.random.default_rng(42)
@@ -1578,14 +1571,13 @@ class TestAnimateFieldsSpeedBasedPlayback:
         fields = [rng.random(env.n_bins) for _ in range(31)]
         frame_times = np.linspace(0, 1, 31)
 
-        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
-            mock.return_value = Path("test.html")
-
+        with patch(
+            "neurospatial.animation.backends.napari_backend.render_napari"
+        ) as mock:
             animate_fields(
                 env,
                 fields,
-                backend="html",
-                save_path="test.html",
+                backend="napari",
                 frame_times=frame_times,
                 speed=0.5,
             )
@@ -1595,7 +1587,7 @@ class TestAnimateFieldsSpeedBasedPlayback:
             assert call_kwargs["speed"] == 0.5
 
     def test_max_playback_fps_passed_to_backend(self):
-        """Test that max_playback_fps is passed to backend via kwargs (Task 3.2)."""
+        """The napari speed control receives the playback-rate cap."""
         from neurospatial.animation.core import animate_fields
 
         rng = np.random.default_rng(42)
@@ -1604,14 +1596,13 @@ class TestAnimateFieldsSpeedBasedPlayback:
         fields = [rng.random(env.n_bins) for _ in range(31)]
         frame_times = np.linspace(0, 1, 31)
 
-        with patch("neurospatial.animation.backends.html_backend.render_html") as mock:
-            mock.return_value = Path("test.html")
-
+        with patch(
+            "neurospatial.animation.backends.napari_backend.render_napari"
+        ) as mock:
             animate_fields(
                 env,
                 fields,
-                backend="html",
-                save_path="test.html",
+                backend="napari",
                 frame_times=frame_times,
                 max_playback_fps=120,
             )

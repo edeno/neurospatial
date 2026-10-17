@@ -1441,3 +1441,40 @@ glitched[10] = [np.inf, 50.0]  # a tracking glitch
 # Before: Environment.from_samples(glitched, bin_size=4.0) raised "Requested binning overflows"
 arena = Environment.from_samples(glitched, bin_size=4.0, units="cm")
 ```
+
+## Animation options a backend does not use raise
+
+`env.animate_fields` used to pass every extra keyword to the backend, which
+ignored the ones it did not know. A misspelled option such as `frame_label=`
+or an option of another backend, such as `codec=` with `backend="html"`,
+silently changed nothing. Each backend now refuses an option it does not use:
+a misspelled name raises `TypeError` with the closest option, and another
+backend's option raises `ValueError` naming the backend that uses it. Options
+left at their defaults are still accepted by every backend.
+
+- `fps=` raises; the playback rate comes from `frame_times` and `speed=`.
+- `overwrite=True` raises with the napari and widget backends, which write no
+  file, and `title=` raises with the video backend, which draws no title (use
+  `frame_labels=`).
+- `scale_bar=` raises with the widget backend. The HTML backend now draws it.
+- `contrast_limits`, `show_colorbar` and `colorbar_label` are removed; no
+  backend used them. For a labeled color scale, plot one frame with
+  `env.plot_field(field, colorbar_label=...)`.
+- `dry_run=True` now works with every backend and writes nothing. The HTML
+  backend used to ignore it and write `animation.html`.
+
+<!-- docs-test: run -->
+```python
+labels = [f"{t:.2f} s" for t in frame_times]
+# Before: env.animate_fields(fields, frame_times=frame_times, backend="html",
+#                            frame_label=labels)  # labels silently ignored
+try:
+    env.animate_fields(
+        fields, frame_times=frame_times, backend="html", frame_label=labels
+    )
+except TypeError as error:
+    print(str(error).splitlines()[-1])  # Fix: pass frame_labels= instead of frame_label=
+env.animate_fields(
+    fields, frame_times=frame_times, backend="html", frame_labels=labels, dry_run=True
+)
+```

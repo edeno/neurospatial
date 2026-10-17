@@ -27,21 +27,179 @@ MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
 MIN_PLAYBACK_FPS: int = 1  # Minimum usable playback
 DEFAULT_SPEED: float = 1.0  # Real-time by default
 
-_NON_NAPARI_BACKEND_KWARGS = frozenset(
-    {
-        "bitrate",
-        "codec",
-        "colorbar_label",
-        "contrast_limits",
-        "dpi",
-        "dry_run",
-        "image_format",
-        "max_html_frames",
-        "n_workers",
-        "show",
-        "show_colorbar",
-    }
+# The caller options each backend uses. Environment.animate_fields forwards
+# every one of its options to the dispatcher, so an option a backend does not
+# use is dropped when it holds that method's default and refused otherwise.
+_BACKEND_OPTIONS: dict[str, frozenset[str]] = {
+    "napari": frozenset(
+        {
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "title",
+            "cache_size",
+            "chunk_size",
+            "max_chunks",
+            "layout",
+            "layer_names",
+            "show_regions",
+            "region_alpha",
+            "scale_bar",
+            "dry_run",
+        }
+    ),
+    "video": frozenset(
+        {
+            "save_path",
+            "overwrite",
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "dpi",
+            "codec",
+            "crf",
+            "preset",
+            "bitrate",
+            "n_workers",
+            "show_regions",
+            "region_alpha",
+            "scale_bar",
+            "dry_run",
+        }
+    ),
+    "html": frozenset(
+        {
+            "save_path",
+            "overwrite",
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "dpi",
+            "image_format",
+            "max_html_frames",
+            "title",
+            "embed",
+            "frames_dir",
+            "n_workers",
+            "show_regions",
+            "region_alpha",
+            "scale_bar",
+            "dry_run",
+        }
+    ),
+    "widget": frozenset(
+        {
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "dpi",
+            "image_format",
+            "initial_cache_size",
+            "cache_limit",
+            "show_regions",
+            "region_alpha",
+            "dry_run",
+        }
+    ),
+}
+
+# animate_fields parameters every backend uses: they set the frame timing and
+# the overlays rather than how one backend draws.
+_SHARED_OPTIONS = frozenset(
+    {"backend", "overlays", "frame_times", "speed", "max_playback_fps"}
 )
+
+
+def _is_default(value: object, default: object) -> bool:
+    """Whether ``value`` is ``default`` (same type and value, or the same flag)."""
+    if default is None or isinstance(default, bool):
+        return value is default
+    return type(value) is type(default) and value == default
+
+
+def _forwarded_defaults() -> dict[str, Any]:
+    """Defaults of the options Environment.animate_fields forwards."""
+    import inspect
+
+    from neurospatial.environment import Environment
+
+    return {
+        name: parameter.default
+        for name, parameter in inspect.signature(
+            Environment.animate_fields
+        ).parameters.items()
+        if parameter.default is not inspect.Parameter.empty
+    }
+
+
+def _backend_options(backend: str, options: dict[str, Any]) -> dict[str, Any]:
+    """Return the options ``backend`` uses, refusing any other set option.
+
+    Raises
+    ------
+    TypeError
+        If an option is not an option of any backend; the message names the
+        closest option of ``backend``.
+    ValueError
+        If an option belongs to another backend and is not left at its
+        default.
+    """
+    uses = _BACKEND_OPTIONS[backend]
+    defaults = _forwarded_defaults()
+    used: dict[str, Any] = {}
+    for name, value in options.items():
+        if name in uses:
+            used[name] = value
+        elif name in defaults and _is_default(value, defaults[name]):
+            continue
+        else:
+            raise _unused_option_error(backend, name)
+    return used
+
+
+def _unused_option_error(backend: str, name: str) -> Exception:
+    """Explain an option ``backend`` would ignore, with the call that works."""
+    from difflib import get_close_matches
+
+    owners = [kind for kind, names in _BACKEND_OPTIONS.items() if name in names]
+    if owners:
+        return ValueError(
+            _format_error(
+                f"animate_fields(backend={backend!r}) does not use the {name}= option.",
+                why=(
+                    f"Why: {name} is an option of the {' and '.join(owners)} "
+                    f"backend{'s' if len(owners) > 1 else ''}; the {backend} "
+                    "backend would ignore it, so the animation would not be "
+                    "the one the call asks for."
+                ),
+                fix=f"remove {name}=..., or pass backend={owners[0]!r}",
+            )
+        )
+    valid = sorted(_BACKEND_OPTIONS[backend] | _SHARED_OPTIONS)
+    matches = get_close_matches(name, valid, n=1)
+    if name == "fps":
+        # The playback rate is derived, so the nearest name would mislead.
+        fix = (
+            "remove fps=; the playback rate is the sampling rate of "
+            "frame_times times speed, so pass speed=2.0 to play twice as fast "
+            "as real time"
+        )
+    elif matches:
+        fix = f"pass {matches[0]}= instead of {name}="
+    else:
+        fix = f"remove {name}=...; the {backend} backend takes {', '.join(valid)}"
+    return TypeError(
+        _format_error(
+            f"animate_fields() got an unknown option {name!r} for backend={backend!r}.",
+            why="Why: no backend has this option, and ignoring it would hide "
+            "a misspelled option.",
+            fix=fix,
+        )
+    )
 
 
 def _compute_playback_fps(
@@ -432,12 +590,6 @@ def animate_fields(
             stacklevel=2,
         )
 
-    # Pass computed values and playback parameters to backends via kwargs
-    kwargs["fps"] = playback_fps
-    kwargs["sample_rate_hz"] = sample_rate_hz
-    kwargs["speed"] = speed
-    kwargs["max_playback_fps"] = max_playback_fps
-
     # Convert overlays to internal OverlayData if provided
     overlay_data = None
     if overlays is not None:
@@ -486,28 +638,44 @@ def animate_fields(
             "animate_fields()."
         )
 
+    if backend not in _BACKEND_OPTIONS:
+        raise ValueError(
+            _format_error(
+                f"Unknown backend: {backend}",
+                fix="pass backend='napari', 'video', 'html', 'widget', or 'auto'",
+                why="Why: only the advertised rendering backends are supported.",
+            )
+        )
+    # Refuse options the chosen backend would ignore before any rendering.
+    options = _backend_options(
+        backend,
+        {
+            "save_path": save_path,
+            "overwrite": overwrite,
+            "show_regions": show_regions,
+            "region_alpha": region_alpha,
+            "scale_bar": scale_bar,
+            **kwargs,
+        },
+    )
+
     # Route to backend with early validation
     if backend == "napari":
         from neurospatial.animation.backends.napari_backend import render_napari
-
-        napari_kwargs = {
-            key: value
-            for key, value in kwargs.items()
-            if key not in _NON_NAPARI_BACKEND_KWARGS
-        }
 
         return render_napari(
             env,
             fields,
             overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
             # Forward frame_times explicitly: it is a named animate_fields
             # parameter (not in **kwargs), so the PlaybackController gets the
             # user's timestamps even when there are no overlays.
             frame_times=frame_times,
-            **napari_kwargs,
+            fps=playback_fps,
+            sample_rate_hz=sample_rate_hz,
+            speed=speed,
+            max_playback_fps=max_playback_fps,
+            **options,
         )
 
     elif backend == "video":
@@ -531,7 +699,8 @@ def animate_fields(
                 "  backend='widget' - Jupyter notebook widget"
             )
 
-        if save_path is None:
+        video_path = options.pop("save_path")
+        if video_path is None:
             raise ValueError(
                 _format_error(
                     "save_path required for video backend, got None",
@@ -541,59 +710,42 @@ def animate_fields(
             )
 
         # Validate environment pickle-ability for parallel rendering
-        n_workers = kwargs.get("n_workers")
+        n_workers = options.get("n_workers")
         if n_workers and n_workers > 1:
             _validate_env_pickleable(env)
 
         return render_video(
             env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            save_path,
-            overwrite=overwrite,
+            video_path,
             overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
-            **kwargs,
+            frame_times=frame_times,
+            fps=playback_fps,
+            **options,
         )
 
     elif backend == "html":
         from neurospatial.animation.backends.html_backend import render_html
 
-        if save_path is None:
-            save_path = "animation.html"
         return render_html(
             env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            save_path,
-            overwrite=overwrite,
+            options.pop("save_path"),
             overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
-            **kwargs,
+            fps=playback_fps,
+            **options,
         )
 
-    elif backend == "widget":
+    else:
         from neurospatial.animation.backends.widget_backend import render_widget
 
         return render_widget(
             env,
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-            scale_bar=scale_bar,
-            **kwargs,
-        )
-
-    else:
-        raise ValueError(
-            _format_error(
-                f"Unknown backend: {backend}",
-                fix="pass backend='napari', 'video', 'html', 'widget', or 'auto'",
-                why="Why: only the advertised rendering backends are supported.",
-            )
+            frame_times=frame_times,
+            fps=playback_fps,
+            **options,
         )
 
 

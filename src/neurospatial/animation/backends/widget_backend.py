@@ -10,6 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.animation._timing import timing
+from neurospatial.animation._utils import _emit_status
 
 # Module-level logger for fallback diagnostics
 _logger = logging.getLogger("neurospatial.animation.backends.widget_backend")
@@ -753,7 +754,7 @@ def render_widget(
     region_alpha: float = 0.3,
     image_format: str = "png",
     frame_times: NDArray[np.float64] | None = None,
-    **kwargs: Any,  # Accept other parameters gracefully
+    dry_run: bool = False,
 ) -> None:
     """Create interactive Jupyter widget with slider control.
 
@@ -811,8 +812,9 @@ def render_widget(
         Timestamps for each animation frame. Required when overlay_data
         contains time series overlays, for synchronizing the time series
         display with the spatial field animation.
-    **kwargs : dict
-        Additional parameters (accepted for backend compatibility, ignored).
+    dry_run : bool, default=False
+        If True, check the inputs, report the number of frames and how many
+        would be pre-rendered, and return without rendering or displaying.
 
     Returns
     -------
@@ -892,6 +894,19 @@ def render_widget(
         n_frames=n_frames,
         backend_name="widget",
     )
+
+    if dry_run:
+        n_prerendered = min(
+            n_frames,
+            cache_limit,
+            500 if initial_cache_size is None else initial_cache_size,
+        )
+        _emit_status(
+            f"Widget dry run: {n_frames:,} frames; {n_prerendered:,} would be "
+            "pre-rendered when the widget is created. Nothing was displayed. "
+            "To proceed, call again with dry_run=False."
+        )
+        return None
 
     # LRU cache storing raw PNG bytes (not base64 strings)
     cached_frames: OrderedDict[int, bytes] = OrderedDict()

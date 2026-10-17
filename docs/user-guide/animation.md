@@ -46,7 +46,8 @@ env.animate_fields(
 HTML's default `animation.html` is protected too. With `embed=False`, a
 nonempty `frames_dir` is also protected; an empty frames directory is usable.
 A refused call creates no new frames directory. The option applies to video
-and HTML exports; interactive napari/widget viewing does not write these files.
+and HTML exports; interactive napari/widget viewing writes no files, so those
+backends refuse `overwrite=True`.
 Environment saves use the same rule for their paired `.json` and `.npz` files.
 
 ## Overview
@@ -203,11 +204,20 @@ env.animate_fields(
     save_path="output.mp4",
     dry_run=True,  # Just estimate, don't render
 )
-# Output:
-# Dry run: Rendering 1 test frame...
-# Estimated time: 2.5 minutes (30 frames, 5s per frame)
-# Estimated file size: 15.2 MB
+# Printed to stderr, for example:
+# Video Export Dry Run Estimate:
+#   Frames:          30
+#   Workers:         4
+#   Frame time:      17.3 ms
+#   Est. total time: 0.0 minutes
+#   Est. file size:  1 MB
+#   Output path:     output.mp4
 ```
+
+`dry_run=True` works with every backend and returns `None`. It checks the
+inputs and the output path, then reports what it would do without writing a
+file: HTML reports the frame count and estimated file size, napari opens no
+viewer and the widget displays nothing.
 
 ### Codec Selection
 
@@ -297,9 +307,9 @@ Works in all modern browsers (Chrome, Firefox, Safari, Edge). No server required
 
 ### Numeric scales and timestamp labels
 
-HTML currently does not display a numeric colorbar through `show_colorbar` or
-`colorbar_label`. Share a labeled static plot with the same colormap and fixed
-limits to communicate the values, and supply real timestamp frame labels.
+HTML frames do not include a colorbar. Share a labeled static plot with the
+same colormap and fixed limits to communicate the values, and supply real
+timestamp frame labels.
 This complete example uses synthetic rate values in Hz:
 
 <!-- docs-test: run -->
@@ -357,22 +367,44 @@ jupyter labextension install @jupyter-widgets/jupyterlab-manager
 
 ## Common Parameters
 
-All backends accept these common parameters:
+Every backend uses these parameters:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `fields` | list/ndarray | Required | Sequence of spatial fields |
 | `frame_times` | ndarray | Required | Timestamp for each frame, in seconds |
 | `backend` | str | `"auto"` | Backend selection |
-| `save_path` | str/Path | None | Output file path |
 | `speed` | float | 1.0 | Playback speed relative to real time |
 | `max_playback_fps` | int | 60 | Upper bound for displayed playback frame rate |
 | `cmap` | str | `"viridis"` | Matplotlib colormap |
 | `vmin` | float | None | Minimum value for colormap (auto if None) |
 | `vmax` | float | None | Maximum value for colormap (auto if None) |
-| `overwrite` | bool | False | Explicitly allow replacing video/HTML targets |
 | `frame_labels` | list[str] | None | Custom labels for each frame |
-| `dpi` | int | 100 | Resolution (dots per inch) |
+| `overlays` | list | None | Position, pose, heading and other overlays |
+| `show_regions` | bool/list[str] | False | Draw all regions, or the named ones |
+| `dry_run` | bool | False | Report what would be rendered without rendering |
+
+Some parameters apply only to some backends:
+
+| Parameter | Default | Backends |
+|-----------|---------|----------|
+| `save_path`, `overwrite` | None, False | video, html |
+| `dpi` | 100 | video, html, widget |
+| `scale_bar` | False | napari, video, html |
+| `title` | "Spatial Field Animation" | napari, html |
+| `n_workers` | None | video, html (`embed=False`) |
+| `codec`, `bitrate`, `crf`, `preset` | see video backend | video |
+| `image_format` | "png" | html, widget |
+| `max_html_frames`, `embed`, `frames_dir` | see HTML backend | html |
+| `cache_size`, `chunk_size`, `max_chunks`, `layout`, `layer_names` | see napari backend | napari |
+| `initial_cache_size`, `cache_limit` | see widget backend | widget |
+
+A backend refuses an option it does not use instead of ignoring it, so a call
+always renders what it asks for. A misspelled name raises `TypeError` with the
+closest option (`frame_label=` suggests `frame_labels=`). Another backend's
+option raises `ValueError` naming the backend that uses it, for example
+`codec="vp9"` with `backend="html"`. Options left at their defaults are
+accepted by every backend, so switching `backend=` needs no other change.
 
 ## Working with Large-Scale Data
 
@@ -747,9 +779,10 @@ env.animate_fields(
 
 ### Napari viewer shows blank/incorrect colors
 
-**Cause**: Previously, `contrast_limits` parameter caused issues (fixed in v0.3.0)
+**Cause**: The color limits do not match the field values, or the fields are
+all NaN.
 
-**Solution**: Update to neurospatial v0.3.0+. If issues persist:
+**Solution**:
 
 1. Check `vmin/vmax` parameters are reasonable
 2. Verify fields contain valid data (not all NaN)

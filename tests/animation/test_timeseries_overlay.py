@@ -2906,9 +2906,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,  # Sequential for test stability
-                progress=False,
             )
 
         # Video should be created
@@ -2964,9 +2962,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,
-                progress=False,
             )
 
         assert result.exists()
@@ -3015,9 +3011,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,
-                progress=False,
             )
 
         assert result.exists()
@@ -3069,9 +3063,7 @@ class TestTimeSeriesIntegration:
                 frame_times=frame_times,
                 backend="video",
                 save_path=str(save_path),
-                fps=10,
                 n_workers=1,
-                progress=False,
             )
 
         assert result.exists()

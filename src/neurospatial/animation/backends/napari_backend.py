@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.animation._region_names import shown_region_names
+from neurospatial.animation._utils import _emit_status
 
 # Import shared coordinate transforms
 from neurospatial.animation.core import MAX_PLAYBACK_FPS
@@ -2780,8 +2781,8 @@ def render_napari(
     sample_rate_hz: float | None = None,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
     frame_times: NDArray[np.float64] | None = None,
-    **kwargs: Any,
-) -> napari.Viewer:
+    dry_run: bool = False,
+) -> napari.Viewer | None:
     """Launch Napari viewer with lazy-loaded field animation.
 
     Napari provides GPU-accelerated rendering with on-demand frame loading,
@@ -2881,15 +2882,17 @@ def render_napari(
         seed the ``PlaybackController`` so time-accurate playback works even when
         no overlays are present. If None, falls back to
         ``overlay_data.frame_times`` when available.
-    **kwargs : dict
-        Additional parameters (gracefully ignored for compatibility
-        with other backends)
+    dry_run : bool, default=False
+        If True, check that napari is available and the environment can be
+        shown, report the number of frames, and return None without opening
+        a viewer.
 
     Returns
     -------
-    viewer : napari.Viewer
-        Napari viewer instance. Call `napari.run()` to block until
-        window is closed, or interact with viewer programmatically.
+    viewer : napari.Viewer or None
+        Napari viewer instance, or None if ``dry_run=True``. Call
+        `napari.run()` to block until window is closed, or interact with
+        viewer programmatically.
 
     Raises
     ------
@@ -3032,16 +3035,6 @@ def render_napari(
         raise NotImplementedError(
             "Napari raster images do not support framed grids; use Matplotlib, video or HTML rendering."
         )
-    # Warn about unknown kwargs for easier debugging
-    if kwargs:
-        unknown_keys = ", ".join(sorted(kwargs.keys()))
-        warnings.warn(
-            f"render_napari received unknown keyword arguments that will be ignored: "
-            f"{unknown_keys}. These may be parameters intended for other backends.",
-            UserWarning,
-            stacklevel=2,
-        )
-
     if not NAPARI_AVAILABLE:
         raise ImportError(
             "Napari backend requires napari. Install with:\n"
@@ -3049,6 +3042,14 @@ def render_napari(
             "or\n"
             "  uv add napari[all]"
         )
+
+    if dry_run:
+        n_frames = len(fields[0]) if _is_multi_field_input(fields) else len(fields)  # type: ignore[arg-type]
+        _emit_status(
+            f"Napari dry run: {n_frames:,} frames at {fps} fps. No viewer was "
+            "opened. To proceed, call again with dry_run=False."
+        )
+        return None
 
     # Detect if fields is a 2D array (memmap-friendly path)
     # This skips validation/multi-field detection which require list iteration

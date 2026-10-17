@@ -10,7 +10,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 import warnings
@@ -20,22 +19,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.animation._utils import _emit_status
+
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
 logger = logging.getLogger(__name__)
-
-
-def _emit_status(message: str) -> None:
-    """Emit a user-facing status/progress message.
-
-    Written to ``stderr`` so it is visible by default -- ``logger.info`` output
-    is silent unless the application configured logging, which silently hid the
-    dry-run estimate and render/encode progress in a plain notebook or script.
-    Also logged at INFO for callers that consume the module logger.
-    """
-    print(message, file=sys.stderr, flush=True)
-    logger.info(message)
 
 
 def check_ffmpeg_available() -> bool:
@@ -93,13 +82,11 @@ def render_video(
     bitrate: int | None = None,
     n_workers: int | None = None,
     dry_run: bool = False,
-    title: str = "Spatial Field Animation",
     overlay_data: Any | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     scale_bar: bool | Any = False,  # bool | ScaleBarConfig
     frame_times: NDArray[np.float64] | None = None,
-    **kwargs,
 ) -> Path | None:
     """Export animation as video using parallel frame rendering.
 
@@ -155,8 +142,6 @@ def render_video(
     dry_run : bool, default=False
         If True, estimate time and file size without rendering.
         Returns None after printing estimate.
-    title : str
-        Animation title (unused in video, for compatibility).
     overlay_data : OverlayData or None, optional
         Overlay data to render on top of fields. Contains positions,
         bodyparts, and head direction data aligned to frames.
@@ -168,8 +153,10 @@ def render_video(
         Alpha transparency for region overlays, range [0.0, 1.0] where 0.0 is
         fully transparent and 1.0 is fully opaque. Only used if show_regions
         is True or a non-empty list. Default is 0.3.
-    **kwargs : dict
-        Additional parameters (accepted for compatibility).
+    scale_bar : bool or ScaleBarConfig, default=False
+        Draw a scale bar in every frame. If True, uses the default config.
+    frame_times : ndarray of shape (n_frames,), optional
+        Frame timestamps in seconds, used to align time-series overlays.
 
     Returns
     -------
