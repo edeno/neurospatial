@@ -19,6 +19,7 @@ from neurospatial.geometry._region_bins import region_bin_mask
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import LookupIndexes
     from neurospatial.regions import Regions
 
 _COUNT_WORDS = {1: "one bin", 2: "two bins, a start and an end"}
@@ -275,7 +276,12 @@ def validate_sample_targets(
 
 
 def locate_points(
-    points: ArrayLike, *, binning: Binning, arena: Arena, operation: str
+    points: ArrayLike,
+    *,
+    binning: Binning,
+    arena: Arena,
+    operation: str,
+    indexes: LookupIndexes | None = None,
 ) -> NDArray[np.intp]:
     """Map explicit query points to the bins that contain them.
 
@@ -289,6 +295,9 @@ def locate_points(
         Continuous domain; points outside a known domain have no bin.
     operation : str
         The call named in errors.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures, usually the environment's
+        analysis cache. None builds them for this call only.
 
     Returns
     -------
@@ -344,7 +353,7 @@ def locate_points(
                 fix="drop the rows with missing coordinates before the query",
             )
         )
-    indices = locate(binning, arena, array)
+    indices = locate(binning, arena, array, indexes)
     outside = indices < 0
     if np.any(outside):
         first = array[outside][0].tolist()
@@ -371,6 +380,7 @@ def resolve_targets(
     coordinates: CartesianSystem | EgocentricPolarSystem,
     regions: Regions | None = None,
     count: int | None = None,
+    indexes: LookupIndexes | None = None,
 ) -> NDArray[np.intp]:
     """Resolve exactly one of ``bins=``, ``points=`` or ``region=`` to bins.
 
@@ -394,6 +404,9 @@ def resolve_targets(
         Named regions; None when the query takes no ``region=``.
     count : int or None, optional
         Exact number of targets the query needs; None accepts any number.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures, usually the environment's
+        analysis cache. None builds them for this call only.
 
     Returns
     -------
@@ -444,11 +457,20 @@ def resolve_targets(
         )
     elif points is not None:
         resolved = locate_points(
-            points, binning=binning, arena=arena, operation=operation
+            points,
+            binning=binning,
+            arena=arena,
+            operation=operation,
+            indexes=indexes,
         )
     else:
         resolved = _region_targets(
-            region, regions, binning=binning, arena=arena, operation=operation
+            region,
+            regions,
+            binning=binning,
+            arena=arena,
+            operation=operation,
+            indexes=indexes,
         )
     if count is not None and resolved.size != count:
         raise ValueError(
@@ -468,6 +490,7 @@ def _region_targets(
     binning: Binning,
     arena: Arena,
     operation: str,
+    indexes: LookupIndexes | None,
 ) -> NDArray[np.intp]:
     """The bins a named region covers, refusing a region that covers none."""
     if regions is None or not isinstance(region, str):
@@ -485,7 +508,7 @@ def _region_targets(
             region, available=list(regions.keys()), argument="region"
         )
     resolved = np.flatnonzero(
-        region_bin_mask(regions[region], binning=binning, arena=arena)
+        region_bin_mask(regions[region], binning=binning, arena=arena, indexes=indexes)
     ).astype(np.intp, copy=False)
     if resolved.size == 0:
         raise ValueError(

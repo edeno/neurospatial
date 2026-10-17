@@ -697,8 +697,8 @@ def test_from_layout_checks_center_lookup_of_every_layout(
     located = []
     locate = RectilinearLocator.locate
 
-    def recording(self, points):
-        result = locate(self, points)
+    def recording(self, points, indexes=None):
+        result = locate(self, points, indexes)
         if np.array_equal(points, centers):
             located.append(result)
         return result

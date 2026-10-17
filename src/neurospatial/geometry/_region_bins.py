@@ -15,6 +15,7 @@ from neurospatial.geometry._lookup import locate
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import LookupIndexes
     from neurospatial.regions.core import Region
 
 
@@ -75,6 +76,7 @@ def region_bin_mask(
     binning: Binning,
     arena: Arena,
     include_boundary: bool = True,
+    indexes: LookupIndexes | None = None,
 ) -> NDArray[np.bool_]:
     """Select the bins a region covers.
 
@@ -94,6 +96,9 @@ def region_bin_mask(
     include_boundary : bool, default=True
         For polygon regions, count a center on the edge as inside. Point
         regions ignore it.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures, usually the environment's
+        analysis cache. None builds them for this call only.
 
     Returns
     -------
@@ -128,7 +133,7 @@ def region_bin_mask(
             )
         )
     mask = np.zeros(n_bins, dtype=np.bool_)
-    index = int(locate(binning, arena, point)[0])
+    index = int(locate(binning, arena, point, indexes)[0])
     if index >= 0:
         mask[index] = True
     return mask

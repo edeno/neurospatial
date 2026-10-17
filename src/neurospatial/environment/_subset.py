@@ -18,6 +18,7 @@ from neurospatial.geometry._region_bins import polygon_bin_mask, region_bin_mask
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
+    from neurospatial.environment._cache import AnalysisCache
     from neurospatial.geometry._arena import Arena
 
 
@@ -25,6 +26,7 @@ def _subset_mask(
     binning: Binning,
     arena: Arena,
     regions: Regions,
+    cache: AnalysisCache,
     *,
     mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
@@ -107,6 +109,7 @@ def _subset_mask(
                 binning=binning,
                 arena=arena,
                 include_boundary=include_boundary,
+                indexes=cache,
             )
 
     elif polygon is not None:
@@ -146,6 +149,7 @@ def _subset(
     binning: Binning,
     arena: Arena,
     regions: Regions,
+    cache: AnalysisCache,
     *,
     mask: NDArray[np.bool_] | None = None,
     region_names: Sequence[str] | None = None,
@@ -158,6 +162,7 @@ def _subset(
         binning,
         arena,
         regions,
+        cache,
         mask=mask,
         region_names=region_names,
         polygon=polygon,

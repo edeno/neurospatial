@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import math
 from collections.abc import Callable
 from contextlib import suppress
@@ -1400,13 +1399,9 @@ def _validate_components(
 
 
 def _validate_center_lookup(binning: Binning) -> None:
-    """Check that the locator places every bin center in its own bin.
-
-    The lookup runs on a detached copy of the locator, so validation does not
-    warm the published locator's memos.
-    """
+    """Check that the locator places every bin center in its own bin."""
     bins = binning.bins
-    located = copy.deepcopy(binning.locator).locate(bins.centers)
+    located = binning.locator.locate(bins.centers)
     if binning.linearization is not None:
         # An embedded track can revisit an identical spatial point at a
         # different linear coordinate. Nearest-point lookup may choose either

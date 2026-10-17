@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -27,10 +27,12 @@ from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._locators import (
     HexLocator,
+    LookupIndexes,
     MeshLocator,
     RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
+    _lookup_index,
 )
 
 
@@ -125,21 +127,14 @@ class ClippedLocator:
     base: Locator
     cells: PolygonCells
     mapping: ClipMapping
-    _tree: STRtree | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if len(self.cells.polygons) != len(self.mapping.parent_bin_indices):
             raise ValueError("cells and mapping must contain the same number of bins.")
 
-    def __getstate__(self) -> dict[str, Any]:
-        return {name: value for name, value in vars(self).items() if name != "_tree"}
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        for name, value in state.items():
-            object.__setattr__(self, name, value)
-        object.__setattr__(self, "_tree", None)
-
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Locate ``(n_points, 2)`` coordinates without resurrecting dropped owners."""
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         if query.ndim != 2 or query.shape[1] != 2:
@@ -148,13 +143,11 @@ class ClippedLocator:
         rows = np.flatnonzero(np.all(np.isfinite(query), axis=1))
         if not len(rows) or not self.cells.polygons:
             return result
-        parents = self.base.locate(query[rows])
+        parents = self.base.locate(query[rows], indexes)
         if np.any(parents >= self.mapping.n_parent_bins):
             raise ValueError("base locator returned a parent outside n_parent_bins.")
-        if self._tree is None:
-            object.__setattr__(self, "_tree", STRtree(self.cells.polygons))
-        assert self._tree is not None
-        point_ids, child_ids = self._tree.query(
+        tree = _lookup_index(self, indexes, lambda: STRtree(self.cells.polygons))
+        point_ids, child_ids = tree.query(
             shapely.points(query[rows]), predicate="covered_by"
         )
         matching = self.mapping.parent_bin_indices[child_ids] == parents[point_ids]

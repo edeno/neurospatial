@@ -78,6 +78,7 @@ from numpy.typing import NDArray
 from scipy.ndimage import gaussian_filter1d
 
 from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry._locators import CallIndexes
 from neurospatial.geometry._lookup import locate
 
 if TYPE_CHECKING:
@@ -637,15 +638,16 @@ def compute_egocentric_distance(
         distances = np.full((n_time, n_targets), np.nan, dtype=np.float64)
 
         # Vectorized: get bin indices for all positions at once
-        pos_bins = locate(binning, arena, positions)
+        indexes = CallIndexes()
+        pos_bins = locate(binning, arena, positions, indexes)
 
         # Hoist target-bin computation out of the per-target inner loop: map
         # every target to its bin in a single batched ``bin_at`` call. For
         # static targets (broadcast from 2D) this collapses ``n_time * n_targets``
         # redundant lookups into one. Shape: (n_time, n_targets).
-        target_bins = locate(binning, arena, targets_3d.reshape(-1, 2)).reshape(
-            n_time, n_targets
-        )
+        target_bins = locate(
+            binning, arena, targets_3d.reshape(-1, 2), indexes
+        ).reshape(n_time, n_targets)
 
         # Cache distance fields by target bin: static targets recompute once;
         # time-varying targets pay only for unique target bins.

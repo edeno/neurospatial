@@ -476,7 +476,7 @@ class Environment(Generic[_C]):
 
     def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
-        return locate(self._binning, self._arena, positions)
+        return locate(self._binning, self._arena, positions, self._cache)
 
     def _target_bins(
         self,
@@ -496,6 +496,7 @@ class Environment(Generic[_C]):
             region=region,
             binning=self._binning,
             arena=self._arena,
+            indexes=self._cache,
             coordinates=self._coordinate_system,
             regions=self.regions if takes_region else None,
             count=count,
@@ -1918,6 +1919,7 @@ class Environment(Generic[_C]):
             positions,
             binning=self._binning,
             arena=self._arena,
+            cache=self._cache,
             dedup=dedup,
             outside_value=outside_value,
             gap_splits_runs=False,
@@ -2005,6 +2007,7 @@ class Environment(Generic[_C]):
             positions,
             binning=self._binning,
             arena=self._arena,
+            cache=self._cache,
             dedup=True,
             outside_value=outside_value,
             gap_splits_runs=True,
@@ -2404,6 +2407,7 @@ class Environment(Generic[_C]):
             self._binning,
             self._arena,
             self.regions,
+            self._cache,
             mask=mask,
             region_names=region_names,
             polygon=polygon,
@@ -4803,6 +4807,7 @@ class Environment(Generic[_C]):
             binning=self._binning,
             arena=self._arena,
             include_boundary=include_boundary,
+            indexes=self._cache,
         )
         return np.flatnonzero(mask).astype(np.intp, copy=False)
 
@@ -4922,6 +4927,7 @@ class Environment(Generic[_C]):
             self.regions if regions is None else regions,
             binning=self._binning,
             arena=self._arena,
+            cache=self._cache,
             include_boundary=include_boundary,
         )
 

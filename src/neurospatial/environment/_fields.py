@@ -165,7 +165,7 @@ def _interpolate_points(
         values = _interpolate_nearest(cache, binning, field, points)
     else:  # mode == "linear"
         values = _interpolate_linear(binning, field, points)
-    owners = locate(binning, arena, points)
+    owners = locate(binning, arena, points, cache)
     values[owners < 0] = np.nan
     return values
 

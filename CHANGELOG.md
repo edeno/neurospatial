@@ -55,8 +55,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 - `Environment.clear_cache()` takes no arguments and releases every cached
   analysis (KD-tree, smoothing kernels, eigenbases, operators, boundary bins
-  and attribute tables). The `kdtree=`, `kernels=` and `cached_properties=`
-  options and `neurospatial.ops.binning.clear_kdtree_cache` are removed; call
+  and attribute tables), including the search structures behind `bin_at` on
+  tracks, triangular meshes and clipped environments. On a track, `bin_at`
+  and `nearest_bin` share one KD-tree. The `kdtree=`, `kernels=` and
+  `cached_properties=` options and
+  `neurospatial.ops.binning.clear_kdtree_cache` are removed; call
   `env.clear_cache()` instead.
 
 - `Environment.to_linear()` and `Environment.linear_to_nd()` raise `TypeError`

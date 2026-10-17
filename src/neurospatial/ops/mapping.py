@@ -20,6 +20,7 @@ from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
 from neurospatial.geometry._coordinates import require_cartesian
+from neurospatial.geometry._locators import CallIndexes
 from neurospatial.geometry._region_bins import region_bin_mask
 
 if TYPE_CHECKING:
@@ -400,9 +401,14 @@ def _regions_mask(
             f"include_boundary must be a bool, got {type(include_boundary).__name__}."
         )
     mask = np.zeros(binning.bins.n_bins, dtype=np.bool_)
+    indexes = CallIndexes()
     for region in resolved:
         mask |= region_bin_mask(
-            region, binning=binning, arena=arena, include_boundary=include_boundary
+            region,
+            binning=binning,
+            arena=arena,
+            include_boundary=include_boundary,
+            indexes=indexes,
         )
     return mask
 

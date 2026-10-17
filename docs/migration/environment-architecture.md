@@ -144,7 +144,8 @@ except TypeError:
 ## One analysis cache, shared by relabelled copies
 
 An environment computes some analyses once and keeps them: the KD-tree behind
-`nearest_bin`, diffusion and Gaussian smoothing kernels, the eigenbases used by
+`nearest_bin`, the search structures behind `bin_at` on tracks, meshes and
+clipped environments, diffusion and Gaussian smoothing kernels, the eigenbases used by
 `smooth`, `diffuse` and `get_mrf_basis`, the gradient and divergence
 operators, boundary bins and the bin and edge attribute tables. They now live
 in one cache per environment.

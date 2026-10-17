@@ -10,11 +10,13 @@ import shapely
 from numpy.typing import NDArray
 from shapely.ops import unary_union
 
+from neurospatial.geometry._locators import CallIndexes
 from neurospatial.geometry._lookup import locate
 
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena, _TransformedArena
     from neurospatial.geometry._binning import Binning, Locator
+    from neurospatial.geometry._locators import LookupIndexes
 
 BoundarySource = Literal["physical", "analysis"]
 Interior = Callable[[NDArray[np.float64]], NDArray[np.bool_]]
@@ -64,6 +66,7 @@ def _resolve_wall_contacts(
     hits: NDArray[np.float64],
     origins: NDArray[np.float64],
     bins: NDArray[np.intp],
+    indexes: LookupIndexes,
 ) -> NDArray[np.intp]:
     """Resolve rounded boundary hits using cells that actually touch the wall.
 
@@ -95,8 +98,8 @@ def _resolve_wall_contacts(
                     == np.searchsorted(edge, query[0, axis], side="right")
                     for axis, edge in enumerate(parent.edges)
                 )
-            original = parent.locate(target)[0]
-            if original >= 0 and parent.locate(query)[0] != original:
+            original = parent.locate(target, indexes)[0]
+            if original >= 0 and parent.locate(query, indexes)[0] != original:
                 return False
             if not isinstance(parent, (SubsetLocator, ClippedLocator)):
                 return True
@@ -137,7 +140,9 @@ def _resolve_wall_contacts(
                 if arena.domain_known and not arena.contains(query)[0]:
                     continue
                 original = np.nextafter(hits[row : row + 1], origins[row : row + 1])
-                if locator.locate(query)[0] == index and same_parent(original, query):
+                if locator.locate(query, indexes)[0] == index and same_parent(
+                    original, query
+                ):
                     bins[row] = index
                     break
             if bins[row] >= 0:
@@ -215,6 +220,7 @@ def _wall_hit_bins(
 
     locator = source_locator(binning.locator, arena, binning.bins.centers)
     frame = _wall_source_frame(binning.locator, arena, binning.bins.centers)
+    indexes = CallIndexes()
     if frame is None:
         if source == "physical":
             walls = physical_walls(arena)
@@ -228,6 +234,7 @@ def _wall_hit_bins(
             hits,
             origins,
             bins,
+            indexes,
         )
     cells, _walls, _centers, _inverse, frames = frame
     query = np.vstack((hits, origins))
@@ -254,11 +261,18 @@ def _wall_hit_bins(
         (shapely.get_x(nearest), shapely.get_y(nearest))
     )
     inside = np.nextafter(query[: len(hits)], query[len(hits) :])
-    bins = locator.locate(inside)
+    bins = locator.locate(inside, indexes)
     if base.domain_known:
         bins[~base.contains(inside)] = -1
     return _resolve_wall_contacts(
-        locator, base, cells, walls, query[: len(hits)], query[len(hits) :], bins
+        locator,
+        base,
+        cells,
+        walls,
+        query[: len(hits)],
+        query[len(hits) :],
+        bins,
+        indexes,
     )
 
 

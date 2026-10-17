@@ -10,6 +10,7 @@ from scipy.spatial import cKDTree
 
 from neurospatial.environment._cache import KDTREE, AnalysisCache
 from neurospatial.geometry._binning import Binning
+from neurospatial.geometry._locators import NearestBinLocator
 from neurospatial.ops.mapping import (
     TieBreakStrategy,
     _nearest_bin_query,
@@ -35,7 +36,7 @@ def nearest_bin(
     """
     resolved = _validate_nearest_options(tie_break, max_distance, max_distance_factor)
     centers = binning.bins.centers
-    tree = cache.get(KDTREE, lambda: cKDTree(centers))
+    tree = cache.get(KDTREE, lambda: _centers_tree(cache, binning))
 
     def query(
         rows: NDArray[np.float64],
@@ -66,3 +67,21 @@ def nearest_bin(
         else:
             bins[finite] = found
     return (bins, distances) if return_dist else bins
+
+
+def _centers_tree(cache: AnalysisCache, binning: Binning) -> cKDTree:
+    """Build the KD-tree over the bin centers, reusing the locator's when it has one.
+
+    A nearest-center locator over exactly these centers, in bin order, already
+    searches them with a KD-tree. Reusing it keeps one tree per environment.
+    """
+    centers = binning.bins.centers
+    locator = binning.locator
+    if (
+        isinstance(locator, NearestBinLocator)
+        and locator.bin_indices is not None
+        and np.array_equal(locator.bin_indices, np.arange(len(centers)))
+        and np.array_equal(locator.centers, centers)
+    ):
+        return locator.kdtree(cache)
+    return cKDTree(centers)

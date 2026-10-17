@@ -23,7 +23,11 @@ from neurospatial.geometry._arena import (
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._combine_geometry import _arena_pieces, _boxes
 from neurospatial.geometry._composition import composition_view
-from neurospatial.geometry._locators import RectilinearLocator
+from neurospatial.geometry._locators import (
+    CallIndexes,
+    LookupIndexes,
+    RectilinearLocator,
+)
 from neurospatial.geometry._lookup import locate
 from neurospatial.geometry._polygon import (
     PolygonCells,
@@ -271,6 +275,7 @@ def retained_linear_intervals(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     valid_mask: NDArray[np.bool_],
+    indexes: LookupIndexes | None = None,
 ) -> tuple[RetainedLinearInterval, ...]:
     """Split observation-valid intervals by exact cells and known Arena support.
 
@@ -287,6 +292,9 @@ def retained_linear_intervals(
     valid_mask : ndarray of bool, shape (n_samples - 1,)
         Observation validity (gaps, speed and recording windows), independent
         of whether the start point belongs to a retained bin.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures, usually the environment's
+        analysis cache. None keeps them for this call only.
 
     Returns
     -------
@@ -306,8 +314,9 @@ def retained_linear_intervals(
         filtered intervals break this continuity.
         Wall endpoint contact and collinear boundary motion remain permitted.
     """
+    indexes = CallIndexes() if indexes is None else indexes
     if binning.bins.n_dims != 2:
-        return _retained_box_intervals(binning, arena, positions, valid_mask)
+        return _retained_box_intervals(binning, arena, positions, valid_mask, indexes)
 
     if positions.shape != (len(times), 2) or valid_mask.shape != (
         max(len(times) - 1, 0),
@@ -343,8 +352,8 @@ def retained_linear_intervals(
 
     def owner_of(queries):
         if source_locator is None:
-            return locate(binning, arena, queries)
-        owners = source_locator.locate(queries)
+            return locate(binning, arena, queries, indexes)
+        owners = source_locator.locate(queries, indexes)
         if domain is not None:
             owners[~shapely.covers(domain, shapely.points(queries))] = -1
         return owners
@@ -430,6 +439,7 @@ def polygon_linear_occupancy(
     valid_mask: NDArray[np.bool_],
     *,
     return_seconds: bool,
+    indexes: LookupIndexes | None = None,
 ) -> tuple[tuple[RetainedLinearInterval, ...], NDArray[np.float64]]:
     """Split valid intervals on exact cells and add up each bin's share.
 
@@ -451,6 +461,9 @@ def polygon_linear_occupancy(
         False, each interval adds one count split by path length. Framed N-D
         grids normalize that count over the full source grid before inactive
         cells drop their share, as native N-D linear allocation does.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures, usually the environment's
+        analysis cache. None keeps them for this call only.
 
     Returns
     -------
@@ -477,7 +490,9 @@ def polygon_linear_occupancy(
                 np.ones(block.stop - block.start),
             )
             np.add.at(normalizers, samples[block][interval], fraction)
-    pieces = retained_linear_intervals(binning, arena, times, positions, valid_mask)
+    pieces = retained_linear_intervals(
+        binning, arena, times, positions, valid_mask, indexes
+    )
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
     for piece in pieces:
         weight = dt[piece.sample_index] if return_seconds else 1.0
@@ -496,6 +511,7 @@ def _retained_box_intervals(
     arena: Arena,
     positions: NDArray[np.float64],
     valid_mask: NDArray[np.bool_],
+    indexes: LookupIndexes,
 ) -> tuple[RetainedLinearInterval, ...]:
     """Partition N-D combined box trajectories at cell and domain planes."""
     frame = binning.grid_frame
@@ -558,9 +574,9 @@ def _retained_box_intervals(
             stop - start
         )
         if frame is None:
-            bins = locate(binning, arena, midpoints)
+            bins = locate(binning, arena, midpoints, indexes)
         else:
-            bins = source_locator.locate(midpoints)
+            bins = source_locator.locate(midpoints, indexes)
             if arena.domain_known:
                 bins[~arena.contains(frame.to_world(midpoints))] = -1
         for left, right, index in zip(fractions[:-1], fractions[1:], bins, strict=True):

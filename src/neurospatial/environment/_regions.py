@@ -17,6 +17,7 @@ from neurospatial.geometry._region_bins import region_bin_mask
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
+    from neurospatial.environment._cache import AnalysisCache
     from neurospatial.geometry._arena import Arena
 
 
@@ -25,6 +26,7 @@ def _region_membership(
     *,
     binning: Binning,
     arena: Arena,
+    cache: AnalysisCache,
     include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
     """Membership of every bin in every region, ``(n_bins, n_regions)``."""
@@ -39,6 +41,10 @@ def _region_membership(
     membership = np.zeros((binning.bins.n_bins, len(regions)), dtype=np.bool_)
     for column, region in enumerate(regions.values()):
         membership[:, column] = region_bin_mask(
-            region, binning=binning, arena=arena, include_boundary=include_boundary
+            region,
+            binning=binning,
+            arena=arena,
+            include_boundary=include_boundary,
+            indexes=cache,
         )
     return membership

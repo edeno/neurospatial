@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, NamedTuple, Protocol
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar, cast
 
 import numpy as np
 import shapely
@@ -18,6 +19,49 @@ from neurospatial.geometry._regular_lookup import _points_to_regular_grid_bin_in
 
 if TYPE_CHECKING:
     from neurospatial.geometry._binning import Locator
+
+_T = TypeVar("_T")
+
+
+class LookupIndexes(Protocol):
+    """Where locators keep the search structures they build on first use.
+
+    A KD-tree, triangle index or polygon tree depends only on its locator's
+    own immutable data. An environment passes its analysis cache, so each
+    structure is built once per environment, shared by its relabelled copies
+    and released by ``clear_cache()``.
+    """
+
+    def lookup_index(self, locator: object, build: Callable[[], _T]) -> _T:
+        """Return the structure ``build`` makes for ``locator``, building it once."""
+        ...
+
+
+class CallIndexes:
+    """Search structures kept for one computation over a binning.
+
+    Repeated ``locate`` calls on a binning that belongs to no environment,
+    such as the copy ``env.binning`` returns, share one of these so that each
+    structure is built once for the computation.
+    """
+
+    __slots__ = ("_built",)
+
+    def __init__(self) -> None:
+        self._built: dict[object, Any] = {}
+
+    def lookup_index(self, locator: object, build: Callable[[], _T]) -> _T:
+        """Return the structure ``build`` makes for ``locator``, building it once."""
+        if locator not in self._built:
+            self._built[locator] = build()
+        return cast("_T", self._built[locator])
+
+
+def _lookup_index(
+    locator: object, indexes: LookupIndexes | None, build: Callable[[], _T]
+) -> _T:
+    """Fetch ``locator``'s structure from ``indexes``, or build it for one call."""
+    return build() if indexes is None else indexes.lookup_index(locator, build)
 
 
 class AffineMatrix(Protocol):
@@ -49,18 +93,8 @@ def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
     return owned
 
 
-class _LocatorState(ReadOnlyState):
-    """Keep rebuildable memos out of serialized state; arrays stay read-only."""
-
-    def __getstate__(self) -> dict[str, Any]:
-        state = vars(self).copy()
-        state.pop("_tree", None)
-        state.pop("_triangle_lookup", None)
-        return state
-
-
 @dataclass(frozen=True, eq=False)
-class RectilinearLocator(_LocatorState):
+class RectilinearLocator(ReadOnlyState):
     """Locate points in half-open rectangular cells of an active grid.
 
     Parameters
@@ -93,7 +127,9 @@ class RectilinearLocator(_LocatorState):
                 self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
             )
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Return active-bin indices, or -1 outside the grid or active cells."""
         query_points = np.atleast_2d(points)
         if query_points.ndim != 2:
@@ -151,7 +187,7 @@ class RectilinearLocator(_LocatorState):
 
 
 @dataclass(frozen=True, eq=False)
-class SubsetLocator(_LocatorState):
+class SubsetLocator(ReadOnlyState):
     """Map parent bins to child bins, keeping dropped and outside points outside."""
 
     base: Locator
@@ -170,9 +206,11 @@ class SubsetLocator(_LocatorState):
             )
         object.__setattr__(self, "parent_to_child", _owned_array(raw, np.intp))
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Return child indices after checking the parent's outside sentinel."""
-        parent = self.base.locate(points)
+        parent = self.base.locate(points, indexes)
         out = np.full(parent.shape, -1, dtype=np.intp)
         inside = parent >= 0
         out[inside] = self.parent_to_child[parent[inside]]
@@ -180,7 +218,7 @@ class SubsetLocator(_LocatorState):
 
 
 @dataclass(frozen=True, eq=False)
-class TransformedLocator(_LocatorState):
+class TransformedLocator(ReadOnlyState):
     """Find bins by applying an owned inverse homogeneous affine matrix."""
 
     base: Locator
@@ -191,7 +229,9 @@ class TransformedLocator(_LocatorState):
         _check_homogeneous(matrix)
         object.__setattr__(self, "inverse", matrix)
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Undo the affine map before using the parent's boundary ownership."""
         query = np.atleast_2d(np.asarray(points, dtype=np.float64))
         n_dims = len(self.inverse) - 1
@@ -204,11 +244,11 @@ class TransformedLocator(_LocatorState):
         original[finite] = (
             query[finite] @ self.inverse[:-1, :-1].T + self.inverse[:-1, -1]
         )
-        return self.base.locate(original)
+        return self.base.locate(original, indexes)
 
 
 @dataclass(frozen=True, eq=False)
-class HexLocator(_LocatorState):
+class HexLocator(ReadOnlyState):
     """Locate points in a pointy-top hexagonal lattice.
 
     Parameters
@@ -234,7 +274,9 @@ class HexLocator(_LocatorState):
             self, "flat_to_active", _owned_array(self.flat_to_active, np.intp)
         )
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Return active-bin indices, or -1 outside active hexagonal cells."""
         query_points = np.asarray(points)
         if query_points.ndim != 2 or query_points.shape[1] != 2:
@@ -265,6 +307,9 @@ _DEGENERATE_RCOND = 1000 * np.finfo(np.float64).eps
 _OVERLAP_RTOL = 1e-9
 # Query points per batch of candidate-triangle tests.
 _QUERY_CHUNK = 65_536
+# Leaf size of the nearest-bin KD-tree. Queries are exact, so the leaf size
+# only changes speed and which of several equidistant centers k=1 returns.
+_LEAF_SIZE = 10
 
 
 class _TriangleIndex(NamedTuple):
@@ -417,7 +462,7 @@ def _triangle_index(
 
 
 @dataclass(frozen=True, eq=False)
-class MeshLocator(_LocatorState):
+class MeshLocator(ReadOnlyState):
     """Locate points in a fixed triangulation clipped to a polygon.
 
     The stored triangles define the bins, so lookup never depends on how this
@@ -441,9 +486,6 @@ class MeshLocator(_LocatorState):
     simplices: NDArray[np.intp]
     simplex_to_active: NDArray[np.intp]
     boundary: Polygon | None
-    _triangle_lookup: _TriangleIndex | None = field(
-        default=None, init=False, repr=False
-    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "points", _owned_array(self.points, np.float64))
@@ -452,17 +494,14 @@ class MeshLocator(_LocatorState):
             self, "simplex_to_active", _owned_array(self.simplex_to_active, np.intp)
         )
 
-    def _triangle_index(self) -> _TriangleIndex:
-        """Validate the stored triangles once and memoize their lookup index."""
-        index = self._triangle_lookup
-        if index is None:
-            index = _triangle_index(self.points, self.simplices)
-            object.__setattr__(self, "_triangle_lookup", index)
-        return index
-
-    def _find_triangles(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def _find_triangles(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None
+    ) -> NDArray[np.intp]:
         """Return the lowest-numbered stored triangle containing each point, or -1."""
-        index = self._triangle_index()
+        # Building the index also validates the stored triangles.
+        index = _lookup_index(
+            self, indexes, lambda: _triangle_index(self.points, self.simplices)
+        )
         found = np.full(len(points), len(self.simplices), dtype=np.intp)
         finite = np.flatnonzero(np.all(np.isfinite(points), axis=1))
         # Chunks bound the memory of the (point, candidate triangle) pairs.
@@ -481,13 +520,15 @@ class MeshLocator(_LocatorState):
         found[found == len(self.simplices)] = -1
         return found
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Return active triangle indices for points inside the boundary."""
         pts2d = np.atleast_2d(points).astype(np.float64, copy=False)
         if pts2d.ndim != 2 or pts2d.shape[1] != 2:
             raise ValueError(f"Expected points of shape (M, 2), got {pts2d.shape}.")
 
-        orig_simplices = self._find_triangles(pts2d)
+        orig_simplices = self._find_triangles(pts2d, indexes)
         active_triangle_idxs = np.full(orig_simplices.shape, -1, dtype=np.intp)
         valid_mask = orig_simplices != -1
         if np.any(valid_mask):
@@ -502,7 +543,7 @@ class MeshLocator(_LocatorState):
 
 
 @dataclass(frozen=True, eq=False)
-class NearestBinLocator(_LocatorState):
+class NearestBinLocator(ReadOnlyState):
     """Find the nearest bin center, optionally within a maximum distance.
 
     Parameters
@@ -518,7 +559,6 @@ class NearestBinLocator(_LocatorState):
     centers: NDArray[np.float64]
     max_distance: float | None = None
     bin_indices: NDArray[np.intp] | None = None
-    _tree: cKDTree | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         centers = _owned_array(self.centers, np.float64)
@@ -540,15 +580,15 @@ class NearestBinLocator(_LocatorState):
         object.__setattr__(self, "centers", centers)
         object.__setattr__(self, "bin_indices", bin_indices)
 
-    def _kdtree(self) -> cKDTree:
-        """Rebuild the nearest-neighbor memo with the original leaf size."""
-        tree = self._tree
-        if tree is None:
-            tree = cKDTree(self.centers, leafsize=10)
-            object.__setattr__(self, "_tree", tree)
-        return tree
+    def kdtree(self, indexes: LookupIndexes | None = None) -> cKDTree:
+        """Return the KD-tree over ``centers``, kept in ``indexes`` when given."""
+        return _lookup_index(
+            self, indexes, lambda: cKDTree(self.centers, leafsize=_LEAF_SIZE)
+        )
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Return nearest bin indices, mapping non-finite rows to -1."""
         query_points = np.atleast_2d(points)
         n_query_points = query_points.shape[0]
@@ -571,7 +611,7 @@ class NearestBinLocator(_LocatorState):
         finite_rows = np.all(np.isfinite(query_points), axis=1)
         if not np.any(finite_rows):
             return final_bin_indices
-        tree = self._kdtree()
+        tree = self.kdtree(indexes)
         try:
             distances, kdtree_internal_indices = tree.query(query_points[finite_rows])
         except Exception as exc:

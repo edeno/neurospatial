@@ -10,8 +10,9 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from neurospatial.geometry._arena import Arena
+from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._binning import Binning, SpatialBins
-from neurospatial.geometry._locators import _LocatorState
+from neurospatial.geometry._locators import LookupIndexes
 
 if TYPE_CHECKING:
     from neurospatial.geometry._binning import Locator
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, eq=False)
-class CombinedLocator(_LocatorState):
+class CombinedLocator(ReadOnlyState):
     """Keep child geometry and domains without retaining live environments.
 
     Child order fixes bin offsets and boundary ties. Bridge arrays describe
@@ -139,7 +140,9 @@ class CombinedLocator(_LocatorState):
             ),
         )
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Locate native points with each child's original arena and lookup."""
         query = np.asarray(points, dtype=np.float64)
         dims = self.children[0].bins.n_dims
@@ -153,7 +156,7 @@ class CombinedLocator(_LocatorState):
             rows = np.flatnonzero(finite & (result < 0))
             if arena.domain_known:
                 rows = rows[arena.contains(query[rows])]
-            local = child.locator.locate(query[rows])
+            local = child.locator.locate(query[rows], indexes)
             valid = local >= 0
             result[rows[valid]] = offset + local[valid]
         return result

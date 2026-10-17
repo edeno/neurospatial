@@ -183,7 +183,7 @@ def _occupancy(
     # bind to the nearest edge bin, so a tracking-error overshoot
     # inflated occupancy at the boundary while bin_sequence
     # correctly flagged the same sample as -1.
-    bin_indices = locate(binning, arena, positions)
+    bin_indices = locate(binning, arena, positions, cache)
     if time_allocation == "linear" and n_dims != 2 and binning.grid_frame is not None:
         source_locator, source_positions = source_grid(binning.grid_frame, positions)
         bin_indices = source_locator.locate(source_positions)
@@ -233,6 +233,7 @@ def _occupancy(
                 positions,
                 valid_mask,
                 return_seconds=return_seconds,
+                indexes=cache,
             )
             # The observation mask has no bounds gate here, so an interval
             # whose path never enters the environment (outside, or with a NaN
@@ -282,6 +283,7 @@ def _bin_sequence(
     *,
     binning: Binning,
     arena: Arena,
+    cache: AnalysisCache,
     dedup: bool,
     outside_value: int | None,
     gap_splits_runs: bool,
@@ -335,7 +337,7 @@ def _bin_sequence(
 
     # Map positions to bin indices
     # Use bin_at which returns -1 for points outside environment
-    bin_indices = locate(binning, arena, positions).astype(np.int32)
+    bin_indices = locate(binning, arena, positions, cache).astype(np.int32)
 
     # Samples belong to a recording only if they touch a valid interval.
     if outside_value is None:
@@ -490,6 +492,7 @@ def _transitions(
             graph=graph,
             binning=binning,
             arena=arena,
+            cache=cache,
             coordinates=coordinates,
             times=times,
             positions=positions,
@@ -507,6 +510,7 @@ def _empirical_transitions(
     graph: nx.Graph,
     binning: Binning,
     arena: Arena,
+    cache: AnalysisCache,
     coordinates: CartesianSystem | EgocentricPolarSystem,
     times: NDArray[np.float64] | None = None,
     positions: NDArray[np.float64] | None = None,
@@ -640,6 +644,7 @@ def _empirical_transitions(
             positions,
             binning=binning,
             arena=arena,
+            cache=cache,
             dedup=False,
             outside_value=-1,
             gap_splits_runs=False,

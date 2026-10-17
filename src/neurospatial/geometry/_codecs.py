@@ -104,9 +104,8 @@ def decode(
     Returns
     -------
     object
-        Geometry with normalized dtypes and owned, read-only arrays. KD-tree
-        and mesh triangle-lookup memos remain lazy and are rebuilt from stored
-        data.
+        Geometry with normalized dtypes and owned, read-only arrays. Locator
+        search structures are not stored; lookup rebuilds them.
 
     Raises
     ------

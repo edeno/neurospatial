@@ -208,6 +208,15 @@ current record to `step`, which returns its replacement and a result, under
 the key's lock, so the growth happens once and readers never see a partial
 record.
 
+Locators hold no search structures of their own. The KD-tree, triangle index
+or polygon tree a locator searches is built by `locate(points, indexes)` and
+kept in `indexes`, a `LookupIndexes` store keyed by the locator. Environment
+code passes its `AnalysisCache` (`cache.lookup_index`), so these structures
+are locked, shared and cleared like every other analysis. Code that locates
+points repeatedly on a binning outside an environment, such as the copy
+`env.binning` returns, passes one `CallIndexes` to every call; `None` builds
+the structure for that call only.
+
 #### Cartesian-only members
 
 There is one runtime `Environment` class; factories give it a static
@@ -422,8 +431,8 @@ it has no stored `EgocentricSurround`. Version 1/`1.x` records are refused
 with recreation guidance. Pure codecs in `geometry/_codecs.py` and
 `geometry/_arena.py` store typed arrays and JSON metadata; polygon WKB bytes
 and offsets preserve ordered cells and holes. Shared snapshot references
-retain locator ownership without duplicating each record. Bounded KD-tree and
-mesh triangle-lookup memos are rebuilt from saved data. Standard NWB
+retain locator ownership without duplicating each record. Locator search
+structures are not stored; they are rebuilt from saved data. Standard NWB
 containers reject slash-containing names, so a one-row ragged DynamicTable
 stores arrays under safe column names. Its description holds the JSON
 metadata and canonical-key/shape/dtype mapping, without padding or a custom

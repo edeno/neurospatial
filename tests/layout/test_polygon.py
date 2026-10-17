@@ -96,7 +96,6 @@ def test_clipped_locator_preserves_parent_boundary_and_nonfinite_semantics():
     np.testing.assert_array_equal(locator.locate(points), [0, -1, 1, -1, -1, -1])
     np.testing.assert_array_equal(points, untouched)
     for restored in (copy.deepcopy(locator), pickle.loads(pickle.dumps(locator))):
-        assert restored._tree is None
         np.testing.assert_array_equal(restored.locate(points), locator.locate(points))
         assert not restored.mapping.parent_bin_indices.flags.writeable
     np.testing.assert_array_equal(

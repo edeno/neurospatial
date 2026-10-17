@@ -426,3 +426,94 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     np.testing.assert_array_equal(smoothed[0], expected)
     monkeypatch.setattr(_fields, "diffusion_apply", original)
     np.testing.assert_array_equal(env.smooth(field, 4.0), expected)
+
+
+def _track() -> Environment:
+    return Environment.linear_track(
+        endpoints=[(0.0, 0.0), (20.0, 0.0)], bin_size=1.0, units="cm"
+    )
+
+
+def _mesh() -> Environment:
+    from neurospatial.layout import create_layout
+
+    return Environment.from_layout(
+        create_layout(
+            "TriangularMesh", boundary_polygon=box(0, 0, 8, 8), point_spacing=2.0
+        )
+    )
+
+
+def _clipped() -> Environment:
+    from shapely.geometry import Point
+
+    square = Environment.from_grid_mask(
+        np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2
+    )
+    return square.clip(Point(5.0, 5.0).buffer(4.0))
+
+
+_LOOKUP_LAYOUTS = pytest.mark.parametrize(
+    "build", [_track, _mesh, _clipped], ids=["kd-tree", "triangles", "polygons"]
+)
+
+
+@_LOOKUP_LAYOUTS
+def test_lookup_structures_live_in_the_analysis_cache(build):
+    env = build()
+    points = env.bin_centers
+    locator = env._binning.locator
+    pickled = len(pickle.dumps(locator))
+    assert len(env._cache) == 0
+
+    np.testing.assert_array_equal(env.bin_at(points), np.arange(env.n_bins))
+
+    assert len(env._cache) > 0
+    # The locator keeps no search structure of its own.
+    assert len(pickle.dumps(locator)) == pickled
+    renamed = env.with_metadata(name="renamed")
+    np.testing.assert_array_equal(renamed.bin_at(points), np.arange(env.n_bins))
+    assert len(renamed._cache) == len(env._cache)
+    env.clear_cache()
+    assert len(renamed._cache) == 0
+    np.testing.assert_array_equal(renamed.bin_at(points), np.arange(env.n_bins))
+
+
+@_LOOKUP_LAYOUTS
+def test_concurrent_first_lookups_build_one_search_structure(build, monkeypatch):
+    from neurospatial.geometry import _locators, _polygon
+
+    env = build()
+    calls: list[int] = []
+    for module, name in (
+        (_locators, "cKDTree"),
+        (_locators, "_triangle_index"),
+        (_polygon, "STRtree"),
+    ):
+        monkeypatch.setattr(module, name, _slow_counted(getattr(module, name), calls))
+
+    results = _run_concurrently(lambda: env.bin_at(env.bin_centers))
+
+    assert len(calls) == 1
+    for result in results:
+        np.testing.assert_array_equal(result, np.arange(env.n_bins))
+
+
+@pytest.mark.parametrize("first", ["bin_at", "nearest_bin"])
+def test_track_lookups_share_one_kdtree(first, monkeypatch):
+    from neurospatial.environment import _lookup
+    from neurospatial.geometry import _locators
+
+    env = _track()
+    calls: list[int] = []
+    for module in (_lookup, _locators):
+        monkeypatch.setattr(module, "cKDTree", _counted(module.cKDTree, calls))
+    points = env.bin_centers + 0.25
+    second = "nearest_bin" if first == "bin_at" else "bin_at"
+
+    for method in (first, second, first):
+        np.testing.assert_array_equal(
+            getattr(env, method)(points), np.arange(env.n_bins)
+        )
+
+    assert len(calls) == 1

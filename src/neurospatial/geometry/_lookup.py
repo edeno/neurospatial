@@ -10,10 +10,14 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._binning import Binning
+    from neurospatial.geometry._locators import LookupIndexes
 
 
 def locate(
-    binning: Binning, arena: Arena, positions: NDArray[np.float64]
+    binning: Binning,
+    arena: Arena,
+    positions: NDArray[np.float64],
+    indexes: LookupIndexes | None = None,
 ) -> NDArray[np.intp]:
     """Assign positions to active bins, applying known arena containment first.
 
@@ -25,6 +29,9 @@ def locate(
         Continuous domain; positions outside a known domain map to ``-1``.
     positions : ndarray of float64, shape (n_positions, n_dims)
         Query positions in the environment's coordinates.
+    indexes : LookupIndexes, optional
+        Keeps the locator's search structures, usually the environment's
+        analysis cache. None builds them for this call only.
 
     Returns
     -------
@@ -32,7 +39,7 @@ def locate(
         Active-bin index of each position, or ``-1`` outside.
     """
     if not arena.domain_known:
-        return binning.locator.locate(positions).astype(np.intp, copy=False)
+        return binning.locator.locate(positions, indexes).astype(np.intp, copy=False)
     n_dims = binning.bins.n_dims
     positions = np.atleast_2d(np.asarray(positions, dtype=np.float64))
     if positions.ndim != 2 or positions.shape[1] != n_dims:
@@ -43,5 +50,5 @@ def locate(
     inside = arena.contains(positions)
     indices = np.full(len(positions), -1, dtype=np.intp)
     if np.any(inside):
-        indices[inside] = binning.locator.locate(positions[inside])
+        indices[inside] = binning.locator.locate(positions[inside], indexes)
     return indices

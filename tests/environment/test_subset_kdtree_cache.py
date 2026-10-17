@@ -1,4 +1,4 @@
-"""Owned subset lookup reuses its nearest-neighbor memo and parent ownership."""
+"""Owned subset lookup keeps its parent locator's KD-tree in the subset's cache."""
 
 from __future__ import annotations
 
@@ -31,9 +31,9 @@ def linearized_parent_and_subset() -> tuple[Environment, Environment, np.ndarray
 
 
 class TestSubsetKDTreeCaching:
-    """Repeated queries reuse the subset's owned parent-locator memo."""
+    """Repeated queries reuse the KD-tree kept in the subset's analysis cache."""
 
-    def test_kdtree_built_at_most_once_over_many_queries(
+    def test_kdtree_built_once_over_many_queries_and_again_after_clearing(
         self, linearized_parent_and_subset
     ) -> None:
         parent, child, keep = linearized_parent_and_subset
@@ -52,10 +52,9 @@ class TestSubsetKDTreeCaching:
         with patch(
             "neurospatial.geometry._locators.cKDTree", wraps=cKDTree
         ) as mock_ckdt:
-            np.testing.assert_array_equal(child.bin_at(pts), expected)
-            memo = locator.base._tree
-            assert memo is not None
             for _ in range(10):
                 np.testing.assert_array_equal(child.bin_at(pts), expected)
-                assert locator.base._tree is memo
-        assert mock_ckdt.call_count <= 1
+            assert mock_ckdt.call_count == 1
+            child.clear_cache()
+            np.testing.assert_array_equal(child.bin_at(pts), expected)
+            assert mock_ckdt.call_count == 2

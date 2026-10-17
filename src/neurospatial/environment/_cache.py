@@ -124,6 +124,33 @@ class AnalysisCache:
         object
             The cached value; every caller receives the same object.
         """
+        return self._once(key, build)
+
+    def lookup_index(self, locator: object, build: Callable[[], _T]) -> _T:
+        """Return a locator's search structure, building it on first request.
+
+        Locators call this for the KD-tree, triangle index or polygon tree
+        they search, so these live and are cleared with the environment's
+        other analyses. Each locator has its own entry, so a derived
+        environment whose locator wraps its parent's builds the parent's
+        structure again in its own cache.
+
+        Parameters
+        ----------
+        locator : object
+            The locator the structure belongs to, compared by identity.
+        build : callable
+            Builds the structure from the locator's data. Called at most once
+            per locator until :meth:`clear`, even under concurrent requests.
+
+        Returns
+        -------
+        object
+            The cached structure; every caller receives the same object.
+        """
+        return self._once((_LOOKUP_INDEX, locator), build)
+
+    def _once(self, key: object, build: Callable[[], _T]) -> _T:
         missing = _MISSING
         value = self._values.get(key, missing)
         if value is not missing:
@@ -217,6 +244,7 @@ class AnalysisCache:
 
 
 _MISSING = object()
+_LOOKUP_INDEX = object()
 
 KDTREE: CacheKey[cKDTree] = CacheKey("kdtree")
 FACE_GEOMETRY: CacheKey[FaceGeometry] = CacheKey("face_geometry")

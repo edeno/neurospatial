@@ -24,6 +24,7 @@ from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 if TYPE_CHECKING:
+    from neurospatial.geometry._locators import LookupIndexes
     from neurospatial.geometry._polygon import ClipMapping, PolygonCells
 
 
@@ -188,11 +189,15 @@ class SpatialBins(ReadOnlyState):
 class Locator(Protocol):
     """Find the bin that contains each query point."""
 
-    def locate(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+    def locate(
+        self, points: NDArray[np.float64], indexes: LookupIndexes | None = None
+    ) -> NDArray[np.intp]:
         """Return bin indices for ``(n_points, n_dims)`` coordinates, or -1.
 
         Non-finite rows return -1; a wrong number of columns raises ValueError.
-        The input is not modified.
+        The input is not modified. ``indexes`` keeps the search structures a
+        locator builds (an environment passes its analysis cache); without
+        it they are built for this call only.
         """
         ...
 
