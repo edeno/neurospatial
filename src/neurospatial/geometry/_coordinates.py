@@ -159,9 +159,12 @@ def require_cartesian(
 ) -> None:
     """Refuse an operation that reads polar ``(distance, angle)`` bins as Cartesian.
 
-    Every Cartesian-only refusal goes through this check: the
-    ``@cartesian_only`` Environment members, the Cartesian-only modes of shared
-    methods, and analysis functions in other packages.
+    Cartesian-only refusals that hold the environment's coordinate descriptor
+    go through this check: the ``@cartesian_only`` Environment members, the
+    Cartesian-only modes of shared methods, and analysis functions in other
+    packages. Code that holds only an arena, such as ``boundary_geometry``,
+    raises :class:`CartesianOnlyError` itself from ``arena.coordinate_kind``,
+    with the same message layout.
 
     Parameters
     ----------
