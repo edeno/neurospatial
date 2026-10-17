@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
-from neurospatial.geometry import Binning, region_bin_mask
+from neurospatial.geometry import Binning, region_bin_mask, region_bin_masks
 from neurospatial.regions import Regions, _snapshot_regions
 
 if TYPE_CHECKING:
@@ -89,13 +89,10 @@ def _region_membership(
         raise TypeError(
             f"include_boundary must be a bool, got {type(include_boundary).__name__}"
         )
-    membership = np.zeros((binning.bins.n_bins, len(regions)), dtype=np.bool_)
-    for column, region in enumerate(regions.values()):
-        membership[:, column] = region_bin_mask(
-            region,
-            binning=binning,
-            arena=arena,
-            include_boundary=include_boundary,
-            indexes=cache,
-        )
-    return membership
+    return region_bin_masks(
+        list(regions.values()),
+        binning=binning,
+        arena=arena,
+        include_boundary=include_boundary,
+        indexes=cache,
+    )

@@ -19,7 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import cKDTree
 
-from neurospatial.geometry import CallIndexes, region_bin_mask, require_cartesian
+from neurospatial.geometry import CallIndexes, region_bin_masks, require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.geometry import Arena, Binning
@@ -400,17 +400,14 @@ def _regions_mask(
         raise TypeError(
             f"include_boundary must be a bool, got {type(include_boundary).__name__}."
         )
-    mask = np.zeros(binning.bins.n_bins, dtype=np.bool_)
-    indexes = CallIndexes()
-    for region in resolved:
-        mask |= region_bin_mask(
-            region,
-            binning=binning,
-            arena=arena,
-            include_boundary=include_boundary,
-            indexes=indexes,
-        )
-    return mask
+    masks = region_bin_masks(
+        resolved,
+        binning=binning,
+        arena=arena,
+        include_boundary=include_boundary,
+        indexes=CallIndexes(),
+    )
+    return np.asarray(masks.any(axis=1), dtype=np.bool_)
 
 
 def resample_field(

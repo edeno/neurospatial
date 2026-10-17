@@ -15,7 +15,7 @@ from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry import (
     Binning,
     polygon_bin_mask,
-    region_bin_mask,
+    region_bin_masks,
     select_bins,
 )
 from neurospatial.regions import Regions
@@ -103,15 +103,14 @@ def _subset_mask(
                     name, available=list(regions), argument="region_names", in_list=True
                 )
 
-        mask = np.zeros(n_bins, dtype=bool)
-        for name in region_names:
-            mask |= region_bin_mask(
-                regions[name],
-                binning=binning,
-                arena=arena,
-                include_boundary=include_boundary,
-                indexes=cache,
-            )
+        covered = region_bin_masks(
+            [regions[name] for name in region_names],
+            binning=binning,
+            arena=arena,
+            include_boundary=include_boundary,
+            indexes=cache,
+        )
+        mask = np.asarray(covered.any(axis=1), dtype=np.bool_)
 
     elif polygon is not None:
         # Validate polygon parameter

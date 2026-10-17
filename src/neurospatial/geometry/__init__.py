@@ -124,6 +124,9 @@ from neurospatial.geometry._polygon_cells import PolygonCells as PolygonCells
 from neurospatial.geometry._rebin_spec import GridBinningSpec as GridBinningSpec
 from neurospatial.geometry._region_bins import polygon_bin_mask as polygon_bin_mask
 from neurospatial.geometry._region_bins import region_bin_mask as region_bin_mask
+from neurospatial.geometry._region_bins import (
+    region_bin_masks as region_bin_masks,
+)
 from neurospatial.geometry._regular_lookup import (
     points_to_regular_grid_bin_ind as points_to_regular_grid_bin_ind,
 )
