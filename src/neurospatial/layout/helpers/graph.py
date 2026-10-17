@@ -92,7 +92,7 @@ def _get_graph_bins(
 
     # 3) Build gap array
     n_edges = len(edge_order)
-    if isinstance(edge_spacing, (int, float)):
+    if isinstance(edge_spacing, (int, float, np.number)):
         gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
     else:
         gaps = np.asarray(edge_spacing, dtype=float)

@@ -89,7 +89,7 @@ def _project_1d_to_2d(
         dtype=float,
     )
 
-    if isinstance(edge_spacing, (int, float)):
+    if isinstance(edge_spacing, (int, float, np.number)):
         gaps = np.full(max(0, n_edges - 1), float(edge_spacing))
     else:
         gaps = np.asarray(edge_spacing, dtype=float)

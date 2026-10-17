@@ -650,6 +650,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `Environment.from_graph`, `linear_track` and `maze` accept a NumPy scalar
+  `edge_spacing` (for example `np.float32(2.0)` read from a config array) as
+  they accept a Python number. It used to raise `IndexError` or `TypeError`.
+
 - `spatial_autocorrelation` accepted hexagonal environments and treated the
   hexagon lattice as a rectangular grid. Its rows are offset, so the
   autocorrelogram and the grid score computed from it were wrong. It now

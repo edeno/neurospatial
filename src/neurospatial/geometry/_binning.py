@@ -425,7 +425,7 @@ class TrackLinearization(ReadOnlyState):
             self,
             "edge_spacing",
             float(spacing)
-            if isinstance(spacing, (int, float))
+            if isinstance(spacing, (int, float, np.number))
             else tuple(float(x) for x in spacing),
         )
         edges = tuple(np.array(e, dtype=np.float64, copy=True) for e in self.grid_edges)
