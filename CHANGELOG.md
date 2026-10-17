@@ -837,6 +837,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `neurospatial.testing.assert_environment_contract` works on a track built
+  without `track_width`: it checks that position lookups refuse with the fix
+  that names `track_width`, instead of failing on the refusal. A track with a
+  width gets the full lookup checks against `expected_bins`.
+
 - `ops.spatial_basis` sizes its basis by the track length on a linearized
   track. It used the geometric mean of the axis extents, which is zero for a
   straight track (it raised "sigma values must be positive") and unrelated to

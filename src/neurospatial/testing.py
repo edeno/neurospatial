@@ -39,7 +39,10 @@ def assert_environment_contract(
         Native coordinates. Include boundary points with independently known
         ownership; this helper cannot infer a scientific boundary convention.
     expected_bins : array-like of int, shape (n_points,)
-        Expected bin IDs, with -1 for outside points.
+        Expected bin IDs, with -1 for outside points. On a track built
+        without ``track_width`` positions have no bins, so the helper checks
+        instead that every position lookup refuses with the fix that names
+        ``track_width``.
 
     Raises
     ------
@@ -55,6 +58,18 @@ def assert_environment_contract(
     original_query = query.copy()
 
     def check_lookup(value: Environment | PolarEnvironment) -> None:
+        if not _assigns_positions(value):
+            for refused in (query, np.full((1, value.n_dims), np.nan)):
+                try:
+                    value._locate(refused)
+                except NotImplementedError as error:
+                    assert "track_width" in str(error), error
+                else:
+                    raise AssertionError(
+                        "a track without track_width assigned positions to bins"
+                    )
+            check_width(value)
+            return
         actual = value._locate(query)
         assert actual.dtype == np.dtype(np.intp)
         np.testing.assert_array_equal(actual, expected)
@@ -62,6 +77,9 @@ def assert_environment_contract(
         invalid = np.full((2, value.n_dims), np.nan)
         invalid[1] = np.inf
         np.testing.assert_array_equal(value._locate(invalid), [-1, -1])
+        check_width(value)
+
+    def check_width(value: Environment | PolarEnvironment) -> None:
         try:
             value._locate(np.zeros((1, value.n_dims + 1)))
         except ValueError:
@@ -121,3 +139,14 @@ def assert_environment_contract(
             pass
         else:
             raise AssertionError("numerical operator accepted missing face geometry")
+
+
+def _assigns_positions(env: Environment | PolarEnvironment) -> bool:
+    """Whether ``env`` maps positions to bins; a track needs its width for that."""
+    from neurospatial.geometry._lookup import require_track_width
+
+    try:
+        require_track_width(env._binning, env._arena)
+    except NotImplementedError:
+        return False
+    return True

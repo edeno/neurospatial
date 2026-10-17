@@ -40,3 +40,19 @@ def test_contract_kit_exercises_missing_face_refusal():
         )
     )
     assert_environment_contract(env, [[0, 0], [2, 0], [10, 0]], [0, 1, -1])
+
+
+def test_contract_kit_checks_that_a_track_without_width_refuses_lookups():
+    track = Environment.linear_track(endpoints=[(0, 0), (10, 0)], bin_size=2.0)
+    # Any expected bins: positions on a widthless track have none.
+    assert_environment_contract(track, [[1.0, 0.0], [1.0, 50.0]], [0, 0])
+
+
+def test_contract_kit_gives_a_track_with_width_the_full_lookup_checks():
+    track = Environment.linear_track(
+        endpoints=[(0, 0), (10, 0)], bin_size=2.0, track_width=2.0
+    )
+    assert_environment_contract(track, [[1.0, 0.0], [1.0, 50.0]], [0, -1])
+    with pytest.raises(AssertionError):
+        # A position 50 cm off a 2 cm wide track has no bin.
+        assert_environment_contract(track, [[1.0, 50.0]], [0])
