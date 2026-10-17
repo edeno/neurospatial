@@ -1519,8 +1519,8 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
     path_positions = [
         bin_centers[0],  # Start
         bin_centers[0] + [2, 0],  # Move right
-        bin_centers[0] + [2, 2],  # Move up (right turn)
-        bin_centers[0] + [0, 2],  # Move left (right turn again)
+        bin_centers[0] + [2, 2],  # Move up (North): a left turn
+        bin_centers[0] + [0, 2],  # Move West: a left turn again
     ]
 
     # Find bins closest to each position
@@ -1544,10 +1544,8 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
         min_samples_per_edge=20,
     )
 
-    # Should detect multiple turns
-    assert isinstance(turn_seq, str)
-    # If there are turns, sequence should contain "-"
-    # May be empty if path is too simple or bins don't form clear turns
+    # East, then North, then West: two counterclockwise turns.
+    assert turn_seq == "left-left"
 
 
 def _turns_along(env, corners, samples_per_bin=60):
@@ -1621,10 +1619,8 @@ def test_graph_turn_sequence_straight(ymaze_env):
         min_samples_per_edge=10,
     )
 
-    # Should return empty string (no turns)
-    assert isinstance(turn_seq, str)
-    # For a straight path from center to straight ahead, no turn should be detected
-    # The result might be empty "" or might not contain "left" or "right"
+    # Center → straight ahead is one direction, so no turn.
+    assert turn_seq == ""
 
 
 def test_graph_turn_sequence_min_samples_filter(ymaze_env):
@@ -1663,10 +1659,8 @@ def test_graph_turn_sequence_min_samples_filter(ymaze_env):
         min_samples_per_edge=50,
     )
 
-    # Should return empty string (brief crossing filtered out)
-    assert isinstance(turn_seq, str)
-    # With only 5 samples on the edge, it should be filtered
-    # Result should be empty or not contain "left"
+    # The 5-sample crossing is below min_samples_per_edge, so nothing is left.
+    assert turn_seq == ""
 
 
 def test_graph_turn_sequence_3d(simple_3d_env):
@@ -1694,9 +1688,10 @@ def test_graph_turn_sequence_3d(simple_3d_env):
         min_samples_per_edge=5,  # Lower threshold for 3D
     )
 
-    # Should return a string (might be empty for simple 3D paths)
-    assert isinstance(turn_seq, str)
-    # Function should handle 3D without errors
+    # Turns are read in the x-y plane. The walk climbs in z and steps along y
+    # at constant x, so its x-y direction never changes: no turn to report.
+    assert np.unique(env.bin_centers[np.unique(position_bins), 0]).size == 1
+    assert turn_seq == ""
 
 
 # =============================================================================

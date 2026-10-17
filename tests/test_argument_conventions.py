@@ -109,12 +109,26 @@ def test_environment_coordinate_arguments_are_named_positions():
     for name in ("bin_at", "contains", "nearest_bin", "to_linear", "interpolate"):
         parameters = inspect.signature(getattr(Environment, name)).parameters
         assert "positions" in parameters, name
-    off_contract = {"points_nd", "nd_position", "trajectory", "xy"}
-    offenders = [
-        (name, parameter)
-        for name in dir(Environment)
-        if not name.startswith("_") and inspect.isfunction(getattr(Environment, name))
-        for parameter in inspect.signature(getattr(Environment, name)).parameters
-        if parameter in off_contract
-    ]
+    off_contract = {
+        "points_nd",
+        "nd_position",
+        "trajectory",
+        "xy",
+        "timestamps",
+        "sigma",
+        "use_geodesic",
+    }
+    offenders = []
+    for name in dir(Environment):
+        if name.startswith("_"):
+            continue
+        member = inspect.getattr_static(Environment, name)
+        function = getattr(member, "__func__", member)
+        if isinstance(member, property) or not callable(function):
+            continue
+        offenders += [
+            (name, parameter)
+            for parameter in inspect.signature(function).parameters
+            if parameter in off_contract
+        ]
     assert not offenders, offenders
