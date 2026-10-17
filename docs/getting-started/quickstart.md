@@ -131,12 +131,12 @@ Four concepts carried that analysis. They are worth a minute now; the
 
 **Environment.** `Environment.from_samples(...)` discretized the continuous
 arena into a grid of **bins** (small square tiles), keeping only the bins your
-samples actually covered. `env.n_bins` reports how many there are, and every
-later step — occupancy, smoothing, plotting — is defined over those bins.
-Presets cover common apparatus: `Environment.open_field` also keeps unvisited
-patches inside the arena, and `Environment.linear_track` and
-`Environment.maze` build linearized tracks (see
-[presets](../user-guide/environments.md#presets)):
+samples actually covered. Presets cover common apparatus:
+`Environment.open_field` also keeps unvisited patches inside the arena, and
+`Environment.linear_track` and `Environment.maze` build linearized tracks (see
+[presets](../user-guide/environments.md#presets)). `env.n_bins` reports how
+many bins there are, and every later step — occupancy, smoothing, plotting —
+is defined over those bins:
 
 ```python
 print(f"{env.n_bins} active bins, {env.n_dims}D, units = {env.units!r}")
