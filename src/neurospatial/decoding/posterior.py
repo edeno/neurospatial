@@ -124,7 +124,8 @@ def _validate_encoding_environment(
         ):
             mismatch = "weighted connectivity"
     if mismatch is None:
-        from neurospatial.geometry._polygon import PolygonCells, materialize_cells
+        from neurospatial.geometry._polygon import materialize_cells
+        from neurospatial.geometry._polygon_cells import PolygonCells
 
         if not _same_arena(source.arena, env.arena):
             mismatch = "continuous arena or physical walls"

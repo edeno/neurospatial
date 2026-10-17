@@ -17,7 +17,7 @@ from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import MissingFaces
 from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._components import TriangleShapes
-from neurospatial.geometry._polygon import PolygonCells
+from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.io import from_dict, to_dict
 from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D, estimate_transform

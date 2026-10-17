@@ -16,7 +16,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._polygon import ClippedLocator
+from neurospatial.geometry._polygon_cells import ClippedLocator
 
 
 def _source_grid(locator: Locator) -> tuple[tuple[int, ...], NDArray[np.intp]] | None:

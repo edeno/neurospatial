@@ -626,7 +626,7 @@ def _saved_label(binning: Binning, *, polar: bool) -> str:
         SubsetLocator,
         TransformedLocator,
     )
-    from neurospatial.geometry._polygon import ClippedLocator
+    from neurospatial.geometry._polygon_cells import ClippedLocator
     from neurospatial.layout import LayoutType, find_layout_type
 
     if polar:

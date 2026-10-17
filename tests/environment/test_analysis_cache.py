@@ -481,14 +481,14 @@ def test_lookup_structures_live_in_the_analysis_cache(build):
 
 @_LOOKUP_LAYOUTS
 def test_concurrent_first_lookups_build_one_search_structure(build, monkeypatch):
-    from neurospatial.geometry import _locators, _polygon
+    from neurospatial.geometry import _locators, _polygon_cells
 
     env = build()
     calls: list[int] = []
     for module, name in (
         (_locators, "cKDTree"),
         (_locators, "_triangle_index"),
-        (_polygon, "STRtree"),
+        (_polygon_cells, "STRtree"),
     ):
         monkeypatch.setattr(module, name, _slow_counted(getattr(module, name), calls))
 

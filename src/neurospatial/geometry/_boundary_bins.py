@@ -25,7 +25,8 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._polygon import PolygonCells, _boundary_cell_indices
+from neurospatial.geometry._polygon import _boundary_cell_indices
+from neurospatial.geometry._polygon_cells import PolygonCells
 
 
 def boundary_bins(

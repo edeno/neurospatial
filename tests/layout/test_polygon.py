@@ -17,13 +17,15 @@ from neurospatial.geometry._derive import subset_binning, transform_binning
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._locators import RectilinearLocator, SubsetLocator
 from neurospatial.geometry._polygon import (
-    ClipMapping,
-    ClippedLocator,
-    PolygonCells,
     cells_from_locator,
     certify_faces,
     clip_binning,
     materialize_cells,
+)
+from neurospatial.geometry._polygon_cells import (
+    ClipMapping,
+    ClippedLocator,
+    PolygonCells,
     subset_polygon_cells,
     transform_polygon_cells,
 )

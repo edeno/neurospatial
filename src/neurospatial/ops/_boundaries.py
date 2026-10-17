@@ -103,8 +103,10 @@ def _resolve_wall_contacts(
 
     from neurospatial.geometry._arena import _feature_cap
     from neurospatial.geometry._locators import RectilinearLocator, SubsetLocator
-    from neurospatial.geometry._polygon import ClippedLocator
-    from neurospatial.geometry._validation import _polygon_coordinate_errors
+    from neurospatial.geometry._polygon_cells import (
+        ClippedLocator,
+        _polygon_coordinate_errors,
+    )
 
     def same_parent(target: NDArray[np.float64], query: NDArray[np.float64]) -> bool:
         parent = locator
@@ -191,11 +193,8 @@ def _wall_hit_bins(
     from neurospatial.geometry._arena import _feature_cap, _TransformedArena
     from neurospatial.geometry._composition import CombinedLocator
     from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-    from neurospatial.geometry._polygon import (
-        ClippedLocator,
-        PolygonCells,
-        materialize_cells,
-    )
+    from neurospatial.geometry._polygon import materialize_cells
+    from neurospatial.geometry._polygon_cells import ClippedLocator, PolygonCells
     from neurospatial.geometry._wall_frame import _wall_source_frame
 
     def source_locator(

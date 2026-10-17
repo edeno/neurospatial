@@ -38,7 +38,11 @@ from neurospatial.geometry._locators import (
     TransformedLocator,
 )
 from neurospatial.geometry._native_faces import NativeFaces
-from neurospatial.geometry._polygon import ClipMapping, ClippedLocator, PolygonCells
+from neurospatial.geometry._polygon_cells import (
+    ClipMapping,
+    ClippedLocator,
+    PolygonCells,
+)
 from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 

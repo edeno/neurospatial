@@ -10,7 +10,7 @@ import networkx as nx
 from neurospatial.geometry._binning import Binning, TrackLinearization
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._context import grid_index
-from neurospatial.geometry._polygon import PolygonCells
+from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.layout._plotting import (
     plot_grid,
     plot_hexagons,

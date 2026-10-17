@@ -25,7 +25,7 @@ from neurospatial.geometry._components import (
 )
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
-from neurospatial.geometry._polygon import PolygonCells
+from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.geometry._track import track_cell_ends
 
 

@@ -8,15 +8,21 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
+from scipy.sparse.csgraph import connected_components
 
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._arrays import ReadOnlyState
 from neurospatial.geometry._binning import Binning, SpatialBins
-from neurospatial.geometry._locators import LookupIndexes
+from neurospatial.geometry._diffusion import DiffusionGeometry
+from neurospatial.geometry._face_normals import FaceNormals
+from neurospatial.geometry._locators import (
+    LookupIndexes,
+    SubsetLocator,
+    TransformedLocator,
+)
+from neurospatial.geometry._polygon_cells import ClippedLocator
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-    from neurospatial.geometry._face_normals import FaceNormals
     from neurospatial.geometry._locators import Locator
 
 
@@ -164,7 +170,6 @@ class CombinedLocator(ReadOnlyState):
 
 def combined_normals(locator: CombinedLocator) -> FaceNormals | None:
     """Combine authoritative child normals; bridges have no physical normal."""
-    from neurospatial.geometry._face_normals import FaceNormals
 
     if any(child.face_normals is None for child in locator.children):
         return None
@@ -190,10 +195,6 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
     Clipped cells must supply their own certified faces. Do not unwrap a
     ClippedLocator here: its parent's weights describe different cell geometry.
     """
-    from scipy.sparse.csgraph import connected_components
-
-    from neurospatial.geometry._diffusion import DiffusionGeometry
-    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 
     def weights(
         locator: Locator, active: NDArray[np.bool_] | None = None
@@ -281,88 +282,10 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
     return DiffusionGeometry(matrix, binning.bins.sizes, int(n_components), labels)
 
 
-def expected_composition_binning(locator: Locator) -> tuple[Binning, bool] | None:
-    """Recover physical face authority through subsets and affine wrappers.
-
-    This is validation of stored duplicates, not a layout rebuild or bridge
-    inference. The flag distinguishes affine arithmetic from exact selection.
-    """
-    from types import SimpleNamespace
-
-    from neurospatial.geometry._binning import KnownFaces, MissingFaces
-    from neurospatial.geometry._derive import transform_binning
-    from neurospatial.geometry._diffusion import FaceGeometry
-    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-
-    if isinstance(locator, CombinedLocator):
-        bins = locator.spatial_bins()
-        faces: KnownFaces | MissingFaces = MissingFaces(
-            "Navigation bridges have no physical faces."
-        )
-        if not len(locator.bridge_pairs) and all(
-            child.faces.available for child in locator.children
-        ):
-            parts = [child.faces.build() for child in locator.children]
-            faces = KnownFaces(
-                FaceGeometry(
-                    bins.pairs,
-                    np.concatenate([part.A for part in parts]),
-                    np.concatenate([part.distance for part in parts]),
-                    bins.sizes,
-                )
-            )
-        normals = combined_normals(locator)
-        return Binning("combined", bins, locator, faces, face_normals=normals), False
-    if isinstance(locator, SubsetLocator):
-        result = expected_composition_binning(locator.base)
-        if result is None:
-            return None
-        parent, computed = result
-        mapping = locator.parent_to_child
-        selected = np.flatnonzero(mapping >= 0)
-        selected = selected[np.argsort(mapping[selected])]
-        mapped = mapping[parent.bins.pairs]
-        kept = np.all(mapped >= 0, axis=1)
-        bins = SpatialBins.from_arrays(
-            parent.bins.centers[selected],
-            parent.bins.sizes[selected],
-            parent.bins.measure_dim,
-            mapped[kept],
-            parent.bins.pair_distances[kept],
-        )
-        subset_faces = parent.faces
-        if subset_faces.available:
-            old = subset_faces.build()
-            subset_faces = KnownFaces(
-                FaceGeometry(bins.pairs, old.A[kept], old.distance[kept], bins.sizes)
-            )
-        from neurospatial.geometry._face_normals import FaceNormals
-
-        normals = (
-            FaceNormals(parent.face_normals.values[kept])
-            if parent.face_normals is not None
-            else None
-        )
-        return Binning(
-            "combined_subset", bins, locator, subset_faces, face_normals=normals
-        ), computed
-    if isinstance(locator, TransformedLocator):
-        result = expected_composition_binning(locator.base)
-        if result is None:
-            return None
-        parent, _computed = result
-        return transform_binning(
-            parent, SimpleNamespace(A=np.linalg.inv(locator.inverse))
-        ), True
-    return None
-
-
 def composition_view(
     locator: object,
 ) -> tuple[CombinedLocator, NDArray[np.intp], float] | None:
     """Resolve current bins to root component IDs and a similarity scale."""
-    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-    from neurospatial.geometry._polygon import ClippedLocator
 
     if isinstance(locator, CombinedLocator):
         return locator, np.arange(locator.offsets[-1], dtype=np.intp), 1.0

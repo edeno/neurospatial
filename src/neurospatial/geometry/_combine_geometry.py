@@ -42,11 +42,8 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._polygon import (
-    PolygonCells,
-    cells_from_locator,
-    materialize_cells,
-)
+from neurospatial.geometry._polygon import cells_from_locator, materialize_cells
+from neurospatial.geometry._polygon_cells import PolygonCells
 
 
 @dataclass

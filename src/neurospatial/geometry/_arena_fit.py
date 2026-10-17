@@ -25,11 +25,8 @@ from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-from neurospatial.geometry._polygon import (
-    ClippedLocator,
-    PolygonCells,
-    materialize_cells,
-)
+from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.geometry._polygon_cells import ClippedLocator, PolygonCells
 from neurospatial.geometry._validation import _polygon_area_allowance
 from neurospatial.geometry._wall_frame import _wall_source_frame
 

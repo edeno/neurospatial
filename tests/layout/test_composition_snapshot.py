@@ -79,7 +79,8 @@ def test_malformed_composition_refuses(change):
 def test_combined_snapshot_publishes_and_round_trips(tmp_path):
     from neurospatial.binning import Binning, MissingFaces
     from neurospatial.geometry._arena import _CombinedArena
-    from neurospatial.geometry._polygon import PolygonCells, cells_from_locator
+    from neurospatial.geometry._polygon import cells_from_locator
+    from neurospatial.geometry._polygon_cells import PolygonCells
     from neurospatial.testing import assert_environment_contract
 
     source = snapshot()

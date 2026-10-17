@@ -22,6 +22,7 @@ from neurospatial.geometry._capabilities import (
     RectilinearGrid,
 )
 from neurospatial.geometry._components import HexagonShapes, Outline, TriangleShapes
+from neurospatial.geometry._composition import bridge_values
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._explicit import cell_extent
 from neurospatial.geometry._face_normals import FaceNormals
@@ -37,6 +38,13 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
     _check_homogeneous,
+)
+from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.geometry._polygon_cells import (
+    ClipMapping,
+    PolygonCells,
+    subset_polygon_cells,
+    transform_polygon_cells,
 )
 
 
@@ -67,11 +75,6 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     Binning
         Owned child geometry. Points in dropped bins are outside the child.
     """
-    from neurospatial.geometry._polygon import (
-        ClipMapping,
-        PolygonCells,
-        subset_polygon_cells,
-    )
 
     keep = np.asarray(keep)
     if (
@@ -301,18 +304,11 @@ def transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
 
 
 def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
-    from neurospatial.geometry._polygon import (
-        PolygonCells,
-        materialize_cells,
-        transform_polygon_cells,
-    )
-
     parent = binning.bins
     matrix = _matrix(transform, parent.n_dims)
     linear = matrix[:-1, :-1]
     kind, scale, logdet = _classification(linear)
     similarity = kind in {"translation", "similarity"}
-    from neurospatial.geometry._composition import bridge_values
 
     couplings = bridge_values(binning)
     if any(value > 0 for value in couplings.values()):

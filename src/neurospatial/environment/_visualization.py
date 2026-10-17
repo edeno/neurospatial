@@ -22,7 +22,7 @@ from neurospatial.geometry._binning import (
 )
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
 from neurospatial.geometry._coordinates import CartesianSystem, EgocentricPolarSystem
-from neurospatial.geometry._polygon import PolygonCells
+from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.layout._plot_cells import plot_binning
 from neurospatial.layout._plotting import (
     hexagon_patches,

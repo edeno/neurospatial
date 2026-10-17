@@ -33,7 +33,8 @@ def _prepare_physical_border(
     from neurospatial.geometry._arena import _CombinedArena, _TransformedArena
     from neurospatial.geometry._composition import CombinedLocator, composition_view
     from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-    from neurospatial.geometry._polygon import ClippedLocator, materialize_cells
+    from neurospatial.geometry._polygon import materialize_cells
+    from neurospatial.geometry._polygon_cells import ClippedLocator
 
     def independent_frame(locator: object) -> bool:
         if isinstance(locator, TransformedLocator):

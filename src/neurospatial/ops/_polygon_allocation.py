@@ -29,11 +29,8 @@ from neurospatial.geometry._locators import (
     RectilinearLocator,
 )
 from neurospatial.geometry._lookup import locate
-from neurospatial.geometry._polygon import (
-    PolygonCells,
-    cells_from_locator,
-    materialize_cells,
-)
+from neurospatial.geometry._polygon import cells_from_locator, materialize_cells
+from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.geometry._wall_frame import _wall_source_frame
 from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
 

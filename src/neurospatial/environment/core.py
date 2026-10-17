@@ -146,7 +146,7 @@ if TYPE_CHECKING:
     from neurospatial.environment._factories import PolygonType
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._diffusion import DiffusionGeometry
-    from neurospatial.geometry._polygon import ClipMapping
+    from neurospatial.geometry._polygon_cells import ClipMapping
     from neurospatial.layout._scale_bar import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import KernelMode

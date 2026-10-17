@@ -18,7 +18,8 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._polygon import ClippedLocator, materialize_cells
+from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.geometry._polygon_cells import ClippedLocator
 from neurospatial.ops.transforms import AffineND
 
 

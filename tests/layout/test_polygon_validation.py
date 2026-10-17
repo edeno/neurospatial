@@ -18,12 +18,11 @@ from neurospatial.geometry._binning import (
 )
 from neurospatial.geometry._derive import subset_binning, transform_binning
 from neurospatial.geometry._locators import RectilinearLocator
-from neurospatial.geometry._polygon import (
+from neurospatial.geometry._polygon import _representative, certify_faces
+from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
     PolygonCells,
-    _representative,
-    certify_faces,
 )
 from neurospatial.geometry._validation import _validate_components
 

@@ -35,7 +35,7 @@ from neurospatial.geometry._locators import (
     SubsetLocator,
     TransformedLocator,
 )
-from neurospatial.geometry._polygon import ClippedLocator
+from neurospatial.geometry._polygon_cells import ClippedLocator
 from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import translate
 

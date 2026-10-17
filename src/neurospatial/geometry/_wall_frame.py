@@ -5,12 +5,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+import shapely
+from shapely.geometry import MultiPolygon, Polygon
+
+from neurospatial.geometry._arena import _TransformedArena
+from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
+from neurospatial.geometry._polygon import cells_from_locator
+from neurospatial.geometry._polygon_cells import (
+    ClippedLocator,
+    _polygon_coordinate_errors,
+)
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
-    from shapely.geometry import LineString, MultiPolygon, Polygon
+    from shapely.geometry import LineString
 
-    from neurospatial.geometry._arena import Arena, _TransformedArena
+    from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._locators import Locator
 
 
@@ -27,9 +37,6 @@ def _wall_source_frame(
     | None
 ):
     """Recover a shared stored frame through retained cell-owner mappings."""
-    from neurospatial.geometry._arena import _TransformedArena
-    from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
-    from neurospatial.geometry._polygon import ClippedLocator, cells_from_locator
 
     if isinstance(locator, TransformedLocator) and isinstance(arena, _TransformedArena):
         if np.array_equal(locator.inverse, arena.inverse):
@@ -60,13 +67,6 @@ def _wall_source_frame(
                     frames,
                 )
             else:
-                import shapely
-                from shapely.geometry import MultiPolygon, Polygon
-
-                from neurospatial.geometry._validation import (
-                    _polygon_coordinate_errors,
-                )
-
                 # Retain the *current* clipped support in the exact wall frame.
                 # Project shared vertices once through the actual stored frames.
                 # Their existing forward-residual bounds include inverse and

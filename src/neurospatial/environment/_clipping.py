@@ -11,7 +11,8 @@ from neurospatial.environment._publication import _Derivation
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._binning import Binning
 from neurospatial.geometry._composition import bridge_values
-from neurospatial.geometry._polygon import PolygonCells, clip_binning
+from neurospatial.geometry._polygon import clip_binning
+from neurospatial.geometry._polygon_cells import PolygonCells
 
 
 def _clip(
