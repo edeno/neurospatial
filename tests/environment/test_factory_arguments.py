@@ -287,6 +287,19 @@ def test_track_factories_share_the_edge_spacing_default():
     assert from_graph.layout_parameters["edge_spacing"] == 0.0
 
 
+def test_edge_spacing_on_a_one_edge_track_is_refused():
+    """A gap sits between two edges, so a straight track has nowhere to put it."""
+    with pytest.raises(ValueError, match="no gap to fill") as caught:
+        Environment.linear_track(
+            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, edge_spacing=5.0
+        )
+    assert "remove edge_spacing" in str(caught.value).split("Fix:")[1]
+    straight = Environment.linear_track(
+        endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, edge_spacing=0.0
+    )
+    assert straight.layout_parameters["edge_spacing"] == 0.0
+
+
 @pytest.mark.parametrize("layout", ["TriangularMesh", MaskedGridLayout])
 def test_from_layout_refuses_a_layout_name_or_class(layout):
     with pytest.raises(TypeError, match="takes a built layout engine") as caught:

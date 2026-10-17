@@ -425,6 +425,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   before-and-after values. A grid cell simulated with
   `GridCellModel(grid_orientation=θ)` is reported with orientation θ.
 
+- A nonzero `edge_spacing` on a track with one edge (for example
+  `Environment.linear_track(endpoints=..., edge_spacing=5.0)`) raises
+  `ValueError`. A gap goes between consecutive edges, so the value used to be
+  recorded in `layout_parameters` and ignored. Remove it, or use
+  `node_positions` with more than two points for a track with segments.
+
 - `graph_turn_sequence(env, position_bins)` no longer takes `start_bin` and
   `end_bin`. They were documented as orienting the path but were never used:
   the order of `position_bins` already sets the direction of travel, and the

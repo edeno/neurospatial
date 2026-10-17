@@ -431,23 +431,27 @@ numbers come back as tuples.
 The parameters never affected any analysis, and loading a saved environment
 does not need them: the bins, graph and arena are stored directly.
 
-They describe the bins that were built. An option the bins did not use is
-recorded at the value that does nothing: with `infer_active_bins=False` every
-bin is active, so `open_field` records `fill_holes=False` (it used to record
-its default `fill_holes=True`):
-
-<!-- docs-test: run -->
-```python
-assert Environment.open_field(
-    positions, bin_size=4.0, infer_active_bins=False
-).layout_parameters["fill_holes"] is False
-```
-
 <!-- docs-test: run -->
 ```python
 # Before: env.layout_parameters["dimension_ranges"]
 ranges = env.dimension_ranges
 bin_size = env.layout_parameters["bin_size"]  # scalar choices are still there
+```
+
+The recorded choices describe the bins that were built. An option the bins
+did not use is recorded at the value that does nothing: with
+`infer_active_bins=False` every bin is active, so `open_field` records
+`fill_holes=False` (it used to record its default `fill_holes=True`). An
+option that cannot act at all is refused, as `edge_spacing` is on a straight
+`linear_track`, which has one edge and no gap between edges:
+
+<!-- docs-test: run -->
+```python
+# Before: Environment.linear_track(endpoints=[(0, 0), (100, 0)], bin_size=2.0, edge_spacing=5.0)
+track = Environment.linear_track(endpoints=[(0, 0), (100, 0)], bin_size=2.0)
+assert Environment.open_field(
+    positions, bin_size=4.0, infer_active_bins=False
+).layout_parameters["fill_holes"] is False
 ```
 
 ## One layout label

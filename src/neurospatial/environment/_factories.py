@@ -595,6 +595,22 @@ def _from_graph(
     track_width: float | None = None,
 ) -> Environment:
     """Implement Environment.from_graph using explicit construction inputs."""
+    # A gap sits between consecutive edges, so a one-edge track has none.
+    if (
+        len(edge_order) == 1
+        and isinstance(edge_spacing, (int, float, np.number))
+        and edge_spacing != 0
+    ):
+        raise ValueError(
+            _format_error(
+                f"edge_spacing={edge_spacing!r} has no gap to fill on a track "
+                "with one edge.",
+                why="Why: edge_spacing is the linear distance inserted between "
+                "consecutive edges of edge_order, so the value would be ignored.",
+                fix="remove edge_spacing from the call (0.0 is accepted); a gap "
+                "applies only to a track of two or more edges",
+            )
+        )
     layout_params = {
         "graph_definition": graph,
         "edge_order": edge_order,
