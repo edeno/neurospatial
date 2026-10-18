@@ -14,8 +14,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   faces: a 100 cm box with a wall at x = 50 cm and 5 cm bins builds and blocks
   paths across the wall. Before, the grid followed the samples' extent, put
   the wall through the middle of cells, and refused to build unless you set
-  `dimension_ranges` by hand. The refusal for a wall that still cuts a cell
-  now names the wall's ends and the bin, and how to choose `bin_size`.
+  `dimension_ranges` by hand.
+
+- A wall that runs through bins no longer stops an environment from being
+  built. `from_samples`, `open_field`, `from_polygon`, `from_grid_mask`,
+  `from_pixel_mask`, `from_layout` and `io.nwb.environment_from_position`
+  take `wall_fit=`. The default `"snap"` keeps every bin and moves the wall
+  onto the bin edges between the bins it divides, warning how far it moved
+  (at most about half a bin), so every analysis works as on any grid.
+  `"split"` keeps the measured wall and cuts each bin it crosses into one
+  exact polygon bin per side; smoothing refuses the bins next to a wall's end
+  or a diagonal wall, so use it with binned rates or wall-distance measures.
+  A wall that covers part of a bin edge now leaves the open part connected
+  with a proportionally smaller conductance, instead of raising. `from_bins`,
+  `rebin` and saved environments still refuse a wall through a bin, with an
+  error that names the wall and the bin.
 
 - `Environment.apply_transform` takes `units=`, and requires it when the
   transform scales or shears lengths and the environment has units. Before,

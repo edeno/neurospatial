@@ -35,6 +35,7 @@ from neurospatial.geometry import (
     GridIndex,
     apply_walls,
     binning_ranges,
+    fit_walls,
     graph_from_binning,
     infer_arena,
     own_arena,
@@ -566,6 +567,7 @@ def publish_layout(
     regions: Regions | None = None,
     arena: Arena | None = None,
     coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
+    wall_fit: Literal["snap", "split"] = "snap",
 ) -> _EnvironmentT:
     """Consume a built layout once and publish only its owned data.
 
@@ -590,12 +592,21 @@ def publish_layout(
         a polar layout needs its :class:`EgocentricSurround`.
     coordinate_kind : {'cartesian', 'polar'}, default='cartesian'
         Meaning of the bin coordinates.
+    wall_fit : {'snap', 'split'}, default='snap'
+        How bins that a wall of ``arena`` divides are fitted to it; see
+        :func:`neurospatial.geometry.fit_walls`.
 
     Returns
     -------
     Environment
         A new instance of ``cls``.
     """
+    if wall_fit not in ("split", "snap"):
+        raise ValueError(
+            f"wall_fit must be 'split' or 'snap', got {wall_fit!r}: 'split' cuts "
+            "the bins a wall crosses along it, 'snap' moves the wall onto bin "
+            "edges."
+        )
     binning, resolved = _built_layout_data(layout)
     if arena is not None and arena.domain_known and coordinate_kind == "cartesian":
         centers = binning.bins.centers
@@ -607,6 +618,8 @@ def publish_layout(
         )
         if not np.all(keep):
             binning = select_bins(binning, keep)
+    if arena is not None:
+        binning, arena = fit_walls(binning, arena, wall_fit)
     return _publish(
         cls,
         binning,

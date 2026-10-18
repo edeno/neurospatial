@@ -51,10 +51,33 @@ def test_explicit_dimension_ranges_still_win():
     assert env.grid_edges[0][-1] == 110.0
 
 
-def test_a_wall_off_the_lattice_names_the_wall_and_the_bin():
-    with pytest.raises(ValueError, match=r"wall cuts through bin \d+") as caught:
-        Environment.from_samples(POSITIONS, bin_size=5.0, arena=_arena(33.0))
+def test_a_wall_off_the_lattice_can_split_the_bins_it_crosses():
+    """A wall at x = 33 cm cuts 5 cm bins; wall_fit='split' splits them."""
+    env = Environment.from_samples(
+        POSITIONS, bin_size=5.0, arena=_arena(33.0), wall_fit="split"
+    )
 
-    message = str(caught.value)
-    assert "from (33, 0) to (33, 60)" in message
-    assert "bin_size that divides the distance" in message
+    split = env.bin_sizes < 25.0
+    assert split.sum() == 2 * 12  # the 12 bins the wall fully crosses
+    assert env.bin_sizes.sum() == pytest.approx(100.0 * 100.0)
+    # A path across the wall goes around its end at y = 60 cm.
+    assert env.distance_between(points=[[31.0, 30.0], [35.0, 30.0]]) > 2 * (60 - 30)
+
+
+def test_a_wall_off_the_lattice_is_snapped_by_default():
+    with pytest.warns(UserWarning, match=r"moved the walls onto bin edges by up to 2"):
+        env = Environment.from_samples(POSITIONS, bin_size=5.0, arena=_arena(33.0))
+
+    assert env.n_bins == 400
+    assert env.arena.walls[0].coords[0][0] in (30.0, 35.0)
+    # Smoothing, the default rate estimator, still works on the whole bins.
+    assert env.smooth(np.ones(env.n_bins), bandwidth=5.0, mode="average").shape == (
+        env.n_bins,
+    )
+
+
+def test_an_unknown_wall_fit_is_refused():
+    with pytest.raises(ValueError, match="wall_fit must be 'split' or 'snap'"):
+        Environment.from_samples(
+            POSITIONS, bin_size=5.0, arena=_arena(33.0), wall_fit="move"
+        )

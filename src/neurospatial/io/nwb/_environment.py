@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -407,6 +407,7 @@ def environment_from_position(
     frame: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
+    wall_fit: Literal["snap", "split"] = "snap",
     layout: LayoutType | str = "RegularGrid",
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
@@ -450,6 +451,9 @@ def environment_from_position(
         Named regions to snapshot with the environment.
     arena : Arena, optional
         Explicit continuous domain. See :meth:`Environment.from_samples`.
+    wall_fit : {'snap', 'split'}, default='snap'
+        What to do with a bin that a wall of ``arena`` divides; see
+        ``Environment.from_samples``.
     layout : LayoutType or str, default "RegularGrid"
         ``"RegularGrid"`` or ``"Hexagonal"``.
     dimension_ranges : sequence of (float, float), optional
@@ -535,6 +539,7 @@ def environment_from_position(
         frame=frame,
         regions=regions,
         arena=arena,
+        wall_fit=wall_fit,
         layout=layout,
         dimension_ranges=dimension_ranges,
         infer_active_bins=infer_active_bins,

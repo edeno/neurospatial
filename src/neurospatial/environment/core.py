@@ -2875,6 +2875,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
@@ -2929,6 +2930,16 @@ class Environment(Generic[_C]):
             from the active cells; an unvisited patch is not a declared wall.
             With a known outline, the grid tiles the arena's bounds unless
             `dimension_ranges` is given.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``, as a LayoutType member or a
             case-insensitive string. For "Hexagonal", `bin_size` is the
@@ -3074,6 +3085,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             layout=layout,
             dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
@@ -3097,6 +3109,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
@@ -3134,6 +3147,16 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
             from the active cells.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``. See :meth:`from_samples`.
         dimension_ranges : sequence of (float, float), optional
@@ -3202,6 +3225,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             layout=layout,
             dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
@@ -3647,6 +3671,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D grid Environment masked by a Shapely Polygon.
@@ -3679,6 +3704,16 @@ class Environment(Generic[_C]):
             retain whole bins by strict center inclusion; use ``env.clip``
             to change cell areas. When omitted, the supplied polygon defines
             the physical footprint.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -3727,6 +3762,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
@@ -3742,6 +3778,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
@@ -3779,6 +3816,16 @@ class Environment(Generic[_C]):
             retain whole bins by strict center inclusion. When omitted, the
             mask defines the computational domain without asserting physical
             walls or a measured footprint.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -3821,6 +3868,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
@@ -3836,6 +3884,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D Environment from a binary image / pixel mask.
@@ -3870,6 +3919,16 @@ class Environment(Generic[_C]):
             retain whole pixels by strict center inclusion. When omitted, the
             image mask defines a computational domain without asserting
             physical walls or a measured footprint.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -3912,6 +3971,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
@@ -3934,6 +3994,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a built layout engine.
 
@@ -3960,6 +4021,16 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain. Bins whose centers fall outside a known arena
             are left out. Otherwise the domain is inferred from the layout.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -4015,6 +4086,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
         )
 
     @classmethod

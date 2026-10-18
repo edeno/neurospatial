@@ -334,10 +334,26 @@ assert env.bin_at(np.array([[9.9, 2.0]]))[0] == -1
 ```
 
 `OpenArena` separates a known polygon from explicitly supplied internal walls.
-Walls block navigation and diffusion connections. The current wall policy
-requires walls to follow complete cell faces; a wall through a cell interior
-or part of a face raises with guidance to refine or align the grid. Align
-openings with cell vertices when representing doorways.
+Walls block navigation and diffusion connections between the bins on either
+side. A wall that covers part of a cell edge, such as a barrier ending partway
+along it, leaves the open part of that edge connected. A measured wall rarely
+lies exactly on bin edges, so the factories that build bins (`from_samples`,
+`open_field`, `from_polygon`, `from_grid_mask`, `from_pixel_mask` and
+`from_layout`) fit the two together with `wall_fit`:
+
+- `wall_fit="snap"` (the default) keeps every bin and moves the wall onto the
+  bin edges between the bins it divides, with a warning that says how far it
+  moved, at most about half a bin. Paths, occupancy, smoothing and wall
+  distances all use the moved wall, and every analysis works as on any grid.
+- `wall_fit="split"` keeps the measured wall and cuts each bin it crosses into
+  one bin per side. The split bins are exact polygons, so smoothing and other
+  finite-volume operations refuse the bins next to a wall's end or along a
+  diagonal wall. Use it for binned rates (`method="binned"`) or for
+  wall-distance measures such as boundary-vector maps, where the exact wall
+  matters.
+
+`from_bins`, `rebin` and saved environments keep the bins they are given, so a
+wall through one of their bins raises an error naming the wall and the bin.
 Declare walls in the original coordinates before clipping or transforming so
 their source alignment is retained. A newly declared wall after those operations
 can raise if coordinate precision prevents proving its clearance from a cell;
@@ -358,6 +374,26 @@ env = Environment.from_grid_mask(
 )
 left = env.bin_centers[:, 0] < 2
 assert all(left[u] == left[v] for u, v in env.connectivity.edges)
+
+# A barrier at x = 2.4 runs through bins: by default it moves to x = 2.
+import warnings
+
+barrier = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2.4, 0), (2.4, 4)]),))
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    snapped = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool),
+        grid_edges=(np.arange(5.0), np.arange(5.0)),
+        arena=barrier,
+    )
+assert "moved the walls onto bin edges by up to 0.4" in str(caught[0].message)
+split = Environment.from_grid_mask(
+    np.ones((4, 4), dtype=bool),
+    grid_edges=(np.arange(5.0), np.arange(5.0)),
+    arena=barrier,
+    wall_fit="split",
+)
+assert (snapped.n_bins, split.n_bins) == (16, 20)
 ```
 
 For a linearized track, `from_graph(..., track_width=...)` supplies a measured

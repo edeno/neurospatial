@@ -101,16 +101,46 @@ def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():
     assert child.arena.walls[0].equals(arena.walls[0])
 
 
-@pytest.mark.parametrize(
-    "wall", [LineString([(1.5, 0), (1.5, 4)]), LineString([(2, 0), (2, 1.5)])]
-)
-def test_unrepresentable_walls_refuse(wall):
-    with pytest.raises(ValueError, match=r"wall|Wall"):
-        Environment.from_grid_mask(
-            np.ones((4, 4), bool),
-            grid_edges=(np.arange(5.0), np.arange(5.0)),
-            arena=OpenArena(box(0, 0, 4, 4), walls=(wall,)),
-        )
+def _walled_grid(wall, **options):
+    return Environment.from_grid_mask(
+        np.ones((4, 4), bool),
+        grid_edges=(np.arange(5.0), np.arange(5.0)),
+        arena=OpenArena(box(0, 0, 4, 4), walls=(wall,)),
+        **options,
+    )
+
+
+def test_a_wall_through_bins_splits_them_along_it():
+    env = _walled_grid(LineString([(1.5, 0), (1.5, 4)]), wall_fit="split")
+
+    # The four bins in the column the wall crosses become eight half bins.
+    assert env.n_bins == 20
+    np.testing.assert_allclose(env.bin_sizes.sum(), 16.0)
+    west = env.bin_centers[:, 0] < 1.5
+    assert all(west[u] == west[v] for u, v in env.edge_pairs)
+
+
+def test_a_wall_ending_partway_along_an_edge_narrows_that_face():
+    """The face it covers half of keeps half its conductance."""
+    env = _walled_grid(LineString([(2, 0), (2, 1.5)]), connect_diagonal_neighbors=False)
+    geometry = env.get_diffusion_geometry()
+    left, right = (int(env.bin_at(np.array([[x, 1.5]]))[0]) for x in (1.5, 2.5))
+    below = (int(env.bin_at(np.array([[x, 0.5]]))[0]) for x in (1.5, 2.5))
+
+    assert not env.connectivity.has_edge(*below)
+    assert geometry.W[left, right] == pytest.approx(0.5)  # open length 0.5 / distance 1
+
+
+def test_by_default_the_wall_is_snapped_onto_bin_edges():
+    with pytest.warns(
+        UserWarning, match=r"moved the walls onto bin edges by up to 0\.5"
+    ):
+        env = _walled_grid(LineString([(1.5, 0), (1.5, 4)]))
+
+    assert env.n_bins == 16
+    assert env.arena.walls[0].equals(LineString([(1, 0), (1, 4)])) or env.arena.walls[
+        0
+    ].equals(LineString([(2, 0), (2, 4)]))
 
 
 def test_clip_splits_bins_and_preserves_mapping_through_derivation():

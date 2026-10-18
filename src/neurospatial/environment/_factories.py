@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import networkx as nx
 import numpy as np
@@ -264,6 +264,7 @@ def _from_samples(
     frame: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
+    wall_fit: Literal["snap", "split"] = "snap",
     layout: LayoutType | str = LayoutType.REGULAR_GRID,
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
     infer_active_bins: bool = True,
@@ -518,6 +519,7 @@ def _from_samples(
         frame=frame,
         regions=regions,
         arena=arena,
+        wall_fit=wall_fit,
     )
 
 
@@ -841,6 +843,7 @@ def _from_polygon(
     frame: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
+    wall_fit: Literal["snap", "split"] = "snap",
     connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_polygon using explicit construction inputs."""
@@ -871,6 +874,7 @@ def _from_polygon(
         frame=frame,
         regions=regions,
         arena=arena,
+        wall_fit=wall_fit,
     )
 
 
@@ -884,6 +888,7 @@ def _from_grid_mask(
     frame: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
+    wall_fit: Literal["snap", "split"] = "snap",
     connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_grid_mask using explicit construction inputs."""
@@ -918,6 +923,7 @@ def _from_grid_mask(
         frame=frame,
         regions=regions,
         arena=arena,
+        wall_fit=wall_fit,
     )
 
 
@@ -931,6 +937,7 @@ def _from_pixel_mask(
     frame: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
+    wall_fit: Literal["snap", "split"] = "snap",
     connect_diagonal_neighbors: bool = True,
 ) -> Environment:
     """Implement Environment.from_pixel_mask using explicit construction inputs."""
@@ -949,6 +956,7 @@ def _from_pixel_mask(
         frame=frame,
         regions=regions,
         arena=arena,
+        wall_fit=wall_fit,
     )
 
 
@@ -962,6 +970,7 @@ def _build_layout(
     frame: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
+    wall_fit: Literal["snap", "split"] = "snap",
 ) -> Environment:
     """Build a named native layout from its parameters and publish it."""
     layout_params = _owned_copy(layout_params)
@@ -975,6 +984,7 @@ def _build_layout(
         metadata=metadata,
         regions=regions,
         arena=arena,
+        wall_fit=wall_fit,
     )
 
 
@@ -987,6 +997,7 @@ def _from_layout(
     frame: str | None = None,
     regions: Regions | None = None,
     arena: Arena | None = None,
+    wall_fit: Literal["snap", "split"] = "snap",
 ) -> Environment:
     """Implement Environment.from_layout: publish a built layout engine."""
     if isinstance(layout, (str, type)):
@@ -1017,6 +1028,7 @@ def _from_layout(
         metadata=_declared_metadata(name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
+        wall_fit=wall_fit,
     )
 
 
