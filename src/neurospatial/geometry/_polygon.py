@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import shapely
@@ -412,7 +412,19 @@ def split_binning(
     mapping = ClipMapping(
         np.array([parent for parent, _ in records], dtype=np.intp), len(source)
     )
-    return _pieces_binning(binning, source, cells, mapping, (), dividers=walls), mapping
+    return _pieces_binning(
+        binning, source, cells, mapping, (), dividers=(wall,)
+    ), mapping
+
+
+class _PairRecord(NamedTuple):
+    """One neighbor pair of clipped or split pieces, ``u < v``."""
+
+    u: int
+    v: int
+    is_open: bool
+    path_only: bool
+    distance: float
 
 
 def _pieces_binning(
@@ -444,25 +456,19 @@ def _pieces_binning(
     wall = unary_union(walls)
     divider = wall if dividers is None else unary_union(dividers)
 
-    def divided(u: int, v: int) -> bool:
-        # The pieces touch, possibly only at a corner, and only on a wall.
-        shared = cells.polygons[u].boundary.intersection(cells.polygons[v].boundary)
+    def contact(u: int, v: int) -> shapely.Geometry:
+        """The boundary two pieces share, possibly a single corner point."""
+        return cells.polygons[u].boundary.intersection(cells.polygons[v].boundary)
+
+    def divided(shared: shapely.Geometry) -> bool:
+        """Whether pieces meet, possibly only at a corner, and only on a wall."""
         return (
-            not shared.is_empty
-            and not divider.is_empty
+            not divider.is_empty
+            and not shared.is_empty
             and shared.difference(divider).is_empty
         )
 
-    # (u, v, is_open, path_only, distance)
-    records: list[tuple[int, int, bool, bool, float]] = []
-
-    def touching(u: int, v: int) -> bool:
-        # Corner contact counts: a diagonal pair across a wall stays a closed pair.
-        return (
-            not cells.polygons[u]
-            .boundary.intersection(cells.polygons[v].boundary)
-            .is_empty
-        )
+    records: list[_PairRecord] = []
 
     links = binning.connections
     parent_distances = np.hypot.reduce(
@@ -496,10 +502,12 @@ def _pieces_binning(
             )
         return float(links.all_distances[parent])
 
-    def closed_record(
-        u: int, v: int, parent: int | None
-    ) -> tuple[int, int, bool, bool, float]:
-        return (min(u, v), max(u, v), False, False, distance(u, v, parent))
+    def record(
+        u: int, v: int, parent: int | None, *, is_open: bool, path_only: bool = False
+    ) -> _PairRecord:
+        return _PairRecord(
+            min(u, v), max(u, v), is_open, path_only, distance(u, v, parent)
+        )
 
     reason = (
         None
@@ -528,45 +536,42 @@ def _pieces_binning(
                 > tolerance
             ):
                 reason = f"Parent pair ({parent_u}, {parent_v}) has an unlocated partial or non-geometric face conductance."
+        row = int(open_rows[index])
         for u in by_parent[int(parent_u)]:
             for v in by_parent[int(parent_v)]:
-                opening = _opening(cells.polygons[u], cells.polygons[v], wall)
+                shared = contact(u, v)
+                opening = shared if wall.is_empty else shared.difference(wall)
                 if opening.length > 0 or (
                     (path_only or old_faces is None) and not opening.is_empty
                 ):
                     records.append(
-                        (
-                            min(u, v),
-                            max(u, v),
-                            True,
-                            bool(path_only),
-                            distance(u, v, int(open_rows[index])),
-                        )
+                        record(u, v, row, is_open=True, path_only=bool(path_only))
                     )
-                elif divided(u, v):
+                elif divided(shared):
                     # Contact only where a wall runs: the wall closes the pair.
-                    records.append(closed_record(u, v, int(open_rows[index])))
+                    records.append(record(u, v, row, is_open=False))
     for parent in np.flatnonzero(~links.is_open):
         parent_u, parent_v = links.all_pairs[parent]
         for u in by_parent[int(parent_u)]:
             for v in by_parent[int(parent_v)]:
-                if touching(u, v):
-                    records.append(closed_record(u, v, int(parent)))
+                # Corner contact counts: a diagonal across a wall stays closed.
+                if not contact(u, v).is_empty:
+                    records.append(record(u, v, int(parent), is_open=False))
     for children in by_parent.values():
         # Pieces of one cell that meet on the wall that divided it.
         for position, u in enumerate(children):
             for v in children[position + 1 :]:
-                if divided(u, v):
-                    records.append(closed_record(u, v, None))
-    records.sort(key=lambda item: (item[0], item[1]))
-    all_pairs = np.array([(u, v) for u, v, *_ in records], dtype=np.intp).reshape(-1, 2)
-    is_open = np.array([record[2] for record in records], dtype=bool)
+                if divided(contact(u, v)):
+                    records.append(record(u, v, None, is_open=False))
+    records.sort(key=lambda item: (item.u, item.v))
+    all_pairs = np.array([(r.u, r.v) for r in records], dtype=np.intp).reshape(-1, 2)
+    is_open = np.array([r.is_open for r in records], dtype=bool)
     bins = SpatialBins.from_arrays(
         centers, np.array([cell.area for cell in cells.polygons]), 2
     )
     connections = BinConnections(
         all_pairs,
-        np.array([record[4] for record in records], dtype=np.float64),
+        np.array([r.distance for r in records], dtype=np.float64),
         is_open,
     )
     pairs = connections.pairs
@@ -578,9 +583,7 @@ def _pieces_binning(
             centers,
             pairs,
             walls=walls,
-            path_only=np.array(
-                [record[3] for record in records if record[2]], dtype=bool
-            ),
+            path_only=np.array([r.path_only for r in records if r.is_open], dtype=bool),
         )
     )
 
