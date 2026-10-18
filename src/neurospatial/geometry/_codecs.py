@@ -74,6 +74,8 @@ Payload = tuple[dict[str, Any], dict[str, NDArray[Any]]]
 
 # The one version each codec writes and reads; every other codec is version 1.
 _VERSIONS: dict[str, int] = {"Binning": 4, "SpatialBins": 2}
+# Version 2 added the required wall names of an OpenArena.
+_ARENA_VERSION = 2
 
 
 @dataclass(frozen=True, eq=False)
@@ -1246,7 +1248,10 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
     arrays : dict of ndarray
         Independent writable numerical arrays using local field names.
     """
-    meta: dict[str, Any] = {"codec": type(arena).__name__, "codec_version": 1}
+    meta: dict[str, Any] = {
+        "codec": type(arena).__name__,
+        "codec_version": _ARENA_VERSION,
+    }
     arrays: dict[str, NDArray[Any]] = {}
     if type(arena) is _CombinedArena:
         entries = []
@@ -1379,7 +1384,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
             if not isinstance(snapshot, Arena):
                 raise ValueError("The installed adapter must decode an arena snapshot.")
             return snapshot
-        if _count(meta, "codec_version", minimum=1) != 1:
+        if _count(meta, "codec_version", minimum=1) != _ARENA_VERSION:
             raise _error(
                 "Unsupported arena codec version.",
                 "read this record with a version that supports its arena codec",

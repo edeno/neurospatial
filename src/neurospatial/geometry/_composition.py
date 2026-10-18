@@ -62,6 +62,8 @@ class CombinedLocator(ReadOnlyState):
             )
         if any(type(child) is not Binning for child in children):
             raise TypeError("Composition children must be built-in Binning snapshots.")
+        for child in children:
+            child.connections.check_bins(child.bins.n_bins)
         dims = children[0].bins.n_dims
         if any(
             child.bins.n_dims != dims
@@ -260,7 +262,8 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                 return None
             matrix, dims = result
             linear = np.linalg.inv(locator.inverse)[:-1, :-1]
-            scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
+            logdet = float(np.linalg.slogdet(linear)[1])
+            scale = float(np.exp(logdet / len(linear)))
             normalized = linear / scale
             if not np.allclose(
                 normalized @ normalized.T, np.eye(len(linear)), rtol=0, atol=1e-12
@@ -273,14 +276,16 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             # single scaling, which derivations refuse before this point.
             coupling = matrix.tocoo()
             mixed = dims[coupling.row] != dims[coupling.col]
-            if scale != 1.0 and np.any(mixed & (coupling.data != 0)):
+            # A rotation's computed scale can differ from 1 by rounding alone.
+            rescales = abs(logdet) > 64 * np.finfo(np.float64).eps * len(linear)
+            if rescales and np.any(mixed & (coupling.data != 0)):
                 raise NotImplementedError(
                     "Combined scalar diffusion cannot rescale a conductance between "
                     "bins measured by length and by area; use the original coordinates."
                 )
-            data = coupling.data * per_dimension(
-                dims[coupling.row], lambda dim: scale ** (dim - 2)
-            )
+            factor = per_dimension(dims[coupling.row], lambda dim: scale ** (dim - 2))
+            factor[mixed] = 1.0  # unscaled, keeping the coupling symmetric
+            data = coupling.data * factor
             matrix = sparse.csr_matrix(
                 (data, (coupling.row, coupling.col)), shape=matrix.shape
             )
@@ -352,10 +357,11 @@ def bridge_values(binning: Binning) -> dict[frozenset[int], float]:
     for u, v in binning.connections.pairs:
         pair = frozenset((int(indices[u]), int(indices[v])))
         if pair in original:
-            # A positive conductance between bins of different measure is
-            # only kept unscaled (scale 1); derivations refuse to rescale it.
-            dim = int(binning.bins.measure_dims[u])
-            result[frozenset((int(u), int(v)))] = original[pair] * scale ** (dim - 2)
+            # A conductance between bins of different measure stays unscaled:
+            # derivations refuse any transform that would rescale it.
+            dims = binning.bins.measure_dims
+            factor = 1.0 if dims[u] != dims[v] else scale ** (int(dims[u]) - 2)
+            result[frozenset((int(u), int(v)))] = original[pair] * factor
     return result
 
 

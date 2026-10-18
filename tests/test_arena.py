@@ -441,7 +441,8 @@ def test_codec_rejects_unknown_versions_missing_arrays_and_wrong_dtypes():
     meta, arrays = encode_arena(arenas()[4])
     for patch in [
         {"codec": "ExternalArena"},
-        {"codec_version": 2},
+        {"codec_version": 1},
+        {"codec_version": 3},
         {"physical_footprint_known": "false"},
     ]:
         with pytest.raises(ValueError):

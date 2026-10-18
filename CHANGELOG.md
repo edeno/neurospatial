@@ -18,7 +18,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `BinConnections.from_arrays(pairs, distances)`, and read
   `binning.connections.pairs` where you read `binning.bins.pairs`. Walls now
   close the pairs across them instead of deleting them, so an environment with
-  a wall lists the same pairs, in the same order, as one without it;
+  a wall on bin edges lists the same pairs, in the same order, as one without
+  it;
   `connections.pairs` and `env.edge_pairs` are still the open pairs, and every
   analysis gives the same numbers as before. Environments saved by earlier
   versions (Binning codec versions 1 to 3) no longer load; rebuild them from

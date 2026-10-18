@@ -17,7 +17,7 @@ def test_environment_payload_uses_arena_schema():
     payload = to_dict(env)
     assert payload["schema_version"] == "Environment-v3"
     assert isinstance(payload["arena"], dict)
-    assert payload["arena"]["codec_version"] == 1
+    assert payload["arena"]["codec_version"] == 2
 
 
 def test_builtin_arena_round_trip(built_environment, round_trip_environment):

@@ -305,7 +305,11 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "use a translation, rotation, reflection or uniform scaling",
             )
         ends = np.array([sorted(pair) for pair in couplings], dtype=np.intp)
-        if scale != 1.0 and np.any(dims[ends[:, 0]] != dims[ends[:, 1]]):
+        conducting = np.array([value > 0 for value in couplings.values()])
+        # A rotation's computed scale can differ from 1 by rounding alone.
+        rescales = abs(logdet) > 64 * np.finfo(np.float64).eps * len(linear)
+        mixed = dims[ends[:, 0]] != dims[ends[:, 1]]
+        if rescales and np.any(mixed & conducting):
             raise _refusal(
                 f"Cannot apply {kind} to a bridge conductance between a bin "
                 "measured by length and one measured by area.",

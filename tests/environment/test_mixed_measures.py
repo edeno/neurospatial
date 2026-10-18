@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from shapely.geometry import LineString, box
 
 from neurospatial import Environment
+from neurospatial.arena import OpenArena
 from neurospatial.binning import SpatialBins
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.transforms import scale_2d, translate
+from neurospatial.ops.transforms import Affine2D, scale_2d, translate
 
 
 def _track(**options):
@@ -158,3 +160,55 @@ def test_combined_tracks_report_the_extent_of_both():
 def test_spatial_bins_validate_each_bins_measure_dimension(measure_dim, match):
     with pytest.raises(ValueError, match=match):
         SpatialBins.from_arrays(np.zeros((3, 2)), np.ones(3), measure_dim)
+
+
+def _conducting_corridor():
+    track, field = _track(), _field()
+    row = Environment.combine({"track": track, "field": field}).get_bridge_attributes()
+    row = row.iloc[0]
+    key = (
+        (row["source_component"], int(row["source_local_bin"])),
+        (row["target_component"], int(row["target_local_bin"])),
+    )
+    return Environment.combine(
+        {"track": track, "field": field}, bridge_conductances={key: 1.0}
+    )
+
+
+def test_rotation_keeps_a_conductance_between_a_track_and_a_field():
+    # A rotation's computed scale can round to 1 - 1e-16 (for about one angle
+    # in eight here); it changes no length, so nothing is refused or rescaled.
+    env = _conducting_corridor()
+    conductance = env.get_bridge_attributes()["conductance"].to_numpy()
+    mass = np.zeros(env.n_bins)
+    mass[0] = 1.0
+    for angle in np.linspace(0.01, 6.2, 120):
+        cos, sin = np.cos(angle), np.sin(angle)
+        rotated = env.apply_transform(
+            Affine2D(np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]]))
+        )
+        np.testing.assert_array_equal(
+            rotated.get_bridge_attributes()["conductance"], conductance
+        )
+        spread = rotated.diffuse(mass, bandwidth=4.0, mode="transition")
+        assert spread.sum() == pytest.approx(1.0)
+
+
+def test_blocked_edges_name_walls_of_a_component_next_to_a_track():
+    edges = np.arange(0.0, 11.0, 2.0)
+    walled = Environment.from_grid_mask(
+        np.ones((5, 5), dtype=bool),
+        grid_edges=(edges, edges),
+        units="cm",
+        arena=OpenArena(
+            box(0, 0, 10, 10), walls={"divider": LineString([(4, 0), (4, 10)])}
+        ),
+    )
+    env = Environment.combine({"track": _track(), "field": walled})
+    table = env.get_blocked_edges()
+    assert len(table) == len(walled.get_blocked_edges())
+    assert set(table["wall"]) == {"divider"}
+    field_bins = _component(env, "field")
+    assert field_bins[table["source"]].all() and field_bins[table["target"]].all()
+    subset = env.subset(mask=np.ones(env.n_bins, dtype=bool))
+    assert set(subset.get_blocked_edges()["wall"]) == {"divider"}

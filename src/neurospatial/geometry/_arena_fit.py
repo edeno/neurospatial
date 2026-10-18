@@ -11,7 +11,7 @@ import numpy as np
 import shapely
 import shapely.ops
 from numpy.typing import NDArray
-from shapely.geometry import LineString, MultiLineString, Polygon
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.ops import linemerge, unary_union
 
 from neurospatial._exceptions import _format_error
@@ -470,19 +470,37 @@ def blocking_walls(binning: Binning, arena: Arena) -> list[str | None]:
     closed = links.all_pairs[~links.is_open]
     if not len(closed) or not arena.walls:
         return [None] * len(closed)
-    frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
-    if frame is None:
-        cells, segments, centers = (
-            materialize_cells(binning),
-            arena.walls,
-            binning.bins.centers,
-        )
-    else:
+    locator = binning.locator
+    if isinstance(locator, CombinedLocator):
+        # Each component closed its own pairs against its own walls.
+        named: dict[tuple[int, int], str | None] = {}
+        for child, child_arena, offset in zip(
+            locator.children, locator.arenas, locator.offsets[:-1], strict=True
+        ):
+            child_links = child.connections
+            child_closed = child_links.all_pairs[~child_links.is_open] + offset
+            for (u, v), name in zip(
+                child_closed, blocking_walls(child, child_arena), strict=True
+            ):
+                named[int(u), int(v)] = name
+        return [named.get((int(u), int(v))) for u, v in closed]
+    frame = wall_source_frame(locator, arena, binning.bins.centers)
+    cells: Sequence[Polygon | MultiPolygon] | None
+    if frame is not None:
         # The frame apply_walls used, so attribution matches what it closed.
         cells, segments, centers, _, _ = frame
+    else:
+        segments, centers = arena.walls, binning.bins.centers
+        # Bins without planar cells, such as a subset of a track combined
+        # with a walled field, fall back to the link between their centers.
+        cells = materialize_cells(binning) if binning.bins.has_measure_dim(2) else None
     names: list[str | None] = []
     for u, v in closed:
-        contact = cells[u].boundary.intersection(cells[v].boundary)
+        contact = (
+            cells[u].boundary.intersection(cells[v].boundary)
+            if cells is not None
+            else LineString()
+        )
         if contact.length > 0:
             cover = [contact.intersection(wall).length for wall in segments]
         else:

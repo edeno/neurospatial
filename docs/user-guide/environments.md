@@ -371,8 +371,10 @@ warnings and saved files refer to it by that name (`arena.wall_names`). Walls
 given as a sequence are named `"wall_0"`, `"wall_1"`, and so on.
 
 A wall closes the neighbor pairs on either side of it rather than deleting
-them: the bins, their order and the list of pairs (`env.binning.connections`)
-are the same as without the wall, and only the pairs' `is_open` flags differ.
+them. For a wall on bin edges (including a snapped one), the bins, their order
+and the list of pairs (`env.binning.connections`) are the same as without the
+wall, and only the pairs' `is_open` flags differ; `wall_fit="split"` makes new
+bins, and the pieces on either side of the wall are closed pairs.
 Paths, distances, smoothing and gradients use the open pairs, `env.edge_pairs`.
 `env.get_blocked_edges()` lists each closed pair and the wall that closes it, a
 quick check that a wall separates the bins you meant.
