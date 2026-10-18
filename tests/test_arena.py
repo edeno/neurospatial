@@ -339,9 +339,7 @@ def test_identity_like_rotation_does_not_refuse_harmless_underflow():
         np.testing.assert_array_equal(result.contains([[1.0, 0.0]]), [True])
 
 
-def test_track_in_frame_maps_centerline_and_scales_width():
-    from neurospatial.geometry import track_in_frame
-
+def test_as_track_maps_centerline_and_scales_width():
     junction = TrackArena(
         np.array([[[0.0, 0.0], [4.0, 0.0]], [[4.0, 0.0], [4.0, 3.0]]]), width=2.0
     )
@@ -354,7 +352,7 @@ def test_track_in_frame_maps_centerline_and_scales_width():
         ]
     )
     twice = junction.transformed(matrix).transformed(matrix)
-    track = track_in_frame(twice)
+    track = twice.as_track()
     assert isinstance(track, TrackArena)
     np.testing.assert_allclose(track.width, 8.0, rtol=1e-15)
     full = matrix @ matrix
@@ -370,13 +368,12 @@ def test_track_in_frame_maps_centerline_and_scales_width():
     rng = np.random.default_rng(0)
     points = rng.uniform(-20, 40, size=(500, 2))
     np.testing.assert_array_equal(track.contains(points), twice.contains(points))
-    assert track_in_frame(junction) is junction
+    assert junction.as_track() is junction
     assert (
-        track_in_frame(TrackArena(junction.segments, None).transformed(matrix)).width
-        is None
+        TrackArena(junction.segments, None).transformed(matrix).as_track().width is None
     )
     for other in (arenas()[2], arenas()[4].transformed(matrix), arenas()[0]):
-        assert track_in_frame(other) is None
+        assert other.as_track() is None
 
 
 @pytest.mark.parametrize("gap", [1e-5, 1e-6])

@@ -6,7 +6,7 @@ import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment._publication import _Derivation
-from neurospatial.geometry import Arena, Binning, TrackArena, track_in_frame
+from neurospatial.geometry import Arena, Binning, TrackArena
 
 
 def _with_track_width(binning: Binning, arena: Arena, width: float) -> _Derivation:
@@ -35,7 +35,7 @@ def _with_track_width(binning: Binning, arena: Arena, width: float) -> _Derivati
     ValueError
         If ``width`` is not a finite positive number.
     """
-    track = track_in_frame(arena)
+    track = arena.as_track()
     if binning.linearization is None or track is None:
         what = (
             "it is not a linearized track"

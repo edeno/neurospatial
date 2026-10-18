@@ -35,7 +35,6 @@ from neurospatial.geometry import (
     get_centers,
     materialize_cells,
     prepare_bins,
-    track_in_frame,
     transform_binning,
 )
 from neurospatial.layout import _built_layout_data
@@ -336,7 +335,7 @@ def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
     new = f"{size:g}" if size else "..."
     linearization = binning.linearization
     if linearization is not None:
-        track = track_in_frame(arena)
+        track = arena.as_track()
         width = None if track is None else track.width
         track_width = "" if width is None else f", track_width={width:g}"
         spacing = linearization.edge_spacing

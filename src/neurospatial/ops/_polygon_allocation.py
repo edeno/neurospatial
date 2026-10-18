@@ -31,7 +31,6 @@ from neurospatial.geometry import (
     composition_view,
     locate,
     materialize_cells,
-    track_in_frame,
     wall_source_frame,
 )
 from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
@@ -262,7 +261,7 @@ def _uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
             "a grid with a restricted arena mask"
             if isinstance(arena, MaskArena)
             else "a track"
-            if track_in_frame(arena) is not None
+            if arena.as_track() is not None
             else "this arena"
         )
         raise NotImplementedError(

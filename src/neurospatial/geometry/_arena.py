@@ -59,6 +59,14 @@ class Arena(Protocol):
         """Test ``(n_positions, n_dims)`` native coordinates, including boundaries."""
         ...
 
+    def as_track(self) -> TrackArena | None:
+        """This arena as a track in its current coordinates, or None.
+
+        A transformed track answers containment in its stored frame; this
+        gives its centerline and width mapped into the current coordinates.
+        """
+        ...
+
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Apply a supported homogeneous affine map to Cartesian coordinates."""
         ...
@@ -247,6 +255,10 @@ class UnknownArena:
         _query(positions, self.n_dims)
         raise _unknown()
 
+    def as_track(self) -> TrackArena | None:
+        """None: this arena is not a track."""
+        return None
+
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Retain unknown Cartesian geometry after a valid affine map."""
         if self.coordinate_kind != "cartesian":
@@ -322,6 +334,10 @@ class OpenArena:
         inside = np.zeros(len(query), dtype=np.bool_)
         inside[finite] = shapely.covers(self.polygon, shapely.points(query[finite]))
         return inside
+
+    def as_track(self) -> TrackArena | None:
+        """None: this arena is not a track."""
+        return None
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Map polygon rings and explicit walls together."""
@@ -431,6 +447,10 @@ class MaskArena(ReadOnlyState):
             )
         inside[finite] = accepted
         return inside
+
+    def as_track(self) -> TrackArena | None:
+        """None: this arena is not a track."""
+        return None
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Retain axis-aligned masks, or store an inverse coordinate map."""
@@ -566,12 +586,16 @@ class TrackArena(ReadOnlyState):
         inside[finite] = _track_distances(self, query[finite]) <= self.width / 2
         return inside
 
+    def as_track(self) -> TrackArena:
+        """The track itself, already in its current coordinates."""
+        return self
+
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Map centerlines and width only under a Cartesian similarity.
 
         Containment is still answered in the stored frame, with bounded
         rounding, so a point on the mapped boundary stays on the track.
-        :func:`track_in_frame` gives the mapped centerline and width.
+        :meth:`as_track` gives the mapped centerline and width.
         """
         matrix = _affine(matrix, self.n_dims)
         scale = self._similarity_scale(matrix)
@@ -711,6 +735,10 @@ class EgocentricSurround:
         )
         return inside
 
+    def as_track(self) -> TrackArena | None:
+        """None: this arena is not a track."""
+        return None
+
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         """Refuse Cartesian affine maps of radial/angular coordinates."""
         raise _error(
@@ -840,6 +868,22 @@ class _TransformedArena(ReadOnlyState):
             error = residual @ self._inverse_sensitivity.T
         return original, error
 
+    def as_track(self) -> TrackArena | None:
+        """The base track mapped into the current coordinates, or None.
+
+        Vertices go through the same arithmetic as cell vertices, and the
+        width is scaled by the similarity's uniform scale.
+        """
+        track = self.base.as_track()
+        if track is None:
+            return None
+        return TrackArena(
+            _mapped_vertices(track.segments, self.forward),
+            None
+            if track.width is None
+            else track.width * track._similarity_scale(self.forward),
+        )
+
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         return _TransformedArena(self, _affine(matrix, self.n_dims))
 
@@ -859,39 +903,6 @@ class _TransformedArena(ReadOnlyState):
         corners = np.array(list(itertools.product(*limits.T)))
         mapped = corners @ self.forward[:-1, :-1].T + self.forward[:-1, -1]
         return np.array([mapped.min(axis=0), mapped.max(axis=0)])
-
-
-def track_in_frame(arena: Arena) -> TrackArena | None:
-    """A track's centerline and width in the arena's current coordinates.
-
-    A transformed track answers containment in its stored frame, so its
-    own ``segments`` and ``width`` are not in the coordinates of the bins.
-    This maps them: vertices through the same arithmetic as cell vertices,
-    and the width by the similarity's uniform scale.
-
-    Parameters
-    ----------
-    arena : Arena
-        Any arena.
-
-    Returns
-    -------
-    TrackArena or None
-        The track in the current coordinates, with the width None when it
-        is unknown; None when ``arena`` is not a track.
-    """
-    if isinstance(arena, TrackArena):
-        return arena
-    if not isinstance(arena, _TransformedArena):
-        return None
-    track = track_in_frame(arena.base)
-    if track is None:
-        return None
-    scale = track._similarity_scale(arena.forward)
-    return TrackArena(
-        _mapped_vertices(track.segments, arena.forward),
-        None if track.width is None else track.width * scale,
-    )
 
 
 def _track_distances(
@@ -1042,6 +1053,10 @@ class _CombinedArena:
             & np.logical_or.reduce([child.contains(query) for child in self.children]),
             dtype=np.bool_,
         )
+
+    def as_track(self) -> TrackArena | None:
+        """None: this arena is not a track."""
+        return None
 
     def transformed(self, matrix: NDArray[np.float64]) -> Arena:
         return _TransformedArena(self, matrix)
