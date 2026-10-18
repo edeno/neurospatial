@@ -318,9 +318,12 @@ domain alone when that domain is known.
 A measured polygon can be supplied through `from_polygon()`, or through the
 optional `arena=` argument of the sample and mask factories. Explicit polygon
 selection keeps whole bins whose centers lie strictly inside the polygon;
-lookup also rejects points outside its boundary or inside its holes. This
-selection does not change cell areas. Use `clip()` below when exact intersected
-cell areas are needed.
+lookup also rejects points outside its boundary or inside its holes. A curved or
+diagonal wall leaves slivers inside the arena whose grid cells were not kept
+(their centers lie outside); a position in a sliver belongs to the neighboring
+bin, less than one cell away, so an animal running along the wall stays in
+occupancy and spike counts. This selection does not change cell areas. Use
+`clip()` below when exact intersected cell areas are needed.
 
 <!-- docs-test: run -->
 ```python
@@ -750,8 +753,11 @@ np.testing.assert_allclose(coarse.bin_sizes, 4.0)
 assert coarse.rebin(bin_size=1.0).n_bins == env.n_bins
 ```
 
-Whole-bin selection keeps centers inside the arena; it does not promise complete
-coverage or exact clipped areas. When original bins are left without a new bin,
+Whole-bin selection keeps centers inside the arena; it does not promise exact
+clipped areas. Original bins in a new perimeter cell whose center lies outside
+the arena take the neighboring new bin, like any position in a sliver. When
+original bins are still left without a new bin (beyond the new grid, or in a
+cell a subset removed),
 `rebin` warns with their count and share of the area, because positions there
 map to `-1` and drop out of occupancy and spike totals. Physical walls must
 still follow complete new cell faces. The arena outline is not a wall: new bins
