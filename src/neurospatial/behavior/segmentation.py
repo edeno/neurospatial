@@ -81,7 +81,11 @@ from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
 from neurospatial._exceptions import RegionNotFoundError, _format_error
-from neurospatial._intervals import observed_runs
+from neurospatial._intervals import (
+    observed_interval_mask,
+    observed_runs,
+    run_sample_bounds,
+)
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
 from neurospatial.geometry import require_cartesian
@@ -2259,9 +2263,11 @@ def trajectory_similarity(
     Parameters
     ----------
     position_bins1 : NDArray[np.int64], shape (n_samples1,)
-        First trajectory as sequence of bin indices.
+        First trajectory as sequence of bin indices. ``-1`` marks a sample
+        outside the environment or missing; such samples are left out.
     position_bins2 : NDArray[np.int64], shape (n_samples2,)
-        Second trajectory as sequence of bin indices.
+        Second trajectory as sequence of bin indices, with the same ``-1``
+        convention.
     env : Environment
         Spatial environment containing bin information.
     method : {'jaccard', 'correlation', 'hausdorff', 'dtw'}, optional
@@ -2281,7 +2287,9 @@ def trajectory_similarity(
     Raises
     ------
     ValueError
-        If trajectories are empty.
+        If a trajectory is empty or has no sample inside the environment.
+    ValueError
+        If a bin index is not ``-1`` or an active bin of ``env``.
     ValueError
         If method is not one of the supported options.
     CartesianOnlyError
@@ -2318,6 +2326,11 @@ def trajectory_similarity(
 
     **Dynamic time warping (DTW)** finds optimal alignment between trajectories
     allowing temporal shifts. Useful for comparing paths with different speeds.
+
+    Samples with bin ``-1`` have no place in the environment. Jaccard,
+    Hausdorff and DTW use only each trajectory's samples inside the
+    environment; correlation drops the aligned sample pairs in which either
+    sample is ``-1``.
 
     Examples
     --------
@@ -2366,6 +2379,38 @@ def trajectory_similarity(
             fix="use method='jaccard' or method='correlation', which compare bins",
         )
 
+    from neurospatial.environment import _validate_target_bins
+
+    validated = []
+    for bins, argument in (
+        (position_bins1, "position_bins1"),
+        (position_bins2, "position_bins2"),
+    ):
+        bins = _validate_target_bins(
+            bins,
+            n_bins=env.n_bins,
+            coordinates=env.coordinate_system,
+            operation="trajectory_similarity()",
+            argument=argument,
+            allow_missing=True,
+        )
+        if not (bins >= 0).any():
+            raise ValueError(
+                _format_error(
+                    f"{argument} has no sample inside the environment.",
+                    why="Every bin is -1, so the trajectory has no place to compare.",
+                    fix="pass bins from env.bin_at(positions) for positions "
+                    "inside the environment",
+                )
+            )
+        validated.append(bins)
+    position_bins1, position_bins2 = validated
+
+    if method != "correlation":
+        # Set and path comparisons use each trajectory's places only.
+        position_bins1 = position_bins1[position_bins1 >= 0]
+        position_bins2 = position_bins2[position_bins2 >= 0]
+
     if method == "jaccard":
         # Spatial overlap (set-based)
         set1 = set(position_bins1)
@@ -2391,6 +2436,11 @@ def trajectory_similarity(
 
         indices = np.linspace(0, len(longer) - 1, len(shorter), dtype=int)
         longer_sampled = longer[indices]
+        # Compare only aligned pairs in which both samples have a place.
+        observed = (shorter >= 0) & (longer_sampled >= 0)
+        shorter, longer_sampled = shorter[observed], longer_sampled[observed]
+        if len(shorter) < 2:
+            return 1.0 if np.array_equal(shorter, longer_sampled) else 0.0
 
         # Compute correlation
         if len(set(shorter)) == 1 or len(set(longer_sampled)) == 1:
@@ -2503,7 +2553,8 @@ def detect_goal_directed_runs(
     Parameters
     ----------
     position_bins : NDArray[np.int64], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
+        Sequence of bin indices representing the trajectory. ``-1`` marks a
+        sample outside the environment or missing.
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to position bins (seconds).
     env : Environment
@@ -2551,7 +2602,9 @@ def detect_goal_directed_runs(
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    is analyzed as a separate recording; no segment spans a pause. A sample
+    outside the environment (bin ``-1``) also ends a recording, since the
+    animal's path to the goal is unknown there.
 
     Each recording supplies one candidate spanning its complete observed
     sample run; this function does not split repeated approaches into separate
@@ -2635,7 +2688,16 @@ def detect_goal_directed_runs(
             "Why: each trajectory sample needs its corresponding timestamp.\n"
             "Fix: pass one timestamp per position bin on the same clock."
         )
-    position_bins = np.asarray(position_bins)
+    from neurospatial.environment import _validate_target_bins
+
+    position_bins = _validate_target_bins(
+        position_bins,
+        n_bins=env.n_bins,
+        coordinates=env.coordinate_system,
+        operation="detect_goal_directed_runs()",
+        argument="position_bins",
+        allow_missing=True,
+    )
     times = np.asarray(times, dtype=np.float64)
 
     from neurospatial.ops.distance import distance_field
@@ -2654,8 +2716,17 @@ def detect_goal_directed_runs(
     distances_to_goal = distance_field(
         env.connectivity, list(goal_bin_indices), weight="distance"
     )
+    # A recording continues across valid intervals between samples inside the
+    # environment.
+    in_environment = position_bins >= 0
+    interval_mask = (
+        observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+        & in_environment[:-1]
+        & in_environment[1:]
+    )
     results: list[Run] = []
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+    for first, last in run_sample_bounds(interval_mask):
+        run = slice(int(first), int(last) + 1)
         results.extend(
             _detect_goal_directed_runs_contiguous(
                 position_bins[run],
