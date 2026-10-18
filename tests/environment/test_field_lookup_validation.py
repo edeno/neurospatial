@@ -42,3 +42,11 @@ def test_non_finite_bandwidth_is_refused(stretched_grid, method, bandwidth):
         getattr(stretched_grid, method)(
             np.ones(stretched_grid.n_bins), bandwidth=bandwidth, mode="transition"
         )
+
+
+@pytest.mark.parametrize("fill", [np.nan, 0.0])
+def test_nearest_bin_refuses_wrong_coordinate_count_even_when_missing(
+    stretched_grid, fill
+):
+    with pytest.raises(ValueError, match="2-D"):
+        stretched_grid.nearest_bin(np.full((2, 3), fill))

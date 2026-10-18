@@ -1482,6 +1482,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `env.nearest_bin` checks the number of coordinates before skipping missing
+  rows. An all-NaN array with the wrong number of columns returned `-1` for
+  every row instead of naming the shape mistake, and a finite one failed with
+  a SciPy error.
+
 - `env.smooth` and `env.diffuse` refuse an infinite bandwidth, as
   `env.compute_kernel` already did. `bandwidth=np.inf` had passed the
   positivity check and turned a field of ones into zeros (or NaN), losing all

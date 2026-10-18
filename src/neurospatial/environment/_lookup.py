@@ -15,6 +15,7 @@ from neurospatial.geometry import (
     CartesianSystem,
     EgocentricPolarSystem,
     NearestBinLocator,
+    require_position_columns,
 )
 from neurospatial.ops import _nearest_bin_query, _validate_nearest_options
 from neurospatial.ops.mapping import TieBreakStrategy
@@ -39,8 +40,13 @@ def nearest_bin(
 
     A point with a NaN coordinate is a missing sample: bin ``-1`` and distance
     NaN. A point with an infinite coordinate is outside: bin ``-1`` and
-    distance ``inf``. Only finite points are queried.
+    distance ``inf``. Only finite points are queried. The number of coordinates
+    is checked first, so an all-missing array of the wrong shape is refused.
     """
+    points = np.asarray(points, dtype=np.float64)
+    require_position_columns(
+        points, binning.bins.n_dims, call="Environment.nearest_bin"
+    )
     resolved = _validate_nearest_options(tie_break, max_distance, max_distance_factor)
     if coordinates.kind == "polar":
         centers, tree = cache.get(
