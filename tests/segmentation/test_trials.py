@@ -464,6 +464,77 @@ class TestSegmentTrials:
         assert trials[1].success is True
         assert trials[1].end_region == "goal"
 
+    @staticmethod
+    def _track_with_wells():
+        """A 100 cm track with a start well at 0-10 cm and a goal at 90-100 cm."""
+        from shapely.geometry import box
+
+        env = Environment.linear_track(
+            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=6.0
+        )
+        regions = Regions(env.regions.values())
+        regions.add("start", polygon=box(-1.0, -3.0, 10.0, 3.0))
+        regions.add("goal", polygon=box(90.0, -3.0, 101.0, 3.0))
+        return env.with_regions(regions)
+
+    @staticmethod
+    def _dwell_then_run(dwell_x):
+        """Dwell at ``dwell_x`` (30 Hz), then run to the goal and back, twice."""
+        run = np.linspace(10.5, 95.0, 90)
+        back = run[::-1]
+        x = np.concatenate([dwell_x, run, np.full(30, 95.0), back, dwell_x, run])
+        return np.column_stack([x, np.zeros_like(x)]), np.arange(len(x)) / 30.0
+
+    def test_segment_trials_dwell_jitter_is_not_an_aborted_trial(self):
+        """Waiting at the start well with tracking jitter across the region edge
+        is one departure, not a failed trial per flicker."""
+        from neurospatial.behavior.segmentation import segment_trials
+
+        env = self._track_with_wells()
+        # 2 s at the well, then jitter across its edge (10 cm) while leaving.
+        dwell = np.concatenate([np.full(60, 5.0), np.repeat([10.5, 9.5, 10.5, 9.5], 5)])
+        positions, times = self._dwell_then_run(dwell)
+        trials = segment_trials(
+            env.bin_sequence(times, positions, dedup=False),
+            times,
+            env,
+            start_region="start",
+            end_regions=["goal"],
+        )
+        assert [t.success for t in trials] == [True, True]
+
+    def test_segment_trials_tracking_dropout_at_well_is_not_a_departure(self):
+        """Lost tracking (bin -1) while the animal waits in the start region
+        does not end the wait or start a trial."""
+        from neurospatial.behavior.segmentation import segment_trials
+
+        env = self._track_with_wells()
+        positions, times = self._dwell_then_run(np.full(90, 5.0))
+        bins = env.bin_sequence(times, positions, dedup=False)
+        bins[30:75] = -1  # 1.5 s dropout during each 3 s wait
+        second_wait = int(np.flatnonzero(np.diff(bins[200:] == bins[0]))[0]) + 201
+        bins[second_wait + 30 : second_wait + 75] = -1
+        trials = segment_trials(
+            bins, times, env, start_region="start", end_regions=["goal"]
+        )
+        assert [t.success for t in trials] == [True, True]
+
+    def test_segment_trials_starts_when_the_animal_leaves_the_start_region(self):
+        """start_time is the last sample in the start region before departure,
+        so trial duration is travel time, not time spent waiting at the well."""
+        from neurospatial.behavior.segmentation import segment_trials
+
+        env = self._track_with_wells()
+        positions, times = self._dwell_then_run(np.full(90, 5.0))
+        trials = segment_trials(
+            env.bin_sequence(times, positions, dedup=False),
+            times,
+            env,
+            start_region="start",
+            end_regions=["goal"],
+        )
+        np.testing.assert_allclose(trials[0].start_time, 89 / 30.0)
+
     def test_segment_trials_aborted_on_reentry_respects_min_duration(self):
         """An aborted trial shorter than min_duration is still dropped."""
         x = np.linspace(0, 100, 100)
