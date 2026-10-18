@@ -141,7 +141,7 @@ class TestEnvironmentClearCache:
         env.nearest_bin(points)
 
         # Populate kernel cache
-        _ = env.compute_kernel(bandwidth=10.0)
+        _ = env.compute_kernel(bandwidth=10.0, mode="density")
 
         # Populate cached properties
         _ = env.get_differential_operator()
@@ -165,7 +165,7 @@ class TestEnvironmentClearCache:
 
         # Get values before clearing
         bins_before = env.nearest_bin(points)
-        kernel_before = env.compute_kernel(bandwidth=10.0)
+        kernel_before = env.compute_kernel(bandwidth=10.0, mode="density")
         diff_op_before = env.get_differential_operator().copy()
         boundary_before = env.boundary_bins.copy()
 
@@ -174,7 +174,7 @@ class TestEnvironmentClearCache:
 
         # Recompute and verify identical results
         bins_after = env.nearest_bin(points)
-        kernel_after = env.compute_kernel(bandwidth=10.0)
+        kernel_after = env.compute_kernel(bandwidth=10.0, mode="density")
         diff_op_after = env.get_differential_operator()
         boundary_after = env.boundary_bins
 

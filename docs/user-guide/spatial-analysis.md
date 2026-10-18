@@ -690,7 +690,7 @@ import numpy as np
 
 firing_rate_raw = np.full(env.n_bins, 7.0)
 firing_rate_raw[env.n_bins // 2] += 5.0
-firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=5.0)  # 5 cm
+firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=5.0, mode="average")  # 5 cm
 
 # Compare raw vs smoothed
 import matplotlib.pyplot as plt
@@ -717,14 +717,13 @@ for ax, data, title in zip(
 plt.show()
 ```
 
-**Migrating the default:** `env.smooth(field, bandwidth=...)` now uses `mode="average"`.
-To preserve the previous count-to-density operation, write
-`env.smooth(counts, bandwidth=..., mode="density")`. Use `mode="transition"` when
-smoothing per-bin counts, occupancy, or probability mass while keeping their sum.
-`compute_kernel` and the lower-level `diffuse` retain their existing defaults;
-select their mode explicitly when composing operators.
+**Choosing the mode:** `env.smooth`, `env.diffuse` and `env.compute_kernel`
+require `mode=`, because the right smoothing depends on what the field holds.
+Use `mode="average"` for a rate map or any other value per bin. Use
+`mode="transition"` for per-bin counts, occupancy or probability mass, which
+keeps their sum. Use `mode="density"` to turn counts into a density.
 
-With the default `mode="average"`, `env.smooth` treats NaN bins as missing,
+With `mode="average"`, `env.smooth` treats NaN bins as missing,
 never as zero. It smooths the field with NaN read as 0, smooths the
 observed-bin mask with the same operator, and divides, so holes are filled
 from their observed neighbors and a constant field with holes stays constant.
@@ -750,13 +749,13 @@ bins must stay empty.
 ```python
 # Specify bandwidth in physical units (not bins!)
 bandwidth_cm = 5.0  # 5 cm smoothing
-firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=bandwidth_cm)
+firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=bandwidth_cm, mode="average")
 
 # Or compute from bin sizes
 bin_size_cm = 2.5
 bandwidth_bins = 2  # Smooth over 2 bins
 bandwidth_cm = bandwidth_bins * bin_size_cm  # 5.0 cm
-firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=bandwidth_cm)
+firing_rate_smooth = env.smooth(firing_rate_raw, bandwidth=bandwidth_cm, mode="average")
 
 # All modes follow connectivity; choose the mode according to field meaning.
 smoothed_counts = env.smooth(spike_counts, bandwidth=5.0, mode="transition")

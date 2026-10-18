@@ -1060,7 +1060,7 @@ positions = rng.uniform(0, 100, size=(2000, 2))  # cm
 env = Environment.from_samples(positions, bin_size=4.0, units="cm")
 rate = np.where(env.bin_centers[:, 0] < 70.0, 5.0, np.nan)  # Hz, east unvisited
 # Before: env.smooth(rate, 8.0) raised "Field contains NaN values"
-smoothed = env.smooth(rate, bandwidth=8.0)
+smoothed = env.smooth(rate, bandwidth=8.0, mode="average")
 assert np.allclose(smoothed[np.isfinite(smoothed)], 5.0)
 # Before: env.nearest_bin([[np.nan, 10.0]]) raised a SciPy error
 assert env.nearest_bin(np.array([[np.nan, 10.0]]))[0] == -1
@@ -1412,7 +1412,44 @@ the rate result itself raises `TypeError` with this call:
 ```python
 rates = np.random.default_rng(1).random((3, env.n_bins))  # (n_units, n_bins), Hz
 # Before: np.stack([env.smooth(unit_rates, 5.0) for unit_rates in rates])
-smoothed = env.smooth(rates.T, bandwidth=5.0).T
+smoothed = env.smooth(rates.T, bandwidth=5.0, mode="average").T
+```
+
+## Transforms that change lengths name their units
+
+`env.apply_transform(transform)` used to keep the environment's units, even
+when the transform was a pixel-to-centimeter calibration. A transform that
+scales or shears lengths now needs `units=` when the environment has units.
+Translations, rotations and reflections keep the units without it.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.ops import scale_2d
+
+pixels = env.with_metadata(units="px")
+# Before: pixels.apply_transform(scale_2d(0.1)).with_metadata(units="cm")
+room = pixels.apply_transform(scale_2d(0.1), units="cm")
+assert room.units == "cm"
+```
+
+## Smoothing needs `mode=`
+
+`env.smooth`, `env.diffuse` and `env.compute_kernel` take a required `mode=`.
+They had different defaults (`smooth` averaged, the other two made densities),
+so the same call gave different numbers depending on the method. Choose the
+mode by what the field holds: `"average"` for a rate map or other value per
+bin, `"transition"` for counts, occupancy or probability mass (keeps the
+total), and `"density"` to turn counts into a density. Leaving it out raises a
+`TypeError` that lists the three.
+
+<!-- docs-test: run -->
+```python
+rate = np.random.default_rng(3).random(env.n_bins)  # Hz
+# Before: env.smooth(rate, bandwidth=5.0)  (averaged by default)
+smoothed = env.smooth(rate, bandwidth=5.0, mode="average")
+# Before: env.diffuse(counts, bandwidth=5.0)  (density by default)
+counts = np.random.default_rng(4).poisson(2.0, env.n_bins).astype(float)
+density = env.diffuse(counts, bandwidth=5.0, mode="density")
 ```
 
 ## Method options are keywords
@@ -1430,9 +1467,9 @@ import matplotlib.pyplot as plt
 
 rate = np.random.default_rng(2).random(env.n_bins)  # Hz
 # Before: env.smooth(rate, 5.0)
-smoothed = env.smooth(rate, bandwidth=5.0)
+smoothed = env.smooth(rate, bandwidth=5.0, mode="average")
 # Before: env.diffuse(counts, 5.0); env.compute_kernel(5.0)
-kernel = env.compute_kernel(bandwidth=5.0)
+kernel = env.compute_kernel(bandwidth=5.0, mode="density")
 # Before: env.plot_field(rate, ax, "magma")
 fig, ax = plt.subplots()
 env.plot_field(smoothed, ax, cmap="magma")

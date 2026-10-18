@@ -413,7 +413,7 @@ class TestFieldOperationPerformance:
 
     def test_smooth_field(self, benchmark, medium_env, test_field):
         """Benchmark field smoothing."""
-        result = benchmark(medium_env.smooth, test_field, bandwidth=5.0)
+        result = benchmark(medium_env.smooth, test_field, bandwidth=5.0, mode="average")
 
         assert result.shape == test_field.shape
 

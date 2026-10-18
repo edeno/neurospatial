@@ -335,7 +335,9 @@ class TestApplyTransformToEnvironment3D:
     def test_apply_3d_scaling(self, simple_3d_env):
         """Test applying 3D scaling."""
         transform = scale_3d(2.0)
-        transformed_env = simple_3d_env.apply_transform(transform)
+        transformed_env = simple_3d_env.apply_transform(
+            transform, units=simple_3d_env.units
+        )
 
         # Centers should be scaled
         expected = simple_3d_env.bin_centers * 2.0

@@ -859,8 +859,10 @@ def distance_to_boundary(
     boundary_type : {'edge', 'obstacle', 'region'}, default='edge'
         Type of boundary to compute distance to:
 
-        - 'edge': Distance to environment boundary (unoccupied bins).
-          Includes arena walls and any holes in the environment.
+        - 'edge': Distance to the edge of the environment's bins: bins
+          next to unoccupied space, including unvisited areas and holes.
+          This is not the distance to the arena's walls; for that use
+          :func:`neurospatial.ops.nearest_boundary`.
         - 'obstacle': Distance to obstacle regions. Requires environment
           to have regions with ``obstacle=True`` attribute.
         - 'region': Distance to boundary of a specific named region.
@@ -877,7 +879,8 @@ def distance_to_boundary(
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
-        Distance from each position to the nearest boundary bin.
+        Distance from each position to the center of the nearest boundary
+        bin, so it is quantized to bin centers.
         Units match environment coordinates (e.g., cm).
         Returns NaN for positions outside the environment.
 
@@ -939,6 +942,7 @@ def distance_to_boundary(
     --------
     distance_to_reward : Distance to reward locations
     time_to_nearest_event : Temporal distance to events
+    neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
     from neurospatial.ops.distance import distance_field
 

@@ -43,9 +43,9 @@ def _populate(env: Environment) -> dict[str, np.ndarray]:
     field = np.linspace(0.0, 1.0, env.n_bins)
     return {
         # A wide bandwidth keeps a truncated eigenbasis in the cache.
-        "smoothed": env.smooth(field, bandwidth=4.0),
+        "smoothed": env.smooth(field, bandwidth=4.0, mode="average"),
         "nearest": env.nearest_bin(env.bin_centers + 0.1),
-        "kernel": env.compute_kernel(bandwidth=1.0),
+        "kernel": env.compute_kernel(bandwidth=1.0, mode="density"),
         "gaussian": np.array(env.compute_gaussian_kernel(bandwidth=1.0)),
         "boundary": env.boundary_bins,
         "differential": env.get_differential_operator().toarray(),
@@ -247,7 +247,9 @@ def test_concurrent_kernels_build_nested_geometry_once(env, monkeypatch):
         _slow_counted(_fields.heat_kernel_from_W, kernel_calls),
     )
 
-    results = _run_concurrently(lambda: env.compute_kernel(bandwidth=1.0))
+    results = _run_concurrently(
+        lambda: env.compute_kernel(bandwidth=1.0, mode="density")
+    )
 
     assert len(geometry_calls) == 1
     assert len(kernel_calls) == 1
@@ -311,10 +313,14 @@ def test_concurrent_smoothing_solves_the_eigenbasis_once(env, monkeypatch):
         _slow_counted(diffusion._adaptive_symmetric_basis, calls),
     )
     field = np.linspace(0.0, 1.0, env.n_bins)
-    expected = pickle.loads(pickle.dumps(env)).smooth(field, bandwidth=4.0)
+    expected = pickle.loads(pickle.dumps(env)).smooth(
+        field, bandwidth=4.0, mode="average"
+    )
     calls.clear()
 
-    results = _run_concurrently(lambda: env.smooth(field, bandwidth=4.0))
+    results = _run_concurrently(
+        lambda: env.smooth(field, bandwidth=4.0, mode="average")
+    )
 
     assert len(calls) == 1
     assert diffusion_eigenbasis(env._cache).basis is not None
@@ -351,7 +357,7 @@ def test_threads_on_an_environment_and_its_copies_share_one_computation(
     field = np.linspace(0.0, 1.0, env.n_bins)
     points = env.bin_centers + 0.1
     reference = pickle.loads(pickle.dumps(env))
-    expected_smoothed = reference.smooth(field, bandwidth=4.0)
+    expected_smoothed = reference.smooth(field, bandwidth=4.0, mode="average")
     expected_nearest = reference.nearest_bin(points)
 
     geometry_calls: list[int] = []
@@ -373,9 +379,9 @@ def test_threads_on_an_environment_and_its_copies_share_one_computation(
 
     results = _run_threads(
         [
-            lambda: env.smooth(field, bandwidth=4.0),
-            lambda: renamed.smooth(field, bandwidth=4.0),
-            lambda: relabelled.smooth(field, bandwidth=4.0),
+            lambda: env.smooth(field, bandwidth=4.0, mode="average"),
+            lambda: renamed.smooth(field, bandwidth=4.0, mode="average"),
+            lambda: relabelled.smooth(field, bandwidth=4.0, mode="average"),
             lambda: renamed.nearest_bin(points),
             lambda: relabelled.nearest_bin(points),
             lambda: env.nearest_bin(points),
@@ -400,7 +406,9 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     from neurospatial.environment import _fields
 
     field = np.linspace(0.0, 1.0, env.n_bins)
-    expected = pickle.loads(pickle.dumps(env)).smooth(field, bandwidth=4.0)
+    expected = pickle.loads(pickle.dumps(env)).smooth(
+        field, bandwidth=4.0, mode="average"
+    )
     deadline = time.monotonic() + 20.0
 
     def remaining() -> float:
@@ -418,7 +426,10 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     monkeypatch.setattr(_fields, "_diffusion_apply", apply_after_clear)
     smoothed: list[np.ndarray] = []
     smoothing = threading.Thread(
-        target=lambda: smoothed.append(env.smooth(field, bandwidth=4.0)), daemon=True
+        target=lambda: smoothed.append(
+            env.smooth(field, bandwidth=4.0, mode="average")
+        ),
+        daemon=True,
     )
     smoothing.start()
     assert applying.wait(timeout=remaining()), "smoothing never started"
@@ -433,7 +444,9 @@ def test_clear_cache_during_smoothing_neither_blocks_nor_changes_the_result(
     assert not smoothing.is_alive(), "smoothing deadlocked"
     np.testing.assert_array_equal(smoothed[0], expected)
     monkeypatch.setattr(_fields, "_diffusion_apply", original)
-    np.testing.assert_array_equal(env.smooth(field, bandwidth=4.0), expected)
+    np.testing.assert_array_equal(
+        env.smooth(field, bandwidth=4.0, mode="average"), expected
+    )
 
 
 def _track() -> Environment:

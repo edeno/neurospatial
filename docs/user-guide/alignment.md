@@ -90,9 +90,16 @@ aligned_points = T_rigid(new_points)
 `env.apply_transform(transform)` returns an environment in the new coordinates.
 It moves cells, the arena, physical walls and regions together. Bin IDs and the
 order of neighbor pairs stay the same, including after reflection. Supply query
-positions in the new world coordinates. The name and units are kept. Name the
-new coordinate frame with `frame=` (for example `frame="room"`); without it the
+positions in the new world coordinates. The name is kept. Name the new
+coordinate frame with `frame=` (for example `frame="room"`); without it the
 frame is `None`, because the coordinates are no longer in the source frame.
+
+A transform that keeps lengths (a translation, rotation or reflection) keeps
+the units. A transform that scales or shears lengths needs `units=` when the
+environment has units: a pixel-to-centimeter calibration takes `units="cm"`,
+and an arena stretched in the same units takes `units=env.units`. The package
+cannot tell the two apart, so it asks instead of keeping a unit that may now be
+wrong.
 
 A grid keeps its original coordinate axes internally. Interpolation and linear
 movement allocation use those axes; plots transform the cell corners into world
@@ -226,10 +233,13 @@ detected_px = corners_px + rng.normal(0, 0.5, corners_px.shape)  # 0.5 px tracki
 corners_cm = np.array([[0., 0.], [50., 0.], [0., 50.], [50., 50.]])
 
 to_cm = estimate_transform(detected_px, corners_cm, kind="similarity")
-room = camera.apply_transform(to_cm).with_metadata(units="cm")
+room = camera.apply_transform(to_cm, units="cm")
 cm_per_px = np.sqrt(abs(np.linalg.det(to_cm.A[:2, :2])))
 field = rng.random(camera.n_bins)
-np.testing.assert_allclose(room.smooth(field, bandwidth=5.0), camera.smooth(field, bandwidth=5.0 / cm_per_px))
+np.testing.assert_allclose(
+    room.smooth(field, bandwidth=5.0, mode="average"),
+    camera.smooth(field, bandwidth=5.0 / cm_per_px, mode="average"),
+)
 ```
 
 New face certification checks normalized orthogonality residuals against `1e-12`.

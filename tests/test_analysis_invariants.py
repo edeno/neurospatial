@@ -108,7 +108,9 @@ def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     # Probe interiors, holes and outside points; exact boundaries are excluded
     # because roundoff there can legitimately change the owning adjacent cell.
     original_bins = env.bin_at(points)
-    shifted = env.apply_transform(transform).apply_transform(translate(3.0, 2.0))
+    shifted = env.apply_transform(transform, units=env.units).apply_transform(
+        translate(3.0, 2.0)
+    )
     moved = translate(3.0, 2.0)(transform(points))
     np.testing.assert_array_equal(shifted.bin_at(moved), original_bins)
     np.testing.assert_allclose(
@@ -121,7 +123,7 @@ def test_chained_coordinate_changes_preserve_queries_and_occupancy(
         shifted.occupancy(times, moved), env.occupancy(times, points)
     )
     restored = shifted.apply_transform(translate(-3.0, -2.0)).apply_transform(
-        transform.inverse()
+        transform.inverse(), units=env.units
     )
     np.testing.assert_allclose(restored.bin_centers, env.bin_centers, atol=1e-12)
     np.testing.assert_array_equal(restored.bin_at(points), original_bins)

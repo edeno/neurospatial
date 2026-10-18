@@ -143,11 +143,8 @@ def test_distinct_world_inset_is_not_inherited_even_within_coordinate_ulp_bound(
     assert _publish(child, arena).n_bins == 1
 
 
-@pytest.mark.parametrize("wall_x", [1e-12, 4 - 1e-12])
-@pytest.mark.parametrize("y_range", [(0.29, 0.31), (1.49, 1.51)])
-def test_unresolved_exterior_projection_gap_refuses_source_interior_wall(
-    wall_x, y_range
-):
+def _rotated_clipped_grid(wall_x, y_range):
+    """A clipped, rotated 4 x 4 grid and a short wall inside its source frame."""
     angle = 0.1
     matrix = np.array(
         [
@@ -168,8 +165,29 @@ def test_unresolved_exterior_projection_gap_refuses_source_interior_wall(
         box(0, 0, 4, 4),
         walls=(LineString([(wall_x, y_range[0]), (wall_x, y_range[1])]),),
     ).transformed(matrix)
+    return child, arena
+
+
+@pytest.mark.parametrize(
+    ("wall_x", "y_range"),
+    [(1e-12, (1.49, 1.51)), (4 - 1e-12, (0.29, 0.31)), (4 - 1e-12, (1.49, 1.51))],
+)
+def test_unresolved_exterior_projection_gap_refuses_source_interior_wall(
+    wall_x, y_range
+):
+    child, arena = _rotated_clipped_grid(wall_x, y_range)
     with pytest.raises(ValueError, match=r"wall.*(?:cuts|clearance|unresolved)"):
         _publish(child, arena)
+
+
+def test_a_resolved_wall_stub_inside_a_bin_leaves_its_paths():
+    """A wall that ends inside a bin does not divide it, so no path changes."""
+    child, arena = _rotated_clipped_grid(1e-12, (0.29, 0.31))
+
+    published = _publish(child, arena)
+
+    assert published.n_bins == child.n_bins
+    np.testing.assert_array_equal(published.edge_pairs, child.edge_pairs)
 
 
 def test_signed_permutation_does_not_certify_a_rounded_diagonal_parent_edge():

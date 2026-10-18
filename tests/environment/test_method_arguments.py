@@ -124,9 +124,9 @@ CASES: dict[str, Case] = {
         lambda n: n["env"].subset(mask=n["mask"]),
     ),
     "smooth(field, bandwidth)": Case(
-        lambda n: n["env"].smooth(n["field"], 5.0),
+        lambda n: n["env"].smooth(n["field"], 5.0, mode="average"),
         "bandwidth=5.0",
-        lambda n: n["env"].smooth(n["field"], bandwidth=5.0),
+        lambda n: n["env"].smooth(n["field"], bandwidth=5.0, mode="average"),
     ),
     "diffuse(fields, bandwidth)": Case(
         lambda n: n["env"].diffuse(n["fields"], 5.0, mode="average"),
@@ -134,9 +134,9 @@ CASES: dict[str, Case] = {
         lambda n: n["env"].diffuse(n["fields"], bandwidth=5.0, mode="average"),
     ),
     "compute_kernel(bandwidth)": Case(
-        lambda n: n["env"].compute_kernel(5.0),
+        lambda n: n["env"].compute_kernel(5.0, mode="density"),
         "bandwidth=5.0",
-        lambda n: n["env"].compute_kernel(bandwidth=5.0),
+        lambda n: n["env"].compute_kernel(bandwidth=5.0, mode="density"),
     ),
     "compute_gaussian_kernel(bandwidth)": Case(
         lambda n: n["env"].compute_gaussian_kernel(5.0),

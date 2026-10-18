@@ -195,8 +195,8 @@ def test_three_dimensional_axis_scaling_keeps_physical_faces():
     ):
         np.testing.assert_allclose(actual, wanted, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(
-        child.compute_kernel(bandwidth=2.0),
-        expected.compute_kernel(bandwidth=2.0),
+        child.compute_kernel(bandwidth=2.0, mode="density"),
+        expected.compute_kernel(bandwidth=2.0, mode="density"),
         rtol=1e-12,
         atol=1e-12,
     )

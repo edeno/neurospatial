@@ -1,0 +1,255 @@
+"""Boundary-vector rate maps recover simulated wall tuning and keep their counts."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+from shapely.geometry import box
+
+from neurospatial import Environment
+from neurospatial.encoding import (
+    BoundaryVectorRateResult,
+    compute_boundary_vector_rate,
+    compute_boundary_vector_rates,
+)
+from neurospatial.encoding._spatial_counts import (
+    count_spikes_by_frame,
+    start_allocated_occupancy,
+)
+from neurospatial.encoding.boundary_vector import _boundary_frame_bins
+from neurospatial.simulation import generate_poisson_spikes
+
+SIDE = 100.0  # cm
+DT = 1 / 30  # 30 Hz tracking
+
+
+@pytest.fixture(scope="module")
+def env() -> Environment:
+    return Environment.from_polygon(box(0, 0, SIDE, SIDE), bin_size=5.0, units="cm")
+
+
+@pytest.fixture(scope="module")
+def session():
+    """Ten minutes of positions and headings that cover the box evenly."""
+    rng = np.random.default_rng(7)
+    times = np.arange(0, 600, DT)
+    positions = rng.uniform(2, SIDE - 2, (len(times), 2))
+    headings = rng.uniform(-np.pi, np.pi, len(times))
+    return times, positions, headings
+
+
+def _wall_distance(positions: np.ndarray, angles: np.ndarray) -> np.ndarray:
+    """Distance from each position to the box side along its own angle."""
+    cos, sin = np.cos(angles), np.sin(angles)
+    x, y = positions.T
+    with np.errstate(divide="ignore", invalid="ignore"):
+        to_x = np.where(cos > 0, (SIDE - x) / cos, np.where(cos < 0, -x / cos, np.inf))
+        to_y = np.where(sin > 0, (SIDE - y) / sin, np.where(sin < 0, -y / sin, np.inf))
+    return np.minimum(to_x, to_y)
+
+
+def _tuned_spikes(times, distance, preferred=15.0, width=4.0, seed=100):
+    rate = 0.5 + 20.0 * np.exp(-0.5 * ((distance - preferred) / width) ** 2)
+    return generate_poisson_spikes(rate, times, seed=seed)
+
+
+def test_a_boundary_vector_cell_is_recovered(env, session):
+    """A cell firing for a wall 15 cm to the East peaks East at about 15 cm."""
+    times, positions, _ = session
+    east = _wall_distance(positions, np.zeros(len(positions)))
+    spikes = _tuned_spikes(times, east)
+
+    result = compute_boundary_vector_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        direction_frame="allocentric",
+        n_direction_bins=24,
+        n_distance_bins=10,
+    )
+
+    sector = np.pi / 24  # half a direction bin
+    assert abs(result.preferred_direction()) <= sector + 1e-12
+    assert 10.0 <= result.preferred_distance() <= 20.0
+
+
+def test_an_egocentric_boundary_cell_is_recovered(env, session):
+    """A cell firing for a wall 15 cm to the left peaks at +pi/2 (left)."""
+    times, positions, headings = session
+    left = _wall_distance(positions, headings + np.pi / 2)
+    spikes = _tuned_spikes(times, left)
+
+    result = compute_boundary_vector_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        headings,
+        direction_frame="egocentric",
+        n_direction_bins=24,
+    )
+
+    assert abs(result.preferred_direction() - np.pi / 2) <= np.pi / 24 + 1e-12
+    assert 10.0 <= result.preferred_distance() <= 20.0
+    # The same cell has no allocentric direction preference to speak of.
+    allocentric = compute_boundary_vector_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        direction_frame="allocentric",
+        n_direction_bins=24,
+    )
+    assert allocentric.spatial_information() < result.spatial_information()
+
+
+def test_every_ray_reaching_a_wall_adds_the_sample_time(env, session):
+    """With every wall in range, each ray counts every interval and spike."""
+    times, positions, headings = session
+    spikes = np.sort(np.random.default_rng(1).uniform(times[0], times[-1], 500))
+    n_directions = 8
+
+    result = compute_boundary_vector_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        headings,
+        direction_frame="egocentric",
+        distance_range=(0.0, 150.0),
+        n_direction_bins=n_directions,
+    )
+    counts = np.asarray(result.firing_rate) * np.asarray(result.occupancy)
+
+    duration = times[-1] - times[0]
+    assert np.asarray(result.occupancy).sum() == pytest.approx(n_directions * duration)
+    assert np.nansum(counts) == pytest.approx(n_directions * len(spikes))
+
+
+def test_vectorized_counts_equal_the_ray_by_ray_counts(env, session):
+    times, positions, headings = session
+    positions = positions.copy()
+    positions[100:130] = np.nan  # a tracking dropout
+    spikes = np.sort(np.random.default_rng(2).uniform(times[0], times[-1], 800))
+    options = {
+        "distance_range": (0.0, 40.0),
+        "n_distance_bins": 8,
+        "n_direction_bins": 12,
+    }
+
+    result = compute_boundary_vector_rate(
+        env, spikes, times, positions, headings, direction_frame="egocentric", **options
+    )
+
+    frame_bins, observed = _boundary_frame_bins(
+        env,
+        positions,
+        headings,
+        direction_frame="egocentric",
+        boundary_source="physical",
+        **options,
+    )
+    mask = observed[:-1] & (np.diff(times) <= 0.5)
+    n_bins = result.env.n_bins
+    rays = range(frame_bins.shape[1])
+    occupancy = sum(
+        start_allocated_occupancy(
+            frame_bins[:, k], np.diff(times), mask & (frame_bins[:-1, k] >= 0), n_bins
+        )
+        for k in rays
+    )
+    counts = sum(
+        count_spikes_by_frame(spikes, times, frame_bins[:, k], mask, n_bins)
+        for k in rays
+    )
+    np.testing.assert_allclose(result.occupancy, occupancy)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        expected = np.where(occupancy > 0, counts / occupancy, np.nan)
+    np.testing.assert_allclose(result.firing_rate, expected)
+
+
+def test_single_unit_equals_unit_zero_of_the_population(env, session):
+    times, positions, headings = session
+    spikes = np.sort(np.random.default_rng(3).uniform(times[0], times[-1], 300))
+
+    single = compute_boundary_vector_rate(
+        env, spikes, times, positions, headings, direction_frame="egocentric"
+    )
+    population = compute_boundary_vector_rates(
+        env,
+        [spikes, spikes[::2]],
+        times,
+        positions,
+        headings,
+        direction_frame="egocentric",
+        unit_ids=["a", "b"],
+    )
+
+    assert isinstance(population[0], BoundaryVectorRateResult)
+    np.testing.assert_array_equal(single.firing_rate, population[0].firing_rate)
+    np.testing.assert_array_equal(single.occupancy, population.occupancy)
+    assert list(single.summary_table().columns) == list(
+        population.summary_table().columns
+    )
+    assert population[1].unit_id == "b"
+    assert population.summary_table().attrs["boundary_source"] == "physical"
+
+
+def test_an_unvisited_corner_is_not_a_wall_unless_asked():
+    """Physical walls ignore what the animal never visited; analysis edges do not."""
+    rng = np.random.default_rng(4)
+    times = np.arange(0, 300, DT)
+    # The west half only, away from the north and south walls, so no eastward
+    # ray from a sample meets a physical wall within 10 cm.
+    positions = rng.uniform([0, 20], [50, 80], (len(times), 2))
+    from neurospatial.arena import OpenArena
+
+    env = Environment.from_samples(
+        positions, bin_size=5.0, arena=OpenArena(box(0, 0, SIDE, SIDE))
+    )
+    spikes = np.sort(rng.uniform(0, 300, 300))
+    kwargs = {"direction_frame": "allocentric", "distance_range": (0.0, 100.0)}
+
+    physical = compute_boundary_vector_rate(env, spikes, times, positions, **kwargs)
+    analysis = compute_boundary_vector_rate(
+        env, spikes, times, positions, boundary_source="analysis", **kwargs
+    )
+
+    # Near the visited edge at x = 50, only the analysis map has eastward
+    # walls closer than 10 cm from samples at x > 40.
+    def east_near(result):
+        centers = result.env.bin_centers
+        near = (centers[:, 0] < 10) & (np.abs(centers[:, 1]) < np.pi / 6)
+        return np.asarray(result.occupancy)[near].sum()
+
+    assert east_near(analysis) > 0
+    assert east_near(physical) == 0
+
+
+def test_the_direction_frame_must_match_the_headings(env, session):
+    times, positions, headings = session
+
+    with pytest.raises(ValueError, match="needs headings"):
+        compute_boundary_vector_rate(
+            env, np.array([1.0]), times, positions, direction_frame="egocentric"
+        )
+    with pytest.raises(ValueError, match="does not use headings"):
+        compute_boundary_vector_rate(
+            env,
+            np.array([1.0]),
+            times,
+            positions,
+            headings,
+            direction_frame="allocentric",
+        )
+
+
+def test_an_environment_without_known_walls_is_refused(session):
+    times, positions, _ = session
+    env = Environment.from_samples(positions, bin_size=5.0)
+
+    with pytest.raises(NotImplementedError, match="Physical walls are unknown"):
+        compute_boundary_vector_rate(
+            env, np.array([1.0]), times, positions, direction_frame="allocentric"
+        )

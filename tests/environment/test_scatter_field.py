@@ -42,8 +42,7 @@ def _scatter(ax):
 def test_default_scatter_marker_area_does_not_depend_on_coordinate_units():
     centimeters = _rotated_points(n_cells=20)
     centimeters = centimeters.with_metadata(units="cm")
-    meters = centimeters.apply_transform(scale_2d(0.01))
-    meters = meters.with_metadata(units="m")
+    meters = centimeters.apply_transform(scale_2d(0.01), units="m")
     figures = []
     sizes = []
     try:

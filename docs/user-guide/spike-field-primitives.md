@@ -115,7 +115,7 @@ compute_spatial_rate(env, spike_times, times, positions, ...)
 
 # This matches the existing neurospatial API:
 env.occupancy(times, positions)
-env.smooth(field, bandwidth=bandwidth)
+env.smooth(field, bandwidth=bandwidth, mode="average")
 env.nearest_bin(positions)
 distance_field(env.connectivity, sources)
 ```

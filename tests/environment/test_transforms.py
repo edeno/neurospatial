@@ -566,7 +566,7 @@ class TestRebinIntegration:
         field = rng.random(rebinned.n_bins)
 
         # Smooth should work
-        smoothed = rebinned.smooth(field, bandwidth=5.0)
+        smoothed = rebinned.smooth(field, bandwidth=5.0, mode="average")
 
         assert smoothed.shape == (rebinned.n_bins,)
         assert not np.any(np.isnan(smoothed))

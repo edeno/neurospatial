@@ -935,7 +935,7 @@ class TestSmoothingProperties:
         field = rng.exponential(scale=5.0, size=env.n_bins)
 
         # Smooth the field
-        smoothed = env.smooth(field, bandwidth=bandwidth)
+        smoothed = env.smooth(field, bandwidth=bandwidth, mode="average")
 
         # Property: smoothing non-negative field should remain non-negative
         assert np.all(smoothed >= -1e-10), (

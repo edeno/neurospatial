@@ -60,7 +60,8 @@ def test_common_class_restoration_keeps_polar_units_and_kernels(restore):
     )
     np.testing.assert_array_equal(result.bin_sizes, env.bin_sizes)
     np.testing.assert_array_equal(
-        result.compute_kernel(bandwidth=0.8), env.compute_kernel(bandwidth=0.8)
+        result.compute_kernel(bandwidth=0.8, mode="density"),
+        env.compute_kernel(bandwidth=0.8, mode="density"),
     )
 
 

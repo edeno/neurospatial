@@ -8,6 +8,44 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.from_samples` (and `open_field`) tile the arena's bounds when
+  given an `arena=` with a known outline and no `dimension_ranges`, so cell
+  edges start at the arena's edge. Walls on that lattice now fall on cell
+  faces: a 100 cm box with a wall at x = 50 cm and 5 cm bins builds and blocks
+  paths across the wall. Before, the grid followed the samples' extent, put
+  the wall through the middle of cells, and refused to build unless you set
+  `dimension_ranges` by hand.
+
+- A wall that runs through bins no longer stops an environment from being
+  built. `from_samples`, `open_field`, `from_polygon`, `from_grid_mask`,
+  `from_pixel_mask`, `from_layout` and `io.nwb.environment_from_position`
+  take `wall_fit=`. The default `"snap"` keeps every bin and moves the wall
+  onto the bin edges between the bins it divides, warning how far it moved
+  (at most about half a bin), so every analysis works as on any grid.
+  `"split"` keeps the measured wall and cuts each bin it crosses into one
+  exact polygon bin per side; smoothing refuses the bins next to a wall's end
+  or a diagonal wall, so use it with binned rates or wall-distance measures.
+  A wall that covers part of a bin edge now leaves the open part connected
+  with a proportionally smaller conductance, instead of raising. `from_bins`,
+  `rebin` and saved environments still refuse a wall through a bin, with an
+  error that names the wall and the bin.
+
+- `Environment.apply_transform` takes `units=`, and requires it when the
+  transform scales or shears lengths and the environment has units. Before,
+  the units were always kept, so a pixel environment calibrated to
+  centimeters with `apply_transform(scale_2d(0.1))` still said `"px"` while
+  its bin areas shrank 100-fold. Pass the new unit (`units="cm"`), or
+  `units=env.units` for an arena stretched in the same units. Translations,
+  rotations and reflections keep the units as before.
+
+- `Environment.smooth`, `Environment.diffuse` and `Environment.compute_kernel`
+  require `mode=`. `smooth` defaulted to `mode="average"` and the other two to
+  `mode="density"`, so the same call gave different numbers on the same field
+  depending on the method. Pass `mode="average"` for a rate map or other value
+  per bin, `mode="transition"` for counts, occupancy or probability mass, and
+  `mode="density"` to turn counts into a density. Leaving `mode` out raises a
+  `TypeError` that lists the three choices.
+
 - `Environment.maze(kind=..., node_positions=...)` refuses a layout whose
   track segments cross or run along each other, naming the two segments and
   the node order the kind expects. The order of `node_positions` sets which
@@ -1027,6 +1065,28 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   are reported.
 
 ### Added
+
+- `compute_boundary_vector_rate` and `compute_boundary_vector_rates` estimate
+  firing by distance and direction to the walls, for boundary-vector cells
+  (`direction_frame="allocentric"`) and egocentric boundary cells
+  (`direction_frame="egocentric"` with `headings`). One ray per direction bin
+  finds the nearest wall from each sample, following Hinman et al. (2019);
+  each interval and spike counts toward the bin of every ray. Walls are the
+  arena's declared walls by default, so unvisited space is not a wall. The
+  results, `BoundaryVectorRateResult` and `BoundaryVectorRatesResult`, have
+  `preferred_distance(s)`, `preferred_direction(s)`, `spatial_information`,
+  `plot` and the shared `summary_table`, `to_dataframe` and `to_xarray`
+  exports. They share their polar-map code with the object-vector results.
+
+- `ops.compute_boundary_distances(env, positions[, headings], direction_frame=...)`
+  casts rays in evenly spaced directions from each sample and returns the
+  distance to the first wall along each, in the allocentric frame for
+  boundary-vector cells or the egocentric frame for egocentric boundary
+  cells. `ops.nearest_boundary(env, positions)` returns the distance and
+  allocentric direction to the closest wall point. Both measure to the
+  arena's declared walls by default (`boundary_source="physical"`), so an
+  unvisited corner is not a wall, and mark a missing sample NaN.
+  `ops.boundary_directions(n)` gives the ray directions.
 
 - `env.coordinate_system` says what it is: `kind` is `"cartesian"` or
   `"polar"`, `circular` says whether the angle axis wraps around (always

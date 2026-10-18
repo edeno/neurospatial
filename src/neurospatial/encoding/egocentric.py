@@ -6,8 +6,9 @@ require headings and measure bearing relative to the animal (0 = ahead,
 +pi/2 = left), following Wang et al. (2018). Both use nearest-object distance,
 Euclidean or geodesic, and return ObjectVectorRateResult/ObjectVectorRatesResult
 with a required ``direction_frame``. Add pi and wrap to obtain the reverse,
-object-to-animal vector. Egocentric boundary-vector coding (Alexander et al.,
-2020) is related work, not the object-vector definition.
+object-to-animal vector. Firing by distance and direction to walls
+(boundary-vector and egocentric boundary cells; Alexander et al., 2020) is in
+:mod:`neurospatial.encoding.boundary_vector`.
 
 Examples
 --------
@@ -57,6 +58,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._polar_results import _PolarRateMixin, polar_summary_frame
 from neurospatial.encoding._significance import (
     _SHUFFLE_DEFAULTS,
     check_criterion,
@@ -118,18 +120,6 @@ def _check_direction_frame(direction_frame: str, *, context: str) -> None:
         )
 
 
-def _egocentric_xarray_attrs(
-    result: ObjectVectorRateResult | ObjectVectorRatesResult,
-) -> dict[str, Any]:
-    """Coordinate and estimator metadata specific to this rate family."""
-    return {
-        "direction_frame": result.direction_frame,
-        "distance_range": list(result.distance_range),
-        "n_distance_bins": result.n_distance_bins,
-        "n_direction_bins": result.n_direction_bins,
-    }
-
-
 def _object_vector_classify(
     rates: NDArray, occupancy: NDArray, *, min_info: float
 ) -> NDArray[np.bool_]:
@@ -145,36 +135,24 @@ def _object_vector_summary_frame(
     index: Sequence[Hashable],
 ) -> pd.DataFrame:
     """Build identical metric columns for single and population results."""
-    import pandas as pd
-
     rates = np.atleast_2d(_to_numpy(result._get_rates()))
     occupancy = _to_numpy(result.occupancy)
-    peaks = np.atleast_2d(result.peak_location())
-    columns = {
-        "peak_rate": np.atleast_1d(result.peak_firing_rate()),
-        "preferred_distance": peaks[:, 0],
-        "preferred_direction_deg": np.degrees(peaks[:, 1]),
-        "preferred_direction": peaks[:, 1],
-        "is_object_vector_cell": _object_vector_classify(
-            rates, occupancy, **OBJECT_VECTOR_THRESHOLDS
-        ),
-    }
-    df = pd.DataFrame(columns, index=pd.Index(list(index), name="unit_id"))
-    df.attrs["direction_frame"] = result.direction_frame
-    df.attrs["units"] = {
-        "peak_rate": "Hz",
-        "preferred_distance": result.env.units or "",
-        "preferred_direction": "rad",
-        "preferred_direction_deg": "deg",
-    }
-    df.attrs["classification_thresholds"] = dict(OBJECT_VECTOR_THRESHOLDS)
-    df.attrs.update(result._analysis_attrs())
-    return df
+    return polar_summary_frame(
+        result,
+        index=index,
+        extra={
+            "is_object_vector_cell": _object_vector_classify(
+                rates, occupancy, **OBJECT_VECTOR_THRESHOLDS
+            )
+        },
+        extra_units={},
+        thresholds=OBJECT_VECTOR_THRESHOLDS,
+    )
 
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
-class ObjectVectorRateResult(SpatialResultMixin):
+class ObjectVectorRateResult(_PolarRateMixin, SpatialResultMixin):
     """Result of object-vector rate computation for a single neuron.
 
     This class wraps an object-vector firing rate map (firing rate by distance
@@ -295,9 +273,6 @@ class ObjectVectorRateResult(SpatialResultMixin):
         _check_direction_frame(self.direction_frame, context="ObjectVectorRateResult")
         self._own_arrays()
 
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _egocentric_xarray_attrs(self)
-
     def summary_table(self) -> pd.DataFrame:
         """Per-unit metrics with the same columns as the population table.
 
@@ -350,13 +325,6 @@ class ObjectVectorRateResult(SpatialResultMixin):
             "preferred_distance": float(self.preferred_distance()),
             "preferred_direction": float(self.preferred_direction()),
         }
-
-    @property
-    def _bin_centers(self) -> NDArray[np.float64]:
-        # Override SpatialResultMixin: egocentric results index polar bins
-        # via env, not a world-coordinate Environment.
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-        return bin_centers
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the object-vector rate map (firing rate by distance/direction).
@@ -660,7 +628,7 @@ class ObjectVectorRateResult(SpatialResultMixin):
 
 @_copy_analysis_settings
 @dataclass(frozen=True, repr=False)
-class ObjectVectorRatesResult(SpatialResultMixin, UnitSelectionMixin):
+class ObjectVectorRatesResult(_PolarRateMixin, SpatialResultMixin, UnitSelectionMixin):
     """Result of object-vector rate computation for multiple neurons.
 
     This class wraps object-vector firing rate maps for a population of neurons
@@ -793,9 +761,6 @@ class ObjectVectorRatesResult(SpatialResultMixin, UnitSelectionMixin):
         default=None, kw_only=True, repr=False, compare=False
     )
 
-    def _xarray_attrs(self) -> dict[str, Any]:
-        return _egocentric_xarray_attrs(self)
-
     def __post_init__(self) -> None:
         from neurospatial._results import align_unit_table, resolve_unit_ids
 
@@ -814,13 +779,6 @@ class ObjectVectorRatesResult(SpatialResultMixin, UnitSelectionMixin):
             ),
         )
         self._own_arrays()
-
-    @property
-    def _bin_centers(self) -> NDArray[np.float64]:
-        # Override SpatialResultMixin: egocentric results index polar bins
-        # via env, not a world-coordinate Environment.
-        bin_centers: NDArray[np.float64] = self.env.bin_centers
-        return bin_centers
 
     def __len__(self) -> int:
         """Return the number of units.

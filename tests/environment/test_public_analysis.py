@@ -186,7 +186,7 @@ def test_accuracy_query_reports_resolution_without_building_a_basis(monkeypatch)
     monkeypatch.setattr(diffusion, "_symmetric_eigenbasis", counted)
     conservative = env.diffusion_accuracy(bandwidth=1.0)
     assert calls == []
-    env.diffuse(np.ones(env.n_bins), bandwidth=1.0)
+    env.diffuse(np.ones(env.n_bins), bandwidth=1.0, mode="density")
     assert calls
     n_calls = len(calls)
     assert env.diffusion_accuracy(bandwidth=1.0) < conservative
@@ -229,7 +229,7 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
         binning=env.binning,
     )
     np.testing.assert_array_equal(
-        diffusion_kernel(host, 1.0), env.compute_kernel(bandwidth=1.0)
+        diffusion_kernel(host, 1.0), env.compute_kernel(bandwidth=1.0, mode="density")
     )
     np.testing.assert_array_equal(
         _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(bandwidth=1.0)

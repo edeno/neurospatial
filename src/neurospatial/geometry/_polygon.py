@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 import shapely
+import shapely.ops
 from numpy.typing import NDArray
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import linemerge, unary_union
@@ -378,6 +379,54 @@ def clip_binning(
     effective = unary_union(_parts(effective))
     source = materialize_cells(binning)
     cells, mapping = _overlay(source, effective)
+    return _pieces_binning(binning, source, cells, mapping, walls), mapping
+
+
+def split_binning(
+    binning: Binning, walls: Sequence[shapely.Geometry]
+) -> tuple[Binning, ClipMapping]:
+    """Split every cell a wall divides into the pieces on each side of it.
+
+    A cell crossed from edge to edge by a wall becomes one exact polygon cell
+    per side; a cell holding only a wall's end stays whole. The pieces of
+    one cell are not neighbors, and the walls themselves are applied later
+    by :func:`apply_walls`, which removes the paths they block.
+
+    Returns
+    -------
+    binning : Binning
+        Exact polygon cells, with a lookup that finds the piece containing a
+        point and a mapping from each piece to the cell it came from.
+    mapping : ClipMapping
+        Parent cell of each piece.
+    """
+    source = materialize_cells(binning)
+    wall = unary_union(walls)
+    records = [
+        (parent, shapely.normalize(piece))
+        for parent, cell in enumerate(source)
+        for piece in sorted(_parts(shapely.ops.split(cell, wall)), key=_key)
+    ]
+    cells = PolygonCells(tuple(piece for _, piece in records))
+    mapping = ClipMapping(
+        np.array([parent for parent, _ in records], dtype=np.intp), len(source)
+    )
+    return _pieces_binning(binning, source, cells, mapping, ()), mapping
+
+
+def _pieces_binning(
+    binning: Binning,
+    source: tuple[Polygon, ...],
+    cells: PolygonCells,
+    mapping: ClipMapping,
+    walls: Sequence[shapely.Geometry],
+) -> Binning:
+    """Bins, paths and faces of cells cut from ``source``, keeping ancestry.
+
+    Pieces of neighboring source cells are neighbors where their shared
+    boundary has an opening past ``walls``; path lengths and face roles come
+    from the source pairs.
+    """
     centers = np.array([_representative(cell) for cell in cells.polygons])
     by_parent: dict[int, list[int]] = defaultdict(list)
     for child, parent in enumerate(mapping.parent_bin_indices):
@@ -479,4 +528,4 @@ def clip_binning(
         shapes=cells,
         clip_mapping=mapping,
         grid_spec=binning.grid_spec,
-    ), mapping
+    )

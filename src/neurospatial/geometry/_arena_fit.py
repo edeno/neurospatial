@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import warnings
+from collections.abc import Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
-from shapely.geometry import LineString
-from shapely.ops import unary_union
+import shapely
+import shapely.ops
+from numpy.typing import NDArray
+from shapely.geometry import LineString, MultiLineString, Polygon
+from shapely.ops import linemerge, unary_union
 
+from neurospatial._exceptions import _format_error
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
@@ -175,6 +182,168 @@ def validate_arena(
                     )
 
 
+def _wall_cut_message(
+    binning: Binning,
+    arena: Arena,
+    wall_segments: Sequence[LineString],
+    cell: Polygon,
+    index: int,
+) -> str:
+    """Name the wall that crosses bin ``index`` and how to align the grid."""
+    crossing = next(
+        number
+        for number, segment in enumerate(wall_segments)
+        if segment.intersection(cell).difference(cell.boundary).length > 0
+    )
+    ends = " to ".join(
+        "(" + ", ".join(f"{value:g}" for value in point) + ")"
+        for point in np.asarray(arena.walls[crossing].coords)[[0, -1]]
+    )
+    center = ", ".join(f"{value:g}" for value in binning.bins.centers[index])
+    return _format_error(
+        f"Physical wall cuts through bin {index} (center ({center})): wall "
+        f"{crossing} of the arena, from {ends}.",
+        why="Why: a wall blocks movement between the bins on either side, so "
+        "it must run along cell edges; a wall through the middle of a cell "
+        "would put one bin on both sides.",
+        fix="let the factory fit the bins to the walls: from_samples, "
+        "open_field, from_polygon, from_grid_mask, from_pixel_mask and "
+        "from_layout move the wall onto bin edges by default "
+        "(wall_fit='snap') or split the bins it crosses with "
+        "wall_fit='split'; from_bins, rebin and saved environments keep their "
+        "bins, so build those bins along the walls",
+    )
+
+
+def _divides(cell: Polygon, walls: shapely.Geometry) -> bool:
+    """Whether the walls cut ``cell`` into two or more pieces.
+
+    A wall that only enters a cell and ends inside it does not divide it.
+    """
+    if not walls.intersects(cell):
+        return False
+    pieces = shapely.ops.split(cell, walls)
+    return bool(sum(piece.area > 0 for piece in pieces.geoms) > 1)
+
+
+def fit_walls(
+    binning: Binning, arena: Arena, mode: Literal["split", "snap"]
+) -> tuple[Binning, Arena]:
+    """Fit the bins and walls together before publication.
+
+    ``"split"`` cuts each cell a wall divides into one exact polygon cell per
+    side, so the walls stay where they were measured. ``"snap"`` keeps the
+    cells and moves each wall onto the cell edges that separate the bins it
+    divides, warning how far it moved. Bins that no wall divides are
+    returned unchanged either way.
+    """
+    if not arena.walls:
+        return binning, arena
+    cells = materialize_cells(binning)
+    walls = unary_union(arena.walls)
+    if not any(_divides(cell, walls) for cell in cells):
+        return binning, arena
+    if mode == "split":
+        from neurospatial.geometry._polygon import split_binning
+
+        return split_binning(binning, arena.walls)[0], arena
+    if not isinstance(arena, OpenArena):
+        raise ValueError(
+            _format_error(
+                f"wall_fit='snap' moves the walls of an OpenArena; this arena is "
+                f"a {type(arena).__name__}.",
+                why="Why: only an OpenArena records walls that can be replaced.",
+                fix="use wall_fit='split', or rebuild the arena as "
+                "OpenArena(outline, walls=...)",
+            )
+        )
+    snapped = _snapped_walls(binning, cells, arena.walls)
+    moved = max(
+        wall.hausdorff_distance(MultiLineString(parts))
+        for wall, parts in zip(arena.walls, snapped, strict=True)
+    )
+    warnings.warn(
+        _format_error(
+            f"wall_fit='snap' moved the walls onto bin edges by up to {moved:.3g} "
+            "(in the units of the positions).",
+            why="Why: snapping keeps every bin whole, so a wall that ran "
+            "through bins now runs along the edges between them; paths, "
+            "occupancy and distances to walls all use the moved walls.",
+            fix="use wall_fit='split' to keep the measured walls and split the "
+            "bins they cross, or build the bins along the walls",
+        ),
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
+    return binning, replace(arena, walls=tuple(p for parts in snapped for p in parts))
+
+
+def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.bool_]:
+    """Which side of ``wall`` each point lies on, by its nearest wall segment.
+
+    True is the left of the wall's direction; a point on the wall counts as
+    left, so a wall through bin centers puts those bins on one side.
+    """
+    coords = np.asarray(wall.coords)
+    starts, ends = coords[:-1], coords[1:]
+    direction = ends - starts  # (n_segments, 2)
+    offset = points[:, None, :] - starts[None, :, :]  # (n_points, n_segments, 2)
+    along = np.clip(
+        np.einsum("psk,sk->ps", offset, direction)
+        / np.einsum("sk,sk->s", direction, direction),
+        0.0,
+        1.0,
+    )
+    nearest = starts[None] + along[..., None] * direction[None]
+    segment = np.argmin(np.hypot.reduce(points[:, None, :] - nearest, axis=2), axis=1)
+    rows = np.arange(len(points))
+    cross = (
+        direction[segment, 0] * offset[rows, segment, 1]
+        - direction[segment, 1] * offset[rows, segment, 0]
+    )
+    return np.asarray(cross >= 0.0)
+
+
+def _snapped_walls(
+    binning: Binning, cells: Sequence[Polygon], walls: Sequence[LineString]
+) -> list[tuple[LineString, ...]]:
+    """Each wall as the cell edges between the bins whose centers it separates.
+
+    Returns one tuple of lines per wall: its edges joined where they meet.
+    """
+    centers = binning.bins.centers
+    pairs = binning.bins.pairs
+    links = shapely.linestrings(
+        np.stack((centers[pairs[:, 0]], centers[pairs[:, 1]]), 1)
+    )
+    snapped = []
+    for wall in walls:
+        left = _wall_sides(wall, centers)
+        crossing = np.flatnonzero(
+            shapely.intersects(links, wall) & (left[pairs[:, 0]] != left[pairs[:, 1]])
+        )
+        edges = [
+            cells[u].boundary.intersection(cells[v].boundary)
+            for u, v in pairs[crossing]
+        ]
+        edges = [edge for edge in edges if edge.length > 0]
+        if not edges:
+            raise ValueError(
+                _format_error(
+                    f"wall_fit='snap' cannot place the wall {list(wall.coords)} on "
+                    "bin edges: it separates no two bin centers.",
+                    why="Why: the wall is shorter than a bin, so the nearest bin "
+                    "edges would remove it.",
+                    fix="use wall_fit='split', or a smaller bin_size",
+                )
+            )
+        merged = linemerge(unary_union(edges))
+        snapped.append(
+            (merged,) if isinstance(merged, LineString) else tuple(merged.geoms)
+        )
+    return snapped
+
+
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
     """Remove complete blocked cell interfaces from paths and finite-volume faces."""
     if _composition_arena(binning.locator) is not None:
@@ -198,22 +367,22 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         cells, wall_segments, centers, _, _ = wall_frame
     walls = unary_union(wall_segments)
     for index, cell in enumerate(cells):
-        interior_part = walls.intersection(cell).difference(cell.boundary)
-        if interior_part.length > 0:
+        if _divides(cell, walls):
             raise ValueError(
-                f"Physical wall cuts through bin {index}. Refine or rebuild cells so walls follow complete cell faces."
+                _wall_cut_message(binning, arena, wall_segments, cell, index)
             )
     keep = np.ones(len(binning.bins.pairs), dtype=bool)
+    # A face partly covered by a wall keeps its open share of the conductance.
+    open_share = np.ones(len(binning.bins.pairs))
     current_cells = None
     for index, (u, v) in enumerate(binning.bins.pairs):
         contact = cells[u].boundary.intersection(cells[v].boundary)
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
-            if blocked.length != contact.length:
-                raise ValueError(
-                    f"Physical wall covers only part of face ({u}, {v}). Align doorway endpoints with cell vertices."
-                )
-            keep[index] = False
+            if blocked.length < contact.length:
+                open_share[index] = 1.0 - blocked.length / contact.length
+            else:
+                keep[index] = False
         elif contact.length == 0:
             link = LineString(centers[[u, v]])
             crosses = link.crosses(walls)
@@ -231,7 +400,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                         "Declare walls before clipping or transforming, or recenter coordinates."
                     )
             keep[index] = contact.intersection(walls).is_empty and not crosses
-    if np.all(keep):
+    if np.all(keep) and np.all(open_share == 1.0):
         return binning
     bins = binning.bins
     updated = SpatialBins(
@@ -244,9 +413,23 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     faces = binning.faces
     if faces.available:
         source = faces.build()
+        area = source.A.copy()
+        partial = np.flatnonzero(open_share < 1.0)
+        if len(partial):
+            # The open length in the published coordinates; taking the
+            # minimum keeps a face that was already narrowed unchanged when
+            # the environment is published again.
+            if current_cells is None:
+                current_cells = materialize_cells(binning)
+            for index in partial:
+                u, v = binning.bins.pairs[index]
+                full = (
+                    current_cells[u].boundary.intersection(current_cells[v].boundary)
+                ).length
+                area[index] = min(area[index], open_share[index] * full)
         faces = KnownFaces(
             FaceGeometry(
-                updated.pairs, source.A[keep], source.distance[keep], updated.sizes
+                updated.pairs, area[keep], source.distance[keep], updated.sizes
             )
         )
     normals = (

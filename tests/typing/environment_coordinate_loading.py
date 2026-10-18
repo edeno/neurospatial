@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from neurospatial.io.nwb import read_environment
 
     def _shared(env: Environment, values: NDArray[np.float64]) -> NDArray[np.float64]:
-        return env.smooth(values, bandwidth=1.0)
+        return env.smooth(values, bandwidth=1.0, mode="average")
 
     def _check_loading(data: dict[str, Any], path: str) -> None:
         assert_type(Environment.from_dict(data), Environment[Any])

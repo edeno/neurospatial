@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import importlib
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, ParamSpec, TypeVar
 
 from neurospatial._exceptions import _format_error
@@ -40,6 +40,7 @@ def keyword_hint(
     former: tuple[str, ...] = (),
     translate: Translate | None = None,
     why: str | None = None,
+    missing: Mapping[str, tuple[str, str]] | None = None,
 ) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
     """Explain a call that passes options by position or to the wrong function.
 
@@ -79,6 +80,11 @@ def keyword_hint(
         Required with ``former``; see :data:`Translate`.
     why : str, optional
         ``Why:`` line for a call that ``former`` explains.
+    missing : mapping of str to (str, str), optional
+        Required keyword-only options whose omission needs more than Python's
+        "missing argument" message, each mapped to its ``Why:`` sentence and
+        its fix: an option with no defensible default, where the caller has
+        to choose.
 
     Returns
     -------
@@ -98,6 +104,17 @@ def keyword_hint(
         unknown = [name for name in order if name not in options]
         if unknown:
             raise TypeError(f"keyword_hint order names unknown options {unknown}.")
+        required = dict(missing or {})
+        optional = [
+            name
+            for name in required
+            if name not in options
+            or parameters[name].default is not inspect.Parameter.empty
+        ]
+        if optional:
+            raise TypeError(
+                f"keyword_hint missing names options that are not required {optional}."
+            )
         removed = frozenset(former) - parameters.keys()
         accepts_any_keyword = any(p.kind is p.VAR_KEYWORD for p in parameters.values())
         title = function.__qualname__
@@ -206,6 +223,15 @@ def keyword_hint(
         def guarded(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             if len(args) > len(positional):
                 raise positional_error(args, kwargs)
+            for name, (reason, advice) in required.items():
+                if name not in kwargs:
+                    raise TypeError(
+                        _format_error(
+                            f"{title}() needs {name}=.",
+                            why=f"Why: {reason}",
+                            fix=advice,
+                        )
+                    )
             if removed and not removed.isdisjoint(kwargs):
                 raise former_error(kwargs)
             if not accepts_any_keyword and redirect is not None:

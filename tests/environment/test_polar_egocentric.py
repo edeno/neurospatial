@@ -887,7 +887,7 @@ class TestPolarRaisesOnCartesianAssumingMethods:
     def test_smooth_works_on_polar_env(self, polar_env):
         field = np.zeros(polar_env.n_bins, dtype=float)
         field[0] = 1.0
-        smoothed = polar_env.smooth(field, bandwidth=5.0)
+        smoothed = polar_env.smooth(field, bandwidth=5.0, mode="average")
         assert smoothed.shape == (polar_env.n_bins,)
 
     def test_repr_shows_polar_class_name(self, polar_env):

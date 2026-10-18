@@ -159,6 +159,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Smoothing methods require mode: no one mode is right for every field.
+_MODE_CHOICE = (
+    "a field of values per bin (a rate map) and a field of totals per bin "
+    "(counts, occupancy) are smoothed differently, and the modes give "
+    "different numbers for the same field.",
+    "pass mode='average' for a rate map or other value per bin, "
+    "mode='transition' for counts, occupancy or probability mass (keeps the "
+    "total), or mode='density' to turn counts into a density",
+)
+
 if TYPE_CHECKING:
     from typing_extensions import TypeVar as _CoordinateTypeVar
 
@@ -1053,10 +1063,10 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> data = np.random.default_rng(0).uniform(0, 100, size=(1000, 2))
         >>> env = Environment.from_samples(data, bin_size=5.0)
-        >>> kernel = env.compute_kernel(bandwidth=10.0)
+        >>> kernel = env.compute_kernel(bandwidth=10.0, mode="average")
         >>> renamed = env.with_metadata(name="session 2")
         >>> env.clear_cache()  # also clears the cache that ``renamed`` uses
-        >>> np.allclose(renamed.compute_kernel(bandwidth=10.0), kernel)
+        >>> np.allclose(renamed.compute_kernel(bandwidth=10.0, mode="average"), kernel)
         True
         """
         self._cache.clear()
@@ -2512,6 +2522,7 @@ class Environment(Generic[_C]):
         *,
         name: str | None = None,
         frame: str | None = None,
+        units: str | None | _Unset = UNSET,
     ) -> Environment[CartesianSystem]:
         """Apply affine transformation to environment, returning a new instance.
 
@@ -2552,6 +2563,14 @@ class Environment(Generic[_C]):
             ``"session2"``. The default ``None`` leaves the frame unlabeled,
             because the transformed coordinates are no longer in this
             environment's frame.
+        units : str or None, optional
+            Length unit of the transformed coordinates, such as ``"cm"`` after
+            a pixel-to-centimeter calibration. Omission keeps this
+            environment's units, which is allowed only when the transform
+            keeps lengths (a translation, rotation or reflection) or the
+            environment has no units. A transform that scales or shears
+            lengths may be a unit conversion or a stretch in the same units,
+            so it needs ``units=``: the new unit, or ``env.units`` to keep it.
 
         Returns
         -------
@@ -2562,7 +2581,8 @@ class Environment(Generic[_C]):
             - `bin_centers`: All bin positions are transformed
             - `connectivity`: Node 'pos' attributes updated, edge distances/vectors recomputed
             - `regions`: Point and polygon regions are transformed
-            - `metadata`: Name and units preserved; frame set from ``frame``
+            - `metadata`: Name preserved; units set from ``units`` (kept when
+              omitted); frame set from ``frame``
 
             Bin IDs and edge ordering are retained. Cell/face measures and
             available numerical capabilities follow the transformed geometry.
@@ -2574,7 +2594,8 @@ class Environment(Generic[_C]):
             If transform dimensionality doesn't match environment dimensionality,
             the transform is not invertible, or a track receives a non-similarity
             transform. Rebuild such a track from transformed nodes with
-            ``Environment.from_graph``.
+            ``Environment.from_graph``. Also if the transform changes lengths,
+            the environment has units, and ``units`` is omitted.
 
         See Also
         --------
@@ -2717,7 +2738,31 @@ class Environment(Generic[_C]):
             arena=self._arena,
             cache=self._cache,
         )
-        return publish_derived(self, derivation, name=name, frame=frame)
+        scale = derivation.length_scale
+        if (
+            isinstance(units, _Unset)
+            and self.units is not None
+            and (scale is None or abs(scale - 1.0) > 1e-9)
+        ):
+            change = (
+                f"scales lengths by {scale:.6g}"
+                if scale is not None
+                else "stretches or shears lengths"
+            )
+            raise ValueError(
+                _format_error(
+                    f"apply_transform() {change}, so lengths may no longer be "
+                    f"in {self.units!r}.",
+                    why="Why: a transform that changes lengths is often a unit "
+                    "conversion, such as pixels to centimeters, but can also "
+                    "stretch an arena in the same units; only the caller knows "
+                    "which.",
+                    fix="pass the unit of the transformed coordinates, as in "
+                    "env.apply_transform(transform, units='cm'), or "
+                    f"units={self.units!r} to keep it",
+                )
+            )
+        return publish_derived(self, derivation, name=name, frame=frame, units=units)
 
     @classmethod
     @keyword_hint()
@@ -2830,6 +2875,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
@@ -2882,6 +2928,18 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
             from the active cells; an unvisited patch is not a declared wall.
+            With a known outline, the grid tiles the arena's bounds unless
+            `dimension_ranges` is given.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``, as a LayoutType member or a
             case-insensitive string. For "Hexagonal", `bin_size` is the
@@ -2890,8 +2948,10 @@ class Environment(Generic[_C]):
             :meth:`from_layout`.
         dimension_ranges : sequence of (float, float), optional
             ``[(min, max), ...]`` extent to tile on each axis, in the units of
-            `positions`. By default the extent of the samples plus half a bin
-            on each side.
+            `positions`. By default the bounds of `arena` when it has a known
+            outline, so cell edges start at the arena's edge and walls on that
+            lattice fall on cell faces; otherwise the extent of the samples
+            plus half a bin on each side.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are
             "active." If False, every bin in the extent is active, and the
@@ -3025,6 +3085,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             layout=layout,
             dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
@@ -3048,6 +3109,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         dimension_ranges: Sequence[tuple[float, float]] | None = None,
         infer_active_bins: bool = True,
@@ -3085,6 +3147,16 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
             from the active cells.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``. See :meth:`from_samples`.
         dimension_ranges : sequence of (float, float), optional
@@ -3153,6 +3225,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             layout=layout,
             dimension_ranges=dimension_ranges,
             infer_active_bins=infer_active_bins,
@@ -3598,6 +3671,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D grid Environment masked by a Shapely Polygon.
@@ -3630,6 +3704,16 @@ class Environment(Generic[_C]):
             retain whole bins by strict center inclusion; use ``env.clip``
             to change cell areas. When omitted, the supplied polygon defines
             the physical footprint.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -3678,6 +3762,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
@@ -3693,6 +3778,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
@@ -3730,6 +3816,16 @@ class Environment(Generic[_C]):
             retain whole bins by strict center inclusion. When omitted, the
             mask defines the computational domain without asserting physical
             walls or a measured footprint.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -3772,6 +3868,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
@@ -3787,6 +3884,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment[CartesianSystem]:
         """Create a 2D Environment from a binary image / pixel mask.
@@ -3821,6 +3919,16 @@ class Environment(Generic[_C]):
             retain whole pixels by strict center inclusion. When omitted, the
             image mask defines a computational domain without asserting
             physical walls or a measured footprint.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -3863,6 +3971,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
@@ -3885,6 +3994,7 @@ class Environment(Generic[_C]):
         frame: str | None = None,
         regions: Regions | None = None,
         arena: Arena | None = None,
+        wall_fit: Literal["snap", "split"] = "snap",
     ) -> Environment[CartesianSystem]:
         """Create an Environment from a built layout engine.
 
@@ -3911,6 +4021,16 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Continuous domain. Bins whose centers fall outside a known arena
             are left out. Otherwise the domain is inferred from the layout.
+        wall_fit : {'snap', 'split'}, default='snap'
+            What to do with a bin that a wall of `arena` divides. ``'snap'``
+            keeps every bin and moves the wall onto the bin edges between the
+            bins it divides, warning how far it moved (at most about half a
+            bin); every analysis then works as on any grid. ``'split'`` cuts
+            each such bin along the wall into one exact polygon bin per side,
+            keeping the measured wall. Smoothing and other finite-volume
+            operations refuse a split bin next to a wall's end or a diagonal
+            wall, so use it with ``method='binned'`` rates or wall-distance
+            measures. Bins no wall divides are the same either way.
 
         Returns
         -------
@@ -3966,6 +4086,7 @@ class Environment(Generic[_C]):
             frame=frame,
             regions=regions,
             arena=arena,
+            wall_fit=wall_fit,
         )
 
     @classmethod
@@ -6002,12 +6123,12 @@ class Environment(Generic[_C]):
             ),
         )
 
-    @keyword_hint("bandwidth")
+    @keyword_hint("bandwidth", missing={"mode": _MODE_CHOICE})
     def compute_kernel(
         self,
         *,
         bandwidth: float,
-        mode: KernelMode = "density",
+        mode: KernelMode,
         cache: bool = True,
     ) -> NDArray[np.float64]:
         """Compute the finite-volume diffusion kernel for smoothing operations.
@@ -6024,8 +6145,9 @@ class Environment(Generic[_C]):
             the diffusion), must be > 0. This is the true physical σ: a
             point source smoothed by this kernel has physical standard
             deviation ``bandwidth`` regardless of bin size.
-        mode : {'transition', 'density', 'average'}, default='density'
-            Kernel orientation, distinguished by the input field type:
+        mode : {'transition', 'density', 'average'}
+            Kernel orientation, chosen by what the field holds; there is no
+            default, because the modes give different numbers for one field:
 
             - 'transition': ``Hᵀ`` — column-stochastic (``sum_i K[i, j] = 1``).
               ``K @ field`` conserves ``sum(field)``; use for **extensive**
@@ -6198,13 +6320,13 @@ class Environment(Generic[_C]):
             diffusion_eigenbasis(self._cache), self.n_bins, bandwidth
         )
 
-    @keyword_hint("bandwidth")
+    @keyword_hint("bandwidth", missing={"mode": _MODE_CHOICE})
     def smooth(
         self,
         field: NDArray[np.float64],
         *,
         bandwidth: float,
-        mode: KernelMode = "average",
+        mode: KernelMode,
     ) -> NDArray[np.float64]:
         """Apply diffusion kernel smoothing to a field.
 
@@ -6226,11 +6348,11 @@ class Environment(Generic[_C]):
         bandwidth : float
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
-        mode : {'transition', 'density', 'average'}, default='average'
-            Smoothing mode, distinguished by the **input type**. The default
-            ``'average'`` preserves the units and level of an intensive field
-            such as a firing-rate map. For the previous count-to-density
-            behavior, pass ``mode='density'`` explicitly.
+        mode : {'transition', 'density', 'average'}
+            Smoothing mode, chosen by what the field holds. There is no
+            default: the modes give different numbers for the same field, and
+            only the caller knows whether it holds totals or values per bin.
+            Use ``'average'`` for a firing-rate map.
 
             - 'transition': Mass-conserving smoothing of an **extensive**
               quantity (a total per bin). Total sum is preserved:
@@ -6351,11 +6473,12 @@ class Environment(Generic[_C]):
         ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
         ... )
 
-        Smoothing an intensive rate map keeps its units and level, so a flat
-        4 Hz map stays 4 Hz:
+        Smoothing a rate map with ``mode="average"`` keeps its units and
+        level, so a flat 4 Hz map stays 4 Hz:
 
         >>> firing_rate = np.full(env.n_bins, 4.0)
-        >>> bool(np.allclose(env.smooth(firing_rate, bandwidth=5.0), 4.0))
+        >>> smoothed = env.smooth(firing_rate, bandwidth=5.0, mode="average")
+        >>> bool(np.allclose(smoothed, 4.0))
         True
 
         Smoothing spike counts with ``mode="transition"`` conserves the total:
@@ -6384,13 +6507,13 @@ class Environment(Generic[_C]):
         """
         return _smooth(self._cache, self._binning, field, bandwidth, mode=mode)
 
-    @keyword_hint("bandwidth")
+    @keyword_hint("bandwidth", missing={"mode": _MODE_CHOICE})
     def diffuse(
         self,
         fields: Any,
         *,
         bandwidth: float,
-        mode: KernelMode = "density",
+        mode: KernelMode,
         backend: Literal["numpy", "jax"] = "numpy",
     ) -> NDArray[np.float64]:
         """Matrix-free finite-volume diffusion smoothing (no ``(n, n)`` kernel).
@@ -6432,8 +6555,9 @@ class Environment(Generic[_C]):
         bandwidth : float
             Physical smoothing standard deviation σ (> 0), independent of bin
             size on any supported layout.
-        mode : {'transition', 'density', 'average'}, default='density'
-            Kernel orientation, matching :meth:`compute_kernel` / :meth:`smooth`
+        mode : {'transition', 'density', 'average'}
+            Kernel orientation, required as for :meth:`smooth`, matching
+            :meth:`compute_kernel` / :meth:`smooth`
             (``'transition'`` = ``Hᵀ`` mass-conserving extensive smoothing;
             ``'density'`` = ``H·M⁻¹`` count→density; ``'average'`` = ``H``
             row-stochastic intensive averaging).

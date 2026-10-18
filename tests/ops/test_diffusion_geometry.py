@@ -119,7 +119,7 @@ def test_all_diffusion_consumers_share_provider_snapshot(face_env, monkeypatch):
 def test_clear_cache_rebuilds_geometry_and_both_eigenbases(face_env):
     env = face_env
     before = env.compute_kernel(bandwidth=1.0, mode="average")
-    env.diffuse(np.ones(3), bandwidth=1.0)
+    env.diffuse(np.ones(3), bandwidth=1.0, mode="density")
     env.get_mrf_basis(np.ones(3), rank=3)
     old_geometry = env._diffusion_geometry
     old_diffusion_cache = diffusion_eigenbasis(env._cache)
@@ -160,7 +160,8 @@ def test_layout_subclass_publishes_through_its_binning():
     renamed = Environment.from_layout(subclass)
     assert renamed.layout_type == original.layout_type == "MaskedGrid"
     np.testing.assert_array_equal(
-        renamed.compute_kernel(bandwidth=1.0), original.compute_kernel(bandwidth=1.0)
+        renamed.compute_kernel(bandwidth=1.0, mode="density"),
+        original.compute_kernel(bandwidth=1.0, mode="density"),
     )
 
 
@@ -284,8 +285,8 @@ def test_round_trips_and_their_copies_use_the_saved_graph(make_env, how, tmp_pat
             divergence(env, gradient(env, field)), expected_divergence
         )
         np.testing.assert_allclose(
-            env.compute_kernel(bandwidth=3.0),
-            original.compute_kernel(bandwidth=3.0),
+            env.compute_kernel(bandwidth=3.0, mode="density"),
+            original.compute_kernel(bandwidth=3.0, mode="density"),
             atol=1e-12,
         )
 
@@ -624,7 +625,8 @@ def test_legacy_polar_parameters_restore_saved_connectivity(circular):
     assert restored.coordinate_system.circular is circular
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
     np.testing.assert_allclose(
-        restored.compute_kernel(bandwidth=3.0), original.compute_kernel(bandwidth=3.0)
+        restored.compute_kernel(bandwidth=3.0, mode="density"),
+        original.compute_kernel(bandwidth=3.0, mode="density"),
     )
 
 
@@ -640,9 +642,15 @@ def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env)
 @pytest.mark.parametrize(
     ("call", "operation"),
     [
-        (lambda env: env.smooth(np.ones(env.n_bins), bandwidth=3.0), "smoothing"),
-        (lambda env: env.compute_kernel(bandwidth=3.0), "smoothing"),
-        (lambda env: env.diffuse(np.ones(env.n_bins), bandwidth=3.0), "smoothing"),
+        (
+            lambda env: env.smooth(np.ones(env.n_bins), bandwidth=3.0, mode="average"),
+            "smoothing",
+        ),
+        (lambda env: env.compute_kernel(bandwidth=3.0, mode="density"), "smoothing"),
+        (
+            lambda env: env.diffuse(np.ones(env.n_bins), bandwidth=3.0, mode="density"),
+            "smoothing",
+        ),
         (lambda env: gradient(env, np.ones(env.n_bins)), "gradient/divergence"),
         (
             lambda env: divergence(env, np.ones(env.connectivity.number_of_edges())),
@@ -692,7 +700,7 @@ def test_dense_kernel_warning_points_at_the_callers_line(monkeypatch, face_env):
     nx.set_edge_attributes(graph, 1.0, "distance")
     with pytest.warns(UserWarning, match="dense diffusion kernel") as record:
         compute_diffusion_kernels(graph, volumes=np.ones(3), sigma=1.0, mode="average")
-        face_env.compute_kernel(bandwidth=1.0, cache=False)
+        face_env.compute_kernel(bandwidth=1.0, cache=False, mode="density")
     dense = [w for w in record if "dense diffusion kernel" in str(w.message)]
     assert [w.filename for w in dense] == [__file__, __file__]
 
@@ -706,15 +714,17 @@ def test_mesh_skew_warning_is_raised_once_per_geometry_at_the_callers_line():
         )
     )
     with pytest.warns(UserWarning, match="non-K-orthogonal") as record:
-        env.compute_kernel(bandwidth=3.0)
+        env.compute_kernel(bandwidth=3.0, mode="density")
     skew = [w for w in record if "non-K-orthogonal" in str(w.message)]
     assert [w.filename for w in skew] == [__file__]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        env.compute_kernel(bandwidth=5.0, cache=False)  # the cached geometry is reused
+        env.compute_kernel(
+            bandwidth=5.0, cache=False, mode="density"
+        )  # the cached geometry is reused
     env.clear_cache()
     with pytest.warns(UserWarning, match="non-K-orthogonal"):
-        env.smooth(np.ones(env.n_bins), bandwidth=3.0)
+        env.smooth(np.ones(env.n_bins), bandwidth=3.0, mode="average")
 
 
 # ---------------------------------------------------------------------------

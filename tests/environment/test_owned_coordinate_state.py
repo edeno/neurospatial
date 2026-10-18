@@ -40,7 +40,8 @@ def test_polar_coordinate_state_is_owned(n_angle, circular, restore):
     restored = restore(env)
     assert restored.coordinate_system == expected
     np.testing.assert_array_equal(
-        restored.compute_kernel(bandwidth=0.8), env.compute_kernel(bandwidth=0.8)
+        restored.compute_kernel(bandwidth=0.8, mode="density"),
+        env.compute_kernel(bandwidth=0.8, mode="density"),
     )
 
 

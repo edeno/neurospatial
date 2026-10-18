@@ -204,5 +204,5 @@ class ResampleTargetConsumer(
     """
 
     def diffuse(
-        self, fields: Any, *, bandwidth: float, mode: KernelMode = ...
+        self, fields: Any, *, bandwidth: float, mode: KernelMode
     ) -> NDArray[np.float64]: ...

@@ -75,7 +75,7 @@ def test_nearest_only_bins_keep_explicit_lookup_and_refuse_cell_capabilities():
     )
     assert not env.arena.domain_known
     with pytest.raises(NotImplementedError, match=r"faces|finite-volume"):
-        env.compute_kernel(bandwidth=1.0)
+        env.compute_kernel(bandwidth=1.0, mode="density")
     with pytest.raises(ValueError, match=r"cell|polygon|clip"):
         env.clip(box(-1, -1, 3, 4))
     with pytest.raises(NotImplementedError, match=r"time_allocation='start'"):

@@ -210,12 +210,12 @@ def test_faces_match_layout_and_cache_lifetime(
     assert env._binning.faces.build() is not env._binning.faces.build()
 
     field = np.arange(env.n_bins, dtype=float)
-    before = env.smooth(field, bandwidth=1.0)
+    before = env.smooth(field, bandwidth=1.0, mode="average")
     published = env._binning
     env.clear_cache()
     assert env._binning is published
     assert face_geometry(env._cache, env._binning) is not faces
-    np.testing.assert_allclose(env.smooth(field, bandwidth=1.0), before)
+    np.testing.assert_allclose(env.smooth(field, bandwidth=1.0, mode="average"), before)
 
 
 @pytest.mark.parametrize(
@@ -271,7 +271,7 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
         )
     )
     geometry, published = env._geometry, env._binning
-    kernel = env.compute_kernel(bandwidth=1.0)
+    kernel = env.compute_kernel(bandwidth=1.0, mode="density")
     cache, n_cached = env._cache, len(env._cache)
     layout = _source_layout(env)
     monkeypatch.setattr(layout, "bin_sizes", lambda: np.full(env.n_bins, np.nan))
@@ -282,7 +282,9 @@ def test_invalid_binning_is_not_published(monkeypatch) -> None:
     assert env._geometry is geometry
     assert env._binning is published
     assert env._cache is cache and len(cache) == n_cached
-    np.testing.assert_array_equal(env.compute_kernel(bandwidth=1.0), kernel)
+    np.testing.assert_array_equal(
+        env.compute_kernel(bandwidth=1.0, mode="density"), kernel
+    )
 
 
 def test_faces_reject_changed_pair_order() -> None:
@@ -327,7 +329,8 @@ def test_non_grid_nwb_record_retains_faces() -> None:
     assert restored._binning.linearization is None
     field = np.arange(env.n_bins, dtype=float)
     np.testing.assert_array_equal(
-        restored.smooth(field, bandwidth=1.0), env.smooth(field, bandwidth=1.0)
+        restored.smooth(field, bandwidth=1.0, mode="average"),
+        env.smooth(field, bandwidth=1.0, mode="average"),
     )
 
 

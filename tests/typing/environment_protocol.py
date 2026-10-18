@@ -26,9 +26,15 @@ if TYPE_CHECKING:
         _ = polar.interpolate  # type: ignore[misc]
         assert_type(polar.bin_at(field[:, None]), NDArray[np.intp])
         assert_type(polar.contains(field[:, None]), NDArray[np.bool_])
-        assert_type(cartesian.smooth(field, bandwidth=1.0), NDArray[np.float64])
-        assert_type(polar.smooth(field, bandwidth=1.0), NDArray[np.float64])
-        assert_type(cartesian.diffuse(field, bandwidth=1.0), NDArray[np.float64])
+        assert_type(
+            cartesian.smooth(field, bandwidth=1.0, mode="average"), NDArray[np.float64]
+        )
+        assert_type(
+            polar.smooth(field, bandwidth=1.0, mode="average"), NDArray[np.float64]
+        )
+        assert_type(
+            cartesian.diffuse(field, bandwidth=1.0, mode="density"), NDArray[np.float64]
+        )
         assert_type(polar.to_dict(), dict[str, Any])
         assert_type(cartesian.neighbors(bins=0), list[int])
 

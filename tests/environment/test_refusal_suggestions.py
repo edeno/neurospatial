@@ -139,7 +139,9 @@ def _widthless_track_transformed() -> dict[str, Any]:
 
     names = _widthless_track()
     rotation = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
-    names["env"] = names["env"].apply_transform(AffineND(rotation))
+    names["env"] = names["env"].apply_transform(
+        AffineND(rotation), units=names["env"].units
+    )
     names["positions"] = names["positions"] @ rotation[:2, :2].T + rotation[:2, 2]
     names["width"] = 20.0  # the track doubled in size
     return names
@@ -223,7 +225,9 @@ CASES: dict[str, Case] = {
         "Environment.from_samples(positions, bin_size=8, layout='Hexagonal')",
     ),
     "hexagonal rebin(2), smoothing instead": Case(
-        _hexagons, lambda n: n["env"].rebin(2), "env.smooth(field, bandwidth=8)"
+        _hexagons,
+        lambda n: n["env"].rebin(2),
+        "env.smooth(field, bandwidth=8, mode='average')",
     ),
     "hexagonal rebin(bin_size=10)": Case(
         _hexagons,
@@ -238,7 +242,9 @@ CASES: dict[str, Case] = {
         "edge_spacing=5.0, track_width=10)",
     ),
     "track rebin(2), smoothing instead": Case(
-        _track, lambda n: n["env"].rebin(2), "env.smooth(field, bandwidth=4)"
+        _track,
+        lambda n: n["env"].rebin(2),
+        "env.smooth(field, bandwidth=4, mode='average')",
     ),
     "mesh rebin(2)": Case(
         _mesh,
@@ -428,23 +434,23 @@ CASES: dict[str, Case] = {
     # fields
     "smooth with bins last": Case(
         lambda: {"env": _grid(), "field": np.ones((3, 100))},
-        lambda n: n["env"].smooth(n["field"], bandwidth=2.0),
-        "env.smooth(field.T, bandwidth=2.0).T",
+        lambda n: n["env"].smooth(n["field"], bandwidth=2.0, mode="average"),
+        "env.smooth(field.T, bandwidth=2.0, mode='average').T",
     ),
     "diffuse with bins last": Case(
         lambda: {"env": _grid(), "fields": np.ones((3, 100))},
-        lambda n: n["env"].diffuse(n["fields"], bandwidth=2.0),
-        "env.diffuse(fields.T, bandwidth=2.0).T",
+        lambda n: n["env"].diffuse(n["fields"], bandwidth=2.0, mode="density"),
+        "env.diffuse(fields.T, bandwidth=2.0, mode='density').T",
     ),
     "smooth(rate result)": Case(
         lambda: _rates(population=False),
-        lambda n: n["env"].smooth(n["result"], bandwidth=10.0),
-        "env.smooth(result.firing_rate, bandwidth=10.0)",
+        lambda n: n["env"].smooth(n["result"], bandwidth=10.0, mode="average"),
+        "env.smooth(result.firing_rate, bandwidth=10.0, mode='average')",
     ),
     "smooth(population rate result)": Case(
         lambda: _rates(population=True),
-        lambda n: n["env"].smooth(n["result"], bandwidth=10.0),
-        "env.smooth(result.firing_rates.T, bandwidth=10.0).T",
+        lambda n: n["env"].smooth(n["result"], bandwidth=10.0, mode="average"),
+        "env.smooth(result.firing_rates.T, bandwidth=10.0, mode='average').T",
     ),
     # regions
     "region_membership(list of names)": Case(
@@ -521,7 +527,9 @@ _SIMILARITY = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
 def _doubled(build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     """The names of ``build`` after ``_SIMILARITY``, positions included."""
     names = build()
-    names["env"] = names["env"].apply_transform(AffineND(_SIMILARITY))
+    names["env"] = names["env"].apply_transform(
+        AffineND(_SIMILARITY), units=names["env"].units
+    )
     if "positions" in names:
         names["positions"] = (
             names["positions"] @ _SIMILARITY[:2, :2].T + _SIMILARITY[:2, 2]
@@ -589,7 +597,9 @@ def test_suggested_track_rebuild_keeps_a_transformed_track_width():
 
     names = _track()
     rotation = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
-    names["env"] = names["env"].apply_transform(AffineND(rotation))
+    names["env"] = names["env"].apply_transform(
+        AffineND(rotation), units=names["env"].units
+    )
     with pytest.raises(NotImplementedError) as caught:
         names["env"].rebin(2)
     fix = str(caught.value).splitlines()[-1]

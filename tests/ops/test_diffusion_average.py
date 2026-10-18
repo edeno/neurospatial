@@ -75,10 +75,12 @@ def test_smooth_default_preserves_rate_level_and_volume_integral(polar_env):
     )
     for env in (coarse, polar_env):
         np.testing.assert_allclose(
-            env.smooth(np.full(env.n_bins, 7.0), bandwidth=4.0), 7.0, atol=1e-9
+            env.smooth(np.full(env.n_bins, 7.0), bandwidth=4.0, mode="average"),
+            7.0,
+            atol=1e-9,
         )
         rates = np.linspace(-2.0, 5.0, env.n_bins)
-        smoothed = env.smooth(rates, bandwidth=4.0)
+        smoothed = env.smooth(rates, bandwidth=4.0, mode="average")
         np.testing.assert_allclose(
             np.dot(smoothed, env.bin_sizes), np.dot(rates, env.bin_sizes), rtol=1e-9
         )
