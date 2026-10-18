@@ -73,11 +73,13 @@ def border_score(
         by field cells; distance is mean center-to-wall distance normalized by
         the wall diameter (maximum point separation). Geodesic mode adds center-to-wall seed
         lengths to paths on the retained graph; unavailable routes return NaN.
-        Every measured wall segment must have retained cells with finite firing
-        rates. Missing cells or observations make physical scoring unavailable;
-        adding arena geometry alone does not supply them. For a rotated
-        rectangular arena, build bins in its aligned frame, then transform bins,
-        arena and observations together.
+        Every measured wall segment must be owned by a retained bin with a
+        finite firing rate: the bin whose cell touches it, or, where a curved or
+        diagonal wall runs through a grid cell that was not kept (a sliver),
+        the neighboring bin that owns positions there. Missing cells or
+        observations make physical scoring unavailable; adding arena geometry
+        alone does not supply them. The wall geometry is prepared once per
+        environment and reused for every rate map.
         Analysis mode explicitly retains the legacy boundary-bin formula below.
         It treats analysis edges as an approximation, not measured walls.
 
@@ -96,8 +98,8 @@ def border_score(
     NotImplementedError
         If physical wall geometry is unavailable, the arena or a combined
         component has no measured footprint (internal walls alone are not
-        enough), or any measured wall segment lacks retained cells with
-        finite firing rates. Missing observations are
+        enough), or any measured wall segment is owned by no retained bin with
+        a finite firing rate. Missing observations are
         not evidence for zero firing; explicitly select the analysis-boundary
         approximation when that is the intended measurement.
 
@@ -112,7 +114,8 @@ def border_score(
     4. Border score: `(cM - d) / (cM + d)`
 
     **Physical-mode algorithm**: replace boundary-bin coverage with the
-    fraction of declared wall length covered by the union of field cells.
+    fraction of declared wall length owned by the field's bins (their cells'
+    wall contact, plus the wall pieces in neighboring slivers).
     Measure mean distance from field centers to actual walls, rather than to
     boundary-bin centers. Normalize by the wall diameter (maximum point separation). Geodesic
     distances use wall-adjacent seeds with their nonzero wall distances and
@@ -255,9 +258,13 @@ def border_score(
     )
     physical_contact = None
     if walls is not None:
-        from neurospatial.encoding._physical_border import _prepare_physical_border
+        from neurospatial.encoding._physical_border import (
+            _require_wall_rates,
+            physical_border_geometry,
+        )
 
-        physical_contact = _prepare_physical_border(env, firing_rate, walls)
+        physical_contact = physical_border_geometry(env, walls)
+        _require_wall_rates(physical_contact, firing_rate)
 
     # Handle all-NaN or all-zero
     if np.all(np.isnan(firing_rate)) or np.all(firing_rate == 0):
@@ -285,7 +292,7 @@ def border_score(
     if walls is not None and physical_contact is not None:
         from neurospatial.encoding._physical_border import _physical_border_score
 
-        return _physical_border_score(env, field_bins, walls, metric, physical_contact)
+        return _physical_border_score(field_bins, metric, physical_contact)
 
     # Explicit legacy approximation: analysis-boundary bins.
     boundary_bins = env.boundary_bins
