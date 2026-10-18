@@ -1351,7 +1351,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   changed bins after a rotation. Positions inside a bin are unchanged, and
   the same rule now applies inside environments built with
   `Environment.combine`. Finding bins on a rotated grid takes about 1.4 times
-  as long (0.42 s instead of 0.31 s for a million 2-D positions).
+  as long (0.42 s instead of 0.31 s for a million 2-D positions). A rotated
+  grid that is then cut with `clip` has polygon cells instead of a grid, and
+  points exactly on its cell edges can still fall outside every cell, as
+  before.
 
 - `rebin(2)` on a pixel-mask grid that was clipped to a polygon suggests
   the coarser cell size, `env.rebin(bin_size=10)` for 5 cm pixels, instead
