@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 import networkx as nx
 import numpy as np
 
-from neurospatial.geometry import Binning, bridge_values, composition_view
+from neurospatial.geometry import (
+    Binning,
+    CoordinateSystem,
+    bridge_values,
+    composition_view,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -47,12 +52,14 @@ def _bin_attributes(graph: nx.Graph) -> pd.DataFrame:
     return df.set_index("node_id")
 
 
-def _edge_attributes(graph: nx.Graph, binning: Binning) -> pd.DataFrame:
+def _edge_attributes(
+    graph: nx.Graph, binning: Binning, coordinates: CoordinateSystem
+) -> pd.DataFrame:
     """Edge attributes in bin-pair order, vectors oriented from source to target."""
     import pandas as pd
 
     edge_attrs = []
-    centers = binning.bins.centers
+    places = coordinates.cartesian_embedding(binning.bins.centers)
     graph_orientation = {
         frozenset((source, target)): (source, target)
         for source, target in graph.edges()
@@ -63,7 +70,7 @@ def _edge_attributes(graph: nx.Graph, binning: Binning) -> pd.DataFrame:
             # Undirected graph insertion order does not establish the
             # orientation of retained attributes. Derive it from the pair
             # instead of blindly negating a possibly already aligned vector.
-            vector = centers[target] - centers[source]
+            vector = places[target] - places[source]
             vector[vector == 0.0] = 0.0
             attrs["vector"] = tuple(vector)
             if "angle_2d" in attrs:

@@ -5933,8 +5933,8 @@ class Environment(Generic[_C]):
         Extract edge attributes as a pandas DataFrame.
 
         Returns a DataFrame where each row corresponds to an edge (connection
-        between bins), with columns for edge attributes like distances, vectors,
-        and any custom metadata.
+        between bins), with columns for edge attributes like distances and
+        vectors.
 
         Returns
         -------
@@ -5944,10 +5944,15 @@ class Environment(Generic[_C]):
             - `'source'`: Source bin ID
             - `'target'`: Target bin ID
             - `'distance'`: Stored navigation distance between bins
-            - `'vector'`: Displacement vector tuple
+            - `'vector'`: Displacement vector tuple from source to target
+              center, in length units. On an egocentric polar environment it
+              is the displacement in the animal's plane (x ahead, y left),
+              not a difference of ``(distance, angle)`` coordinates.
             - `'vector_dim0'`, `'vector_dim1'`, ...: Displacement components
             - `'edge_id'`: Unique edge ID
-            - `'angle_2d'`: Angle for 2D layouts (optional)
+            - `'angle_2d'`: Direction of ``vector`` in radians, for 2D
+              layouts (optional); egocentric on a polar environment
+              (0 = ahead, +π/2 = left)
 
         Notes
         -----
@@ -5983,7 +5988,9 @@ class Environment(Generic[_C]):
     def _edge_attributes_cached(self) -> pd.DataFrame:
         return self._cache.get(
             EDGE_ATTRIBUTES,
-            lambda: _edge_attributes(self.connectivity, self._binning),
+            lambda: _edge_attributes(
+                self.connectivity, self._binning, self.coordinate_system
+            ),
         )
 
     @keyword_hint("bandwidth")

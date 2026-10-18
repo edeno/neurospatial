@@ -249,7 +249,9 @@ class _PublishedGraph(nx.Graph):
         super().__delattr__(name)
 
 
-def _published_graph(binning: Binning) -> _PublishedGraph:
+def _published_graph(
+    binning: Binning, coordinates: CartesianSystem | EgocentricPolarSystem
+) -> _PublishedGraph:
     """Build the frozen navigation graph an environment publishes for ``binning``.
 
     Nodes, attributes and edge orientation follow
@@ -257,7 +259,10 @@ def _published_graph(binning: Binning) -> _PublishedGraph:
     edge keeps one attribute record shared by both directions.
     """
     graph = graph_from_binning(
-        binning, graph_class=_PublishedGraph, attributes=_ReadOnlyGraphAttributes
+        binning,
+        coordinates=coordinates,
+        graph_class=_PublishedGraph,
+        attributes=_ReadOnlyGraphAttributes,
     )
     graph.__dict__["graph"] = _ReadOnlyGraphAttributes()
     nx.freeze(graph)
@@ -525,7 +530,7 @@ def _publish(
     validate_arena(arena, binning, coordinates)
     binning = apply_walls(binning, arena)
     # Built here from the validated bins, so its attributes need no check.
-    graph = _published_graph(binning)
+    graph = _published_graph(binning, coordinates)
     env = cls.__new__(cls)
     env._metadata = metadata
     env._provenance = provenance

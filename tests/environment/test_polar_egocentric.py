@@ -1428,6 +1428,40 @@ def test_owned_metadata_and_graph_exports_preserve_polar_coordinates():
         )
 
 
+@pytest.mark.parametrize("export", ["table", "graph"])
+def test_edge_vectors_are_displacements_in_the_animal_plane(export):
+    """Edge vectors are lengths in the egocentric plane, not (cm, rad) mixes.
+
+    Across the angular seam the displacement is the short chord between
+    neighbors, not a jump of almost a full turn in angle.
+    """
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 40.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 4,
+    )
+    if export == "table":
+        table = env.get_edge_attributes()
+        sources, targets = table["source"].to_numpy(), table["target"].to_numpy()
+        vectors = np.array(table["vector"].tolist())
+        angles = table["angle_2d"].to_numpy()
+    else:
+        edges = list(env.to_networkx().edges(data=True))
+        sources = np.array([u for u, _, _ in edges])
+        targets = np.array([v for _, v, _ in edges])
+        vectors = np.array([data["vector"] for _, _, data in edges])
+        angles = np.array([data["angle_2d"] for _, _, data in edges])
+
+    distance, angle = env.bin_centers[:, 0], env.bin_centers[:, 1]
+    places = np.c_[distance * np.cos(angle), distance * np.sin(angle)]
+    np.testing.assert_allclose(vectors, places[targets] - places[sources], atol=1e-12)
+    np.testing.assert_allclose(angles, np.arctan2(vectors[:, 1], vectors[:, 0]))
+    # Neighbors are never farther apart than one ring step plus one arc step
+    # on the outermost ring.
+    assert np.linalg.norm(vectors, axis=1).max() < 10.0 + 35.0 * np.pi / 4
+
+
 def test_every_public_member_is_classified_for_polar():
     public = {name for name in dir(Environment) if not name.startswith("_")}
     shared = public - CARTESIAN_OPERATIONS

@@ -1343,6 +1343,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- On an egocentric polar environment, the edge `vector` and `angle_2d` in
+  `get_edge_attributes()`, `connectivity` and `to_networkx()` are the
+  displacement between neighboring bins in the animal's plane (x ahead,
+  y left, in length units) and its egocentric direction. Before, they were
+  differences of `(distance, angle)` coordinates, mixing a length with
+  radians, and an edge across the angular seam showed an angle step of almost
+  a full turn instead of one bin.
+
 - `simulate_trajectory_ou(boundary_mode="stop")` holds the animal at the
   wall it reached. Before, the clamp used `bin_at`, which returns `-1` for a
   position outside, and moved the animal to the last bin center, often the
