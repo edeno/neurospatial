@@ -1482,6 +1482,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `env.interpolate(mode="nearest")` keeps every point the environment
+  contains. It had inherited a hidden cutoff of 10 typical bin spacings from
+  the nearest-bin lookup, so a point inside a tall or wide cell but far from
+  its center read NaN (on a grid of 1 x 100 cells, the point (0.5, 1) of a
+  field of ones gave NaN although `env.contains` was True).
+
 - Behavior and event analyses that take a region name (`segment_trials`,
   `detect_region_crossings`, `detect_region_visits`,
   `detect_runs_between_regions`, `running_direction_labels`,
