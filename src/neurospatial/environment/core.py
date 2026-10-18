@@ -6602,9 +6602,10 @@ class Environment(Generic[_C]):
         exact 0-floor — clip the result yourself if you need a strict floor.
 
         A light bandwidth on a large grid needs most modes; there the eigenbasis
-        cannot beat the dense kernel, so ``diffuse`` builds a **transient** dense
-        basis (applied then dropped, never cached) with the same large-matrix
-        ``UserWarning`` as :meth:`compute_kernel`.
+        cannot beat the dense kernel, so ``diffuse`` solves the full dense basis
+        once, with the same large-matrix ``UserWarning`` as
+        :meth:`compute_kernel`, and keeps it for later calls at any bandwidth.
+        :meth:`clear_cache` releases it.
         """
         return _diffuse(
             self._cache, self._binning, fields, bandwidth, mode=mode, backend=backend
