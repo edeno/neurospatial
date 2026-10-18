@@ -1343,6 +1343,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `Environment.arena` and `Environment.clip_mapping` return detached copies,
+  as `Environment.binning` does. Their arrays were read-only but shared with
+  the environment, and reshaping one in place
+  (`env.arena.active_mask.shape = (-1,)`) broke the environment's own lookups:
+  `env.contains` then raised `IndexError`.
+
 - On an egocentric polar environment, the edge `vector` and `angle_2d` in
   `get_edge_attributes()`, `connectivity` and `to_networkx()` are the
   displacement between neighboring bins in the animal's plane (x ahead,

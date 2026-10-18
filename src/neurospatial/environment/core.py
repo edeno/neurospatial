@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Mapping, Sequence
 from typing import (
@@ -374,6 +375,11 @@ class Environment(Generic[_C]):
         return self._geometry.binning
 
     @property
+    def _arena(self) -> Arena:
+        """The arena published with the current geometry."""
+        return self._geometry.arena
+
+    @property
     def binning(self) -> Binning:
         """Return a detached snapshot of bins, lookup and geometry components.
 
@@ -403,17 +409,19 @@ class Environment(Generic[_C]):
     def arena(self) -> Arena:
         """Continuous domain, distinguished from the active analysis bins.
 
-        The owned, immutable record is returned without copying.
+        The returned record is a detached copy, as for :attr:`binning`: its
+        arrays are read-only, and reshaping one in place cannot change this
+        environment.
         """
-        return self._geometry.arena
+        return copy.deepcopy(self._geometry.arena)
 
     @property
     def clip_mapping(self) -> ClipMapping | None:
         """Most recent clip's source-bin mapping, or None before clipping.
 
-        The owned, immutable record is returned without copying.
+        The returned record is a detached copy, as for :attr:`binning`.
         """
-        return self._binning.clip_mapping
+        return copy.deepcopy(self._binning.clip_mapping)
 
     @property
     def edge_pairs(self) -> NDArray[np.intp]:
@@ -444,7 +452,7 @@ class Environment(Generic[_C]):
 
     def _locate(self, positions: NDArray[np.float64], call: str) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
-        return locate(self._binning, self.arena, positions, self._cache, call=call)
+        return locate(self._binning, self._arena, positions, self._cache, call=call)
 
     def _target_bins(
         self,
@@ -463,7 +471,7 @@ class Environment(Generic[_C]):
             points=points,
             region=region,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             indexes=self._cache,
             coordinates=self._geometry.coordinates,
             regions=self.regions if takes_region else None,
@@ -579,7 +587,7 @@ class Environment(Generic[_C]):
         >>> track.derivations
         ('with_track_width',)
         """
-        derivation = _with_track_width(self._binning, self.arena, width)
+        derivation = _with_track_width(self._binning, self._arena, width)
         return publish_derived(self, derivation)
 
     def __repr__(self) -> str:
@@ -1801,7 +1809,7 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             coordinates=self._geometry.coordinates,
             cache=self._cache,
             speed=speed,
@@ -1913,7 +1921,7 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             call="Environment.bin_sequence",
             dedup=dedup,
@@ -2008,7 +2016,7 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             call="Environment.bin_sequence_with_runs",
             dedup=True,
@@ -2131,7 +2139,7 @@ class Environment(Generic[_C]):
             field,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             mode=mode,
         )
@@ -2295,14 +2303,14 @@ class Environment(Generic[_C]):
         """
         derivation, check = _rebin(
             self._binning,
-            self.arena,
+            self._arena,
             self.connectivity,
             self._provenance,
             factor=factor,
             bin_size=bin_size,
         )
         rebinned = publish_derived(self, derivation, name=name)
-        warn_rebin_losses(self._binning, self.arena, rebinned, check)
+        warn_rebin_losses(self._binning, self._arena, rebinned, check)
         return rebinned
 
     @cartesian_only(
@@ -2435,7 +2443,7 @@ class Environment(Generic[_C]):
         """
         derivation = _subset(
             self._binning,
-            self.arena,
+            self._arena,
             self.regions,
             self._cache,
             mask=mask,
@@ -2484,7 +2492,7 @@ class Environment(Generic[_C]):
             Cartesian planar area cells.
         """
         return publish_derived(
-            self, _clip(self._binning, self.arena, polygon), name=name
+            self, _clip(self._binning, self._arena, polygon), name=name
         )
 
     @cartesian_only(
@@ -2705,7 +2713,7 @@ class Environment(Generic[_C]):
             transform,
             binning=self._binning,
             regions=self.regions,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
         )
         return publish_derived(self, derivation, name=name, frame=frame)
@@ -4911,7 +4919,7 @@ class Environment(Generic[_C]):
             region_name,
             self.regions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             include_boundary=include_boundary,
         )
@@ -5030,7 +5038,7 @@ class Environment(Generic[_C]):
         return _region_membership(
             self.regions if regions is None else regions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             include_boundary=include_boundary,
         )
@@ -5111,7 +5119,7 @@ class Environment(Generic[_C]):
             regions,
             named_regions=self.regions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             include_boundary=include_boundary,
         )
 
@@ -6696,7 +6704,7 @@ class Environment(Generic[_C]):
             bins,
             graph=self.connectivity,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             times=times,
             positions=positions,
