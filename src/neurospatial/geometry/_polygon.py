@@ -412,7 +412,7 @@ def split_binning(
     mapping = ClipMapping(
         np.array([parent for parent, _ in records], dtype=np.intp), len(source)
     )
-    return _pieces_binning(binning, source, cells, mapping, ()), mapping
+    return _pieces_binning(binning, source, cells, mapping, (), dividers=walls), mapping
 
 
 def _pieces_binning(
@@ -421,8 +421,14 @@ def _pieces_binning(
     cells: PolygonCells,
     mapping: ClipMapping,
     walls: Sequence[shapely.Geometry],
+    *,
+    dividers: Sequence[shapely.Geometry] | None = None,
 ) -> Binning:
     """Bins, paths and faces of cells cut from ``source``, keeping ancestry.
+
+    ``dividers`` are the walls that separate pieces into closed pairs; they
+    default to ``walls``. Splitting passes its walls here but not as
+    ``walls``, which publication applies afterwards.
 
     Pieces of neighboring source cells are neighbors where their shared
     boundary has an opening past ``walls``; path lengths and face roles come
@@ -436,6 +442,17 @@ def _pieces_binning(
         by_parent[int(parent)].append(child)
     old_faces = binning.faces.build() if binning.faces.available else None
     wall = unary_union(walls)
+    divider = wall if dividers is None else unary_union(dividers)
+
+    def divided(u: int, v: int) -> bool:
+        # The pieces touch, possibly only at a corner, and only on a wall.
+        shared = cells.polygons[u].boundary.intersection(cells.polygons[v].boundary)
+        return (
+            not shared.is_empty
+            and not divider.is_empty
+            and shared.difference(divider).is_empty
+        )
+
     # (u, v, is_open, path_only, distance)
     records: list[tuple[int, int, bool, bool, float]] = []
 
@@ -447,22 +464,43 @@ def _pieces_binning(
             .is_empty
         )
 
-    def closed_record(u: int, v: int) -> tuple[int, int, bool, bool, float]:
-        distance = float(np.hypot.reduce(centers[v] - centers[u]))
-        return (min(u, v), max(u, v), False, False, distance)
-
     links = binning.connections
     parent_distances = np.hypot.reduce(
-        binning.bins.centers[links.pairs[:, 1]]
-        - binning.bins.centers[links.pairs[:, 0]],
+        binning.bins.centers[links.all_pairs[:, 1]]
+        - binning.bins.centers[links.all_pairs[:, 0]],
         axis=1,
     )
-    declared_paths = ~np.isclose(
-        links.pair_distances,
+    # A declared navigation distance differs from the straight center link.
+    declared = ~np.isclose(
+        links.all_distances,
         parent_distances,
         rtol=64 * np.finfo(np.float64).eps,
         atol=0.0,
     )
+    open_rows = np.flatnonzero(links.is_open)
+
+    def distance(u: int, v: int, parent: int | None) -> float:
+        """The parent pair's declared distance, or the new center link."""
+        if parent is None or not declared[parent]:
+            return float(np.hypot.reduce(centers[v] - centers[u]))
+        parent_u, parent_v = links.all_pairs[parent]
+        if not np.array_equal(
+            centers[[u, v]], binning.bins.centers[[parent_u, parent_v]]
+        ):
+            raise _error(
+                "Clipping moved an endpoint of declared navigation "
+                f"path ({parent_u}, {parent_v}).",
+                "use subset() to retain whole bins, or construct "
+                "clipped bins with updated navigation path lengths "
+                "using Environment.from_bins()",
+            )
+        return float(links.all_distances[parent])
+
+    def closed_record(
+        u: int, v: int, parent: int | None
+    ) -> tuple[int, int, bool, bool, float]:
+        return (min(u, v), max(u, v), False, False, distance(u, v, parent))
+
     reason = (
         None
         if old_faces is not None
@@ -496,37 +534,30 @@ def _pieces_binning(
                 if opening.length > 0 or (
                     (path_only or old_faces is None) and not opening.is_empty
                 ):
-                    if declared_paths[index]:
-                        if not np.array_equal(
-                            centers[[u, v]], binning.bins.centers[[parent_u, parent_v]]
-                        ):
-                            raise _error(
-                                "Clipping moved an endpoint of declared navigation "
-                                f"path ({parent_u}, {parent_v}).",
-                                "use subset() to retain whole bins, or construct "
-                                "clipped bins with updated navigation path lengths "
-                                "using Environment.from_bins()",
-                            )
-                        distance = float(links.pair_distances[index])
-                    else:
-                        distance = float(np.hypot.reduce(centers[v] - centers[u]))
                     records.append(
-                        (min(u, v), max(u, v), True, bool(path_only), distance)
+                        (
+                            min(u, v),
+                            max(u, v),
+                            True,
+                            bool(path_only),
+                            distance(u, v, int(open_rows[index])),
+                        )
                     )
-                elif opening.is_empty and not wall.is_empty and touching(u, v):
+                elif divided(u, v):
                     # Contact only where a wall runs: the wall closes the pair.
-                    records.append(closed_record(u, v))
-    for parent_u, parent_v in links.all_pairs[~links.is_open]:
+                    records.append(closed_record(u, v, int(open_rows[index])))
+    for parent in np.flatnonzero(~links.is_open):
+        parent_u, parent_v = links.all_pairs[parent]
         for u in by_parent[int(parent_u)]:
             for v in by_parent[int(parent_v)]:
                 if touching(u, v):
-                    records.append(closed_record(u, v))
+                    records.append(closed_record(u, v, int(parent)))
     for children in by_parent.values():
-        # Pieces of one cell meet only along the wall that divided it.
+        # Pieces of one cell that meet on the wall that divided it.
         for position, u in enumerate(children):
             for v in children[position + 1 :]:
-                if touching(u, v):
-                    records.append(closed_record(u, v))
+                if divided(u, v):
+                    records.append(closed_record(u, v, None))
     records.sort(key=lambda item: (item[0], item[1]))
     all_pairs = np.array([(u, v) for u, v, *_ in records], dtype=np.intp).reshape(-1, 2)
     is_open = np.array([record[2] for record in records], dtype=bool)

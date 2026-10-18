@@ -8,7 +8,7 @@ from dataclasses import replace
 import networkx as nx
 import numpy as np
 import pytest
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, MultiPolygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
@@ -197,3 +197,44 @@ def test_clipping_unchanged_cells_keeps_every_closed_pair():
 
     assert located(clipped, after) == located(env, before)
     assert set(after["wall"]) == {"divider"}
+
+
+def _declared_closed_distance():
+    env = _rooms(CLOSED)
+    binning = env.binning
+    links = binning.connections
+    distances = links.all_distances.copy()
+    closed = np.flatnonzero(~links.is_open)[0]
+    distances[closed] = 7.0  # a measured detour around the divider
+    declared = replace(
+        binning,
+        connections=BinConnections(links.all_pairs, distances, links.is_open),
+        faces=KnownFaces(binning.faces.build()),
+    )
+    return Environment.from_bins(declared, arena=env.arena), links.all_pairs[closed]
+
+
+def test_clipping_keeps_a_declared_distance_on_a_closed_pair():
+    env, pair = _declared_closed_distance()
+    clipped = env.clip(ROOMS).binning.connections
+    row = np.flatnonzero((clipped.all_pairs == pair).all(axis=1))
+    assert clipped.all_distances[row].tolist() == [7.0]
+    assert not clipped.is_open[row].any()
+
+
+def test_clipping_refuses_to_move_an_end_of_a_declared_closed_path():
+    env, _ = _declared_closed_distance()
+    # Cutting the column west of the divider moves the closed pair's west end.
+    with pytest.raises(ValueError, match="moved an endpoint of declared navigation"):
+        env.clip(box(1.5, 0, 4, 3))
+
+
+def test_pieces_touching_only_at_a_clip_corner_are_not_closed_pairs():
+    # No wall separates them: they are simply not neighbors.
+    cell = Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool), grid_edges=(np.array([0.0, 2.0]),) * 2
+    )
+    pieces = cell.clip(MultiPolygon([box(0, 0, 1, 1), box(1, 1, 2, 2)]))
+    assert pieces.n_bins == 2
+    assert len(pieces.binning.connections.all_pairs) == 0
+    assert pieces.get_blocked_edges().empty
