@@ -118,7 +118,8 @@ class TestMakeHamletMaze:
             assert np.isclose(distance_from_origin, dims.inner_radius, atol=2.0)
 
     def test_outer_positions_are_at_outer_radius(self):
-        """Outer regions should be at the outer radius."""
+        """Outer regions sit at the corridor's end square, half a corridor
+        width inside the outer radius."""
         from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
 
         dims = HamletDims(inner_radius=40.0, outer_radius=80.0)
@@ -128,7 +129,11 @@ class TestMakeHamletMaze:
         for i in range(5):
             outer_pos = maze.env_2d.regions[f"outer_{i}"].data
             distance_from_origin = np.linalg.norm(outer_pos)
-            assert np.isclose(distance_from_origin, dims.outer_radius, atol=2.0)
+            assert np.isclose(
+                distance_from_origin,
+                dims.outer_radius - dims.corridor_width / 2,
+                atol=2.0,
+            )
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""

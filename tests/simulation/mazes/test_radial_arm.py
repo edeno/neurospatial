@@ -104,9 +104,12 @@ class TestMakeRadialArmMaze:
             arm_region = maze.env_2d.regions[f"arm_{i}"]
             assert arm_region.kind == "point"
 
-            # Distance from center
+            # Distance from center: the arm end's square, half an arm width
+            # inside the tip, where the well sits
             distance = np.linalg.norm(arm_region.data)
-            expected_distance = dims.center_radius + dims.arm_length
+            expected_distance = (
+                dims.center_radius + dims.arm_length - dims.arm_width / 2
+            )
             assert np.isclose(distance, expected_distance, atol=2.0)
 
             # Angle

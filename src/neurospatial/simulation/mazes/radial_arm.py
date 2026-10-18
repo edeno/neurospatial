@@ -37,6 +37,7 @@ from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
+    corridor_end_point,
     make_circular_arena,
     make_corridor_polygon,
     make_star_graph,
@@ -203,7 +204,7 @@ def make_radial_arm_maze(
             width=dims.arm_width,
         )
         arm_polygons.append(arm_polygon)
-        arm_endpoints.append(end_pos)
+        arm_endpoints.append(corridor_end_point(start_pos, end_pos, dims.arm_width))
 
     # Union center and all arms into single polygon
     radial_polygon = union_polygons([center_polygon, *arm_polygons])
