@@ -1343,6 +1343,28 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `simulate_trajectory_ou(boundary_mode="stop")` holds the animal at the
+  wall it reached. Before, the clamp used `bin_at`, which returns `-1` for a
+  position outside, and moved the animal to the last bin center, often the
+  far corner, where it stayed. `boundary_mode="reflect"` used the same clamp
+  after a reflection.
+
+- `PlaceCellModel` and `ObjectVectorCellModel` with `metric="geodesic"` give
+  a NaN rate for a NaN position, as `metric="euclidean"` does. Before, the
+  missing position took the rate at bin 0.
+
+- A sample outside the environment (bin `-1`) is in no bin in
+  `trajectory_similarity`, `compute_home_range` and
+  `detect_goal_directed_runs`. Before, `-1` indexed the last bin:
+  `trajectory_similarity` scored an outside sample as the last bin
+  (Hausdorff, DTW) or as a place both trajectories shared (Jaccard),
+  `compute_home_range` returned `-1` as a home-range bin and counted outside
+  time in the total, and `detect_goal_directed_runs` failed with
+  `NodeNotFound: Node -1`. Now `trajectory_similarity` compares only places
+  inside the environment and refuses a trajectory with none,
+  `compute_home_range` leaves outside samples out, and
+  `detect_goal_directed_runs` ends a recording at an outside sample.
+
 - An environment pickled by another version of neurospatial is refused when
   it is loaded, with the advice to save with `env.to_file(path)` and read with
   `Environment.from_file(path)`. Before, a pickle from the previous release
