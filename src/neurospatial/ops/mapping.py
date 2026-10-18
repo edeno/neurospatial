@@ -24,6 +24,7 @@ from neurospatial.geometry import CallIndexes, region_bin_masks, require_cartesi
 if TYPE_CHECKING:
     from neurospatial.geometry import Arena, Binning
     from neurospatial.ops._protocols import (
+        NamedRegionConsumer,
         RegionMaskConsumer,
         ResampleSourceConsumer,
         ResampleTargetConsumer,
@@ -396,6 +397,83 @@ def regions_to_mask(
         binning=env.binning,
         arena=env.arena,
         include_boundary=include_boundary,
+    )
+
+
+def _require_region_mask(
+    env: NamedRegionConsumer,
+    name: str,
+    *,
+    operation: str,
+    argument: str,
+    in_list: bool = False,
+) -> NDArray[np.bool_]:
+    """Bins of the named region, refusing a missing region or one with no bins.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose ``regions`` hold ``name``.
+    name : str
+        Region name.
+    operation : str
+        Calling function, named in the error, e.g. ``"segment_trials()"``.
+    argument : str
+        Calling function's argument that holds ``name``.
+    in_list : bool, default False
+        Whether ``argument`` takes a list of names.
+
+    Returns
+    -------
+    mask : NDArray[np.bool_], shape (n_bins,)
+        True for each bin the region covers (``regions_to_mask``).
+
+    Raises
+    ------
+    RegionNotFoundError
+        If ``name`` is not in ``env.regions``.
+    ValueError
+        If the region covers no bins, so the analysis would silently find no
+        visits, trials or runs for it.
+    """
+    from neurospatial._exceptions import RegionNotFoundError, _format_error
+
+    if name not in env.regions:
+        raise RegionNotFoundError(
+            name, available=list(env.regions.keys()), argument=argument, in_list=in_list
+        )
+    mask = regions_to_mask(env, [name])
+    if mask.any():
+        return mask
+    region = env.regions[name]
+    if region.kind == "point":
+        point = np.asarray(region.data, dtype=np.float64)
+        coords = ", ".join(f"{value:g}" for value in point)
+        gap = float(np.min(np.linalg.norm(env.bin_centers - point, axis=1)))
+        units = f" {env.units}" if env.units else ""
+        why = (
+            f"Why: a point region selects the bin that contains it, and "
+            f"({coords}) lies outside every bin; the nearest bin center is "
+            f"{gap:.3g}{units} away. A point on the arena's edge, such as a "
+            "reward well at the end of an arm, is outside."
+        )
+        fix = (
+            "move the point inside the environment, or give the region an "
+            f"area, for example polygon=shapely.Point({coords}).buffer(radius)"
+        )
+    else:
+        why = (
+            "Why: a polygon region selects the bins whose centers it contains, "
+            "and this one contains none."
+        )
+        fix = "enlarge the polygon or move it inside the environment"
+    raise ValueError(
+        _format_error(
+            f"Region {name!r} covers no bins, so {operation} cannot find the "
+            "animal in it.",
+            why=why,
+            fix=fix,
+        )
     )
 
 

@@ -23,9 +23,8 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
-from neurospatial._exceptions import RegionNotFoundError
 from neurospatial.ops.distance import distance_field
-from neurospatial.ops.mapping import regions_to_mask
+from neurospatial.ops.mapping import _require_region_mask
 
 __all__ = [
     "goal_reward_field",
@@ -131,13 +130,9 @@ def region_reward_field(
            shaping. ICML.
     """
     # Validate region exists
-    if region_name not in env.regions:
-        raise RegionNotFoundError(
-            region_name, available=list(env.regions), argument="region_name"
-        )
-
-    # Get region mask
-    region_mask = regions_to_mask(env, region_name)
+    region_mask = _require_region_mask(
+        env, region_name, operation="region_reward_field()", argument="region_name"
+    )
 
     if decay == "constant":
         # Binary reward: reward_value inside, 0 outside
