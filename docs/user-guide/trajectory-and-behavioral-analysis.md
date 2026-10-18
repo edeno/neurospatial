@@ -601,10 +601,10 @@ print(f"Timeouts: {sum(1 for t in trials if not t.success)}")
 ```
 
 **Returns**: List of `Trial` objects
-- `start_time`: Start region entry time
-- `end_time`: End region entry or timeout
-- `outcome`: Name of end region reached (or None if timeout)
-- `success`: True if end region reached, False if timeout
+- `start_time`: Departure from the start region (the last sample inside it)
+- `end_time`: End region entry, timeout, or return to the start region
+- `end_region`: Name of end region reached (or None if not reached)
+- `success`: True if end region reached, False if timed out or aborted
 
 ---
 

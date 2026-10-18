@@ -91,7 +91,10 @@ def test_trials_do_not_span_pause(pause_track):
         max_duration=2000,
     )
     assert len(trials) == 1
-    assert trials[0].start_time == 0
+    # The trial starts when the animal leaves the source, before the pause.
+    in_source = r.env.region_mask("source")[r.position_bins]
+    departure = r.times[np.flatnonzero(in_source & (r.times < 100))[-1]]
+    assert trials[0].start_time == departure
     assert trials[0].end_time <= 99.9
     assert not trials[0].success
 
