@@ -327,6 +327,7 @@ def _encode_connections(obj: BinConnections, prefix: str) -> Payload:
         all_pairs=obj.all_pairs,
         all_distances=obj.all_distances,
         is_open=obj.is_open,
+        closed_by=obj.closed_by,
     )
 
 
@@ -337,6 +338,7 @@ def _decode_connections(
         _array(arrays, prefix, "all_pairs", np.intp),
         _array(arrays, prefix, "all_distances", np.float64),
         _array(arrays, prefix, "is_open", np.bool_),
+        _array(arrays, prefix, "closed_by", np.intp),
     )
 
 

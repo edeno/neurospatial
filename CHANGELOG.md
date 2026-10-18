@@ -10,8 +10,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 - A binning keeps its bins and their neighbor pairs in separate records.
   `SpatialBins` holds centers, measures and `measure_dim`; the new
-  `BinConnections` holds the neighbor pairs, their navigation distances and
-  `is_open`, and `Binning` takes it after the bins:
+  `BinConnections` holds the neighbor pairs, their navigation distances,
+  `is_open`, and `closed_by` (the index in `arena.walls` of the wall closing
+  each closed pair, recorded when walls are applied), and `Binning` takes it
+  after the bins:
   `Binning(kind, bins, connections, locator, faces)`. Replace
   `SpatialBins.from_arrays(centers, sizes, dim, pairs, distances)` with
   `SpatialBins.from_arrays(centers, sizes, dim)` and

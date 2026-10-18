@@ -25,9 +25,9 @@ from neurospatial.geometry._arena import (
     _CombinedArena,
     _TransformedArena,
 )
-from neurospatial.geometry._binning import KnownFaces
+from neurospatial.geometry._binning import BinConnections, KnownFaces
 from neurospatial.geometry._codecs import encode_arena
-from neurospatial.geometry._composition import CombinedLocator, composition_view
+from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals
@@ -379,20 +379,48 @@ def _wall_geometry(
     return cells, segments, centers, True
 
 
+def _closing_walls(
+    connections: BinConnections,
+    cells: Sequence[Polygon | MultiPolygon],
+    segments: Sequence[LineString],
+    centers: NDArray[np.float64],
+) -> NDArray[np.intp]:
+    """Index of the wall closing each closed pair; see ``BinConnections.closed_by``."""
+    closed_by = np.full(len(connections.all_pairs), -1, dtype=np.intp)
+    for row in np.flatnonzero(~connections.is_open):
+        u, v = connections.all_pairs[row]
+        contact = cells[u].boundary.intersection(cells[v].boundary)
+        if contact.length > 0:
+            cover = [contact.intersection(wall).length for wall in segments]
+        else:
+            link = LineString(centers[[u, v]])
+            cover = [float(link.intersects(wall)) for wall in segments]
+        best = int(np.argmax(cover))
+        if cover[best] > 0:
+            closed_by[row] = best
+    return closed_by
+
+
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
     """Close the neighbor pairs whose shared edge a wall blocks completely.
 
     A closed pair stays listed in ``binning.connections`` but leaves paths and
     finite-volume faces. A partly covered edge stays open with the open share
-    of its face. Pairs already closed stay closed.
+    of its face. Pairs already closed stay closed, and every closed pair
+    records the wall that closes it (``connections.closed_by``).
     """
     if _composition_arena(binning.locator) is not None:
         # Each owned child already carries its certified wall geometry. Rechecking
         # its independently rounded global polygons loses the native source frame.
         # New bridge crossings are checked when constructing/validating the root.
         return binning
+    links = binning.connections
     if not arena.walls:
-        return binning
+        if np.all(links.closed_by < 0):
+            return binning
+        # No wall of this arena closes a pair; drop indices into other walls.
+        unattributed = np.full(len(links.closed_by), -1, dtype=np.intp)
+        return replace(binning, connections=replace(links, closed_by=unattributed))
 
     cells, wall_segments, centers, in_source_frame = _wall_geometry(binning, arena)
     walls = unary_union(wall_segments)
@@ -431,9 +459,13 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                         "Declare walls before clipping or transforming, or recenter coordinates."
                     )
             keep[index] = contact.intersection(walls).is_empty and not crosses
+    connections = links.closed(keep)
+    connections = replace(
+        connections,
+        closed_by=_closing_walls(connections, cells, wall_segments, centers),
+    )
     if np.all(keep) and np.all(open_share == 1.0):
-        return binning
-    connections = binning.connections.closed(keep)
+        return replace(binning, connections=connections)
     faces = binning.faces
     if faces.available:
         source = faces.build()
@@ -465,46 +497,3 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         else None
     )
     return replace(binning, connections=connections, faces=faces, face_normals=normals)
-
-
-def blocking_walls(binning: Binning, arena: Arena) -> list[str | None]:
-    """Name the wall that closes each closed pair, in ``all_pairs`` order.
-
-    The named wall is the one covering most of the edge the pair's cells
-    share, or for cells that meet only at a corner, the first wall the link
-    between their centers crosses. None marks a pair that no wall of
-    ``arena`` closes, such as one supplied closed to ``from_bins``.
-    """
-    links = binning.connections
-    closed = links.all_pairs[~links.is_open]
-    if not len(closed) or not arena.walls:
-        return [None] * len(closed)
-    view = composition_view(binning.locator)
-    if view is not None:
-        # Each component closed its own pairs against its own walls, as
-        # apply_walls leaves them; subsets, clips and transforms keep them.
-        root, roots, _ = view
-        named: dict[frozenset[int], str | None] = {}
-        for child, child_arena, offset in zip(
-            root.children, root.arenas, root.offsets[:-1], strict=True
-        ):
-            child_links = child.connections
-            child_closed = child_links.all_pairs[~child_links.is_open] + offset
-            for (u, v), name in zip(
-                child_closed, blocking_walls(child, child_arena), strict=True
-            ):
-                named[frozenset((int(u), int(v)))] = name
-        return [named.get(frozenset((int(roots[u]), int(roots[v])))) for u, v in closed]
-    # The frame apply_walls used, so attribution matches what it closed.
-    cells, segments, centers, _ = _wall_geometry(binning, arena)
-    names: list[str | None] = []
-    for u, v in closed:
-        contact = cells[u].boundary.intersection(cells[v].boundary)
-        if contact.length > 0:
-            cover = [contact.intersection(wall).length for wall in segments]
-        else:
-            link = LineString(centers[[u, v]])
-            cover = [float(link.intersects(wall)) for wall in segments]
-        best = int(np.argmax(cover))
-        names.append(arena.wall_names[best] if cover[best] > 0 else None)
-    return names

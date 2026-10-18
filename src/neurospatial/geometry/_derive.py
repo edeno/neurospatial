@@ -404,7 +404,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             centers[all_pairs[:, 1]] - centers[all_pairs[:, 0]], axis=1
         )
     bins = SpatialBins.from_arrays(centers, sizes, dims)
-    connections = BinConnections(all_pairs, distances, links.is_open)
+    connections = BinConnections(all_pairs, distances, links.is_open, links.closed_by)
     pairs = connections.pairs
     if locator is None:
         locator = TransformedLocator(

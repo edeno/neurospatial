@@ -162,6 +162,24 @@ class CombinedLocator(ReadOnlyState):
                     np.ones(len(self.bridge_pairs), dtype=bool),
                 ]
             ),
+            # Each child's wall indices move to its place in the combined
+            # arena's walls, which list every child's walls in order.
+            np.concatenate(
+                [
+                    *[
+                        np.where(link.closed_by >= 0, link.closed_by + start, -1)
+                        for link, start in zip(links, self.wall_offsets, strict=True)
+                    ],
+                    np.full(len(self.bridge_pairs), -1, dtype=np.intp),
+                ]
+            ),
+        )
+
+    @property
+    def wall_offsets(self) -> NDArray[np.intp]:
+        """Where each child's walls start in the combined arena's walls."""
+        return np.cumsum(
+            [0, *[len(arena.walls) for arena in self.arenas[:-1]]], dtype=np.intp
         )
 
     def locate(

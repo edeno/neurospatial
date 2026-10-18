@@ -331,7 +331,7 @@ def _primitive_geometry(
             raw, links = child.bins, child.connections
             SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
             BinConnections.from_arrays(
-                links.all_pairs, links.all_distances, links.is_open
+                links.all_pairs, links.all_distances, links.is_open, links.closed_by
             )
             if isinstance(child.faces, KnownFaces):
                 KnownFaces(child.faces.faces)
@@ -918,6 +918,7 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         expected_links = locator.bin_connections()
         _equal(links.all_pairs, expected_links.all_pairs, "combined neighbor pairs")
         _equal(links.is_open, expected_links.is_open, "combined open pairs")
+        _equal(links.closed_by, expected_links.closed_by, "combined closing walls")
         _equal(
             links.all_distances,
             expected_links.all_distances,
@@ -1024,6 +1025,11 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
                 "derived combined neighbor pairs",
             )
             _equal(links.is_open, expected_links.is_open, "derived combined open pairs")
+            _equal(
+                links.closed_by,
+                expected_links.closed_by,
+                "derived combined closing walls",
+            )
             if computed:
                 u, v = links.all_pairs.T
                 error = np.linalg.norm(

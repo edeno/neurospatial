@@ -227,6 +227,12 @@ class BinConnections(ReadOnlyState):
         distances used by finite-volume faces at track junctions.
     is_open : ndarray of bool, shape (n_all_pairs,)
         False where a wall closes the edge between the pair's bins.
+    closed_by : ndarray of intp, shape (n_all_pairs,)
+        Index into the arena's ``walls`` of the wall that closes each pair:
+        the one covering most of the edge the pair's cells share, or for
+        cells that meet only at a corner, the first wall the link between
+        their centers crosses. -1 for open pairs and for closed pairs no wall
+        of the arena closes. Publication records it when it applies walls.
     pairs : ndarray of intp, shape (n_pairs, 2)
         The open pairs, in the order of ``all_pairs``.
     pair_distances : ndarray of float64, shape (n_pairs,)
@@ -236,6 +242,7 @@ class BinConnections(ReadOnlyState):
     all_pairs: NDArray[np.intp]
     all_distances: NDArray[np.float64]
     is_open: NDArray[np.bool_]
+    closed_by: NDArray[np.intp]
     pairs: NDArray[np.intp] = field(init=False, repr=False)
     pair_distances: NDArray[np.float64] = field(init=False, repr=False)
 
@@ -291,10 +298,23 @@ class BinConnections(ReadOnlyState):
                 f"got {is_open.dtype} with shape {is_open.shape}."
             )
         is_open = np.array(is_open, dtype=bool, copy=True)
+        closed_by = np.asarray(self.closed_by)
+        if (
+            closed_by.shape != (len(pairs),)
+            or (closed_by.size and closed_by.dtype.kind not in "iu")
+            or np.any(closed_by < -1)
+            or np.any(closed_by[is_open] != -1)
+        ):
+            raise ValueError(
+                f"closed_by must hold one wall index >= -1 per pair, shape "
+                f"({len(pairs)},), and -1 for every open pair."
+            )
+        closed_by = np.array(closed_by, dtype=np.intp, copy=True)
         values = {
             "all_pairs": pairs,
             "all_distances": distances,
             "is_open": is_open,
+            "closed_by": closed_by,
             "pairs": pairs if is_open.all() else pairs[is_open],
             "pair_distances": distances if is_open.all() else distances[is_open],
         }
@@ -308,6 +328,7 @@ class BinConnections(ReadOnlyState):
         pairs: ArrayLike,
         pair_distances: ArrayLike,
         is_open: ArrayLike | None = None,
+        closed_by: ArrayLike | None = None,
     ) -> BinConnections:
         """Validate and own neighbor pairs, their distances and openness.
 
@@ -319,6 +340,9 @@ class BinConnections(ReadOnlyState):
             Finite, non-negative navigation distances.
         is_open : array-like of bool, shape (n_pairs,), optional
             Which pairs movement can cross. All pairs are open by default.
+        closed_by : array-like of int, shape (n_pairs,), optional
+            Index of the arena wall closing each pair, -1 for none (the
+            default). Publication recomputes it from the arena's walls.
 
         Returns
         -------
@@ -340,6 +364,9 @@ class BinConnections(ReadOnlyState):
             np.ones(len(all_pairs), dtype=bool)
             if is_open is None
             else np.asarray(is_open),
+            np.full(len(all_pairs), -1, dtype=np.intp)
+            if closed_by is None
+            else np.asarray(closed_by),
         )
 
     def closed(self, keep_open: NDArray[np.bool_]) -> BinConnections:
@@ -354,11 +381,14 @@ class BinConnections(ReadOnlyState):
         -------
         BinConnections
             The same pairs, with the given open pairs closed. Closed pairs
-            stay closed.
+            stay closed; newly closed pairs have no closing wall (-1) until
+            one is recorded.
         """
         is_open = self.is_open.copy()
         is_open[np.flatnonzero(self.is_open)[~keep_open]] = False
-        return BinConnections(self.all_pairs, self.all_distances, is_open)
+        return BinConnections(
+            self.all_pairs, self.all_distances, is_open, self.closed_by
+        )
 
     def select(
         self, child_of: NDArray[np.intp]
@@ -385,6 +415,7 @@ class BinConnections(ReadOnlyState):
             mapped[kept].reshape(-1, 2),
             self.all_distances[kept],
             self.is_open[kept],
+            self.closed_by[kept],
         )
         return connections, kept[self.is_open]
 

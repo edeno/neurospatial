@@ -208,7 +208,9 @@ def _declared_closed_distance():
     distances[closed] = 7.0  # a measured detour around the divider
     declared = replace(
         binning,
-        connections=BinConnections(links.all_pairs, distances, links.is_open),
+        connections=BinConnections(
+            links.all_pairs, distances, links.is_open, links.closed_by
+        ),
         faces=KnownFaces(binning.faces.build()),
     )
     return Environment.from_bins(declared, arena=env.arena), links.all_pairs[closed]
@@ -238,3 +240,40 @@ def test_pieces_touching_only_at_a_clip_corner_are_not_closed_pairs():
     assert pieces.n_bins == 2
     assert len(pieces.binning.connections.all_pairs) == 0
     assert pieces.get_blocked_edges().empty
+
+
+def test_each_closed_pair_records_the_wall_that_closes_it(configurations):
+    _, door, _ = configurations
+    links = door.binning.connections
+    closed = ~links.is_open
+    assert np.all(links.closed_by[~closed] == -1)
+    names = np.array(door.arena.wall_names)[links.closed_by[closed]]
+    rows = door.bin_centers[links.all_pairs[closed, 0], 1]
+    assert set(names[rows < 1]) == {"lower"} and set(names[rows > 2]) == {"upper"}
+    restored = Environment.from_dict(door.to_dict()).binning.connections
+    np.testing.assert_array_equal(restored.closed_by, links.closed_by)
+
+
+def test_combined_components_keep_their_own_walls():
+    left = _rooms({"divider": LineString([(2, 0), (2, 3)])})
+    right = Environment.from_grid_mask(
+        np.ones((4, 3), dtype=bool),
+        grid_edges=(np.arange(5.0) + 10, np.arange(4.0)),
+        arena=OpenArena(
+            box(10, 0, 14, 3), walls={"shelf": LineString([(10, 1), (14, 1)])}
+        ),
+        connect_diagonal_neighbors=False,
+    )
+    env = Environment.combine({"left": left, "right": right}, auto_bridge=False)
+    table = env.get_blocked_edges()
+    east = env.bin_centers[table["source"], 0] >= 10
+    assert set(table["wall"][~east]) == {"divider"}
+    assert set(table["wall"][east]) == {"shelf"}
+    assert env.arena.wall_names == ("divider", "shelf")
+
+
+def test_closing_walls_must_be_recorded_for_closed_pairs_only():
+    with pytest.raises(ValueError, match="-1 for every open pair"):
+        BinConnections.from_arrays([[0, 1]], [1.0], is_open=[True], closed_by=[0])
+    with pytest.raises(ValueError, match="one wall index >= -1 per pair"):
+        BinConnections.from_arrays([[0, 1]], [1.0], is_open=[False], closed_by=[-2])

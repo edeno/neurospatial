@@ -238,7 +238,7 @@ def prepare_bins(binning: object) -> Binning:
     # rather than assuming they remain identical to their constructor inputs.
     bins = SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
     connections = BinConnections.from_arrays(
-        links.all_pairs, links.all_distances, links.is_open
+        links.all_pairs, links.all_distances, links.is_open, links.closed_by
     )
     faces = (
         KnownFaces(snapshot.faces.faces)

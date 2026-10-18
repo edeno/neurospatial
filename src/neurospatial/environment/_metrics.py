@@ -11,7 +11,6 @@ from neurospatial.geometry import (
     Arena,
     Binning,
     CoordinateSystem,
-    blocking_walls,
     bridge_values,
     composition_view,
 )
@@ -100,12 +99,16 @@ def _blocked_edges(binning: Binning, arena: Arena) -> pd.DataFrame:
     links = binning.connections
     closed = ~links.is_open
     pairs = links.all_pairs[closed]
+    walls = [
+        arena.wall_names[index] if index >= 0 else None
+        for index in links.closed_by[closed]
+    ]
     return pd.DataFrame(
         {
             "source": pairs[:, 0].copy(),
             "target": pairs[:, 1].copy(),
             "distance": links.all_distances[closed].copy(),
-            "wall": pd.Series(blocking_walls(binning, arena), dtype=object),
+            "wall": pd.Series(walls, dtype=object),
         }
     )
 

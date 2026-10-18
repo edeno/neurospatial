@@ -138,7 +138,7 @@ def test_spatial_bins_owns_read_only_arrays(constructor):
     [
         BinConnections.from_arrays,
         lambda pairs, pair_distances, is_open: BinConnections(
-            pairs, pair_distances, is_open
+            pairs, pair_distances, is_open, np.where(is_open, -1, 0)
         ),
     ],
 )
