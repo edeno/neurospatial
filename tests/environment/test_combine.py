@@ -587,7 +587,7 @@ def test_rigid_and_uniform_transforms_preserve_paths_and_scale_geometric_conduct
         bridge_conductances={(("a", 1), ("b", 0)): 0.5},
     )
     translated = env.apply_transform(translate_3d(2, 3, 4))
-    scaled = env.apply_transform(scale_3d(2))
+    scaled = env.apply_transform(scale_3d(2), units=env.units)
     assert translated.bin_sources == env.bin_sources == scaled.bin_sources
     np.testing.assert_allclose(
         translated.get_bridge_attributes()["distance"],

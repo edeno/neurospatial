@@ -139,7 +139,9 @@ def _widthless_track_transformed() -> dict[str, Any]:
 
     names = _widthless_track()
     rotation = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
-    names["env"] = names["env"].apply_transform(AffineND(rotation))
+    names["env"] = names["env"].apply_transform(
+        AffineND(rotation), units=names["env"].units
+    )
     names["positions"] = names["positions"] @ rotation[:2, :2].T + rotation[:2, 2]
     names["width"] = 20.0  # the track doubled in size
     return names
@@ -525,7 +527,9 @@ _SIMILARITY = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
 def _doubled(build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     """The names of ``build`` after ``_SIMILARITY``, positions included."""
     names = build()
-    names["env"] = names["env"].apply_transform(AffineND(_SIMILARITY))
+    names["env"] = names["env"].apply_transform(
+        AffineND(_SIMILARITY), units=names["env"].units
+    )
     if "positions" in names:
         names["positions"] = (
             names["positions"] @ _SIMILARITY[:2, :2].T + _SIMILARITY[:2, 2]
@@ -593,7 +597,9 @@ def test_suggested_track_rebuild_keeps_a_transformed_track_width():
 
     names = _track()
     rotation = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
-    names["env"] = names["env"].apply_transform(AffineND(rotation))
+    names["env"] = names["env"].apply_transform(
+        AffineND(rotation), units=names["env"].units
+    )
     with pytest.raises(NotImplementedError) as caught:
         names["env"].rebin(2)
     fix = str(caught.value).splitlines()[-1]

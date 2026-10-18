@@ -133,7 +133,8 @@ def test_a_subset_keeps_its_bins():
 def test_a_transformed_track_takes_the_width_in_its_own_units():
     # Rotate by 90 degrees and double the size: a 10 cm track is now 20 wide.
     matrix = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
-    transformed = _track().apply_transform(AffineND(matrix))
+    track = _track()
+    transformed = track.apply_transform(AffineND(matrix), units=track.units)
     env = transformed.with_track_width(2 * _WIDTH)
     built = _track(track_width=_WIDTH)
     on_and_off = np.array([[50.0, 4.0], [50.0, 6.0], [100.0, 30.0]])

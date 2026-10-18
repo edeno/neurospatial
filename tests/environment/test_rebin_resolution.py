@@ -145,7 +145,7 @@ def test_rebin_retains_grid_frame_and_uses_physical_axis_lengths():
         ]
     )
     transform = Affine2D(matrix)
-    parent = grid().apply_transform(transform)
+    parent = grid().apply_transform(transform, units="cm")
     coarse = parent.rebin(bin_size=(4.0, 9.0))
     local = np.array([[x, y] for x in [1, 3, 5] for y in [1.5, 4.5]])
     np.testing.assert_allclose(

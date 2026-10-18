@@ -2522,6 +2522,7 @@ class Environment(Generic[_C]):
         *,
         name: str | None = None,
         frame: str | None = None,
+        units: str | None | _Unset = UNSET,
     ) -> Environment[CartesianSystem]:
         """Apply affine transformation to environment, returning a new instance.
 
@@ -2562,6 +2563,14 @@ class Environment(Generic[_C]):
             ``"session2"``. The default ``None`` leaves the frame unlabeled,
             because the transformed coordinates are no longer in this
             environment's frame.
+        units : str or None, optional
+            Length unit of the transformed coordinates, such as ``"cm"`` after
+            a pixel-to-centimeter calibration. Omission keeps this
+            environment's units, which is allowed only when the transform
+            keeps lengths (a translation, rotation or reflection) or the
+            environment has no units. A transform that scales or shears
+            lengths may be a unit conversion or a stretch in the same units,
+            so it needs ``units=``: the new unit, or ``env.units`` to keep it.
 
         Returns
         -------
@@ -2572,7 +2581,8 @@ class Environment(Generic[_C]):
             - `bin_centers`: All bin positions are transformed
             - `connectivity`: Node 'pos' attributes updated, edge distances/vectors recomputed
             - `regions`: Point and polygon regions are transformed
-            - `metadata`: Name and units preserved; frame set from ``frame``
+            - `metadata`: Name preserved; units set from ``units`` (kept when
+              omitted); frame set from ``frame``
 
             Bin IDs and edge ordering are retained. Cell/face measures and
             available numerical capabilities follow the transformed geometry.
@@ -2584,7 +2594,8 @@ class Environment(Generic[_C]):
             If transform dimensionality doesn't match environment dimensionality,
             the transform is not invertible, or a track receives a non-similarity
             transform. Rebuild such a track from transformed nodes with
-            ``Environment.from_graph``.
+            ``Environment.from_graph``. Also if the transform changes lengths,
+            the environment has units, and ``units`` is omitted.
 
         See Also
         --------
@@ -2727,7 +2738,31 @@ class Environment(Generic[_C]):
             arena=self._arena,
             cache=self._cache,
         )
-        return publish_derived(self, derivation, name=name, frame=frame)
+        scale = derivation.length_scale
+        if (
+            isinstance(units, _Unset)
+            and self.units is not None
+            and (scale is None or abs(scale - 1.0) > 1e-9)
+        ):
+            change = (
+                f"scales lengths by {scale:.6g}"
+                if scale is not None
+                else "stretches or shears lengths"
+            )
+            raise ValueError(
+                _format_error(
+                    f"apply_transform() {change}, so lengths may no longer be "
+                    f"in {self.units!r}.",
+                    why="Why: a transform that changes lengths is often a unit "
+                    "conversion, such as pixels to centimeters, but can also "
+                    "stretch an arena in the same units; only the caller knows "
+                    "which.",
+                    fix="pass the unit of the transformed coordinates, as in "
+                    "env.apply_transform(transform, units='cm'), or "
+                    f"units={self.units!r} to keep it",
+                )
+            )
+        return publish_derived(self, derivation, name=name, frame=frame, units=units)
 
     @classmethod
     @keyword_hint()

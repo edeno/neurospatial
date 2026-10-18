@@ -79,7 +79,9 @@ def test_transformed_grid_nwb_round_trip_preserves_binning(empty_nwb, kind):
         "rotation": [[0, -1, 10], [1, 0, 20], [0, 0, 1]],
         "shear_and_scaling": [[2, 1, 10], [0, 3, 20], [0, 0, 1]],
     }
-    aligned = env.apply_transform(Affine2D(np.array(matrices[kind], dtype=float)))
+    aligned = env.apply_transform(
+        Affine2D(np.array(matrices[kind], dtype=float)), units="cm"
+    )
     write_environment(empty_nwb, aligned)
     restored = read_environment(empty_nwb)
     np.testing.assert_array_equal(restored.bin_centers, aligned.bin_centers)

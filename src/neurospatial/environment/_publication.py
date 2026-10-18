@@ -660,14 +660,16 @@ def publish_derived(
     *,
     name: str | None = None,
     frame: str | None | _Unset = UNSET,
+    units: str | None | _Unset = UNSET,
 ) -> _EnvironmentT:
     """Publish an environment derived from ``parent``, keeping its labels.
 
-    Derivations (subset, clip, rebin, apply_transform and combine) keep the
-    parent's class, name, units, frame, regions, arena, coordinate meaning
-    and build choices unless the derivation supplies a replacement, and add
-    their name to the derivation history. Units are never changed by a
-    derivation, and an inherited label is not checked again.
+    Derivations (subset, clip, rebin, apply_transform, with_track_width and
+    combine) keep the parent's class, name, units, frame, regions, arena,
+    coordinate meaning and build choices unless the derivation or the caller
+    supplies a replacement, and add their name to the derivation history.
+    Only ``apply_transform`` passes ``units``; an inherited label is not
+    checked again, and a new one is.
 
     Parameters
     ----------
@@ -679,16 +681,19 @@ def publish_derived(
         Replacement name; ``None`` keeps the parent's name.
     frame : str or None, optional
         Replacement frame label; omission keeps the parent's frame.
+    units : str or None, optional
+        Replacement unit label; omission keeps the parent's units.
 
     Returns
     -------
     Environment
         A new instance of ``type(parent)``.
     """
-    metadata = _Metadata(
-        parent.name if name is None else name,
-        parent.units,
-        parent.frame if isinstance(frame, _Unset) else frame,
+    metadata = _replace_metadata(
+        parent._metadata,
+        name=UNSET if name is None else name,
+        units=units,
+        frame=frame,
     )
     inherited = parent._provenance
     history = inherited.derivations if derivation.continues_history else ()

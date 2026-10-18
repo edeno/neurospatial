@@ -1415,6 +1415,23 @@ rates = np.random.default_rng(1).random((3, env.n_bins))  # (n_units, n_bins), H
 smoothed = env.smooth(rates.T, bandwidth=5.0, mode="average").T
 ```
 
+## Transforms that change lengths name their units
+
+`env.apply_transform(transform)` used to keep the environment's units, even
+when the transform was a pixel-to-centimeter calibration. A transform that
+scales or shears lengths now needs `units=` when the environment has units.
+Translations, rotations and reflections keep the units without it.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.ops import scale_2d
+
+pixels = env.with_metadata(units="px")
+# Before: pixels.apply_transform(scale_2d(0.1)).with_metadata(units="cm")
+room = pixels.apply_transform(scale_2d(0.1), units="cm")
+assert room.units == "cm"
+```
+
 ## Smoothing needs `mode=`
 
 `env.smooth`, `env.diffuse` and `env.compute_kernel` take a required `mode=`.

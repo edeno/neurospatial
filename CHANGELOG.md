@@ -8,6 +8,14 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.apply_transform` takes `units=`, and requires it when the
+  transform scales or shears lengths and the environment has units. Before,
+  the units were always kept, so a pixel environment calibrated to
+  centimeters with `apply_transform(scale_2d(0.1))` still said `"px"` while
+  its bin areas shrank 100-fold. Pass the new unit (`units="cm"`), or
+  `units=env.units` for an arena stretched in the same units. Translations,
+  rotations and reflections keep the units as before.
+
 - `Environment.smooth`, `Environment.diffuse` and `Environment.compute_kernel`
   require `mode=`. `smooth` defaulted to `mode="average"` and the other two to
   `mode="density"`, so the same call gave different numbers on the same field
