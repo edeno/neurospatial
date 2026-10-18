@@ -15,6 +15,7 @@ graph : Graph convolution, neighborhood reduction
 calculus : Spatial gradient, divergence
 transforms : Affine transforms, calibration
 alignment : Probability mapping, similarity transforms
+boundary_vectors : Distance and direction to the arena's walls
 egocentric : Heading computation, allocentric/egocentric transforms
 visibility : Viewshed, gaze, line-of-sight
 basis : GLM spatial basis functions
@@ -56,6 +57,13 @@ from neurospatial.ops.basis import (
     plot_basis_functions,
     select_basis_centers,
     spatial_basis,
+)
+
+# Distance and direction to walls
+from neurospatial.ops.boundary_vectors import (
+    boundary_directions,
+    compute_boundary_distances,
+    nearest_boundary,
 )
 
 # Calculus operations (gradient, divergence)
@@ -189,6 +197,10 @@ __all__ = [
     "TieBreakStrategy",
     "regions_to_mask",
     "resample_field",
+    # Boundary vectors
+    "boundary_directions",
+    "compute_boundary_distances",
+    "nearest_boundary",
     # Calculus
     "divergence",
     "gradient",

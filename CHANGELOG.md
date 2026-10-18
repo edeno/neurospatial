@@ -1053,6 +1053,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `ops.compute_boundary_distances(env, positions[, headings], direction_frame=...)`
+  casts rays in evenly spaced directions from each sample and returns the
+  distance to the first wall along each, in the allocentric frame for
+  boundary-vector cells or the egocentric frame for egocentric boundary
+  cells. `ops.nearest_boundary(env, positions)` returns the distance and
+  allocentric direction to the closest wall point. Both measure to the
+  arena's declared walls by default (`boundary_source="physical"`), so an
+  unvisited corner is not a wall, and mark a missing sample NaN.
+  `ops.boundary_directions(n)` gives the ray directions.
+
 - `env.coordinate_system` says what it is: `kind` is `"cartesian"` or
   `"polar"`, `circular` says whether the angle axis wraps around (always
   `False` for Cartesian coordinates), and `periodic_axes` lists the axes whose
