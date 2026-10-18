@@ -354,9 +354,7 @@ def framed_locator(locator: Locator, frame: FramedGrid) -> Locator:
     if isinstance(locator, TransformedLocator):
         if _same_frame(locator.frame, frame):
             return locator
-        framed = TransformedLocator(locator.base, locator.inverse)
-        object.__setattr__(framed, "frame", frame)
-        return framed
+        return TransformedLocator(locator.base, locator.inverse, frame)
     if isinstance(locator, SubsetLocator):
         parent_mask = frame_from_locator(locator.base)[0].source.active_mask
         parent = FramedGrid(

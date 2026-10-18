@@ -405,3 +405,14 @@ def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, r
             replace(loaded._binning, shapes=PolygonCells((corrupted,))),
             arena=loaded.arena,
         )
+
+
+def test_a_replaced_framed_locator_keeps_its_frame():
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), bool), grid_edges=(np.arange(5.0),) * 2
+    ).apply_transform(
+        AffineND(np.array([[0.6, -0.8, 1.0], [0.8, 0.6, 2.0], [0, 0, 1]]))
+    )
+    locator = env._binning.locator
+    assert locator.frame is not None
+    assert replace(locator).frame is locator.frame

@@ -274,11 +274,14 @@ class TransformedLocator(ReadOnlyState):
         Locator in the source coordinates.
     inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
         Homogeneous map from current to source coordinates.
+    frame : FramedGrid or None, optional
+        The grid frame of the binning this locator belongs to; a ``Binning``
+        with a ``grid_frame`` sets it, so it is rarely passed directly.
     """
 
     base: Locator
     inverse: NDArray[np.float64]
-    frame: FramedGrid | None = field(default=None, init=False, repr=False)
+    frame: FramedGrid | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         matrix = _owned_array(self.inverse, np.float64)
