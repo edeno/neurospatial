@@ -37,10 +37,11 @@ from neurospatial.geometry import (
     prepare_bins,
     transform_binning,
 )
-from neurospatial.layout import _built_layout_data
+from neurospatial.layout import LayoutType, _built_layout_data
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
+from neurospatial.layout.factories import _size_parameter
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 
 if TYPE_CHECKING:
@@ -301,26 +302,23 @@ def refuse_unsupported_rebin(
     )
 
 
-# The recorded build option that sets the cell size of each native kind.
-_SIZE_OPTION = {
-    "Hexagonal": "hexagon_width",
-    "Graph": "bin_size",
-    "TriangularMesh": "point_spacing",
-}
-
-
 def _requested_size(
     layout_parameters: Mapping[str, Any],
     binning: Binning,
     factor: object,
     bin_size: object,
 ) -> float | None:
-    """The new cell size the call asks for, when it is one known number."""
+    """The new cell size the call asks for, when it is one known number.
+
+    A factor multiplies the recorded value of the option that sets the
+    layout's cell size (its engine's ``size_parameter``).
+    """
     if bin_size is not None:
         sizes = np.ravel(np.asarray(bin_size, dtype=float))
         return float(sizes[0]) if sizes.size and np.all(sizes == sizes[0]) else None
     factors = np.ravel(np.asarray(factor, dtype=float))
-    current = layout_parameters.get(_SIZE_OPTION.get(str(binning.kind), "bin_size"))
+    option = _size_parameter(binning.kind)
+    current = None if option is None else layout_parameters.get(option)
     if (
         isinstance(current, (int, float))
         and factors.size
@@ -345,18 +343,19 @@ def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
             "list(env.binning.linearization.edge_order), "
             f"bin_size={new}, edge_spacing={spacing!r}{track_width})"
         )
-    if binning.kind == "Hexagonal":
+    if binning.kind == LayoutType.HEXAGONAL:
         return (
             "build the hexagons again from the positions you built them from: "
             f"Environment.from_samples(positions, bin_size={new}, "
-            "layout='Hexagonal')"
+            f"layout={LayoutType.HEXAGONAL.value!r})"
         )
-    if binning.kind == "TriangularMesh" and arena.polygonal_domain() is not None:
+    mesh = LayoutType.TRIANGULAR_MESH
+    if binning.kind == mesh and arena.polygonal_domain() is not None:
         return (
             "build the mesh again at the new spacing: from neurospatial.layout "
-            "import create_layout; Environment.from_layout(create_layout("
-            "'TriangularMesh', boundary_polygon=env.arena.polygonal_domain(), "
-            f"point_spacing={new}))"
+            f"import create_layout; Environment.from_layout(create_layout("
+            f"{mesh.value!r}, boundary_polygon=env.arena.polygonal_domain(), "
+            f"{_size_parameter(mesh)}={new}))"
         )
     return "build the bins again at the new size with the factory or layout engine that made them"
 

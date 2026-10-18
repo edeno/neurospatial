@@ -55,6 +55,26 @@ def _engine_class(kind: object, caller: str) -> Any:
     )
 
 
+def _size_parameter(kind: object) -> str | None:
+    """Return the build option that sets the cell size of the layout ``kind`` names.
+
+    Parameters
+    ----------
+    kind : LayoutType or str
+        A layout label, such as ``Binning.kind``.
+
+    Returns
+    -------
+    str or None
+        The engine's ``size_parameter``, such as ``"bin_size"`` or
+        ``"hexagon_width"``; None when no built-in engine builds ``kind`` or
+        no single option sets its cell size.
+    """
+    member = find_layout_type(kind)
+    engine = None if member is None else _LAYOUT_MAP.get(member.value)
+    return None if engine is None else engine.size_parameter
+
+
 def list_available_layouts() -> list[str]:
     """List the layout names that ``create_layout`` builds.
 

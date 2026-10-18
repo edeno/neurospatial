@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,6 +45,7 @@ class TriangularMeshLayout(_NeighborPairsMixin):
     """
 
     layout_type: str = LayoutType.TRIANGULAR_MESH.value
+    size_parameter: ClassVar[str | None] = "point_spacing"
     _build_params_used: dict[str, Any]
 
     bin_centers: NDArray[np.float64]

@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -41,6 +41,7 @@ class HexagonalLayout(_NeighborPairsMixin):
     active_mask: NDArray[np.bool_] | None = None
 
     layout_type: str = LayoutType.HEXAGONAL.value
+    size_parameter: ClassVar[str | None] = "hexagon_width"
     _build_params_used: dict[str, Any]
 
     # Layout Specific

@@ -236,6 +236,15 @@ class LayoutEngine(Protocol):
     ``distance``, ``vector``, ``edge_id`` and, in 2-D, ``angle_2d``. It is
     built on first access and is not part of the protocol.
 
+    Each built-in engine names the build option that sets its cell size, in
+    the units of positions, in the class attribute ``size_parameter``:
+    ``"bin_size"`` for grids and tracks, ``"hexagon_width"``,
+    ``"point_spacing"`` for a mesh, ``"pixel_size"`` for an image mask, and
+    ``None`` for a masked grid, whose edges are given. ``from_samples`` passes
+    its ``bin_size`` to that option, and a refused ``rebin`` reads the
+    recorded value to suggest a rebuild at the coarser size. It is not part
+    of the protocol either.
+
     Attributes
     ----------
     bin_centers : NDArray[np.float64]

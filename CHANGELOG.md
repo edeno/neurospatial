@@ -1339,6 +1339,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `Environment.combine`. Finding bins on a rotated grid takes about 1.4 times
   as long (0.42 s instead of 0.31 s for a million 2-D positions).
 
+- `rebin(2)` on a pixel-mask grid that was clipped to a polygon suggests
+  the coarser cell size, `env.rebin(bin_size=10)` for 5 cm pixels, instead
+  of `env.rebin(bin_size=...)`. Each built-in layout engine now names the
+  option that sets its cell size (`size_parameter`, such as `pixel_size` or
+  `hexagon_width`), and the suggestion reads that option. Bins from a custom
+  engine no longer get a size guessed from a recorded `bin_size`.
+
 - After `apply_transform`, a track with a known width still says so. The
   `rebin` refusal on such a track suggested an `Environment.from_graph(...)`
   rebuild without `track_width=`, so following it lost the width; it now

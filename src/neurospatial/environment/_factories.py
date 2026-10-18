@@ -25,7 +25,11 @@ from neurospatial.geometry import (
     prepare_bins,
 )
 from neurospatial.layout import LayoutType, find_layout_type
-from neurospatial.layout.factories import create_layout, list_available_layouts
+from neurospatial.layout.factories import (
+    _size_parameter,
+    create_layout,
+    list_available_layouts,
+)
 from neurospatial.layout.helpers.track_graphs import (
     add_edge_with_distance,
     maze_track_graph,
@@ -453,16 +457,13 @@ def _from_samples(
         "bin_count_threshold": options["bin_count_threshold"],
     }
 
-    # Layout-specific parameters
+    # bin_size goes to the option that sets the engine's cell size, the
+    # hexagon width for a hexagonal tiling.
+    size_option = _size_parameter(layout_type)
+    assert size_option is not None  # both sampled layouts declare one
+    layout_params = {**common_params, size_option: bin_size}
     if layout_type is LayoutType.REGULAR_GRID:
-        specific_params: dict[str, Any] = {
-            "bin_size": bin_size,
-            **{name: options[name] for name in _REGULAR_GRID_ONLY},
-        }
-    else:
-        specific_params = {"hexagon_width": bin_size}
-
-    layout_params = {**common_params, **specific_params}
+        layout_params.update({name: options[name] for name in _REGULAR_GRID_ONLY})
     if dimension_ranges is not None:
         layout_params["dimension_ranges"] = dimension_ranges
 

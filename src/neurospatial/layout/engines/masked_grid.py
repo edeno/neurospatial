@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -27,6 +27,7 @@ class MaskedGridLayout(_GridMixin):
     active_mask: NDArray[np.bool_] | None = None
 
     layout_type: str = LayoutType.MASKED_GRID.value
+    size_parameter: ClassVar[str | None] = None
     _build_params_used: dict[str, Any]
     bin_size_: NDArray[np.float64] | None = None
 

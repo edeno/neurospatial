@@ -11,6 +11,7 @@ from neurospatial.environment import Environment
 from neurospatial.geometry import graph_from_binning
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import (
+    _size_parameter,
     create_layout,
     get_layout_parameters,
     list_available_layouts,
@@ -463,6 +464,36 @@ def test_layout_engine_protocol_adherence(
     assert binning.faces.available
     np.testing.assert_array_equal(binning.faces.build().edges, binning.bins.pairs)
     assert (binning.linearization is not None) == layout.is_linearized_track
+
+
+@pytest.mark.parametrize("layout_kind", list_available_layouts())
+def test_size_parameter_sets_the_cell_size(
+    layout_kind: str, simple_graph_for_layout: nx.Graph
+):
+    """The option an engine names as its cell size scales its cells.
+
+    ``from_samples`` passes its ``bin_size`` to this option, and a refused
+    ``rebin`` suggests a coarser value of it.
+    """
+    option = _size_parameter(layout_kind)
+    if option is None:
+        # A masked grid takes its cell edges, not a size.
+        assert layout_kind == "MaskedGrid"
+        return
+    assert option in get_layout_parameters(layout_kind)
+    params = MINIMAL_BUILD_PARAMS[layout_kind].copy()
+    if layout_kind == "Graph":
+        params["graph_definition"] = simple_graph_for_layout
+        params["edge_order"] = list(simple_graph_for_layout.edges())
+    coarse = create_layout(layout_kind, **params).binning().bins
+    params[option] = params[option] / 2
+    fine = create_layout(layout_kind, **params).binning().bins
+    # Mesh triangles along the outline keep the ratio from being exact.
+    np.testing.assert_allclose(
+        np.mean(fine.sizes),
+        np.mean(coarse.sizes) / 2**coarse.measure_dim,
+        rtol=0.2,
+    )
 
 
 @pytest.mark.parametrize("layout_kind", list_available_layouts())

@@ -178,7 +178,13 @@ share one rule for bin measures and face directions through
 `assemble_binning` in `layout/_assembly.py`. Engines do not build graphs: a
 built-in engine's `connectivity` is a convenience derived on first access
 from its binning with `geometry.graph_from_binning`, the same graph an
-environment publishes, and editing it changes nothing the engine publishes. Polar environments use a masked grid over
+environment publishes, and editing it changes nothing the engine publishes.
+Each built-in engine names the build option that sets its cell size in the
+class attribute `size_parameter` (`"bin_size"`, `"hexagon_width"`,
+`"point_spacing"`, ...): `from_samples` passes its `bin_size` to that option,
+and a refused `rebin` reads its recorded value, through the `LayoutType`
+registry in `layout/factories.py`, to suggest a rebuild at the coarser size.
+Polar environments use a masked grid over
 (distance, angle) with circular seam edges and are built only by
 `Environment.from_polar_egocentric`.
 

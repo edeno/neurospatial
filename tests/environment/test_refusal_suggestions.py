@@ -158,6 +158,11 @@ def _clipped() -> dict[str, Any]:
     return {"env": env.clip(Polygon([(0, 0), (100, 0), (0, 100)]))}
 
 
+def _clipped_pixels() -> dict[str, Any]:
+    env = Environment.from_pixel_mask(np.ones((20, 20), dtype=bool), pixel_size=5.0)
+    return {"env": env.clip(Polygon([(0, 0), (100, 0), (0, 100)]))}
+
+
 def _unrecorded_lattice() -> dict[str, Any]:
     grid = _grid()
     bins = replace(grid.binning, grid_spec=None)
@@ -243,6 +248,9 @@ CASES: dict[str, Case] = {
     ),
     "clipped grid rebin(2)": Case(
         _clipped, lambda n: n["env"].rebin(2), "env.rebin(bin_size=10)"
+    ),
+    "clipped pixel grid rebin(2)": Case(
+        _clipped_pixels, lambda n: n["env"].rebin(2), "env.rebin(bin_size=10)"
     ),
     "rebin(bin_size=) without a recorded lattice": Case(
         _unrecorded_lattice, lambda n: n["env"].rebin(bin_size=8.0), "env.rebin(2)"

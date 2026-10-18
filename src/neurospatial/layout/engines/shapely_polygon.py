@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 import shapely
@@ -37,6 +37,7 @@ class ShapelyPolygonLayout(_GridMixin):
     active_mask: NDArray[np.bool_] | None = None
 
     layout_type: str = LayoutType.SHAPELY_POLYGON.value
+    size_parameter: ClassVar[str | None] = "bin_size"
     _build_params_used: dict[str, Any]
 
     # Layout Specific

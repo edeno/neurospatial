@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import networkx as nx
 import numpy as np
@@ -46,6 +46,7 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
     active_mask: NDArray[np.bool_] | None = None
 
     layout_type: str = LayoutType.GRAPH.value
+    size_parameter: ClassVar[str | None] = "bin_size"
     _build_params_used: dict[str, Any]
 
     # Layout Specific

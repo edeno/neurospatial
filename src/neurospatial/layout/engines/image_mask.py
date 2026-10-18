@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -31,6 +31,7 @@ class ImageMaskLayout(_GridMixin):
     active_mask: NDArray[np.bool_] | None = None
 
     layout_type: str = LayoutType.IMAGE_MASK.value
+    size_parameter: ClassVar[str | None] = "pixel_size"
     _build_params_used: dict[str, Any]
 
     def __init__(self) -> None:
