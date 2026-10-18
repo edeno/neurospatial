@@ -92,6 +92,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
 from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.simulation.models.base import geodesic_lookup_bins
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -365,13 +366,7 @@ class ObjectVectorCellModel:
         if metric == "geodesic":
             self._distance_fields = []
             for obj_pos in object_positions:
-                # Find bin containing the object
-                if env.contains(obj_pos[None, :])[0]:
-                    obj_bin = int(env.bin_at(obj_pos[None, :])[0])
-                else:
-                    # Use nearest bin if outside environment
-                    distances = np.linalg.norm(env.bin_centers - obj_pos, axis=1)
-                    obj_bin = int(np.argmin(distances))
+                obj_bin = int(geodesic_lookup_bins(env, obj_pos[None, :])[0])
 
                 # Compute distance field from this object's bin
                 dist_field = distance_field(env.connectivity, sources=[obj_bin])
@@ -450,25 +445,14 @@ class ObjectVectorCellModel:
             # Geodesic distance
             assert self._distance_fields is not None
 
-            # Map positions to bins
-            inside_mask = self.env.contains(positions)
-            bin_indices = np.empty(n_time, dtype=np.int_)
+            bin_indices = geodesic_lookup_bins(self.env, positions)
 
-            if inside_mask.any():
-                bin_indices[inside_mask] = self.env.bin_at(positions[inside_mask])
-
-            if not inside_mask.all():
-                outside_positions = positions[~inside_mask]
-                dists_to_bins = np.linalg.norm(
-                    self.env.bin_centers[None, :, :] - outside_positions[:, None, :],
-                    axis=2,
-                )
-                bin_indices[~inside_mask] = np.argmin(dists_to_bins, axis=1)
-
-            # Lookup distances from precomputed fields
-            distances = np.empty((n_time, n_objects), dtype=np.float64)
+            # Lookup distances from precomputed fields; a missing position has
+            # no distance, so its rate stays NaN.
+            distances = np.full((n_time, n_objects), np.nan)
+            observed = bin_indices >= 0
             for i, dist_field in enumerate(self._distance_fields):
-                distances[:, i] = dist_field[bin_indices]
+                distances[observed, i] = dist_field[bin_indices[observed]]
 
         # Apply Gaussian distance tuning
         # distance_response: (n_time, n_objects)

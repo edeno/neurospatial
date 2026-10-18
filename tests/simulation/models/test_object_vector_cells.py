@@ -770,6 +770,30 @@ class TestGeodesicDistance:
         assert hasattr(model, "_distance_fields")
         assert model._distance_fields is not None
 
+    def test_geodesic_missing_position_rate_is_nan(self, env):
+        """A NaN position has no rate, matching the Euclidean mode."""
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        positions = np.array([[np.nan, np.nan], [60.0, 50.0], [200.0, 200.0]])
+        rates = {
+            metric: ObjectVectorCellModel(
+                direction_frame="egocentric",
+                env=env,
+                object_positions=np.array([[50.0, 50.0]]),
+                preferred_distance=10.0,
+                distance_width=5.0,
+                metric=metric,
+            ).firing_rate(positions)
+            for metric in ("euclidean", "geodesic")
+        }
+
+        assert np.isnan(rates["geodesic"][0])
+        np.testing.assert_array_equal(
+            np.isnan(rates["geodesic"]), np.isnan(rates["euclidean"])
+        )
+
 
 class TestGroundTruth:
     """Test ground_truth property."""
