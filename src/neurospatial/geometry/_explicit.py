@@ -28,6 +28,7 @@ from neurospatial.geometry._components import (
 )
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._grid_frame import FramedGrid
+from neurospatial.geometry._native_faces import NativeFaces
 from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.geometry._track import track_cell_ends
@@ -208,21 +209,23 @@ def prepare_bins(binning: object) -> Binning:
         binning = snapshot_provider(binning, "binning")
     assert isinstance(binning, Binning)
     binning = _snapshot_binning(binning)
-    if type(binning.faces) not in (KnownFaces, MissingFaces):
+    if type(binning.faces) not in (KnownFaces, MissingFaces, NativeFaces):
         raise TypeError(
             _format_error(
-                "from_bins() needs the cell faces themselves, but this Binning "
-                "holds a recipe that builds them, as env.binning returns.",
-                why="Why: from_bins() checks the faces against the bins it is "
-                "given and does not run a layout's recipe, which could describe "
-                "other bins.",
-                fix="build the faces first: from dataclasses import replace; "
-                "from neurospatial.binning import KnownFaces; "
-                "binning = replace(binning, faces=KnownFaces(binning.faces.build())); "
-                "Environment.from_bins(binning, arena=env.arena)",
+                f"from_bins() cannot use faces of type {type(binning.faces).__name__}.",
+                why="Why: it checks the faces against the bins, which needs the "
+                "face measures themselves or a stated reason they are missing.",
+                fix="pass KnownFaces(FaceGeometry(...)) with measured faces, "
+                "MissingFaces('reason') when none were measured, or the faces "
+                "env.binning carries",
             )
         )
     _check_binning(binning)
+    if isinstance(binning.faces, NativeFaces):
+        # A native recipe, as env.binning carries, is a closed formula over
+        # its own owned arrays. Build it here; publication then checks the
+        # faces against the supplied bins like any explicit faces.
+        binning = replace(binning, faces=KnownFaces(binning.faces.build()))
     if not isinstance(binning.kind, str):
         raise TypeError("Binning.kind must be a descriptive string.")
     if isinstance(binning.faces, MissingFaces) and not isinstance(

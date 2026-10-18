@@ -412,9 +412,10 @@ class Environment(Generic[_C]):
         raises, and reshaping one in place (``array.shape = ...``), which a
         read-only array allows, cannot change this environment.
         Native face recipes remain lazy; reading this property does not build
-        numerical geometry. To pass a native Cartesian snapshot to from_bins(),
-        explicitly replace its faces with KnownFaces(snapshot.faces.build()).
-        MissingFaces is already explicit and retains its refusal reason.
+        numerical geometry. ``Environment.from_bins(env.binning,
+        arena=env.arena)`` builds and checks them, so a Cartesian snapshot
+        rebuilds an equivalent environment. MissingFaces is already explicit
+        and retains its refusal reason.
 
         Polar snapshots retain radius/angle coordinates and are not inputs to
         the Cartesian from_bins() factory. Use environment storage to restore
@@ -1447,11 +1448,13 @@ class Environment(Generic[_C]):
         ``(distance, angle)`` columns, while ``nearest_bin`` searches the
         centers' Cartesian embedding.
 
-        The tree is built on first use and kept in the analysis cache: it is
-        shared with relabelled copies and released by ``clear_cache()``. Use
-        it for queries that ``nearest_bin`` does not answer, such as the
-        ``k`` nearest bin centers with their distances. Tree indices are bin
-        indices. Query it, but do not modify it.
+        The tree is built on first use and kept in the analysis cache, shared
+        with relabelled copies and released by ``clear_cache()``. Each call
+        returns an independent copy of it (about a millisecond for 200,000
+        bins), so changing the copy's arrays cannot change this environment
+        or its lookups. Use it for queries that ``nearest_bin`` does not
+        answer, such as the ``k`` nearest bin centers with their distances.
+        Tree indices are bin indices.
 
         Returns
         -------
@@ -1469,9 +1472,9 @@ class Environment(Generic[_C]):
         >>> bins.tolist()
         [[0, 1]]
         >>> env.bin_center_tree() is env.bin_center_tree()
-        True
+        False
         """
-        return center_tree(self._cache, self._binning)
+        return copy.deepcopy(center_tree(self._cache, self._binning))
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Check if N-dimensional continuous points fall within any active bin.

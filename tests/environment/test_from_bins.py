@@ -404,9 +404,12 @@ def test_missing_faces_is_explicit_and_delegated_faces_are_refused():
     native = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    for faces in (None, object(), native._binning.faces):
-        with pytest.raises(TypeError, match=r"KnownFaces|MissingFaces"):
+    for faces in (None, object()):
+        with pytest.raises(TypeError, match=r"KnownFaces.*MissingFaces"):
             Environment.from_bins(replace(source, faces=faces))
+    # Another environment's native recipe builds faces for other bins.
+    with pytest.raises(ValueError, match="faces"):
+        Environment.from_bins(replace(source, faces=native._binning.faces))
 
 
 @pytest.mark.parametrize("field,value", [("A", -1), ("distance", 0), ("volumes", -1)])

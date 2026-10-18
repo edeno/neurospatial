@@ -245,22 +245,18 @@ to convert an external provider into these built-in records.
 
 `env.binning` returns an independent snapshot for inspecting or preparing geometry.
 Changing its array shapes, writable flags or values cannot change the environment.
-Reading it keeps native face recipes lazy. `from_bins()` requires explicit faces;
-materialize them when rebuilding a native Cartesian snapshot:
+Reading it keeps native face recipes lazy; `from_bins()` builds them and checks
+them against the bins, so a Cartesian snapshot rebuilds directly:
 
 <!-- docs-test: run -->
 ```python
-from dataclasses import replace
 import numpy as np
 from neurospatial import Environment
-from neurospatial.binning import KnownFaces
 
 original = Environment.from_grid_mask(
     np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
 )
-snapshot = original.binning
-explicit = replace(snapshot, faces=KnownFaces(snapshot.faces.build()))
-rebuilt = Environment.from_bins(explicit, arena=original.arena)
+rebuilt = Environment.from_bins(original.binning, arena=original.arena)
 np.testing.assert_array_equal(rebuilt.bin_centers, original.bin_centers)
 ```
 

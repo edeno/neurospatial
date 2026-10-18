@@ -52,11 +52,6 @@ _MISTAKES = {
         TypeError,
         "arena=OpenArena(polygon)",
     ),
-    "from_bins(env.binning)": (
-        lambda: Environment.from_bins(_ENV.binning),
-        TypeError,
-        "faces=KnownFaces(binning.faces.build())",
-    ),
     "rebin(1.5)": (lambda: _ENV.rebin(1.5), ValueError, "rebin(2)"),
     "linear_track(endpoints=[0, 200])": (
         lambda: Environment.linear_track(endpoints=[0, 200], bin_size=2.0),

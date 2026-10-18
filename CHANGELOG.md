@@ -32,6 +32,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   since a sum or density over lengths and areas has no unit; the error says how
   to analyze one component at a time.
 
+- `Environment.bin_center_tree()` returns an independent copy of the cached
+  KD-tree (about a millisecond for 200,000 bins), so `tree1 is tree2` is now
+  False. Before, it returned the cached tree itself, and changing its
+  `indices` or reshaping its `data` in place changed the environment's own
+  lookups and bin centers.
+
 - `Binning` no longer has a `clip_mapping` field. The clipped locator already
   holds the mapping, and the stored copy had to agree with it, so
   `Environment.clip_mapping` now reads it from the locator. Drop
@@ -1203,7 +1209,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   such as a corridor built with `linear_track` and the arena it leads into.
   Each bin keeps its own measure; occupancy, rate maps, smoothing within each
   component, decoding and storage work on the combined environment, and a
-  transform scales each bin by its own dimension.
+  transform scales each bin by its own dimension. Bridges between bins of
+  different measure are navigation-only: a `bridge_conductances` entry for one
+  is refused, because diffusion between a density per length and one per area
+  would depend on the units.
+
+- `Environment.from_bins(env.binning, arena=env.arena)` rebuilds an
+  equivalent environment directly: `from_bins` builds the lazy face recipe
+  that `env.binning` carries and checks it against the bins, instead of
+  refusing it.
 
 - `Environment.get_blocked_edges()` lists the neighbor pairs that walls close,
   with each pair's navigation distance and the name of the wall that closes
@@ -1588,6 +1602,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- The default smoothing bandwidth for an environment with no neighbor pairs and
+  no metric units used each bin's measure to the power `1 / n_dims`, so a track
+  bin 2 long in 2-D coordinates counted as 1.41 long. It now uses each bin's
+  own measure dimension: a track bin's length, the side of an area bin.
 
 - A combined environment whose components have no polygon cells, such as two
   tracks, reported no `dimension_ranges`, and `compute_spatial_rate` on it
