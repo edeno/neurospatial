@@ -1289,9 +1289,6 @@ _POLAR_INHERITED_MEMBERS = {
         "contains",
         "occupancy",
     },
-    "KD-tree over the stored (distance, angle) bin centers": {
-        "bin_center_tree",
-    },
     "combined-component records, empty on a native polar environment": {
         "bin_sources",
         "component_keys",
@@ -1525,6 +1522,7 @@ def test_cartesian_operations_are_the_capability_methods():
     """The @cartesian_only decorators mark exactly these members and grid needs."""
     assert {
         "apply_transform",
+        "bin_center_tree",
         "clip",
         "interpolate",
         "rebin",

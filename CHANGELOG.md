@@ -32,9 +32,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   since a sum or density over lengths and areas has no unit; the error says how
   to analyze one component at a time.
 
+- `Environment.rebin` keeps a subset's or clip's selection. A new bin is
+  kept only where it covers the environment's own bins (and lies in the
+  arena); before, rebinning re-covered the whole arena, so an 8-bin subset
+  became 16 bins after `rebin(factor=1)`. Environments that were never
+  subset or clipped rebin exactly as before.
+
 - `Environment.bin_center_tree()` returns an independent copy of the cached
   KD-tree (about a millisecond for 200,000 bins), so `tree1 is tree2` is now
-  False. Before, it returned the cached tree itself, and changing its
+  False, and it refuses polar environments: a tree over `(distance, angle)`
+  rows adds centimeters to radians and treats angles a turn apart as far
+  apart, disagreeing with `nearest_bin`. Use `env.nearest_bin` there.
+  `heat_kernel_wavelet_basis` on a polar environment now measures bin spacing
+  physically instead of in those rows. Before, it returned the cached tree itself, and changing its
   `indices` or reshaping its `data` in place changed the environment's own
   lookups and bin centers.
 

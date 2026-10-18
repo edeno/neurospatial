@@ -1440,13 +1440,16 @@ class Environment(Generic[_C]):
             max_distance_factor=max_distance_factor,
         )
 
-    def bin_center_tree(self) -> cKDTree:
-        """Return the KD-tree over ``bin_centers``.
-
-        On Cartesian environments it is the tree ``nearest_bin`` searches. On
-        an egocentric polar environment it is over the stored
-        ``(distance, angle)`` columns, while ``nearest_bin`` searches the
-        centers' Cartesian embedding.
+    @cartesian_only(
+        why="A KD-tree over (distance, angle) rows would add centimeters to "
+        "radians and treat angles a turn apart as far apart, so its neighbors "
+        "would disagree with nearest_bin, which measures physical distance.",
+        fix="use env.nearest_bin, which finds the nearest bin by physical "
+        "distance on a polar environment",
+        example="env.nearest_bin(positions)",
+    )
+    def bin_center_tree(self: Environment[CartesianSystem]) -> cKDTree:
+        """Return the KD-tree over ``bin_centers``, the one ``nearest_bin`` searches.
 
         The tree is built on first use and kept in the analysis cache, shared
         with relabelled copies and released by ``clear_cache()``. Each call

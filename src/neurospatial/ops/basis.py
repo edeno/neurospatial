@@ -770,9 +770,16 @@ def heat_kernel_wavelet_basis(
     faces = env.binning.faces
     if not faces.available:
         raise faces.missing_error("heat_kernel_wavelet_basis")
-    laplacian = _diffusion_generator(
-        env.bin_centers, env.bin_center_tree(), env.get_diffusion_geometry()
-    )
+    # Bin spacing is a physical length: on a polar environment it comes from
+    # the centers' Cartesian embedding, not from (distance, angle) rows.
+    if env.coordinate_system.kind == "cartesian":
+        places, tree = env.bin_centers, env.bin_center_tree()
+    else:
+        from scipy.spatial import cKDTree
+
+        places = env.coordinate_system.cartesian_embedding(env.bin_centers)
+        tree = cKDTree(places)
+    laplacian = _diffusion_generator(places, tree, env.get_diffusion_geometry())
 
     # Create delta vectors at centers
     # Shape: (n_bins, n_centers)
