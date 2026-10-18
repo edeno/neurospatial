@@ -73,7 +73,75 @@ def locate(
     indices = np.full(len(positions), -1, dtype=np.intp)
     if np.any(inside):
         indices[inside] = binning.locator.locate(positions[inside], indexes)
+    _snap_outline_slivers(binning, arena, positions, inside, indices)
     return indices
+
+
+def _snap_outline_slivers(
+    binning: Binning,
+    arena: Arena,
+    positions: NDArray[np.float64],
+    inside: NDArray[np.bool_],
+    indices: NDArray[np.intp],
+) -> None:
+    """Give in-arena positions in a grid cell dropped at the outline a bin.
+
+    A grid keeps the cells whose centers lie inside the arena's outline, so
+    slivers of a curved or diagonal wall are inside the arena but in no bin.
+    A position inside such a cell (one of the grid's cells, whose center lies
+    outside the arena) belongs to the nearest neighboring cell whose center
+    lies inside, less than one cell away, when that cell is a bin. A cell
+    removed on purpose (by ``subset``) keeps its sliver positions outside, as
+    do positions beyond the grid. Updates ``indices`` in place.
+    """
+    from neurospatial.geometry._locators import RectilinearLocator
+
+    locator = binning.locator
+    orphan = inside & (indices < 0)
+    if not np.any(orphan) or not isinstance(locator, RectilinearLocator):
+        return
+    shape = np.asarray(locator.shape)
+    rows = np.flatnonzero(orphan)
+    cells = np.column_stack(
+        [
+            np.searchsorted(edge, positions[rows, axis], side="right") - 1
+            for axis, edge in enumerate(locator.edges)
+        ]
+    )
+    in_grid = np.all((cells >= 0) & (cells < shape), axis=1)
+    rows, cells = rows[in_grid], cells[in_grid]
+    if rows.size == 0:
+        return
+
+    def centers_of(grid_cells: NDArray[np.intp]) -> NDArray[np.float64]:
+        return np.stack(
+            [
+                0.5 * (edge[grid_cells[..., axis]] + edge[grid_cells[..., axis] + 1])
+                for axis, edge in enumerate(locator.edges)
+            ],
+            axis=-1,
+        )
+
+    sliver = ~arena.contains(centers_of(cells))
+    rows, cells = rows[sliver], cells[sliver]
+    if rows.size == 0:
+        return
+    # Every neighboring cell, (n_rows, n_offsets, n_dims).
+    offsets = np.array(list(np.ndindex(*(3,) * len(shape)))) - 1
+    offsets = offsets[np.any(offsets != 0, axis=1)]
+    neighbors = cells[:, None, :] + offsets[None, :, :]
+    valid = np.all((neighbors >= 0) & (neighbors < shape), axis=2)
+    neighbors = np.clip(neighbors, 0, shape - 1)
+    centers = centers_of(neighbors)
+    flat_centers = centers.reshape(-1, len(shape))
+    valid &= arena.contains(flat_centers).reshape(valid.shape)
+    distance = np.linalg.norm(centers - positions[rows, None, :], axis=2)
+    distance[~valid] = np.inf
+    best = np.argmin(distance, axis=1)
+    found = np.isfinite(distance[np.arange(len(rows)), best])
+    owner = neighbors[np.arange(len(rows)), best][found]
+    flat = np.ravel_multi_index(tuple(owner.T), locator.shape)
+    indices[rows[found]] = locator._active_index(flat)
 
 
 def require_position_columns(

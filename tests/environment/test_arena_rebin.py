@@ -1,7 +1,6 @@
 """Coarsening retains continuous domains and representable physical walls."""
 
 import copy
-import re
 import warnings
 
 import networkx as nx
@@ -138,32 +137,19 @@ def test_factor_two_rebin_merges_every_fine_bin_beside_a_domain_corner(kind):
     assert coarse_time.sum() == pytest.approx(fine_time.sum())
 
 
-def _reported_loss(record):
-    """Return the bin count and percentage quoted by the coverage warning."""
-    (message,) = [
-        str(item.message) for item in record if "without a new bin" in str(item.message)
-    ]
-    count, total, percent = re.search(
-        r"(\d+) of (\d+) original bins \((\d+\.\d)%", message
-    ).groups()
-    return int(count), int(total), float(percent), message
-
-
-def test_factor_rebin_reports_fine_bins_left_outside_every_coarse_cell():
-    # Perimeter coarse cells of a circle have centers outside it, so some
-    # recorded fine bins have no coarse cell. The warning quantifies the loss.
+def test_factor_rebin_keeps_fine_bins_in_coarse_perimeter_cells():
+    # Perimeter coarse cells of a circle have centers outside it. The fine
+    # bins in them lie inside the arena, so they take the neighboring coarse
+    # bin (less than one coarse cell away) instead of being lost.
     circle = Point(0, 0).buffer(10.0, quad_segs=64)
     fine = Environment.from_polygon(circle, bin_size=1.0)
-    with pytest.warns(UserWarning, match="without a new bin") as record:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
         coarse = fine.rebin(2)
-    lost = coarse.bin_at(fine.bin_centers) < 0
-    assert lost.any()
-    count, total, percent, message = _reported_loss(record)
-    assert (count, total) == (np.count_nonzero(lost), fine.n_bins)
-    assert percent == pytest.approx(
-        100 * fine.bin_sizes[lost].sum() / fine.bin_sizes.sum(), abs=0.05
-    )
-    assert "-1" in message and "clip" in message
+    owners = coarse.bin_at(fine.bin_centers)
+    assert np.all(owners >= 0)
+    gap = np.linalg.norm(coarse.bin_centers[owners] - fine.bin_centers, axis=1)
+    assert gap.max() < 2.0 * np.sqrt(2)
 
     # The suggested route covers the whole arena: no fine bin is lost and
     # the exact cells add up to the arena's area.

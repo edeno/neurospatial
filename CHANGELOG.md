@@ -670,6 +670,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `max_distance_factor=10.0` for the old cutoff. `resample_field` keeps its
   outside-the-source rule by passing that factor itself.
 
+- A position inside a known arena outline that falls in no bin -- a sliver
+  of a curved or diagonal wall, whose grid cell was dropped because its center
+  lies outside the outline -- belongs to the neighboring bin whose center lies
+  inside, less than one cell away. Before, `bin_at` gave `-1` and occupancy and
+  spike counts dropped it. For an animal running along the wall of a 50 cm
+  circular arena (mean 4 cm from it) with a border cell, 4 cm bins dropped 10%
+  of the time and 17% of the spikes (14% of the time within 5 cm of the wall);
+  now none, with rate maps and border scores nearly unchanged. Cells removed by
+  `subset()`, holes and positions beyond the grid stay outside. Applies to
+  rectangular grids (`from_polygon`, and `from_samples`/`open_field` with an
+  `arena=`); `time_allocation="linear"` still splits paths by the exact cells.
+  `rebin` therefore no longer reports fine bins in perimeter coarse cells as
+  lost.
+
 ### Changed
 
 - Speed is one definition everywhere: the velocity vector smoothed with a
