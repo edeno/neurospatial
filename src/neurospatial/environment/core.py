@@ -2239,10 +2239,12 @@ class Environment(Generic[_C]):
         the number of bins. This method only modifies the grid geometry and
         connectivity; it does not aggregate any field values.
 
-        Pass exactly one of ``factor`` or ``bin_size``. The new-size mode
-        reconstructs over the retained arena using stored rectangular-lattice
-        data; analysis crops do not change the arena. It preserves the grid
-        frame and lattice anchor, independently of descriptive provenance.
+        Pass exactly one of ``factor`` or ``bin_size``. Either mode covers the
+        bins this environment has, within its arena: rebinning a ``subset`` or
+        ``clip`` keeps that selection rather than restoring the space it left
+        out. The new-size mode uses stored rectangular-lattice data and
+        preserves the grid frame and lattice anchor, independently of
+        descriptive provenance.
 
         Parameters
         ----------
@@ -2264,8 +2266,10 @@ class Environment(Generic[_C]):
         -------
         coarse_env : Environment
             New environment at the requested resolution. With ``factor``, the grid shape is
-            ``original_shape // factor`` in each dimension. Keep coarse bins
-            whose centers lie inside the original arena.
+            ``original_shape // factor`` in each dimension. A new bin is kept
+            when it holds one of this environment's bins (or, with
+            ``bin_size``, lies within one) and its center lies inside the
+            arena.
 
         Raises
         ------
@@ -2311,13 +2315,15 @@ class Environment(Generic[_C]):
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
 
-        **Active bins**: With ``factor``, keep coarse cells whose centers lie
-        in the known arena, including on its boundary, as ``contains`` does;
-        a factor of 2 therefore merges every fine bin of a grid mask. With
-        ``bin_size``, keep new cells whose centers lie strictly inside a
-        polygonal arena, or are contained by another known arena. Unknown
-        domains retain the full coarse grid. Rebinning preserves the arena
-        rather than filling its holes. When original bins (inside the
+        **Active bins**: A new cell must cover this environment's bins: with
+        ``factor``, its block of fine cells holds at least one bin; with
+        ``bin_size``, its center lies in a bin or a bin's center lies in it.
+        It must also lie in the arena: with ``factor``, its center lies in the
+        known arena, including on its boundary, as ``contains`` does; with
+        ``bin_size``, strictly inside a polygonal arena, or contained by
+        another known arena. A factor of 2 therefore merges every fine bin of
+        a grid mask, and rebinning keeps both a subset's selection and the
+        arena's holes. When original bins (inside the
         truncated extent) are left without a new bin, a ``UserWarning`` gives
         their count and share of the area, since positions in them map to -1.
 

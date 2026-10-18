@@ -756,11 +756,12 @@ track footprints still require a separate exact wall representation. For a
 position-derived environment with supported planar cells, explicitly select
 `boundary_source="analysis"` when that approximation is the intended model.
 
-## Change bin size while retaining the arena
+## Change bin size
 
-`env.rebin(bin_size=...)` builds a new rectangular lattice over the retained
-arena. It keeps the original grid frame, lattice anchor, units, frame label and
-regions. The argument is a physical length along each retained grid axis;
+`env.rebin(bin_size=...)` builds a new rectangular lattice over the bins the
+environment has, within its arena: rebinning a subset keeps the selection
+rather than bringing back the space it left out. It keeps the original grid
+frame, lattice anchor, units, frame label and regions. The argument is a physical length along each retained grid axis;
 a tuple gives different lengths along different axes. It can refine or coarsen.
 
 <!-- docs-test: run -->
@@ -774,13 +775,13 @@ env = Environment.from_grid_mask(
 )
 crop = env.subset(mask=env.bin_centers[:, 0] < 2)
 coarse = crop.rebin(bin_size=2.0)
-assert coarse.n_bins == 9  # rebuild the whole retained arena
+assert coarse.n_bins == 3  # the cropped column, at the new size
 np.testing.assert_allclose(coarse.bin_sizes, 4.0)
-assert coarse.rebin(bin_size=1.0).n_bins == env.n_bins
+assert coarse.rebin(bin_size=1.0).n_bins == crop.n_bins
 ```
 
-Whole-bin selection keeps centers inside the arena; it does not promise exact
-clipped areas. Original bins in a new perimeter cell whose center lies outside
+Whole-bin selection keeps new cells that cover the environment's bins and whose
+centers lie inside the arena; it does not promise exact clipped areas. Original bins in a new perimeter cell whose center lies outside
 the arena take the neighboring new bin, like any position in a sliver. When
 original bins are still left without a new bin (beyond the new grid, or in a
 cell a subset removed),

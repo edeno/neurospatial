@@ -88,16 +88,16 @@ def test_factor_rebin_accepts_subset_and_wall_filtered_native_graph(diagonal):
     source = _grid(diagonal=diagonal, arena=arena)
     for parent in (source, source.subset(mask=source.bin_centers[:, 1] < 2)):
         child = parent.rebin(1)
-        # The original arena still determines the target support, including when
-        # the input is a selected analysis region within that physical arena.
-        np.testing.assert_array_equal(child.bin_centers, source.bin_centers)
-        assert set(child.connectivity.edges()) == set(source.connectivity.edges())
+        # Rebinning keeps the selected bins and the wall that splits them.
+        np.testing.assert_array_equal(child.bin_centers, parent.bin_centers)
+        assert set(child.connectivity.edges()) == set(parent.connectivity.edges())
         assert nx.number_connected_components(child.connectivity) == 2
 
 
 def test_owned_diagonal_policy_applies_when_source_has_no_diagonal_edges():
     active = np.zeros((4, 4), dtype=bool)
     active[0] = True
+    active[3, 3] = True  # far from row 0, so no diagonal neighbor in the source
     source = Environment.from_grid_mask(
         active,
         grid_edges=(np.arange(5.0),) * 2,
@@ -108,8 +108,8 @@ def test_owned_diagonal_policy_applies_when_source_has_no_diagonal_edges():
         np.count_nonzero(source.bin_centers[u] != source.bin_centers[v]) == 1
         for u, v in source.edge_pairs
     )
-    # An unknown domain retains the existing full-coarse-grid behavior. The
-    # stored construction choice remains authoritative for its new diagonal links.
+    # The stored construction choice remains authoritative for new diagonal
+    # links: the coarse blocks holding bins are (0, 0), (0, 1) and (1, 1).
     child = source.rebin(2)
-    assert child.n_bins == 4
-    assert child.connectivity.number_of_edges() == 6
+    assert child.n_bins == 3
+    assert child.connectivity.number_of_edges() == 3

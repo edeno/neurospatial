@@ -26,16 +26,14 @@ def grid():
     )
 
 
-def test_rebin_new_resolution_restores_arena_after_analysis_crop():
+def test_rebin_new_resolution_keeps_the_selection_after_an_analysis_crop():
     env = grid().subset(mask=grid().bin_centers[:, 0] < 2)
     coarse = env.rebin(bin_size=2.0)
-    expected = np.array([[x, y] for x in [1, 3, 5] for y in [1, 3, 5]])
+    expected = np.array([[1, y] for y in [1, 3, 5]])
     np.testing.assert_array_equal(coarse.bin_centers, expected)
     np.testing.assert_allclose(coarse.bin_sizes, 4.0)
     assert coarse.units == "cm" and coarse.frame == "lab"
-    np.testing.assert_array_equal(
-        coarse.rebin(bin_size=1).bin_centers, grid().bin_centers
-    )
+    np.testing.assert_array_equal(coarse.rebin(bin_size=1).bin_centers, env.bin_centers)
 
 
 def test_rebin_reports_original_area_left_without_a_new_bin():
@@ -156,10 +154,11 @@ def test_rebin_retains_grid_frame_and_uses_physical_axis_lengths():
     np.testing.assert_allclose(restored.bin_centers, coarse.bin_centers)
 
 
-def test_clip_keeps_spec_but_does_not_turn_crop_into_new_arena():
+def test_clip_keeps_spec_and_rebinning_keeps_the_crop():
     clipped = grid().clip(box(0.2, 0.2, 1.8, 1.8))
     assert clipped._binning.grid_spec is not None
-    assert clipped.rebin(bin_size=2).n_bins == 9
+    coarse = clipped.rebin(bin_size=2)
+    np.testing.assert_array_equal(coarse.bin_centers, [[1.0, 1.0]])
 
 
 def test_rebin_preserves_complete_face_walls_and_refuses_splitting_cells():
@@ -324,3 +323,23 @@ def test_factor_rebin_without_spec_records_the_choice_it_built():
         np.count_nonzero(refined.bin_centers[u] != refined.bin_centers[v]) > 1
         for u, v in refined.edge_pairs
     )
+
+
+@pytest.mark.parametrize(
+    ("options", "n_bins"),
+    [
+        ({"factor": 1}, 18),
+        ({"factor": 2}, 6),  # coarse columns 0-1 and 2-3 hold retained bins
+        ({"bin_size": 2.0}, 6),
+        ({"bin_size": 0.5}, 72),
+    ],
+)
+def test_rebinning_a_subset_never_restores_dropped_space(options, n_bins):
+    full = grid()
+    west = full.subset(mask=full.bin_centers[:, 0] < 3)  # 3 of 6 columns
+    coarse = west.rebin(**options)
+    assert coarse.n_bins == n_bins
+    # Every new bin holds a retained bin, or lies within one.
+    holds = set(coarse.bin_at(west.bin_centers).tolist())
+    within = west.bin_at(coarse.bin_centers) >= 0
+    assert all(index in holds or within[index] for index in range(coarse.n_bins))

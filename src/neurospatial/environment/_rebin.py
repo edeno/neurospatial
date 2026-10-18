@@ -433,6 +433,20 @@ def _rebin_resolution(
         keep = shapely.contains_xy(domain, mapped[:, 0], mapped[:, 1])
     else:
         keep = arena.contains(mapped)
+    # Keep only cells over the bins the environment has, so rebinning a
+    # subset does not bring back the space it left out: a new cell is kept
+    # when its center lies in a bin, or a bin's center lies in it.
+    in_bins = binning.locator.locate(mapped) >= 0
+    source = (binning.bins.centers - spec.forward[:-1, -1]) @ np.linalg.inv(
+        spec.forward[:-1, :-1]
+    ).T
+    cell = np.floor((source - spec.origin) / spacing).astype(np.intp) - low.astype(
+        np.intp
+    )
+    inside = np.all((cell >= 0) & (cell < np.array(shape)), axis=1)
+    holds_bin = np.zeros(len(centers), dtype=bool)
+    holds_bin[np.ravel_multi_index(tuple(cell[inside].T), shape)] = True
+    keep &= in_bins | holds_bin
     if not np.any(keep):
         raise ValueError(
             "Rebinning retains no bin center inside the original arena; use a smaller bin_size."
@@ -682,9 +696,15 @@ def _rebin_factor(
     # environment. The original arena remains the continuous authority. Its
     # closed containment keeps a coarse cell centered on the domain boundary,
     # such as the corner beside a missing fine cell, in every dimension.
-    keep = np.ones(len(coarse_bin_centers), dtype=bool)
+    # A coarse cell is a block of fine cells; keep only blocks holding one of
+    # the environment's bins, so rebinning a subset keeps the selection.
+    block_shape = [
+        n for pair in zip(coarse_shape, factor_tuple, strict=True) for n in pair
+    ]
+    active = grid.active_mask[tuple(slice(0, size) for size in truncated_shape)]
+    keep = active.reshape(block_shape).any(axis=tuple(range(1, 2 * n_dims, 2))).ravel()
     if arena.domain_known:
-        keep = arena.contains(coarse_bin_centers)
+        keep &= arena.contains(coarse_bin_centers)
         if not np.any(keep):
             raise ValueError(
                 "Rebinning retains no coarse bin center inside the original arena. "

@@ -447,9 +447,10 @@ refuses custom path lengths or topology that cell geometry cannot
 reconstruct, keeps its historical grid partitioning, retains native lazy
 faces and its recorded grid parameters, and keeps truncation warnings and
 complete-face wall constraints. `rebin(bin_size=...)` uses the owned
-`GridBinningSpec`, independently of provenance: it re-bins the retained known
-arena, preserving the grid anchor and affine frame, and prepares faces for
-that frame. Requested sizes are physical lengths along those axes. Subset and
+`GridBinningSpec`, independently of provenance: it re-bins the environment's
+bins within the known arena (a subset or clip keeps its selection),
+preserving the grid anchor and affine frame, and prepares faces for that
+frame. Requested sizes are physical lengths along those axes. Subset and
 clipping preserve the specification; combining does not invent a shared one.
 Unsupported families and records without a specification refuse new-size
 re-binning.
