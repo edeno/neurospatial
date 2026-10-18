@@ -79,6 +79,7 @@ if TYPE_CHECKING:
 
 from neurospatial._results import ResultMixin
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops.mapping import _require_region_mask
 from neurospatial.stats.circular import wrap_angle
 
 __all__ = [
@@ -764,6 +765,12 @@ def compute_vte_session(
     )
     times, positions = validate_times_positions(
         times, positions, call="compute_vte_session"
+    )
+    _require_region_mask(
+        env,
+        decision_region,
+        operation="compute_vte_session()",
+        argument="decision_region",
     )
     from neurospatial.behavior.decisions import (
         decision_region_entry_time,

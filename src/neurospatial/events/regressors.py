@@ -21,8 +21,8 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import RegionNotFoundError
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -982,10 +982,12 @@ def distance_to_boundary(
         # Region boundary bins: boundary of the named region
         # region_name is already validated as not None by the earlier check
         assert region_name is not None  # for type checker
-        if region_name not in env.regions:
-            raise RegionNotFoundError(
-                region_name, available=list(env.regions.keys()), argument="region_name"
-            )
+        _require_region_mask(
+            env,
+            region_name,
+            operation="distance_to_boundary()",
+            argument="region_name",
+        )
         boundary_bins = _find_region_boundary_bins(env, region_name)
 
     else:
