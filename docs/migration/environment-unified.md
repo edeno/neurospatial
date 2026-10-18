@@ -27,7 +27,9 @@ assert type(room) is type(polar) is Environment
 assert room.coordinate_kind == "cartesian"
 assert polar.coordinate_kind == "polar"
 assert hasattr(polar, "bin_at")  # visible; calling it raises CartesianOnlyError
-assert polar.smooth(np.ones(polar.n_bins), bandwidth=1.0).shape == (polar.n_bins,)
+assert polar.smooth(
+    np.ones(polar.n_bins), bandwidth=1.0, mode="average"
+).shape == (polar.n_bins,)
 ```
 
 Polar coordinates are `(distance, angle)`: distance uses the declared length

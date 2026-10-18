@@ -229,7 +229,10 @@ to_cm = estimate_transform(detected_px, corners_cm, kind="similarity")
 room = camera.apply_transform(to_cm).with_metadata(units="cm")
 cm_per_px = np.sqrt(abs(np.linalg.det(to_cm.A[:2, :2])))
 field = rng.random(camera.n_bins)
-np.testing.assert_allclose(room.smooth(field, bandwidth=5.0), camera.smooth(field, bandwidth=5.0 / cm_per_px))
+np.testing.assert_allclose(
+    room.smooth(field, bandwidth=5.0, mode="average"),
+    camera.smooth(field, bandwidth=5.0 / cm_per_px, mode="average"),
+)
 ```
 
 New face certification checks normalized orthogonality residuals against `1e-12`.

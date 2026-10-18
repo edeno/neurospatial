@@ -285,7 +285,7 @@ def refuse_unsupported_rebin(
     rebuild = _rebuild_call(binning, arena, size)
     smooth = (
         f"; or smooth fields at that scale instead: env.smooth(field, "
-        f"bandwidth={size:g})"
+        f"bandwidth={size:g}, mode='average') for a rate map"
         if size
         else ""
     )

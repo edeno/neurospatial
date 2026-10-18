@@ -35,7 +35,7 @@ class TestComputeKernel:
 
     def test_compute_kernel_basic(self, small_2d_env):
         """Test basic kernel computation."""
-        kernel = small_2d_env.compute_kernel(bandwidth=5.0)
+        kernel = small_2d_env.compute_kernel(bandwidth=5.0, mode="density")
 
         # Kernel should be n_bins x n_bins
         assert kernel.shape == (small_2d_env.n_bins, small_2d_env.n_bins)
@@ -71,7 +71,7 @@ class TestComputeKernel:
     @pytest.mark.parametrize("bandwidth", [1.0, 5.0, 10.0])
     def test_compute_kernel_various_bandwidths(self, small_2d_env, bandwidth):
         """Test kernel computation with various bandwidths."""
-        kernel = small_2d_env.compute_kernel(bandwidth=bandwidth)
+        kernel = small_2d_env.compute_kernel(bandwidth=bandwidth, mode="density")
 
         assert kernel.shape == (small_2d_env.n_bins, small_2d_env.n_bins)
         # All values should be non-negative
@@ -239,7 +239,7 @@ class TestSmooth:
         rng = np.random.default_rng(42)
         field = rng.random(small_2d_env.n_bins)
 
-        smoothed = small_2d_env.smooth(field, bandwidth=3.0)
+        smoothed = small_2d_env.smooth(field, bandwidth=3.0, mode="average")
 
         assert smoothed.shape == field.shape
 
@@ -247,7 +247,7 @@ class TestSmooth:
         """Test that smoothing zero field gives zero field."""
         field = np.zeros(small_2d_env.n_bins)
 
-        smoothed = small_2d_env.smooth(field, bandwidth=5.0)
+        smoothed = small_2d_env.smooth(field, bandwidth=5.0, mode="average")
 
         np.testing.assert_array_equal(smoothed, field)
 
@@ -258,7 +258,7 @@ class TestSmooth:
         field_wrong = rng.random(medium_2d_env.n_bins + 10)
 
         with pytest.raises(ValueError, match=r"bins, which must be the first axis"):
-            medium_2d_env.smooth(field_wrong, bandwidth=2.0)
+            medium_2d_env.smooth(field_wrong, bandwidth=2.0, mode="average")
 
     def test_smooth_3d_field_raises(self, medium_2d_env):
         """A field batch has two axes at most: bins, then fields."""
@@ -266,7 +266,7 @@ class TestSmooth:
         field_3d = rng.random((medium_2d_env.n_bins, 3, 2))
 
         with pytest.raises(ValueError, match=r"\(n_bins,\) or \(n_bins, n_fields\)"):
-            medium_2d_env.smooth(field_3d, bandwidth=2.0)
+            medium_2d_env.smooth(field_3d, bandwidth=2.0, mode="average")
 
     def test_smooth_negative_bandwidth_raises(self, medium_2d_env):
         """Test that negative bandwidth raises ValueError."""
@@ -274,7 +274,7 @@ class TestSmooth:
         field = rng.random(medium_2d_env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
-            medium_2d_env.smooth(field, bandwidth=-1.0)
+            medium_2d_env.smooth(field, bandwidth=-1.0, mode="average")
 
     def test_smooth_zero_bandwidth_raises(self, medium_2d_env):
         """Test that zero bandwidth raises ValueError."""
@@ -282,7 +282,7 @@ class TestSmooth:
         field = rng.random(medium_2d_env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
-            medium_2d_env.smooth(field, bandwidth=0.0)
+            medium_2d_env.smooth(field, bandwidth=0.0, mode="average")
 
     def test_smooth_invalid_mode_raises(self, medium_2d_env):
         """Test that invalid mode raises ValueError."""
@@ -298,7 +298,7 @@ class TestSmooth:
         field[0] = np.inf
 
         with pytest.raises(ValueError, match=r"Field contains infinite values"):
-            medium_2d_env.smooth(field, bandwidth=2.0)
+            medium_2d_env.smooth(field, bandwidth=2.0, mode="average")
 
     def test_smooth_field_with_negative_inf_raises(self, medium_2d_env):
         """Test that field with -Inf raises ValueError."""
@@ -306,7 +306,7 @@ class TestSmooth:
         field[0] = -np.inf
 
         with pytest.raises(ValueError, match=r"Field contains infinite values"):
-            medium_2d_env.smooth(field, bandwidth=2.0)
+            medium_2d_env.smooth(field, bandwidth=2.0, mode="average")
 
 
 # =============================================================================

@@ -47,8 +47,8 @@ positions = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # cm
 env = Environment.from_samples(positions, bin_size=2.0)
 rate = np.random.default_rng(1).random(env.n_bins)  # Hz
 
-smoothed = env.smooth(rate, bandwidth=5.0)  # builds the eigenbasis once
-smoothed_again = env.smooth(rate, bandwidth=5.0)  # reuses it
+smoothed = env.smooth(rate, bandwidth=5.0, mode="average")  # builds the eigenbasis once
+smoothed_again = env.smooth(rate, bandwidth=5.0, mode="average")  # reuses it
 kernel = env.compute_kernel(bandwidth=5.0, mode="average", cache=False)
 bins = env.nearest_bin(positions)  # builds the KD-tree once
 env.clear_cache()  # release every cached analysis
@@ -66,7 +66,7 @@ you are done with it, or let the environment go out of scope:
 ```python
 for env in environments:
     for bandwidth in (5.0, 10.0, 15.0):
-        process_result(env.smooth(field, bandwidth=bandwidth))
+        process_result(env.smooth(field, bandwidth=bandwidth, mode="average"))
     env.clear_cache()
 ```
 
@@ -246,13 +246,11 @@ def process_session(session_data, bin_size=2.0):
         bin_size=bin_size
     )
 
-    # Pre-compute commonly used kernel
-    env.compute_kernel(bandwidth=10.0, cache=True)
-
-    # Process multiple fields
+    # Process multiple rate maps; the first call builds the eigenbasis that
+    # the others reuse.
     results = {}
     for field_name, field_data in session_data['fields'].items():
-        smoothed = env.smooth(field_data, bandwidth=10.0)
+        smoothed = env.smooth(field_data, bandwidth=10.0, mode="average")
         results[field_name] = analyze_field(smoothed)
 
     # Clear caches before returning (prevent memory leak)
@@ -278,7 +276,7 @@ import tracemalloc
 
 tracemalloc.start()
 
-env.compute_kernel(bandwidth=10.0, cache=True)
+env.compute_kernel(bandwidth=10.0, mode="average", cache=True)
 current, peak = tracemalloc.get_traced_memory()
 
 print(f"Current memory: {current / 1024 / 1024:.2f} MB")
@@ -297,11 +295,11 @@ import time
 env.clear_cache()
 
 start = time.time()
-result1 = env.smooth(field, bandwidth=10.0)
+result1 = env.smooth(field, bandwidth=10.0, mode="average")
 uncached_time = time.time() - start
 
 start = time.time()
-result2 = env.smooth(field, bandwidth=10.0)
+result2 = env.smooth(field, bandwidth=10.0, mode="average")
 cached_time = time.time() - start
 
 print(f"Uncached: {uncached_time*1000:.2f} ms")

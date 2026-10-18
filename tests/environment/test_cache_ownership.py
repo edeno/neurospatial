@@ -56,8 +56,8 @@ def test_kernel_exports_reuse_computation(env, monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(_fields, "heat_kernel_from_W", counted)
-    first = env.compute_kernel(bandwidth=0.5)
-    second = env.compute_kernel(bandwidth=0.5)
+    first = env.compute_kernel(bandwidth=0.5, mode="density")
+    second = env.compute_kernel(bandwidth=0.5, mode="density")
     assert len(calls) == 1
     assert first is not second
     np.testing.assert_array_equal(first, second)

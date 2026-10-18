@@ -58,7 +58,7 @@ class TestSmoothBasic:
         env = Environment.from_samples(positions, bin_size=5.0)
 
         field = rng.random(env.n_bins)
-        smoothed = env.smooth(field, bandwidth=3.0)
+        smoothed = env.smooth(field, bandwidth=3.0, mode="average")
 
         assert smoothed.shape == field.shape
         assert smoothed.shape == (env.n_bins,)
@@ -70,7 +70,7 @@ class TestSmoothBasic:
         env = Environment.from_samples(positions, bin_size=3.0)
 
         field = rng.random(env.n_bins)
-        smoothed = env.smooth(field, bandwidth=2.0)
+        smoothed = env.smooth(field, bandwidth=2.0, mode="average")
 
         assert smoothed.dtype == np.float64
 
@@ -187,6 +187,38 @@ class TestSmoothModes:
         assert smoothed.shape == (env.n_bins,)
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda env: env.smooth(np.ones(env.n_bins), bandwidth=2.0),
+        lambda env: env.diffuse(np.ones(env.n_bins), bandwidth=2.0),
+        lambda env: env.compute_kernel(bandwidth=2.0),
+    ],
+    ids=["smooth", "diffuse", "compute_kernel"],
+)
+def test_mode_is_required_and_the_error_names_each_choice(call):
+    """No mode is right for every field, so omitting it refuses with the choices."""
+    env = Environment.from_samples(
+        np.random.default_rng(42).random((50, 2)) * 20, bin_size=2.0
+    )
+
+    with pytest.raises(TypeError, match=r"needs mode=") as caught:
+        call(env)
+
+    for choice in ("mode='average'", "mode='transition'", "mode='density'"):
+        assert choice in str(caught.value)
+
+
+def test_a_positional_bandwidth_is_explained_before_the_missing_mode():
+    """``env.smooth(rate, 5.0)`` still names the keyword it meant."""
+    env = Environment.from_samples(
+        np.random.default_rng(42).random((50, 2)) * 20, bin_size=2.0
+    )
+
+    with pytest.raises(TypeError, match=r"pass bandwidth=5\.0 by keyword"):
+        env.smooth(np.ones(env.n_bins), 5.0)
+
+
 class TestSmoothValidation:
     """Input validation tests."""
 
@@ -200,7 +232,7 @@ class TestSmoothValidation:
         field_wrong = rng.random(env.n_bins + 10)
 
         with pytest.raises(ValueError, match=r"bins, which must be the first axis"):
-            env.smooth(field_wrong, bandwidth=2.0)
+            env.smooth(field_wrong, bandwidth=2.0, mode="average")
 
     def test_smooth_negative_bandwidth_raises_error(self):
         """Negative bandwidth should raise ValueError."""
@@ -211,7 +243,7 @@ class TestSmoothValidation:
         field = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
-            env.smooth(field, bandwidth=-1.0)
+            env.smooth(field, bandwidth=-1.0, mode="average")
 
     def test_smooth_zero_bandwidth_raises_error(self):
         """Zero bandwidth should raise ValueError."""
@@ -222,7 +254,7 @@ class TestSmoothValidation:
         field = rng.random(env.n_bins)
 
         with pytest.raises(ValueError, match=r"bandwidth must be positive"):
-            env.smooth(field, bandwidth=0.0)
+            env.smooth(field, bandwidth=0.0, mode="average")
 
     def test_smooth_invalid_mode_raises_error(self):
         """Invalid mode should raise ValueError."""
@@ -243,11 +275,11 @@ class TestSmoothValidation:
         fields = rng.random((env.n_bins, 3))
         fields[0, 1] = np.nan  # one missing bin in the middle column
 
-        batch = env.smooth(fields, bandwidth=2.0)
+        batch = env.smooth(fields, bandwidth=2.0, mode="average")
 
         assert batch.shape == fields.shape
         columns = np.column_stack(
-            [env.smooth(fields[:, k], bandwidth=2.0) for k in range(3)]
+            [env.smooth(fields[:, k], bandwidth=2.0, mode="average") for k in range(3)]
         )
         np.testing.assert_allclose(batch, columns, rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(
@@ -263,7 +295,7 @@ class TestSmoothValidation:
 
         for smoothing, argument in ((env.smooth, "field"), (env.diffuse, "fields")):
             with pytest.raises(ValueError, match="must be the first axis") as caught:
-                smoothing(rates, bandwidth=2.0)
+                smoothing(rates, bandwidth=2.0, mode="average")
             assert f"Fix: pass {argument}.T" in str(caught.value)
 
     def test_smooth_field_with_inf_raises_error(self):
@@ -276,7 +308,7 @@ class TestSmoothValidation:
         field[0] = np.inf
 
         with pytest.raises(ValueError, match=r"Field contains infinite values"):
-            env.smooth(field, bandwidth=2.0)
+            env.smooth(field, bandwidth=2.0, mode="average")
 
     def test_smooth_field_with_negative_inf_raises_error(self):
         """Field containing -Inf should raise ValueError."""
@@ -288,7 +320,7 @@ class TestSmoothValidation:
         field[0] = -np.inf
 
         with pytest.raises(ValueError, match=r"Field contains infinite values"):
-            env.smooth(field, bandwidth=2.0)
+            env.smooth(field, bandwidth=2.0, mode="average")
 
     def test_smooth_empty_field_handled(self):
         """Empty field (all zeros) should be handled gracefully."""
@@ -297,7 +329,7 @@ class TestSmoothValidation:
         env = Environment.from_samples(positions, bin_size=2.0)
 
         field = np.zeros(env.n_bins)
-        smoothed = env.smooth(field, bandwidth=2.0)
+        smoothed = env.smooth(field, bandwidth=2.0, mode="average")
 
         # Should return all zeros
         np.testing.assert_array_equal(smoothed, field)
@@ -315,7 +347,7 @@ class TestSmoothMultipleLayouts:
         env = Environment.from_samples(positions, bin_size=1.0)
 
         field = rng.random(env.n_bins)
-        smoothed = env.smooth(field, bandwidth=1.0)
+        smoothed = env.smooth(field, bandwidth=1.0, mode="average")
 
         assert smoothed.shape == (env.n_bins,)
 
@@ -325,7 +357,7 @@ class TestSmoothMultipleLayouts:
         env = graph_env
 
         field = rng.random(env.n_bins)
-        smoothed = env.smooth(field, bandwidth=3.0)
+        smoothed = env.smooth(field, bandwidth=3.0, mode="average")
 
         assert smoothed.shape == (env.n_bins,)
 
@@ -410,21 +442,21 @@ def test_rate_result_is_refused_with_the_array_to_pass(population):
     spikes = np.sort(rng.uniform(0, times[-1], 200))
     if population:
         result = compute_spatial_rates(env, [spikes, spikes], times, positions)
-        expected = "env.smooth(result.firing_rates.T, bandwidth=10.0).T"
+        expected = "env.smooth(result.firing_rates.T, bandwidth=10.0, mode='average').T"
         rates = result.firing_rates.T
     else:
         result = compute_spatial_rate(env, spikes, times, positions)
-        expected = "env.smooth(result.firing_rate, bandwidth=10.0)"
+        expected = "env.smooth(result.firing_rate, bandwidth=10.0, mode='average')"
         rates = result.firing_rate
 
     for smoothing in (env.smooth, env.diffuse):
         with pytest.raises(
             TypeError, match="takes an array of values per bin"
         ) as caught:
-            smoothing(result, bandwidth=10.0)
+            smoothing(result, bandwidth=10.0, mode="average")
         assert expected in str(caught.value).split("Fix:")[1]
 
     # The suggested call works and keeps unvisited bins missing.
-    smoothed = env.smooth(rates, bandwidth=10.0)
+    smoothed = env.smooth(rates, bandwidth=10.0, mode="average")
     assert smoothed.shape == rates.shape
     assert np.all(np.isfinite(smoothed[np.isfinite(rates)]))

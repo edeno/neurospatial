@@ -8,6 +8,14 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.smooth`, `Environment.diffuse` and `Environment.compute_kernel`
+  require `mode=`. `smooth` defaulted to `mode="average"` and the other two to
+  `mode="density"`, so the same call gave different numbers on the same field
+  depending on the method. Pass `mode="average"` for a rate map or other value
+  per bin, `mode="transition"` for counts, occupancy or probability mass, and
+  `mode="density"` to turn counts into a density. Leaving `mode` out raises a
+  `TypeError` that lists the three choices.
+
 - `Environment.maze(kind=..., node_positions=...)` refuses a layout whose
   track segments cross or run along each other, naming the two segments and
   the node order the kind expects. The order of `node_positions` sets which

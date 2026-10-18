@@ -124,7 +124,8 @@ def test_rebinned_environment_round_trips(
         assert set(restored.connectivity.edges()) == set(env.connectivity.edges())
         field = np.arange(env.n_bins, dtype=float)
         np.testing.assert_allclose(
-            restored.smooth(field, bandwidth=1.0), env.smooth(field, bandwidth=1.0)
+            restored.smooth(field, bandwidth=1.0, mode="average"),
+            env.smooth(field, bandwidth=1.0, mode="average"),
         )
 
 
@@ -518,7 +519,7 @@ class TestRebinIntegration:
 
         # Then smooth a field
         field = rng.random(coarse.n_bins)
-        smoothed = coarse.smooth(field, bandwidth=5.0)
+        smoothed = coarse.smooth(field, bandwidth=5.0, mode="average")
 
         assert smoothed.shape == (coarse.n_bins,)
         assert not np.any(np.isnan(smoothed))

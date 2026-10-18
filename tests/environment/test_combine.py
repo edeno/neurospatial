@@ -134,15 +134,17 @@ def test_path_bridges_do_not_diffuse_but_declared_conductance_does():
     path_only = Environment.combine(children)
     field = np.array([1.0, 1.0, 0.0, 0.0])
     np.testing.assert_allclose(
-        path_only.diffuse(field, bandwidth=1.0), field, atol=1e-14
+        path_only.diffuse(field, bandwidth=1.0, mode="density"), field, atol=1e-14
     )
     coupled = Environment.combine(
         children, bridge_conductances={(("a", 1), ("b", 0)): 0.5}
     )
-    output = coupled.diffuse(field, bandwidth=1.0)
+    output = coupled.diffuse(field, bandwidth=1.0, mode="density")
     assert output[2] > 0
     np.testing.assert_allclose(output @ coupled.bin_sizes, field @ coupled.bin_sizes)
-    np.testing.assert_allclose(coupled.diffuse(np.ones(4), bandwidth=1.0), np.ones(4))
+    np.testing.assert_allclose(
+        coupled.diffuse(np.ones(4), bandwidth=1.0, mode="density"), np.ones(4)
+    )
     with pytest.raises(NotImplementedError, match=r"[Bb]ridge|face"):
         path_only.get_differential_operator()
 
@@ -159,7 +161,7 @@ def test_nearest_support_must_be_certified_and_missing_faces_remain_missing():
     )
     np.testing.assert_array_equal(env.bin_at([[0, 0], [3, 0], [1, 0]]), [0, 1, -1])
     with pytest.raises(NotImplementedError, match=r"geometry|faces"):
-        env.diffuse(np.ones(2), bandwidth=1.0)
+        env.diffuse(np.ones(2), bandwidth=1.0, mode="density")
 
 
 def test_metadata_regions_and_cutoff():
@@ -182,7 +184,9 @@ def test_subsets_remove_bridges_and_keep_original_sources():
     subset = env.subset(mask=np.array([True, False, True, True]))
     assert subset.bin_sources == (("a", 0), ("b", 0), ("b", 1))
     assert subset.get_bridge_attributes().empty
-    np.testing.assert_allclose(subset.diffuse(np.ones(3), bandwidth=1.0), np.ones(3))
+    np.testing.assert_allclose(
+        subset.diffuse(np.ones(3), bandwidth=1.0, mode="density"), np.ones(3)
+    )
 
 
 def test_no_bridge_combination_clips_without_losing_sources():
@@ -648,8 +652,8 @@ def test_removed_missing_geometry_no_longer_blocks_certified_subset():
     )
     reduced = env.subset(mask=np.array([True, True, False]))
     np.testing.assert_allclose(
-        reduced.diffuse(np.array([1.0, 0.0]), bandwidth=1.0),
-        grid().diffuse(np.array([1.0, 0.0]), bandwidth=1.0),
+        reduced.diffuse(np.array([1.0, 0.0]), bandwidth=1.0, mode="density"),
+        grid().diffuse(np.array([1.0, 0.0]), bandwidth=1.0, mode="density"),
     )
 
 

@@ -159,6 +159,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Smoothing methods require mode: no one mode is right for every field.
+_MODE_CHOICE = (
+    "a field of values per bin (a rate map) and a field of totals per bin "
+    "(counts, occupancy) are smoothed differently, and the modes give "
+    "different numbers for the same field.",
+    "pass mode='average' for a rate map or other value per bin, "
+    "mode='transition' for counts, occupancy or probability mass (keeps the "
+    "total), or mode='density' to turn counts into a density",
+)
+
 if TYPE_CHECKING:
     from typing_extensions import TypeVar as _CoordinateTypeVar
 
@@ -1053,10 +1063,10 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> data = np.random.default_rng(0).uniform(0, 100, size=(1000, 2))
         >>> env = Environment.from_samples(data, bin_size=5.0)
-        >>> kernel = env.compute_kernel(bandwidth=10.0)
+        >>> kernel = env.compute_kernel(bandwidth=10.0, mode="average")
         >>> renamed = env.with_metadata(name="session 2")
         >>> env.clear_cache()  # also clears the cache that ``renamed`` uses
-        >>> np.allclose(renamed.compute_kernel(bandwidth=10.0), kernel)
+        >>> np.allclose(renamed.compute_kernel(bandwidth=10.0, mode="average"), kernel)
         True
         """
         self._cache.clear()
@@ -6002,12 +6012,12 @@ class Environment(Generic[_C]):
             ),
         )
 
-    @keyword_hint("bandwidth")
+    @keyword_hint("bandwidth", missing={"mode": _MODE_CHOICE})
     def compute_kernel(
         self,
         *,
         bandwidth: float,
-        mode: KernelMode = "density",
+        mode: KernelMode,
         cache: bool = True,
     ) -> NDArray[np.float64]:
         """Compute the finite-volume diffusion kernel for smoothing operations.
@@ -6024,8 +6034,9 @@ class Environment(Generic[_C]):
             the diffusion), must be > 0. This is the true physical σ: a
             point source smoothed by this kernel has physical standard
             deviation ``bandwidth`` regardless of bin size.
-        mode : {'transition', 'density', 'average'}, default='density'
-            Kernel orientation, distinguished by the input field type:
+        mode : {'transition', 'density', 'average'}
+            Kernel orientation, chosen by what the field holds; there is no
+            default, because the modes give different numbers for one field:
 
             - 'transition': ``Hᵀ`` — column-stochastic (``sum_i K[i, j] = 1``).
               ``K @ field`` conserves ``sum(field)``; use for **extensive**
@@ -6198,13 +6209,13 @@ class Environment(Generic[_C]):
             diffusion_eigenbasis(self._cache), self.n_bins, bandwidth
         )
 
-    @keyword_hint("bandwidth")
+    @keyword_hint("bandwidth", missing={"mode": _MODE_CHOICE})
     def smooth(
         self,
         field: NDArray[np.float64],
         *,
         bandwidth: float,
-        mode: KernelMode = "average",
+        mode: KernelMode,
     ) -> NDArray[np.float64]:
         """Apply diffusion kernel smoothing to a field.
 
@@ -6226,11 +6237,11 @@ class Environment(Generic[_C]):
         bandwidth : float
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
-        mode : {'transition', 'density', 'average'}, default='average'
-            Smoothing mode, distinguished by the **input type**. The default
-            ``'average'`` preserves the units and level of an intensive field
-            such as a firing-rate map. For the previous count-to-density
-            behavior, pass ``mode='density'`` explicitly.
+        mode : {'transition', 'density', 'average'}
+            Smoothing mode, chosen by what the field holds. There is no
+            default: the modes give different numbers for the same field, and
+            only the caller knows whether it holds totals or values per bin.
+            Use ``'average'`` for a firing-rate map.
 
             - 'transition': Mass-conserving smoothing of an **extensive**
               quantity (a total per bin). Total sum is preserved:
@@ -6351,11 +6362,12 @@ class Environment(Generic[_C]):
         ...     np.c_[x.ravel(), y.ravel()], bin_size=5.0, units="cm"
         ... )
 
-        Smoothing an intensive rate map keeps its units and level, so a flat
-        4 Hz map stays 4 Hz:
+        Smoothing a rate map with ``mode="average"`` keeps its units and
+        level, so a flat 4 Hz map stays 4 Hz:
 
         >>> firing_rate = np.full(env.n_bins, 4.0)
-        >>> bool(np.allclose(env.smooth(firing_rate, bandwidth=5.0), 4.0))
+        >>> smoothed = env.smooth(firing_rate, bandwidth=5.0, mode="average")
+        >>> bool(np.allclose(smoothed, 4.0))
         True
 
         Smoothing spike counts with ``mode="transition"`` conserves the total:
@@ -6384,13 +6396,13 @@ class Environment(Generic[_C]):
         """
         return _smooth(self._cache, self._binning, field, bandwidth, mode=mode)
 
-    @keyword_hint("bandwidth")
+    @keyword_hint("bandwidth", missing={"mode": _MODE_CHOICE})
     def diffuse(
         self,
         fields: Any,
         *,
         bandwidth: float,
-        mode: KernelMode = "density",
+        mode: KernelMode,
         backend: Literal["numpy", "jax"] = "numpy",
     ) -> NDArray[np.float64]:
         """Matrix-free finite-volume diffusion smoothing (no ``(n, n)`` kernel).
@@ -6432,8 +6444,9 @@ class Environment(Generic[_C]):
         bandwidth : float
             Physical smoothing standard deviation σ (> 0), independent of bin
             size on any supported layout.
-        mode : {'transition', 'density', 'average'}, default='density'
-            Kernel orientation, matching :meth:`compute_kernel` / :meth:`smooth`
+        mode : {'transition', 'density', 'average'}
+            Kernel orientation, required as for :meth:`smooth`, matching
+            :meth:`compute_kernel` / :meth:`smooth`
             (``'transition'`` = ``Hᵀ`` mass-conserving extensive smoothing;
             ``'density'`` = ``H·M⁻¹`` count→density; ``'average'`` = ``H``
             row-stochastic intensive averaging).

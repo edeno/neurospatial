@@ -189,8 +189,8 @@ def test_grid_engine_matches_builtin_grid() -> None:
     assert env.layout_type == "RecordedGrid"
     assert env.layout_parameters == {}
     np.testing.assert_allclose(
-        env.compute_kernel(bandwidth=2.0, cache=False),
-        builtin.compute_kernel(bandwidth=2.0, cache=False),
+        env.compute_kernel(bandwidth=2.0, cache=False, mode="density"),
+        builtin.compute_kernel(bandwidth=2.0, cache=False, mode="density"),
     )
 
 

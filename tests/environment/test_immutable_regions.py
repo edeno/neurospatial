@@ -83,11 +83,13 @@ def test_regions_outside_arena_are_allowed_and_order_is_preserved():
 
 def test_replacement_shares_the_sources_populated_cache():
     env = _environment()
-    kernel = env.compute_kernel(bandwidth=0.5)
+    kernel = env.compute_kernel(bandwidth=0.5, mode="density")
     original_cache = env._cache
     n_cached = len(original_cache)
     replacement = env.with_regions(Regions())
     assert env._cache is original_cache
     assert replacement._cache is original_cache
     assert len(original_cache) == n_cached > 0
-    np.testing.assert_array_equal(replacement.compute_kernel(bandwidth=0.5), kernel)
+    np.testing.assert_array_equal(
+        replacement.compute_kernel(bandwidth=0.5, mode="density"), kernel
+    )

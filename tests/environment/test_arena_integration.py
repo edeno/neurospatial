@@ -94,7 +94,7 @@ def test_closed_wall_blocks_navigation_and_diffusion_and_survives_subset():
     )
     left = env.bin_centers[:, 0] < 2
     assert all(left[u] == left[v] for u, v in env.connectivity.edges)
-    kernel = env.compute_kernel(bandwidth=1.0)
+    kernel = env.compute_kernel(bandwidth=1.0, mode="density")
     assert np.all(kernel[np.ix_(left, ~left)] == 0)
     child = env.subset(mask=env.bin_centers[:, 1] < 2)
     assert _arena_record(child.arena) == _arena_record(arena)
@@ -146,10 +146,12 @@ def test_general_clip_uses_known_domain_and_conditional_numerics():
     assert clipped.bin_sizes.sum() <= parent.arena.polygon.area + 1e-12
     assert not clipped._binning.faces.available
     with pytest.raises(NotImplementedError, match=r"geometry|orthogonal|convex"):
-        clipped.smooth(np.ones(clipped.n_bins), bandwidth=1)
+        clipped.smooth(np.ones(clipped.n_bins), bandwidth=1, mode="average")
     rectangle = grid((2, 2)).clip(box(0.25, 0, 2, 2))
     assert rectangle._binning.faces.available
-    np.testing.assert_allclose(rectangle.smooth(np.ones(4), bandwidth=1), 1)
+    np.testing.assert_allclose(
+        rectangle.smooth(np.ones(4), bandwidth=1, mode="average"), 1
+    )
 
 
 def test_polygon_hole_is_not_filled_in_field_plot():

@@ -373,7 +373,7 @@ def _compute_kernel(
     binning: Binning,
     bandwidth: float,
     *,
-    mode: KernelMode = "density",
+    mode: KernelMode,
     use_cache: bool = True,
     writable: bool = True,
 ) -> NDArray[np.float64]:
@@ -402,7 +402,12 @@ def _compute_kernel(
 
 
 def _field_batch(
-    fields: Any, n_bins: int, operation: str, argument: str, bandwidth: float
+    fields: Any,
+    n_bins: int,
+    operation: str,
+    argument: str,
+    bandwidth: float,
+    mode: KernelMode,
 ) -> Any:
     """Check a field or batch of fields indexed by bin first.
 
@@ -412,10 +417,12 @@ def _field_batch(
     """
     if hasattr(fields, "firing_rate") or hasattr(fields, "firing_rates"):
         call = (
-            f"env.smooth(result.firing_rates.T, bandwidth={bandwidth!r}).T, "
+            f"env.smooth(result.firing_rates.T, bandwidth={bandwidth!r}, "
+            "mode='average').T, "
             "which keeps each unit's rates in a column"
             if hasattr(fields, "firing_rates")
-            else f"env.smooth(result.firing_rate, bandwidth={bandwidth!r})"
+            else f"env.smooth(result.firing_rate, bandwidth={bandwidth!r}, "
+            "mode='average')"
         )
         raise TypeError(
             _format_error(
@@ -424,8 +431,8 @@ def _field_batch(
                 why="Why: it returns an array, so it smooths the rates "
                 "themselves; a rate result also holds occupancy and settings "
                 "that a smoothed copy would no longer match.",
-                fix=f"pass the rates: {call}; smooth's default mode='average' "
-                "is the one for rates. To smooth while estimating the rates, "
+                fix=f"pass the rates: {call}; mode='average' is the mode for "
+                "rates. To smooth while estimating the rates, "
                 "pass bandwidth= to compute_spatial_rate instead",
             )
         )
@@ -456,7 +463,7 @@ def _field_batch(
                 fix=(
                     f"pass {argument}.T with the same options and transpose the "
                     f"result back, such as env.{operation[:-2]}({argument}.T, "
-                    f"bandwidth={bandwidth!r}).T"
+                    f"bandwidth={bandwidth!r}, mode={mode!r}).T"
                     if transposed
                     else "compute the field on this environment, or map it here "
                     "with neurospatial.ops.resample_field"
@@ -472,11 +479,11 @@ def _smooth(
     field: NDArray[np.float64],
     bandwidth: float,
     *,
-    mode: KernelMode = "average",
+    mode: KernelMode,
 ) -> NDArray[np.float64]:
     """Validate bin-valued fields and smooth them matrix-free."""
     n_bins = binning.bins.n_bins
-    field = _field_batch(field, n_bins, "smooth()", "field", bandwidth)
+    field = _field_batch(field, n_bins, "smooth()", "field", bandwidth, mode)
     field = np.asarray(field, dtype=np.float64)
 
     # NaN marks a missing bin and is handled by _diffuse; infinity is invalid.
@@ -503,7 +510,7 @@ def _diffuse(
     fields: Any,
     bandwidth: float,
     *,
-    mode: KernelMode = "density",
+    mode: KernelMode,
     backend: Literal["numpy", "jax"] = "numpy",
 ) -> NDArray[np.float64]:
     """Validate a field batch and apply the cached truncated heat operator."""
@@ -519,7 +526,7 @@ def _diffuse(
     # Coerce to 2-D (n_bins, n_fields); a 1-D field is squeezed back on
     # return. np.ndim / np.shape avoid forcing a JAX array to NumPy.
     n_bins = binning.bins.n_bins
-    fields = _field_batch(fields, n_bins, "diffuse()", "fields", bandwidth)
+    fields = _field_batch(fields, n_bins, "diffuse()", "fields", bandwidth, mode)
     if backend == "numpy":
         fields = np.asarray(fields, dtype=np.float64)
     was_1d = np.ndim(fields) == 1

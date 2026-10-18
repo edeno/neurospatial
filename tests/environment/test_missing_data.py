@@ -257,7 +257,7 @@ def test_smoothing_without_nan_is_the_plain_operator(any_env, mode):
 def test_a_constant_field_with_holes_stays_constant(any_env):
     holed = np.full(any_env.n_bins, 2.5)
     holed[_holes(any_env)] = np.nan
-    smoothed = any_env.smooth(holed, bandwidth=3.0)
+    smoothed = any_env.smooth(holed, bandwidth=3.0, mode="average")
     assert np.isfinite(smoothed).all()
     np.testing.assert_allclose(smoothed, 2.5, rtol=1e-11)
 
@@ -287,10 +287,13 @@ def test_concrete_jax_input_with_nan_is_refused(any_env):
     np.testing.assert_allclose(
         np.asarray(
             any_env.diffuse(
-                jnp.asarray(np.ones(any_env.n_bins)), bandwidth=3.0, backend="jax"
+                jnp.asarray(np.ones(any_env.n_bins)),
+                bandwidth=3.0,
+                backend="jax",
+                mode="density",
             )
         ),
-        any_env.diffuse(np.ones(any_env.n_bins), bandwidth=3.0),
+        any_env.diffuse(np.ones(any_env.n_bins), bandwidth=3.0, mode="density"),
         rtol=1e-5,
     )
 
@@ -311,7 +314,7 @@ def test_an_interior_hole_is_filled_from_its_neighbors(any_env):
     field = np.sin(np.arange(any_env.n_bins) * 0.37)
     holed = field.copy()
     holed[any_env.n_bins // 2] = np.nan
-    smoothed = any_env.smooth(holed, bandwidth=3.0)
+    smoothed = any_env.smooth(holed, bandwidth=3.0, mode="average")
     assert np.isfinite(smoothed).all()
     assert field.min() <= smoothed[any_env.n_bins // 2] <= field.max()
 
@@ -329,7 +332,10 @@ def test_a_batch_keeps_nan_free_fields_unchanged(any_env):
     np.testing.assert_array_equal(batch[:, 0], filled[:, 0])
     # Each field has its own observed mask; batching changes only roundoff.
     np.testing.assert_allclose(
-        batch[:, 1], any_env.smooth(holed, bandwidth=3.0), rtol=1e-12, atol=1e-14
+        batch[:, 1],
+        any_env.smooth(holed, bandwidth=3.0, mode="average"),
+        rtol=1e-12,
+        atol=1e-14,
     )
 
 
@@ -347,11 +353,13 @@ def test_a_room_with_no_observed_bin_stays_nan(two_rooms):
     assert two_rooms.get_diffusion_geometry().n_components == 2
     field = np.sin(np.arange(two_rooms.n_bins) * 0.37)
     holed = np.where(labels == 1, np.nan, field)
-    smoothed = two_rooms.smooth(holed, bandwidth=2.0)
+    smoothed = two_rooms.smooth(holed, bandwidth=2.0, mode="average")
 
     assert np.isnan(smoothed[labels == 1]).all()
     # The observed room is fully observed, so it smooths as if alone.
-    reference = two_rooms.smooth(np.where(labels == 1, 0.0, field), bandwidth=2.0)
+    reference = two_rooms.smooth(
+        np.where(labels == 1, 0.0, field), bandwidth=2.0, mode="average"
+    )
     np.testing.assert_allclose(
         smoothed[labels == 0], reference[labels == 0], rtol=1e-12
     )
@@ -363,7 +371,7 @@ def test_bins_stay_nan_exactly_where_the_support_is_below_the_floor():
     track = Environment.from_samples(np.linspace(0.0, 60.0, 400)[:, None], bin_size=1.0)
     observed = track.bin_centers[:, 0] < 15.0
     field = np.where(observed, np.cos(track.bin_centers[:, 0] / 4.0), np.nan)
-    smoothed = track.smooth(field, bandwidth=2.0)
+    smoothed = track.smooth(field, bandwidth=2.0, mode="average")
 
     # The share of each bin's smoothing weight that falls on observed bins.
     support = (
@@ -385,7 +393,7 @@ def test_sparse_observations_with_a_wide_bandwidth_are_not_all_nan():
     )
     field = np.full(track.n_bins, np.nan)
     field[::25] = 1.0
-    smoothed = track.smooth(field, bandwidth=30.0)
+    smoothed = track.smooth(field, bandwidth=30.0, mode="average")
     assert np.isfinite(smoothed).all()
     np.testing.assert_allclose(smoothed, 1.0, rtol=1e-6)
 
@@ -394,7 +402,7 @@ def test_smooth_still_refuses_infinite_values(any_env):
     field = np.zeros(any_env.n_bins)
     field[0] = np.inf
     with pytest.raises(ValueError, match="infinite"):
-        any_env.smooth(field, bandwidth=3.0)
+        any_env.smooth(field, bandwidth=3.0, mode="average")
 
 
 def _polygon() -> Environment:

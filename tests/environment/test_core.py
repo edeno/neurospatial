@@ -1337,9 +1337,11 @@ class TestCacheManagement:
             "bins": cache_test_env.get_bin_attributes(),
             "edges": cache_test_env.get_edge_attributes(),
             "nearest": cache_test_env.nearest_bin(points),
-            "kernel": cache_test_env.compute_kernel(bandwidth=1.0),
+            "kernel": cache_test_env.compute_kernel(bandwidth=1.0, mode="density"),
             "smoothed": cache_test_env.smooth(
-                np.ones(cache_test_env.n_bins), bandwidth=1.0
+                np.ones(cache_test_env.n_bins),
+                bandwidth=1.0,
+                mode="average",
             ),
         }
         assert len(cache_test_env._cache) > 0
@@ -1365,10 +1367,13 @@ class TestCacheManagement:
             cache_test_env.nearest_bin(points), before["nearest"]
         )
         np.testing.assert_array_equal(
-            cache_test_env.compute_kernel(bandwidth=1.0), before["kernel"]
+            cache_test_env.compute_kernel(bandwidth=1.0, mode="density"),
+            before["kernel"],
         )
         np.testing.assert_allclose(
-            cache_test_env.smooth(np.ones(cache_test_env.n_bins), bandwidth=1.0),
+            cache_test_env.smooth(
+                np.ones(cache_test_env.n_bins), bandwidth=1.0, mode="average"
+            ),
             before["smoothed"],
             rtol=0,
             atol=1e-12,

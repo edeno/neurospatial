@@ -67,7 +67,7 @@ def test_env_is_first():
 def test_environment_method_options_are_keyword_only():
     """Environment methods take data positionally and every option by keyword.
 
-    A positional option with a default would let ``env.smooth(rate, 5.0)``
+    A positional option with a default would let ``env.smooth(rate, 5.0, mode="average")``
     or ``env.distance_between(a, b, None)`` change meaning silently. The
     optional arguments allowed by position are data or the Axes to draw on.
     """

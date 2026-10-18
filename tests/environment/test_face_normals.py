@@ -404,7 +404,7 @@ def test_zero_area_contact_stays_navigation_only_after_solver_refusal():
     np.testing.assert_array_equal(child._binning.face_normals.values[contact], 0.0)
     assert not child._binning.faces.available
     with pytest.raises(NotImplementedError):
-        child.smooth(np.ones(child.n_bins), bandwidth=1.0)
+        child.smooth(np.ones(child.n_bins), bandwidth=1.0, mode="average")
 
 
 @pytest.mark.parametrize("built_environment", ["polar_open"], indirect=True)

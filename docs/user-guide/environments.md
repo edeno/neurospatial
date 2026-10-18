@@ -274,7 +274,7 @@ and connected diffusion components. These are independent read-only exports.
 The environment keeps its expensive geometry and eigenbasis caches private.
 
 `env.compute_gaussian_kernel(bandwidth=...)` returns unnormalized Gaussian weights
-that ignore walls; `env.diffuse(field, bandwidth=...)` respects the numerical boundary
+that ignore walls; `env.diffuse(field, bandwidth=..., mode=...)` respects the numerical boundary
 geometry. After diffusion, `env.diffusion_accuracy(bandwidth=...)` reports its relative
 noise floor. A spatial model can request a Markov random field smoothness basis
 with `env.get_mrf_basis(occupancy, rank=...)`.
@@ -293,7 +293,7 @@ assert geometry.W.shape == (9, 9)
 assert geometry.n_components == 1
 weights = env.compute_gaussian_kernel(bandwidth=1.0)
 assert not weights.flags.writeable
-smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), bandwidth=1.0)
+smoothed = env.diffuse(np.arange(env.n_bins, dtype=float), bandwidth=1.0, mode="average")
 assert env.diffusion_accuracy(bandwidth=1.0) <= 1e-6
 basis = env.get_mrf_basis(np.ones(env.n_bins), rank=4)
 assert basis.B.shape == (env.n_bins, 4)
@@ -428,7 +428,7 @@ parent = Environment.from_grid_mask(
     np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
 )
 child = parent.clip(box(0.25, 0, 2, 2))
-smoothed = child.smooth(np.ones(child.n_bins), bandwidth=0.5)
+smoothed = child.smooth(np.ones(child.n_bins), bandwidth=0.5, mode="average")
 np.testing.assert_allclose(smoothed, 1.0)
 ```
 

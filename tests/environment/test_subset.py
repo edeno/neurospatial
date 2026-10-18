@@ -368,7 +368,7 @@ class TestSubsetIntegration:
 
         # Create field and smooth
         field = rng.random(sub_env.n_bins)
-        smoothed = sub_env.smooth(field, bandwidth=5.0)
+        smoothed = sub_env.smooth(field, bandwidth=5.0, mode="average")
 
         assert smoothed.shape == (sub_env.n_bins,)
         assert np.all(np.isfinite(smoothed))

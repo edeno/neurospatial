@@ -223,7 +223,9 @@ CASES: dict[str, Case] = {
         "Environment.from_samples(positions, bin_size=8, layout='Hexagonal')",
     ),
     "hexagonal rebin(2), smoothing instead": Case(
-        _hexagons, lambda n: n["env"].rebin(2), "env.smooth(field, bandwidth=8)"
+        _hexagons,
+        lambda n: n["env"].rebin(2),
+        "env.smooth(field, bandwidth=8, mode='average')",
     ),
     "hexagonal rebin(bin_size=10)": Case(
         _hexagons,
@@ -238,7 +240,9 @@ CASES: dict[str, Case] = {
         "edge_spacing=5.0, track_width=10)",
     ),
     "track rebin(2), smoothing instead": Case(
-        _track, lambda n: n["env"].rebin(2), "env.smooth(field, bandwidth=4)"
+        _track,
+        lambda n: n["env"].rebin(2),
+        "env.smooth(field, bandwidth=4, mode='average')",
     ),
     "mesh rebin(2)": Case(
         _mesh,
@@ -428,23 +432,23 @@ CASES: dict[str, Case] = {
     # fields
     "smooth with bins last": Case(
         lambda: {"env": _grid(), "field": np.ones((3, 100))},
-        lambda n: n["env"].smooth(n["field"], bandwidth=2.0),
-        "env.smooth(field.T, bandwidth=2.0).T",
+        lambda n: n["env"].smooth(n["field"], bandwidth=2.0, mode="average"),
+        "env.smooth(field.T, bandwidth=2.0, mode='average').T",
     ),
     "diffuse with bins last": Case(
         lambda: {"env": _grid(), "fields": np.ones((3, 100))},
-        lambda n: n["env"].diffuse(n["fields"], bandwidth=2.0),
-        "env.diffuse(fields.T, bandwidth=2.0).T",
+        lambda n: n["env"].diffuse(n["fields"], bandwidth=2.0, mode="density"),
+        "env.diffuse(fields.T, bandwidth=2.0, mode='density').T",
     ),
     "smooth(rate result)": Case(
         lambda: _rates(population=False),
-        lambda n: n["env"].smooth(n["result"], bandwidth=10.0),
-        "env.smooth(result.firing_rate, bandwidth=10.0)",
+        lambda n: n["env"].smooth(n["result"], bandwidth=10.0, mode="average"),
+        "env.smooth(result.firing_rate, bandwidth=10.0, mode='average')",
     ),
     "smooth(population rate result)": Case(
         lambda: _rates(population=True),
-        lambda n: n["env"].smooth(n["result"], bandwidth=10.0),
-        "env.smooth(result.firing_rates.T, bandwidth=10.0).T",
+        lambda n: n["env"].smooth(n["result"], bandwidth=10.0, mode="average"),
+        "env.smooth(result.firing_rates.T, bandwidth=10.0, mode='average').T",
     ),
     # regions
     "region_membership(list of names)": Case(

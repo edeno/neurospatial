@@ -52,7 +52,8 @@ def test_polar_circularity_survives_nwb_round_trip(
         restored = read_environment(io.read())
     assert restored.coordinate_system.circular is circular
     np.testing.assert_allclose(
-        restored.compute_kernel(bandwidth=1.0), env.compute_kernel(bandwidth=1.0)
+        restored.compute_kernel(bandwidth=1.0, mode="density"),
+        env.compute_kernel(bandwidth=1.0, mode="density"),
     )
 
 
@@ -2470,7 +2471,7 @@ def test_finite_volume_ops_survive_nwb_round_trip(hexagonal_env_from_nwb, operat
                 env, np.sin(np.arange(env.connectivity.number_of_edges()))
             )
         if operation == "smooth":
-            return env.smooth(field, bandwidth=5.0)
+            return env.smooth(field, bandwidth=5.0, mode="average")
         return heat_kernel_wavelet_basis(env, centers=np.array([0]))
 
     np.testing.assert_array_equal(evaluate(loaded), evaluate(original))

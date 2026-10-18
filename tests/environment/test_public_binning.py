@@ -84,7 +84,8 @@ def test_from_bins_requires_explicit_faces_for_native_binning():
     )
     np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(
-        rebuilt.compute_kernel(bandwidth=0.5), env.compute_kernel(bandwidth=0.5)
+        rebuilt.compute_kernel(bandwidth=0.5, mode="density"),
+        env.compute_kernel(bandwidth=0.5, mode="density"),
     )
 
 
