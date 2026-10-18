@@ -131,9 +131,11 @@ np.testing.assert_allclose(env.subset(mask=in_arena).bin_sizes, 4.0)  # cm^2
 ```
 
 A transform scales each bin by its own dimension: doubling lengths doubles the
-corridor bins and quadruples the arena bins. A bridge conductance between a
-corridor bin and an arena bin has no single length dimension, so a transform
-that rescales lengths refuses it; scale each component before combining.
+corridor bins and quadruples the arena bins. The bridge between the corridor and
+the arena is navigation-only, and `combine` refuses a `bridge_conductances`
+entry for it: diffusion between a density per length and a density per area
+would give different answers in centimeters and millimeters, whatever the
+conductance.
 
 ## Migration
 

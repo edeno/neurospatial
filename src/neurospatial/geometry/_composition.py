@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
 from neurospatial.geometry._binning import BinConnections, Binning, SpatialBins
@@ -100,6 +101,21 @@ class CombinedLocator(ReadOnlyState):
             owners[bridges.pairs[:, 0]] == owners[bridges.pairs[:, 1]]
         ):
             raise ValueError("Bridges must join bins in different components.")
+        measures = np.concatenate([child.bins.measure_dims for child in children])
+        ends = bridges.pairs
+        if np.any((conductances > 0) & (measures[ends[:, 0]] != measures[ends[:, 1]])):
+            raise ValueError(
+                _format_error(
+                    "A bridge conductance joins a bin measured by length to a bin "
+                    "measured by area.",
+                    why="Why: diffusion through it would exchange mass between a "
+                    "density per length and a density per area, so the result "
+                    "would change with the units (cm or mm), whatever the "
+                    "conductance.",
+                    fix="leave that bridge navigation-only (no conductance), or "
+                    "combine components whose bins are measured the same way",
+                )
+            )
         conductances.setflags(write=False)
         for name, value in (
             ("keys", keys),
@@ -262,8 +278,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                 return None
             matrix, dims = result
             linear = np.linalg.inv(locator.inverse)[:-1, :-1]
-            logdet = float(np.linalg.slogdet(linear)[1])
-            scale = float(np.exp(logdet / len(linear)))
+            scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
             normalized = linear / scale
             if not np.allclose(
                 normalized @ normalized.T, np.eye(len(linear)), rtol=0, atol=1e-12
@@ -272,20 +287,11 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                     "Combined scalar diffusion requires a similarity transform; use the original coordinates."
                 )
             # Conductance has units length ** (measure_dim - 2) of the bins it
-            # joins; a coupling between bins of different measure has no
-            # single scaling, which derivations refuse before this point.
+            # joins; positive couplings only join bins of one measure.
             coupling = matrix.tocoo()
-            mixed = dims[coupling.row] != dims[coupling.col]
-            # A rotation's computed scale can differ from 1 by rounding alone.
-            rescales = abs(logdet) > 64 * np.finfo(np.float64).eps * len(linear)
-            if rescales and np.any(mixed & (coupling.data != 0)):
-                raise NotImplementedError(
-                    "Combined scalar diffusion cannot rescale a conductance between "
-                    "bins measured by length and by area; use the original coordinates."
-                )
-            factor = per_dimension(dims[coupling.row], lambda dim: scale ** (dim - 2))
-            factor[mixed] = 1.0  # unscaled, keeping the coupling symmetric
-            data = coupling.data * factor
+            data = coupling.data * per_dimension(
+                dims[coupling.row], lambda dim: scale ** (dim - 2)
+            )
             matrix = sparse.csr_matrix(
                 (data, (coupling.row, coupling.col)), shape=matrix.shape
             )
@@ -357,11 +363,9 @@ def bridge_values(binning: Binning) -> dict[frozenset[int], float]:
     for u, v in binning.connections.pairs:
         pair = frozenset((int(indices[u]), int(indices[v])))
         if pair in original:
-            # A conductance between bins of different measure stays unscaled:
-            # derivations refuse any transform that would rescale it.
-            dims = binning.bins.measure_dims
-            factor = 1.0 if dims[u] != dims[v] else scale ** (int(dims[u]) - 2)
-            result[frozenset((int(u), int(v)))] = original[pair] * factor
+            # Positive conductances only join bins of one measure.
+            dim = int(binning.bins.measure_dims[u])
+            result[frozenset((int(u), int(v)))] = original[pair] * scale ** (dim - 2)
     return result
 
 

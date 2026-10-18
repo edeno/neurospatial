@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from shapely.geometry import LineString, box
@@ -10,7 +12,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.binning import SpatialBins
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.transforms import Affine2D, scale_2d, translate
+from neurospatial.ops.transforms import scale_2d, translate
 
 
 def _track(**options):
@@ -123,20 +125,67 @@ def test_mixed_measures_survive_storage(corridor_and_field, tmp_path):
         )
 
 
-def test_a_conductance_between_a_track_and_a_field_cannot_be_rescaled():
+def test_a_conductance_cannot_join_a_track_bin_to_a_field_bin():
+    # Diffusion between a density per length and a density per area changes
+    # with the units, whatever the conductance, so it is refused.
     track, field = _track(), _field()
-    bridge = Environment.combine({"track": track, "field": field})
-    row = bridge.get_bridge_attributes().iloc[0]
+    row = Environment.combine({"track": track, "field": field})
+    row = row.get_bridge_attributes().iloc[0]
     key = (
         (row["source_component"], int(row["source_local_bin"])),
         (row["target_component"], int(row["target_local_bin"])),
     )
-    conducting = Environment.combine(
-        {"track": track, "field": field}, bridge_conductances={key: 1.0}
+    with pytest.raises(
+        ValueError, match="measured by length to a bin measured by area"
+    ):
+        Environment.combine(
+            {"track": track, "field": field}, bridge_conductances={key: 1.0}
+        )
+    navigation_only = Environment.combine(
+        {"track": track, "field": field}, bridge_conductances={key: 0.0}
     )
-    conducting.apply_transform(translate(1.0, 1.0))
-    with pytest.raises(ValueError, match="measured by length and one measured by area"):
-        conducting.apply_transform(scale_2d(2.0), units="mm")
+    assert navigation_only.get_bridge_attributes()["conductance"].tolist() == [0.0]
+
+
+@pytest.mark.parametrize("derive", ["none", "subset", "transform"])
+def test_published_measure_dimensions_must_match_the_components(
+    corridor_and_field, derive
+):
+    env = corridor_and_field
+    if derive == "subset":
+        env = env.subset(mask=np.arange(env.n_bins) != 5)
+    elif derive == "transform":
+        env = env.apply_transform(scale_2d(2.0), units="mm")
+    binning = replace(env.binning, kind="corridor_and_field")
+    dims = binning.bins.measure_dims.copy()
+    track = np.flatnonzero(dims == 1)[0]
+    field = np.flatnonzero(dims == 2)[0]
+    dims[[track, field]] = dims[[field, track]]
+    swapped = replace(binning, bins=replace(binning.bins, measure_dims=dims))
+    with pytest.raises(ValueError, match=r"bins\.measure_dims does not match"):
+        Environment.from_bins(swapped, arena=env.arena)
+    Environment.from_bins(binning, arena=env.arena)  # the unswapped bins publish
+
+
+def test_default_bandwidth_uses_each_bins_own_length():
+    # One bin per component and no bridge: no edge lengths to take a median of.
+    track = _track().with_metadata(units=None)
+    field = _field().with_metadata(units=None)
+    lone = Environment.combine(
+        {
+            "track": track.subset(mask=np.arange(track.n_bins) == 0),
+            "field": field.subset(mask=np.arange(field.n_bins) == 0),
+        },
+        auto_bridge=False,
+    )
+    lengths = lone.coordinate_system.fallback_lengths(lone)
+    np.testing.assert_allclose(lengths, [2.0, 2.0])  # 2 cm of track, a 2 cm square
+    times = np.arange(0.0, 10.0, 0.1)
+    positions = np.tile([1.0, 1.0], (times.size, 1))
+    result = compute_spatial_rate(
+        lone, np.array([1.0]), times, positions, method="diffusion_kde"
+    )
+    assert result.bandwidth == pytest.approx(5.0)  # 2.5 bin lengths
 
 
 def test_combined_tracks_report_the_extent_of_both():
@@ -160,38 +209,6 @@ def test_combined_tracks_report_the_extent_of_both():
 def test_spatial_bins_validate_each_bins_measure_dimension(measure_dim, match):
     with pytest.raises(ValueError, match=match):
         SpatialBins.from_arrays(np.zeros((3, 2)), np.ones(3), measure_dim)
-
-
-def _conducting_corridor():
-    track, field = _track(), _field()
-    row = Environment.combine({"track": track, "field": field}).get_bridge_attributes()
-    row = row.iloc[0]
-    key = (
-        (row["source_component"], int(row["source_local_bin"])),
-        (row["target_component"], int(row["target_local_bin"])),
-    )
-    return Environment.combine(
-        {"track": track, "field": field}, bridge_conductances={key: 1.0}
-    )
-
-
-def test_rotation_keeps_a_conductance_between_a_track_and_a_field():
-    # A rotation's computed scale can round to 1 - 1e-16 (for about one angle
-    # in eight here); it changes no length, so nothing is refused or rescaled.
-    env = _conducting_corridor()
-    conductance = env.get_bridge_attributes()["conductance"].to_numpy()
-    mass = np.zeros(env.n_bins)
-    mass[0] = 1.0
-    for angle in np.linspace(0.01, 6.2, 120):
-        cos, sin = np.cos(angle), np.sin(angle)
-        rotated = env.apply_transform(
-            Affine2D(np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]]))
-        )
-        np.testing.assert_array_equal(
-            rotated.get_bridge_attributes()["conductance"], conductance
-        )
-        spread = rotated.diffuse(mass, bandwidth=4.0, mode="transition")
-        assert spread.sum() == pytest.approx(1.0)
 
 
 def test_blocked_edges_name_walls_of_a_component_next_to_a_track():

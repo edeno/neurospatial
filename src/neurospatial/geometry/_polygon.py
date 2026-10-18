@@ -426,8 +426,9 @@ def _pieces_binning(
 
     Pieces of neighboring source cells are neighbors where their shared
     boundary has an opening past ``walls``; path lengths and face roles come
-    from the source pairs. Pieces that share boundary only along a wall, and
-    pieces of source pairs that were already closed, are closed neighbors.
+    from the source pairs. Pieces that meet only along or at a wall, and
+    touching pieces of source pairs that were already closed, are closed
+    neighbors.
     """
     centers = np.array([_representative(cell) for cell in cells.polygons])
     by_parent: dict[int, list[int]] = defaultdict(list)
@@ -439,9 +440,11 @@ def _pieces_binning(
     records: list[tuple[int, int, bool, bool, float]] = []
 
     def touching(u: int, v: int) -> bool:
-        return bool(
-            cells.polygons[u].boundary.intersection(cells.polygons[v].boundary).length
-            > 0
+        # Corner contact counts: a diagonal pair across a wall stays a closed pair.
+        return (
+            not cells.polygons[u]
+            .boundary.intersection(cells.polygons[v].boundary)
+            .is_empty
         )
 
     def closed_record(u: int, v: int) -> tuple[int, int, bool, bool, float]:
@@ -510,7 +513,8 @@ def _pieces_binning(
                     records.append(
                         (min(u, v), max(u, v), True, bool(path_only), distance)
                     )
-                elif touching(u, v):
+                elif opening.is_empty and not wall.is_empty and touching(u, v):
+                    # Contact only where a wall runs: the wall closes the pair.
                     records.append(closed_record(u, v))
     for parent_u, parent_v in links.all_pairs[~links.is_open]:
         for u in by_parent[int(parent_u)]:

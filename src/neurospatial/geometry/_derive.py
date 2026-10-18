@@ -304,21 +304,10 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "conductance scaling requires a similarity with a known length scale",
                 "use a translation, rotation, reflection or uniform scaling",
             )
-        ends = np.array([sorted(pair) for pair in couplings], dtype=np.intp)
-        conducting = np.array([value > 0 for value in couplings.values()])
-        # A rotation's computed scale can differ from 1 by rounding alone.
-        rescales = abs(logdet) > 64 * np.finfo(np.float64).eps * len(linear)
-        mixed = dims[ends[:, 0]] != dims[ends[:, 1]]
-        if rescales and np.any(mixed & conducting):
-            raise _refusal(
-                f"Cannot apply {kind} to a bridge conductance between a bin "
-                "measured by length and one measured by area.",
-                "such a conductance has no single length dimension to scale by",
-                "scale each component before combining them, or use a "
-                "translation, rotation or reflection",
-            )
+        # Positive conductances only join bins of one measure dimension.
+        ends = np.array([min(pair) for pair in couplings], dtype=np.intp)
         try:
-            factor_c = per_dimension(dims[ends[:, 0]], lambda dim: scale ** (dim - 2))
+            factor_c = per_dimension(dims[ends], lambda dim: scale ** (dim - 2))
             with np.errstate(over="raise", invalid="raise", under="ignore"):
                 transformed_c = np.array(list(couplings.values())) * factor_c
             if np.any(

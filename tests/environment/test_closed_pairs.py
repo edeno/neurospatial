@@ -173,3 +173,27 @@ def test_connections_validate_openness_and_close_only_open_pairs():
     np.testing.assert_array_equal(open_kept, [False, True])
     for array in (links.all_pairs, links.is_open, links.pairs, links.pair_distances):
         assert not array.flags.writeable
+
+
+def test_clipping_unchanged_cells_keeps_every_closed_pair():
+    # Diagonal neighbors across the wall meet only at a corner on it.
+    env = Environment.from_grid_mask(
+        np.ones((4, 3), dtype=bool),
+        grid_edges=(np.arange(5.0), np.arange(4.0)),
+        arena=OpenArena(ROOMS, walls=CLOSED),
+    )
+    clipped = env.clip(ROOMS)
+    assert clipped.n_bins == env.n_bins
+    before, after = env.get_blocked_edges(), clipped.get_blocked_edges()
+    assert len(before) == 7  # three edge neighbors and four diagonals
+
+    def located(environment, table):
+        # Each closed pair as the unordered pair of its bin centers.
+        centers = environment.bin_centers
+        return {
+            frozenset((tuple(centers[u]), tuple(centers[v])))
+            for u, v in zip(table["source"], table["target"], strict=True)
+        }
+
+    assert located(clipped, after) == located(env, before)
+    assert set(after["wall"]) == {"divider"}

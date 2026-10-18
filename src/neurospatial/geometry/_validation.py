@@ -1060,6 +1060,10 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
         and not bins.has_measure_dim(bins.n_dims)
     ):
         raise ValueError("bins.measure_dim does not match the cell geometry dimension.")
+    if geometry.measure_dims is not None:
+        # Combined components fix each bin's measure; subsets and transforms
+        # carry it, so the published dimensions must match bin for bin.
+        _equal(bins.measure_dims, geometry.measure_dims, "bins.measure_dims")
     if geometry.measures and not any(
         actual.shape == bins.sizes.shape
         and np.all(np.abs(bins.sizes - actual) <= np.minimum(error, actual / 4))

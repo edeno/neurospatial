@@ -8,19 +8,22 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import ClassVar, Literal, Protocol
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import CartesianOnlyError
 
+if TYPE_CHECKING:
+    from neurospatial.geometry._binning import Binning
+
 
 class CellLengthConsumer(Protocol):
     """Cell measures, dimension count and radial edges for length-scale defaults."""
 
     @property
-    def bin_sizes(self) -> NDArray[np.float64]: ...
+    def binning(self) -> Binning: ...
 
     @property
     def n_dims(self) -> int: ...
@@ -110,8 +113,13 @@ class CartesianSystem:
         return points
 
     def fallback_lengths(self, env: CellLengthConsumer) -> NDArray[np.float64]:
-        """Edge length of a cube with each bin's volume."""
-        return np.asarray(env.bin_sizes) ** (1.0 / env.n_dims)
+        """Each bin's own length: a track bin's length, a square's side, a cube's."""
+        bins = env.binning.bins
+        lengths = np.empty(bins.n_bins)
+        for dim in np.unique(bins.measure_dims):
+            measured = bins.measure_dims == dim
+            lengths[measured] = bins.sizes[measured] ** (1.0 / int(dim))
+        return lengths
 
     def axis_labels(self, units: str | None) -> tuple[str, str]:
         """Cartesian axis labels, including declared length units."""
