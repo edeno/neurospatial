@@ -8,6 +8,15 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.from_samples` (and `open_field`) tile the arena's bounds when
+  given an `arena=` with a known outline and no `dimension_ranges`, so cell
+  edges start at the arena's edge. Walls on that lattice now fall on cell
+  faces: a 100 cm box with a wall at x = 50 cm and 5 cm bins builds and blocks
+  paths across the wall. Before, the grid followed the samples' extent, put
+  the wall through the middle of cells, and refused to build unless you set
+  `dimension_ranges` by hand. The refusal for a wall that still cuts a cell
+  now names the wall's ends and the bin, and how to choose `bin_size`.
+
 - `Environment.apply_transform` takes `units=`, and requires it when the
   transform scales or shears lengths and the environment has units. Before,
   the units were always kept, so a pixel environment calibrated to

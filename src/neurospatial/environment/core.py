@@ -2927,6 +2927,8 @@ class Environment(Generic[_C]):
         arena : Arena, optional
             Explicit continuous domain. Without one, infer an estimated domain
             from the active cells; an unvisited patch is not a declared wall.
+            With a known outline, the grid tiles the arena's bounds unless
+            `dimension_ranges` is given.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             ``"RegularGrid"`` or ``"Hexagonal"``, as a LayoutType member or a
             case-insensitive string. For "Hexagonal", `bin_size` is the
@@ -2935,8 +2937,10 @@ class Environment(Generic[_C]):
             :meth:`from_layout`.
         dimension_ranges : sequence of (float, float), optional
             ``[(min, max), ...]`` extent to tile on each axis, in the units of
-            `positions`. By default the extent of the samples plus half a bin
-            on each side.
+            `positions`. By default the bounds of `arena` when it has a known
+            outline, so cell edges start at the arena's edge and walls on that
+            lattice fall on cell faces; otherwise the extent of the samples
+            plus half a bin on each side.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are
             "active." If False, every bin in the extent is active, and the

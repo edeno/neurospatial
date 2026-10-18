@@ -465,6 +465,22 @@ def _from_samples(
     layout_params = {**common_params, size_option: bin_size}
     if layout_type is LayoutType.REGULAR_GRID:
         layout_params.update({name: options[name] for name in _REGULAR_GRID_ONLY})
+    if arena is not None:
+        # Normalizes a registered provider and refuses anything else, such as
+        # a bare polygon, before its outline is read.
+        arena = own_arena(arena)
+    if (
+        dimension_ranges is None
+        and arena is not None
+        and arena.domain_known
+        and arena.n_dims == n_dims
+    ):
+        # Tile the declared arena, not the samples' extent, so the cell edges
+        # start at the arena's edge and walls on that lattice fall on faces.
+        domain = arena.polygonal_domain()
+        if domain is not None:
+            low_x, low_y, high_x, high_y = domain.bounds
+            dimension_ranges = ((low_x, high_x), (low_y, high_y))
     if dimension_ranges is not None:
         layout_params["dimension_ranges"] = dimension_ranges
 

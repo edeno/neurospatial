@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
+from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arena import (
     Arena,
     MaskArena,
@@ -175,6 +177,37 @@ def validate_arena(
                     )
 
 
+def _wall_cut_message(
+    binning: Binning,
+    arena: Arena,
+    wall_segments: Sequence[LineString],
+    cell: Polygon,
+    index: int,
+) -> str:
+    """Name the wall that crosses bin ``index`` and how to align the grid."""
+    crossing = next(
+        number
+        for number, segment in enumerate(wall_segments)
+        if segment.intersection(cell).difference(cell.boundary).length > 0
+    )
+    ends = " to ".join(
+        "(" + ", ".join(f"{value:g}" for value in point) + ")"
+        for point in np.asarray(arena.walls[crossing].coords)[[0, -1]]
+    )
+    center = ", ".join(f"{value:g}" for value in binning.bins.centers[index])
+    return _format_error(
+        f"Physical wall cuts through bin {index} (center ({center})): wall "
+        f"{crossing} of the arena, from {ends}.",
+        why="Why: a wall blocks movement between the bins on either side, so "
+        "it must run along cell edges; a wall through the middle of a cell "
+        "would put one bin on both sides.",
+        fix="put cell edges on the walls: build the grid over the arena's "
+        "bounds (from_samples does this when given an arena with a known "
+        "outline) with a bin_size that divides the distance from the arena's "
+        "edge to each wall, or pass dimension_ranges that start on a wall",
+    )
+
+
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
     """Remove complete blocked cell interfaces from paths and finite-volume faces."""
     if _composition_arena(binning.locator) is not None:
@@ -201,7 +234,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         interior_part = walls.intersection(cell).difference(cell.boundary)
         if interior_part.length > 0:
             raise ValueError(
-                f"Physical wall cuts through bin {index}. Refine or rebuild cells so walls follow complete cell faces."
+                _wall_cut_message(binning, arena, wall_segments, cell, index)
             )
     keep = np.ones(len(binning.bins.pairs), dtype=bool)
     current_cells = None
