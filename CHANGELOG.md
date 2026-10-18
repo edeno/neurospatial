@@ -647,6 +647,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   peak memory of 72,000 errors drops from 808 MB to 327 MB, at the same speed
   and with identical values.
 
+- `Environment.nearest_bin` returns the nearest bin for every finite point,
+  however far away, unless you pass `max_distance` or `max_distance_factor`.
+  Before, a point more than 10 typical bin spacings from every center got
+  `-1` with no limit given; code that fed that `-1` back as an index read the
+  last bin (geodesic decoding error did), and nearest interpolation dropped
+  points deep inside a long cell. Use `bin_at()` or `contains()` to ask
+  whether a point is inside the environment, or pass
+  `max_distance_factor=10.0` for the old cutoff. `resample_field` keeps its
+  outside-the-source rule by passing that factor itself.
+
 ### Changed
 
 - A position exactly on the outline of a grid environment's bins -- the
@@ -1481,6 +1491,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- `env.interpolate(mode="linear")` reads the edge value between the grid's
+  edge and its outermost bin centers instead of NaN. Interpolation runs over
+  the grid of bin centers, so the outer half of every edge bin, inside the
+  environment, had no value; it now holds the edge value along the clamped
+  axis, as `mode="nearest"` does there. Points outside the environment still
+  read NaN.
 
 - Geodesic `decoding_error` (and `error_against`) measures a position far
   outside the environment from its own nearest bin. The nearest-bin lookup's

@@ -94,14 +94,12 @@ class TestNearestBin:
         np.testing.assert_array_equal(bins_before, bins_after)
 
     def test_out_of_bounds_points(self, grid_env):
-        """Test that far out-of-bounds points are marked as -1."""
-        # Points very far from environment
+        """A far point gets its nearest bin; a distance limit can reject it."""
         points = np.array([[1000.0, 1000.0], [5.0, 5.0]])
-        bins = grid_env.nearest_bin(points)
-
-        # Far point should be -1, close point should be valid
-        assert bins[0] == -1
-        assert bins[1] >= 0
+        assert np.all(grid_env.nearest_bin(points) >= 0)
+        limited = grid_env.nearest_bin(points, max_distance_factor=10.0)
+        assert limited[0] == -1
+        assert limited[1] >= 0
 
     def test_batch_mapping_performance(self, grid_env):
         """Test that batch mapping works with many points."""

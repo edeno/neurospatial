@@ -195,10 +195,9 @@ def _interpolate_nearest(
             coordinates=CartesianSystem(),
             tie_break="lowest_index",
             return_dist=False,
-            # No distance cutoff: the containment check that follows decides
-            # which points are outside, so a point deep in a tall cell keeps
-            # its value.
-            max_distance=np.inf,
+            # The containment check that follows decides which points are
+            # outside, so a point deep in a tall cell keeps its value.
+            max_distance=None,
             max_distance_factor=None,
         ),
     )
@@ -284,6 +283,15 @@ def _interpolate_linear(
         points = frame._project_to_planes(
             points, grid_points, operation="Linear interpolation"
         )
+    # Between the grid's edge and its outermost centers, hold the edge value
+    # along that axis; the containment check afterwards still rejects points
+    # outside the environment.
+    points = np.column_stack(
+        [
+            np.clip(points[:, axis], centers[0], centers[-1])
+            for axis, centers in enumerate(grid_points)
+        ]
+    )
 
     # Create interpolator
     # bounds_error=False, fill_value=np.nan → outside points return NaN

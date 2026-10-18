@@ -137,14 +137,22 @@ class TestMapPointsToBinsBehavior:
         expected = np.linalg.norm(point[0] - regular_grid_env.bin_centers[bins[0]])
         assert dists[0] == pytest.approx(expected, abs=1e-10)
 
-    def test_returns_dist_inf_for_outside_points(self, regular_grid_env):
-        """A point far outside the env returns inf distance."""
+    def test_returns_dist_inf_for_rejected_points(self, regular_grid_env):
+        """A point rejected by a distance limit returns inf distance; without a
+        limit, it gets its nearest bin and the finite distance to it."""
 
         far_point = np.array([[1000.0, 1000.0]])
-        bins, dists = regular_grid_env.nearest_bin(far_point, return_dist=True)
-
+        bins, dists = regular_grid_env.nearest_bin(
+            far_point, return_dist=True, max_distance_factor=10.0
+        )
         assert bins[0] == -1
         assert np.isinf(dists[0])
+        bins, dists = regular_grid_env.nearest_bin(far_point, return_dist=True)
+        assert bins[0] >= 0
+        np.testing.assert_allclose(
+            dists,
+            np.linalg.norm(regular_grid_env.bin_centers[bins] - far_point, axis=1),
+        )
 
     def test_max_distance_marks_outside(self, regular_grid_env):
         """max_distance threshold rejects points beyond it (bin index -1)."""
@@ -211,11 +219,12 @@ class TestMapPointsToBinsBehavior:
         with pytest.raises(ValueError, match=r"positive|non-negative"):
             regular_grid_env.nearest_bin(point, max_distance=-1.0)
 
-    def test_default_threshold_is_10x_typical_spacing(self, monkeypatch):
-        """The implicit default threshold is 10 x typical bin spacing.
+    def test_distance_factor_multiplies_typical_spacing(self, monkeypatch):
+        """max_distance_factor rejects points beyond factor x typical spacing.
 
-        Monkeypatch the spacing estimator to a known K; a point at 9.5*K is
-        inside while a point at 10.5*K is rejected. Pins the 10x heuristic.
+        Monkeypatch the spacing estimator to a known K; with a factor of 10 a
+        point at 9.5*K is kept and one at 10.5*K is rejected. Without a factor
+        there is no cutoff.
         """
         import neurospatial.ops.mapping as mapping
         from neurospatial import Environment
@@ -232,13 +241,14 @@ class TestMapPointsToBinsBehavior:
 
         env_in = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
         point_in = np.array([[20.0 + 9.5 * K, 0.0]])  # dist 9.5*K from (20, 0)
-        bins_in = env_in.nearest_bin(point_in)
+        bins_in = env_in.nearest_bin(point_in, max_distance_factor=10.0)
         assert bins_in[0] >= 0
 
         env_out = Environment.from_samples(data, bin_size=_GRID_BIN_SIZE)
         point_out = np.array([[20.0 + 10.5 * K, 0.0]])  # dist 10.5*K
-        bins_out = env_out.nearest_bin(point_out)
+        bins_out = env_out.nearest_bin(point_out, max_distance_factor=10.0)
         assert bins_out[0] == -1
+        assert env_out.nearest_bin(point_out)[0] >= 0
 
     @pytest.mark.parametrize("use_enum", [True, False])
     def test_closest_center_vs_lowest_index_on_tie(self, regular_grid_env, use_enum):
@@ -341,7 +351,9 @@ class TestResampleFieldOutOfBounds:
         from neurospatial.ops.mapping import TieBreakStrategy
 
         dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
+            dst_env.bin_centers,
+            tie_break=TieBreakStrategy.LOWEST_INDEX,
+            max_distance_factor=10.0,  # resample_field's outside-source rule
         )
         outside = dst_to_src < 0
 
@@ -409,7 +421,9 @@ class TestResampleFieldDiffuseNaN:
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
         dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
+            dst_env.bin_centers,
+            tie_break=TieBreakStrategy.LOWEST_INDEX,
+            max_distance_factor=10.0,  # resample_field's outside-source rule
         )
         outside = dst_to_src < 0
         assert np.any(outside)  # the test scenario must have out-of-source bins
@@ -437,7 +451,9 @@ class TestResampleFieldDiffuseNaN:
         field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
 
         dst_to_src = src_env.nearest_bin(
-            dst_env.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX
+            dst_env.bin_centers,
+            tie_break=TieBreakStrategy.LOWEST_INDEX,
+            max_distance_factor=10.0,  # resample_field's outside-source rule
         )
         outside = dst_to_src < 0
         assert np.any(outside)
