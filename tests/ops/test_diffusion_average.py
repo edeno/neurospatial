@@ -141,7 +141,11 @@ def _partial_coverage_pair():
         bin_size=1.0,
     )
     idx = np.asarray(
-        src.nearest_bin(dst.bin_centers, tie_break=TieBreakStrategy.LOWEST_INDEX)
+        src.nearest_bin(
+            dst.bin_centers,
+            tie_break=TieBreakStrategy.LOWEST_INDEX,
+            max_distance_factor=10.0,  # resample_field's outside-source rule
+        )
     )
     outside = idx < 0
     return src, dst, idx, outside

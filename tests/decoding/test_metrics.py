@@ -304,12 +304,26 @@ class TestErrorAlongTheEnvironment:
 
         decoded = np.array([[30.0, 79.0]])  # between left and middle arms
         actual = np.array([[60.0, 79.0]])
-        nearest = w_track.bin_centers[w_track.nearest_bin(decoded)]
+        nearest_bin = w_track.nearest_bin(decoded, max_distance=np.inf)
+        assert nearest_bin[0] >= 0
+        nearest = w_track.bin_centers[nearest_bin]
         np.testing.assert_allclose(
             decoding_error(w_track, decoded, actual),
             decoding_error(w_track, nearest, actual),
         )
         assert decoding_error(w_track, decoded, actual)[0] > 100.0
+
+    def test_far_outside_position_is_measured_from_its_own_nearest_bin(self):
+        """However far off, a position is measured from its nearest bin, never
+        from bin -1 (the last bin) when a lookup cutoff gives up."""
+        from neurospatial.decoding.metrics import decoding_error
+
+        row = Environment.from_grid_mask(
+            np.ones((5, 1), dtype=bool),
+            grid_edges=(np.arange(6.0), np.array([0.0, 1.0])),
+        )
+        far_left, first = np.array([[-1000.0, 0.5]]), np.array([[0.5, 0.5]])
+        np.testing.assert_array_equal(decoding_error(row, far_left, first), [0.0])
 
     def test_geodesic_matches_all_pairs_shortest_paths(self, small_2d_env):
         from neurospatial.decoding.metrics import decoding_error

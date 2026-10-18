@@ -195,6 +195,8 @@ def _interpolate_nearest(
             coordinates=CartesianSystem(),
             tie_break="lowest_index",
             return_dist=False,
+            # The containment check that follows decides which points are
+            # outside, so a point deep in a tall cell keeps its value.
             max_distance=None,
             max_distance_factor=None,
         ),
@@ -281,6 +283,15 @@ def _interpolate_linear(
         points = frame._project_to_planes(
             points, grid_points, operation="Linear interpolation"
         )
+    # Between the grid's edge and its outermost centers, hold the edge value
+    # along that axis; the containment check afterwards still rejects points
+    # outside the environment.
+    points = np.column_stack(
+        [
+            np.clip(points[:, axis], centers[0], centers[-1])
+            for axis, centers in enumerate(grid_points)
+        ]
+    )
 
     # Create interpolator
     # bounds_error=False, fill_value=np.nan → outside points return NaN
@@ -517,10 +528,11 @@ def _diffuse(
     _check_kernel_mode(mode)
     if backend not in ("numpy", "jax"):
         raise ValueError(f"backend must be 'numpy' or 'jax' (got '{backend}').")
-    if not bandwidth > 0:
+    if not (np.isfinite(bandwidth) and bandwidth > 0):
         raise ValueError(
-            f"bandwidth must be positive (got {bandwidth}). "
-            "Bandwidth controls the spatial scale of smoothing."
+            f"bandwidth must be finite and positive (got {bandwidth}). "
+            "Bandwidth controls the spatial scale of smoothing; an infinite "
+            "bandwidth has no heat kernel."
         )
 
     # Coerce to 2-D (n_bins, n_fields); a 1-D field is squeezed back on

@@ -660,6 +660,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (0.05 for meters, 50 for millimeters), and ask for an explicit value when
   the environment's units are not a metric length.
 
+- `Environment.nearest_bin` returns the nearest bin for every finite point,
+  however far away, unless you pass `max_distance` or `max_distance_factor`.
+  Before, a point more than 10 typical bin spacings from every center got
+  `-1` with no limit given; code that fed that `-1` back as an index read the
+  last bin (geodesic decoding error did), and nearest interpolation dropped
+  points deep inside a long cell. Use `bin_at()` or `contains()` to ask
+  whether a point is inside the environment, or pass
+  `max_distance_factor=10.0` for the old cutoff. `resample_field` keeps its
+  outside-the-source rule by passing that factor itself.
+
 ### Changed
 
 - Speed is one definition everywhere: the velocity vector smoothed with a
@@ -1513,6 +1523,34 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- `env.interpolate(mode="linear")` reads the edge value between the grid's
+  edge and its outermost bin centers instead of NaN. Interpolation runs over
+  the grid of bin centers, so the outer half of every edge bin, inside the
+  environment, had no value; it now holds the edge value along the clamped
+  axis, as `mode="nearest"` does there. Points outside the environment still
+  read NaN.
+
+- Geodesic `decoding_error` (and `error_against`) measures a position far
+  outside the environment from its own nearest bin. The nearest-bin lookup's
+  distance cutoff returned `-1` for it, which indexed the last bin: a decode
+  1000 cm left of a row of bins was measured from its rightmost bin.
+
+- `env.nearest_bin` checks the number of coordinates before skipping missing
+  rows. An all-NaN array with the wrong number of columns returned `-1` for
+  every row instead of naming the shape mistake, and a finite one failed with
+  a SciPy error.
+
+- `env.smooth` and `env.diffuse` refuse an infinite bandwidth, as
+  `env.compute_kernel` already did. `bandwidth=np.inf` had passed the
+  positivity check and turned a field of ones into zeros (or NaN), losing all
+  its mass.
+
+- `env.interpolate(mode="nearest")` keeps every point the environment
+  contains. It had inherited a hidden cutoff of 10 typical bin spacings from
+  the nearest-bin lookup, so a point inside a tall or wide cell but far from
+  its center read NaN (on a grid of 1 x 100 cells, the point (0.5, 1) of a
+  field of ones gave NaN although `env.contains` was True).
 
 - Behavior and event analyses that take a region name (`segment_trials`,
   `detect_region_crossings`, `detect_region_visits`,
