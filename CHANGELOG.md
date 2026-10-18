@@ -1364,6 +1364,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   open field at `bandwidth=5`, each extra shuffle in `place_cell_significance`
   for 10 cells takes about 35 ms instead of 2 s. The basis takes
   `8 * n_bins**2` bytes (50 MB for 2,500 bins) until `env.clear_cache()`.
+  `method="glm"` fits that need the full smoothness basis (a `rank` of half
+  the bins or more) likewise solve it once per environment.
 
 - `rate_map_centroid(method="geodesic")` computes the field bins' graph
   distances in one pass instead of one shortest-path search per pair of

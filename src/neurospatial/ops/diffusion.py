@@ -181,8 +181,8 @@ class _MRFEigenbasis:
     mode_comp : ndarray of intp, shape (G,)
         Read-only source W-component of each mode.
     G : int
-        Number of modes held; 0 before the first solve. Dense solves are
-        call-local and never stored.
+        Number of modes held; 0 before the first solve and ``n_bins`` once a
+        request needed the dense basis.
     """
 
     Q: NDArray[np.float64]
@@ -538,8 +538,8 @@ def _symmetric_eigenbasis(
 # the environment's cached ``_MRFEigenbasis``) owns the eigensolve and grows on demand; a
 # PURE selector (``_select_live_basis``) consumes the cached modes and only masks
 # by occupancy. The split keeps the eigensolve behind the cache so a repeat call
-# at the same-or-smaller rank / same live support never re-solves *while it stays
-# in the sparse (persisted) regime* (a near-full-rank dense solve is transient).
+# at the same-or-smaller rank / same live support never re-solves, sparse or
+# dense.
 # ---------------------------------------------------------------------------
 def _ensure_global_modes(
     holder: _MRFEigenbasis,
@@ -562,10 +562,9 @@ def _ensure_global_modes(
     any nonzero row, recovering the mode -> component map WITHOUT touching the
     eigensolver.
 
-    Past ``dense_fraction * n`` the resolved basis is an ``n x n`` matrix; the
-    design forbids persisting it (it would pin GBs on the env), so a dense solve
-    is **call-local**: it is returned with the unchanged holder, which stays at
-    its last sparse ``G``.
+    Past ``dense_fraction * n`` the resolved basis is the full ``n x n`` matrix.
+    It is kept like a truncated one, so repeated fits reuse a single dense
+    solve; ``env.clear_cache()`` releases it.
 
     Parameters
     ----------
@@ -578,7 +577,7 @@ def _ensure_global_modes(
     needed_G : int
         Minimum number of global modes required.
     dense_fraction : float, optional
-        Fraction of ``n`` at or above which a dense (transient) solve is used.
+        Fraction of ``n`` at or above which a dense solve is used.
 
     Returns
     -------
@@ -602,8 +601,6 @@ def _ensure_global_modes(
     # on that per-component solve -- a refactor to a single global eigsh would
     # leak cross-component entries and silently corrupt this map.
     mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
-    if dense:  # transient-dense policy: never persist an (n, n) basis
-        return holder, (Q, Lam, mode_comp)
     grown = _MRFEigenbasis(_frozen(Q), _frozen(Lam), _frozen(mode_comp), Q.shape[1])
     return grown, (grown.Q, grown.Lam, grown.mode_comp)
 
