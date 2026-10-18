@@ -8,10 +8,11 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from shapely.geometry import Point
+from shapely.geometry import Point, Polygon
 
 from neurospatial import Environment
 from neurospatial.geometry._polygon import materialize_cells
+from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import AffineND
 
 _CARTESIAN = [
@@ -205,3 +206,45 @@ def test_mesh_subset_shrinks_to_its_kept_triangles(built_environment):
     # Every mesh point is retained, but the unused ones do not widen the extent.
     assert np.all(np.asarray(child.dimension_ranges)[:, 1] <= 8.0)
     assert np.all(shapes.points.max(axis=0) == 12.0)
+
+
+def _clipped_grid() -> Environment:
+    grid = Environment.from_grid_mask(
+        np.ones((6, 6), dtype=bool), grid_edges=(np.linspace(0, 12, 7),) * 2
+    )
+    return grid.clip(Point(6, 6).buffer(5.0))
+
+
+def _hexagons() -> Environment:
+    return Environment.from_layout(
+        create_layout(
+            "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
+        )
+    )
+
+
+def _triangles() -> Environment:
+    return Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon([(0, 0), (12, 0), (12, 12), (0, 12)]),
+            point_spacing=4.0,
+        )
+    )
+
+
+@pytest.mark.parametrize("build", [_hexagons, _triangles, _clipped_grid])
+def test_cell_shapes_select_and_bound_their_own_cells(build):
+    env = build()
+    keep = np.zeros(env.n_bins, dtype=bool)
+    keep[1::3] = True
+    kept = env.binning.shapes.subset(keep)
+    child = env.subset(mask=keep)
+    assert type(kept) is type(child.binning.shapes)
+    assert kept.extent() == child.dimension_ranges
+    for shapes, owner in ((kept, child), (env.binning.shapes, env)):
+        np.testing.assert_allclose(
+            shapes.extent(), _cell_bounds(owner), rtol=0, atol=1e-12
+        )
+    with pytest.raises(ValueError, match="boolean mask"):
+        env.binning.shapes.subset(np.flatnonzero(keep))

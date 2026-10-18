@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 
 def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -24,6 +24,27 @@ def get_centers(bin_edges: NDArray[np.float64]) -> NDArray[np.float64]:
 
     """
     return bin_edges[:-1] + np.diff(bin_edges) / 2
+
+
+def boolean_selection(keep: ArrayLike, n_items: int) -> NDArray[np.bool_]:
+    """Return ``keep`` as a boolean mask with one entry per item.
+
+    Raises
+    ------
+    ValueError
+        If ``keep`` is not boolean or does not have shape ``(n_items,)``.
+    """
+    mask = np.asarray(keep)
+    if mask.dtype.kind != "b" or mask.shape != (n_items,):
+        raise ValueError("keep must be a boolean mask with one entry per cell.")
+    return mask
+
+
+def axis_ranges(
+    low: NDArray[np.float64], high: NDArray[np.float64]
+) -> tuple[tuple[float, float], ...]:
+    """Pair per-axis lower and upper bounds as ``(low, high)`` floats."""
+    return tuple((float(a), float(b)) for a, b in zip(low, high, strict=True))
 
 
 def _mark_read_only(value: object) -> None:

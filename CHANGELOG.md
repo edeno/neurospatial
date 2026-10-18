@@ -1013,6 +1013,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   work again. It adds `"with_track_width"` to `env.derivations` and refuses an
   environment that is not a track.
 
+- The cell-shape records in `neurospatial.binning` (`HexagonShapes`,
+  `TriangleShapes`, `PolygonCells`) have `extent()`, the `(low, high)` bounds
+  of their cells per axis, and `subset(keep)`, the cells selected by a boolean
+  mask of one entry per bin, in their original order. These are the same
+  rules `env.dimension_ranges` and `env.subset()` use, so explicit bins built
+  for `Environment.from_bins()` can be bounded and subset the same way.
+
 - `neurospatial.ops.KernelMode` names the values `mode=` accepts in
   `Environment.compute_kernel`, `smooth` and `diffuse`
   (`"transition"`, `"density"`, `"average"`), for type annotations in your
