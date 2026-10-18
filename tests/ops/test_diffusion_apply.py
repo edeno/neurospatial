@@ -610,35 +610,59 @@ def test_compute_kernel_does_not_poison_apply_cache():
     assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
 
 
-def test_near_full_rank_diffuse_no_poison():
-    """A near-full-rank env.diffuse (rank >= dense_fraction*n) uses a TRANSIENT
-    dense basis (applied, dropped) and never caches an (n, n) basis; a later
-    normal env.diffuse still uses the bounded truncated basis."""
+def test_near_full_rank_diffuse_solves_once(monkeypatch):
+    """A near-full-rank env.diffuse (rank >= dense_fraction*n) caches the full
+    dense basis, so repeated calls -- shuffles, cross-validation folds, other
+    bandwidths -- reuse it instead of repeating the dense eigensolve."""
+    from neurospatial.ops import diffusion
+
+    solves = []
+    original = diffusion._symmetric_eigenbasis
+
+    def counting(S, rank):
+        solves.append(rank)
+        return original(S, rank)
+
+    monkeypatch.setattr(diffusion, "_symmetric_eigenbasis", counting)
     env, source_coord = _build_env("grid_2d")
     src = source_bin(env, source_coord)
     fields = make_fields(env, src)
-    # Tiny sigma -> near-full rank -> transient dense (with the large-matrix note
-    # suppressed on this small env, which is below the warn threshold anyway).
+    # Tiny sigma -> near-full rank -> dense basis (the large-matrix note is
+    # suppressed; this small env is below the warn threshold anyway).
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         out = np.asarray(env.diffuse(fields["nonneg"], bandwidth=0.8, mode="density"))
     assert np.all(np.isfinite(out))
-    # The transient dense basis is NOT cached.
     holder = diffusion_eigenbasis(env._cache)
-    assert holder.basis is None
     assert holder.resolved[(0.8, _HEAT_KERNEL_RANK_TOL)] == "dense"
+    assert holder.basis[0].shape == (env.n_bins, env.n_bins)
+    assert not any(array.flags.writeable for array in holder.basis)
+    n_dense_solves = solves.count(None)
+    assert n_dense_solves == 1
 
-    # A SECOND call at the same near-full-rank bandwidth takes the memoized
-    # "dense" fast path (still transient, still not cached) and matches the first.
+    # Same bandwidth again, another near-full-rank bandwidth, and a light
+    # bandwidth all reuse the cached full basis: no further dense solve.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         out2 = np.asarray(env.diffuse(fields["nonneg"], bandwidth=0.8, mode="density"))
+        env.diffuse(fields["nonneg"], bandwidth=0.9, mode="density")
     np.testing.assert_allclose(out, out2, rtol=1e-10)
-    assert diffusion_eigenbasis(env._cache).basis is None
+    light = np.asarray(env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density"))
+    assert solves.count(None) == n_dense_solves
+    assert diffusion_eigenbasis(env._cache).basis[0].shape[1] == env.n_bins
 
-    # A subsequent truncated call caches a bounded (< n) basis.
-    env.diffuse(fields["nonneg"], bandwidth=10.0, mode="density")
-    assert diffusion_eigenbasis(env._cache).basis[0].shape[1] < env.n_bins
+    # The reused basis still reproduces the dense kernel at the light bandwidth.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        dense = (
+            env.compute_kernel(bandwidth=10.0, mode="density", cache=False)
+            @ fields["nonneg"]
+        )
+    assert _m_norm_rel(light, dense, env.bin_sizes) < _TRUNC_MNORM_TOL
+
+    # Clearing the cache releases the (n, n) basis.
+    env.clear_cache()
+    assert diffusion_eigenbasis(env._cache).basis is None
 
 
 # ---------------------------------------------------------------------------

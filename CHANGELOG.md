@@ -1357,6 +1357,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- Shuffle tests and other repeated `diffusion_kde` maps no longer repeat the
+  environment's eigendecomposition on every call when the bandwidth is small
+  for the arena. `env.diffuse` now solves that full basis once and keeps it
+  for later calls at any bandwidth, with identical results. On a 2,500-bin
+  open field at `bandwidth=5`, each extra shuffle in `place_cell_significance`
+  for 10 cells takes about 35 ms instead of 2 s. The basis takes
+  `8 * n_bins**2` bytes (50 MB for 2,500 bins) until `env.clear_cache()`.
+
 - `rate_map_centroid(method="geodesic")` computes the field bins' graph
   distances in one pass instead of one shortest-path search per pair of
   bins: a 200-bin field takes about 2 ms instead of 3 s, with identical

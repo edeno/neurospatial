@@ -69,7 +69,8 @@ __all__ = [
 # dense ``compute_kernel`` path is untouched). Drop heat-kernel modes whose
 # weight ``exp(-t*lambda)`` is below ``_HEAT_KERNEL_RANK_TOL``; once the resolved
 # rank would exceed ``_HEAT_KERNEL_DENSE_FRACTION * n_bins`` a truncated ``eigsh``
-# no longer beats a dense ``eigh``, so fall back to a transient dense basis.
+# no longer beats a dense ``eigh``, so solve the full dense basis once and keep
+# it: it serves every later bandwidth without another eigensolve.
 # ``_HEAT_KERNEL_RANK_START`` is the first probe size for the adaptive search.
 _HEAT_KERNEL_RANK_TOL = 1e-6
 _HEAT_KERNEL_DENSE_FRACTION = 0.5
@@ -140,12 +141,13 @@ class _DiffusionEigenbasis:
     ----------
     basis : tuple of ndarray or None
         ``(Q, Lam)``: read-only eigenvectors, shape ``(n_bins, rank)``, and
-        ascending eigenvalues, shape ``(rank,)``. The largest truncated basis
-        requested so far, always below ``dense_fraction * n_bins`` modes;
-        None before the first truncated solve.
+        ascending eigenvalues, shape ``(rank,)``. The largest basis requested so
+        far: a truncated basis below ``dense_fraction * n_bins`` modes, or the
+        full ``(n_bins, n_bins)`` basis once any bandwidth needed it. None before
+        the first solve.
     resolved : mapping of (float, float) to int or "dense"
         Rank resolved for each ``(sigma, tol)``; ``"dense"`` marks a bandwidth
-        that needs a transient full basis, which is never kept.
+        applied with the full basis.
     """
 
     basis: tuple[NDArray[np.float64], NDArray[np.float64]] | None = None
@@ -854,9 +856,9 @@ def _adaptive_symmetric_basis(
     eigenvalue brackets the heat-kernel cutoff ``lambda_cut = -ln(tol) / t``, then
     keeps every mode at or below it (``>= n_components``, so no null mode drops).
     Returns ``(None, None, None)`` when the resolved rank would exceed
-    ``dense_fraction * n_bins`` -- signalling the caller to use a **transient**
-    dense full basis (a light bandwidth on a large grid genuinely needs most
-    modes; a truncated ``eigsh`` no longer beats a dense ``eigh`` there).
+    ``dense_fraction * n_bins`` -- signalling the caller to use the dense full
+    basis (a light bandwidth on a large grid genuinely needs most modes; a
+    truncated ``eigsh`` no longer beats a dense ``eigh`` there).
     """
     n = S.shape[0]
     t = sigma**2 / 2.0
@@ -997,10 +999,11 @@ def _warn_large_dense_basis(n: int) -> None:
         warnings.warn(
             f"env.diffuse resolved a near-full-rank basis for {n} bins (a light "
             f"bandwidth on a large grid needs most modes), so a dense {n} x {n} "
-            f"float64 eigenvector matrix (~{estimated_gb:.1f} GB) is built "
-            f"transiently, applied, and dropped (never cached). Proceeding; this "
-            f"may be slow and memory-intensive. To reduce the cost, increase the "
-            f"bandwidth or the bin_size (fewer bins).",
+            f"float64 eigenvector matrix (~{estimated_gb:.1f} GB) is built once "
+            f"and kept in this environment's cache for later bandwidths; "
+            f"env.clear_cache() releases it. Proceeding; this may be slow and "
+            f"memory-intensive. To reduce the cost, increase the bandwidth or the "
+            f"bin_size (fewer bins).",
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
@@ -1019,15 +1022,14 @@ def _resolve_basis(
     """Return the holder to keep and ``(Q, Lam)`` for ``sigma``.
 
     ``holder`` is the environment's cached :class:`_DiffusionEigenbasis`; it is
-    never changed. It holds ONE truncated basis -- the max rank requested so
-    far, strictly below ``dense_fraction * n`` -- plus the resolved rank per
-    ``(sigma, tol)`` so repeat calls at a bandwidth (every neuron) skip the
-    adaptive probe. A request that needs more is answered with a replacement
-    holder, which the caller stores in place of ``holder``.
+    never changed. It holds ONE basis -- the max rank requested so far -- plus
+    the resolved rank per ``(sigma, tol)`` so repeat calls at a bandwidth (every
+    neuron) skip the adaptive probe. A request that needs more is answered with
+    a replacement holder, which the caller stores in place of ``holder``.
 
     A request whose rank would reach ``dense_fraction * n`` (a near-full-rank
-    ``env.diffuse``) builds a **transient** dense basis -- applied then dropped,
-    never stored -- so it can never grow the cache to ``(n, n)``.
+    ``env.diffuse``) solves the full dense basis once and keeps it, so shuffles,
+    folds and every later bandwidth reuse that one ``(n, n)`` solve.
     """
     n = int(volumes.shape[0])
     key = (float(sigma), float(tol))
@@ -1035,25 +1037,30 @@ def _resolve_basis(
 
     # Fast path: rank already resolved for this bandwidth.
     r = holder.resolved.get(key)
-    if r == "dense":  # transient full basis, never cached
-        # No re-warn here: the large-matrix warning fired once when this
-        # bandwidth first resolved to "dense" (the probe path below).
-        return holder, _transient_dense_basis(W, volumes)
+    if r == "dense":
+        # No re-warn here: the large-matrix warning fired once, when the full
+        # basis was first solved (the probe path below).
+        assert holder.basis is not None  # "dense" is resolved on the full basis
+        return holder, holder.basis
     if isinstance(r, int):
         assert holder.basis is not None  # an int rank is resolved on a basis
         Q, Lam = holder.basis
         return holder, (Q[:, :r], Lam[:r])
 
     # If the cached basis already brackets this bandwidth's cutoff (its largest
-    # retained mode is negligible), slice it -- no new eigensolve.
+    # retained mode is negligible) or is the full basis, slice it -- no new
+    # eigensolve. A rank the truncated path would not serve uses all of it.
     if holder.basis is not None:
         Qc, Lamc = holder.basis
-        if float(np.exp(-t * Lamc[-1])) < tol:
+        full = Lamc.shape[0] == n
+        if full or float(np.exp(-t * Lamc[-1])) < tol:
             r = int(
                 min(
                     max(heat_kernel_rank(Lamc, sigma, tol), n_components), Lamc.shape[0]
                 )
             )
+            if full and r >= dense_fraction * n:
+                return holder.with_rank(key, "dense"), holder.basis
             return holder.with_rank(key, r), (Qc[:, :r], Lamc[:r])
 
     # Otherwise probe (and possibly grow the single cached basis).
@@ -1064,8 +1071,8 @@ def _resolve_basis(
     if rank is None:
         _warn_large_dense_basis(n)
         vals_full, vecs_full = _symmetric_eigenbasis(S, rank=None)
-        # transient, NOT cached
-        return holder.with_rank(key, "dense"), (vecs_full, vals_full)
+        basis = (_frozen(vecs_full), _frozen(vals_full))
+        return holder.with_rank(key, "dense", basis), basis
     assert eigvals is not None and eigvecs is not None  # narrowed by rank is not None
     # The single cached basis is replaced by a larger one (it never shrinks),
     # so a request needing more modes than are cached recomputes it.
@@ -1076,21 +1083,6 @@ def _resolve_basis(
     assert holder.basis is not None  # cached_rank > rank >= 0
     Qc, Lamc = holder.basis
     return holder.with_rank(key, rank), (Qc[:, :rank], Lamc[:rank])
-
-
-def _transient_dense_basis(
-    W: scipy.sparse.spmatrix, volumes: NDArray[np.float64]
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Build a full dense eigenbasis of ``S`` transiently (never cached).
-
-    Does NOT warn (the caller warns once, when the bandwidth first resolves to
-    "dense"). Returns ``(Q, Lam)`` -- eigenvectors first -- matching
-    :func:`_resolve_basis` (``_symmetric_eigenbasis`` returns ``(eigvals,
-    eigvecs)``, so swap).
-    """
-    S = _symmetric_conjugate(W, volumes)
-    eigvals, eigvecs = _symmetric_eigenbasis(S, rank=None)
-    return eigvecs, eigvals
 
 
 def _diffusion_apply(
