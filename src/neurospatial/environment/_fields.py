@@ -195,7 +195,10 @@ def _interpolate_nearest(
             coordinates=CartesianSystem(),
             tie_break="lowest_index",
             return_dist=False,
-            max_distance=None,
+            # No distance cutoff: the containment check that follows decides
+            # which points are outside, so a point deep in a tall cell keeps
+            # its value.
+            max_distance=np.inf,
             max_distance_factor=None,
         ),
     )
@@ -517,10 +520,11 @@ def _diffuse(
     _check_kernel_mode(mode)
     if backend not in ("numpy", "jax"):
         raise ValueError(f"backend must be 'numpy' or 'jax' (got '{backend}').")
-    if not bandwidth > 0:
+    if not (np.isfinite(bandwidth) and bandwidth > 0):
         raise ValueError(
-            f"bandwidth must be positive (got {bandwidth}). "
-            "Bandwidth controls the spatial scale of smoothing."
+            f"bandwidth must be finite and positive (got {bandwidth}). "
+            "Bandwidth controls the spatial scale of smoothing; an infinite "
+            "bandwidth has no heat kernel."
         )
 
     # Coerce to 2-D (n_bins, n_fields); a 1-D field is squeezed back on

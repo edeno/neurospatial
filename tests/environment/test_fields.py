@@ -273,7 +273,7 @@ class TestSmooth:
         rng = np.random.default_rng(42)
         field = rng.random(medium_2d_env.n_bins)
 
-        with pytest.raises(ValueError, match=r"bandwidth must be positive"):
+        with pytest.raises(ValueError, match=r"bandwidth must be finite and positive"):
             medium_2d_env.smooth(field, bandwidth=-1.0, mode="average")
 
     def test_smooth_zero_bandwidth_raises(self, medium_2d_env):
@@ -281,7 +281,7 @@ class TestSmooth:
         rng = np.random.default_rng(42)
         field = rng.random(medium_2d_env.n_bins)
 
-        with pytest.raises(ValueError, match=r"bandwidth must be positive"):
+        with pytest.raises(ValueError, match=r"bandwidth must be finite and positive"):
             medium_2d_env.smooth(field, bandwidth=0.0, mode="average")
 
     def test_smooth_invalid_mode_raises(self, medium_2d_env):

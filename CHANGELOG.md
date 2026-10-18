@@ -1482,6 +1482,27 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- Geodesic `decoding_error` (and `error_against`) measures a position far
+  outside the environment from its own nearest bin. The nearest-bin lookup's
+  distance cutoff returned `-1` for it, which indexed the last bin: a decode
+  1000 cm left of a row of bins was measured from its rightmost bin.
+
+- `env.nearest_bin` checks the number of coordinates before skipping missing
+  rows. An all-NaN array with the wrong number of columns returned `-1` for
+  every row instead of naming the shape mistake, and a finite one failed with
+  a SciPy error.
+
+- `env.smooth` and `env.diffuse` refuse an infinite bandwidth, as
+  `env.compute_kernel` already did. `bandwidth=np.inf` had passed the
+  positivity check and turned a field of ones into zeros (or NaN), losing all
+  its mass.
+
+- `env.interpolate(mode="nearest")` keeps every point the environment
+  contains. It had inherited a hidden cutoff of 10 typical bin spacings from
+  the nearest-bin lookup, so a point inside a tall or wide cell but far from
+  its center read NaN (on a grid of 1 x 100 cells, the point (0.5, 1) of a
+  field of ones gave NaN although `env.contains` was True).
+
 - Behavior and event analyses that take a region name (`segment_trials`,
   `detect_region_crossings`, `detect_region_visits`,
   `detect_runs_between_regions`, `running_direction_labels`,
