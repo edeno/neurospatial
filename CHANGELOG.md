@@ -8,6 +8,15 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.maze(kind=..., node_positions=...)` refuses a layout whose
+  track segments cross or run along each other, naming the two segments and
+  the node order the kind expects. The order of `node_positions` sets which
+  nodes are joined, so a W maze listed as base/arm pairs used to build arms on
+  top of each other (25 duplicate bin centers in one example) without an
+  error. When `node_positions` holds bare numbers, the error now suggests a
+  valid layout for the kind instead of points along one line, which no W,
+  plus or T maze can be.
+
 - `ops.geodesic_distance_between_points` and `ops.pairwise_distances` raise
   `networkx.NodeNotFound` for a bin that is not a node of the graph, such as
   the outside marker `-1`. Before, they returned `inf` (or `default`), the

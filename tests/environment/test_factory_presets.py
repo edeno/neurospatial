@@ -212,13 +212,14 @@ class TestMaze:
 
     def test_plus_topology_is_coordinate_independent(self):
         """Plus topology comes from order, not coordinates (regression)."""
-        # Arms in arbitrary/flipped directions; order alone defines edges.
+        # Arms listed in no compass order, with y increasing downward; order
+        # alone defines edges.
         nodes = {
             "center": (0, 0),
             "a": (0, -50),
-            "b": (0, -100),
-            "c": (-50, 0),
-            "d": (-100, 0),
+            "b": (-50, 0),
+            "c": (50, 0),
+            "d": (0, 50),
         }
         env = Environment.maze(kind="plus", node_positions=nodes, bin_size=5.0)
         graph = env.binning.linearization.graph
@@ -230,6 +231,41 @@ class TestMaze:
             frozenset({"center", "d"}),
         }
         assert edges == expected
+
+    @pytest.mark.parametrize(
+        ("kind", "nodes"),
+        [
+            # W nodes listed as base/arm pairs instead of bases then arms.
+            (
+                "w",
+                {
+                    "bl": (0, 0),
+                    "al": (0, 50),
+                    "bm": (20, 0),
+                    "am": (20, 50),
+                    "br": (40, 0),
+                    "ar": (40, 50),
+                },
+            ),
+            # Two plus-maze arms along the same direction.
+            (
+                "plus",
+                {
+                    "c": (0, 0),
+                    "a": (0, -50),
+                    "b": (0, -100),
+                    "d": (50, 0),
+                    "e": (-50, 0),
+                },
+            ),
+            # A T maze laid out on one line.
+            ("t", {0: (0, 0), 1: (10, 0), 2: (20, 0), 3: (30, 0)}),
+        ],
+    )
+    def test_misordered_nodes_that_overlap_are_refused(self, kind, nodes):
+        """Out-of-order nodes would build arms on top of each other."""
+        with pytest.raises(ValueError, match="overlap or cross"):
+            Environment.maze(kind=kind, node_positions=nodes, bin_size=2.0)
 
     def test_t_edge_topology_and_to_linear(self):
         """T graph edges (stem + crossbar) and to_linear() works."""
