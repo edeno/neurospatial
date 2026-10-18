@@ -128,6 +128,33 @@ class TestSimulateTrajectoryOU:
         for pos in positions:
             assert simple_2d_env.contains(pos)
 
+    @pytest.mark.parametrize("boundary_mode", ["reflect", "stop"])
+    def test_boundary_clamp_moves_to_nearby_bin(self, simple_2d_env, boundary_mode):
+        """A clamp at the wall lands next to the wall, not at a far corner.
+
+        ``bin_at`` returns -1 for a point outside, and -1 indexes the last bin
+        center, so a clamp built on it teleports the animal across the arena.
+        """
+        dt = 0.01
+        speed_mean = 20.0
+        positions, _times = simulate_trajectory_ou(
+            simple_2d_env,
+            duration=60.0,
+            dt=dt,
+            speed_mean=speed_mean,
+            boundary_mode=boundary_mode,
+            seed=0,
+            speed_units="cm",
+        )
+
+        steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+        # One step moves at most 3 * speed_mean * dt; snapping to a bin center
+        # adds at most one bin diagonal.
+        bin_diagonal = np.linalg.norm(
+            [np.diff(edges).max() for edges in simple_2d_env.grid_edges]
+        )
+        assert steps.max() <= 3 * speed_mean * dt + bin_diagonal
+
     def test_reproducibility_with_seed(self, simple_2d_env):
         """Test that same seed produces same trajectory."""
         pos1, times1 = simulate_trajectory_ou(

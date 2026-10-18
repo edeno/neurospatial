@@ -1,6 +1,5 @@
 """Trajectory simulation functions for generating movement patterns."""
 
-import logging
 from typing import Literal
 
 import numpy as np
@@ -9,8 +8,6 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
-
-logger = logging.getLogger(__name__)
 
 
 def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
@@ -372,20 +369,6 @@ def simulate_trajectory_ou(
             # Check if proposed position would be outside environment
             # Note: contains() returns ndarray, so use [None, :] for single point
             if not env.contains(proposed_position[None, :])[0]:
-                # Find nearest valid bin to current position (not proposed)
-                try:
-                    nearest_bin = int(env.bin_at(position[None, :])[0])
-                except (ValueError, IndexError):
-                    # bin_at can raise ValueError (e.g. non-Cartesian layout) or
-                    # IndexError; fall back to the nearest bin center.
-                    logger.debug(
-                        "bin_at failed during boundary reflection; "
-                        "falling back to nearest bin center.",
-                        exc_info=True,
-                    )
-                    distances = np.linalg.norm(env.bin_centers - position, axis=1)
-                    nearest_bin = int(np.argmin(distances))
-
                 # Compute outward normal (from current position toward boundary)
                 # Direction from current position to proposed position
                 displacement = proposed_position - position
@@ -419,18 +402,7 @@ def simulate_trajectory_ou(
         if boundary_mode == "reflect":
             # Note: contains() returns ndarray, so use [None, :] for single point
             if not env.contains(position[None, :])[0]:
-                # Clamp to nearest valid bin
-                try:
-                    nearest_bin = int(env.bin_at(position[None, :])[0])
-                except (ValueError, IndexError):
-                    logger.debug(
-                        "bin_at failed while clamping post-update position; "
-                        "falling back to nearest bin center.",
-                        exc_info=True,
-                    )
-                    distances = np.linalg.norm(env.bin_centers - position, axis=1)
-                    nearest_bin = int(np.argmin(distances))
-                position = env.bin_centers[nearest_bin].copy()
+                position = _nearest_bin_center(env, position)
 
         elif boundary_mode == "periodic":
             # Wrap position using dimension ranges
@@ -442,19 +414,7 @@ def simulate_trajectory_ou(
 
         # Note: contains() returns ndarray, so use [None, :] for single point
         elif boundary_mode == "stop" and not env.contains(position[None, :])[0]:
-            # Clamp to environment bounds - find nearest valid bin
-            try:
-                nearest_bin = int(env.bin_at(position[None, :])[0])
-            except (ValueError, IndexError):
-                logger.debug(
-                    "bin_at failed during 'stop' boundary clamp; "
-                    "falling back to nearest bin center.",
-                    exc_info=True,
-                )
-                distances = np.linalg.norm(env.bin_centers - position, axis=1)
-                nearest_bin = int(np.argmin(distances))
-
-            position = env.bin_centers[nearest_bin].copy()
+            position = _nearest_bin_center(env, position)
 
             # Zero velocity in crossing direction (simple: zero all velocity)
             velocity = np.zeros(n_dims)
@@ -464,6 +424,18 @@ def simulate_trajectory_ou(
         positions[i] = position
 
     return positions, times  # type: ignore[return-value]
+
+
+def _nearest_bin_center(
+    env: Environment, position: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Center of the bin nearest a position that has left the environment.
+
+    ``bin_at`` cannot clamp: it returns -1 for an outside point, and -1 would
+    index the last bin center.
+    """
+    nearest = int(env.nearest_bin(position[None, :], max_distance=np.inf)[0])
+    return env.bin_centers[nearest].copy()
 
 
 def simulate_trajectory_sinusoidal(
