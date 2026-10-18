@@ -168,7 +168,7 @@ def test_alignment_spikes_and_occupancy_same_intervals(
     min_speed = 10.0
 
     # --- Public path ---
-    resolved = resolve_speed(times, positions, None, min_speed)
+    resolved = resolve_speed(times, positions, None, min_speed, max_gap=0.5)
     counts_public = bin_spike_train(
         env_1d, spike_times, times, positions, speed=resolved, min_speed=min_speed
     )
@@ -235,27 +235,21 @@ def test_explicit_speed_equals_auto_derived(env_1d, two_speed_trajectory) -> Non
     _assert_array_equal_nan(auto.occupancy, explicit.occupancy)
 
 
-def test_resolve_speed_forward_difference_last_sample(
-    env_1d, two_speed_trajectory
-) -> None:
-    """resolve_speed uses forward difference and repeats the last value."""
+def test_resolve_speed_is_compute_speed(env_1d, two_speed_trajectory) -> None:
+    """The inferred gate speed is the public smoothed speed, sample for sample."""
+    from neurospatial.behavior import compute_speed
+
     times = two_speed_trajectory["times"]
     positions = two_speed_trajectory["positions"]
-    resolved = resolve_speed(times, positions, None, min_speed=1.0)
-    assert resolved is not None
-    # speed == per-step displacement / dt.
-    step = np.linalg.norm(np.diff(positions, axis=0), axis=1)
-    dt = np.diff(times)
-    np.testing.assert_allclose(resolved[:-1], step / dt)
-    # Last sample repeats the prior interval speed.
-    assert resolved[-1] == resolved[-2]
+    resolved = resolve_speed(times, positions, None, min_speed=1.0, max_gap=0.5)
+    np.testing.assert_array_equal(resolved, compute_speed(times, positions))
 
 
 def test_resolve_speed_none_when_min_speed_none(env_1d, two_speed_trajectory) -> None:
     """resolve_speed returns None (no filtering) when min_speed is None."""
     times = two_speed_trajectory["times"]
     positions = two_speed_trajectory["positions"]
-    assert resolve_speed(times, positions, None, None) is None
+    assert resolve_speed(times, positions, None, None, max_gap=0.5) is None
 
 
 # ==============================================================================
@@ -270,7 +264,7 @@ def test_wrong_length_speed_raises(env_1d, two_speed_trajectory) -> None:
     bad_speed = np.ones(len(times) - 3)
 
     with pytest.raises(ValueError, match="speed"):
-        resolve_speed(times, positions, bad_speed, min_speed=1.0)
+        resolve_speed(times, positions, bad_speed, min_speed=1.0, max_gap=0.5)
 
     with pytest.raises(ValueError, match="speed"):
         compute_spatial_rate(
@@ -370,7 +364,7 @@ def test_filter_occupancy_only_bug_regression(env_1d, two_speed_trajectory) -> N
     spike_times = np.array([0.5, 1.0, 2.0, 3.0, 4.0])
     min_speed = 10.0
 
-    resolved = resolve_speed(times, positions, None, min_speed)
+    resolved = resolve_speed(times, positions, None, min_speed, max_gap=0.5)
     counts = bin_spike_train(
         env_1d, spike_times, times, positions, speed=resolved, min_speed=min_speed
     )
@@ -433,7 +427,7 @@ def test_speed_without_min_speed_raises_resolve(env_1d, two_speed_trajectory) ->
     positions = two_speed_trajectory["positions"]
     speed = np.ones(len(times))
     with pytest.raises(ValueError, match="min_speed"):
-        resolve_speed(times, positions, speed, None)
+        resolve_speed(times, positions, speed, None, max_gap=0.5)
 
 
 def test_speed_without_min_speed_raises_single(env_1d, two_speed_trajectory) -> None:

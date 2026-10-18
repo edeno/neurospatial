@@ -84,6 +84,7 @@ from neurospatial.behavior.segmentation import (
 )
 from neurospatial.behavior.trajectory import (
     compute_home_range,
+    compute_speed,
     compute_step_lengths,
     compute_trajectory_curvature,
     compute_turn_angles,
@@ -184,6 +185,7 @@ __all__ = [  # noqa: RUF022
     "region_reward_field",
     # trajectory module
     "compute_home_range",
+    "compute_speed",
     "compute_step_lengths",
     "compute_trajectory_curvature",
     "compute_turn_angles",

@@ -6,7 +6,10 @@ structure and rtol=1e-12 for floating metrics. The ``compute_decision_analysis``
 entry was captured again when each goal region began to be represented by its
 centroid bin (the bin ``trials_to_region_arrays`` uses), which moves the
 goal-region boundary. The ``segment_trials`` entry was captured again when
-trials began at departure from the start region instead of entry.
+trials began at departure from the start region instead of entry, and the
+``segment_by_velocity``, ``compute_pre_decision_metrics`` and
+``compute_vte_trial`` entries when speed became the Gaussian-smoothed velocity
+of ``compute_speed``.
 """
 
 import json

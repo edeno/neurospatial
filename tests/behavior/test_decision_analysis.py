@@ -746,7 +746,9 @@ def test_pre_decision_heading_stats_excludes_stationary(east_stop_north):
     positions, times = east_stop_north
     np.testing.assert_allclose(
         pre_decision_heading_stats(times, positions),
-        [0.7854, 0.2929, 0.7071],
+        # 11 eastward samples (the stop's first sample still moves) and 10
+        # northward ones
+        [0.7378, 0.2921, 0.7079],
         atol=1e-4,
     )
 
