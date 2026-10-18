@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import copy
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import networkx as nx
 import numpy as np
@@ -15,30 +13,15 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-def _copy_export(value: Any) -> Any:
-    """Copy nested export values, including immutable mapping snapshots."""
-    if isinstance(value, Mapping):
-        return {copy.deepcopy(key): _copy_export(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return tuple(_copy_export(item) for item in value)
-    if isinstance(value, list):
-        return [_copy_export(item) for item in value]
-    return copy.deepcopy(value)
-
-
 def _copy_attributes(frame: pd.DataFrame) -> pd.DataFrame:
-    """Detach frame buffers, labels and nested object-column values."""
-    import pandas as pd
+    """Detach frame buffers and labels from the cached table.
 
+    Object columns hold tuples of scalars (``graph_from_binning``), which are
+    immutable, so their values need no copy.
+    """
     result = frame.copy(deep=True)
     result.index = frame.index.copy(deep=True)
     result.columns = frame.columns.copy(deep=True)
-    for column in frame.select_dtypes(include="object"):
-        result[column] = pd.Series(
-            [_copy_export(value) for value in frame[column]],
-            index=result.index,
-            dtype=object,
-        )
     return result
 
 

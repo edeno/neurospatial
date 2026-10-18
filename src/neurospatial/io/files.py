@@ -364,6 +364,7 @@ def _environment_payload(
         "layout_type": env.layout_type,
         "layout_parameters": env.layout_parameters,
         "derivations": list(env.derivations),
+        "length_scale": env._provenance.length_scale,
         "binning": binning_meta,
         "arena": arena_meta,
         "dimension_ranges": env.dimension_ranges,
@@ -464,9 +465,6 @@ def _restore_environment(
     from neurospatial.geometry import (
         Arena,
         Binning,
-        CartesianSystem,
-        EgocentricPolarSystem,
-        EgocentricSurround,
         HexLocator,
         MeshLocator,
         TrackLinearization,
@@ -529,6 +527,7 @@ def _restore_environment(
             binning, kind=_saved_label(binning, polar=coordinate_kind == "polar")
         )
         params, derivations = _saved_history(metadata, binning.kind)
+        length_scale = _saved_length_scale(metadata, derivations)
         ranges = metadata.get("dimension_ranges")
         if ranges is not None:
             binning = replace(binning, dimension_ranges=tuple(tuple(r) for r in ranges))
@@ -563,16 +562,11 @@ def _restore_environment(
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
-        coordinates: CartesianSystem | EgocentricPolarSystem = CartesianSystem()
-        if coordinate_kind == "polar":
-            coordinates = EgocentricPolarSystem(
-                arena.circular if isinstance(arena, EgocentricSurround) else True
-            )
         env = _publish(
             Environment,
             binning,
-            coordinates=coordinates,
-            provenance=_Provenance(params, derivations),
+            coordinate_kind=coordinate_kind,
+            provenance=_Provenance(params, derivations, length_scale),
             metadata=_declared_metadata(
                 name=metadata["name"],
                 units=metadata.get("units"),
@@ -662,6 +656,37 @@ def _saved_label(binning: Binning, *, polar: bool) -> str:
         if isinstance(locator, lookup):
             return label.value
     return kind
+
+
+def _saved_length_scale(
+    metadata: dict[str, Any], derivations: tuple[str, ...]
+) -> float | None:
+    """Return how long a unit of the saved build choices' lengths is now.
+
+    Files written before this was saved give 1.0 when no ``apply_transform``
+    followed the last recorded choices (a build, ``rebin`` or ``combine``),
+    and None, unknown, when one did.
+
+    Parameters
+    ----------
+    metadata : dict
+        The saved environment metadata.
+    derivations : tuple of str
+        The saved derivation history, oldest first.
+
+    Returns
+    -------
+    float or None
+        The ``length_scale`` of the environment's build record.
+    """
+    if "length_scale" in metadata:
+        saved: float | None = metadata["length_scale"]  # _Provenance checks it
+        return saved
+    recorded = max(
+        (i for i, step in enumerate(derivations) if step in ("rebin", "combine")),
+        default=-1,
+    )
+    return None if "apply_transform" in derivations[recorded + 1 :] else 1.0
 
 
 def _saved_history(

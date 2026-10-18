@@ -535,7 +535,58 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   the order of `position_bins` already sets the direction of travel, and the
   result did not depend on them. Drop the two arguments from the call.
 
+- A built-in layout engine's `connectivity` graph (for example
+  `create_layout("RegularGrid", ...).connectivity`) is now made from the
+  engine's `binning()` when you first read it, so it is the same graph as
+  `env.connectivity`. It can no longer be assigned, and editing it no longer
+  changes the engine's bins or an environment built from it; return other
+  neighbor pairs from your own engine's `binning()` instead. Reading it
+  before `build()` raises `LayoutNotBuiltError` instead of returning `None`.
+  Its attributes now match `env.connectivity`: on a track, edge `vector`
+  and `angle_2d` point from the lower to the higher bin (along a segment
+  they pointed the other way), `source_grid_flat_index` counts the gap cells
+  of a track with `edge_spacing > 0`, a 3-D track has no `angle_2d`, the
+  angular-seam edges of a polar grid number their `edge_id` by pair row,
+  and values are Python numbers instead of NumPy scalars. Neighbor pairs,
+  their order and their distances are unchanged.
+
+- `neurospatial.GraphValidationError` and
+  `neurospatial.layout.validation.validate_connectivity_graph` are removed.
+  Layout engines no longer build graphs, and an environment's graph is made
+  from bins that are checked when they are created: a non-finite or negative
+  pair distance, a bin paired with itself or a repeated pair raises
+  `ValueError`. Code that caught `GraphValidationError` can catch
+  `ValueError`, its parent class.
+
 ### Changed
+
+- The `neurospatial.layout.LayoutEngine` protocol lists only `build()` and
+  `binning()`, the two methods an environment uses. A custom engine needs
+  nothing else, and type checkers no longer ask it for `bin_centers`,
+  `grid_edges`, `plot()` and the other members that the built-in engines
+  offer for working with an engine directly.
+
+- `to_linear()`, `linear_to_nd()` and `with_track_width()` on a polar
+  environment now say what is actually wrong: it is not a track (for example
+  "to_linear() needs a linearized track ..., but this is a Polar environment,
+  which has no track"), with the same advice every other non-track
+  environment gets, such as `env.bin_at(positions)` instead of `to_linear`.
+  They used to answer with the Cartesian-coordinates refusal. The error is
+  still a `TypeError`, but no longer a `CartesianOnlyError`, and these
+  three are no longer listed among the Cartesian-only members.
+
+- Positions or points with the wrong number of columns get the same error from
+  every operation that maps them to bins (`bin_at`, `contains`, `occupancy`,
+  `bin_sequence`, `bin_sequence_with_runs`, `transitions`, `interpolate`,
+  `points=` queries such as `distance_to`, geodesic
+  `compute_egocentric_distance`). It names the operation, the shape given and
+  the shape needed, for example `Environment.occupancy got positions with
+  shape (500, 3), but this environment's bins are 2-D, so positions needs
+  shape (n_positions, 2).`, and says how to fix it, such as reshaping a 1-D
+  array on a 1-D environment or using the original coordinates instead of
+  linearized ones. Rate maps and other encoding functions that report several
+  input problems together describe this one in the same words. It is still a
+  `ValueError`; only the wording changed.
 
 - `Environment.from_bins(binning)` is annotated as taking a `Binning`. An
   object from another package that an installed snapshot adapter converts
@@ -952,6 +1003,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `env.coordinate_system` says what it is: `kind` is `"cartesian"` or
+  `"polar"`, `circular` says whether the angle axis wraps around (always
+  `False` for Cartesian coordinates), and `periodic_axes` lists the axes whose
+  two ends are neighbors (`(1,)` for a full-circle polar environment, otherwise
+  empty). A custom analysis can ask the descriptor directly instead of
+  checking its class. A polar environment's wrap is recorded once, by its
+  `EgocentricSurround` arena (`env.arena.circular`), and the descriptor is
+  derived from it, so the two can never disagree.
+
 - `Environment.with_track_width(width)` gives a track its measured full width
   and keeps its bins, linear coordinates, name, units, frame and regions. Use
   it on a track built without `track_width`, such as one saved by an earlier
@@ -960,6 +1020,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   5 cm from the centerline get bin `-1` and rate maps, occupancy and decoding
   work again. It adds `"with_track_width"` to `env.derivations` and refuses an
   environment that is not a track.
+
+- The cell-shape records in `neurospatial.binning` (`HexagonShapes`,
+  `TriangleShapes`, `PolygonCells`) have `extent()`, the `(low, high)` bounds
+  of their cells per axis, and `subset(keep)`, the cells selected by a boolean
+  mask of one entry per bin, in their original order. These are the same
+  rules `env.dimension_ranges` and `env.subset()` use, so explicit bins built
+  for `Environment.from_bins()` can be bounded and subset the same way.
 
 - `neurospatial.ops.KernelMode` names the values `mode=` accepts in
   `Environment.compute_kernel`, `smooth` and `diffuse`
@@ -1205,10 +1272,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
-- `from neurospatial import Environment` no longer imports
-  `matplotlib.pyplot` or `pandas`; they load when you first plot or ask for a
-  table. The import takes about 0.27 s instead of 0.42 s, which helps
-  scripts and worker processes that only bin positions.
+- `from neurospatial import Environment` no longer imports matplotlib or
+  `pandas`; they load when you first plot or ask for a table. The import
+  takes about 0.19 s instead of 0.42 s, which helps scripts and worker
+  processes that only bin positions.
 
 - Renaming an environment no longer discards its cached analyses: on a
   3,586-bin open field, the first `compute_spatial_rate` call after
@@ -1231,7 +1298,87 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   trajectory sampled at 5 Hz on a 21 × 21 × 21 grid takes 0.07 s instead of
   1.2 s. Occupancy values are unchanged.
 
+- `Environment.distance_to(metric="euclidean")` and
+  `neurospatial.ops.distance_field(metric="euclidean")` find the nearest
+  target with a KD-tree instead of a bins × targets distance array: on a
+  90,000-bin grid with 22,500 target bins the call takes 0.03 s instead of
+  56 s and about 32 GB of temporary memory. Distances can differ from before
+  only in the last digit of floating-point rounding.
+
+- `Environment.transitions(times=..., positions=...)` with the default
+  `allow_teleports=False` checks that each step joins neighboring bins with a
+  sparse adjacency lookup instead of a Python loop: 1,000,000 steps on a
+  90,000-bin grid take 0.04 s instead of 0.49 s. The counts are unchanged.
+
+- `nearest_bin` and `interpolate(mode="nearest")` resolve a point that lies
+  equally close to several bins by measuring only the bins near that point,
+  instead of every bin: for points on the cell corners of a 10,000-bin grid
+  this is about 100 times faster and no longer allocates an array the size
+  of points × bins. The chosen bin (the lowest-numbered tied bin) is
+  unchanged.
+
+- `subset` and `apply_transform` reuse the parent environment's cell faces
+  once smoothing or another diffusion analysis has built them, instead of
+  building them again: on a 90,000-bin grid `subset` takes 0.43 s instead of
+  2.2 s after such an analysis.
+
+- Building an environment is much faster. Layout engines find neighboring
+  bins with array operations instead of building a NetworkX graph one bin at
+  a time, which the environment then discarded, and the environment builds
+  its own read-only graph in one pass. On a 300 × 300 grid mask
+  `Environment.from_grid_mask` takes 0.48 s instead of 4.4 s and `subset`
+  0.48 s instead of 3.2 s; `Environment.from_samples` with 100,000 positions
+  (bin size 1, about 10,000 bins) 0.05 s instead of 0.57 s; a 20,000-bin
+  linear track 0.04 s instead of 0.33 s. Bins, neighbor pairs
+  (`env.edge_pairs`), their order and their distances are unchanged.
+
 ### Fixed
+
+- An environment pickled by another version of neurospatial is refused when
+  it is loaded, with the advice to save with `env.to_file(path)` and read with
+  `Environment.from_file(path)`. Before, a pickle from the previous release
+  loaded and then failed on its first `subset`, `apply_transform`, `rebin` or
+  `to_dict` with an `AttributeError`. Pickles now carry a format version.
+
+- On a grid rotated or sheared by `apply_transform`, a position exactly on the
+  line (or, in 3-D, the face) between two bins now belongs to the same bin as
+  on the grid before the transform: the bin above the line, as on any
+  rectangular grid. Before, rounding in the rotation put such a position in
+  either bin, or outside the environment, so `bin_at`, `bin_sequence`,
+  `occupancy(time_allocation="start")` and spike counts could disagree with
+  `occupancy(time_allocation="linear")`, which already used this rule. In a
+  test lattice of cell centers, cell edges and corners, 16–41% of the points
+  changed bins after a rotation. Positions inside a bin are unchanged, and
+  the same rule now applies inside environments built with
+  `Environment.combine`. Finding bins on a rotated grid takes about 1.4 times
+  as long (0.42 s instead of 0.31 s for a million 2-D positions). A rotated
+  grid that is then cut with `clip` has polygon cells instead of a grid, and
+  points exactly on its cell edges can still fall outside every cell, as
+  before.
+
+- `rebin(2)` on a pixel-mask grid that was clipped to a polygon suggests
+  the coarser cell size, `env.rebin(bin_size=10)` for 5 cm pixels, instead
+  of `env.rebin(bin_size=...)`. Each built-in layout engine now names the
+  option that sets its cell size (`size_parameter`, such as `pixel_size` or
+  `hexagon_width`), and the suggestion reads that option. Bins from a custom
+  engine no longer get a size guessed from a recorded `bin_size`.
+
+- After `apply_transform` scales the bins, a refused `rebin(2)` suggests
+  twice their current size. It used to double the size they were built at,
+  so hexagons built 4 cm wide and scaled by two were suggested a rebuild at
+  `bin_size=8`, the width they already had, instead of 16; tracks, meshes
+  and clipped grids had the same error. After a transform that stretches
+  some directions more than others, the suggestion gives no size, since
+  the cells no longer have one. Files, dictionaries and NWB files save the
+  scale as `length_scale`; files saved earlier give no size after a
+  transform.
+
+- After `apply_transform`, a track with a known width still says so. The
+  `rebin` refusal on such a track suggested an `Environment.from_graph(...)`
+  rebuild without `track_width=`, so following it lost the width; it now
+  passes the width in the transformed units (20 for a 10 cm track scaled by
+  two). The refusal of `time_allocation="linear"` on a transformed track
+  also names the track instead of "this arena".
 
 - `apply_transform` accepts a rotation by an angle so small that its sine is
   below the normal floating-point range (about 1e-308), such as 2e-313

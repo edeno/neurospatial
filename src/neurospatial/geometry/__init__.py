@@ -111,7 +111,13 @@ from neurospatial.geometry._locators import RectilinearLocator as RectilinearLoc
 from neurospatial.geometry._locators import SubsetLocator as SubsetLocator
 from neurospatial.geometry._locators import TransformedLocator as TransformedLocator
 from neurospatial.geometry._lookup import locate as locate
+from neurospatial.geometry._lookup import (
+    require_position_columns as require_position_columns,
+)
 from neurospatial.geometry._lookup import require_track_width as require_track_width
+from neurospatial.geometry._lookup import (
+    wrong_position_columns as wrong_position_columns,
+)
 from neurospatial.geometry._native_faces import NativeFaces as NativeFaces
 from neurospatial.geometry._ownership import own_arena as own_arena
 from neurospatial.geometry._ownership import own_binning as own_binning

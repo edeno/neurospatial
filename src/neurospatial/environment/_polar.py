@@ -9,7 +9,7 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _declared_metadata
-from neurospatial.geometry import EgocentricPolarSystem
+from neurospatial.geometry import EgocentricPolarSystem, EgocentricSurround
 from neurospatial.layout import _PolarGridLayout
 
 if TYPE_CHECKING:
@@ -92,5 +92,10 @@ def _create_polar_environment(
         cls,
         cast("LayoutEngine", layout),
         metadata=_declared_metadata(name=name, units=units, frame=frame),
-        coordinates=EgocentricPolarSystem(circular_angle),
+        arena=EgocentricSurround(
+            (float(distance_edges[0]), float(distance_edges[-1])),
+            (float(angle_edges[0]), float(angle_edges[-1])),
+            circular=circular_angle,
+        ),
+        coordinate_kind="polar",
     )

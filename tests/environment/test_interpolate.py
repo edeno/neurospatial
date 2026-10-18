@@ -217,34 +217,6 @@ class TestInterpolateValidation:
         with pytest.raises(ValueError, match=r"1-D array"):
             env.interpolate(field, points, mode="nearest")
 
-    def test_interpolate_points_wrong_ndim(self):
-        """Points must be 2D array (n_points, n_dims)."""
-        rng = np.random.default_rng(42)
-        data = rng.uniform(0, 10, size=(50, 2))
-        env = Environment.from_samples(data, bin_size=1.0)
-
-        field = np.ones(env.n_bins)
-
-        # 1D points array
-        points = np.array([5.0, 5.0])
-
-        with pytest.raises(ValueError, match=r"2-D array"):
-            env.interpolate(field, points, mode="nearest")
-
-    def test_interpolate_points_dimension_mismatch(self):
-        """Points dimensionality must match environment."""
-        rng = np.random.default_rng(42)
-        data = rng.uniform(0, 10, size=(50, 2))
-        env = Environment.from_samples(data, bin_size=1.0)
-
-        field = np.ones(env.n_bins)
-
-        # 3D points for 2D environment
-        points = np.array([[5.0, 5.0, 5.0]])
-
-        with pytest.raises(ValueError, match=r"dimension"):
-            env.interpolate(field, points, mode="nearest")
-
     def test_interpolate_invalid_mode(self):
         """Invalid mode should raise ValueError."""
         rng = np.random.default_rng(42)

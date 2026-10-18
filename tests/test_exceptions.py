@@ -16,7 +16,6 @@ import pytest
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
-    GraphValidationError,
     IncompatibleEnvironmentError,
     LayoutNotBuiltError,
     RegionNotFoundError,
@@ -104,7 +103,6 @@ class TestPublicReExports:
         "name",
         [
             "BinIndexOutOfRangeError",
-            "GraphValidationError",
             "IncompatibleEnvironmentError",
             "LayoutNotBuiltError",
             "RegionNotFoundError",
@@ -118,13 +116,6 @@ class TestPublicReExports:
         )
         assert name in neurospatial.__all__
 
-    def test_graph_validation_error_is_same_class(self):
-        from neurospatial.layout.validation import (
-            GraphValidationError as LayoutGraphErr,
-        )
-
-        assert GraphValidationError is LayoutGraphErr
-
 
 @pytest.mark.parametrize(
     "name,builtin",
@@ -134,7 +125,6 @@ class TestPublicReExports:
         ("BinIndexOutOfRangeError", ValueError),
         ("IncompatibleEnvironmentError", ValueError),
         ("LayoutNotBuiltError", RuntimeError),
-        ("GraphValidationError", ValueError),
     ],
 )
 def test_every_library_error_is_a_neurospatial_error(name, builtin):
@@ -245,7 +235,6 @@ def test_incompatible_environment_site():
             "Environment.bin_at()", why="It reads positions.", fix="use bins."
         ),
         lambda e: e.LayoutNotBuiltError("RegularGrid", "bin_centers"),
-        lambda e: e.GraphValidationError("bad graph"),
     ],
 )
 def test_errors_survive_pickling(make):

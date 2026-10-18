@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import ClassVar, Protocol
+from typing import ClassVar, Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,6 +33,21 @@ class CoordinateSystem(Protocol):
     """Physical measurement and axis names for an environment's bin centers."""
 
     equal_aspect: ClassVar[bool]
+
+    @property
+    def kind(self) -> Literal["cartesian", "polar"]:
+        """Cartesian positions or egocentric ``(distance, angle)``."""
+        ...
+
+    @property
+    def circular(self) -> bool:
+        """Whether an angular axis wraps across its seam; False for Cartesian."""
+        ...
+
+    @property
+    def periodic_axes(self) -> tuple[int, ...]:
+        """Axes whose two ends are neighbors."""
+        ...
 
     def squared_distances(self, centers: NDArray[np.float64]) -> NDArray[np.float64]:
         """Squared physical distances between every pair of points, ``(n, n)``."""
@@ -59,8 +74,21 @@ class CoordinateSystem(Protocol):
 
 @dataclass(frozen=True)
 class CartesianSystem:
-    """Bin centers are ``(x, y[, z])`` positions in one length unit."""
+    """Bin centers are ``(x, y[, z])`` positions in one length unit.
 
+    Attributes
+    ----------
+    kind : {'cartesian'}
+        The coordinate kind.
+    circular : bool
+        Always False: no axis wraps.
+    periodic_axes : tuple of int
+        Always empty.
+    """
+
+    kind: ClassVar[Literal["cartesian"]] = "cartesian"
+    circular: ClassVar[bool] = False
+    periodic_axes: ClassVar[tuple[int, ...]] = ()
     equal_aspect: ClassVar[bool] = True
 
     def squared_distances(self, centers: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -97,12 +125,20 @@ class EgocentricPolarSystem:
 
     Attributes
     ----------
+    kind : {'polar'}
+        The coordinate kind.
     circular : bool
         Whether the angular axis wraps across the seam.
     """
 
     circular: bool
+    kind: ClassVar[Literal["polar"]] = "polar"
     equal_aspect: ClassVar[bool] = False
+
+    @property
+    def periodic_axes(self) -> tuple[int, ...]:
+        """The angle axis, ``(1,)``, when it wraps; otherwise empty."""
+        return (1,) if self.circular else ()
 
     def squared_distances(self, centers: NDArray[np.float64]) -> NDArray[np.float64]:
         """Squared physical distance, with angular wrapping only if circular."""
@@ -213,5 +249,5 @@ def require_cartesian(
     CartesianOnlyError
         If ``coordinates`` is an :class:`EgocentricPolarSystem`.
     """
-    if isinstance(coordinates, EgocentricPolarSystem):
+    if coordinates.kind != "cartesian":
         raise CartesianOnlyError(operation, why=why, fix=fix, example=example)

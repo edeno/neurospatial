@@ -637,14 +637,15 @@ def compute_egocentric_distance(
 
         # Vectorized: get bin indices for all positions at once
         indexes = CallIndexes()
-        pos_bins = locate(binning, arena, positions, indexes)
+        call = "compute_egocentric_distance(metric='geodesic')"
+        pos_bins = locate(binning, arena, positions, indexes, call=call)
 
         # Hoist target-bin computation out of the per-target inner loop: map
         # every target to its bin in a single batched ``bin_at`` call. For
         # static targets (broadcast from 2D) this collapses ``n_time * n_targets``
         # redundant lookups into one. Shape: (n_time, n_targets).
         target_bins = locate(
-            binning, arena, targets_3d.reshape(-1, 2), indexes
+            binning, arena, targets_3d.reshape(-1, 2), indexes, call=call
         ).reshape(n_time, n_targets)
 
         # Cache distance fields by target bin: static targets recompute once;

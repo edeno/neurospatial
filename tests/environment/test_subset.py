@@ -559,8 +559,9 @@ class TestSubsetKeepsParentConnectivity:
             (x0, y0), (x1, y1) = centers[u], centers[v]
             return (x0 - 3.0) * (x1 - 3.0) < 0 and min(y0, y1) > 2.0
 
-        graph = layout.connectivity
-        graph.remove_edges_from([(u, v) for u, v in graph.edges if crosses_wall(u, v)])
+        native = layout.binning().bins
+        kept = [not crosses_wall(u, v) for u, v in native.pairs.tolist()]
+        layout._set_neighbor_pairs(native.pairs[kept], native.pair_distances[kept])
         walled = publish_environment(layout=layout, layout_type_used="MaskedGrid")
         walled = from_dict(to_dict(walled))
         assert not any(crosses_wall(u, v) for u, v in walled.connectivity.edges())

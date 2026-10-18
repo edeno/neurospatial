@@ -148,8 +148,11 @@ assigned, and equality is by identity, so cached analyses and
 `with_regions` return a new object over the same geometry and cache.
 
 The build record (`_Provenance`) only describes how the bins were built, as
-scalar choices such as `bin_size`, and the derivations applied since
-(`env.derivations`). It never holds input data: an engine
+scalar choices such as `bin_size`, the derivations applied since
+(`env.derivations`) and how long a unit of the choices' lengths is in the
+current coordinates (`length_scale`: multiplied by each similarity
+`apply_transform`, None after any other transform, reset by `rebin`). It never
+holds input data: an engine
 declares its data arguments once, with `@capture_build_params(data=(...))` on
 its `build` method, and any other argument that is not a scalar or a flat
 sequence of scalars is refused when the engine is built. The layout label is
@@ -166,13 +169,25 @@ or NWB for storage.
 
 #### Layout engines own their binning
 
-Every layout engine, built-in or custom, implements `binning()`, which
-returns a `Binning` assembled from the engine's own state. The environment
-never inspects engine classes or reads build parameters for geometry, so a
-custom engine needs no registration: build it and pass it to
-`Environment.from_layout(engine)`. Built-in engines share one rule for pair
-order, bin measures and face directions through `assemble_binning` in
-`layout/_assembly.py`. Polar environments use a masked grid over
+Every layout engine, built-in or custom, implements `build()` and
+`binning()`, which returns a `Binning` assembled from the engine's own state.
+The environment never inspects engine classes or reads build parameters for
+geometry, so a custom engine needs no registration: build it and pass it to
+`Environment.from_layout(engine)`. Built-in engines compute their neighbor
+pairs and pair distances as arrays in `build()`, with vectorized helpers in
+`layout/helpers/neighbor_pairs.py` that fix the pair order (it becomes
+`env.edge_pairs`, the order of edge fields in gradients and divergence), and
+share one rule for bin measures and face directions through
+`assemble_binning` in `layout/_assembly.py`. Engines do not build graphs: a
+built-in engine's `connectivity` is a convenience derived on first access
+from its binning with `geometry.graph_from_binning`, the same graph an
+environment publishes, and editing it changes nothing the engine publishes.
+Each built-in engine names the build option that sets its cell size in the
+class attribute `size_parameter` (`"bin_size"`, `"hexagon_width"`,
+`"point_spacing"`, ...): `from_samples` passes its `bin_size` to that option,
+and a refused `rebin` reads its recorded value, through the `LayoutType`
+registry in `layout/factories.py`, to suggest a rebuild at the coarser size.
+Polar environments use a masked grid over
 (distance, angle) with circular seam edges and are built only by
 `Environment.from_polar_egocentric`.
 
@@ -227,25 +242,42 @@ points repeatedly on a binning outside an environment, such as the copy
 `env.binning` returns, passes one `CallIndexes` to every call; `None` builds
 the structure for that call only.
 
+A scientist's positions reach the bins through `geometry.locate(binning,
+arena, positions, indexes, call=...)`, not a locator's own `locate`. It checks
+the column count with `require_position_columns` on every path, with or
+without a known arena, so the error names `call`, the operation the scientist
+called. A method that uses positions before the lookup, or returns early
+without one, calls `require_position_columns` first with the same `call`.
+
 #### Cartesian-only members
 
 There is one runtime `Environment` class; factories give it a static
 coordinate type, `Environment[CartesianSystem]` or
 `Environment[EgocentricPolarSystem]`. Mark a member that is meaningless on
-polar bins with `@cartesian_only(why=..., fix=...)` from
+polar bins with `@cartesian_only(why=..., fix=..., example=...)` from
 `environment/_cartesian.py`, and annotate `self` as
 `Environment[CartesianSystem]`. `why` says what the member does with Cartesian
-coordinates and `fix` names what works on a polar environment. The decorator is
+coordinates, `fix` names what works on a polar environment and `example` is
+code for it, which the tests run. The decorator is
 the only record of the capability: it refuses polar environments when the
 member is called and feeds `CARTESIAN_OPERATIONS`. The member stays visible, so
-`hasattr` is True. A Cartesian-only mode of a shared method, or an analysis
+`hasattr` is True. Track-only members (`to_linear`, `linear_to_nd`,
+`with_track_width`) are not marked, though their `self` is
+`Environment[CartesianSystem]` because every track is Cartesian: a polar
+environment is never a track, so at run time it gets the same "needs a track"
+refusal as every other non-track environment. A
+Cartesian-only mode of a shared method, or an analysis
 function in another package, refuses with
 `neurospatial.geometry.require_cartesian(env.coordinate_system, operation,
 why=..., fix=...)`. Both raise `CartesianOnlyError`, a `TypeError`, with one
 message layout.
-Shared code asks the coordinate descriptor about lengths, axes and
-circularity, or reads `coordinate_kind`; it does not branch on classes or
-layout labels. Every other public member needs a stated polar meaning, which
+Shared code asks the coordinate descriptor about lengths, axes, its `kind`
+and which axes wrap (`circular`, `periodic_axes`), and passes the descriptor
+itself to geometry validators; it does not branch on descriptor classes or
+layout labels. The publisher derives the descriptor from the declared
+coordinate kind and the arena: a polar environment's `EgocentricSurround` is
+the one record of whether its angle wraps, so the arena and the descriptor
+cannot disagree. Every other public member needs a stated polar meaning, which
 `test_every_public_member_is_classified_for_polar` enforces.
 
 #### Derivations
@@ -344,8 +376,12 @@ similarity behavior; a normal alone does not certify a new deformation.
 `RectilinearGrid` axes/mask plus their forward world map. Grid consumers read
 it through `require_grid_context` and map coordinates explicitly. Keep
 `rectilinear` and the environment's world-grid attributes (`grid_edges`,
-`grid_shape`, `active_mask`) truthful. Framed interpolation/allocation share
-bounded source-plane recovery capped at a quarter of the smallest cell width.
+`grid_shape`, `active_mask`) truthful. Framed point lookup, interpolation and
+allocation share bounded source-plane recovery capped at a quarter of the
+smallest cell width. A `Binning` gives its frame to the affine step of its
+locator (`framed_locator`), which then assigns points by the half-open source
+cells (`FramedGrid._locate`), so lookup and linear allocation agree on shared
+faces.
 QuadMesh consumers transform corners and reshape values with the source mask.
 Partial clipping drops the tensor-grid component. `GridBinningSpec` separately
 describes how `rebin(bin_size=...)` builds a new grid and must not replace

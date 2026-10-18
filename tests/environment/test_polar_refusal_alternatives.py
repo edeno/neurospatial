@@ -20,9 +20,6 @@ from neurospatial import CartesianOnlyError, Environment
 from neurospatial.environment.core import CARTESIAN_OPERATIONS
 from neurospatial.geometry._lookup import locate
 
-# Members with no polar equivalent: a polar environment is never a track.
-NO_POLAR_EQUIVALENT = {"to_linear", "linear_to_nd", "with_track_width"}
-
 # (distance cm, angle rad); the second angle is a whole turn past the range,
 # and the last row lies beyond the 40 cm surround.
 POINTS = np.array([[15.0, 0.3], [25.0, -2.0 + 2 * np.pi], [41.0, 0.0]])
@@ -52,7 +49,7 @@ def _run(code: str, names: dict[str, Any]) -> Any:
 
 def _containing_bins(env: Environment, rows: np.ndarray) -> np.ndarray:
     """Polar containment, the lookup ``points=`` queries use; -1 outside."""
-    return locate(env.binning, env.arena, rows)
+    return locate(env.binning, env.arena, rows, call="points=")
 
 
 def _recording() -> dict[str, Any]:
@@ -146,13 +143,10 @@ def _member_refusal(env: Environment, name: str) -> CartesianOnlyError:
 
 def test_every_member_refusal_has_a_checked_alternative():
     env = _surround()
-    without = {
-        name
-        for name in CARTESIAN_OPERATIONS
-        if _member_refusal(env, name).example is None
-    }
-    assert without == NO_POLAR_EQUIVALENT
-    assert set(CHECKS) == CARTESIAN_OPERATIONS - NO_POLAR_EQUIVALENT
+    assert all(
+        _member_refusal(env, name).example is not None for name in CARTESIAN_OPERATIONS
+    )
+    assert set(CHECKS) == CARTESIAN_OPERATIONS
 
 
 @pytest.mark.parametrize("name", sorted(CHECKS))

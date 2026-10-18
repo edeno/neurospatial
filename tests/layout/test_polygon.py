@@ -26,7 +26,6 @@ from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
     PolygonCells,
-    subset_polygon_cells,
     transform_polygon_cells,
 )
 from neurospatial.ops.transforms import AffineND
@@ -119,7 +118,7 @@ def test_subset_then_reclip_does_not_resurrect_point_touch_owner():
             child.bins, centers=child.bins.centers[1:], sizes=child.bins.sizes[1:]
         ),
         locator=SubsetLocator(child.locator, np.array([-1, 0])),
-        shapes=subset_polygon_cells(child.shapes, [False, True]),
+        shapes=child.shapes.subset([False, True]),
         faces=KnownFaces(
             FaceGeometry(
                 np.empty((0, 2), dtype=int),
@@ -344,9 +343,7 @@ def test_materialized_wrapped_hex_cells_keep_shared_transformed_vertices(
     expected = transform_polygon_cells(PolygonCells(materialize_cells(parent)), matrix)
     selected = subset_binning(transform_binning(parent, AffineND(matrix)), keep)
     actual = materialize_cells(selected)
-    for polygon, wanted in zip(
-        actual, subset_polygon_cells(expected, keep).polygons, strict=True
-    ):
+    for polygon, wanted in zip(actual, expected.subset(keep).polygons, strict=True):
         assert polygon.equals_exact(wanted, 1e-13)
     for u, v in selected.bins.pairs:
         assert actual[u].intersection(actual[v]).area == 0

@@ -14,7 +14,6 @@ import warnings
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-import matplotlib.axes
 import numpy as np
 from numpy.typing import NDArray
 
@@ -23,6 +22,8 @@ from neurospatial._exceptions import RegionNotFoundError
 from .core import Region, Regions
 
 if TYPE_CHECKING:
+    import matplotlib.axes
+
     from ..ops.transforms import SpatialTransform
 
 

@@ -33,6 +33,7 @@ from neurospatial._validation import (
     validate_finite,
 )
 from neurospatial.environment import Environment
+from neurospatial.geometry import wrong_position_columns
 
 __all__ = [
     "_validate_env_argument",
@@ -259,10 +260,7 @@ def validate_trajectory(
             (positions.ndim == 1 and n_dims > 1)
             or (positions.ndim == 2 and positions.shape[1] != n_dims)
         ):
-            problems.append(
-                f"positions has shape {positions.shape} but env is {n_dims}-D, "
-                f"so positions must have shape (n_samples, {n_dims})."
-            )
+            problems.append(f"Got {wrong_position_columns(positions.shape, n_dims)}.")
     if headings is not None:
         if headings.ndim != 1:
             problems.append(f"headings must be 1D, got shape {headings.shape}.")

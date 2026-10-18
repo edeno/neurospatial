@@ -27,7 +27,7 @@ def _grid(n=8):
 
 
 @pytest.mark.parametrize("polar", [False, True])
-def test_coordinate_descriptor_is_an_independent_frozen_value(polar):
+def test_coordinate_descriptor_is_a_frozen_value(polar):
     env = (
         Environment.from_polar_egocentric(
             distance_range=(0.0, 3.0),
@@ -40,14 +40,11 @@ def test_coordinate_descriptor_is_an_independent_frozen_value(polar):
     )
     first, second = env.coordinate_system, env.coordinate_system
     assert isinstance(first, EgocentricPolarSystem if polar else CartesianSystem)
-    assert first == second and first is not second
+    assert first == second
     with pytest.raises(FrozenInstanceError):
         first.equal_aspect = False
     with pytest.raises(AttributeError):
         env.coordinate_system = first
-    if polar:
-        vars(first)["circular"] = False
-        assert env.coordinate_system.circular
 
 
 def _geometry_arrays(geometry):

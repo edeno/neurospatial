@@ -394,6 +394,23 @@ def test_restricted_nd_mask_refuses_unimplemented_linear_subdivision():
         )
 
 
+@pytest.mark.parametrize("moved", [False, True], ids=["native", "transformed"])
+def test_track_refusal_of_linear_allocation_names_the_track(moved):
+    from neurospatial.ops.transforms import translate
+
+    env = Environment.linear_track(
+        node_positions=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=10.0
+    )
+    if moved:
+        env = env.apply_transform(translate(5.0, 0.0))
+    with pytest.raises(NotImplementedError, match="among the bins of a track"):
+        env.occupancy(
+            np.arange(3.0),
+            np.array([[10.0, 0.0], [50.0, 0.0], [90.0, 0.0]]),
+            time_allocation="linear",
+        )
+
+
 @pytest.mark.parametrize("polygon_cells", [False, True])
 def test_analytic_domain_requires_owned_materialization_before_publication(
     polygon_cells,

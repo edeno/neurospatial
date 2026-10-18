@@ -126,12 +126,20 @@ def test_pickle_round_trip_keeps_published_values_immutable():
         lambda state: state.pop("_provenance"),
         lambda state: state.update(_extra=1),
         lambda state: state.update(_geometry=None),
+        lambda state: state.pop("_state_format"),
+        lambda state: state.update(_state_format=1),
     ],
-    ids=["missing-field", "unknown-field", "wrong-type"],
+    ids=[
+        "missing-field",
+        "unknown-field",
+        "wrong-type",
+        "unversioned",
+        "other-version",
+    ],
 )
 def test_unpickling_a_foreign_state_says_to_use_environment_files(edit):
     env = _environment()
-    state = dict(env.__dict__)
+    state = env.__getstate__()
     edit(state)
     blank = Environment.__new__(Environment)
 

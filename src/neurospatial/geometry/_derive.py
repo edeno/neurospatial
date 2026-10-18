@@ -43,7 +43,6 @@ from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     PolygonCells,
-    subset_polygon_cells,
     transform_polygon_cells,
 )
 
@@ -120,13 +119,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         grid = RectilinearGrid(
             grid.edges, grid.shape, _restricted_mask(grid.active_mask, keep)
         )
-    shapes = binning.shapes
-    if isinstance(shapes, HexagonShapes):
-        shapes = HexagonShapes(bins.centers, shapes.radius, shapes.orientation)
-    elif isinstance(shapes, TriangleShapes):
-        shapes = TriangleShapes(shapes.points, shapes.triangles[parent_ids])
-    elif isinstance(shapes, PolygonCells):
-        shapes = subset_polygon_cells(shapes, keep)
+    shapes = None if binning.shapes is None else binning.shapes.subset(keep)
     track = binning.linearization
     if track is not None:
         if isinstance(track, TrackLinearization):

@@ -10,6 +10,7 @@ from typing import Literal
 import numpy as np
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import axis_ranges
 from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
@@ -101,10 +102,7 @@ def _active_framed_extent(frame: FramedGrid) -> tuple[tuple[float, float], ...]:
         axis=-1,
     ).reshape(-1, mask.ndim)
     world = frame.to_world(source)
-    return tuple(
-        (float(low), float(high))
-        for low, high in zip(world.min(axis=0), world.max(axis=0), strict=True)
-    )
+    return axis_ranges(world.min(axis=0), world.max(axis=0))
 
 
 def component_extent(
@@ -138,19 +136,9 @@ def component_extent(
     if outline is not None:
         low_x, low_y, high_x, high_y = outline.geometry.bounds
         return ((low_x, high_x), (low_y, high_y))
-    if isinstance(shapes, PolygonCells):
-        bounds = np.array([polygon.bounds for polygon in shapes.polygons])
-        low, high = bounds[:, :2].min(axis=0), bounds[:, 2:].max(axis=0)
-    elif isinstance(shapes, HexagonShapes):
-        angles = np.arange(6) * np.pi / 3 + np.pi / 2 + shapes.orientation
-        offsets = shapes.radius * np.column_stack((np.cos(angles), np.sin(angles)))
-        low = shapes.centers.min(axis=0) + offsets.min(axis=0)
-        high = shapes.centers.max(axis=0) + offsets.max(axis=0)
-    elif isinstance(shapes, TriangleShapes):
-        # Only the retained triangles: a subset keeps every mesh point.
-        vertices = shapes.points[np.unique(shapes.triangles)]
-        low, high = vertices.min(axis=0), vertices.max(axis=0)
-    elif linearization is not None:
+    if shapes is not None:
+        return shapes.extent()
+    if linearization is not None:
         ends = track_cell_ends(
             linearization.graph,
             linearization.edge_order,
@@ -158,10 +146,8 @@ def component_extent(
             linearization.grid_edges[0],
             linearization.active_mask,
         )
-        low, high = ends.min(axis=(0, 1)), ends.max(axis=(0, 1))
-    else:
-        return None
-    return tuple((float(a), float(b)) for a, b in zip(low, high, strict=True))
+        return axis_ranges(ends.min(axis=(0, 1)), ends.max(axis=(0, 1)))
+    return None
 
 
 def binning_ranges(binning: Binning) -> tuple[tuple[float, float], ...] | None:

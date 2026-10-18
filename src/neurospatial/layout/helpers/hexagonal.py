@@ -12,8 +12,7 @@ hexagonal tiling. These functions cover:
   (`_infer_active_bins_from_hex_grid`).
 - Determining neighbor relationships in the hexagonal grid
   (`get_hex_grid_neighbor_deltas`).
-- Constructing a connectivity graph for active hexagonal bins
-  (`_create_hex_connectivity_graph`).
+- Pairing neighboring active hexagonal bins (`hex_grid_pairs`).
 
 These utilities are primarily used by the `HexagonalLayout` engine.
 """
@@ -22,7 +21,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -33,6 +31,7 @@ from neurospatial.geometry import (
     get_hex_grid_neighbor_deltas,
     points_to_hex_bin_ind,
 )
+from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
 
 
 def _create_hex_grid(
@@ -225,97 +224,36 @@ def _infer_active_bins_from_hex_grid(
     return bin_ind.astype(int)
 
 
-def _create_hex_connectivity_graph(
-    active_original_flat_indices: NDArray[np.int_],
-    full_grid_bin_centers: NDArray[np.float64],
-    centers_shape: tuple[int, int],
-) -> nx.Graph:
-    """Create a connectivity graph for active bins in a hexagonal grid.
+def hex_grid_pairs(
+    active_flat: NDArray[np.int_], centers_shape: tuple[int, int]
+) -> NDArray[np.intp]:
+    """Pair active hexagons with their adjacent active hexagons.
 
-    Nodes in the returned graph are indexed from `0` to `n_active_bins - 1`.
-    Each node corresponds to an active hexagon and stores attributes:
-    - 'pos': (x, y) coordinates of the active hexagon's center.
-    - 'source_grid_flat_index': Original flat index in the full conceptual hex grid.
-    - 'original_grid_nd_index': (row, col) index in the full conceptual hex grid.
-
-    Edges connect active hexagons that are immediate neighbors in the lattice.
-    Edges store 'distance', 'vector', and 'angle_2d'.
+    Bins are the active hexagons in ``active_flat`` order. Each bin pairs with
+    its higher-numbered active neighbors, visited in the order of
+    :func:`neurospatial.geometry.get_hex_grid_neighbor_deltas` for its row.
 
     Parameters
     ----------
-    active_original_flat_indices : NDArray[np.int_], shape (n_active_bins,)
-        Array of original flat indices (relative to the full conceptual grid)
-        for hexagons that are active.
-    full_grid_bin_centers : NDArray[np.float64], shape (n_total_hex_bins, 2)
-        Center coordinates of *all* potential hexagons in the full grid.
-    centers_shape : Tuple[int, int]
-        Shape (n_hex_rows, n_hex_cols) of the full conceptual grid of hexagons.
+    active_flat : ndarray of int, shape (n_bins,)
+        Increasing flat indices of the active hexagons in the full lattice.
+    centers_shape : tuple of int
+        Shape ``(n_hex_rows, n_hex_cols)`` of the full lattice.
 
     Returns
     -------
-    nx.Graph
-        Connectivity graph of active hexagonal bins. Nodes are re-indexed
-        `0` to `n_active_bins - 1`.
+    ndarray of intp, shape (n_pairs, 2)
+        Pairs ``(lower, higher)`` of bin IDs in authoritative order.
 
-    Notes
-    -----
-    This function now delegates to the generic connectivity graph builder,
-    providing a hexagonal grid-specific neighbor-finding callback.
-
+    Examples
+    --------
+    >>> hex_grid_pairs(np.arange(4), (2, 2)).tolist()
+    [[0, 1], [0, 2], [1, 2], [1, 3], [2, 3]]
     """
-    # Import the generic helper (local import to avoid circular dependencies)
-    from neurospatial.layout.helpers.graph_building import (
-        _create_connectivity_graph_generic,
-    )
-
-    # Define neighbor-finding callback for hexagonal grids
-    def get_hex_grid_neighbors(
-        flat_index: int, grid_shape: tuple[int, ...]
-    ) -> list[int]:
-        """Get neighbor flat indices for a hexagonal grid bin.
-
-        Parameters
-        ----------
-        flat_index : int
-            Flat index of the current hexagon.
-        grid_shape : tuple[int, ...]
-            Shape of the hexagonal grid (n_hex_rows, n_hex_cols).
-
-        Returns
-        -------
-        list[int]
-            List of flat indices of neighbors in the hexagonal lattice.
-        """
-        n_hex_y, n_hex_x = grid_shape
-
-        # Convert flat index to 2D index
-        row_idx = flat_index // n_hex_x
-        col_idx = flat_index % n_hex_x
-
-        # Determine if the current row is odd or even
-        is_odd_row = (row_idx % 2) == 1
-
-        # Get the neighbor deltas based on the row parity
-        neighbor_deltas = get_hex_grid_neighbor_deltas(is_odd_row)
-
-        # Find neighbors
-        neighbors = []
-        for delta_col, delta_row in neighbor_deltas:
-            neighbor_row = row_idx + delta_row
-            neighbor_col = col_idx + delta_col
-
-            # Check if the neighbor is within bounds
-            if 0 <= neighbor_row < n_hex_y and 0 <= neighbor_col < n_hex_x:
-                # Calculate the original flat index of the neighbor
-                neighbor_flat_index = neighbor_row * n_hex_x + neighbor_col
-                neighbors.append(neighbor_flat_index)
-
-        return neighbors
-
-    # Use generic helper to build the graph
-    return _create_connectivity_graph_generic(
-        active_original_flat_indices,
-        full_grid_bin_centers,
-        centers_shape,
-        get_hex_grid_neighbors,
-    )
+    active_flat = np.asarray(active_flat, dtype=np.intp)
+    odd_row = (active_flat // centers_shape[1]) % 2 == 1
+    # Deltas are (column, row); lattice indices are (row, column).
+    even = np.array(get_hex_grid_neighbor_deltas(False), dtype=np.intp)[:, ::-1]
+    odd = np.array(get_hex_grid_neighbor_deltas(True), dtype=np.intp)[:, ::-1]
+    offsets = np.where(odd_row[None, :, None], odd[:, None, :], even[:, None, :])
+    return lattice_neighbor_pairs(active_flat, centers_shape, offsets)

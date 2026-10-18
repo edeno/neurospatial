@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy as copy_module
 import logging
 from collections.abc import Mapping, Sequence
 from typing import (
@@ -37,6 +36,7 @@ from neurospatial.environment._cartesian import (
 from neurospatial.environment._clipping import _clip
 from neurospatial.environment._combine import _combine
 from neurospatial.environment._factories import (
+    _OPEN_FIELD_OPTION_DEFAULTS,
     _from_bins,
     _from_graph,
     _from_grid_mask,
@@ -47,7 +47,6 @@ from neurospatial.environment._factories import (
     _from_samples,
     _linear_track,
     _maze,
-    _open_field,
 )
 from neurospatial.environment._fields import (
     _compute_gaussian_kernel,
@@ -78,6 +77,7 @@ from neurospatial.environment._publication import (
     _restored_state,
     _Unset,
     editable_graph,
+    environment_state,
     publish_derived,
 )
 from neurospatial.environment._queries import (
@@ -340,11 +340,6 @@ class Environment(Generic[_C]):
         """Owned immutable named regions; edit a standalone Regions builder."""
         return self._regions
 
-    @property
-    def _is_polar(self) -> bool:
-        """Coordinate kind from the owned per-instance descriptor."""
-        return isinstance(self._geometry.coordinates, EgocentricPolarSystem)
-
     def __init__(self) -> None:
         """Use an Environment factory to build owned geometry and metadata."""
         raise ValueError(
@@ -354,6 +349,10 @@ class Environment(Generic[_C]):
                 why="Why: a factory builds the geometry and connectivity required by Environment.",
             )
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Return the owned state with the version of its private format."""
+        return environment_state(self.__dict__)
 
     def __setstate__(self, state: object) -> None:
         """Restore owned state; the analysis cache unpickles empty.
@@ -443,14 +442,9 @@ class Environment(Generic[_C]):
         """
         return editable_graph(self.connectivity)
 
-    @property
-    def _arena(self) -> Arena:
-        """The published arena, shared rather than copied for internal reads."""
-        return self._geometry.arena
-
-    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
+    def _locate(self, positions: NDArray[np.float64], call: str) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
-        return locate(self._binning, self._arena, positions, self._cache)
+        return locate(self._binning, self.arena, positions, self._cache, call=call)
 
     def _target_bins(
         self,
@@ -469,9 +463,9 @@ class Environment(Generic[_C]):
             points=points,
             region=region,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             indexes=self._cache,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
             regions=self.regions if takes_region else None,
             count=count,
         )
@@ -540,12 +534,6 @@ class Environment(Generic[_C]):
         result._regions = snapshot
         return result
 
-    @cartesian_only(
-        why="A track width is a distance from a Cartesian centerline, and a "
-        "polar environment is not a track.",
-        fix="build the track with Environment.linear_track, Environment.maze or "
-        "Environment.from_graph and call with_track_width() on that environment",
-    )
     def with_track_width(
         self: Environment[CartesianSystem], width: float
     ) -> Environment[CartesianSystem]:
@@ -591,7 +579,7 @@ class Environment(Generic[_C]):
         >>> track.derivations
         ('with_track_width',)
         """
-        derivation = _with_track_width(self._binning, self._arena, width)
+        derivation = _with_track_width(self._binning, self.arena, width)
         return publish_derived(self, derivation)
 
     def __repr__(self) -> str:
@@ -819,7 +807,10 @@ class Environment(Generic[_C]):
         ``fill_holes=False``: no bin was filled.
 
         ``subset``, ``clip`` and ``apply_transform`` keep the bins they were
-        given, so they keep these choices. ``rebin`` builds new bins and
+        given, so they keep these choices, and lengths such as ``bin_size``
+        stay in the coordinates the bins were built in: after
+        ``apply_transform(scale_2d(2.0))`` the bins are twice as wide as the
+        recorded ``bin_size``. ``rebin`` builds new bins and
         records their ``bin_size`` and ``connect_diagonal_neighbors``.
         ``combine`` records none. :attr:`derivations` lists what was applied.
 
@@ -1068,12 +1059,7 @@ class Environment(Generic[_C]):
         Polar radius uses declared length units; angle is always in radians.
         This read-only property replaces public-class checks for dispatch.
         """
-        return "polar" if self._is_polar else "cartesian"
-
-    @property
-    def _coordinate_system(self) -> _C:
-        """Owned coordinate semantics, inferred from the construction factory."""
-        return self._geometry.coordinates
+        return self._geometry.coordinates.kind
 
     @property
     def coordinate_system(self) -> _C:
@@ -1081,16 +1067,11 @@ class Environment(Generic[_C]):
 
         CartesianSystem describes position columns in length units.
         EgocentricPolarSystem describes radius in length units and angle in
-        radians, including whether the angular axis wraps. The descriptor is
-        an independent frozen value; changing it cannot change the environment.
+        radians. Both say their ``kind`` and whether an axis wraps
+        (``circular``, ``periodic_axes``); a polar environment's arena,
+        ``env.arena``, is the record they are derived from.
         """
-        return copy_module.copy(self._coordinate_system)
-
-    @property
-    def _angular_is_circular(self) -> bool:
-        """Normalized polar circularity, retained through copies and storage."""
-        coordinates = self._geometry.coordinates
-        return isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
+        return self._geometry.coordinates
 
     @property
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
@@ -1100,7 +1081,7 @@ class Environment(Generic[_C]):
                 self.connectivity,
                 self.grid_shape,
                 self.active_mask,
-                periodic_axes=(1,) if self._angular_is_circular else (),
+                periodic_axes=self._geometry.coordinates.periodic_axes,
             )
 
         return self._cache.get(BOUNDARY_BINS, build)
@@ -1287,7 +1268,7 @@ class Environment(Generic[_C]):
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        return self._locate(positions)
+        return self._locate(positions, "Environment.bin_at")
 
     def nearest_bin(
         self,
@@ -1374,7 +1355,7 @@ class Environment(Generic[_C]):
             self._cache,
             self._binning,
             positions,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
             tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
@@ -1460,7 +1441,7 @@ class Environment(Generic[_C]):
         array([ True, False])
 
         """
-        indices = self._locate(positions)
+        indices = self._locate(positions, "Environment.contains")
         return np.asarray(indices != -1, dtype=np.bool_)
 
     @keyword_hint(
@@ -1530,12 +1511,6 @@ class Environment(Generic[_C]):
             self.connectivity, int(start), int(end), weight=edge_weight
         )
 
-    @cartesian_only(
-        why="It projects Cartesian positions onto a track that "
-        "Environment.from_graph built, and a polar environment is not a track.",
-        fix="build the track with Environment.from_graph(...) and call "
-        "to_linear() on that environment",
-    )
     def to_linear(
         self: Environment[CartesianSystem],
         positions: NDArray[np.float64],
@@ -1596,12 +1571,6 @@ class Environment(Generic[_C]):
         """
         return _to_linear(self._binning, positions)
 
-    @cartesian_only(
-        why="It maps positions along a track that Environment.from_graph built "
-        "back to Cartesian positions, and a polar environment is not a track.",
-        fix="build the track with Environment.from_graph(...) and call "
-        "linear_to_nd() on that environment",
-    )
     def linear_to_nd(
         self: Environment[CartesianSystem],
         linear_position: NDArray[np.float64],
@@ -1829,9 +1798,8 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self._arena,
-            coordinates=self._coordinate_system,
-            dimension_ranges=self.dimension_ranges,
+            arena=self.arena,
+            coordinates=self._geometry.coordinates,
             cache=self._cache,
             speed=speed,
             min_speed=min_speed,
@@ -1942,8 +1910,9 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             cache=self._cache,
+            call="Environment.bin_sequence",
             dedup=dedup,
             outside_value=outside_value,
             gap_splits_runs=False,
@@ -2036,8 +2005,9 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             cache=self._cache,
+            call="Environment.bin_sequence_with_runs",
             dedup=True,
             outside_value=outside_value,
             gap_splits_runs=True,
@@ -2158,7 +2128,7 @@ class Environment(Generic[_C]):
             field,
             positions,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             cache=self._cache,
             mode=mode,
         )
@@ -2322,14 +2292,14 @@ class Environment(Generic[_C]):
         """
         derivation, check = _rebin(
             self._binning,
-            self._arena,
+            self.arena,
             self.connectivity,
-            self._provenance.build_params,
+            self._provenance,
             factor=factor,
             bin_size=bin_size,
         )
         rebinned = publish_derived(self, derivation, name=name)
-        warn_rebin_losses(self._binning, self._arena, rebinned, check)
+        warn_rebin_losses(self._binning, self.arena, rebinned, check)
         return rebinned
 
     @cartesian_only(
@@ -2462,7 +2432,7 @@ class Environment(Generic[_C]):
         """
         derivation = _subset(
             self._binning,
-            self._arena,
+            self.arena,
             self.regions,
             self._cache,
             mask=mask,
@@ -2511,7 +2481,7 @@ class Environment(Generic[_C]):
             Cartesian planar area cells.
         """
         return publish_derived(
-            self, _clip(self._binning, self._arena, polygon), name=name
+            self, _clip(self._binning, self.arena, polygon), name=name
         )
 
     @cartesian_only(
@@ -2732,7 +2702,8 @@ class Environment(Generic[_C]):
             transform,
             binning=self._binning,
             regions=self.regions,
-            arena=self._arena,
+            arena=self.arena,
+            cache=self._cache,
         )
         return publish_derived(self, derivation, name=name, frame=frame)
 
@@ -3161,7 +3132,7 @@ class Environment(Generic[_C]):
         >>> env.is_linearized_track
         False
         """
-        return _open_field(
+        return _from_samples(
             cls,
             positions,
             bin_size=bin_size,
@@ -3179,6 +3150,8 @@ class Environment(Generic[_C]):
             close_gaps=close_gaps,
             add_boundary_bins=add_boundary_bins,
             connect_diagonal_neighbors=connect_diagonal_neighbors,
+            factory="open_field",
+            defaults=_OPEN_FIELD_OPTION_DEFAULTS,
         )
 
     @classmethod
@@ -4095,7 +4068,7 @@ class Environment(Generic[_C]):
         (3, 2)
 
         """
-        return _bin_center_of(self.bin_centers, bin_indices, self._coordinate_system)
+        return _bin_center_of(self.bin_centers, bin_indices, self._geometry.coordinates)
 
     @keyword_hint(former=("bin_index",), translate=former_targets(1), why=TARGET_WHY)
     def neighbors(
@@ -4348,7 +4321,7 @@ class Environment(Generic[_C]):
             metric=metric,
             bin_centers=self.bin_centers,
             graph=self.connectivity,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
         )
 
     @keyword_hint(former=("source_bin",), translate=former_targets(1), why=TARGET_WHY)
@@ -4935,7 +4908,7 @@ class Environment(Generic[_C]):
             region_name,
             self.regions,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             cache=self._cache,
             include_boundary=include_boundary,
         )
@@ -5054,7 +5027,7 @@ class Environment(Generic[_C]):
         return _region_membership(
             self.regions if regions is None else regions,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             cache=self._cache,
             include_boundary=include_boundary,
         )
@@ -5135,7 +5108,7 @@ class Environment(Generic[_C]):
             regions,
             named_regions=self.regions,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             include_boundary=include_boundary,
         )
 
@@ -5145,7 +5118,7 @@ class Environment(Generic[_C]):
             name=self.name,
             layout_type=self.layout_type,
             units=self.units,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
         )
 
     @keyword_hint(
@@ -6156,7 +6129,7 @@ class Environment(Generic[_C]):
         clear_cache() releases the cached weights.
         """
         return _compute_gaussian_kernel(
-            self._cache, self.bin_centers, self._coordinate_system, bandwidth
+            self._cache, self.bin_centers, self._geometry.coordinates, bandwidth
         )
 
     def get_diffusion_geometry(self) -> DiffusionGeometry:
@@ -6713,7 +6686,7 @@ class Environment(Generic[_C]):
             bins,
             graph=self.connectivity,
             binning=self._binning,
-            arena=self._arena,
+            arena=self.arena,
             cache=self._cache,
             times=times,
             positions=positions,

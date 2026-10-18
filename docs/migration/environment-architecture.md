@@ -227,10 +227,10 @@ version that wrote it and save it again, or rebuild it with
 ## Custom layout engines supply `binning()`
 
 Each layout engine now hands its geometry to the environment through one
-method, `binning()`, which returns a `Binning`: the bins in the order of the
-connectivity graph's nodes, neighbor pairs in the order of its edges, point
-lookup, the faces between cells (or the reason they are missing) and any grid,
-track, shape and outline records. All built-in engines implement it, and the
+method, `binning()`, which returns a `Binning`: the bins, neighbor pairs with
+their distances (their order becomes `env.edge_pairs`), point lookup, the
+faces between cells (or the reason they are missing) and any grid, track,
+shape and outline records. All built-in engines implement it, and the
 `LayoutEngine` protocol lists it.
 
 If you wrote your own layout engine:
@@ -249,6 +249,12 @@ If you wrote your own layout engine:
   engines no longer have `point_to_bin_index`, `finite_volume_geometry` or
   `is_grid_compatible` (see below), and a custom engine does not need them. A layout whose methods were
   replaced on the instance is no longer refused.
+- A built-in engine computes its neighbor pairs as arrays in `build()` and
+  no longer builds a graph. Its `connectivity` is derived from `binning()` on
+  first access, with the same node and edge attributes as `env.connectivity`.
+  It can no longer be assigned, and editing it changes neither the engine's
+  bins nor an environment built from it. To publish other neighbor pairs,
+  return them from your own engine's `binning()`.
 - An engine may also have a `layout_type` label, and build
   arguments recorded with `neurospatial.layout.base.capture_build_params`
   become `env.layout_parameters`. Both are optional. The label becomes

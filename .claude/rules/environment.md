@@ -15,7 +15,8 @@ The design intent is in the "Environment architecture" section of
   `layout/_labels.py`, the class attribute `layout_type =
   LayoutType.<MEMBER>.value` (its `binning()` passes `kind=self.layout_type`),
   a place in `_ENGINES` in `layout/factories.py` (the `create_layout`
-  registry is derived from it), an export from `layout/__init__.py`,
+  registry is derived from it), the class attribute `size_parameter` naming
+  the build option that sets its cell size (or `None`), an export from `layout/__init__.py`,
   `@capture_build_params(data=(...))` on `build` naming its data arguments
   (any other non-scalar argument is refused when the engine is built), and
   an entry in `MINIMAL_BUILD_PARAMS` in

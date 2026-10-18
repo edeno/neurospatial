@@ -13,7 +13,6 @@ import neurospatial.environment
 from neurospatial import Environment
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Metadata, _Provenance
-from neurospatial.geometry._coordinates import CartesianSystem
 from neurospatial.layout._construction import _built_layout_data
 
 
@@ -24,7 +23,7 @@ def publish_binning(
     dimension_ranges=None,
     build_params=None,
     derivations=(),
-    coordinates=None,
+    coordinate_kind="cartesian",
     name="",
     units=None,
     frame=None,
@@ -34,7 +33,8 @@ def publish_binning(
     """Publish an explicit binning, as factories and readers do.
 
     ``layout_type`` and ``dimension_ranges``, when given, replace the
-    binning's own label and ranges. ``coordinates`` defaults to Cartesian.
+    binning's own label and ranges. A polar ``coordinate_kind`` needs an
+    ``arena=`` keyword holding the environment's ``EgocentricSurround``.
     """
     if layout_type is not None:
         binning = replace(binning, kind=layout_type)
@@ -43,7 +43,7 @@ def publish_binning(
     return _publication._publish(
         cls,
         binning,
-        coordinates=CartesianSystem() if coordinates is None else coordinates,
+        coordinate_kind=coordinate_kind,
         provenance=_Provenance(dict(build_params or {}), derivations),
         metadata=_Metadata(name, units, frame),
         **kwargs,
@@ -65,17 +65,20 @@ def publish_environment(
 
     A built layout records its own build choices; ``layout_params_used``
     replaces the choices only when republishing an environment.
-    ``layout_type_used`` replaces the layout label.
+    ``layout_type_used`` replaces the layout label. A republished polar
+    environment keeps its arena unless ``arena=`` replaces it.
     """
-    coordinates = kwargs.pop("_coordinates", None)
+    coordinate_kind = kwargs.pop("_coordinate_kind", "cartesian")
     if isinstance(layout, Environment):
+        if layout.coordinate_kind == "polar":
+            kwargs.setdefault("arena", layout.arena)
         return publish_binning(
             layout._binning,
             layout_type=layout_type_used,
             build_params=layout.layout_parameters
             if layout_params_used is None
             else layout_params_used,
-            coordinates=layout._geometry.coordinates,
+            coordinate_kind=layout.coordinate_kind,
             name=name,
             units=units,
             frame=frame,
@@ -88,7 +91,7 @@ def publish_environment(
             binning,
             layout_type=layout_type_used,
             build_params=build_params,
-            coordinates=coordinates,
+            coordinate_kind=coordinate_kind,
             name=name,
             units=units,
             frame=frame,
@@ -100,7 +103,7 @@ def publish_environment(
         layout,
         metadata=_Metadata(name, units, frame),
         regions=regions,
-        coordinates=coordinates,
+        coordinate_kind=coordinate_kind,
         **kwargs,
     )
 

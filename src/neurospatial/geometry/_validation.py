@@ -29,6 +29,7 @@ from neurospatial.geometry._composition import (
     CombinedLocator,
     combined_normals,
 )
+from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._derive import transform_binning
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import (
@@ -371,7 +372,7 @@ def _primitive_geometry(
             )
             if isinstance(child.faces, KnownFaces):
                 KnownFaces(child.faces.faces)
-            validate_components(child, child.linearization is not None, coordinate_kind)
+            validate_components(child, CartesianSystem())
 
         certify_components(locator.children, locator.arenas, locator.keys)
         bins = locator.spatial_bins()
@@ -894,12 +895,9 @@ def _validate_cell_faces(binning: Binning, geometry: _LocatorGeometry) -> None:
     _validate_face_distances(binning, geometry, f"{label}.distance")
 
 
-def validate_components(
-    binning: Binning,
-    is_track: bool,
-    coordinate_kind: Literal["cartesian", "polar"],
-) -> None:
+def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None:
     """Compare shared arrays exactly and recursively check computed geometry."""
+    coordinate_kind = coordinates.kind
     bins, locator = binning.bins, binning.locator
     if binning.grid_spec is not None:
         spec = binning.grid_spec
@@ -1277,10 +1275,6 @@ def validate_components(
             )
         ):
             raise ValueError("outline boundary does not match mesh locator boundary.")
-    if is_track != (track is not None):
-        raise ValueError(
-            "is_linearized_track does not match the linearization component."
-        )
     if track is not None:
         if not isinstance(track, TrackLinearization) or not isinstance(
             geometry.leaf, NearestBinLocator

@@ -12,7 +12,6 @@ the published result to report source bins and barriers the new bins lose.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
@@ -24,7 +23,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._publication import _Derivation
+from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry import (
     Arena,
     Binning,
@@ -32,14 +31,16 @@ from neurospatial.geometry import (
     NativeFaces,
     SpatialBins,
     apply_walls,
+    get_centers,
     materialize_cells,
     prepare_bins,
     transform_binning,
 )
-from neurospatial.layout import _built_layout_data
+from neurospatial.layout import LayoutType, _built_layout_data
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.layout.engines.regular_grid import regular_grid_from_cells
+from neurospatial.layout.factories import _size_parameter
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 
 if TYPE_CHECKING:
@@ -64,6 +65,12 @@ class RebinCheck:
     considered: NDArray[np.bool_] | None
     lost_remedy: str
     crossing_remedy: str
+
+
+def _grid_centers(edges: tuple[NDArray[np.float64], ...]) -> NDArray[np.float64]:
+    """Centers of every cell of a grid, shape ``(n_cells, n_dims)``, C order."""
+    axes = np.meshgrid(*(get_centers(edge) for edge in edges), indexing="ij")
+    return np.column_stack([axis.ravel() for axis in axes])
 
 
 def warn_rebin_losses(
@@ -202,7 +209,7 @@ def _rebin(
     binning: Binning,
     arena: Arena,
     connectivity: nx.Graph,
-    layout_parameters: Mapping[str, Any],
+    provenance: _Provenance,
     *,
     factor: int | tuple[int, ...] | None,
     bin_size: float | tuple[float, ...] | None,
@@ -223,7 +230,7 @@ def _rebin(
     if (factor is None) == (bin_size is None):
         raise ValueError("Pass exactly one of factor or bin_size to rebin().")
     refuse_unsupported_rebin(
-        binning, arena, layout_parameters, factor=factor, bin_size=bin_size
+        binning, arena, provenance, factor=factor, bin_size=bin_size
     )
     if bin_size is not None:
         return _rebin_resolution(binning, arena, bin_size)
@@ -234,7 +241,7 @@ def _rebin(
 def refuse_unsupported_rebin(
     binning: Binning,
     arena: Arena,
-    layout_parameters: Mapping[str, Any],
+    provenance: _Provenance,
     *,
     factor: object,
     bin_size: object,
@@ -250,7 +257,7 @@ def refuse_unsupported_rebin(
     needs_lattice = bin_size is not None
     if (binning.grid_spec if needs_lattice else binning.rectilinear) is not None:
         return
-    size = _requested_size(layout_parameters, binning, factor, bin_size)
+    size = _requested_size(provenance, binning, factor, bin_size)
     if not needs_lattice and binning.grid_spec is not None:
         # A clipped grid keeps its lattice but not whole rectangular cells.
         target = f"env.rebin(bin_size={size:g})" if size else "env.rebin(bin_size=...)"
@@ -294,32 +301,32 @@ def refuse_unsupported_rebin(
     )
 
 
-# The recorded build option that sets the cell size of each native kind.
-_SIZE_OPTION = {
-    "Hexagonal": "hexagon_width",
-    "Graph": "bin_size",
-    "TriangularMesh": "point_spacing",
-}
-
-
 def _requested_size(
-    layout_parameters: Mapping[str, Any],
+    provenance: _Provenance,
     binning: Binning,
     factor: object,
     bin_size: object,
 ) -> float | None:
-    """The new cell size the call asks for, when it is one known number."""
+    """The new cell size the call asks for, when it is one known number.
+
+    A factor multiplies the current cell size: the recorded value of the
+    option that sets the layout's cell size (its engine's
+    ``size_parameter``), in the coordinates the bins are in now.
+    """
     if bin_size is not None:
         sizes = np.ravel(np.asarray(bin_size, dtype=float))
         return float(sizes[0]) if sizes.size and np.all(sizes == sizes[0]) else None
     factors = np.ravel(np.asarray(factor, dtype=float))
-    current = layout_parameters.get(_SIZE_OPTION.get(str(binning.kind), "bin_size"))
+    option = _size_parameter(binning.kind)
+    recorded = None if option is None else provenance.build_params.get(option)
+    scale = provenance.length_scale
     if (
-        isinstance(current, (int, float))
+        isinstance(recorded, (int, float))
+        and scale is not None
         and factors.size
         and np.all(factors == factors[0])
     ):
-        return float(current) * float(factors[0])
+        return float(recorded) * scale * float(factors[0])
     return None
 
 
@@ -328,8 +335,9 @@ def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
     new = f"{size:g}" if size else "..."
     linearization = binning.linearization
     if linearization is not None:
-        width = getattr(arena, "width", None)
-        track_width = "" if width is None else f", track_width={float(width):g}"
+        track = arena.as_track()
+        width = None if track is None else track.width
+        track_width = "" if width is None else f", track_width={width:g}"
         spacing = linearization.edge_spacing
         return (
             "build the track again at the new bin size: "
@@ -337,18 +345,19 @@ def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
             "list(env.binning.linearization.edge_order), "
             f"bin_size={new}, edge_spacing={spacing!r}{track_width})"
         )
-    if binning.kind == "Hexagonal":
+    if binning.kind == LayoutType.HEXAGONAL:
         return (
             "build the hexagons again from the positions you built them from: "
             f"Environment.from_samples(positions, bin_size={new}, "
-            "layout='Hexagonal')"
+            f"layout={LayoutType.HEXAGONAL.value!r})"
         )
-    if binning.kind == "TriangularMesh" and arena.polygonal_domain() is not None:
+    mesh = LayoutType.TRIANGULAR_MESH
+    if binning.kind == mesh and arena.polygonal_domain() is not None:
         return (
             "build the mesh again at the new spacing: from neurospatial.layout "
-            "import create_layout; Environment.from_layout(create_layout("
-            "'TriangularMesh', boundary_polygon=env.arena.polygonal_domain(), "
-            f"point_spacing={new}))"
+            f"import create_layout; Environment.from_layout(create_layout("
+            f"{mesh.value!r}, boundary_polygon=env.arena.polygonal_domain(), "
+            f"{_size_parameter(mesh)}={new}))"
         )
     return "build the bins again at the new size with the factory or layout engine that made them"
 
@@ -417,10 +426,7 @@ def _rebin_resolution(
         raise ValueError(
             "bin_size is too small at this coordinate precision; recenter coordinates or use larger bins."
         )
-    axes = [(edge[:-1] + edge[1:]) / 2 for edge in edges]
-    centers = np.column_stack(
-        [axis.ravel() for axis in np.meshgrid(*axes, indexing="ij")]
-    )
+    centers = _grid_centers(edges)
     mapped = centers @ spec.forward[:-1, :-1].T + spec.forward[:-1, -1]
     domain = arena.polygonal_domain()
     if domain is not None:
@@ -661,41 +667,18 @@ def _rebin_factor(
 
     # --- Compute new grid parameters ---
 
-    # Truncate grid edges if needed
-    truncated_edges = []
-    for edges, trunc_size in zip(grid_edges, truncated_shape, strict=True):
-        # Keep edges up to truncated_size + 1 (edges define bins)
-        truncated_edges.append(edges[: trunc_size + 1])
-
-    # Compute new coarsened edges
+    # Keep the edges of the truncated grid, then every factor-th of them.
     coarse_edges = tuple(
-        edges[::f] for edges, f in zip(truncated_edges, factor_tuple, strict=True)
+        edges[: size + 1 : f]
+        for edges, size, f in zip(
+            grid_edges, truncated_shape, factor_tuple, strict=True
+        )
     )
-
-    # New grid shape
     coarse_shape = tuple(len(edges) - 1 for edges in coarse_edges)
 
-    # --- Compute new bin centers from coarsened edges ---
-
-    # For each coarse bin, compute center from the coarse grid edges
-    # This avoids issues with active/inactive bins from the original grid
-
-    # Create bin centers from coarse edges using meshgrid
-    coarse_grid_centers = []
-    for edges in coarse_edges:
-        # Bin centers are midpoints between edges
-        centers = (edges[:-1] + edges[1:]) / 2
-        coarse_grid_centers.append(centers)
-
-    # Create meshgrid of bin centers
-    if n_dims == 1:
-        center_coords = [coarse_grid_centers[0]]
-    else:
-        center_grids = np.meshgrid(*coarse_grid_centers, indexing="ij")
-        center_coords = [grid.ravel() for grid in center_grids]
-
-    # Stack into (n_bins, n_dims)
-    coarse_bin_centers = np.column_stack(center_coords)
+    # Centers come from the coarse edges, not from the original grid's
+    # active bins.
+    coarse_bin_centers = _grid_centers(coarse_edges)
 
     # Finalize active cells before constructing the graph or publishing an
     # environment. The original arena remains the continuous authority. Its

@@ -1096,7 +1096,7 @@ def environment_round_trip(built_environment, request, tmp_path):
         dimension_ranges=original.dimension_ranges,
         layout_type=original.layout_type,
         build_params=original.layout_parameters,
-        coordinates=original._geometry.coordinates,
+        coordinate_kind=original.coordinate_kind,
         arena=original.arena,
     )
     original = publish_environment(
@@ -1108,7 +1108,7 @@ def environment_round_trip(built_environment, request, tmp_path):
         units=original.units,
         frame=original.frame,
         arena=original.arena,
-        _coordinates=original._coordinate_system,
+        _coordinate_kind=original.coordinate_kind,
     )
 
     if request.param == "file":

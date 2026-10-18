@@ -13,7 +13,6 @@ from typing import Any, Literal
 __all__ = [
     "BinIndexOutOfRangeError",
     "CartesianOnlyError",
-    "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",
     "NeurospatialError",
@@ -311,7 +310,7 @@ class LayoutNotBuiltError(RuntimeError, NeurospatialError):
     """Raised when a :class:`LayoutEngine` is accessed before ``build()``.
 
     This signals that the layout engine has not been built (e.g. its
-    ``connectivity`` is ``None``). It is mostly raised inside layout
+    ``binning()`` is requested before ``build()``). It is mostly raised inside layout
     engines and helpers; user code typically sees it surfacing through
     a layout property accessed at the wrong time.
 
@@ -329,18 +328,3 @@ class LayoutNotBuiltError(RuntimeError, NeurospatialError):
         )
         self.layout_name = layout_name
         self.attribute = attribute
-
-
-class GraphValidationError(ValueError, NeurospatialError):
-    """Raised when connectivity graph has invalid structure or metadata.
-
-    This error indicates a bug in the layout engine that produced the graph,
-    not a user error. All layout engines must produce graphs that pass
-    validation.
-
-    See Also
-    --------
-    validate_connectivity_graph : Main validation function
-    """
-
-    pass

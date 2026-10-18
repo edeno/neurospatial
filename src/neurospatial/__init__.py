@@ -227,7 +227,6 @@ from typing import TYPE_CHECKING, Any
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
     CartesianOnlyError,
-    GraphValidationError,
     IncompatibleEnvironmentError,
     LayoutNotBuiltError,
     NeurospatialError,
@@ -325,7 +324,6 @@ __all__ = [
     "CartesianOnlyError",
     "DecodingResult",
     "Environment",
-    "GraphValidationError",
     "IncompatibleEnvironmentError",
     "LayoutNotBuiltError",
     "NeurospatialError",

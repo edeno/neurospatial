@@ -6,10 +6,12 @@ import pytest
 from shapely.geometry import Polygon as ShapelyPoly
 from shapely.geometry import box
 
-from neurospatial import Regions
+from neurospatial import LayoutNotBuiltError, Regions
 from neurospatial.environment import Environment
+from neurospatial.geometry import graph_from_binning
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import (
+    _size_parameter,
     create_layout,
     get_layout_parameters,
     list_available_layouts,
@@ -309,9 +311,7 @@ MINIMAL_BUILD_PARAMS["TriangularMesh"] = {
 def test_layout_engine_protocol_adherence(
     layout_kind: str, simple_graph_for_layout: nx.Graph
 ):
-    """
-    Meta-test: checks if all layouts adhere to the LayoutEngine protocol.
-    """
+    """Every built-in layout is a LayoutEngine and offers the shared extras."""
     if layout_kind not in MINIMAL_BUILD_PARAMS:
         pytest.skip(
             f"Minimal build parameters not defined for layout kind: {layout_kind}"
@@ -329,7 +329,8 @@ def test_layout_engine_protocol_adherence(
     except Exception as e:
         pytest.fail(f"Failed to create layout {layout_kind} with params {params}: {e}")
 
-    # 1. Check presence of all protocol attributes
+    # 1. The protocol (build and binning), then the built-in engines' extras
+    assert isinstance(layout, LayoutEngine)
     assert hasattr(layout, "bin_centers"), f"{layout_kind} missing bin_centers"
     assert hasattr(layout, "connectivity"), f"{layout_kind} missing connectivity"
     assert hasattr(layout, "dimension_ranges"), (
@@ -462,6 +463,68 @@ def test_layout_engine_protocol_adherence(
     assert binning.faces.available
     np.testing.assert_array_equal(binning.faces.build().edges, binning.bins.pairs)
     assert (binning.linearization is not None) == layout.is_linearized_track
+
+
+@pytest.mark.parametrize("layout_kind", list_available_layouts())
+def test_size_parameter_sets_the_cell_size(
+    layout_kind: str, simple_graph_for_layout: nx.Graph
+):
+    """The option an engine names as its cell size scales its cells.
+
+    ``from_samples`` passes its ``bin_size`` to this option, and a refused
+    ``rebin`` suggests a coarser value of it.
+    """
+    option = _size_parameter(layout_kind)
+    if option is None:
+        # A masked grid takes its cell edges, not a size.
+        assert layout_kind == "MaskedGrid"
+        return
+    assert option in get_layout_parameters(layout_kind)
+    params = MINIMAL_BUILD_PARAMS[layout_kind].copy()
+    if layout_kind == "Graph":
+        params["graph_definition"] = simple_graph_for_layout
+        params["edge_order"] = list(simple_graph_for_layout.edges())
+    coarse = create_layout(layout_kind, **params).binning().bins
+    params[option] = params[option] / 2
+    fine = create_layout(layout_kind, **params).binning().bins
+    # Mesh triangles along the outline keep the ratio from being exact.
+    np.testing.assert_allclose(
+        np.mean(fine.sizes),
+        np.mean(coarse.sizes) / 2**coarse.measure_dim,
+        rtol=0.2,
+    )
+
+
+@pytest.mark.parametrize("layout_kind", list_available_layouts())
+def test_engine_connectivity_is_derived_from_its_binning(
+    layout_kind: str, simple_graph_for_layout: nx.Graph
+):
+    """``connectivity`` is the binning's graph, built once per build, never fed back."""
+    params = MINIMAL_BUILD_PARAMS[layout_kind].copy()
+    if layout_kind == "Graph":
+        params["graph_definition"] = simple_graph_for_layout
+        params["edge_order"] = list(simple_graph_for_layout.edges())
+    layout = create_layout(layout_kind, **params)
+    unbuilt = type(layout)()
+    with pytest.raises(LayoutNotBuiltError):
+        _ = unbuilt.connectivity
+
+    graph = layout.connectivity
+    expected = graph_from_binning(layout.binning())
+    assert type(graph) is nx.Graph
+    assert list(graph.nodes(data=True)) == list(expected.nodes(data=True))
+    assert list(graph.edges(data=True)) == list(expected.edges(data=True))
+    assert layout.connectivity is graph
+
+    # The graph is a convenience copy: editing it leaves the bins unchanged.
+    pairs = layout.binning().bins.pairs
+    graph.remove_edges_from(list(graph.edges))
+    np.testing.assert_array_equal(layout.binning().bins.pairs, pairs)
+
+    # Building again replaces the graph.
+    layout.build(**params)
+    assert layout.connectivity is not graph
+    assert layout.connectivity.number_of_edges() == len(pairs)
 
 
 def test_located_bin_dtype_is_intp():

@@ -18,7 +18,6 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _declared_metadata, _Provenance
 from neurospatial.geometry import (
-    CartesianSystem,
     CombinedLocator,
     OpenArena,
     TrackArena,
@@ -26,7 +25,11 @@ from neurospatial.geometry import (
     prepare_bins,
 )
 from neurospatial.layout import LayoutType, find_layout_type
-from neurospatial.layout.factories import create_layout, list_available_layouts
+from neurospatial.layout.factories import (
+    _size_parameter,
+    create_layout,
+    list_available_layouts,
+)
 from neurospatial.layout.helpers.track_graphs import (
     add_edge_with_distance,
     maze_track_graph,
@@ -77,7 +80,6 @@ def _from_bins(
     result = _publication._publish(
         cls,
         snapshot,
-        coordinates=CartesianSystem(),
         provenance=_Provenance({}),
         metadata=_declared_metadata(name=name, units=units, frame=frame),
         regions=regions,
@@ -126,6 +128,11 @@ _SAMPLE_OPTION_DEFAULTS: dict[str, Any] = {
     "close_gaps": False,
     "add_boundary_bins": False,
     "connect_diagonal_neighbors": True,
+}
+# Environment.open_field is from_samples that fills holes by default.
+_OPEN_FIELD_OPTION_DEFAULTS: dict[str, Any] = {
+    **_SAMPLE_OPTION_DEFAULTS,
+    "fill_holes": True,
 }
 # A hexagonal layout has six fixed neighbors and no mask clean-up.
 _REGULAR_GRID_ONLY = (
@@ -450,16 +457,13 @@ def _from_samples(
         "bin_count_threshold": options["bin_count_threshold"],
     }
 
-    # Layout-specific parameters
+    # bin_size goes to the option that sets the engine's cell size, the
+    # hexagon width for a hexagonal tiling.
+    size_option = _size_parameter(layout_type)
+    assert size_option is not None  # both sampled layouts declare one
+    layout_params = {**common_params, size_option: bin_size}
     if layout_type is LayoutType.REGULAR_GRID:
-        specific_params: dict[str, Any] = {
-            "bin_size": bin_size,
-            **{name: options[name] for name in _REGULAR_GRID_ONLY},
-        }
-    else:
-        specific_params = {"hexagon_width": bin_size}
-
-    layout_params = {**common_params, **specific_params}
+        layout_params.update({name: options[name] for name in _REGULAR_GRID_ONLY})
     if dimension_ranges is not None:
         layout_params["dimension_ranges"] = dimension_ranges
 
@@ -497,50 +501,6 @@ def _from_samples(
         frame=frame,
         regions=regions,
         arena=arena,
-    )
-
-
-def _open_field(
-    cls: type[Environment[Any]],
-    positions: NDArray[np.float64],
-    *,
-    bin_size: float | Sequence[float],
-    name: str = "",
-    units: str | None = None,
-    frame: str | None = None,
-    regions: Regions | None = None,
-    arena: Arena | None = None,
-    layout: LayoutType | str = LayoutType.REGULAR_GRID,
-    dimension_ranges: Sequence[tuple[float, float]] | None = None,
-    infer_active_bins: bool = True,
-    bin_count_threshold: int = 0,
-    dilate: bool = False,
-    fill_holes: bool = True,
-    close_gaps: bool = False,
-    add_boundary_bins: bool = False,
-    connect_diagonal_neighbors: bool = True,
-) -> Environment:
-    """Implement Environment.open_field: from_samples that fills holes by default."""
-    return _from_samples(
-        cls,
-        positions,
-        bin_size=bin_size,
-        name=name,
-        units=units,
-        frame=frame,
-        regions=regions,
-        arena=arena,
-        layout=layout,
-        dimension_ranges=dimension_ranges,
-        infer_active_bins=infer_active_bins,
-        bin_count_threshold=bin_count_threshold,
-        dilate=dilate,
-        fill_holes=fill_holes,
-        close_gaps=close_gaps,
-        add_boundary_bins=add_boundary_bins,
-        connect_diagonal_neighbors=connect_diagonal_neighbors,
-        factory="open_field",
-        defaults={**_SAMPLE_OPTION_DEFAULTS, "fill_holes": True},
     )
 
 
@@ -739,9 +699,7 @@ def _maze(
         # any `edge_id` on the input graph is ignored.
         for u, v in graph.edges():
             if "distance" not in graph.edges[u, v]:
-                p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
-                p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
-                graph.edges[u, v]["distance"] = float(np.linalg.norm(p2 - p1))
+                add_edge_with_distance(graph, u, v)
     elif node_positions is not None:
         coordinates = _track_points(
             list(node_positions.values()),
@@ -990,7 +948,6 @@ def _build_layout(
         metadata=metadata,
         regions=regions,
         arena=arena,
-        within_arena=True,
     )
 
 
@@ -1033,7 +990,6 @@ def _from_layout(
         metadata=_declared_metadata(name=name, units=units, frame=frame),
         regions=regions,
         arena=arena,
-        within_arena=True,
     )
 
 

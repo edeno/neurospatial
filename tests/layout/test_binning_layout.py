@@ -33,8 +33,8 @@ def _facade(env, *, binning=None):
         dimension_ranges=env.dimension_ranges,
         layout_type=source.kind,
         build_params=env.layout_parameters,
-        coordinates=env._geometry.coordinates,
-        arena=env.arena if env._is_polar else None,
+        coordinate_kind=env.coordinate_kind,
+        arena=env.arena if env.coordinate_kind == "polar" else None,
     )
 
 

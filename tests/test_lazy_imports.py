@@ -149,13 +149,14 @@ def test_phase_precession_function_does_not_shadow_module() -> None:
 
 
 def test_environment_import_loads_no_plotting_or_table_libraries() -> None:
-    """Workers that only bin positions do not pay for pyplot or pandas."""
+    """Workers that only bin positions do not pay for matplotlib or pandas."""
     import subprocess
 
     code = (
         "import sys\n"
         "from neurospatial import Environment\n"
-        "loaded = [m for m in ('matplotlib.pyplot', 'pandas') if m in sys.modules]\n"
+        "loaded = [m for m in ('matplotlib', 'mpl_toolkits', 'pandas') "
+        "if m in sys.modules]\n"
         "print(','.join(loaded))\n"
     )
     result = subprocess.run(

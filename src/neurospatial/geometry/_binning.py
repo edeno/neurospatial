@@ -20,7 +20,7 @@ from neurospatial.geometry._diffusion import (
     FaceGeometry,
 )
 from neurospatial.geometry._face_normals import FaceNormals
-from neurospatial.geometry._grid_frame import FramedGrid
+from neurospatial.geometry._grid_frame import FramedGrid, framed_locator
 from neurospatial.geometry._locators import Locator
 from neurospatial.geometry._rebin_spec import GridBinningSpec
 from neurospatial.geometry._track import project_1d_to_2d
@@ -457,6 +457,10 @@ class Binning:
     cover. An environment computes that extent from the cells; only bins
     without cells keep a declared value (or None). An environment's
     binning carries the environment's ``dimension_ranges``.
+
+    A ``grid_frame`` is handed to the affine step of ``locator`` (a
+    :class:`TransformedLocator`), so ``locator.locate`` assigns points by the
+    frame's half-open source cells, as linear time allocation does.
     """
 
     kind: str
@@ -474,6 +478,11 @@ class Binning:
     dimension_ranges: tuple[tuple[float, float], ...] | None = None
 
     def __post_init__(self) -> None:
+        if self.grid_frame is not None:
+            # Lookup and linear allocation share the frame's cell rule.
+            object.__setattr__(
+                self, "locator", framed_locator(self.locator, self.grid_frame)
+            )
         if self.dimension_ranges is None:
             return
         try:

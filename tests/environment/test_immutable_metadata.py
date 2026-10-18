@@ -128,7 +128,7 @@ def test_polar_replacement_preserves_concrete_type_and_circularity():
     updated = env.with_metadata(name="polar copy")
     assert type(updated) is Environment
     assert updated._geometry is env._geometry
-    assert updated._angular_is_circular == env._angular_is_circular
+    assert updated.coordinate_system.circular == env.coordinate_system.circular
     assert (updated.units, updated.frame) == ("cm", "animal")
 
 
@@ -177,7 +177,7 @@ def test_restoration_refuses_custom_arenas_requiring_snapshot_migration():
         pass
 
     env = _environment()
-    state = vars(env).copy()
+    state = env.__getstate__()
     state["_geometry"] = replace(env._geometry, arena=CustomArena(box(-1, -1, 4, 4)))
     restored = Environment.__new__(Environment)
     with pytest.raises(TypeError, match="arena= takes an arena"):

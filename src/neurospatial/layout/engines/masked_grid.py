@@ -1,7 +1,6 @@
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, ClassVar
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -21,7 +20,6 @@ class MaskedGridLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
 
     grid_edges: tuple[NDArray[np.float64], ...] | None = None
@@ -29,6 +27,7 @@ class MaskedGridLayout(_GridMixin):
     active_mask: NDArray[np.bool_] | None = None
 
     layout_type: str = LayoutType.MASKED_GRID.value
+    size_parameter: ClassVar[str | None] = None
     _build_params_used: dict[str, Any]
     bin_size_: NDArray[np.float64] | None = None
 
@@ -36,7 +35,6 @@ class MaskedGridLayout(_GridMixin):
         """Initialize a MaskedGridLayout engine."""
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2), dtype=np.float64)
-        self.connectivity = None
         self.dimension_ranges = None
         self.grid_edges = None
         self.grid_shape = None

@@ -1,12 +1,11 @@
-import networkx as nx
 import numpy as np
 import pytest
 
 from neurospatial.geometry import points_to_regular_grid_bin_ind
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
-    _create_regular_grid_connectivity_graph,
     _infer_active_bins_from_regular_grid,
+    regular_grid_pairs,
 )
 from neurospatial.layout.helpers.utils import get_n_bins
 
@@ -128,39 +127,35 @@ def test_infer_active_bins_boundary_exists_3d():
     assert mask[1, 1, 1]
 
 
-def test_create_regular_grid_connectivity_2d_orthogonal():
-    # 2x2 grid, all bins active, orthogonal connections
-    centers_list = [0.5, 1.5]
-    mesh = np.meshgrid(centers_list, centers_list, indexing="ij")
-    bin_centers = np.stack([m.ravel() for m in mesh], axis=1)
-    active_mask = np.ones((2, 2), dtype=bool)
-    graph = _create_regular_grid_connectivity_graph(bin_centers, active_mask, (2, 2))
-    assert isinstance(graph, nx.Graph)
-    assert graph.number_of_nodes() == 4
-    # Each node should have up to 2 orthogonal neighbors (except corners)
-    degrees = [d for n, d in graph.degree()]
-    assert set(degrees) == {2}
-    # Check edge attributes
-    for _u, _v, d in graph.edges(data=True):
-        assert "distance" in d
-        assert "vector" in d
-        assert "edge_id" in d
+def test_regular_grid_pairs_2d_orthogonal():
+    # 2x2 grid, all bins active: every bin has its two face neighbors.
+    pairs = regular_grid_pairs(np.ones((2, 2), dtype=bool))
+    assert pairs.dtype == np.intp
+    assert pairs.tolist() == [[0, 2], [0, 1], [1, 3], [2, 3]]
 
 
-def test_create_regular_grid_connectivity_2d_diagonal():
-    # 2x2 grid, all bins active, diagonal connections
-    (np.array([0, 1, 2]), np.array([0, 1, 2]))
-    centers_list = [0.5, 1.5]
-    mesh = np.meshgrid(centers_list, centers_list, indexing="ij")
-    bin_centers = np.stack([m.ravel() for m in mesh], axis=1)
-    active_mask = np.ones((2, 2), dtype=bool)
-    graph = _create_regular_grid_connectivity_graph(
-        bin_centers, active_mask, (2, 2), connect_diagonal=True
-    )
-    assert graph.number_of_edges() > 4  # Should include diagonals
-    # Check angle_2d attribute exists
-    for _u, _v, d in graph.edges(data=True):
-        assert "angle_2d" in d
+def test_regular_grid_pairs_2d_diagonal():
+    # Diagonals add the two corner-sharing pairs of a 2x2 grid.
+    pairs = regular_grid_pairs(np.ones((2, 2), dtype=bool), connect_diagonal=True)
+    assert pairs.tolist() == [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
+
+
+@pytest.mark.parametrize("connect_diagonal", [False, True])
+@pytest.mark.parametrize("shape", [(9,), (5, 7), (3, 4, 5)])
+def test_regular_grid_pairs_match_adjacent_active_cells(shape, connect_diagonal):
+    """Pairs are exactly the adjacent active cells, each once, low to high."""
+    mask = np.random.default_rng(3).random(shape) < 0.7
+    cells = np.argwhere(mask)
+    steps = np.abs(cells[:, None, :] - cells[None, :, :])
+    adjacent = steps.max(axis=-1) == 1 if connect_diagonal else steps.sum(axis=-1) == 1
+    expected = {tuple(pair) for pair in np.argwhere(np.triu(adjacent))}
+
+    pairs = regular_grid_pairs(mask, connect_diagonal=connect_diagonal)
+
+    assert {tuple(pair) for pair in pairs.tolist()} == expected
+    assert len(pairs) == len(expected)
+    assert np.all(pairs[:, 0] < pairs[:, 1])
+    assert np.all(np.diff(pairs[:, 0]) >= 0)
 
 
 def test_points_to_regular_grid_bin_ind_basic():
@@ -206,7 +201,7 @@ def test_create_and_connectivity_for_3d_grid():
 
       1) _create_regular_grid produces exactly one bin along each dimension
       2) bin_centers is a single point at (0.5, 0.5, 0.5)
-      3) The 3D connectivity graph has exactly 1 node and 0 edges
+      3) The single active bin has no neighbor pairs
       4) Per-dimension bin sizes are [1.0, 1.0, 1.0]
     """
     # 1) Eight corner points of [0,1]^3
@@ -270,16 +265,8 @@ def test_create_and_connectivity_for_3d_grid():
     assert active_mask.shape == (1, 1, 1)
     assert active_mask[0, 0, 0]
 
-    # Build the connectivity graph for this 1×1×1 grid:
-    conn_graph = _create_regular_grid_connectivity_graph(
-        full_grid_bin_centers=bin_centers,
-        active_mask_nd=active_mask,
-        grid_shape=centers_shape,
-        connect_diagonal=False,
-    )
-    # There’s exactly 1 active bin → 1 node, 0 edges
-    assert conn_graph.number_of_nodes() == 1
-    assert conn_graph.number_of_edges() == 0
+    # There’s exactly 1 active bin, so it has no neighbor pairs.
+    assert regular_grid_pairs(active_mask).shape == (0, 2)
 
     # 4) Compute per-dimension bin sizes by differencing each edge array:
     diffs = [float(np.diff(e)[0]) for e in edges_tuple]

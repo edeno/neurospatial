@@ -17,6 +17,7 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     locate,
     region_bin_mask,
+    require_position_columns,
 )
 
 if TYPE_CHECKING:
@@ -105,8 +106,9 @@ def coordinate_hint(
     str
         The ``Fix:`` text for a float or boolean bin target.
     """
-    polar = isinstance(coordinates, EgocentricPolarSystem)
-    rows = "(distance, angle) rows" if polar else "coordinate rows"
+    rows = (
+        "(distance, angle) rows" if coordinates.kind == "polar" else "coordinate rows"
+    )
     if takes_points:
         return f"pass {rows} with points= instead, one row per point"
     return (
@@ -209,11 +211,7 @@ def validate_bin_indices(
         raise BinIndexOutOfRangeError(
             int(indices[out_of_range][0]),
             n_bins=n_bins,
-            coordinate_kind=(
-                "polar"
-                if isinstance(coordinates, EgocentricPolarSystem)
-                else "cartesian"
-            ),
+            coordinate_kind=coordinates.kind,
         )
     return indices.astype(np.intp, copy=False)
 
@@ -379,19 +377,8 @@ def locate_points(
                 fix=f"pass coordinates as an array of shape (n_points, {n_dims})",
             )
         ) from error
-    if array.ndim != 2 or array.shape[1] != n_dims:
-        example = {
-            1: "points=np.reshape(points, (-1, 1))",
-            2: "points=[[x, y]]",
-        }.get(n_dims, "points=np.atleast_2d(point)")
-        raise ValueError(
-            _format_error(
-                f"{operation} got points= with shape {array.shape}; expected "
-                f"(n_points, {n_dims}) for this {n_dims}-D environment.",
-                why="Why: each row is one point, in the same coordinates as env.bin_centers.",
-                fix=f"pass one row per point, for example {example}",
-            )
-        )
+    # Before the empty and missing-coordinate checks, which read rows.
+    require_position_columns(array, n_dims, call=operation, name="points")
     if array.shape[0] == 0:
         raise ValueError(
             _format_error(
@@ -410,7 +397,7 @@ def locate_points(
                 fix="drop the rows with missing coordinates before the query",
             )
         )
-    indices = locate(binning, arena, array, indexes)
+    indices = locate(binning, arena, array, indexes, call=operation)
     outside = indices < 0
     if np.any(outside):
         first = array[outside][0].tolist()

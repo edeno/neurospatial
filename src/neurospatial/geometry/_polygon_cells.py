@@ -13,7 +13,11 @@ from shapely.ops import polygonize, unary_union
 from shapely.strtree import STRtree
 
 from neurospatial._exceptions import _format_error
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import (
+    ReadOnlyState,
+    axis_ranges,
+    boolean_selection,
+)
 from neurospatial.geometry._locators import (
     Locator,
     LookupIndexes,
@@ -71,6 +75,39 @@ class PolygonCells:
             _validate_polygon(polygon, f"cells[{index}]")
         _check_disjoint(polygons)
         object.__setattr__(self, "polygons", polygons)
+
+    def extent(self) -> tuple[tuple[float, float], ...]:
+        """Bound the polygons, one ``(low, high)`` per axis.
+
+        Returns
+        -------
+        tuple of (float, float)
+            The lowest and highest coordinate of the cells on each axis.
+        """
+        bounds = np.array([polygon.bounds for polygon in self.polygons])
+        return axis_ranges(bounds[:, :2].min(axis=0), bounds[:, 2:].max(axis=0))
+
+    def subset(self, keep: ArrayLike) -> PolygonCells:
+        """Keep the selected polygons in their original order.
+
+        Parameters
+        ----------
+        keep : array_like of bool, shape (n_bins,)
+            True for each polygon to keep.
+
+        Raises
+        ------
+        ValueError
+            If ``keep`` is not a boolean mask with one entry per polygon.
+        """
+        mask = boolean_selection(keep, len(self.polygons))
+        return PolygonCells(
+            tuple(
+                polygon
+                for polygon, selected in zip(self.polygons, mask, strict=True)
+                if selected
+            )
+        )
 
 
 @dataclass(frozen=True, eq=False)
@@ -153,20 +190,6 @@ def _check_disjoint(polygons: tuple[Polygon, ...]) -> None:
                     f"cells[{index}] and cells[{other}] overlap in their interiors.",
                     "provide a nonoverlapping cell partition",
                 )
-
-
-def subset_polygon_cells(cells: PolygonCells, keep: ArrayLike) -> PolygonCells:
-    """Retain polygons in their existing bin order."""
-    mask = np.asarray(keep)
-    if mask.dtype.kind != "b" or mask.shape != (len(cells.polygons),):
-        raise ValueError("keep must be a boolean mask with one entry per polygon.")
-    return PolygonCells(
-        tuple(
-            polygon
-            for polygon, selected in zip(cells.polygons, mask, strict=True)
-            if selected
-        )
-    )
 
 
 def transform_polygon_cells(

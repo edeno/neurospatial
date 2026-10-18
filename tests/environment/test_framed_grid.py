@@ -68,6 +68,62 @@ def test_frame_retains_source_mask_order_and_world_centers(n_dims, kind, offset)
     )
 
 
+def oblique(n_dims, angle, shear, offset):
+    """Rotate the first two axes by ``angle``, then shear and translate."""
+    value = np.eye(n_dims + 1)
+    value[:2, :2] = [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    value[0, :-1] += shear * value[1, :-1]
+    value[:-1, -1] = offset
+    return value
+
+
+def half_step_lattice(n_dims):
+    """Cell centers, shared faces, edges and corners, inside and just outside."""
+    steps = np.arange(-0.5, 4.0, 0.5)
+    return np.stack(np.meshgrid(*[steps] * n_dims, indexing="ij"), -1).reshape(
+        -1, n_dims
+    )
+
+
+@pytest.mark.parametrize("n_dims", [2, 3])
+@pytest.mark.parametrize("angle,shear,offset", [(0.123, 0.3, 13.7), (2.0, 0.0, 1e4)])
+def test_rotating_the_grid_and_positions_together_keeps_each_bin(
+    n_dims, angle, shear, offset
+):
+    # A position on a face shared by two cells belongs to the cell above it on
+    # any rectangular grid. Rotating the grid together with the positions must
+    # not move it into the other cell, whatever the rounding of the rotation.
+    env = grid(n_dims)
+    child = moved(env, oblique(n_dims, angle, shear, offset))
+    source = half_step_lattice(n_dims)
+    world = child._binning.grid_frame.to_world(source)
+    expected = env.bin_at(source)
+    np.testing.assert_array_equal(child.bin_at(world), expected)
+
+    # The binning's own locator applies the same rule, also after a subset.
+    np.testing.assert_array_equal(child._binning.locator.locate(world), expected)
+    keep = np.arange(child.n_bins) % 3 != 1
+    subset = child.subset(mask=keep)
+    renumber = np.full(child.n_bins + 1, -1)
+    renumber[np.flatnonzero(keep)] = np.arange(keep.sum())
+    np.testing.assert_array_equal(subset.bin_at(world), renumber[expected])
+    np.testing.assert_array_equal(
+        subset._binning.locator.locate(world), renumber[expected]
+    )
+
+    # A combined environment finds the same bins in its rotated component.
+    far = moved(grid(n_dims), oblique(n_dims, angle, shear, offset + 100.0))
+    joined = Environment.combine({"near": child, "far": far})
+    np.testing.assert_array_equal(joined.bin_at(world), expected)
+
+    # The bins of start allocation are the bins of bin_at.
+    times = np.arange(len(source), dtype=np.float64)
+    np.testing.assert_array_equal(
+        child.occupancy(times, world, time_allocation="start"),
+        env.occupancy(times, source, time_allocation="start"),
+    )
+
+
 @pytest.mark.parametrize("n_dims", [2, 3])
 def test_composed_frames_and_subsets_keep_logical_ids(n_dims):
     env = grid(n_dims)
@@ -128,7 +184,7 @@ def test_frame_round_trip_owns_all_arrays(
             rectilinear=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
         )
     )
-    env = moved(native, matrix(n_dims))
+    env = moved(native, oblique(n_dims, 0.123, 0.3, 13.7))
     if transport == "dict":
         restored = from_dict(to_dict(env))
     elif transport == "file":
@@ -168,6 +224,13 @@ def test_frame_round_trip_owns_all_arrays(
         np.testing.assert_array_equal(a, b)
         assert not a.flags.writeable
         assert not np.shares_memory(a, b)
+    # The restored locator still assigns points on cell faces like the grid
+    # before the transform.
+    source = half_step_lattice(n_dims)
+    world = expected.to_world(source)
+    np.testing.assert_array_equal(
+        restored._binning.locator.locate(world), native.bin_at(source)
+    )
     np.testing.assert_array_equal(
         restored.bin_at(env.bin_centers), np.arange(env.n_bins)
     )
@@ -342,3 +405,14 @@ def test_hole_ring_order_does_not_change_polygon_identity_after_inverse(angle, r
             replace(loaded._binning, shapes=PolygonCells((corrupted,))),
             arena=loaded.arena,
         )
+
+
+def test_a_replaced_framed_locator_keeps_its_frame():
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), bool), grid_edges=(np.arange(5.0),) * 2
+    ).apply_transform(
+        AffineND(np.array([[0.6, -0.8, 1.0], [0.8, 0.6, 2.0], [0, 0, 1]]))
+    )
+    locator = env._binning.locator
+    assert locator.frame is not None
+    assert replace(locator).frame is locator.frame

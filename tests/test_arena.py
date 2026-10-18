@@ -339,6 +339,43 @@ def test_identity_like_rotation_does_not_refuse_harmless_underflow():
         np.testing.assert_array_equal(result.contains([[1.0, 0.0]]), [True])
 
 
+def test_as_track_maps_centerline_and_scales_width():
+    junction = TrackArena(
+        np.array([[[0.0, 0.0], [4.0, 0.0]], [[4.0, 0.0], [4.0, 3.0]]]), width=2.0
+    )
+    angle = 0.3
+    matrix = np.array(
+        [
+            [2 * np.cos(angle), -2 * np.sin(angle), 7.0],
+            [2 * np.sin(angle), 2 * np.cos(angle), -1.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    twice = junction.transformed(matrix).transformed(matrix)
+    track = twice.as_track()
+    assert isinstance(track, TrackArena)
+    np.testing.assert_allclose(track.width, 8.0, rtol=1e-15)
+    full = matrix @ matrix
+    np.testing.assert_allclose(
+        track.segments,
+        junction.segments @ full[:2, :2].T + full[:2, -1],
+        rtol=0,
+        atol=1e-13,
+    )
+    # The shared junction vertex stays one vertex in the new frame.
+    np.testing.assert_array_equal(track.segments[0, 1], track.segments[1, 0])
+    # Off the boundary, the mapped track and the transformed arena agree.
+    rng = np.random.default_rng(0)
+    points = rng.uniform(-20, 40, size=(500, 2))
+    np.testing.assert_array_equal(track.contains(points), twice.contains(points))
+    assert junction.as_track() is junction
+    assert (
+        TrackArena(junction.segments, None).transformed(matrix).as_track().width is None
+    )
+    for other in (arenas()[2], arenas()[4].transformed(matrix), arenas()[0]):
+        assert other.as_track() is None
+
+
 @pytest.mark.parametrize("gap", [1e-5, 1e-6])
 def test_transformed_track_keeps_resolvable_collective_hole(gap):
     height = np.sqrt(3.0)

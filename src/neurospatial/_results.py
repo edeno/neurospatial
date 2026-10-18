@@ -544,8 +544,6 @@ def _bin_center_coords(
     if env is None:
         return {}
 
-    from neurospatial.geometry import EgocentricPolarSystem
-
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     # bin-center data IS present (env was given); a shape disagreement here is
     # a real inconsistency between the result and its environment, not an
@@ -572,7 +570,7 @@ def _bin_center_coords(
             "recompute the result against this environment."
         )
 
-    if isinstance(getattr(env, "coordinate_system", None), EgocentricPolarSystem):
+    if getattr(env, "coordinate_kind", "cartesian") == "polar":
         return {
             "bin_center_distance": ("bin", bin_centers[:, 0]),
             "bin_center_angle": ("bin", bin_centers[:, 1]),

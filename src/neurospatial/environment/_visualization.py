@@ -7,35 +7,28 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import matplotlib
-import matplotlib.axes
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import cKDTree
 
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.geometry import (
     Binning,
     CartesianSystem,
     EgocentricPolarSystem,
-    HexagonShapes,
-    PolygonCells,
-    TrackLinearization,
-    TriangleShapes,
-    require_grid_context,
 )
 from neurospatial.layout import (
-    _hexagon_patches,
+    _cell_shape,
+    _FieldStyle,
     _plot_binning,
+    _plot_binning_field,
     _plot_track_linear,
-    _polygon_patches,
 )
-from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.regions import Regions
 from neurospatial.regions.plot import plot_regions
 
 if TYPE_CHECKING:
+    import matplotlib.axes
     from matplotlib.colors import Colormap
 
     from neurospatial.layout import ScaleBarConfig
@@ -122,288 +115,6 @@ def _add_scale_bar_if_requested(
             _add_scale_bar_to_axes(ax, extent_x, units, config)
 
 
-# Helper functions for layout-specific rendering
-
-
-def _plot_grid_field(
-    binning: Binning,
-    field: NDArray[np.float64],
-    ax: matplotlib.axes.Axes,
-    cmap: str | Colormap,
-    vmin: float,
-    vmax: float,
-    nan_color: str | None,
-    rasterized: bool,
-    **kwargs: Any,
-) -> Any:
-    """Plot field on grid layout using pcolormesh."""
-    import matplotlib.pyplot as plt
-
-    grid, frame = require_grid_context(
-        binning, "plot_field()", fix="supply rectangular cells"
-    )
-
-    # Validate 2D grid
-    if len(grid.shape) != 2:
-        raise NotImplementedError(
-            f"pcolormesh requires 2D grids, got grid_shape={grid.shape}"
-        )
-
-    # Convert to grid
-    grid_data = map_active_data_to_grid(
-        grid.shape, grid.active_mask, field, fill_value=np.nan
-    )
-
-    # Setup colormap with NaN handling
-    cmap_obj = plt.get_cmap(cmap).copy()
-    if nan_color is not None:
-        cmap_obj.set_bad(color=nan_color, alpha=1.0)
-
-    # Plot
-    x, y = grid.edges
-    if frame is not None:
-        xx, yy = np.meshgrid(x, y, indexing="xy")
-        corners = frame.to_world(np.column_stack((xx.ravel(), yy.ravel())))
-        x, y = (corners[:, axis].reshape(xx.shape) for axis in range(2))
-    mesh = ax.pcolormesh(
-        x,
-        y,
-        grid_data.T,
-        cmap=cmap_obj,
-        vmin=vmin,
-        vmax=vmax,
-        rasterized=rasterized,
-        shading="flat",
-        **kwargs,
-    )
-
-    return mesh
-
-
-def _plot_polygon_field(
-    binning: Binning,
-    field: NDArray[np.float64],
-    ax: matplotlib.axes.Axes,
-    cmap: str | Colormap,
-    vmin: float,
-    vmax: float,
-    nan_color: str | None,
-    rasterized: bool,
-    **kwargs: Any,
-) -> Any:
-    """Render exact polygon rings with the standard missing-value colors."""
-    import matplotlib.pyplot as plt
-    from matplotlib.collections import PatchCollection
-
-    shapes = binning.shapes
-    assert isinstance(shapes, PolygonCells)
-    cmap_obj = plt.get_cmap(cmap).copy()
-    cmap_obj.set_bad(nan_color or "none")
-    collection = PatchCollection(
-        _polygon_patches(shapes), cmap=cmap_obj, rasterized=rasterized, **kwargs
-    )
-    collection.set_array(np.ma.masked_invalid(field))
-    collection.set_clim(vmin, vmax)
-    ax.add_collection(collection)
-    ax.autoscale_view()
-    return collection
-
-
-def _plot_hex_field(
-    binning: Binning,
-    field: NDArray[np.float64],
-    ax: matplotlib.axes.Axes,
-    cmap: str | Colormap,
-    vmin: float,
-    vmax: float,
-    nan_color: str | None,
-    rasterized: bool,
-    **kwargs: Any,
-) -> Any:
-    """Plot field on hexagonal layout using PatchCollection."""
-    from matplotlib.collections import PatchCollection
-
-    shapes = binning.shapes
-    if not isinstance(shapes, HexagonShapes):
-        raise RuntimeError("Hexagonal field plotting requires hexagon cell shapes.")
-
-    # Note: Unlike grid layouts which use colormap's built-in NaN handling,
-    # PatchCollection requires manual filtering of NaN values to avoid creating
-    # empty patches that matplotlib doesn't handle well.
-    # Skip NaN bins if nan_color is None
-    drawn = (
-        np.ones(len(field), dtype=bool) if nan_color is not None else ~np.isnan(field)
-    )
-    if not np.any(drawn):
-        return None
-
-    # Create collection
-    collection = PatchCollection(
-        _hexagon_patches(shapes, shapes.centers[drawn]),
-        cmap=cmap,
-        rasterized=rasterized,
-        **kwargs,
-    )
-    collection.set_array(np.asarray(field)[drawn])
-    collection.set_clim(vmin, vmax)
-    collection.set_edgecolor("none")
-
-    ax.add_collection(collection)
-    return collection
-
-
-def _plot_trimesh_field(
-    binning: Binning,
-    field: NDArray[np.float64],
-    ax: matplotlib.axes.Axes,
-    cmap: str | Colormap,
-    vmin: float,
-    vmax: float,
-    nan_color: str | None,
-    rasterized: bool,
-    **kwargs: Any,
-) -> Any:
-    """Plot field on triangular mesh layout using tripcolor."""
-    import matplotlib.pyplot as plt
-
-    shapes = binning.shapes
-    if not isinstance(shapes, TriangleShapes):
-        raise RuntimeError("Mesh field plotting requires triangular cell shapes.")
-    triangles = shapes.triangles
-    mesh_points = shapes.points
-
-    # Setup colormap with NaN handling
-    cmap_obj = plt.get_cmap(cmap).copy()
-    if nan_color is not None:
-        cmap_obj.set_bad(color=nan_color, alpha=1.0)
-
-    # Plot using tripcolor
-    mesh = ax.tripcolor(
-        mesh_points[:, 0],
-        mesh_points[:, 1],
-        triangles,
-        facecolors=field,
-        cmap=cmap_obj,
-        vmin=vmin,
-        vmax=vmax,
-        rasterized=rasterized,
-        **kwargs,
-    )
-
-    return mesh
-
-
-def _plot_1d_field(
-    linearization: TrackLinearization,
-    units: str | None,
-    field: NDArray[np.float64],
-    ax: matplotlib.axes.Axes,
-    ylabel: str,
-    **kwargs: Any,
-) -> Any:
-    """Plot a track field in physical display coordinates without bridging gaps."""
-    edges, active_mask = linearization.grid_edges, linearization.active_mask
-    x_positions = (edges[0][:-1] + edges[0][1:]) / 2
-    values = np.full(x_positions.shape, np.nan, dtype=np.float64)
-    values[active_mask.ravel()] = field
-
-    # Keep NaNs in the line and fill: dropping them invents interpolation over
-    # unobserved bins and the layout's artificial inter-segment display gaps.
-    kwargs.setdefault("linewidth", 2)
-    (line,) = ax.plot(x_positions, values, **kwargs)
-    ax.fill_between(x_positions, 0, values, alpha=0.3, color=line.get_color())
-
-    unit_label = f" ({units})" if units else ""
-    ax.set_xlabel(f"Linearized track coordinate{unit_label}", fontsize=12)
-    ax.set_ylabel(ylabel if ylabel else "Field Value", fontsize=12)
-    ax.set_title("1D Field Plot", fontsize=14)
-
-    return line
-
-
-def _plot_scatter_field(
-    binning: Binning,
-    coordinates: CartesianSystem | EgocentricPolarSystem,
-    field: NDArray[np.float64],
-    ax: matplotlib.axes.Axes,
-    cmap: str | Colormap,
-    vmin: float,
-    vmax: float,
-    nan_color: str | None,
-    rasterized: bool,
-    **kwargs: Any,
-) -> Any:
-    """Plot field using scatter plot (fallback for unknown layouts)."""
-    import matplotlib.pyplot as plt
-
-    bin_centers = binning.bins.centers
-    n_bins = len(bin_centers)
-    # Filter NaN values if nan_color is None
-    if nan_color is None:
-        valid_mask = ~np.isnan(field)
-        plot_centers = bin_centers[valid_mask]
-        plot_values = field[valid_mask]
-    else:
-        plot_centers = bin_centers
-        plot_values = field.copy()
-
-    if len(plot_centers) == 0:
-        return None
-
-    # Scatter sizes are areas in display points, never physical coordinate
-    # units. Estimate visible spacing after accounting for the eventual axes
-    # limits and aspect ratio. A cap keeps sparse layouts readable as points.
-    if "s" not in kwargs and n_bins > 1:
-        ranges = (
-            np.asarray(binning.dimension_ranges, dtype=float)
-            if binning.dimension_ranges is not None
-            else np.column_stack((bin_centers.min(axis=0), bin_centers.max(axis=0)))
-        )
-        spans = ranges[:2, 1] - ranges[:2, 0]
-        axes_points = np.asarray(ax.get_window_extent().size) * 72.0 / ax.figure.dpi
-        points_per_unit = np.divide(axes_points, spans, out=np.ones(2), where=spans > 0)
-        if coordinates.equal_aspect and np.any(spans > 0):
-            points_per_unit[:] = np.min(points_per_unit[spans > 0])
-        display_centers = (bin_centers[:, :2] - ranges[:2, 0]) * points_per_unit
-        tree = cKDTree(display_centers)
-        # Find nearest neighbor distance for sample
-        sample_size = min(100, n_bins)
-        distances, _ = tree.query(display_centers[:sample_size], k=2)
-        typical_spacing = np.median(distances[:, 1])
-        kwargs["s"] = (
-            min(100.0, (0.8 * typical_spacing) ** 2) if typical_spacing > 0 else 100.0
-        )
-    elif "s" not in kwargs:
-        kwargs["s"] = 100.0
-
-    # Keep caller-supplied per-bin sizes aligned when skipping NaN bins.
-    if nan_color is None:
-        sizes = np.asarray(kwargs["s"])
-        if sizes.ndim > 0 and sizes.size == n_bins:
-            kwargs["s"] = sizes.ravel()[valid_mask]
-    else:
-        # Matplotlib otherwise drops nonfinite colors instead of showing the
-        # documented missing-support color. Copy so global colormaps stay intact.
-        cmap = plt.get_cmap(cmap).copy()
-        cmap.set_bad(nan_color)
-        kwargs.setdefault("plotnonfinite", True)
-    kwargs.setdefault("edgecolors", "none")
-
-    # Plot
-    scatter = ax.scatter(
-        plot_centers[:, 0],
-        plot_centers[:, 1],
-        c=plot_values,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        rasterized=rasterized,
-        **kwargs,
-    )
-
-    return scatter
-
-
 def _plot(
     binning: Binning,
     connectivity: nx.Graph,
@@ -420,14 +131,7 @@ def _plot(
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
 
-    ax = _plot_binning(
-        binning,
-        connectivity,
-        binning.dimension_ranges,
-        labels.layout_type,
-        ax=ax,
-        **l_kwargs,
-    )
+    ax = _plot_binning(binning, connectivity, labels.layout_type, ax=ax, **l_kwargs)
     # layout.plot() always returns an Axes object, never None
     assert ax is not None
     if binning.bins.n_dims == 2:
@@ -505,8 +209,7 @@ def _plot_field(
     import matplotlib.pyplot as plt
 
     n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
-    linearization = binning.linearization
-    is_linearized_track = linearization is not None
+    is_linearized_track = _cell_shape(binning) == "track"
     if field.ndim != 1 or field.shape[0] != n_bins:
         raise ValueError(
             f"field must be 1D array with length n_bins={n_bins}, "
@@ -553,39 +256,18 @@ def _plot_field(
         unit_label = f" ({labels.units})" if labels.units else ""
         ax.set_xlabel(f"Position{unit_label}")
         ax.set_ylabel(colorbar_label or "Field Value")
-    elif binning.rectilinear is not None or binning.grid_frame is not None:
-        mappable = _plot_grid_field(
-            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-        )
-    elif isinstance(binning.shapes, HexagonShapes):
-        mappable = _plot_hex_field(
-            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-        )
-    elif isinstance(binning.shapes, TriangleShapes):
-        mappable = _plot_trimesh_field(
-            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-        )
-    elif isinstance(binning.shapes, PolygonCells):
-        mappable = _plot_polygon_field(
-            binning, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
-        )
-    elif linearization is not None:
-        mappable = _plot_1d_field(
-            linearization, labels.units, field, ax, colorbar_label, **kwargs
-        )
     else:
-        mappable = _plot_scatter_field(
-            binning,
-            labels.coordinates,
-            field,
-            ax,
-            cmap,
-            vmin,
-            vmax,
-            nan_color,
-            rasterized,
-            **kwargs,
+        style = _FieldStyle(
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            nan_color=nan_color,
+            rasterized=rasterized,
+            units=labels.units,
+            coordinates=labels.coordinates,
+            colorbar_label=colorbar_label,
         )
+        mappable = _plot_binning_field(binning, field, ax, style, **kwargs)
 
     # Add colorbar (not for 1D)
     # Note: mappable can be None if all field values are NaN and nan_color=None

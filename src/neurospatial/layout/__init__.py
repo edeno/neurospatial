@@ -1,8 +1,11 @@
 from neurospatial.layout._construction import _built_layout_data as _built_layout_data
+from neurospatial.layout._plot_cells import _cell_shape as _cell_shape
+from neurospatial.layout._plot_cells import _FieldStyle as _FieldStyle
 from neurospatial.layout._plot_cells import _plot_binning as _plot_binning
-from neurospatial.layout._plotting import _hexagon_patches as _hexagon_patches
+from neurospatial.layout._plot_cells import (
+    _plot_binning_field as _plot_binning_field,
+)
 from neurospatial.layout._plotting import _plot_track_linear as _plot_track_linear
-from neurospatial.layout._plotting import _polygon_patches as _polygon_patches
 from neurospatial.layout._scale_bar import ScaleBarConfig
 from neurospatial.layout._scale_bar import (
     _add_scale_bar_to_axes as _add_scale_bar_to_axes,

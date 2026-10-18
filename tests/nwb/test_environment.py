@@ -50,7 +50,7 @@ def test_polar_circularity_survives_nwb_round_trip(
         io.write(empty_nwb)
     with pynwb.NWBHDF5IO(str(path), "r") as io:
         restored = read_environment(io.read())
-    assert restored._angular_is_circular is circular
+    assert restored.coordinate_system.circular is circular
     np.testing.assert_allclose(
         restored.compute_kernel(bandwidth=1.0), env.compute_kernel(bandwidth=1.0)
     )

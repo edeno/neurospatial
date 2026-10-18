@@ -25,7 +25,7 @@ def _count_transitions(
     target_bins: NDArray[np.intp],
     n_bins: int,
     *,
-    graph: nx.Graph | None,
+    neighbor_pairs: NDArray[np.intp] | None,
     normalize: bool,
 ) -> scipy.sparse.csr_matrix:
     """Count observed steps between bins.
@@ -36,9 +36,10 @@ def _count_transitions(
         Bin of each step's start and end, all in ``[0, n_bins)``.
     n_bins : int
         Number of bins.
-    graph : networkx.Graph or None
-        When given, only steps between graph neighbors, or within one bin,
-        are counted; other jumps (such as tracking errors) are dropped.
+    neighbor_pairs : ndarray of intp, shape (n_pairs, 2), or None
+        When given, only steps between these neighbors (in either
+        direction), or within one bin, are counted; other jumps (such as
+        tracking errors) are dropped.
     normalize : bool
         Return row-stochastic probabilities instead of counts.
 
@@ -48,20 +49,19 @@ def _count_transitions(
         ``T[i, j]`` is the number of ``i -> j`` steps, or with ``normalize``
         ``P(next=j | current=i)``; rows without steps sum to zero.
     """
-    if graph is not None:
-        adjacency_set = set()
-        for u, v in graph.edges():
-            adjacency_set.add((u, v))
-            adjacency_set.add((v, u))
-        for node in graph.nodes():
-            adjacency_set.add((node, node))
-        is_adjacent = np.array(
-            [
-                (src, tgt) in adjacency_set
-                for src, tgt in zip(source_bins, target_bins, strict=True)
-            ],
-            dtype=bool,
+    if neighbor_pairs is not None:
+        u, v = neighbor_pairs[:, 0], neighbor_pairs[:, 1]
+        adjacency = scipy.sparse.csr_array(
+            (
+                np.ones(2 * len(neighbor_pairs), dtype=bool),
+                (np.concatenate([u, v]), np.concatenate([v, u])),
+            ),
+            shape=(n_bins, n_bins),
         )
+        is_adjacent = source_bins == target_bins
+        # scipy returns a sparse array, not an ndarray, for empty indices.
+        if source_bins.size:
+            is_adjacent |= np.asarray(adjacency[source_bins, target_bins], dtype=bool)
         source_bins = source_bins[is_adjacent]
         target_bins = target_bins[is_adjacent]
 

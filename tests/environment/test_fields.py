@@ -438,25 +438,6 @@ class TestInterpolate:
         with pytest.raises(ValueError, match=r"Field must be 1-D array"):
             medium_2d_env.interpolate(field_2d, query_points)
 
-    def test_interpolate_wrong_points_dimension_raises(self, medium_2d_env):
-        """Test that wrong points dimension raises ValueError."""
-        rng = np.random.default_rng(42)
-        field = rng.random(medium_2d_env.n_bins)
-        # 3D points for 2D environment
-        query_points_3d = rng.random((10, 3))
-
-        with pytest.raises(ValueError, match=r"Points dimension.*must match"):
-            medium_2d_env.interpolate(field, query_points_3d)
-
-    def test_interpolate_1d_points_raises(self, medium_2d_env):
-        """Test that 1-D points array raises ValueError."""
-        rng = np.random.default_rng(42)
-        field = rng.random(medium_2d_env.n_bins)
-        points_1d = rng.random(10)
-
-        with pytest.raises(ValueError, match=r"Points must be 2-D array"):
-            medium_2d_env.interpolate(field, points_1d)
-
     def test_interpolate_invalid_mode_raises(self, medium_2d_env):
         """Test that invalid mode raises ValueError."""
         rng = np.random.default_rng(42)

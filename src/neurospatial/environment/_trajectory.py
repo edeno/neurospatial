@@ -15,7 +15,6 @@ offsets are ``np.int64``.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -27,6 +26,7 @@ from numpy.typing import NDArray
 from neurospatial._intervals import (
     as_intervals,
     interval_valid_mask,
+    observed_interval_mask,
     start_allocated_occupancy,
     warn_excluded_intervals,
 )
@@ -39,6 +39,7 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     locate,
     require_cartesian,
+    require_position_columns,
     require_rectilinear,
 )
 from neurospatial.ops import (
@@ -46,7 +47,6 @@ from neurospatial.ops import (
     _linear_grid_occupancy,
     _polygon_linear_occupancy,
     _random_walk_transitions,
-    _source_grid,
     _uses_polygon_allocation,
 )
 from neurospatial.ops import (
@@ -101,7 +101,6 @@ def _occupancy(
     binning: Binning,
     arena: Arena,
     coordinates: CartesianSystem | EgocentricPolarSystem,
-    dimension_ranges: Sequence[tuple[float, float]] | None,
     cache: AnalysisCache,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -116,20 +115,8 @@ def _occupancy(
     times, positions = validate_times_positions(
         times, positions, call="Environment.occupancy"
     )
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be 2-dimensional array (n_samples, n_dims), "
-            f"got shape {positions.shape}"
-        )
-
-    # Validate positions dimensionality
-    if dimension_ranges is not None:
-        expected_dims = len(dimension_ranges)
-        if positions.shape[1] != expected_dims:
-            raise ValueError(
-                f"positions must have {expected_dims} dimensions to match environment. "
-                f"Got {positions.shape[1]} dimensions."
-            )
+    # Before the empty and single-sample returns, which never look positions up.
+    require_position_columns(positions, n_dims, call="Environment.occupancy")
 
     # Validate speed parameters
     if min_speed is not None and speed is None:
@@ -192,12 +179,7 @@ def _occupancy(
     # bind to the nearest edge bin, so a tracking-error overshoot
     # inflated occupancy at the boundary while bin_sequence
     # correctly flagged the same sample as -1.
-    bin_indices = locate(binning, arena, positions, cache)
-    if time_allocation == "linear" and n_dims != 2 and binning.grid_frame is not None:
-        source_locator, source_positions = _source_grid(binning.grid_frame, positions)
-        bin_indices = source_locator.locate(source_positions)
-        if arena.domain_known:
-            bin_indices[~arena.contains(positions)] = -1
+    bin_indices = locate(binning, arena, positions, cache, call="Environment.occupancy")
 
     # Compute time intervals
     dt = np.diff(times)
@@ -279,7 +261,7 @@ def _occupancy(
         # Use mode='transition' for occupancy (counts), not 'density'
         # This ensures mass conservation: kernel columns sum to 1
         kernel = _compute_kernel(
-            cache, binning, bandwidth, mode="transition", use_cache=True
+            cache, binning, bandwidth, mode="transition", writable=False
         )
         occupancy = kernel @ occupancy
 
@@ -293,6 +275,7 @@ def _bin_sequence(
     binning: Binning,
     arena: Arena,
     cache: AnalysisCache,
+    call: str,
     dedup: bool,
     outside_value: int | None,
     gap_splits_runs: bool,
@@ -302,32 +285,14 @@ def _bin_sequence(
     """Shared implementation for ``bin_sequence`` and
     ``bin_sequence_with_runs``: always computes both bins and runs;
     the public methods choose which fields of the result to expose.
+    ``call`` names the public method in error messages.
     """
-    times, positions = validate_times_positions(
-        times, positions, call="Environment.bin_sequence"
-    )
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be a 2-dimensional array (n_samples, n_dims), "
-            f"got shape {positions.shape}"
-        )
+    times, positions = validate_times_positions(times, positions, call=call)
+    # Before the gap warnings, so wrong positions are reported first.
+    require_position_columns(positions, binning.bins.n_dims, call=call)
 
-    # Validate dimensions match environment
-    n_dims = binning.bins.n_dims
-    if positions.shape[1] != n_dims:
-        raise ValueError(
-            f"positions must have {n_dims} dimensions to match environment. "
-            f"Got positions.shape[1] = {positions.shape[1]}"
-        )
-
-    resolved_epochs = as_intervals(epochs, name="epochs")
-    mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
-    warn_excluded_intervals(
-        times,
-        mask,
-        max_gap=max_gap,
-        epochs=resolved_epochs,
-        result="the bin sequence is empty",
+    mask = observed_interval_mask(
+        times, max_gap=max_gap, epochs=epochs, result="the bin sequence is empty"
     )
     sample_valid = np.zeros(times.size, dtype=bool)
     sample_valid[:-1] |= mask
@@ -346,7 +311,7 @@ def _bin_sequence(
 
     # Map positions to bin indices
     # Use bin_at which returns -1 for points outside environment
-    bin_indices = locate(binning, arena, positions, cache).astype(np.intp)
+    bin_indices = locate(binning, arena, positions, cache, call=call)
 
     # Samples belong to a recording only if they touch a valid interval.
     if outside_value is None:
@@ -356,7 +321,6 @@ def _bin_sequence(
 
     # Apply deduplication if requested
     deduplicated_bins: NDArray[np.intp]
-    deduplicated_indices: NDArray[np.int_]
 
     # Recording breaks always split repeats. Outside-sample gaps retain
     # the plain sequence's legacy dedup behavior, and split the run view.
@@ -377,12 +341,7 @@ def _bin_sequence(
         ]
         change_points = bin_change | gap_change | recording_change
 
-    if dedup:
-        deduplicated_bins = bin_indices[change_points]
-        deduplicated_indices = original_indices[change_points]
-    else:
-        deduplicated_bins = bin_indices
-        deduplicated_indices = original_indices
+    deduplicated_bins = bin_indices[change_points] if dedup else bin_indices
 
     if len(deduplicated_bins) == 0:
         return BinSequenceWithRuns(
@@ -400,19 +359,11 @@ def _bin_sequence(
     # extent from start to end (inclusive) covers only original-array
     # indices that are actually in this run — outside samples do not
     # leak into run_lengths anymore.
-    change_positions = np.where(change_points)[0]
-    if dedup:
-        run_starts = deduplicated_indices
-        run_ends_indexer = (
-            np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
-        )
-        run_ends = original_indices[run_ends_indexer]
-    else:
-        run_starts = original_indices[change_positions]
-        run_ends_indexer = (
-            np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
-        )
-        run_ends = original_indices[run_ends_indexer]
+    change_positions = np.flatnonzero(change_points)
+    run_starts = original_indices[change_positions]
+    run_ends = original_indices[
+        np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+    ]
 
     # Convert (start, end) to (start, length) for the public API. ``end``
     # is inclusive, so length = end - start + 1 is always >= 1.
@@ -497,7 +448,6 @@ def _transitions(
         # EMPIRICAL MODE
         return _empirical_transitions(
             bins=bins,
-            graph=graph,
             binning=binning,
             arena=arena,
             cache=cache,
@@ -514,7 +464,6 @@ def _transitions(
 def _empirical_transitions(
     bins: NDArray[np.intp] | None = None,
     *,
-    graph: nx.Graph,
     binning: Binning,
     arena: Arena,
     cache: AnalysisCache,
@@ -626,19 +575,17 @@ def _empirical_transitions(
             binning=binning,
             arena=arena,
             cache=cache,
+            call="Environment.transitions",
             dedup=False,
             outside_value=-1,
             gap_splits_runs=False,
             max_gap=None,
             epochs=None,
         ).bins
-        resolved_epochs = as_intervals(epochs, name="epochs")
-        mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
-        warn_excluded_intervals(
+        mask = observed_interval_mask(
             times,
-            mask,
             max_gap=max_gap,
-            epochs=resolved_epochs,
+            epochs=epochs,
             result="the transition matrix is empty",
         )
 
@@ -689,7 +636,7 @@ def _empirical_transitions(
         source_bins,
         target_bins,
         n_bins,
-        graph=None if allow_teleports else graph,
+        neighbor_pairs=None if allow_teleports else binning.bins.pairs,
         normalize=normalize,
     )
 
@@ -710,5 +657,5 @@ def _diffusion_transitions(
         )
 
     return _diffusion_transition_matrix(
-        _compute_kernel(cache, binning, bandwidth, mode="transition", use_cache=True)
+        _compute_kernel(cache, binning, bandwidth, mode="transition", writable=False)
     )

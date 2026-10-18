@@ -212,14 +212,6 @@ class TestOutOfRangeHintFollowsGeometry:
 
 
 class TestPointsAreValidated:
-    def test_one_dimensional_points_raise_with_fix(self, grid):
-        with pytest.raises(ValueError, match=r"shape \(2,\)[\s\S]*points=\[\[x, y\]\]"):
-            grid.distance_to(points=[15.0, 15.0])
-
-    def test_wrong_width_raises(self, grid):
-        with pytest.raises(ValueError, match=r"expected \(n_points, 2\)"):
-            grid.distance_to(points=[[1.0, 2.0, 3.0]])
-
     @pytest.mark.parametrize("bad", [np.nan, np.inf])
     def test_nonfinite_points_raise(self, grid, bad):
         with pytest.raises(ValueError, match=r"NaN or inf[\s\S]*Fix:"):

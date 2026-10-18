@@ -8,6 +8,7 @@ function here takes the cache and the published :class:`Binning` explicitly.
 from __future__ import annotations
 
 import warnings
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -33,10 +34,14 @@ from neurospatial.geometry import (
     DiffusionGeometry,
     EgocentricPolarSystem,
     FaceGeometry,
+    KnownFaces,
     combined_diffusion,
+    get_centers,
     locate,
     require_grid_context,
+    require_position_columns,
 )
+from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.ops import (
     _HEAT_KERNEL_RANK_TOL,
     _RESOLUTION_MARGIN,
@@ -107,24 +112,11 @@ def _interpolate(
             "Infinite values are not supported in interpolation operations."
         )
 
-    # Input validation - points
+    # Before interpolating, which reads the coordinates before the lookup.
     points = np.asarray(points, dtype=np.float64)
-
-    # Check points dimensionality
-    if points.ndim != 2:
-        raise ValueError(
-            f"Points must be 2-D array (got {points.ndim}-D array). "
-            f"Expected shape (n_points, n_dims), got shape {points.shape}."
-        )
-
-    # Check points dimension matches environment
-    n_dims = binning.bins.n_dims
-    if points.shape[1] != n_dims:
-        raise ValueError(
-            f"Points dimension {points.shape[1]} must match environment "
-            f"dimension {n_dims}. Expected shape (n_points, {n_dims}), "
-            f"got shape {points.shape}."
-        )
+    require_position_columns(
+        points, binning.bins.n_dims, call="Environment.interpolate", name="points"
+    )
 
     # Validate mode
     valid_modes = {"nearest", "linear"}
@@ -165,7 +157,7 @@ def _interpolate_points(
         values = _interpolate_nearest(cache, binning, field, points)
     else:  # mode == "linear"
         values = _interpolate_linear(binning, field, points)
-    owners = locate(binning, arena, points, cache)
+    owners = locate(binning, arena, points, cache, call="Environment.interpolate")
     values[owners < 0] = np.nan
     return values
 
@@ -261,16 +253,13 @@ def _interpolate_linear(
     )
 
     grid_shape = grid.shape
-    grid_edges = grid.edges
-    n_dims = len(grid_shape)
 
-    # Scatter active-bin values into a full-grid array before reshaping.
-    # `field` is indexed by active-bin id (length n_bins); `grid_shape`
-    # is the FULL grid. On a holed/masked grid n_bins < prod(grid_shape),
-    # so a direct reshape would raise. Use finite placeholders for inactive
-    # cells and mask their positive-weight contributions separately below:
-    # 0 * NaN would otherwise erase even exact active-bin center values.
-    # NaN (missing) field values are handled the same way as inactive cells.
+    # Scatter active-bin values into the full grid. `field` is indexed by
+    # active-bin id; on a holed/masked grid n_bins < prod(grid_shape). Use
+    # finite placeholders for inactive cells and mask their positive-weight
+    # contributions separately below: 0 * NaN would otherwise erase even exact
+    # active-bin center values. NaN (missing) field values are handled the
+    # same way as inactive cells.
     n_full = int(np.prod(grid_shape))
     active_mask = grid.active_mask
     missing_values = np.isnan(field)
@@ -279,20 +268,14 @@ def _interpolate_linear(
         # Fully-active grid: field already covers every cell.
         field_grid = field.reshape(grid_shape)
     else:
-        active_cells = np.flatnonzero(active_mask.ravel())
-        full_field = np.zeros(n_full, dtype=np.float64)
-        full_field[active_cells] = np.where(missing_values, 0.0, field)
-        field_grid = full_field.reshape(grid_shape)
-        missing_cells = ~active_mask.ravel()
-        missing_cells[active_cells[missing_values]] = True
+        field_grid = map_active_data_to_grid(
+            grid_shape, active_mask, np.where(missing_values, 0.0, field), 0.0
+        )
+        missing_cells = np.isnan(
+            map_active_data_to_grid(grid_shape, active_mask, field, np.nan)
+        )
 
-    # Create grid points for each dimension (bin centers)
-    grid_points: list[NDArray[np.float64]] = []
-    for dim in range(n_dims):
-        edges = grid_edges[dim]
-        # Bin centers are midpoints between edges
-        centers = (edges[:-1] + edges[1:]) / 2
-        grid_points.append(centers)
+    grid_points = [get_centers(edges) for edges in grid.edges]
 
     if frame is not None:
         points = frame._project_to_planes(
@@ -314,7 +297,7 @@ def _interpolate_linear(
     if has_missing:
         missing_weight = RegularGridInterpolator(
             grid_points,
-            missing_cells.reshape(grid_shape).astype(np.float64),
+            missing_cells.astype(np.float64),
             method="linear",
             bounds_error=False,
             fill_value=1.0,
@@ -327,6 +310,17 @@ def _interpolate_linear(
 def face_geometry(cache: AnalysisCache, binning: Binning) -> FaceGeometry:
     """Validated cell faces, built once per published geometry."""
     return cache.get(FACE_GEOMETRY, binning.faces.build)
+
+
+def with_cached_faces(cache: AnalysisCache, binning: Binning) -> Binning:
+    """Return ``binning`` with its faces taken from the cache, built once.
+
+    A derivation that carries faces into its child then reads the parent's
+    cached faces instead of building them again from the layout's recipe.
+    """
+    if not binning.faces.available or isinstance(binning.faces, KnownFaces):
+        return binning
+    return replace(binning, faces=KnownFaces(face_geometry(cache, binning)))
 
 
 def require_face_geometry(
@@ -362,6 +356,18 @@ def diffusion_eigenbasis(cache: AnalysisCache) -> _DiffusionEigenbasis:
     return cache.get(DIFFUSION_EIGENBASIS, _DiffusionEigenbasis)
 
 
+def _check_kernel_mode(mode: str) -> None:
+    """Refuse a diffusion-kernel mode other than the three defined ones."""
+    if mode not in ("transition", "density", "average"):
+        raise ValueError(
+            f"mode must be one of 'transition', 'density' or 'average' "
+            f"(got {mode!r}). Use 'transition' for mass-conserving smoothing of "
+            "extensive quantities, 'density' for count-to-density (KDE), or "
+            "'average' for volume-unbiased averaging of an intensive field "
+            "(rate map)."
+        )
+
+
 def _compute_kernel(
     cache: AnalysisCache,
     binning: Binning,
@@ -369,17 +375,14 @@ def _compute_kernel(
     *,
     mode: KernelMode = "density",
     use_cache: bool = True,
+    writable: bool = True,
 ) -> NDArray[np.float64]:
-    """Dense finite-volume diffusion kernel, optionally cached by bandwidth and mode."""
-    # Validate mode.
-    valid_modes = {"transition", "density", "average"}
-    if mode not in valid_modes:
-        raise ValueError(
-            f"mode must be one of {valid_modes} (got '{mode}'). "
-            "Use 'transition' for mass-conserving smoothing of extensive "
-            "quantities, 'density' for count-to-density (KDE), or 'average' "
-            "for volume-unbiased averaging of an intensive field (rate map)."
-        )
+    """Dense finite-volume diffusion kernel, optionally cached by bandwidth and mode.
+
+    A cached kernel is read-only; ``writable=True`` returns a copy of it, and
+    ``writable=False`` a read-only view for callers that only read it.
+    """
+    _check_kernel_mode(mode)
 
     # The kernel uses the cached diffusion geometry, whose cell measures
     # (the layout's bin sizes) are the mass matrix M used by every mode.
@@ -387,10 +390,15 @@ def _compute_kernel(
         geometry = diffusion_geometry(cache, binning)
         return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)
 
+    def build_read_only() -> NDArray[np.float64]:
+        kernel = build()
+        kernel.setflags(write=False)
+        return kernel
+
     if not use_cache:
         return build()
-    kernel = cache.get_recent(DIFFUSION_KERNELS, (bandwidth, mode), build)
-    return cast("NDArray[np.float64]", kernel.copy())
+    kernel = cache.get_recent(DIFFUSION_KERNELS, (bandwidth, mode), build_read_only)
+    return cast("NDArray[np.float64]", kernel.copy() if writable else kernel.view())
 
 
 def _field_batch(
@@ -480,24 +488,7 @@ def _smooth(
             "operations."
         )
 
-    # Validate bandwidth
-    if bandwidth <= 0:
-        raise ValueError(
-            f"bandwidth must be positive (got {bandwidth}). "
-            "Bandwidth controls the spatial scale of smoothing."
-        )
-
-    # Validate mode
-    valid_modes = {"transition", "density", "average"}
-    if mode not in valid_modes:
-        raise ValueError(
-            f"mode must be one of {valid_modes} (got '{mode}'). "
-            "Use 'transition' for mass-conserving smoothing of extensive "
-            "data, 'density' for count-to-density, or 'average' for "
-            "volume-unbiased averaging of an intensive field."
-        )
-
-    # Apply the diffusion smoothing via the matrix-free apply-path. On a
+    # _diffuse checks mode and bandwidth. Apply the diffusion smoothing via the matrix-free apply-path. On a
     # NaN-free field this is a pure linear operator -- no clip / renorm -- so
     # smoothing a SIGNED field is preserved; a field with NaN is averaged over
     # its observed bins (mode="average" only). It reproduces the dense kernel to
@@ -516,11 +507,7 @@ def _diffuse(
     backend: Literal["numpy", "jax"] = "numpy",
 ) -> NDArray[np.float64]:
     """Validate a field batch and apply the cached truncated heat operator."""
-    if mode not in ("transition", "density", "average"):
-        raise ValueError(
-            f"mode must be one of {{'transition', 'density', 'average'}} "
-            f"(got '{mode}')."
-        )
+    _check_kernel_mode(mode)
     if backend not in ("numpy", "jax"):
         raise ValueError(f"backend must be 'numpy' or 'jax' (got '{backend}').")
     if not bandwidth > 0:

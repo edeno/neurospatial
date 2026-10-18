@@ -14,9 +14,7 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 _GUARDED: set[Callable[..., Any]] = set()
 
 
-def cartesian_only(
-    *, why: str, fix: str, example: str | None = None
-) -> Callable[[_F], _F]:
+def cartesian_only(*, why: str, fix: str, example: str) -> Callable[[_F], _F]:
     """Mark an Environment member as Cartesian-only and refuse polar calls.
 
     The guard runs when the member is called, before it reads any
@@ -33,10 +31,9 @@ def cartesian_only(
         One sentence on why this member needs Cartesian coordinates.
     fix : str
         What works on a polar environment instead.
-    example : str or None, optional
+    example : str
         Code for that alternative, run by the tests (see
-        :class:`~neurospatial.CartesianOnlyError`). None when a polar
-        environment has no equivalent.
+        :class:`~neurospatial.CartesianOnlyError`).
 
     Returns
     -------

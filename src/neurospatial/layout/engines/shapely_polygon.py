@@ -1,9 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import matplotlib
-import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
@@ -18,6 +16,9 @@ from neurospatial.layout.helpers.regular_grid import _create_regular_grid
 from neurospatial.layout.helpers.utils import check_grid_size_safety
 from neurospatial.layout.mixins import _GridMixin
 
+if TYPE_CHECKING:
+    import matplotlib.axes
+
 
 class ShapelyPolygonLayout(_GridMixin):
     """2D grid layout masked by a Shapely Polygon.
@@ -29,7 +30,6 @@ class ShapelyPolygonLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
 
     grid_edges: tuple[NDArray[np.float64], ...] | None = None
@@ -37,6 +37,7 @@ class ShapelyPolygonLayout(_GridMixin):
     active_mask: NDArray[np.bool_] | None = None
 
     layout_type: str = LayoutType.SHAPELY_POLYGON.value
+    size_parameter: ClassVar[str | None] = "bin_size"
     _build_params_used: dict[str, Any]
 
     # Layout Specific
@@ -46,7 +47,6 @@ class ShapelyPolygonLayout(_GridMixin):
         """Initialize a ShapelyPolygonLayout engine."""
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2), dtype=np.float64)  # 2D Layout
-        self.connectivity = None
         self.dimension_ranges = None
         self.grid_edges = None
         self.grid_shape = None
@@ -126,14 +126,14 @@ class ShapelyPolygonLayout(_GridMixin):
 
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
+        ax: "matplotlib.axes.Axes | None" = None,
         figsize=(7, 7),
         cmap: str = "bone_r",
         alpha: float = 0.7,
         show_connectivity: bool = True,
         node_size: float = 20,
         node_color: str = "blue",
-    ) -> matplotlib.axes.Axes:
+    ) -> "matplotlib.axes.Axes":
         """Plot the ShapelyPolygon layout.
 
         Displays the active grid cells and overlays the defining polygon.
@@ -168,7 +168,6 @@ class ShapelyPolygonLayout(_GridMixin):
             or self.grid_edges is None
             or self.active_mask is None
             or self.grid_shape is None
-            or self.connectivity is None
         ):
             raise LayoutNotBuiltError(
                 type(self).__name__,
@@ -179,7 +178,6 @@ class ShapelyPolygonLayout(_GridMixin):
                         "grid_edges",
                         "active_mask",
                         "grid_shape",
-                        "connectivity",
                     )
                     if getattr(self, name) is None
                 ),

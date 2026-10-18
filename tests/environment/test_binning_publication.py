@@ -145,7 +145,9 @@ def test_locator_preserves_layout_lookup_and_input_arrays(
     assert actual_warnings == expected_warnings
     if env.arena.domain_known:
         # Polar angles are wrapped into the angle range before the lookup.
-        query = env.arena.wrap_angles(points) if env._is_polar else points
+        query = (
+            env.arena.wrap_angles(points) if env.coordinate_kind == "polar" else points
+        )
         inside = env.arena.contains(query)
         # Qhull can choose either triangle at a shared edge, depending
         # on preceding queries. Compare the same arena-filtered batch.
@@ -290,16 +292,12 @@ def test_faces_reject_changed_pair_order() -> None:
             np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
         )
     )
-    reordered = nx.Graph()
-    reordered.add_nodes_from(reversed(list(env.connectivity.nodes)))
-    reordered.add_edges_from(env.connectivity.edges(data=True))
-    assert set(map(frozenset, reordered.edges)) == set(
-        map(frozenset, env.connectivity.edges)
-    )
-    assert list(reordered.edges) != list(env.connectivity.edges)
     layout = _source_layout(env)
-    layout.connectivity = reordered
+    native = layout.binning().bins
+    # Reverse both the pair order and each pair's orientation.
+    layout._set_neighbor_pairs(native.pairs[::-1, ::-1], native.pair_distances[::-1])
     binning = layout.binning()
+    assert not np.array_equal(binning.bins.pairs, native.pairs)
     faces = binning.faces.build()
     np.testing.assert_array_equal(faces.edges, binning.bins.pairs)
     expected = face_geometry(env._cache, env._binning)
@@ -349,8 +347,27 @@ def test_require_rectilinear_message_unchanged() -> None:
     )
 
 
-def test_polar_publication_refuses_coordinates_that_disagree_with_the_arena():
-    from neurospatial.geometry._coordinates import EgocentricPolarSystem
+@pytest.mark.parametrize("circular", [True, False])
+def test_polar_publication_reads_the_angle_wrap_from_the_arena(circular):
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 10.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 2,
+        circular_angle=circular,
+    )
+    republished = publish_binning(
+        env._binning,
+        layout_type=env.layout_type,
+        coordinate_kind="polar",
+        arena=env.arena,
+    )
+    assert republished.coordinate_system.circular is circular
+    assert republished.coordinate_system.periodic_axes == ((1,) if circular else ())
+
+
+def test_polar_publication_refuses_an_arena_without_the_angle_wrap():
+    from neurospatial.arena import UnknownArena
 
     env = Environment.from_polar_egocentric(
         distance_range=(0.0, 10.0),
@@ -358,21 +375,17 @@ def test_polar_publication_refuses_coordinates_that_disagree_with_the_arena():
         distance_bin_size=5.0,
         angle_bin_size=np.pi / 2,
     )
-    assert env.arena.circular
-    with pytest.raises(ValueError, match="circular=True") as error:
-        publish_binning(
-            env._binning,
-            layout_type=env.layout_type,
-            coordinates=EgocentricPolarSystem(False),
-            arena=env.arena,
-        )
-    assert "Fix: pass coordinates matching the arena's circular flag" in str(
-        error.value
-    )
+    for arena in (None, UnknownArena(2, "polar")):
+        with pytest.raises(ValueError, match="needs an EgocentricSurround arena"):
+            publish_binning(
+                env._binning,
+                layout_type=env.layout_type,
+                coordinate_kind="polar",
+                arena=arena,
+            )
 
 
 def _center_lookup_paths():
-    import networkx as nx
     from shapely.geometry import box
 
     from neurospatial.binning import KnownFaces

@@ -22,7 +22,6 @@ from neurospatial.geometry import (
     MaskArena,
     PolygonCells,
     RectilinearLocator,
-    TrackArena,
     UnknownArena,
     _CombinedArena,
     _TransformedArena,
@@ -39,20 +38,17 @@ from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
 if TYPE_CHECKING:
     from neurospatial.geometry import FramedGrid
 
+# Names the analysis in a lookup error; its points come from validated positions.
+_LINEAR_CALL = "occupancy with time_allocation='linear'"
+
 
 def _source_grid(
     frame: FramedGrid, positions: NDArray[np.float64]
 ) -> tuple[RectilinearLocator, NDArray[np.float64]]:
     """Recover source edge planes only within bounded projection roundoff."""
-    grid = frame.source
-    original = frame._project_to_planes(
-        positions, grid.edges, operation="Linear allocation"
+    return frame._source_locator(), frame._project_to_planes(
+        positions, frame.source.edges, operation="Linear allocation"
     )
-    mapping = np.full(grid.active_mask.size, -1, dtype=np.intp)
-    mapping[grid.active_mask.ravel()] = np.arange(np.count_nonzero(grid.active_mask))
-    return RectilinearLocator(
-        grid.edges, grid.shape, grid.active_mask, mapping
-    ), original
 
 
 @dataclass(frozen=True)
@@ -259,7 +255,7 @@ def _uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
             "a grid with a restricted arena mask"
             if isinstance(arena, MaskArena)
             else "a track"
-            if isinstance(arena, TrackArena)
+            if arena.as_track() is not None
             else "this arena"
         )
         raise NotImplementedError(
@@ -375,7 +371,7 @@ def retained_linear_intervals(
 
     def owner_of(queries):
         if source_locator is None:
-            return locate(binning, arena, queries, indexes)
+            return locate(binning, arena, queries, indexes, call=_LINEAR_CALL)
         owners = source_locator.locate(queries, indexes)
         if domain is not None:
             owners[~shapely.covers(domain, shapely.points(queries))] = -1
@@ -597,7 +593,7 @@ def _retained_box_intervals(
             stop - start
         )
         if frame is None:
-            bins = locate(binning, arena, midpoints, indexes)
+            bins = locate(binning, arena, midpoints, indexes, call=_LINEAR_CALL)
         else:
             bins = source_locator.locate(midpoints, indexes)
             if arena.domain_known:

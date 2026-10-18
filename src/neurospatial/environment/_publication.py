@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
+    Literal,
     NoReturn,
     TypeVar,
     cast,
@@ -45,10 +46,6 @@ from neurospatial.geometry import (
 from neurospatial.geometry import grid_index as compute_grid_index
 from neurospatial.layout import _built_layout_data
 from neurospatial.layout.base import build_choices
-from neurospatial.layout.validation import (
-    GraphValidationError,
-    validate_connectivity_graph,
-)
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -259,22 +256,10 @@ def _published_graph(binning: Binning) -> _PublishedGraph:
     :func:`neurospatial.geometry.graph_from_binning`; each undirected
     edge keeps one attribute record shared by both directions.
     """
-    source = graph_from_binning(binning)
-    graph = _PublishedGraph()
-    graph.__dict__["graph"] = _ReadOnlyGraphAttributes(source.graph)
-    graph._node = {
-        node: _ReadOnlyGraphAttributes(attrs) for node, attrs in source._node.items()
-    }
-    frozen_edges: dict[int, _ReadOnlyGraphAttributes] = {}
-    adjacency: dict[Any, dict[Any, _ReadOnlyGraphAttributes]] = {}
-    for u, neighbors in source._adj.items():
-        row = adjacency[u] = {}
-        for v, attrs in neighbors.items():
-            frozen = frozen_edges.get(id(attrs))
-            if frozen is None:
-                frozen = frozen_edges[id(attrs)] = _ReadOnlyGraphAttributes(attrs)
-            row[v] = frozen
-    graph._adj = adjacency
+    graph = graph_from_binning(
+        binning, graph_class=_PublishedGraph, attributes=_ReadOnlyGraphAttributes
+    )
+    graph.__dict__["graph"] = _ReadOnlyGraphAttributes()
     nx.freeze(graph)
     graph._published = True
     return graph
@@ -334,19 +319,33 @@ class _Provenance:
         Names of the derivations (``"subset"``, ``"clip"``, ``"rebin"``,
         ``"apply_transform"``, ``"combine"``) applied since the bins were
         built, oldest first.
+    length_scale : float or None
+        How long one unit of length in the build choices is in the current
+        coordinates. It is 1.0 while the bins are in the coordinates the
+        choices were recorded in, is multiplied by the scale of each later
+        similarity transform, and is None after any other transform, which
+        stretches lengths differently along different directions. A
+        ``bin_size`` of 2 with a ``length_scale`` of 3 describes cells 6
+        wide now.
 
     Raises
     ------
     TypeError
         If a build choice is not a scalar or a flat sequence of scalars, or a
         derivation name is not a string.
+    ValueError
+        If ``length_scale`` is not None or a finite positive number.
     """
 
     choices: tuple[tuple[str, Any], ...]
     derivations: tuple[str, ...]
+    length_scale: float | None
 
     def __init__(
-        self, build_params: Mapping[str, Any], derivations: tuple[str, ...] = ()
+        self,
+        build_params: Mapping[str, Any],
+        derivations: tuple[str, ...] = (),
+        length_scale: float | None = 1.0,
     ) -> None:
         choices = build_choices(build_params, owner="layout_parameters")
         object.__setattr__(self, "choices", tuple(choices.items()))
@@ -354,6 +353,19 @@ class _Provenance:
         if not all(isinstance(step, str) for step in derivations):
             raise TypeError("Derivation names must be strings.")
         object.__setattr__(self, "derivations", derivations)
+        if length_scale is not None:
+            if (
+                isinstance(length_scale, bool)
+                or not isinstance(length_scale, (int, float, np.number))
+                or not np.isfinite(length_scale)
+                or length_scale <= 0
+            ):
+                raise ValueError(
+                    "length_scale must be None or a finite positive number, "
+                    f"got {length_scale!r}."
+                )
+            length_scale = float(length_scale)
+        object.__setattr__(self, "length_scale", length_scale)
 
     @property
     def build_params(self) -> dict[str, Any]:
@@ -379,12 +391,8 @@ def _declared_metadata(
 _EnvironmentT = TypeVar("_EnvironmentT", bound="Environment[Any]")
 
 
-def _validate_coordinates(
-    coordinates: CartesianSystem | EgocentricPolarSystem, arena: Arena
-) -> None:
-    """Refuse a polar environment whose arena disagrees with its angular axis."""
-    if not isinstance(coordinates, EgocentricPolarSystem):
-        return
+def _polar_coordinates(arena: Arena | None) -> EgocentricPolarSystem:
+    """The polar descriptor of ``arena``, which declares whether the angle wraps."""
     if not isinstance(arena, EgocentricSurround):
         raise ValueError(
             _format_error(
@@ -393,17 +401,19 @@ def _validate_coordinates(
                 fix="build the environment with Environment.from_polar_egocentric, or re-save an older record with this version",
             )
         )
-    if arena.circular != coordinates.circular:
-        raise ValueError(
-            _format_error(
-                f"A polar environment's arena has circular={arena.circular}, but "
-                f"its coordinates have circular={coordinates.circular}.",
-                why="Why: both describe whether the angle wraps around, which "
-                "decides the seam neighbors and angular distances.",
-                fix="pass coordinates matching the arena's circular flag, e.g. "
-                "EgocentricPolarSystem(arena.circular)",
-            )
-        )
+    return EgocentricPolarSystem(arena.circular)
+
+
+# The version of the private records an Environment pickles. Bump it whenever
+# a pickled record (metadata, provenance, geometry, binning or locators)
+# gains, loses or reinterprets a field, so a pickle from another version is
+# refused with the advice to use environment files instead of failing later.
+STATE_FORMAT = 2
+
+
+def environment_state(env_dict: dict[str, Any]) -> dict[str, Any]:
+    """The state an Environment pickles: its attributes and the format version."""
+    return {**env_dict, "_state_format": STATE_FORMAT}
 
 
 def _restored_state(state: object) -> dict[str, Any]:
@@ -419,6 +429,7 @@ def _restored_state(state: object) -> dict[str, Any]:
         version of neurospatial.
     """
     expected = {
+        "_state_format": int,
         "_metadata": _Metadata,
         "_regions": Regions,
         "_provenance": _Provenance,
@@ -429,6 +440,7 @@ def _restored_state(state: object) -> dict[str, Any]:
         not isinstance(state, dict)
         or state.keys() != expected.keys()
         or not all(isinstance(state[key], kind) for key, kind in expected.items())
+        or state["_state_format"] != STATE_FORMAT
     ):
         found = sorted(state) if isinstance(state, dict) else type(state).__name__
         raise TypeError(
@@ -447,6 +459,7 @@ def _restored_state(state: object) -> dict[str, Any]:
             )
         )
     geometry: _PublishedGeometry = state["_geometry"]
+    state = {key: value for key, value in state.items() if key != "_state_format"}
     return {
         **state,
         "_geometry": replace(geometry, arena=own_arena(geometry.arena)),
@@ -458,7 +471,7 @@ def _publish(
     cls: type[_EnvironmentT],
     binning: Binning,
     *,
-    coordinates: CartesianSystem | EgocentricPolarSystem,
+    coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
     provenance: _Provenance,
     metadata: _Metadata,
     regions: Regions | None = None,
@@ -470,7 +483,9 @@ def _publish(
     The binning is owned and validated, including that every bin center
     locates its own bin; the arena's physical walls are applied; and the
     navigation graph, grid index and ``dimension_ranges`` are derived from
-    the resulting binning.
+    the resulting binning. The coordinate descriptor is derived here too: a
+    polar environment's :class:`EgocentricSurround` arena is the one record
+    of whether its angle wraps.
 
     Parameters
     ----------
@@ -479,8 +494,9 @@ def _publish(
     binning : Binning
         Bins, lookup and geometry components. Its ``dimension_ranges``, when
         set, are the environment's; otherwise they come from the cells.
-    coordinates : CartesianSystem or EgocentricPolarSystem
-        Meaning of the bin coordinates.
+    coordinate_kind : {'cartesian', 'polar'}, default='cartesian'
+        Meaning of the bin coordinates. A polar environment needs an
+        :class:`EgocentricSurround` ``arena``.
     provenance : _Provenance
         Build choices and derivation history.
     metadata : _Metadata
@@ -488,47 +504,28 @@ def _publish(
     regions : Regions or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
-        Continuous domain. Omission infers one from the binning.
+        Continuous domain. Omission infers a Cartesian one from the binning.
 
     Returns
     -------
     Environment
         A new instance of ``cls``.
     """
-    if not isinstance(coordinates, (CartesianSystem, EgocentricPolarSystem)):
-        raise TypeError(
-            "coordinates must be a CartesianSystem or EgocentricPolarSystem."
-        )
-    polar = isinstance(coordinates, EgocentricPolarSystem)
-    # Whether the angular axis wraps; False for Cartesian coordinates.
-    circular = isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
+    coordinates: CartesianSystem | EgocentricPolarSystem = (
+        _polar_coordinates(arena) if coordinate_kind == "polar" else CartesianSystem()
+    )
     binning = own_binning(binning)
     # The published binning carries the environment's ranges, so the two
     # never disagree after a derivation or a read-back.
     binning = replace(binning, dimension_ranges=binning_ranges(binning))
-    validate_components(
-        binning,
-        binning.linearization is not None,
-        "polar" if polar else "cartesian",
-    )
+    validate_components(binning, coordinates)
     if arena is None:
-        arena = infer_arena(binning, polar=polar, circular=circular)
+        arena = infer_arena(binning)
     arena = own_arena(arena)
-    _validate_coordinates(coordinates, arena)
-    validate_arena(arena, binning, polar=polar)
+    validate_arena(arena, binning, coordinates)
     binning = apply_walls(binning, arena)
+    # Built here from the validated bins, so its attributes need no check.
     graph = _published_graph(binning)
-    try:
-        validate_connectivity_graph(
-            graph,
-            n_dims=binning.bins.n_dims,
-            check_node_attrs=True,
-            check_edge_attrs=True,
-        )
-    except GraphValidationError as error:
-        raise ValueError(
-            f"Invalid connectivity graph from layout engine '{binning.kind}': {error}"
-        ) from error
     env = cls.__new__(cls)
     env._metadata = metadata
     env._provenance = provenance
@@ -555,10 +552,15 @@ def publish_layout(
     metadata: _Metadata,
     regions: Regions | None = None,
     arena: Arena | None = None,
-    coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
-    within_arena: bool = False,
+    coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
 ) -> _EnvironmentT:
     """Consume a built layout once and publish only its owned data.
+
+    Only the bins whose centers lie in a known Cartesian ``arena`` (strictly
+    inside a polygonal one) are kept. They are selected on the layout's
+    binning, as ``subset`` selects them, before the single publication, so
+    the recorded layout and build choices do not depend on whether the arena
+    dropped a bin.
 
     Parameters
     ----------
@@ -571,15 +573,10 @@ def publish_layout(
     regions : Regions or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
-        Continuous domain. Omission infers one from the binning.
-    coordinates : CartesianSystem or EgocentricPolarSystem or None, optional
-        Coordinate meaning; ``None`` means Cartesian.
-    within_arena : bool, default=False
-        Keep only the bins whose centers lie in a known Cartesian ``arena``
-        (strictly inside a polygonal one). The bins are selected on the
-        layout's binning, as ``subset`` selects them, before the single
-        publication, so the recorded layout and build choices do not depend
-        on whether the arena dropped a bin.
+        Continuous domain. Omission infers a Cartesian one from the binning;
+        a polar layout needs its :class:`EgocentricSurround`.
+    coordinate_kind : {'cartesian', 'polar'}, default='cartesian'
+        Meaning of the bin coordinates.
 
     Returns
     -------
@@ -587,9 +584,7 @@ def publish_layout(
         A new instance of ``cls``.
     """
     binning, resolved = _built_layout_data(layout)
-    coordinates = CartesianSystem() if coordinates is None else coordinates
-    polar = isinstance(coordinates, EgocentricPolarSystem)
-    if within_arena and arena is not None and arena.domain_known and not polar:
+    if arena is not None and arena.domain_known and coordinate_kind == "cartesian":
         centers = binning.bins.centers
         domain = arena.polygonal_domain()
         keep = (
@@ -602,7 +597,7 @@ def publish_layout(
     return _publish(
         cls,
         binning,
-        coordinates=coordinates,
+        coordinate_kind=coordinate_kind,
         provenance=_Provenance(resolved),
         metadata=metadata,
         regions=regions,
@@ -622,7 +617,12 @@ class _Derivation:
     step : str
         Name of the derivation, appended to the derivation history.
     build_params : mapping or None, optional
-        Build choices of new bins; ``None`` keeps the parent's choices.
+        Build choices of new bins, in their coordinates; ``None`` keeps the
+        parent's choices.
+    length_scale : float or None, default=1.0
+        The factor by which the derivation multiplies lengths when it keeps
+        the parent's choices: the scale of a similarity transform, or None
+        for a transform that has no single scale.
     continues_history : bool, default=True
         Append ``step`` to the parent's derivation history. ``False`` starts
         a new history at ``step``, for a result with no single parent.
@@ -635,6 +635,7 @@ class _Derivation:
     binning: Binning
     step: str
     build_params: Mapping[str, Any] | None = None
+    length_scale: float | None = 1.0
     continues_history: bool = True
     regions: Regions | None = None
     arena: Arena | None = None
@@ -678,16 +679,22 @@ def publish_derived(
     )
     inherited = parent._provenance
     history = inherited.derivations if derivation.continues_history else ()
-    provenance = _Provenance(
-        inherited.build_params
-        if derivation.build_params is None
-        else derivation.build_params,
-        (*history, derivation.step),
-    )
+    params: Mapping[str, Any]
+    scale: float | None
+    if derivation.build_params is None:
+        params = inherited.build_params
+        scale = (
+            None
+            if inherited.length_scale is None or derivation.length_scale is None
+            else inherited.length_scale * derivation.length_scale
+        )
+    else:
+        params, scale = derivation.build_params, 1.0
+    provenance = _Provenance(params, (*history, derivation.step), scale)
     return _publish(
         type(parent),
         derivation.binning,
-        coordinates=parent._geometry.coordinates,
+        coordinate_kind=parent.coordinate_kind,
         provenance=provenance,
         metadata=metadata,
         regions=parent.regions if derivation.regions is None else derivation.regions,

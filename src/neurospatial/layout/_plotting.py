@@ -84,6 +84,33 @@ def plot_polygon_cells(
     return ax
 
 
+def _grid_mesh(
+    rectilinear: RectilinearGrid, frame: FramedGrid | None
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Cell corner coordinates of a 2-D grid for ``pcolormesh``.
+
+    Parameters
+    ----------
+    rectilinear : RectilinearGrid
+        Two-dimensional grid; with ``frame``, the grid in source coordinates.
+    frame : FramedGrid or None
+        Map from source to world coordinates of a rotated, reflected or
+        sheared grid.
+
+    Returns
+    -------
+    x, y : ndarray of float64
+        The axis edges, shapes ``(n_x + 1,)`` and ``(n_y + 1,)``, or with a
+        frame the world corners, each of shape ``(n_y + 1, n_x + 1)``.
+    """
+    x, y = rectilinear.edges
+    if frame is not None:
+        xx, yy = np.meshgrid(x, y, indexing="xy")
+        corners = frame.to_world(np.column_stack((xx.ravel(), yy.ravel())))
+        x, y = (corners[:, axis].reshape(xx.shape) for axis in range(2))
+    return x, y
+
+
 def plot_grid(
     ax: Axes | None = None,
     *,
@@ -110,11 +137,7 @@ def plot_grid(
         )
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
-    x, y = grid_edges
-    if frame is not None:
-        xx, yy = np.meshgrid(x, y, indexing="xy")
-        corners = frame.to_world(np.column_stack((xx.ravel(), yy.ravel())))
-        x, y = (corners[:, axis].reshape(xx.shape) for axis in range(2))
+    x, y = _grid_mesh(rectilinear, frame)
     ax.pcolormesh(
         x,
         y,

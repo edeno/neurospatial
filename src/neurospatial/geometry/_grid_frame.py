@@ -40,6 +40,11 @@ class FramedGrid(ReadOnlyState):
     source: RectilinearGrid
     forward: NDArray[np.float64]
     inverse: NDArray[np.float64] = field(init=False, repr=False)
+    # Fixed by the map and the grid, so built once: the half-open source cells
+    # and the bound on how far inverse-map roundoff moves a source coordinate
+    # (None when the map is too ill-conditioned to resolve the cells).
+    _cells: RectilinearLocator = field(init=False, repr=False)
+    _sensitivity: NDArray[np.float64] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if type(self.source) is not RectilinearGrid:
@@ -88,6 +93,28 @@ class FramedGrid(ReadOnlyState):
         )
         object.__setattr__(self, "forward", matrix)
         object.__setattr__(self, "inverse", inverse)
+        source = self.source
+        mapping = np.full(source.active_mask.size, -1, dtype=np.intp)
+        mapping[source.active_mask.ravel()] = np.arange(
+            np.count_nonzero(source.active_mask)
+        )
+        object.__setattr__(
+            self,
+            "_cells",
+            RectilinearLocator(source.edges, source.shape, source.active_mask, mapping),
+        )
+        linear, inverse_linear = matrix[:-1, :-1], inverse[:-1, :-1]
+        dims = len(linear)
+        residual = np.abs(np.eye(dims) - inverse_linear @ linear)
+        residual += 2 * _gamma(dims) * (np.abs(inverse_linear) @ np.abs(linear))
+        sensitivity = (
+            None
+            if np.max(residual.sum(axis=1)) >= 0.5
+            else 2 * np.linalg.solve(np.eye(dims) - residual, np.abs(inverse_linear))
+        )
+        if sensitivity is not None:
+            sensitivity.setflags(write=False)
+        object.__setattr__(self, "_sensitivity", sensitivity)
 
     def _map(
         self,
@@ -120,18 +147,13 @@ class FramedGrid(ReadOnlyState):
         self, points: NDArray[np.float64]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Project world queries with a forward-residual roundoff bound."""
-        original = self.to_source(points)
-        linear, inverse = self.forward[:-1, :-1], self.inverse[:-1, :-1]
-        dims = len(linear)
-        eps = np.finfo(float).eps
-        gamma = (dims + 4) * eps / (1 - (dims + 4) * eps)
-        residual = np.abs(np.eye(dims) - inverse @ linear)
-        residual += 2 * gamma * (np.abs(inverse) @ np.abs(linear))
-        if np.max(residual.sum(axis=1)) >= 0.5:
+        if self._sensitivity is None:
             raise ValueError(
                 "Grid projection has unresolved precision; recenter or rescale coordinates."
             )
-        sensitivity = 2 * np.linalg.solve(np.eye(dims) - residual, np.abs(inverse))
+        original = self.to_source(points)
+        linear = self.forward[:-1, :-1]
+        gamma = _gamma(len(linear))
         remapped = self.to_world(original)
         difference = np.abs(points - remapped)
         error = difference + 0.5 * (
@@ -140,7 +162,7 @@ class FramedGrid(ReadOnlyState):
             + np.spacing(np.abs(points))
         )
         error += 2 * gamma * (np.abs(original) @ np.abs(linear).T)
-        return original, error @ sensitivity.T
+        return original, error @ self._sensitivity.T
 
     def _project_to_planes(
         self,
@@ -180,6 +202,37 @@ class FramedGrid(ReadOnlyState):
             original[snap, axis] = nearest[snap]
         return original
 
+    def _source_locator(self) -> RectilinearLocator:
+        """Half-open source cells, numbering active cells in row-major order."""
+        return self._cells
+
+    def _locate(
+        self, points: NDArray[np.float64], *, operation: str
+    ) -> NDArray[np.intp]:
+        """Return the active bin of each world point, or -1 outside active cells.
+
+        A point is mapped back to source coordinates and snapped onto a cell
+        face it lies on within the inverse map's roundoff (see
+        :meth:`_project_to_planes`). The half-open source cells then own it,
+        so a point on a face shared by two cells belongs to the cell above
+        it, as on an axis-aligned grid, however the map rounds.
+
+        Parameters
+        ----------
+        points : ndarray of float64, shape (n_points, n_dims)
+            World coordinates; non-finite rows return -1.
+        operation : str
+            Names the calling operation in a precision error.
+
+        Returns
+        -------
+        ndarray of intp, shape (n_points,)
+            Active-bin index of each point, or -1.
+        """
+        return self._source_locator().locate(
+            self._project_to_planes(points, self.source.edges, operation=operation)
+        )
+
     def to_world(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
         """Map ``(n_points, n_dims)`` source points into world coordinates."""
         return self._map(points, self.forward)
@@ -191,6 +244,12 @@ class FramedGrid(ReadOnlyState):
                 list(product(*[(edge[0], edge[-1]) for edge in self.source.edges]))
             )
         )
+
+
+def _gamma(n_dims: int) -> float:
+    """Relative rounding bound of the ``n_dims``-term dot products in a projection."""
+    eps = float(np.finfo(np.float64).eps)
+    return (n_dims + 4) * eps / (1 - (n_dims + 4) * eps)
 
 
 def _underflow_error(
@@ -257,3 +316,53 @@ def frame_from_locator(locator: Locator) -> tuple[FramedGrid, NDArray[np.float64
         RectilinearGrid(locator.edges, locator.shape, mask),
         np.eye(len(locator.shape) + 1),
     ), np.zeros((len(locator.shape) + 1,) * 2)
+
+
+def _same_frame(left: FramedGrid | None, right: FramedGrid) -> bool:
+    return left is right or (
+        left is not None
+        and np.array_equal(left.forward, right.forward)
+        and np.array_equal(left.source.active_mask, right.source.active_mask)
+        and all(
+            np.array_equal(a, b)
+            for a, b in zip(left.source.edges, right.source.edges, strict=True)
+        )
+    )
+
+
+def framed_locator(locator: Locator, frame: FramedGrid) -> Locator:
+    """Give the affine step of a framed grid's locator the binning's frame.
+
+    The outermost :class:`TransformedLocator` then assigns points by the
+    frame's half-open source cells. Below a :class:`SubsetLocator`, it gets
+    the same map over the parent's active cells. Other locators are
+    returned unchanged; publication validates that they match the frame.
+
+    Parameters
+    ----------
+    locator : Locator
+        The binning's locator.
+    frame : FramedGrid
+        The binning's ``grid_frame``.
+
+    Returns
+    -------
+    Locator
+        ``locator`` itself when it already carries this frame, or a copy
+        that does.
+    """
+    if isinstance(locator, TransformedLocator):
+        if _same_frame(locator.frame, frame):
+            return locator
+        return TransformedLocator(locator.base, locator.inverse, frame)
+    if isinstance(locator, SubsetLocator):
+        parent_mask = frame_from_locator(locator.base)[0].source.active_mask
+        parent = FramedGrid(
+            RectilinearGrid(frame.source.edges, frame.source.shape, parent_mask),
+            frame.forward,
+        )
+        base = framed_locator(locator.base, parent)
+        if base is locator.base:
+            return locator
+        return SubsetLocator(base, locator.parent_to_child)
+    return locator

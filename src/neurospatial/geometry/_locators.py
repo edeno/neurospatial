@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, NamedTuple, Protocol, TypeVar, cast
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, NamedTuple, Protocol, TypeVar, cast
 
 import numpy as np
 import shapely
@@ -17,6 +17,9 @@ from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial.geometry._arrays import ReadOnlyState, get_centers
 from neurospatial.geometry._hex_lookup import points_to_hex_bin_ind
 from neurospatial.geometry._regular_lookup import points_to_regular_grid_bin_ind
+
+if TYPE_CHECKING:
+    from neurospatial.geometry._grid_frame import FramedGrid
 
 _T = TypeVar("_T")
 
@@ -256,10 +259,29 @@ class SubsetLocator(ReadOnlyState):
 
 @dataclass(frozen=True, eq=False)
 class TransformedLocator(ReadOnlyState):
-    """Find bins by applying an owned inverse homogeneous affine matrix."""
+    """Find bins by applying an owned inverse homogeneous affine matrix.
+
+    In a binning with a ``grid_frame`` (a rotated or sheared grid), the
+    binning gives this locator its frame. Points are then assigned by the
+    frame's half-open source cells, with points on a cell face within the
+    map's roundoff snapped onto it, the rule linear time allocation uses, so
+    a point on a face shared by two cells belongs to the cell above it.
+    Without a frame, the parent locator owns the inverse-mapped point.
+
+    Parameters
+    ----------
+    base : Locator
+        Locator in the source coordinates.
+    inverse : ndarray of float64, shape (n_dims + 1, n_dims + 1)
+        Homogeneous map from current to source coordinates.
+    frame : FramedGrid or None, optional
+        The grid frame of the binning this locator belongs to; a ``Binning``
+        with a ``grid_frame`` sets it, so it is rarely passed directly.
+    """
 
     base: Locator
     inverse: NDArray[np.float64]
+    frame: FramedGrid | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         matrix = _owned_array(self.inverse, np.float64)
@@ -275,6 +297,10 @@ class TransformedLocator(ReadOnlyState):
         if query.ndim != 2 or query.shape[1] != n_dims:
             raise ValueError(
                 f"Expected points of shape (M, {n_dims}), got {query.shape}."
+            )
+        if self.frame is not None:
+            return self.frame._locate(
+                query, operation="Bin lookup on a rotated or sheared grid"
             )
         original = np.full(query.shape, np.nan, dtype=np.float64)
         finite = np.all(np.isfinite(query), axis=1)

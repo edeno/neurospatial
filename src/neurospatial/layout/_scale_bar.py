@@ -10,12 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-import matplotlib.font_manager as fm
 import numpy as np
-from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
 if TYPE_CHECKING:
     import matplotlib.axes
+    from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
 __all__ = [
     "ScaleBarConfig",
@@ -273,6 +272,9 @@ def _add_scale_bar_to_axes(
 
     # label_top is just config.label_top (bool)
     label_top = config.label_top
+
+    import matplotlib.font_manager as fm
+    from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
     # Create font properties
     fontprops = fm.FontProperties(size=config.font_size)

@@ -11,7 +11,6 @@ from shapely.ops import unary_union
 
 from neurospatial.geometry._arena import (
     Arena,
-    EgocentricSurround,
     MaskArena,
     OpenArena,
     TrackArena,
@@ -22,6 +21,7 @@ from neurospatial.geometry._arena import (
 from neurospatial.geometry._binning import KnownFaces, SpatialBins
 from neurospatial.geometry._codecs import encode_arena
 from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
@@ -34,23 +34,20 @@ if TYPE_CHECKING:
     from neurospatial.geometry._binning import Binning
 
 
-def infer_arena(binning: Binning, *, polar: bool, circular: bool = False) -> Arena:
-    """Use declared shapes or an inferred cell domain, without asserting walls."""
+def infer_arena(binning: Binning) -> Arena:
+    """Infer a Cartesian domain from declared shapes or cells, without walls.
+
+    A polar environment's arena is never inferred: its
+    :class:`EgocentricSurround` declares whether the angle wraps, which the
+    bins do not record.
+    """
     combined = _composition_arena(binning.locator)
     if combined is not None:
         return combined
     n_dims = binning.bins.n_dims
     grid = binning.rectilinear
     if binning.bins.n_bins == 0:
-        return UnknownArena(n_dims, coordinate_kind="polar" if polar else "cartesian")
-    if polar:
-        if grid is not None:
-            return EgocentricSurround(
-                (float(grid.edges[0][0]), float(grid.edges[0][-1])),
-                (float(grid.edges[1][0]), float(grid.edges[1][-1])),
-                circular=circular,
-            )
-        return UnknownArena(n_dims, coordinate_kind="polar")
+        return UnknownArena(n_dims)
     track = binning.linearization
     if track is not None:
         graph = getattr(track, "graph", None)
@@ -95,7 +92,9 @@ def _composition_arena(locator: object) -> Arena | None:
     return None
 
 
-def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
+def validate_arena(
+    arena: Arena, binning: Binning, coordinates: CoordinateSystem
+) -> None:
     """Reject a domain whose coordinate semantics disagree with its bins."""
     combined_arena = _composition_arena(binning.locator)
     if combined_arena is not None:
@@ -114,7 +113,7 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
             for child, child_arena in zip(
                 locator.children, locator.arenas, strict=True
             ):
-                validate_arena(child_arena, child, polar=False)
+                validate_arena(child_arena, child, CartesianSystem())
                 if child_arena.walls:
                     checked = apply_walls(child, child_arena)
                     if not np.array_equal(checked.bins.pairs, child.bins.pairs):
@@ -150,10 +149,9 @@ def validate_arena(arena: Arena, binning: Binning, *, polar: bool) -> None:
             raise ValueError("Combined arena disagrees with stored component domains.")
     if arena.n_dims != binning.bins.n_dims:
         raise ValueError("Arena coordinate dimensions must match the binning.")
-    kind = "polar" if polar else "cartesian"
-    if arena.coordinate_kind != kind:
+    if arena.coordinate_kind != coordinates.kind:
         raise ValueError(
-            f"Arena coordinate_kind must be {kind!r} for this environment."
+            f"Arena coordinate_kind must be {coordinates.kind!r} for this environment."
         )
     if arena.domain_known and not np.all(arena.contains(binning.bins.centers)):
         raise ValueError(

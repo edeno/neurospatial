@@ -5,7 +5,7 @@ This module tests the triangular mesh layout engine which:
 - Generates interior points for triangulation
 - Performs Delaunay triangulation
 - Filters active triangles by centroid location
-- Builds connectivity graphs
+- Pairs neighboring triangles
 - Maps points to triangle bins
 - Computes triangle areas (bin sizes)
 """
@@ -19,11 +19,11 @@ from shapely.geometry import Polygon
 
 from neurospatial.layout.engines.triangular_mesh import TriangularMeshLayout
 from neurospatial.layout.helpers.triangular_mesh import (
-    _build_mesh_connectivity_graph,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
     _sample_polygon_boundary,
     _triangulate_points,
+    mesh_pairs,
 )
 
 
@@ -164,66 +164,32 @@ class TestFilterActiveSimplicesByCentroid:
         assert active_indices.shape[0] == 0
 
 
-class TestBuildMeshConnectivityGraph:
-    """Tests for _build_mesh_connectivity_graph helper function."""
+class TestMeshPairs:
+    """Tests for the mesh_pairs helper function."""
 
-    def test_basic_connectivity(self):
-        """Test building connectivity graph for simple triangulation."""
-        points = np.array([[0, 0], [2, 0], [1, 2], [3, 2]], dtype=float)
-        tri = Delaunay(points)
-        poly = Polygon([(-1, -1), (4, -1), (4, 3), (-1, 3)])
-
-        active_indices, centroids = _filter_active_simplices_by_centroid(tri, poly)
-        orig_to_active = {orig: act for act, orig in enumerate(active_indices)}
-
-        graph = _build_mesh_connectivity_graph(
-            active_indices, centroids, orig_to_active, tri
+    def test_pairs_are_active_triangles_sharing_a_side(self):
+        """Pairs are exactly the active triangles with two shared vertices."""
+        rng = np.random.default_rng(0)
+        tri = Delaunay(rng.uniform(0, 10, (40, 2)))
+        active = np.flatnonzero(rng.random(len(tri.simplices)) < 0.7)
+        simplices = tri.simplices[active]
+        shared = np.array(
+            [[len(set(a) & set(b)) for b in simplices] for a in simplices]
         )
+        expected = {tuple(pair) for pair in np.argwhere(np.triu(shared == 2))}
 
-        # Should have one node per active triangle
-        assert graph.number_of_nodes() == len(active_indices)
-        # Nodes should have required attributes
-        for node in graph.nodes():
-            assert "pos" in graph.nodes[node]
-            assert "source_grid_flat_index" in graph.nodes[node]
-            assert "original_grid_nd_index" in graph.nodes[node]
+        pairs = mesh_pairs(active, tri.neighbors)
 
-    def test_edge_attributes(self):
-        """Test that edges have required attributes."""
-        points = np.array([[0, 0], [2, 0], [1, 1.5], [3, 1.5]], dtype=float)
-        tri = Delaunay(points)
-        poly = Polygon([(-1, -1), (4, -1), (4, 3), (-1, 3)])
+        assert pairs.dtype == np.intp
+        assert {tuple(pair) for pair in pairs.tolist()} == expected
+        assert len(pairs) == len(expected)
+        assert np.all(pairs[:, 0] < pairs[:, 1])
+        assert np.all(np.diff(pairs[:, 0]) >= 0)
 
-        active_indices, centroids = _filter_active_simplices_by_centroid(tri, poly)
-        orig_to_active = {orig: act for act, orig in enumerate(active_indices)}
-
-        graph = _build_mesh_connectivity_graph(
-            active_indices, centroids, orig_to_active, tri
-        )
-
-        # Check edge attributes
-        for u, v in graph.edges():
-            assert "distance" in graph.edges[u, v]
-            assert "vector" in graph.edges[u, v]
-            assert "angle_2d" in graph.edges[u, v]
-            assert graph.edges[u, v]["distance"] > 0
-
-    def test_no_duplicate_edges(self):
-        """Test that graph has no duplicate edges (undirected)."""
-        points = np.array([[0, 0], [2, 0], [1, 2], [3, 2]], dtype=float)
-        tri = Delaunay(points)
-        poly = Polygon([(-1, -1), (4, -1), (4, 3), (-1, 3)])
-
-        active_indices, centroids = _filter_active_simplices_by_centroid(tri, poly)
-        orig_to_active = {orig: act for act, orig in enumerate(active_indices)}
-
-        graph = _build_mesh_connectivity_graph(
-            active_indices, centroids, orig_to_active, tri
-        )
-
-        # Check that no reverse edges exist (since graph is undirected)
-        edges_set = {tuple(sorted([u, v])) for u, v in graph.edges()}
-        assert len(edges_set) == graph.number_of_edges()
+    def test_no_active_neighbors(self):
+        """A single active triangle has no pairs."""
+        tri = Delaunay(np.array([[0, 0], [2, 0], [1, 2], [3, 2]], dtype=float))
+        assert mesh_pairs(np.array([0]), tri.neighbors).shape == (0, 2)
 
 
 class TestTriangularMeshLayoutBuild:

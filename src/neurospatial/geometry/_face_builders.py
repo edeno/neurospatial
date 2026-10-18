@@ -121,18 +121,36 @@ def track_geometry(
 
 
 def track_junctions(
-    graph: nx.Graph, track_graph: nx.Graph, n_dims: int
+    pairs: NDArray[np.intp],
+    segment_ids: NDArray[np.int_],
+    track_graph: nx.Graph,
+    n_dims: int,
 ) -> NDArray[np.float64]:
-    """Capture physical junction positions without retaining the track builder."""
-    result = np.full((graph.number_of_edges(), n_dims), np.nan)
+    """Capture physical junction positions without retaining the track builder.
+
+    Parameters
+    ----------
+    pairs : ndarray of int, shape (n_pairs, 2)
+        Neighbor bin pairs.
+    segment_ids : ndarray of int, shape (n_bins,)
+        Track-graph edge ID (position in ``track_graph.edges()``) of each bin.
+    track_graph : networkx.Graph
+        Track graph whose nodes carry ``"pos"``.
+    n_dims : int
+        Number of coordinate dimensions.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_pairs, n_dims)
+        Position of the track node shared by the segments of a pair's two
+        bins; NaN for pairs on one segment or without exactly one shared node.
+    """
+    result = np.full((len(pairs), n_dims), np.nan)
     track_edges = list(track_graph.edges())
     node_pos = nx.get_node_attributes(track_graph, "pos")
-    for index, (u, v) in enumerate(graph.edges()):
-        seg_u = graph.nodes[u].get("source_edge_id")
-        seg_v = graph.nodes[v].get("source_edge_id")
-        if seg_u is None or seg_v is None or seg_u == seg_v:
-            continue
-        a, b = int(seg_u), int(seg_v)
+    segments = np.asarray(segment_ids)[np.asarray(pairs, dtype=np.intp)].reshape(-1, 2)
+    for index in np.flatnonzero(segments[:, 0] != segments[:, 1]):
+        a, b = int(segments[index, 0]), int(segments[index, 1])
         if not (0 <= a < len(track_edges) and 0 <= b < len(track_edges)):
             continue
         shared = set(track_edges[a]) & set(track_edges[b])

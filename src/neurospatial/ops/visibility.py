@@ -836,7 +836,9 @@ def _viewshed(
 
     # Reshape for batch bin_at query: (n_rays * n_steps, 2)
     flat_ray_points = ray_points_all.reshape(-1, 2)
-    flat_bin_indices = locate(binning, arena, flat_ray_points, indexes)
+    flat_bin_indices = locate(
+        binning, arena, flat_ray_points, indexes, call="compute_viewshed"
+    )
 
     # Reshape back: (n_rays, n_steps)
     bin_indices_2d = flat_bin_indices.reshape(n_rays, n_steps)

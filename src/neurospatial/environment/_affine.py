@@ -10,8 +10,17 @@ from numpy.typing import NDArray
 from shapely.geometry import Polygon
 
 from neurospatial._exceptions import _format_error
+from neurospatial.environment._cache import AnalysisCache
+from neurospatial.environment._fields import with_cached_faces
 from neurospatial.environment._publication import _Derivation
-from neurospatial.geometry import Arena, Binning, cell_extent, transform_binning
+from neurospatial.geometry import (
+    Arena,
+    Binning,
+    cell_extent,
+    mapped_geometry,
+    transform_binning,
+)
+from neurospatial.geometry._derive import _classification
 from neurospatial.ops.transforms import Affine2D, AffineND
 from neurospatial.regions import Region, Regions
 
@@ -22,6 +31,7 @@ def _apply_transform(
     binning: Binning,
     regions: Regions,
     arena: Arena,
+    cache: AnalysisCache,
 ) -> _Derivation:
     """Transform owned cells, their bounds, arenas and regions together."""
     n_dims = binning.bins.n_dims
@@ -73,39 +83,31 @@ def _apply_transform(
             "Fix: use nonzero scale factors and an invertible affine matrix."
         ) from exc
 
-    transformed = transform_binning(binning, transform)
+    transformed = transform_binning(with_cached_faces(cache, binning), transform)
 
-    # The transformed cells' own extent; bins without cells map their
-    # declared box instead.
-    transformed_dim_ranges = cell_extent(transformed, shapeless="none")
-    dimension_ranges = binning.dimension_ranges
-    if transformed_dim_ranges is None and dimension_ranges is not None:
-        # Generate all corner points of the N-dimensional bounding box
-        # For N dims, we have 2^N corners (all combinations of low/high per dimension)
-        ranges = dimension_ranges
-        corner_indices = list(product([0, 1], repeat=n_dims))  # All combinations of 0/1
-        corners = np.array(
-            [
-                [ranges[dim][idx] for dim, idx in enumerate(corner)]
-                for corner in corner_indices
-            ]
+    # Publication records the transformed cells' extent as the ranges; bins
+    # without cells map the corners of their declared box instead.
+    ranges = binning.dimension_ranges
+    if ranges is not None and cell_extent(transformed, shapeless="none") is None:
+        corners = transform(np.array(list(product(*ranges)), dtype=np.float64))
+        transformed = replace(
+            transformed,
+            dimension_ranges=tuple(
+                zip(
+                    corners.min(axis=0).tolist(),
+                    corners.max(axis=0).tolist(),
+                    strict=True,
+                )
+            ),
         )
 
-        # Transform all corners
-        transformed_corners = transform(corners)
-
-        # New bounding box: min/max along each dimension
-        transformed_dim_ranges = tuple(
-            (
-                float(transformed_corners[:, dim].min()),
-                float(transformed_corners[:, dim].max()),
-            )
-            for dim in range(n_dims)
-        )
-
+    # The build choices keep their lengths; record how much longer those
+    # lengths are now, when the transform scales every direction alike.
+    kind, scale, _ = _classification(np.asarray(transform.A)[:-1, :-1])
     return _Derivation(
-        replace(transformed, dimension_ranges=transformed_dim_ranges),
+        transformed,
         "apply_transform",
+        length_scale=scale if kind in ("translation", "similarity") else None,
         regions=Regions(
             _transformed_region(region, transform) for region in regions.values()
         ),
@@ -120,17 +122,9 @@ def _transformed_region(region: Region, transform: AffineND | Affine2D) -> Regio
             np.asarray(region.data).reshape(1, -1)
         )[0]
     else:
-        # Type narrowing: region.data is a Polygon when kind == "polygon"
-        if not isinstance(region.data, Polygon):
-            raise TypeError(
-                f"Region '{region.name}' has kind='polygon' but data is not a Polygon"
-            )
-        data = Polygon(
-            transform(np.asarray(region.data.exterior.coords)),
-            holes=[
-                transform(np.asarray(ring.coords)) for ring in region.data.interiors
-            ],
-        )
+        # Region construction guarantees a Polygon here. The arena and the
+        # cells map their vertices the same way, so shared boundaries agree.
+        data = mapped_geometry(region.data, transform.A)
     return Region(
         name=region.name,
         kind=region.kind,
