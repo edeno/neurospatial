@@ -327,7 +327,7 @@ class TestCircularWrapEdgeArcLength:
         When ``angle_bin_size`` does not evenly divide the angular range,
         ``ceil`` binning yields a realized step slightly different from the
         requested one. The regular angular edges use the realized step (via
-        ``_fix_polar_edge_geometry``, which reads actual node angles), so the
+        ``_polar_pair_lengths``, which reads the actual bin angles), so the
         seam edge must too; otherwise the seam edge is inconsistent with its
         regular neighbors and biases seam geodesics.
 
