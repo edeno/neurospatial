@@ -584,7 +584,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   shape (500, 3), but this environment's bins are 2-D, so positions needs
   shape (n_positions, 2).`, and says how to fix it, such as reshaping a 1-D
   array on a 1-D environment or using the original coordinates instead of
-  linearized ones. It is still a `ValueError`; only the wording changed.
+  linearized ones. Rate maps and other encoding functions that report several
+  input problems together describe this one in the same words. It is still a
+  `ValueError`; only the wording changed.
 
 - `Environment.from_bins(binning)` is annotated as taking a `Binning`. An
   object from another package that an installed snapshot adapter converts

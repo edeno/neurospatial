@@ -38,7 +38,7 @@ from neurospatial._intervals import (
     warn_excluded_intervals,
 )
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.geometry import require_cartesian
+from neurospatial.geometry import require_cartesian, require_position_columns
 from neurospatial.ops import (
     _polygon_linear_occupancy,
     _RetainedLinearInterval,
@@ -1211,12 +1211,7 @@ def compute_occupancy(
     if positions.ndim == 1:
         positions = positions.reshape(-1, 1)
 
-    # Check position dimensions match environment
-    if positions.shape[1] != env.n_dims:
-        raise ValueError(
-            f"in {context}: positions have {positions.shape[1]} dimensions "
-            f"but environment has {env.n_dims} dimensions"
-        )
+    require_position_columns(positions, env.n_dims, call=context)
 
     if time_allocation == "linear":
         if linear_intervals is None:

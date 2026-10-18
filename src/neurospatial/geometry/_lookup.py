@@ -120,12 +120,40 @@ def require_position_columns(
         fix += f"; use the original {n_dims}-D coordinates, not linearized ones"
     raise ValueError(
         _format_error(
-            f"{call} got {name} with shape {positions.shape}, but this "
-            f"environment's bins are {n_dims}-D, so {name} needs shape "
-            f"(n_{name}, {n_dims}).",
+            f"{call} got {wrong_position_columns(positions.shape, n_dims, name)}.",
             why=why,
             fix=fix,
         )
+    )
+
+
+def wrong_position_columns(
+    shape: tuple[int, ...], n_dims: int, name: str = "positions"
+) -> str:
+    """Describe positions of ``shape`` that do not match ``n_dims``-D bins.
+
+    The clause that :func:`require_position_columns` and checks that report
+    several input problems together use for this mistake.
+
+    Parameters
+    ----------
+    shape : tuple of int
+        Shape of the array as given.
+    n_dims : int
+        Number of coordinates of each bin center.
+    name : str, default="positions"
+        The argument that held the positions.
+
+    Returns
+    -------
+    str
+        A clause such as ``"positions with shape (5, 3), but this
+        environment's bins are 2-D, so positions needs shape
+        (n_positions, 2)"``.
+    """
+    return (
+        f"{name} with shape {shape}, but this environment's bins are "
+        f"{n_dims}-D, so {name} needs shape (n_{name}, {n_dims})"
     )
 
 
