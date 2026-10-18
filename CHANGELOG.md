@@ -1343,6 +1343,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The multi-session workflow in the user guide compared rate maps with
+  `map_probabilities(..., source_probabilities=...)`, which raised
+  `TypeError` (the parameter is `source_probs`) and, with the right keyword,
+  summed rates as if they were probability mass. It now builds one
+  environment for the box, computes both sessions' maps on it, and shows
+  `resample_field` for maps that already have different bins. The example
+  runs in the documentation tests. The alignment guide's
+  `map_probabilities` examples use the right keyword, and its docstring says
+  to use `resample_field` for rate maps.
+
 - `Environment.arena` and `Environment.clip_mapping` return detached copies,
   as `Environment.binning` does. Their arrays were read-only but shared with
   the environment, and reshaping one in place

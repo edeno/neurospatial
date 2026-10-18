@@ -562,86 +562,112 @@ plt.show()
 
 ## Workflow 4: Multi-Session Alignment
 
-Comparing environments across recording sessions.
+Comparing a cell's place field across recording sessions in the same box.
 
 ### Overview
 
-**Goal**: Align spatial representations from different sessions to track stability
+**Goal**: Measure how stable a place field is from one day to the next.
 
-**Steps**: Create environments for each session → Align using transforms → Compare firing patterns
+**Steps**: Build one environment for the box → Compute each day's rate map on
+it → Correlate the maps over bins visited on both days
+
+Two rate maps can be compared bin by bin only when bin `i` is the same place
+in both. `Environment.from_samples` places its grid from the samples it is
+given, so two sessions built separately get slightly different bins even in
+the same box. Build the environment once from the box's geometry (or from
+both sessions' positions together) and compute every session's map on it.
+If you have maps on different bins already, move one onto the other's bins
+with `resample_field`, which copies each rate from the nearest bin. Rates stay
+in Hz, and bins outside the source environment stay NaN. Do not use
+`map_probabilities` for rate maps: it sums probability mass, so it changes the
+rates.
+
+If the camera moved between sessions, first put both sessions' positions in
+one frame (see [Alignment and transforms](alignment.md)).
 
 ### Complete Example
 
+<!-- docs-test: run -->
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
+from shapely.geometry import box
 
-from neurospatial import Environment
-from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops import map_probabilities
-
-# Session 1 (reference)
-env1 = Environment.from_samples(
-    session1_position,
-    bin_size=2.5,
-    name="Session1",
-)
-firing_rate1 = compute_spatial_rate(
-    env1, session1_spikes, session1_times, session1_position,
-    method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
-).firing_rate
-
-# Session 2 (may have slight camera shift or animal positioning differences)
-env2 = Environment.from_samples(
-    session2_position,
-    bin_size=2.5,
-    name="Session2",
-)
-firing_rate2 = compute_spatial_rate(
-    env2, session2_spikes, session2_times, session2_position,
-    method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
-).firing_rate
-
-# Align session 2 to session 1 coordinate frame
-firing_rate2_aligned = map_probabilities(
-    source_env=env2,
-    target_env=env1,
-    source_probabilities=firing_rate2
+from neurospatial import Environment, compute_spatial_rate
+from neurospatial.ops import resample_field
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
 )
 
-# Compute spatial correlation
-valid_bins = ~np.isnan(firing_rate1) & ~np.isnan(firing_rate2_aligned)
-correlation = np.corrcoef(
-    firing_rate1[valid_bins],
-    firing_rate2_aligned[valid_bins]
+# The same 100 x 100 cm box on both days. Building the environment from the
+# box, not from each day's samples, gives both days the same bins.
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+place_cell = PlaceCellModel(env, center=[30.0, 60.0], width=8.0, max_rate=15.0)
+
+
+def record_session(seed):
+    """One 10-minute session: times, positions and the place cell's spikes."""
+    positions, times = simulate_trajectory_ou(
+        env, duration=600.0, dt=1 / 30, speed_mean=15.0, speed_units="cm", seed=seed
+    )
+    # Seed the spikes differently from the trajectory.
+    spikes = generate_poisson_spikes(
+        place_cell.firing_rate(positions), times, seed=seed + 100
+    )
+    return times, positions, spikes
+
+
+times1, positions1, spikes1 = record_session(seed=1)
+times2, positions2, spikes2 = record_session(seed=2)
+
+options = dict(method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5)
+day1 = compute_spatial_rate(env, spikes1, times1, positions1, **options)
+day2 = compute_spatial_rate(env, spikes2, times2, positions2, **options)
+
+# Compare only bins with at least 0.5 s of occupancy on both days; the others
+# are NaN, which means "not measured", not 0 Hz.
+both = np.isfinite(day1.firing_rate) & np.isfinite(day2.firing_rate)
+stability = np.corrcoef(day1.firing_rate[both], day2.firing_rate[both])[0, 1]
+print(f"Day-to-day map correlation: {stability:.2f} over {both.sum()} bins")
+
+# A day-2 map someone already computed on bins built from that day's samples:
+# move it onto the shared bins before comparing.
+env_day2 = Environment.from_samples(positions2, bin_size=5.0, units="cm")
+day2_own_bins = compute_spatial_rate(env_day2, spikes2, times2, positions2, **options)
+day2_on_shared_bins = resample_field(day2_own_bins.firing_rate, env_day2, env)
+
+# The rates are copied, not rescaled: the peak is the same number of Hz.
+assert np.isclose(
+    np.nanmax(day2_on_shared_bins), np.nanmax(day2_own_bins.firing_rate)
+)
+both_resampled = np.isfinite(day1.firing_rate) & np.isfinite(day2_on_shared_bins)
+resampled_stability = np.corrcoef(
+    day1.firing_rate[both_resampled], day2_on_shared_bins[both_resampled]
 )[0, 1]
+print(f"Correlation after resampling: {resampled_stability:.2f}")
 
-print(f"Spatial correlation: {correlation:.3f}")
-
-# Visualize comparison
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-# Session 1
-axes[0].scatter(env1.bin_centers[:, 0], env1.bin_centers[:, 1],
-                c=firing_rate1, s=50, cmap='hot')
-axes[0].set_title('Session 1')
-
-# Session 2 (aligned)
-axes[1].scatter(env1.bin_centers[:, 0], env1.bin_centers[:, 1],
-                c=firing_rate2_aligned, s=50, cmap='hot')
-axes[1].set_title('Session 2 (aligned)')
-
-# Difference
-difference = firing_rate2_aligned - firing_rate1
-axes[2].scatter(env1.bin_centers[:, 0], env1.bin_centers[:, 1],
-                c=difference, s=50, cmap='RdBu_r',
-                vmin=-np.nanmax(np.abs(difference)),
-                vmax=np.nanmax(np.abs(difference)))
-axes[2].set_title(f'Difference (r={correlation:.3f})')
-
+fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+vmax = np.nanmax([day1.firing_rate, day2.firing_rate])
+for ax, rate, title in [
+    (axes[0], day1.firing_rate, "Day 1"),
+    (axes[1], day2.firing_rate, "Day 2"),
+    (axes[2], day2_on_shared_bins, "Day 2, resampled from its own bins"),
+]:
+    env.plot_field(rate, ax=ax, vmin=0, vmax=vmax, colorbar_label="Rate (Hz)")
+    ax.set_title(title)
+fig.suptitle(f"Map correlation r = {stability:.2f}")
 plt.tight_layout()
 plt.show()
 ```
+
+The two days' maps put the field in the same place, and the correlation over
+bins visited on both days is close to 1. Gray bins had less than 0.5 s of
+occupancy on that day and carry no rate. A cell that remapped would give a
+low or negative correlation. Resampling the day-2 map from its own bins gives
+nearly the same answer; the small difference comes from bins whose centers are
+not exactly aligned.
 
 ## Workflow 5: Track Linearization
 

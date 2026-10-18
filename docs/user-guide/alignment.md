@@ -265,7 +265,11 @@ version. The outer Environment-v3 and NWB 3.0 envelopes are unchanged.
 
 ## Probability Alignment
 
-Map probability distributions between environments (works for 2D or 3D):
+Map probability distributions between environments (works for 2D or 3D).
+`map_probabilities` moves probability mass: each source bin's mass goes to its
+nearest target bin and the masses are summed, so the total is kept. Use it for
+posteriors and occupancy probabilities, not for rate maps. To move a rate map
+onto other bins, use `resample_field`, which copies each rate.
 
 ```python
 from neurospatial.ops import get_2d_rotation_matrix, map_probabilities
@@ -275,7 +279,7 @@ from scipy.spatial.transform import Rotation
 aligned_probs_2d = map_probabilities(
     source_env=env1,
     target_env=env2,
-    source_probabilities=probs1,
+    source_probs=probs1,
     source_rotation_matrix=get_2d_rotation_matrix(angle_degrees=45),
     source_scale=1.2
 )
@@ -285,7 +289,7 @@ R_3d = Rotation.from_euler('xyz', [45, 30, 60], degrees=True).as_matrix()
 aligned_probs_3d = map_probabilities(
     source_env=env_3d_1,
     target_env=env_3d_2,
-    source_probabilities=probs_3d,
+    source_probs=probs_3d,
     source_rotation_matrix=R_3d,
     source_scale=0.9,
     source_translation_vector=[10, 20, 30]
