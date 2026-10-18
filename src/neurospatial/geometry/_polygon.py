@@ -526,6 +526,5 @@ def _pieces_binning(
         faces,
         face_normals=FaceNormals(normal_values) if normal_values is not None else None,
         shapes=cells,
-        clip_mapping=mapping,
         grid_spec=binning.grid_spec,
     )

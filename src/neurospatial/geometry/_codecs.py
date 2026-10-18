@@ -771,8 +771,6 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
     # Current components precede historical locator frames in snapshot order.
     if isinstance(obj.shapes, PolygonCells):
         reference(obj.shapes)
-    if obj.clip_mapping is not None:
-        reference(obj.clip_mapping)
 
     def locator_payload(locator: object, path: str) -> Payload:
         if not isinstance(locator, (ClippedLocator, SubsetLocator, TransformedLocator)):
@@ -802,7 +800,6 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
         "linearization",
         "shapes",
         "outline",
-        "clip_mapping",
         "grid_spec",
         "face_normals",
         "grid_frame",
@@ -1028,7 +1025,6 @@ def _decode_binning(
         "linearization": TrackLinearization,
         "shapes": (HexagonShapes, TriangleShapes, PolygonCells),
         "outline": Outline,
-        "clip_mapping": ClipMapping,
         "grid_spec": GridBinningSpec,
         "face_normals": FaceNormals,
         "grid_frame": FramedGrid,
@@ -1036,7 +1032,7 @@ def _decode_binning(
     part: object | None
     for name, kind in expected.items():
         optional_legacy = (
-            name in {"clip_mapping", "grid_spec"}
+            name == "grid_spec"
             or (name == "face_normals" and meta["codec_version"] == 1)
             or (name == "grid_frame" and meta["codec_version"] < 3)
         )
@@ -1049,12 +1045,6 @@ def _decode_binning(
             and "polygon_cells_ref" in value
         ):
             part = referenced(value, "polygon_cells_ref")
-        elif (
-            name == "clip_mapping"
-            and isinstance(value, dict)
-            and "clip_mapping_ref" in value
-        ):
-            part = referenced(value, "clip_mapping_ref")
         elif name == "locator":
             part = locator_value(value, f"{prefix}/{name}")
         else:

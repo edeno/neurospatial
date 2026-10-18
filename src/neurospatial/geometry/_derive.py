@@ -41,7 +41,6 @@ from neurospatial.geometry._locators import (
 )
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
-    ClipMapping,
     PolygonCells,
     transform_polygon_cells,
 )
@@ -159,14 +158,6 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         face_normals=(
             FaceNormals(binning.face_normals.values[pair_kept])
             if binning.face_normals is not None
-            else None
-        ),
-        clip_mapping=(
-            ClipMapping(
-                binning.clip_mapping.parent_bin_indices[keep],
-                binning.clip_mapping.n_parent_bins,
-            )
-            if binning.clip_mapping is not None
             else None
         ),
     )
@@ -542,7 +533,6 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         linearization=track,
         shapes=shapes,
         outline=outline,
-        clip_mapping=binning.clip_mapping,
         grid_frame=frame,
         face_normals=normal_data[0] if normal_data is not None else None,
         grid_spec=(

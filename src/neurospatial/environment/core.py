@@ -123,6 +123,7 @@ from neurospatial.geometry import (
     CartesianSystem,
     EgocentricPolarSystem,
     boundary_bins,
+    clip_mapping_of,
     composition_bin_sources,
     composition_component_keys,
     locate,
@@ -431,7 +432,7 @@ class Environment(Generic[_C]):
 
         The returned record is a detached copy, as for :attr:`binning`.
         """
-        return copy.deepcopy(self._binning.clip_mapping)
+        return copy.deepcopy(clip_mapping_of(self._binning.locator))
 
     @property
     def edge_pairs(self) -> NDArray[np.intp]:

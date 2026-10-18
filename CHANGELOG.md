@@ -8,6 +8,12 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Binning` no longer has a `clip_mapping` field. The clipped locator already
+  holds the mapping, and the stored copy had to agree with it, so
+  `Environment.clip_mapping` now reads it from the locator. Drop
+  `clip_mapping=` when building a `Binning` for `from_bins`. Saved
+  environments that stored the field still load.
+
 - `Environment.from_samples` (and `open_field`) tile the arena's bounds when
   given an `arena=` with a known outline and no `dimension_ranges`, so cell
   edges start at the arena's edge. Walls on that lattice now fall on cell

@@ -131,6 +131,7 @@ from neurospatial.geometry._polygon import materialize_cells as materialize_cell
 from neurospatial.geometry._polygon_cells import ClipMapping as ClipMapping
 from neurospatial.geometry._polygon_cells import ClippedLocator as ClippedLocator
 from neurospatial.geometry._polygon_cells import PolygonCells as PolygonCells
+from neurospatial.geometry._polygon_cells import clip_mapping_of as clip_mapping_of
 from neurospatial.geometry._rebin_spec import GridBinningSpec as GridBinningSpec
 from neurospatial.geometry._region_bins import polygon_bin_mask as polygon_bin_mask
 from neurospatial.geometry._region_bins import region_bin_mask as region_bin_mask

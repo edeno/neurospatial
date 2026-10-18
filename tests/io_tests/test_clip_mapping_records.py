@@ -1,4 +1,4 @@
-"""Clip mappings are interned by value while legacy duplicates stay valid."""
+"""Clip mappings are stored once, with the locator, while legacy duplicates stay valid."""
 
 import copy
 
@@ -17,7 +17,7 @@ def _clipped():
 
 
 @pytest.mark.parametrize(
-    "operation,expected_count", [("native", 1), ("transform", 1), ("subset", 2)]
+    "operation,expected_count", [("native", 1), ("transform", 1), ("subset", 1)]
 )
 def test_equal_owned_clip_mappings_use_one_stored_snapshot(operation, expected_count):
     env = _clipped()

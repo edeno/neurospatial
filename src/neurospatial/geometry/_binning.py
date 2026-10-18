@@ -26,7 +26,7 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 from neurospatial.geometry._track import project_1d_to_2d
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._polygon_cells import ClipMapping, PolygonCells
+    from neurospatial.geometry._polygon_cells import PolygonCells
 
 
 @dataclass(frozen=True, eq=False)
@@ -471,7 +471,6 @@ class Binning:
     linearization: TrackLinearization | None = None
     shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None
     outline: Outline | None = None
-    clip_mapping: ClipMapping | None = None
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
     grid_frame: FramedGrid | None = None

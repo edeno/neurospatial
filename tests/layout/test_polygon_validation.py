@@ -24,6 +24,7 @@ from neurospatial.geometry._polygon_cells import (
     ClipMapping,
     ClippedLocator,
     PolygonCells,
+    clip_mapping_of,
 )
 from neurospatial.geometry._validation import validate_components
 
@@ -52,7 +53,6 @@ def _binning(polygons, *, pairs=(), known=False):
         ClippedLocator(parent, cells, mapping),
         faces,
         shapes=cells,
-        clip_mapping=mapping,
     )
 
 
@@ -130,38 +130,30 @@ def _twice_clipped():
         source,
         bins=bins,
         shapes=cells,
-        clip_mapping=mapping,
         locator=ClippedLocator(source.locator, cells, mapping),
     )
 
 
-@pytest.mark.parametrize("operation", ["none", "subset", "transform", "both"])
-@pytest.mark.parametrize("corruption", ["missing", "historical", "parent_count"])
-def test_current_clip_mapping_matches_latest_locator_through_wrappers(
-    operation, corruption
-):
-    original = _twice_clipped()
-    result = original
+@pytest.mark.parametrize(
+    ("operation", "expected"),
+    [("none", [0, 1]), ("subset", [1]), ("transform", [0, 1]), ("both", [1])],
+)
+def test_clip_mapping_follows_latest_clip_through_wrappers(operation, expected):
+    result = _twice_clipped()
     if operation in ("subset", "both"):
         result = subset_binning(result, np.array([False, True]))
     if operation in ("transform", "both"):
         result = transform_binning(result, SimpleNamespace(A=_matrix(0.3)))
     _publish(result)
-    if corruption == "missing":
-        mapping = None
-    elif corruption == "historical":
-        mapping = ClipMapping(np.zeros(result.bins.n_bins, dtype=int), 1)
-    else:
-        mapping = ClipMapping(result.clip_mapping.parent_bin_indices, 3)
-    with pytest.raises(ValueError, match="clip_mapping"):
-        _publish(replace(result, clip_mapping=mapping))
+    mapping = clip_mapping_of(result.locator)
+    assert mapping is not None
+    assert mapping.n_parent_bins == 2
+    np.testing.assert_array_equal(mapping.parent_bin_indices, expected)
 
 
-def test_unexpected_clip_mapping_without_clipped_locator_is_rejected():
+def test_clip_mapping_is_none_without_a_clip():
     source = _binning([box(0, 0, 1, 1)])
-    plain = replace(source, locator=source.locator.base, shapes=None)
-    with pytest.raises(ValueError, match="clip_mapping"):
-        _publish(plain)
+    assert clip_mapping_of(source.locator.base) is None
 
 
 def test_stored_zero_face_cannot_opt_out_of_positive_opening_validation():

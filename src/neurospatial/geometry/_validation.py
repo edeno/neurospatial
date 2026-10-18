@@ -57,7 +57,6 @@ from neurospatial.geometry._polygon import (
     certify_faces,
 )
 from neurospatial.geometry._polygon_cells import (
-    ClipMapping,
     ClippedLocator,
     PolygonCells,
     _polygon_coordinate_errors,
@@ -133,47 +132,6 @@ def _polygon_area_allowance(
             reference_clearance**2 / 16,
         )
     )
-
-
-def _current_clip_mapping(locator: Locator) -> ClipMapping | None:
-    """Recover the latest clip's mapping in the current active-bin order."""
-    if isinstance(locator, ClippedLocator):
-        return locator.mapping
-    if isinstance(locator, TransformedLocator):
-        return _current_clip_mapping(locator.base)
-    if isinstance(locator, SubsetLocator):
-        mapping = _current_clip_mapping(locator.base)
-        if mapping is None:
-            return None
-        if locator.parent_to_child.shape != mapping.parent_bin_indices.shape:
-            raise ValueError("clip_mapping and subset parent count disagree.")
-        active = _active_indices(
-            locator.parent_to_child,
-            int(np.count_nonzero(locator.parent_to_child >= 0)),
-            "clip_mapping subset ordering",
-        )
-        return ClipMapping(mapping.parent_bin_indices[active], mapping.n_parent_bins)
-    return None
-
-
-def _validate_clip_mapping(binning: Binning) -> None:
-    """Require the current published map to describe the latest clipped locator."""
-    expected = _current_clip_mapping(binning.locator)
-    actual = binning.clip_mapping
-    if (actual is None) != (expected is None):
-        raise ValueError(
-            "clip_mapping presence disagrees with the latest clipped locator."
-        )
-    if actual is not None and expected is not None:
-        if actual.n_parent_bins != expected.n_parent_bins:
-            raise ValueError(
-                "clip_mapping parent count disagrees with the latest clip."
-            )
-        _equal(
-            actual.parent_bin_indices,
-            expected.parent_bin_indices,
-            "clip_mapping parent_bin_indices and latest clip",
-        )
 
 
 def _computed_equal(
@@ -914,7 +872,6 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     if binning.face_normals is not None and coordinate_kind != "cartesian":
         raise ValueError("Physical face normals require Cartesian coordinates.")
     validate_normals(binning)
-    _validate_clip_mapping(binning)
     if isinstance(locator, CombinedLocator):
         if binning.face_normals is not None:
             expected_normals = combined_normals(locator)

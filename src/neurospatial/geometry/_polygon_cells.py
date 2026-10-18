@@ -21,6 +21,8 @@ from neurospatial.geometry._arrays import (
 from neurospatial.geometry._locators import (
     Locator,
     LookupIndexes,
+    SubsetLocator,
+    TransformedLocator,
     _check_homogeneous,
     _lookup_index,
 )
@@ -179,6 +181,31 @@ class ClippedLocator:
         local[local == len(self.cells.polygons)] = -1
         result[rows] = local
         return result
+
+
+def clip_mapping_of(locator: Locator) -> ClipMapping | None:
+    """The latest clip's mapping in the current bin order, or None before clipping.
+
+    The clipped locator owns the mapping because lookup needs it; later
+    transforms keep the bin order and later subsets select from it.
+    """
+    if isinstance(locator, ClippedLocator):
+        return locator.mapping
+    if isinstance(locator, TransformedLocator):
+        return clip_mapping_of(locator.base)
+    if isinstance(locator, SubsetLocator):
+        mapping = clip_mapping_of(locator.base)
+        if mapping is None:
+            return None
+        child = locator.parent_to_child
+        if child.shape != mapping.parent_bin_indices.shape:
+            raise ValueError(
+                "A subset's parent count disagrees with the clip it selects from."
+            )
+        kept = np.flatnonzero(child >= 0)
+        kept = kept[np.argsort(child[kept])]
+        return ClipMapping(mapping.parent_bin_indices[kept], mapping.n_parent_bins)
+    return None
 
 
 def _check_disjoint(polygons: tuple[Polygon, ...]) -> None:

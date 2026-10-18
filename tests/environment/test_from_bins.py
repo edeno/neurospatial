@@ -494,7 +494,7 @@ def test_custom_callbacks_are_refused_before_copy_or_lookup():
         Environment.from_bins(replace(_nearest(), locator=CustomLocator()))
 
 
-@pytest.mark.parametrize("slot", ["mapping", "cells", "clip_mapping"])
+@pytest.mark.parametrize("slot", ["mapping", "cells"])
 def test_clipped_records_refuse_nested_custom_providers_before_copy(slot):
     parent = Environment.from_grid_mask(
         np.ones((1, 2), dtype=bool),
@@ -526,10 +526,8 @@ def test_clipped_records_refuse_nested_custom_providers_before_copy(slot):
         source = replace(
             source, locator=replace(source.locator, mapping=ExternalMapping())
         )
-    elif slot == "cells":
-        source = replace(source, locator=replace(source.locator, cells=ExternalCells()))
     else:
-        source = replace(source, clip_mapping=ExternalMapping())
+        source = replace(source, locator=replace(source.locator, cells=ExternalCells()))
     with pytest.raises(TypeError, match=r"owned.*snapshot|supported"):
         Environment.from_bins(source)
 

@@ -85,11 +85,6 @@ def _check_binning(binning: Binning) -> None:
     """Refuse opaque callbacks before any provider can be deep-copied."""
     if type(binning) is not Binning or type(binning.bins) is not SpatialBins:
         _migration(binning)
-    if (
-        binning.clip_mapping is not None
-        and type(binning.clip_mapping) is not ClipMapping
-    ):
-        _migration(binning.clip_mapping)
     _check_locator(binning.locator)
     faces = binning.faces
     if type(faces) not in (KnownFaces, MissingFaces, NativeFaces):
