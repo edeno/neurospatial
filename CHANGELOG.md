@@ -1364,6 +1364,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- On an egocentric polar environment, the bin that stands for a start or goal
+  region in trial and decision analyses (`trials_to_region_arrays`, decision
+  boundaries) is the region bin nearest the region's center in the animal's
+  plane. Before, the center was an average of `(distance, angle)` rows, which
+  put a wide wedge 10–40 cm ahead at 25 cm instead of about 16 cm.
+
 - `HeadDirectionOverlay`, `BodypartOverlay`, `ObjectVectorOverlay` and
   `VideoOverlay` raise `CartesianOnlyError` on an egocentric polar
   environment. They draw arena coordinates, and a polar environment's axes
