@@ -303,7 +303,13 @@ recorded points and finds the nearest one for each position:
 ```python
 import numpy as np
 
-from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 
 
 class RecordedPoints:
@@ -316,7 +322,8 @@ class RecordedPoints:
         lengths = np.linalg.norm(points[pairs[:, 1]] - points[pairs[:, 0]], axis=1)
         self._binning = Binning(
             "RecordedPoints",
-            SpatialBins.from_arrays(points, np.ones(len(points)), 2, pairs, lengths),
+            SpatialBins.from_arrays(points, np.ones(len(points)), 2),
+            BinConnections.from_arrays(pairs, lengths),
             NearestBinLocator(points, max_distance=5.0),
             MissingFaces("Recorded points have no cells."),
             dimension_ranges=((0.0, 100.0), (0.0, 100.0)),
@@ -352,6 +359,37 @@ graph = env.to_networkx()
 graph.nodes[0]["label"] = "start"
 labels = np.full(env.n_bins, "", dtype=object)  # or an array indexed by bin
 labels[0] = "start"
+```
+
+## Neighbor pairs live in `BinConnections`
+
+A `Binning` keeps its bins (`SpatialBins`: centers, measures and
+`measure_dim`) and their neighbor pairs (`BinConnections`: pairs, navigation
+distances and `is_open`) in separate records, passed in that order. A wall
+closes the pairs across it instead of deleting them; `connections.pairs` and
+`env.edge_pairs` are the open pairs, as before. The clip mapping is read from
+the clipped locator, so `Binning` no longer takes `clip_mapping=`:
+
+<!-- docs-test: run -->
+```python
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
+
+sites = np.array([[0.0, 0.0], [2.0, 0.0]])
+# Before: bins = SpatialBins.from_arrays(sites, [1.0, 1.0], 2, [[0, 1]], [2.0])
+# Before: Binning("sites", bins, NearestBinLocator(sites), MissingFaces("none"))
+bins = SpatialBins.from_arrays(sites, [1.0, 1.0], 2)
+connections = BinConnections.from_arrays([[0, 1]], [2.0])
+sites_env = Environment.from_bins(
+    Binning("sites", bins, connections, NearestBinLocator(sites), MissingFaces("none"))
+)
+# Before: sites_env.binning.bins.pairs
+assert sites_env.binning.connections.pairs.tolist() == [[0, 1]]
 ```
 
 ## Track graph attributes must be saveable

@@ -227,9 +227,9 @@ def test_grid_spec_owns_inputs_and_survives_copy_restore():
         assert not owned.origin.flags.writeable and not owned.forward.flags.writeable
 
 
-def test_legacy_payload_does_not_infer_spec_from_provenance():
+def test_payload_without_spec_does_not_infer_one_from_provenance():
     data = grid().to_dict()
-    data["binning"].pop("grid_spec")
+    data["binning"]["grid_spec"] = None
     restored = Environment.from_dict(data)
     assert restored._binning.grid_spec is None
     with pytest.raises(NotImplementedError, match="do not record"):

@@ -63,6 +63,7 @@ from neurospatial.environment._fields import (
 from neurospatial.environment._lookup import center_tree, nearest_bin
 from neurospatial.environment._metrics import (
     _bin_attributes,
+    _blocked_edges,
     _copy_attributes,
     _edge_attributes,
     _get_bridge_attributes,
@@ -441,7 +442,7 @@ class Environment(Generic[_C]):
         This order preserves explicit bin input, and can differ from NetworkX
         edge iteration. The returned array is read-only.
         """
-        pairs: NDArray[np.intp] = self._binning.bins.pairs.view()
+        pairs: NDArray[np.intp] = self._binning.connections.pairs.view()
         return pairs
 
     def to_networkx(self) -> nx.Graph:
@@ -1218,6 +1219,55 @@ class Environment(Generic[_C]):
         Conductance units are length ** (measure_dim - 2).
         """
         return _get_bridge_attributes(self._binning)
+
+    def get_blocked_edges(self) -> pd.DataFrame:
+        """Return the neighbor pairs that walls close, and the wall closing each.
+
+        A wall along the edge between two bins closes that pair: paths,
+        distances, smoothing and gradients do not cross it. The pair stays
+        recorded, so this table shows which bins each wall separates.
+
+        Returns
+        -------
+        pd.DataFrame, shape (n_closed_pairs, 4)
+            One row per closed pair, in the binning's pair order:
+
+            - ``'source'``, ``'target'``: bin IDs of the pair.
+            - ``'distance'``: navigation distance the pair would have.
+            - ``'wall'``: name of the wall covering most of the shared edge
+              (``arena.wall_names``), or None for a pair no current wall
+              closes, such as one passed closed to :meth:`from_bins`.
+
+            Empty when nothing is closed. A wall that covers only part of an
+            edge leaves the pair open with a narrower face, so it is not
+            listed.
+
+        See Also
+        --------
+        get_edge_attributes : The open pairs, ``edge_pairs``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from shapely.geometry import LineString, box
+        >>> from neurospatial import Environment
+        >>> from neurospatial.arena import OpenArena
+        >>> arena = OpenArena(
+        ...     box(0, 0, 4, 2), walls={"divider": LineString([(2, 0), (2, 2)])}
+        ... )
+        >>> env = Environment.from_grid_mask(
+        ...     np.ones((4, 2), dtype=bool),
+        ...     grid_edges=(np.arange(5.0), np.arange(3.0)),
+        ...     arena=arena,
+        ... )
+        >>> env.get_blocked_edges()  # the two neighbors across x = 2 and both diagonals
+           source  target  distance     wall
+        0       2       4  1.000000  divider
+        1       2       5  1.414214  divider
+        2       3       4  1.414214  divider
+        3       3       5  1.000000  divider
+        """
+        return _blocked_edges(self._binning, self.arena)
 
     def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-dimensional points to bins using geometric containment.

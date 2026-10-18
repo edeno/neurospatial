@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.geometry._arrays import ReadOnlyState
-from neurospatial.geometry._binning import SpatialBins
+from neurospatial.geometry._binning import BinConnections, SpatialBins
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_builders import (
     grid_geometry,
@@ -28,7 +28,10 @@ class NativeFaces(ReadOnlyState):
     Parameters
     ----------
     bins : SpatialBins
-        Centers, ordered edges, navigation distances and physical measures.
+        Centers and physical measures.
+    connections : BinConnections
+        Ordered neighbor pairs and navigation distances; faces follow the
+        open pairs.
     family : {'grid', 'polar', 'hex', 'mesh', 'track'}
         Native formula to evaluate. No construction parameters are replayed.
     arrays : tuple of ndarray
@@ -41,6 +44,7 @@ class NativeFaces(ReadOnlyState):
     """
 
     bins: SpatialBins
+    connections: BinConnections
     family: Literal["grid", "polar", "hex", "mesh", "track"]
     arrays: tuple[NDArray[Any], ...] = ()
     n_angle: int = 0
@@ -59,10 +63,12 @@ class NativeFaces(ReadOnlyState):
 
     def build(self) -> FaceGeometry:
         """Evaluate the shared native formula in authoritative pair order."""
-        bins = self.bins
+        bins, pairs = self.bins, self.connections.pairs
         graph = nx.Graph()
         graph.add_nodes_from(range(bins.n_bins))
-        for (u, v), distance in zip(bins.pairs, bins.pair_distances, strict=True):
+        for (u, v), distance in zip(
+            pairs, self.connections.pair_distances, strict=True
+        ):
             graph.add_edge(int(u), int(v), distance=float(distance))
         if self.family == "grid":
             graph, volumes = grid_geometry(
@@ -85,7 +91,7 @@ class NativeFaces(ReadOnlyState):
             )
         else:
             input_order = {
-                frozenset((int(u), int(v))): i for i, (u, v) in enumerate(bins.pairs)
+                frozenset((int(u), int(v))): i for i, (u, v) in enumerate(pairs)
             }
             junctions = self.arrays[0][
                 [input_order[frozenset((u, v))] for u, v in graph.edges()]
@@ -96,12 +102,12 @@ class NativeFaces(ReadOnlyState):
             frozenset((int(u), int(v))): i for i, (u, v) in enumerate(faces.edges)
         }
         order = np.array(
-            [indices[frozenset((int(u), int(v)))] for u, v in bins.pairs], dtype=np.intp
+            [indices[frozenset((int(u), int(v)))] for u, v in pairs], dtype=np.intp
         )
         areas, distances = faces.A[order], faces.distance[order]
         areas.setflags(write=False)
         distances.setflags(write=False)
-        return FaceGeometry(bins.pairs, areas, distances, faces.volumes)
+        return FaceGeometry(pairs, areas, distances, faces.volumes)
 
     def missing_error(self, operation: str) -> NotImplementedError:
         """Return the faces-source protocol's unused available-source error."""

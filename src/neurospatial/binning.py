@@ -1,8 +1,8 @@
 """Explicit owned geometry for :meth:`Environment.from_bins`.
 
-``SpatialBins`` supplies bin IDs, physical measures and ordered neighbor pairs.
-``Binning`` adds an explicit locator and either ``KnownFaces`` or
-``MissingFaces``. Optional components establish grid, track and drawing
+``SpatialBins`` supplies bin IDs and physical measures, and ``BinConnections``
+their ordered neighbor pairs. ``Binning`` adds an explicit locator and either
+``KnownFaces`` or ``MissingFaces``. Optional components establish grid, track and drawing
 capabilities. Nearest-center lookup and scalar measures do not define cells.
 
 Environment construction takes an independent snapshot of these records.
@@ -11,6 +11,7 @@ changing an existing environment. Delegated layout callbacks are not accepted.
 """
 
 from neurospatial.geometry import (
+    BinConnections,
     Binning,
     ClipMapping,
     ClippedLocator,
@@ -37,6 +38,7 @@ from neurospatial.geometry import (
 )
 
 __all__ = [
+    "BinConnections",
     "Binning",
     "ClipMapping",
     "ClippedLocator",

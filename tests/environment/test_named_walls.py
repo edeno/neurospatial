@@ -11,7 +11,6 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.binning import Binning, KnownFaces
-from neurospatial.geometry import decode_arena, encode_arena
 from neurospatial.ops.transforms import translate
 
 DIVIDER = LineString([(2, 0), (2, 3)])
@@ -92,12 +91,6 @@ def test_names_survive_derivations_and_storage(tmp_path):
     assert Environment.from_file(tmp_path / "walled").arena.wall_names == ("divider",)
     combined = Environment.combine({"left": env, "right": moved}, auto_bridge=False)
     assert combined.arena.wall_names == ("divider", "divider")
-
-
-def test_records_without_wall_names_get_default_names():
-    meta, arrays = encode_arena(OpenArena(box(0, 0, 4, 4), walls={"divider": DIVIDER}))
-    del meta["wall_names"]
-    assert decode_arena(meta, arrays).wall_names == ("wall_0",)
 
 
 def test_binning_import_is_unchanged_for_wall_free_arenas():

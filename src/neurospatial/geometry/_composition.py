@@ -12,7 +12,7 @@ from scipy.sparse.csgraph import connected_components
 
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._arrays import ReadOnlyState
-from neurospatial.geometry._binning import Binning, SpatialBins
+from neurospatial.geometry._binning import BinConnections, Binning, SpatialBins
 from neurospatial.geometry._diffusion import DiffusionGeometry
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
@@ -74,15 +74,13 @@ class CombinedLocator(ReadOnlyState):
                 "Components need matching Cartesian dimensions and measures."
             )
         centers = np.concatenate([child.bins.centers for child in children])
-        sizes = np.concatenate([child.bins.sizes for child in children])
-        bridge_bins = SpatialBins.from_arrays(
-            centers, sizes, measure, self.bridge_pairs, self.bridge_distances
-        )
+        bridges = BinConnections.from_arrays(self.bridge_pairs, self.bridge_distances)
+        bridges.check_bins(len(centers))
         geometric = np.linalg.norm(
-            centers[bridge_bins.pairs[:, 1]] - centers[bridge_bins.pairs[:, 0]], axis=1
+            centers[bridges.pairs[:, 1]] - centers[bridges.pairs[:, 0]], axis=1
         )
         if not np.allclose(
-            bridge_bins.pair_distances, geometric, rtol=32 * np.finfo(float).eps, atol=0
+            bridges.pair_distances, geometric, rtol=32 * np.finfo(float).eps, atol=0
         ):
             raise ValueError(
                 "Inferred bridge distances must match endpoint separation."
@@ -91,7 +89,7 @@ class CombinedLocator(ReadOnlyState):
             if arena.domain_known and not np.all(arena.contains(child.bins.centers)):
                 raise ValueError("A component arena excludes its own bin centers.")
         conductances = np.array(self.bridge_conductances, dtype=np.float64, copy=True)
-        if conductances.shape != (len(bridge_bins.pairs),) or np.any(
+        if conductances.shape != (len(bridges.pairs),) or np.any(
             ~np.isfinite(conductances) | (conductances < 0)
         ):
             raise ValueError(
@@ -99,8 +97,8 @@ class CombinedLocator(ReadOnlyState):
             )
         offsets = np.cumsum([0, *[child.bins.n_bins for child in children]])
         owners = np.repeat(np.arange(len(children)), np.diff(offsets))
-        if len(bridge_bins.pairs) and np.any(
-            owners[bridge_bins.pairs[:, 0]] == owners[bridge_bins.pairs[:, 1]]
+        if len(bridges.pairs) and np.any(
+            owners[bridges.pairs[:, 0]] == owners[bridges.pairs[:, 1]]
         ):
             raise ValueError("Bridges must join bins in different components.")
         conductances.setflags(write=False)
@@ -108,8 +106,8 @@ class CombinedLocator(ReadOnlyState):
             ("keys", keys),
             ("children", children),
             ("arenas", arenas),
-            ("bridge_pairs", bridge_bins.pairs),
-            ("bridge_distances", bridge_bins.pair_distances),
+            ("bridge_pairs", bridges.pairs),
+            ("bridge_distances", bridges.pair_distances),
             ("bridge_conductances", conductances),
         ):
             object.__setattr__(self, name, value)
@@ -122,27 +120,34 @@ class CombinedLocator(ReadOnlyState):
         )
 
     def spatial_bins(self) -> SpatialBins:
-        """Assemble the authoritative concatenated bins and navigation edges."""
-        offsets = self.offsets
+        """Assemble the authoritative concatenated bins."""
         return SpatialBins.from_arrays(
             np.concatenate([child.bins.centers for child in self.children]),
             np.concatenate([child.bins.sizes for child in self.children]),
             self.children[0].bins.measure_dim,
+        )
+
+    def bin_connections(self) -> BinConnections:
+        """Each child's pairs, open and closed, then the open bridges."""
+        offsets = self.offsets
+        links = [child.connections for child in self.children]
+        return BinConnections(
             np.concatenate(
                 [
                     *[
-                        child.bins.pairs + offset
-                        for child, offset in zip(
-                            self.children, offsets[:-1], strict=True
-                        )
+                        link.all_pairs + offset
+                        for link, offset in zip(links, offsets[:-1], strict=True)
                     ],
                     self.bridge_pairs,
                 ]
             ),
             np.concatenate(
+                [*[link.all_distances for link in links], self.bridge_distances]
+            ),
+            np.concatenate(
                 [
-                    *[child.bins.pair_distances for child in self.children],
-                    self.bridge_distances,
+                    *[link.is_open for link in links],
+                    np.ones(len(self.bridge_pairs), dtype=bool),
                 ]
             ),
         )
@@ -334,7 +339,7 @@ def bridge_values(binning: Binning) -> dict[frozenset[int], float]:
             }
         )
     result = {}
-    for u, v in binning.bins.pairs:
+    for u, v in binning.connections.pairs:
         pair = frozenset((int(indices[u]), int(indices[v])))
         if pair in original:
             result[frozenset((int(u), int(v)))] = original[pair] * scale ** (

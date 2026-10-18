@@ -22,7 +22,12 @@ from neurospatial.environment._fields import (
     diffusion_eigenbasis,
     face_geometry,
 )
-from neurospatial.geometry._binning import Binning, KnownFaces, SpatialBins
+from neurospatial.geometry._binning import (
+    BinConnections,
+    Binning,
+    KnownFaces,
+    SpatialBins,
+)
 from neurospatial.geometry._diffusion import (
     DiffusionGeometry,
     FaceGeometry,
@@ -52,10 +57,14 @@ def _face_environment(scale=1.0):
     for (u, v), area in zip(graph.edges(), (2.0, 3.0), strict=True):
         graph.edges[u, v]["A"] = area * scale
     faces = FaceGeometry.from_graph(graph, volumes)
-    bins = SpatialBins.from_arrays(
-        layout.bin_centers, volumes, 1, faces.edges, np.ones(2)
+    bins = SpatialBins.from_arrays(layout.bin_centers, volumes, 1)
+    binning = Binning(
+        "Faces",
+        bins,
+        BinConnections.from_arrays(faces.edges, np.ones(2)),
+        NearestBinLocator(bins.centers),
+        KnownFaces(faces),
     )
-    binning = Binning("Faces", bins, NearestBinLocator(bins.centers), KnownFaces(faces))
     owned = publish_binning(
         binning,
         dimension_ranges=layout.dimension_ranges,

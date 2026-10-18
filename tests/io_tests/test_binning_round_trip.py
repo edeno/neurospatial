@@ -56,8 +56,11 @@ def test_file_round_trip_identical(environment_round_trip):
     for array in (
         loaded.bin_centers,
         loaded.bin_sizes,
-        loaded._binning.bins.pairs,
-        loaded._binning.bins.pair_distances,
+        loaded._binning.connections.all_pairs,
+        loaded._binning.connections.all_distances,
+        loaded._binning.connections.is_open,
+        loaded._binning.connections.pairs,
+        loaded._binning.connections.pair_distances,
         *face_geometry(loaded._cache, loaded._binning),
     ):
         assert not array.flags.writeable
@@ -151,7 +154,7 @@ def test_loaded_snapshot_pickle_restores_protected_arrays(environment_round_trip
     for array in (
         loaded.bin_centers,
         loaded.bin_sizes,
-        loaded._binning.bins.pairs,
+        loaded._binning.connections.pairs,
         *face_geometry(loaded._cache, loaded._binning),
     ):
         assert not array.flags.writeable
@@ -213,11 +216,13 @@ def test_saved_format_stores_binning(simple_saved_grid, tmp_path, transport):
         payload = json.loads(path.with_suffix(".json").read_text())
         with np.load(path.with_suffix(".npz")) as arrays:
             assert "binning/bins/centers" in arrays
+            assert "binning/connections/all_pairs" in arrays
+            assert "binning/connections/is_open" in arrays
             assert "binning/faces/volumes" in arrays
     assert payload["schema_version"] == "Environment-v3"
     assert payload["layout_type"] == simple_saved_grid.layout_type
     assert payload["derivations"] == list(simple_saved_grid.derivations)
-    assert payload["binning"]["codec_version"] == 3
+    assert payload["binning"]["codec_version"] == 4
 
 
 @pytest.mark.parametrize("transport", ["file", "dict"])

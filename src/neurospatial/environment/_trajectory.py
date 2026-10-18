@@ -640,7 +640,7 @@ def _empirical_transitions(
         source_bins,
         target_bins,
         n_bins,
-        neighbor_pairs=None if allow_teleports else binning.bins.pairs,
+        neighbor_pairs=None if allow_teleports else binning.connections.pairs,
         normalize=normalize,
     )
 

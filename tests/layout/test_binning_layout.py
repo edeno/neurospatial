@@ -12,6 +12,7 @@ from environment_helpers import publish_binning
 from neurospatial import Environment
 from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -223,7 +224,9 @@ def test_facade_accepts_coherent_geometric_bin_permutation(built_environment):
         original.bins,
         centers=original.bins.centers[permutation],
         sizes=original.bins.sizes[permutation],
-        pairs=inverse[original.bins.pairs],
+    )
+    connections = replace(
+        original.connections, all_pairs=inverse[original.connections.all_pairs]
     )
     mapping_name = (
         "flat_to_active" if original.kind == "Hexagonal" else "simplex_to_active"
@@ -241,7 +244,14 @@ def test_facade_accepts_coherent_geometric_bin_permutation(built_environment):
     faces = KnownFaces(
         faces._replace(edges=inverse[faces.edges], volumes=faces.volumes[permutation])
     )
-    binning = replace(original, bins=bins, locator=locator, shapes=shapes, faces=faces)
+    binning = replace(
+        original,
+        bins=bins,
+        connections=connections,
+        locator=locator,
+        shapes=shapes,
+        faces=faces,
+    )
     facade = _facade(env, binning=binning)
     np.testing.assert_array_equal(
         facade._binning.locator.locate(bins.centers), np.arange(env.n_bins)
@@ -321,7 +331,8 @@ def test_facade_validates_genuinely_nonuniform_cartesian_cells(corrupt):
     distances = np.array([1.5])
     binning = Binning(
         "MaskedGrid",
-        SpatialBins(centers, sizes, 2, pairs, distances),
+        SpatialBins(centers, sizes, 2),
+        BinConnections.from_arrays(pairs, distances),
         RectilinearLocator(edges, (2, 1), mask, np.arange(2)),
         KnownFaces(FaceGeometry(pairs, np.array([1.0]), distances, sizes)),
         rectilinear=RectilinearGrid(edges, (2, 1), mask),

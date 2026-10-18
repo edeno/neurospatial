@@ -185,20 +185,30 @@ the [region guide](regions.md) shows that workflow.
 ## Bring explicit bins
 
 Use `from_bins()` when another tool already defines the bin centers, measures,
-neighbor pairs and lookup rule. Supply the measures and navigation distances
-explicitly; nearest-center lookup does not establish cell boundaries or faces.
+neighbor pairs and lookup rule. `SpatialBins` holds the bins and their measures,
+`BinConnections` their neighbor pairs and navigation distances. Supply the
+measures and distances explicitly; nearest-center lookup does not establish cell
+boundaries or faces.
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 
 centers = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]])
 bins = SpatialBins.from_arrays(
     centers=centers,
     sizes=np.array([1.0, 1.0, 1.0]),  # supplied areas, in cm squared
     measure_dim=2,
+)
+connections = BinConnections.from_arrays(
     pairs=np.array([[1, 2], [1, 0]]),
     pair_distances=np.array([3.0, 4.0]),  # supplied navigation path lengths
 )
@@ -206,6 +216,7 @@ env = Environment.from_bins(
     Binning(
         kind="sample_sites",
         bins=bins,
+        connections=connections,
         locator=NearestBinLocator(centers, max_distance=0.25),
         faces=MissingFaces("Only centers and navigation distances were measured."),
     ),
@@ -359,6 +370,13 @@ Name each wall by passing a mapping, `walls={"divider": line}`, and errors,
 warnings and saved files refer to it by that name (`arena.wall_names`). Walls
 given as a sequence are named `"wall_0"`, `"wall_1"`, and so on.
 
+A wall closes the neighbor pairs on either side of it rather than deleting
+them: the bins, their order and the list of pairs (`env.binning.connections`)
+are the same as without the wall, and only the pairs' `is_open` flags differ.
+Paths, distances, smoothing and gradients use the open pairs, `env.edge_pairs`.
+`env.get_blocked_edges()` lists each closed pair and the wall that closes it, a
+quick check that a wall separates the bins you meant.
+
 `from_bins`, `rebin` and saved environments keep the bins they are given, so a
 wall through one of their bins raises an error naming the wall and the bin.
 Declare walls in the original coordinates before clipping or transforming so
@@ -395,6 +413,11 @@ with warnings.catch_warnings(record=True) as caught:
     )
 assert "moved the walls onto bin edges by up to 0.4" in str(caught[0].message)
 assert snapped.arena.wall_names == ("barrier",)
+
+# The wall closes the pairs across it; the bins and their pair order stay.
+blocked = env.get_blocked_edges()
+assert set(blocked["wall"]) == {"divider"}
+assert all(left[u] != left[v] for u, v in zip(blocked["source"], blocked["target"]))
 split = Environment.from_grid_mask(
     np.ones((4, 4), dtype=bool),
     grid_edges=(np.arange(5.0), np.arange(5.0)),

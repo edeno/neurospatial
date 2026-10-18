@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.geometry import (
+    BinConnections,
     Binning,
     FaceNormals,
     GridBinningSpec,
@@ -45,7 +46,7 @@ def assemble_binning(
     outline: Outline | None = None,
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
 ) -> Binning:
-    """Snapshot bins and neighbor pairs, computing faces lazily.
+    """Snapshot bins and their neighbor pairs, computing faces lazily.
 
     Every built-in layout engine's ``binning()`` passes its own state here,
     so all engines share one rule for bin measures and face directions. The
@@ -96,19 +97,19 @@ def assemble_binning(
         centers=np.asarray(centers, dtype=np.float64),
         sizes=sizes,
         measure_dim=measure_dim,
-        pairs=pairs,
-        pair_distances=pair_distances,
     )
+    connections = BinConnections.from_arrays(pairs, pair_distances)
     normals = (
-        geometric_normals(locator, bins.centers, bins.pairs)
+        geometric_normals(locator, bins.centers, connections.pairs)
         if face_normals and bins.n_dims in (2, 3)
         else None
     )
     return Binning(
         kind=kind,
         bins=bins,
+        connections=connections,
         locator=locator,
-        faces=NativeFaces(bins, faces, face_arrays, n_angle, circular),
+        faces=NativeFaces(bins, connections, faces, face_arrays, n_angle, circular),
         rectilinear=rectilinear,
         linearization=linearization,
         grid_spec=grid_spec,

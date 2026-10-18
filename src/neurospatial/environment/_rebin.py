@@ -26,10 +26,10 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry import (
     Arena,
+    BinConnections,
     Binning,
     KnownFaces,
     NativeFaces,
-    SpatialBins,
     apply_walls,
     get_centers,
     materialize_cells,
@@ -159,7 +159,7 @@ def _warn_outline_crossings(
         Mode-specific advice for resolving the barrier.
     """
     domain = arena.polygonal_domain()
-    pairs = rebinned._binning.bins.pairs
+    pairs = rebinned._binning.connections.pairs
     if domain is None or len(pairs) == 0:
         return
     centers = rebinned.bin_centers
@@ -473,9 +473,9 @@ def _require_native_grid_navigation(
     binning: Binning, arena: Arena, *, connect_diagonal: bool
 ) -> None:
     """Require the native grid paths that factor rebinning knows how to rebuild."""
-    bins = binning.bins
+    bins, links = binning.bins, binning.connections
     direct_distances = np.hypot.reduce(
-        bins.centers[bins.pairs[:, 1]] - bins.centers[bins.pairs[:, 0]], axis=1
+        bins.centers[links.pairs[:, 1]] - bins.centers[links.pairs[:, 0]], axis=1
     )
     message = (
         "rebin() cannot reconstruct custom navigation paths or connections. "
@@ -483,7 +483,7 @@ def _require_native_grid_navigation(
         "and their navigation geometry."
     )
     if not np.allclose(
-        bins.pair_distances,
+        links.pair_distances,
         direct_distances,
         rtol=64 * np.finfo(np.float64).eps,
         atol=0.0,
@@ -508,10 +508,7 @@ def _require_native_grid_navigation(
     ).connectivity
     assert graph is not None
     pairs = np.asarray(list(graph.edges()), dtype=np.intp).reshape(-1, 2)
-    candidate_bins = SpatialBins(
-        bins.centers,
-        bins.sizes,
-        bins.measure_dim,
+    candidate_links = BinConnections.from_arrays(
         pairs,
         np.hypot.reduce(bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]], axis=1),
     )
@@ -519,17 +516,18 @@ def _require_native_grid_navigation(
     # aligned to the candidate graph rather than the source's selected pairs.
     candidate = replace(
         binning,
-        bins=candidate_bins,
+        connections=candidate_links,
         faces=NativeFaces(
-            candidate_bins,
+            bins,
+            candidate_links,
             "grid",
             (np.array([edge[1] - edge[0] for edge in grid.edges]),),
         ),
         face_normals=None,
     )
     candidate = apply_walls(candidate, arena)
-    expected_pairs = {frozenset(pair) for pair in candidate.bins.pairs}
-    if expected_pairs != {frozenset(pair) for pair in bins.pairs}:
+    expected_pairs = {frozenset(pair) for pair in candidate.connections.pairs}
+    if expected_pairs != {frozenset(pair) for pair in links.pairs}:
         raise NotImplementedError(message)
 
 

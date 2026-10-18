@@ -933,12 +933,13 @@ def combine_binnings(
         keys, children_tuple, arenas, bridge_pairs, np.array(distances), conductances
     )
     bins = locator.spatial_bins()
+    connections = locator.bin_connections()
     faces: KnownFaces | MissingFaces
     if not len(pairs) and all(child.faces.available for child in children):
         child_faces = [child.faces.build() for child in children]
         faces = KnownFaces(
             FaceGeometry(
-                bins.pairs,
+                connections.pairs,
                 np.concatenate([part.A for part in child_faces]),
                 np.concatenate([part.distance for part in child_faces]),
                 bins.sizes,
@@ -954,6 +955,14 @@ def combine_binnings(
             shapes = PolygonCells(cells_from_locator(locator))
     normals = combined_normals(locator) if not len(pairs) else None
     combined = prepare_bins(
-        Binning(kind, bins, locator, faces, shapes=shapes, face_normals=normals)
+        Binning(
+            kind,
+            bins,
+            connections,
+            locator,
+            faces,
+            shapes=shapes,
+            face_normals=normals,
+        )
     )
     return combined, len(pairs)

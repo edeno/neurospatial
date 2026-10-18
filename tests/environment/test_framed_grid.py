@@ -13,7 +13,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.binning import FramedGrid, RectilinearGrid
-from neurospatial.geometry._codecs import decode, encode
+from neurospatial.geometry._codecs import encode
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import PolygonCells
 from neurospatial.io import from_dict, from_file, to_dict, to_file
@@ -154,6 +154,7 @@ def test_frame_round_trip_owns_all_arrays(
 ):
     # Create before forbidding builders (the fixture patches classes at setup).
     from neurospatial.binning import (
+        BinConnections,
         Binning,
         MissingFaces,
         RectilinearLocator,
@@ -168,17 +169,12 @@ def test_frame_round_trip_owns_all_arrays(
         .T
     )
     locator = RectilinearLocator(edges, shape, None, None)
-    bins = SpatialBins(
-        centers,
-        np.ones(len(centers)),
-        n_dims,
-        np.empty((0, 2), dtype=np.intp),
-        np.empty(0),
-    )
+    bins = SpatialBins(centers, np.ones(len(centers)), n_dims)
     native = Environment.from_bins(
         Binning(
             "explicit",
             bins,
+            BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), np.empty(0)),
             locator,
             MissingFaces("No edges."),
             rectilinear=RectilinearGrid(edges, shape, np.ones(shape, dtype=bool)),
@@ -295,23 +291,10 @@ def test_hexagon_conversion_retains_exact_vertices(kind):
     )
 
 
-def test_frame_codec_version_and_legacy_v2_normal_data():
-    env = moved(grid(), matrix())
-    meta, arrays = encode(env._binning, "binning")
-    assert meta["codec_version"] == 3
+def test_binning_and_frame_codec_versions():
+    meta, _ = encode(moved(grid(), matrix())._binning, "binning")
+    assert meta["codec_version"] == 4
     assert meta["grid_frame"]["codec_version"] == 1
-    meta["codec_version"] = 2
-    with pytest.raises(ValueError, match="grid_frame requires"):
-        decode(meta, arrays, "binning")
-    native = grid()
-    meta, arrays = encode(native._binning, "binning")
-    meta["codec_version"] = 2
-    del meta["grid_frame"]
-    restored = decode(meta, arrays, "binning")
-    assert restored.grid_frame is None
-    np.testing.assert_array_equal(
-        restored.face_normals.values, native._binning.face_normals.values
-    )
 
 
 @pytest.mark.parametrize("kind", ["grid", "hexagonal"])

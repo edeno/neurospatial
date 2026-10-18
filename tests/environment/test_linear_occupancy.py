@@ -664,15 +664,22 @@ class TestLinearOccupancyMaskedGrid:
 
 def _cell_less_bins():
     """Four unit bins given by centers and sizes only, with no cell shapes."""
-    from neurospatial.binning import Binning, KnownFaces, NearestBinLocator, SpatialBins
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        KnownFaces,
+        NearestBinLocator,
+        SpatialBins,
+    )
     from neurospatial.geometry._diffusion import FaceGeometry
 
     centers = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
     pairs = np.array([[0, 1], [0, 2], [1, 3], [2, 3]])
-    bins = SpatialBins(centers, np.ones(4), 2, pairs, np.ones(4))
+    bins = SpatialBins(centers, np.ones(4), 2)
+    connections = BinConnections.from_arrays(pairs, np.ones(4))
     faces = KnownFaces(FaceGeometry(pairs, np.ones(4), np.ones(4), bins.sizes))
     return Environment.from_bins(
-        Binning("declared", bins, NearestBinLocator(centers), faces)
+        Binning("declared", bins, connections, NearestBinLocator(centers), faces)
     )
 
 

@@ -28,6 +28,7 @@ def _rotated_points(n_cells=4):
         Binning(
             "points",
             env._binning.bins,
+            env._binning.connections,
             NearestBinLocator(env.bin_centers),
             MissingFaces("Point-only bins have no physical cell faces."),
         )

@@ -300,6 +300,7 @@ class TestFFTAutocorrelationLagsArePhysical:
     def _grid(x_edges, y_edges):
         """Fully active rectangular cells on the given edges, from explicit bins."""
         from neurospatial.binning import (
+            BinConnections,
             Binning,
             MissingFaces,
             RectilinearGrid,
@@ -327,7 +328,8 @@ class TestFFTAutocorrelationLagsArePhysical:
         return Environment.from_bins(
             Binning(
                 "RegularGrid",
-                SpatialBins.from_arrays(centers, areas, 2, pairs, distances),
+                SpatialBins.from_arrays(centers, areas, 2),
+                BinConnections.from_arrays(pairs, distances),
                 RectilinearLocator(edges, shape, mask, None),
                 MissingFaces("No finite-volume faces supplied."),
                 rectilinear=RectilinearGrid(edges, shape, mask),
@@ -452,6 +454,7 @@ class TestFFTAutocorrelationLagsArePhysical:
 
 def _pixel_size_cases():
     from neurospatial.binning import (
+        BinConnections,
         Binning,
         MissingFaces,
         RectilinearGrid,
@@ -481,7 +484,8 @@ def _pixel_size_cases():
         return Environment.from_bins(
             Binning(
                 "RegularGrid",
-                SpatialBins.from_arrays(centers, areas, 2, pairs, distances),
+                SpatialBins.from_arrays(centers, areas, 2),
+                BinConnections.from_arrays(pairs, distances),
                 RectilinearLocator((x_edges, y_edges), shape, mask, None),
                 MissingFaces("No finite-volume faces supplied."),
                 rectilinear=RectilinearGrid((x_edges, y_edges), shape, mask),

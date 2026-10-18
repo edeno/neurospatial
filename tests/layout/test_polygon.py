@@ -158,7 +158,7 @@ def test_materialized_native_cells_match_measures_and_centers(built_environment)
 def test_canonical_hex_materialization_has_all_shared_faces(built_environment):
     parent = built_environment._binning
     cells = materialize_cells(parent)
-    for u, v in parent.bins.pairs:
+    for u, v in parent.connections.pairs:
         assert cells[u].intersection(cells[v]).area == 0
         assert cells[u].boundary.intersection(
             cells[v].boundary
@@ -174,7 +174,7 @@ def test_disconnected_intersection_splits_and_shares_owned_data():
     np.testing.assert_array_equal(mapping.parent_bin_indices, [0, 0])
     np.testing.assert_array_equal(child.bins.centers, [[0.5, 2], [3.5, 2]])
     np.testing.assert_array_equal(child.bins.sizes, [4, 4])
-    assert len(child.bins.pairs) == 0
+    assert len(child.connections.pairs) == 0
     assert child.faces.available
     reversed_child, _ = clip_binning(parent, MultiPolygon(list(reversed(region.geoms))))
     assert [p.wkb for p in child.shapes.polygons] == [
@@ -251,11 +251,13 @@ def test_multiple_openings_are_not_certified_by_parallel_center_link():
     assert "single connected" in faces.reason
 
 
-def test_full_physical_wall_removes_pair_without_changing_cell_area():
+def test_full_physical_wall_closes_pair_without_changing_cell_area():
     child, _ = clip_binning(
         _grid(), box(0, 0, 2, 1), walls=(LineString([(1, 0), (1, 1)]),)
     )
-    assert len(child.bins.pairs) == 0
+    assert len(child.connections.pairs) == 0
+    np.testing.assert_array_equal(child.connections.all_pairs, [[0, 1]])
+    np.testing.assert_array_equal(child.connections.is_open, [False])
     np.testing.assert_array_equal(child.bins.sizes, [1, 1])
     assert child.faces.available
 
@@ -263,11 +265,13 @@ def test_full_physical_wall_removes_pair_without_changing_cell_area():
 def test_parent_path_only_faces_stay_zero_and_missing_roles_stay_missing():
     parent = _grid((2, 2), diagonals=True)
     child, _ = clip_binning(parent, box(0, 0, 2, 2))
-    np.testing.assert_array_equal(child.bins.pairs, parent.bins.pairs)
+    np.testing.assert_array_equal(child.connections.pairs, parent.connections.pairs)
     np.testing.assert_array_equal(child.faces.build().A, parent.faces.build().A)
     missing = replace(parent, faces=MissingFaces("Unknown source flux roles"))
     uncertified, _ = clip_binning(missing, box(0, 0, 2, 2))
-    np.testing.assert_array_equal(uncertified.bins.pairs, parent.bins.pairs)
+    np.testing.assert_array_equal(
+        uncertified.connections.pairs, parent.connections.pairs
+    )
     assert not uncertified.faces.available
     assert "inherited path-only" in uncertified.faces.reason
 
@@ -346,7 +350,7 @@ def test_materialized_wrapped_hex_cells_keep_shared_transformed_vertices(
     actual = materialize_cells(selected)
     for polygon, wanted in zip(actual, expected.subset(keep).polygons, strict=True):
         assert polygon.equals_exact(wanted, 1e-13)
-    for u, v in selected.bins.pairs:
+    for u, v in selected.connections.pairs:
         assert actual[u].intersection(actual[v]).area == 0
         assert actual[u].boundary.intersection(actual[v].boundary).length > 0
 

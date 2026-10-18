@@ -8,11 +8,26 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- A binning keeps its bins and their neighbor pairs in separate records.
+  `SpatialBins` holds centers, measures and `measure_dim`; the new
+  `BinConnections` holds the neighbor pairs, their navigation distances and
+  `is_open`, and `Binning` takes it after the bins:
+  `Binning(kind, bins, connections, locator, faces)`. Replace
+  `SpatialBins.from_arrays(centers, sizes, dim, pairs, distances)` with
+  `SpatialBins.from_arrays(centers, sizes, dim)` and
+  `BinConnections.from_arrays(pairs, distances)`, and read
+  `binning.connections.pairs` where you read `binning.bins.pairs`. Walls now
+  close the pairs across them instead of deleting them, so an environment with
+  a wall lists the same pairs, in the same order, as one without it;
+  `connections.pairs` and `env.edge_pairs` are still the open pairs, and every
+  analysis gives the same numbers as before. Environments saved by earlier
+  versions (Binning codec versions 1 to 3) no longer load; rebuild them from
+  their recording and save them again.
+
 - `Binning` no longer has a `clip_mapping` field. The clipped locator already
   holds the mapping, and the stored copy had to agree with it, so
   `Environment.clip_mapping` now reads it from the locator. Drop
-  `clip_mapping=` when building a `Binning` for `from_bins`. Saved
-  environments that stored the field still load.
+  `clip_mapping=` when building a `Binning` for `from_bins`.
 
 - `Environment.from_samples` (and `open_field`) tile the arena's bounds when
   given an `arena=` with a known outline and no `dimension_ranges`, so cell
@@ -1176,10 +1191,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `Environment.get_blocked_edges()` lists the neighbor pairs that walls close,
+  with each pair's navigation distance and the name of the wall that closes
+  it, to check that a wall separates the bins you meant.
+
 - Walls have names. `OpenArena(outline, walls={"divider": line})` names each
   wall; walls given as a sequence are named `"wall_0"`, `"wall_1"`, ... (or
   pass `wall_names=`). `arena.wall_names` lists them, snapped walls keep their
-  wall's name, files store them, and the errors and warnings about a wall
+  wall's name, files store them (saved arenas now require them), and the errors and warnings about a wall
   through a bin or a snapped wall name it.
 
 - `compute_boundary_vector_rate` and `compute_boundary_vector_rates` estimate

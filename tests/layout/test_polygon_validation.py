@@ -11,6 +11,7 @@ from shapely.affinity import translate
 from shapely.geometry import Polygon, box
 
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -43,13 +44,12 @@ def _binning(polygons, *, pairs=(), known=False):
     centers = np.array([_representative(polygon) for polygon in polygons])
     edges = np.array(pairs, dtype=int).reshape(-1, 2)
     distances = np.hypot.reduce(centers[edges[:, 1]] - centers[edges[:, 0]], axis=1)
-    bins = SpatialBins(
-        centers, np.array([p.area for p in polygons]), 2, edges, distances
-    )
+    bins = SpatialBins(centers, np.array([p.area for p in polygons]), 2)
     faces = certify_faces(cells, centers, edges) if known else MissingFaces("fixture")
     return Binning(
         "fixture",
         bins,
+        BinConnections.from_arrays(edges, distances),
         ClippedLocator(parent, cells, mapping),
         faces,
         shapes=cells,

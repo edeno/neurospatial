@@ -178,7 +178,12 @@ pairs and pair distances as arrays in `build()`, with vectorized helpers in
 `layout/helpers/neighbor_pairs.py` that fix the pair order (it becomes
 `env.edge_pairs`, the order of edge fields in gradients and divergence), and
 share one rule for bin measures and face directions through
-`assemble_binning` in `layout/_assembly.py`. Engines do not build graphs: a
+`assemble_binning` in `layout/_assembly.py`. A binning keeps the bins
+(`SpatialBins`: centers, measures) separate from their neighbor pairs
+(`BinConnections`), because they change for different reasons. Walls close
+pairs (`is_open`) instead of deleting them, so environments over the same bins
+keep one pair order; `connections.pairs`, the open pairs, is `env.edge_pairs`,
+and faces and face normals align with it. Engines do not build graphs: a
 built-in engine's `connectivity` is a convenience derived on first access
 from its binning with `geometry.graph_from_binning`, the same graph an
 environment publishes, and editing it changes nothing the engine publishes.
@@ -389,10 +394,12 @@ Partial clipping drops the tensor-grid component. `GridBinningSpec` separately
 describes how `rebin(bin_size=...)` builds a new grid and must not replace
 current-cell geometry.
 
-Binning codec version 3 stores frames and normals; readers accept version 2
-(normals only) and version 1 (neither component). New stored geometry components
-require a codec version increment so older readers cannot silently ignore a
-capability they do not understand. Environment-v3/NWB 3.0 envelopes are unchanged.
+Binning codec version 4 stores the bins and their connections as separate
+records, with frames and normals; readers accept only the version they write
+and refuse older records with recreation guidance. New stored geometry
+components require a codec version increment so older readers cannot silently
+ignore a capability they do not understand. Environment-v3/NWB 3.0 envelopes are
+unchanged.
 
 Combined environments retain child binnings instead of inventing physical faces
 for navigation bridges. Scalar diffusion assembles the certified child blocks
@@ -434,7 +441,7 @@ records. Live delegated lookup and track conversion callbacks are refused.
 
 Both rebin modes live in `environment/_rebin.py` and keep distinct
 construction rules. Integer-factor `rebin` requires uniform rectangular cells
-and native grid navigation, allowing physical walls to remove connections. It
+and native grid navigation, allowing physical walls to close connections. It
 refuses custom path lengths or topology that cell geometry cannot
 reconstruct, keeps its historical grid partitioning, retains native lazy
 faces and its recorded grid parameters, and keeps truncation warnings and
@@ -466,8 +473,9 @@ pieces become separate bins with an owned immediate-parent `ClipMapping`.
 Current polygon cells and each historical locator's cells/mapping retain their
 own immutable snapshots and coordinate frames through subset and transform.
 No fields or fitted models transfer automatically. Navigation retains allowed
-parent connections; explicit complete-face walls remove both navigation edges
-and finite-volume faces. Interior-cut or partially covered walls refuse.
+parent connections; explicit complete-face walls close navigation edges and
+remove their finite-volume faces, and pieces that meet only along a wall are
+closed pairs. Interior-cut or partially covered walls refuse.
 Numerical geometry is published only after convexity, interface and
 orthogonality checks; containment and plotting do not depend on certification.
 

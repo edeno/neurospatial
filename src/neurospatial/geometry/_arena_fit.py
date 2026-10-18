@@ -25,7 +25,7 @@ from neurospatial.geometry._arena import (
     _CombinedArena,
     _TransformedArena,
 )
-from neurospatial.geometry._binning import KnownFaces, SpatialBins
+from neurospatial.geometry._binning import KnownFaces
 from neurospatial.geometry._codecs import encode_arena
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
@@ -123,7 +123,9 @@ def validate_arena(
                 validate_arena(child_arena, child, CartesianSystem())
                 if child_arena.walls:
                     checked = apply_walls(child, child_arena)
-                    if not np.array_equal(checked.bins.pairs, child.bins.pairs):
+                    if not np.array_equal(
+                        checked.connections.pairs, child.connections.pairs
+                    ):
                         raise ValueError(
                             "Component connectivity crosses its declared physical walls."
                         )
@@ -325,7 +327,7 @@ def _snapped_walls(
     Returns one tuple of lines per wall: its edges joined where they meet.
     """
     centers = binning.bins.centers
-    pairs = binning.bins.pairs
+    pairs = binning.connections.pairs
     links = shapely.linestrings(
         np.stack((centers[pairs[:, 0]], centers[pairs[:, 1]]), 1)
     )
@@ -359,7 +361,12 @@ def _snapped_walls(
 
 
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
-    """Remove complete blocked cell interfaces from paths and finite-volume faces."""
+    """Close the neighbor pairs whose shared edge a wall blocks completely.
+
+    A closed pair stays listed in ``binning.connections`` but leaves paths and
+    finite-volume faces. A partly covered edge stays open with the open share
+    of its face. Pairs already closed stay closed.
+    """
     if _composition_arena(binning.locator) is not None:
         # Each owned child already carries its certified wall geometry. Rechecking
         # its independently rounded global polygons loses the native source frame.
@@ -385,11 +392,12 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
             raise ValueError(
                 _wall_cut_message(binning, arena, wall_segments, cell, index)
             )
-    keep = np.ones(len(binning.bins.pairs), dtype=bool)
+    pairs = binning.connections.pairs
+    keep = np.ones(len(pairs), dtype=bool)
     # A face partly covered by a wall keeps its open share of the conductance.
-    open_share = np.ones(len(binning.bins.pairs))
+    open_share = np.ones(len(pairs))
     current_cells = None
-    for index, (u, v) in enumerate(binning.bins.pairs):
+    for index, (u, v) in enumerate(pairs):
         contact = cells[u].boundary.intersection(cells[v].boundary)
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
@@ -416,14 +424,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
             keep[index] = contact.intersection(walls).is_empty and not crosses
     if np.all(keep) and np.all(open_share == 1.0):
         return binning
-    bins = binning.bins
-    updated = SpatialBins(
-        bins.centers,
-        bins.sizes,
-        bins.measure_dim,
-        bins.pairs[keep],
-        bins.pair_distances[keep],
-    )
+    connections = binning.connections.closed(keep)
     faces = binning.faces
     if faces.available:
         source = faces.build()
@@ -436,14 +437,17 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
             if current_cells is None:
                 current_cells = materialize_cells(binning)
             for index in partial:
-                u, v = binning.bins.pairs[index]
+                u, v = pairs[index]
                 full = (
                     current_cells[u].boundary.intersection(current_cells[v].boundary)
                 ).length
                 area[index] = min(area[index], open_share[index] * full)
         faces = KnownFaces(
             FaceGeometry(
-                updated.pairs, area[keep], source.distance[keep], updated.sizes
+                connections.pairs,
+                area[keep],
+                source.distance[keep],
+                binning.bins.sizes,
             )
         )
     normals = (
@@ -451,4 +455,39 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         if binning.face_normals is not None
         else None
     )
-    return replace(binning, bins=updated, faces=faces, face_normals=normals)
+    return replace(binning, connections=connections, faces=faces, face_normals=normals)
+
+
+def blocking_walls(binning: Binning, arena: Arena) -> list[str | None]:
+    """Name the wall that closes each closed pair, in ``all_pairs`` order.
+
+    The named wall is the one covering most of the edge the pair's cells
+    share, or for cells that meet only at a corner, the first wall the link
+    between their centers crosses. None marks a pair that no wall of
+    ``arena`` closes, such as one supplied closed to ``from_bins``.
+    """
+    links = binning.connections
+    closed = links.all_pairs[~links.is_open]
+    if not len(closed) or not arena.walls:
+        return [None] * len(closed)
+    frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
+    if frame is None:
+        cells, segments, centers = (
+            materialize_cells(binning),
+            arena.walls,
+            binning.bins.centers,
+        )
+    else:
+        # The frame apply_walls used, so attribution matches what it closed.
+        cells, segments, centers, _, _ = frame
+    names: list[str | None] = []
+    for u, v in closed:
+        contact = cells[u].boundary.intersection(cells[v].boundary)
+        if contact.length > 0:
+            cover = [contact.intersection(wall).length for wall in segments]
+        else:
+            link = LineString(centers[[u, v]])
+            cover = [float(link.intersects(wall)) for wall in segments]
+        best = int(np.argmax(cover))
+        names.append(arena.wall_names[best] if cover[best] > 0 else None)
+    return names

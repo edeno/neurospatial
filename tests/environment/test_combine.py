@@ -8,7 +8,13 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 from neurospatial.layout import create_layout
 
 
@@ -29,9 +35,8 @@ def nearest(center, *, radius=None):
     return Environment.from_bins(
         Binning(
             "sites",
-            SpatialBins.from_arrays(
-                centers, [1.0], 2, np.empty((0, 2), dtype=np.intp), []
-            ),
+            SpatialBins.from_arrays(centers, [1.0], 2),
+            BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), []),
             NearestBinLocator(centers, max_distance=radius),
             MissingFaces("Sites lack faces."),
         ),
@@ -311,9 +316,8 @@ def test_complementary_unbounded_nearest_subsets_are_valid():
     parent = Environment.from_bins(
         Binning(
             "sites",
-            SpatialBins.from_arrays(
-                centers, [1, 1], 2, np.empty((0, 2), dtype=np.intp), []
-            ),
+            SpatialBins.from_arrays(centers, [1, 1], 2),
+            BinConnections.from_arrays(np.empty((0, 2), dtype=np.intp), []),
             NearestBinLocator(centers),
             MissingFaces("sites"),
         )
@@ -345,9 +349,8 @@ def test_automatic_bridges_respect_nearest_component_interiors(dims, finite):
     parent = Environment.from_bins(
         Binning(
             "sites",
-            SpatialBins.from_arrays(
-                centers, np.ones(3), dims, np.empty((0, 2), dtype=int), []
-            ),
+            SpatialBins.from_arrays(centers, np.ones(3), dims),
+            BinConnections.from_arrays(np.empty((0, 2), dtype=int), []),
             NearestBinLocator(centers, max_distance=0.25 if finite else None),
             MissingFaces("Sites lack faces."),
         )
@@ -459,9 +462,8 @@ def test_bounded_nearest_clearance_uses_its_retained_partition():
     parent = Environment.from_bins(
         Binning(
             "sites",
-            SpatialBins.from_arrays(
-                centers, [1, 1], 2, np.empty((0, 2), dtype=int), []
-            ),
+            SpatialBins.from_arrays(centers, [1, 1], 2),
+            BinConnections.from_arrays(np.empty((0, 2), dtype=int), []),
             NearestBinLocator(centers, max_distance=2.0),
             MissingFaces("Sites lack faces."),
         )
@@ -669,7 +671,7 @@ def test_saved_composition_rejects_inconsistent_geometry(corruption):
         ).tolist()
     elif corruption == "bridge_distance":
         data["arrays"]["binning/locator/bridge_distances"] = [100.0]
-        data["arrays"]["binning/bins/pair_distances"][-1] = 100.0
+        data["arrays"]["binning/connections/all_distances"][-1] = 100.0
         for edge in data["graph"]["links"]:
             if {edge["source"], edge["target"]} == {1, 2}:
                 edge["distance"] = 100.0
@@ -724,7 +726,7 @@ def test_derived_saved_authority_cannot_disagree(derive, with_bridge):
     )
     data = env.to_dict()
     if with_bridge:
-        data["arrays"]["binning/bins/pair_distances"][-1] = 100.0
+        data["arrays"]["binning/connections/all_distances"][-1] = 100.0
         for edge in data["graph"]["links"]:
             if {edge["source"], edge["target"]} == {1, 2}:
                 edge["distance"] = 100.0

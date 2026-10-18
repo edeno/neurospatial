@@ -271,20 +271,20 @@ def test_area_vectors_match_seeded_edge_and_cross_product_oracles(dims):
 
 
 def test_positive_area_underflow_is_refused_in_legacy_similarity_path():
-    from neurospatial.binning import Binning, NearestBinLocator, SpatialBins
-
-    bins = SpatialBins(
-        np.array([[0.0, 0.0], [1.0, 0.0]]),
-        np.full(2, 1e300),
-        2,
-        np.array([[0, 1]]),
-        np.ones(1),
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        NearestBinLocator,
+        SpatialBins,
     )
+
+    bins = SpatialBins(np.array([[0.0, 0.0], [1.0, 0.0]]), np.full(2, 1e300), 2)
+    connections = BinConnections.from_arrays(np.array([[0, 1]]), np.ones(1))
     faces = KnownFaces(
-        FaceGeometry(bins.pairs, np.array([1e-200]), np.ones(1), bins.sizes)
+        FaceGeometry(connections.pairs, np.array([1e-200]), np.ones(1), bins.sizes)
     )
     env = Environment.from_bins(
-        Binning("declared", bins, NearestBinLocator(bins.centers), faces)
+        Binning("declared", bins, connections, NearestBinLocator(bins.centers), faces)
     )
     with pytest.raises(ValueError, match=r"underflow.*rescale"):
         env.apply_transform(affine(np.eye(2) * 1e-150))

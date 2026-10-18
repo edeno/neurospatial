@@ -40,8 +40,11 @@ def _handed_out(env):
         {
             "binning.bins.centers": binning.bins.centers,
             "binning.bins.sizes": binning.bins.sizes,
-            "binning.bins.pairs": binning.bins.pairs,
-            "binning.bins.pair_distances": binning.bins.pair_distances,
+            "binning.connections.all_pairs": binning.connections.all_pairs,
+            "binning.connections.all_distances": binning.connections.all_distances,
+            "binning.connections.is_open": binning.connections.is_open,
+            "binning.connections.pairs": binning.connections.pairs,
+            "binning.connections.pair_distances": binning.connections.pair_distances,
         }
     )
     if binning.rectilinear is not None:

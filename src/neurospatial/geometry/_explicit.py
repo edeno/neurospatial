@@ -12,6 +12,7 @@ import numpy as np
 from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import axis_ranges
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -216,16 +217,17 @@ def prepare_bins(binning: object) -> Binning:
     ):
         raise TypeError("MissingFaces.reason must be a string.")
     snapshot = copy.deepcopy(binning)
-    raw = snapshot.bins
+    raw, links = snapshot.bins, snapshot.connections
     # Standalone records have writable NumPy headers; revalidate at ingress
     # rather than assuming they remain identical to their constructor inputs.
-    bins = SpatialBins.from_arrays(
-        raw.centers, raw.sizes, raw.measure_dim, raw.pairs, raw.pair_distances
+    bins = SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dim)
+    connections = BinConnections.from_arrays(
+        links.all_pairs, links.all_distances, links.is_open
     )
     faces = (
         KnownFaces(snapshot.faces.faces)
         if isinstance(snapshot.faces, KnownFaces)
         else snapshot.faces
     )
-    snapshot = replace(snapshot, bins=bins, faces=faces)
+    snapshot = replace(snapshot, bins=bins, connections=connections, faces=faces)
     return snapshot

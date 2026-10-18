@@ -61,20 +61,29 @@ def test_binning_matches_layout(built_environment: _BuiltEnvironment) -> None:
     """Measures and edge-indexed vectors retain the layout's scientific meaning."""
     env = built_environment
     bins = env._binning.bins
+    connections = env._binning.connections
     edges = list(env.connectivity.edges(data=True))
     np.testing.assert_array_equal(bins.centers, env.bin_centers)
     np.testing.assert_array_equal(bins.sizes, env.bin_sizes)
     np.testing.assert_array_equal(
-        bins.pairs,
+        connections.pairs,
         np.array([(u, v) for u, v, _ in edges], dtype=np.intp).reshape(-1, 2),
     )
     np.testing.assert_array_equal(
-        bins.pair_distances, [attrs["distance"] for _, _, attrs in edges]
+        connections.pair_distances, [attrs["distance"] for _, _, attrs in edges]
     )
     assert (bins.n_bins, bins.n_dims) == (env.n_bins, env.n_dims)
     assert bins.measure_dim == (1 if env.is_linearized_track else env.n_dims)
     assert env.bin_sizes is not bins.sizes
-    for array in (bins.centers, bins.sizes, bins.pairs, bins.pair_distances):
+    for array in (
+        bins.centers,
+        bins.sizes,
+        connections.pairs,
+        connections.pair_distances,
+        connections.all_pairs,
+        connections.all_distances,
+        connections.is_open,
+    ):
         assert not array.flags.writeable
 
 
@@ -214,10 +223,10 @@ def test_faces_match_layout_and_cache_lifetime(
     for actual, reference in zip(faces, expected, strict=True):
         np.testing.assert_array_equal(actual, reference)
         assert not actual.flags.writeable
-    np.testing.assert_array_equal(faces.edges, env._binning.bins.pairs)
+    np.testing.assert_array_equal(faces.edges, env._binning.connections.pairs)
     np.testing.assert_array_equal(faces.volumes, env.bin_sizes)
     if env.is_linearized_track:
-        assert np.any(faces.distance != env._binning.bins.pair_distances)
+        assert np.any(faces.distance != env._binning.connections.pair_distances)
     assert env._binning.faces.build() is not env._binning.faces.build()
 
     field = np.arange(env.n_bins, dtype=float)
@@ -240,11 +249,17 @@ def test_serialized_binning_preserves_ownership(
     restored = restore(original)
     assert restored != original
     assert restored.bins != original.bins
-    for name in ("centers", "sizes", "pairs", "pair_distances"):
-        array = getattr(restored.bins, name)
-        np.testing.assert_array_equal(array, getattr(original.bins, name))
+    for record, name in (
+        ("bins", "centers"),
+        ("bins", "sizes"),
+        ("connections", "pairs"),
+        ("connections", "pair_distances"),
+    ):
+        array = getattr(getattr(restored, record), name)
+        reference = getattr(getattr(original, record), name)
+        np.testing.assert_array_equal(array, reference)
         assert not array.flags.writeable
-        assert not np.shares_memory(array, getattr(original.bins, name))
+        assert not np.shares_memory(array, reference)
     if restored.rectilinear is not None:
         for array in (*restored.rectilinear.edges, restored.rectilinear.active_mask):
             assert not array.flags.writeable
@@ -269,9 +284,9 @@ def test_restored_geometry_has_independent_binning_and_cached_faces() -> None:
     assert env._binning is old_binning
     assert face_geometry(env._cache, env._binning) is old_faces
     np.testing.assert_array_equal(
-        restored._binning.bins.pairs, list(replacement.connectivity.edges())
+        restored._binning.connections.pairs, list(replacement.connectivity.edges())
     )
-    assert len(restored._binning.bins.pairs) < len(old_binning.bins.pairs)
+    assert len(restored._binning.connections.pairs) < len(old_binning.connections.pairs)
 
 
 def test_invalid_binning_is_not_published(monkeypatch) -> None:
@@ -306,13 +321,13 @@ def test_faces_reject_changed_pair_order() -> None:
         )
     )
     layout = _source_layout(env)
-    native = layout.binning().bins
+    native = layout.binning().connections
     # Reverse both the pair order and each pair's orientation.
     layout._set_neighbor_pairs(native.pairs[::-1, ::-1], native.pair_distances[::-1])
     binning = layout.binning()
-    assert not np.array_equal(binning.bins.pairs, native.pairs)
+    assert not np.array_equal(binning.connections.pairs, native.pairs)
     faces = binning.faces.build()
-    np.testing.assert_array_equal(faces.edges, binning.bins.pairs)
+    np.testing.assert_array_equal(faces.edges, binning.connections.pairs)
     expected = face_geometry(env._cache, env._binning)
     by_pair = {frozenset(pair): i for i, pair in enumerate(expected.edges)}
     for i, pair in enumerate(faces.edges):

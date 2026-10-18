@@ -1297,6 +1297,9 @@ _POLAR_INHERITED_MEMBERS = {
         "component_keys",
         "get_bridge_attributes",
     },
+    "wall records, empty because a polar surround has no walls": {
+        "get_blocked_edges",
+    },
     "graph and diffusion operations on physical polar geometry": {
         "bin_sizes",
         "components",
@@ -1543,6 +1546,9 @@ def test_polar_environment_reports_no_combined_components():
     bridges = polar_env.get_bridge_attributes()
     assert bridges.empty
     assert "conductance" in bridges.columns
+    blocked = polar_env.get_blocked_edges()
+    assert blocked.empty
+    assert list(blocked.columns) == ["source", "target", "distance", "wall"]
 
 
 def test_combine_refuses_polar_components_with_the_shared_error():

@@ -10,7 +10,7 @@ from shapely.geometry import LineString, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
-from neurospatial.binning import FaceGeometry, FaceNormals, KnownFaces, SpatialBins
+from neurospatial.binning import BinConnections, FaceGeometry, FaceNormals, KnownFaces
 from neurospatial.environment._fields import face_geometry
 
 
@@ -27,9 +27,10 @@ def _explicit_grid(source, *, spec, navigation=None):
     """Retain exact cells and faces while changing only declared navigation."""
     binning = source._binning
     bins = binning.bins
+    pairs = binning.connections.pairs
     faces = face_geometry(source._cache, source._binning)
-    keep = np.ones(len(bins.pairs), dtype=bool)
-    distances = bins.pair_distances.copy()
+    keep = np.ones(len(pairs), dtype=bool)
+    distances = binning.connections.pair_distances.copy()
     if navigation == "long_path":
         distances[0] *= 7.0
     elif navigation == "missing_link":
@@ -38,16 +39,10 @@ def _explicit_grid(source, *, spec, navigation=None):
         replace(
             binning,
             kind="RecordedGrid",
-            bins=SpatialBins(
-                bins.centers,
-                bins.sizes,
-                bins.measure_dim,
-                bins.pairs[keep],
-                distances[keep],
-            ),
+            connections=BinConnections.from_arrays(pairs[keep], distances[keep]),
             faces=KnownFaces(
                 FaceGeometry(
-                    bins.pairs[keep],
+                    pairs[keep],
                     faces.A[keep],
                     faces.distance[keep],
                     bins.sizes,
@@ -80,8 +75,8 @@ def test_native_explicit_grid_navigation_survives_copy_and_load(spec, diagonal):
         np.testing.assert_array_equal(actual.bin_centers, expected.bin_centers)
         np.testing.assert_array_equal(actual.edge_pairs, expected.edge_pairs)
         np.testing.assert_allclose(
-            actual._binning.bins.pair_distances,
-            expected._binning.bins.pair_distances,
+            actual._binning.connections.pair_distances,
+            expected._binning.connections.pair_distances,
             rtol=0,
             atol=0,
         )

@@ -153,7 +153,7 @@ def test_polar_faces_come_from_the_layout_not_its_parameters():
         _coordinate_kind="polar",
     )
     faces = env._binning.faces.build()
-    radius = env.bin_centers[env._binning.bins.pairs, 0]
+    radius = env.bin_centers[env._binning.connections.pairs, 0]
     same_ring = radius[:, 0] == radius[:, 1]
     assert np.count_nonzero(same_ring) == 2
     np.testing.assert_array_equal(faces.A[same_ring], [2.0, 2.0])

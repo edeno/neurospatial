@@ -14,6 +14,7 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import linemerge, unary_union
 
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -389,8 +390,8 @@ def split_binning(
 
     A cell crossed from edge to edge by a wall becomes one exact polygon cell
     per side; a cell holding only a wall's end stays whole. The pieces of
-    one cell are not neighbors, and the walls themselves are applied later
-    by :func:`apply_walls`, which removes the paths they block.
+    one cell are closed neighbors, and the walls themselves are applied later
+    by :func:`apply_walls`, which closes the paths they block.
 
     Returns
     -------
@@ -425,7 +426,8 @@ def _pieces_binning(
 
     Pieces of neighboring source cells are neighbors where their shared
     boundary has an opening past ``walls``; path lengths and face roles come
-    from the source pairs.
+    from the source pairs. Pieces that share boundary only along a wall, and
+    pieces of source pairs that were already closed, are closed neighbors.
     """
     centers = np.array([_representative(cell) for cell in cells.polygons])
     by_parent: dict[int, list[int]] = defaultdict(list)
@@ -433,14 +435,27 @@ def _pieces_binning(
         by_parent[int(parent)].append(child)
     old_faces = binning.faces.build() if binning.faces.available else None
     wall = unary_union(walls)
-    records: list[tuple[int, int, bool, float]] = []
+    # (u, v, is_open, path_only, distance)
+    records: list[tuple[int, int, bool, bool, float]] = []
+
+    def touching(u: int, v: int) -> bool:
+        return bool(
+            cells.polygons[u].boundary.intersection(cells.polygons[v].boundary).length
+            > 0
+        )
+
+    def closed_record(u: int, v: int) -> tuple[int, int, bool, bool, float]:
+        distance = float(np.hypot.reduce(centers[v] - centers[u]))
+        return (min(u, v), max(u, v), False, False, distance)
+
+    links = binning.connections
     parent_distances = np.hypot.reduce(
-        binning.bins.centers[binning.bins.pairs[:, 1]]
-        - binning.bins.centers[binning.bins.pairs[:, 0]],
+        binning.bins.centers[links.pairs[:, 1]]
+        - binning.bins.centers[links.pairs[:, 0]],
         axis=1,
     )
     declared_paths = ~np.isclose(
-        binning.bins.pair_distances,
+        links.pair_distances,
         parent_distances,
         rtol=64 * np.finfo(np.float64).eps,
         atol=0.0,
@@ -450,7 +465,7 @@ def _pieces_binning(
         if old_faces is not None
         else "The parent has no certified face geometry; inherited path-only or partial-face roles cannot be reconstructed."
     )
-    for index, (parent_u, parent_v) in enumerate(binning.bins.pairs):
+    for index, (parent_u, parent_v) in enumerate(links.pairs):
         old_opening = _opening(source[parent_u], source[parent_v], wall)
         path_only = old_faces is not None and old_faces.A[index] == 0
         if old_faces is not None and not path_only:
@@ -489,16 +504,35 @@ def _pieces_binning(
                                 "clipped bins with updated navigation path lengths "
                                 "using Environment.from_bins()",
                             )
-                        distance = float(binning.bins.pair_distances[index])
+                        distance = float(links.pair_distances[index])
                     else:
                         distance = float(np.hypot.reduce(centers[v] - centers[u]))
-                    records.append((min(u, v), max(u, v), bool(path_only), distance))
+                    records.append(
+                        (min(u, v), max(u, v), True, bool(path_only), distance)
+                    )
+                elif touching(u, v):
+                    records.append(closed_record(u, v))
+    for parent_u, parent_v in links.all_pairs[~links.is_open]:
+        for u in by_parent[int(parent_u)]:
+            for v in by_parent[int(parent_v)]:
+                if touching(u, v):
+                    records.append(closed_record(u, v))
+    for children in by_parent.values():
+        # Pieces of one cell meet only along the wall that divided it.
+        for position, u in enumerate(children):
+            for v in children[position + 1 :]:
+                if touching(u, v):
+                    records.append(closed_record(u, v))
     records.sort(key=lambda item: (item[0], item[1]))
-    pairs = np.array([(u, v) for u, v, _, _ in records], dtype=np.intp).reshape(-1, 2)
-    distances = np.array([distance for _, _, _, distance in records], dtype=np.float64)
-    bins = SpatialBins(
-        centers, np.array([cell.area for cell in cells.polygons]), 2, pairs, distances
+    all_pairs = np.array([(u, v) for u, v, *_ in records], dtype=np.intp).reshape(-1, 2)
+    is_open = np.array([record[2] for record in records], dtype=bool)
+    bins = SpatialBins(centers, np.array([cell.area for cell in cells.polygons]), 2)
+    connections = BinConnections(
+        all_pairs,
+        np.array([record[4] for record in records], dtype=np.float64),
+        is_open,
     )
+    pairs = connections.pairs
     faces = (
         MissingFaces(reason)
         if reason is not None
@@ -507,21 +541,22 @@ def _pieces_binning(
             centers,
             pairs,
             walls=walls,
-            path_only=np.array([path for _, _, path, _ in records], dtype=bool),
+            path_only=np.array(
+                [record[3] for record in records if record[2]], dtype=bool
+            ),
         )
     )
 
     locator = ClippedLocator(binning.locator, cells, mapping)
     normal_values = (
-        geometric_normals(locator, bins.centers, bins.pairs)
-        if faces.available
-        else None
+        geometric_normals(locator, bins.centers, pairs) if faces.available else None
     )
     if normal_values is not None:
         normal_values[faces.build().A == 0] = 0
     return Binning(
         binning.kind,
         bins,
+        connections,
         locator,
         faces,
         face_normals=FaceNormals(normal_values) if normal_values is not None else None,

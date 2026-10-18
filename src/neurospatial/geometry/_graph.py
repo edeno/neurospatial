@@ -210,8 +210,9 @@ def graph_from_binning(
 
     # Graph nodes iterate in bin ID order. Keep each vector in that graph
     # orientation; edge_id links it to the explicit pair-array authority.
-    low = np.minimum(bins.pairs[:, 0], bins.pairs[:, 1])
-    high = np.maximum(bins.pairs[:, 0], bins.pairs[:, 1])
+    pairs = binning.connections.pairs
+    low = np.minimum(pairs[:, 0], pairs[:, 1])
+    high = np.maximum(pairs[:, 0], pairs[:, 1])
     places = coordinates.cartesian_embedding(centers)
     try:
         with np.errstate(over="raise", invalid="raise"):
@@ -223,7 +224,7 @@ def graph_from_binning(
     columns = [
         low.tolist(),
         high.tolist(),
-        bins.pair_distances.tolist(),
+        binning.connections.pair_distances.tolist(),
         vectors.tolist(),
     ]
     if bins.n_dims == 2:

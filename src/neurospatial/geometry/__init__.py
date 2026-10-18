@@ -16,10 +16,12 @@ from neurospatial.geometry._arena import _CombinedArena as _CombinedArena
 from neurospatial.geometry._arena import _TransformedArena as _TransformedArena
 from neurospatial.geometry._arena import mapped_geometry as mapped_geometry
 from neurospatial.geometry._arena_fit import apply_walls as apply_walls
+from neurospatial.geometry._arena_fit import blocking_walls as blocking_walls
 from neurospatial.geometry._arena_fit import fit_walls as fit_walls
 from neurospatial.geometry._arena_fit import infer_arena as infer_arena
 from neurospatial.geometry._arena_fit import validate_arena as validate_arena
 from neurospatial.geometry._arrays import get_centers as get_centers
+from neurospatial.geometry._binning import BinConnections as BinConnections
 from neurospatial.geometry._binning import Binning as Binning
 from neurospatial.geometry._binning import KnownFaces as KnownFaces
 from neurospatial.geometry._binning import MissingFaces as MissingFaces

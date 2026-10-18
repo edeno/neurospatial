@@ -60,19 +60,21 @@ def test_subset_binning_restricts_arrays_and_pair_order(built_environment):
     selected = np.flatnonzero(keep)
     child_of = np.full(len(keep), -1, dtype=np.intp)
     child_of[selected] = np.arange(len(selected))
-    paired = keep[parent.bins.pairs].all(axis=1)
+    paired = keep[parent.connections.pairs].all(axis=1)
     child = subset_binning(parent, keep)
     np.testing.assert_array_equal(child.bins.centers, parent.bins.centers[keep])
     np.testing.assert_array_equal(child.bins.sizes, parent.bins.sizes[keep])
-    np.testing.assert_array_equal(child.bins.pairs, child_of[parent.bins.pairs[paired]])
     np.testing.assert_array_equal(
-        child.bins.pair_distances, parent.bins.pair_distances[paired]
+        child.connections.pairs, child_of[parent.connections.pairs[paired]]
+    )
+    np.testing.assert_array_equal(
+        child.connections.pair_distances, parent.connections.pair_distances[paired]
     )
     assert child.bins.measure_dim == parent.bins.measure_dim
     assert isinstance(child.faces, KnownFaces)
     expected_faces = parent.faces.build()
     actual_faces = child.faces.build()
-    np.testing.assert_array_equal(actual_faces.edges, child.bins.pairs)
+    np.testing.assert_array_equal(actual_faces.edges, child.connections.pairs)
     np.testing.assert_array_equal(actual_faces.A, expected_faces.A[paired])
     np.testing.assert_array_equal(
         actual_faces.distance, expected_faces.distance[paired]
@@ -81,8 +83,8 @@ def test_subset_binning_restricts_arrays_and_pair_order(built_environment):
     for array in (
         child.bins.centers,
         child.bins.sizes,
-        child.bins.pairs,
-        child.bins.pair_distances,
+        child.connections.pairs,
+        child.connections.pair_distances,
         *actual_faces,
     ):
         assert not array.flags.writeable

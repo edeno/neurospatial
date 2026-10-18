@@ -66,18 +66,22 @@ tracks using the existing factories; use `from_bins` for explicit owned geometry
 
 <!-- docs-test: run -->
 ```python
-from neurospatial.binning import Binning, NearestBinLocator, SpatialBins
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 
 bins = SpatialBins.from_arrays(
-    centers=np.array([[0.0], [1.0]]),
-    sizes=np.ones(2),
-    measure_dim=1,
-    pairs=np.array([[0, 1]]),
-    pair_distances=np.ones(1),
+    centers=np.array([[0.0], [1.0]]), sizes=np.ones(2), measure_dim=1
 )
-from neurospatial.binning import MissingFaces
+connections = BinConnections.from_arrays(
+    pairs=np.array([[0, 1]]), pair_distances=np.ones(1)
+)
 explicit = Environment.from_bins(
-    Binning("measured bins", bins, NearestBinLocator(bins.centers),
+    Binning("measured bins", bins, connections, NearestBinLocator(bins.centers),
             MissingFaces("No measured cell interfaces")),
     units="cm",
 )
