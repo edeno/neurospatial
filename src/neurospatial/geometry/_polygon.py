@@ -412,6 +412,9 @@ def split_binning(
     mapping = ClipMapping(
         np.array([parent for parent, _ in records], dtype=np.intp), len(source)
     )
+    # The walls only divide pieces here; apply_walls applies them at
+    # publication, narrowing a partly covered face by its open share. Passing
+    # them as walls instead makes face certification refuse such faces.
     return _pieces_binning(
         binning, source, cells, mapping, (), dividers=(wall,)
     ), mapping
@@ -569,7 +572,8 @@ def _pieces_binning(
     bins = SpatialBins.from_arrays(
         centers, np.array([cell.area for cell in cells.polygons]), 2
     )
-    connections = BinConnections(
+    # Publication records the wall that closes each closed pair.
+    connections = BinConnections.from_arrays(
         all_pairs,
         np.array([r.distance for r in records], dtype=np.float64),
         is_open,
