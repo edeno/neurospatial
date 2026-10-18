@@ -27,7 +27,7 @@ from neurospatial.geometry._arena import (
 )
 from neurospatial.geometry._binning import KnownFaces
 from neurospatial.geometry._codecs import encode_arena
-from neurospatial.geometry._composition import CombinedLocator
+from neurospatial.geometry._composition import CombinedLocator, composition_view
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._diffusion import FaceGeometry
 from neurospatial.geometry._face_normals import FaceNormals
@@ -360,6 +360,25 @@ def _snapped_walls(
     return snapped
 
 
+def _wall_geometry(
+    binning: Binning, arena: Arena
+) -> tuple[
+    Sequence[Polygon | MultiPolygon], Sequence[LineString], NDArray[np.float64], bool
+]:
+    """Cells, wall segments and centers in the frame walls are checked in.
+
+    The last value says whether that is a stored source frame recovered through
+    transforms, rather than the published cells and walls.
+    """
+    frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
+    if frame is None:
+        return materialize_cells(binning), arena.walls, binning.bins.centers, False
+    # Shared snapshots avoid independently rounded collinear vertices.
+    # Retained source-frame cells preserve current clipping and ownership.
+    cells, segments, centers, _, _ = frame
+    return cells, segments, centers, True
+
+
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
     """Close the neighbor pairs whose shared edge a wall blocks completely.
 
@@ -375,17 +394,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
     if not arena.walls:
         return binning
 
-    wall_frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
-    if wall_frame is None:
-        cells, wall_segments, centers = (
-            materialize_cells(binning),
-            arena.walls,
-            binning.bins.centers,
-        )
-    else:
-        # Shared snapshots avoid independently rounded collinear vertices.
-        # Retained source-frame cells preserve current clipping and ownership.
-        cells, wall_segments, centers, _, _ = wall_frame
+    cells, wall_segments, centers, in_source_frame = _wall_geometry(binning, arena)
     walls = unary_union(wall_segments)
     for index, cell in enumerate(cells):
         if _divides(cell, walls):
@@ -408,7 +417,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         elif contact.length == 0:
             link = LineString(centers[[u, v]])
             crosses = link.crosses(walls)
-            if wall_frame is not None and crosses:
+            if in_source_frame and crosses:
                 if current_cells is None:
                     current_cells = materialize_cells(binning)
                 if (
@@ -470,37 +479,27 @@ def blocking_walls(binning: Binning, arena: Arena) -> list[str | None]:
     closed = links.all_pairs[~links.is_open]
     if not len(closed) or not arena.walls:
         return [None] * len(closed)
-    locator = binning.locator
-    if isinstance(locator, CombinedLocator):
-        # Each component closed its own pairs against its own walls.
-        named: dict[tuple[int, int], str | None] = {}
+    view = composition_view(binning.locator)
+    if view is not None:
+        # Each component closed its own pairs against its own walls, as
+        # apply_walls leaves them; subsets, clips and transforms keep them.
+        root, roots, _ = view
+        named: dict[frozenset[int], str | None] = {}
         for child, child_arena, offset in zip(
-            locator.children, locator.arenas, locator.offsets[:-1], strict=True
+            root.children, root.arenas, root.offsets[:-1], strict=True
         ):
             child_links = child.connections
             child_closed = child_links.all_pairs[~child_links.is_open] + offset
             for (u, v), name in zip(
                 child_closed, blocking_walls(child, child_arena), strict=True
             ):
-                named[int(u), int(v)] = name
-        return [named.get((int(u), int(v))) for u, v in closed]
-    frame = wall_source_frame(locator, arena, binning.bins.centers)
-    cells: Sequence[Polygon | MultiPolygon] | None
-    if frame is not None:
-        # The frame apply_walls used, so attribution matches what it closed.
-        cells, segments, centers, _, _ = frame
-    else:
-        segments, centers = arena.walls, binning.bins.centers
-        # Bins without planar cells, such as a subset of a track combined
-        # with a walled field, fall back to the link between their centers.
-        cells = materialize_cells(binning) if binning.bins.has_measure_dim(2) else None
+                named[frozenset((int(u), int(v)))] = name
+        return [named.get(frozenset((int(roots[u]), int(roots[v])))) for u, v in closed]
+    # The frame apply_walls used, so attribution matches what it closed.
+    cells, segments, centers, _ = _wall_geometry(binning, arena)
     names: list[str | None] = []
     for u, v in closed:
-        contact = (
-            cells[u].boundary.intersection(cells[v].boundary)
-            if cells is not None
-            else LineString()
-        )
+        contact = cells[u].boundary.intersection(cells[v].boundary)
         if contact.length > 0:
             cover = [contact.intersection(wall).length for wall in segments]
         else:
