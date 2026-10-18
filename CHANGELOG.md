@@ -1482,6 +1482,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `env.smooth` and `env.diffuse` refuse an infinite bandwidth, as
+  `env.compute_kernel` already did. `bandwidth=np.inf` had passed the
+  positivity check and turned a field of ones into zeros (or NaN), losing all
+  its mass.
+
 - `env.interpolate(mode="nearest")` keeps every point the environment
   contains. It had inherited a hidden cutoff of 10 typical bin spacings from
   the nearest-bin lookup, so a point inside a tall or wide cell but far from

@@ -33,3 +33,12 @@ def test_interpolation_still_refuses_outside_points(stretched_grid):
         np.ones(stretched_grid.n_bins), np.array([[5.0, 50.0]]), mode="nearest"
     )
     assert np.isnan(value).all()
+
+
+@pytest.mark.parametrize("bandwidth", [np.inf, np.nan])
+@pytest.mark.parametrize("method", ["smooth", "diffuse"])
+def test_non_finite_bandwidth_is_refused(stretched_grid, method, bandwidth):
+    with pytest.raises(ValueError, match="bandwidth"):
+        getattr(stretched_grid, method)(
+            np.ones(stretched_grid.n_bins), bandwidth=bandwidth, mode="transition"
+        )
