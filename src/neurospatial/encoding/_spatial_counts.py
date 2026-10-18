@@ -42,7 +42,6 @@ from neurospatial.geometry import require_cartesian
 from neurospatial.ops import (
     _polygon_linear_occupancy,
     _RetainedLinearInterval,
-    _source_grid,
     _uses_polygon_allocation,
 )
 
@@ -461,16 +460,7 @@ def _bin_spike_train_with_stats(
     for d in range(n_dims):
         spike_positions[:, d] = np.interp(spike_times_valid, times, positions[:, d])
 
-    grid_frame = env.binning.grid_frame if linear_intervals is not None else None
-    if grid_frame is not None:
-        # Use the same retained source planes and half-open ownership as
-        # fractional dwell allocation, including paths along a hole edge.
-        locator, source_positions = _source_grid(grid_frame, spike_positions)
-        spike_bins = locator.locate(source_positions)
-        if env.arena.domain_known:
-            spike_bins[~env.arena.contains(spike_positions)] = -1
-    else:
-        spike_bins = env.bin_at(spike_positions)
+    spike_bins = env.bin_at(spike_positions)
     valid_bins = spike_bins[spike_bins >= 0]
     n_bin_dropped = n_after_time - len(valid_bins)
 

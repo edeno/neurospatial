@@ -367,8 +367,12 @@ similarity behavior; a normal alone does not certify a new deformation.
 `RectilinearGrid` axes/mask plus their forward world map. Grid consumers read
 it through `require_grid_context` and map coordinates explicitly. Keep
 `rectilinear` and the environment's world-grid attributes (`grid_edges`,
-`grid_shape`, `active_mask`) truthful. Framed interpolation/allocation share
-bounded source-plane recovery capped at a quarter of the smallest cell width.
+`grid_shape`, `active_mask`) truthful. Framed point lookup, interpolation and
+allocation share bounded source-plane recovery capped at a quarter of the
+smallest cell width. A `Binning` gives its frame to the affine step of its
+locator (`framed_locator`), which then assigns points by the half-open source
+cells (`FramedGrid._locate`), so lookup and linear allocation agree on shared
+faces.
 QuadMesh consumers transform corners and reshape values with the source mask.
 Partial clipping drops the tensor-grid component. `GridBinningSpec` separately
 describes how `rebin(bin_size=...)` builds a new grid and must not replace

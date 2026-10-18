@@ -46,15 +46,9 @@ def _source_grid(
     frame: FramedGrid, positions: NDArray[np.float64]
 ) -> tuple[RectilinearLocator, NDArray[np.float64]]:
     """Recover source edge planes only within bounded projection roundoff."""
-    grid = frame.source
-    original = frame._project_to_planes(
-        positions, grid.edges, operation="Linear allocation"
+    return frame._source_locator(), frame._project_to_planes(
+        positions, frame.source.edges, operation="Linear allocation"
     )
-    mapping = np.full(grid.active_mask.size, -1, dtype=np.intp)
-    mapping[grid.active_mask.ravel()] = np.arange(np.count_nonzero(grid.active_mask))
-    return RectilinearLocator(
-        grid.edges, grid.shape, grid.active_mask, mapping
-    ), original
 
 
 @dataclass(frozen=True)

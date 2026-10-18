@@ -47,7 +47,6 @@ from neurospatial.ops import (
     _linear_grid_occupancy,
     _polygon_linear_occupancy,
     _random_walk_transitions,
-    _source_grid,
     _uses_polygon_allocation,
 )
 from neurospatial.ops import (
@@ -181,11 +180,6 @@ def _occupancy(
     # inflated occupancy at the boundary while bin_sequence
     # correctly flagged the same sample as -1.
     bin_indices = locate(binning, arena, positions, cache, call="Environment.occupancy")
-    if time_allocation == "linear" and n_dims != 2 and binning.grid_frame is not None:
-        source_locator, source_positions = _source_grid(binning.grid_frame, positions)
-        bin_indices = source_locator.locate(source_positions)
-        if arena.domain_known:
-            bin_indices[~arena.contains(positions)] = -1
 
     # Compute time intervals
     dt = np.diff(times)

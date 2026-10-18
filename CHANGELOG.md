@@ -1326,6 +1326,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- On a grid rotated or sheared by `apply_transform`, a position exactly on the
+  line (or, in 3-D, the face) between two bins now belongs to the same bin as
+  on the grid before the transform: the bin above the line, as on any
+  rectangular grid. Before, rounding in the rotation put such a position in
+  either bin, or outside the environment, so `bin_at`, `bin_sequence`,
+  `occupancy(time_allocation="start")` and spike counts could disagree with
+  `occupancy(time_allocation="linear")`, which already used this rule. In a
+  test lattice of cell centers, cell edges and corners, 16–41% of the points
+  changed bins after a rotation. Positions inside a bin are unchanged, and
+  the same rule now applies inside environments built with
+  `Environment.combine`. Finding bins on a rotated grid takes about 1.4 times
+  as long (0.42 s instead of 0.31 s for a million 2-D positions).
+
 - After `apply_transform`, a track with a known width still says so. The
   `rebin` refusal on such a track suggested an `Environment.from_graph(...)`
   rebuild without `track_width=`, so following it lost the width; it now

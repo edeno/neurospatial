@@ -30,7 +30,6 @@ from neurospatial.ops._polygon_allocation import (
 from neurospatial.ops._polygon_allocation import (
     _RetainedLinearInterval as _RetainedLinearInterval,
 )
-from neurospatial.ops._polygon_allocation import _source_grid as _source_grid
 from neurospatial.ops._polygon_allocation import (
     _uses_polygon_allocation as _uses_polygon_allocation,
 )
