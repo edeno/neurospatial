@@ -621,6 +621,32 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `ValueError`. Code that caught `GraphValidationError` can catch
   `ValueError`, its parent class.
 
+- Decoding error is measured along the environment by default.
+  `DecodingResult.error_against`, `decoding_error`, `median_decoding_error`
+  and `BayesianDecoder.score` default to `metric="geodesic"` (`distance=` for
+  `score`): the shortest path between the decoded and actual bins on the
+  environment's connectivity graph, so a decode in the wrong arm of a maze
+  counts the path between the arms. Before, the default was the straight
+  line: on a simulated W-track the mean error read 39 cm instead of 59 cm
+  along the track. Pass `metric="euclidean"` for the straight-line error.
+  `decoding_error` and `median_decoding_error` now take the environment
+  first, like `confusion_matrix`:
+
+  ```python
+  # before
+  decoding_error(decoded, actual)  # straight line
+  # after
+  decoding_error(env, decoded, actual)  # along the environment
+  decoding_error(env, decoded, actual, metric="euclidean")  # straight line
+  ```
+
+  A geodesic position outside every bin, such as a posterior mean between two
+  arms, is measured from its nearest bin instead of falling back to the
+  straight line. Distances come from shortest paths run from the decoded bins
+  in blocks instead of a dense all-pairs matrix: on a 10,000-bin arena the
+  peak memory of 72,000 errors drops from 808 MB to 327 MB, at the same speed
+  and with identical values.
+
 ### Changed
 
 - The `neurospatial.layout.LayoutEngine` protocol lists only `build()` and

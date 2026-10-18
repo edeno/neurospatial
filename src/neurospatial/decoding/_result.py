@@ -951,7 +951,7 @@ class DecodingResult(ResultMixin):
         true_times: NDArray[np.float64],
         true_positions: NDArray[np.float64],
         *,
-        metric: Literal["euclidean", "geodesic"] = "euclidean",
+        metric: Literal["euclidean", "geodesic"] = "geodesic",
         max_gap: float | None = 0.5,
     ) -> NDArray[np.float64]:
         """Per-time-bin decode error against externally sampled ground truth.
@@ -969,10 +969,12 @@ class DecodingResult(ResultMixin):
         true_positions : NDArray[np.float64], shape (n_true, n_dims)
             Ground-truth positions sampled at ``true_times``. ``n_dims`` must
             match the environment dimensionality.
-        metric : {"euclidean", "geodesic"}, default="euclidean"
+        metric : {"geodesic", "euclidean"}, default="geodesic"
             Distance metric passed through to
             :func:`neurospatial.decoding.metrics.decoding_error`. ``"geodesic"``
-            uses this result's :attr:`env` for graph distances.
+            measures along this result's :attr:`env` connectivity graph, so a
+            decode in the wrong arm of a maze counts the path between the
+            arms; ``"euclidean"`` gives the straight-line distance.
         max_gap : float or None, default=0.5
             Largest ground-truth sampling interval (seconds) over which to
             interpolate. Longer gaps, NaN tracking and times outside the tracked
@@ -1052,12 +1054,7 @@ class DecodingResult(ResultMixin):
             max_gap=max_gap,
         )
 
-        errors = decoding_error(
-            self.map_position,
-            aligned,
-            env=self.env,
-            metric=metric,
-        )
+        errors = decoding_error(self.env, self.map_position, aligned, metric=metric)
 
         # Undecodable rows: a posterior row that is entirely non-finite
         # (all-NaN / all-Inf) carries no position information. np.argmax would

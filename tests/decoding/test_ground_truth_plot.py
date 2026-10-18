@@ -169,5 +169,6 @@ def test_score_forwards_its_configured_gap_policy(env):
         [0, 1],
         np.array([[0.0], [100.0]]),
         metric="mean_error",
+        distance="euclidean",  # exact straight-line mean of the interpolated track
     )
     assert score == pytest.approx(50.0)

@@ -63,7 +63,7 @@ rates = compute_spatial_rates(env, spike_times, times, positions)
 result = decode_session(env, spike_times, times, positions, dt=0.1)
 actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
 print(f"array-first median error: "
-      f"{np.nanmedian(decoding_error(result.map_position, actual)):.1f} cm")
+      f"{np.nanmedian(decoding_error(env, result.map_position, actual)):.1f} cm")
 
 # --- BayesianDecoder: optional wrapper, byte-exact vs decode_session -------
 decoder = BayesianDecoder(env, dt=0.1).fit(spike_times, times, positions)
