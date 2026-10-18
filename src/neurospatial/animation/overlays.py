@@ -37,6 +37,7 @@ from matplotlib.colors import to_hex
 from numpy.typing import NDArray
 
 from neurospatial.animation._region_names import shown_region_names
+from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
     from neurospatial.animation._video_io import VideoReaderProtocol
@@ -465,6 +466,11 @@ class BodypartOverlay:
         BodypartData
             Internal data container aligned to frame times.
         """
+        _require_allocentric(
+            env,
+            "BodypartOverlay",
+            why="It draws tracked body parts at their arena coordinates.",
+        )
         # Validate skeleton consistency first
         bodypart_names = list(self.data.keys())
         _validate_skeleton_consistency(
@@ -662,6 +668,11 @@ class HeadDirectionOverlay:
         HeadDirectionData
             Internal data container aligned to frame times.
         """
+        _require_allocentric(
+            env,
+            "HeadDirectionOverlay",
+            why="It draws allocentric heading arrows in arena coordinates.",
+        )
         # Validate head direction data
         _validate_finite_values(self.headings, name="HeadDirectionOverlay.headings")
 
@@ -2056,6 +2067,11 @@ class ObjectVectorOverlay:
         ValueError
             If shapes don't match or firing_rates length mismatches.
         """
+        _require_allocentric(
+            env,
+            "ObjectVectorOverlay",
+            why="It draws lines from the animal to objects in arena coordinates.",
+        )
         # Validate object positions shape
         _validate_finite_values(
             self.object_positions, name="ObjectVectorOverlay.object_positions"
@@ -2427,6 +2443,11 @@ class VideoOverlay:
         VideoData
             Internal data container aligned to frame times.
         """
+        _require_allocentric(
+            env,
+            "VideoOverlay",
+            why="It places camera frames in arena coordinates.",
+        )
         import warnings
 
         # Validate environment supports video overlays
@@ -3562,6 +3583,21 @@ def _validate_pickle_ability(
             f"include lambdas, closures, local functions, and certain class instances.\n\n"
             f"{_pickling_guidance('overlays')}"
         ) from e
+
+
+def _require_allocentric(env: Any, overlay: str, *, why: str) -> None:
+    """Refuse an overlay drawn in arena coordinates on a polar environment.
+
+    A polar environment's axes are ``(distance, angle)`` relative to the
+    animal, so arena positions, headings and frames have no place on them.
+    """
+    require_cartesian(
+        env.coordinate_system,
+        overlay,
+        why=why,
+        fix="animate on the allocentric environment the animal moves in, or "
+        "draw positions as (distance, angle) rows with PositionOverlay",
+    )
 
 
 def _validate_video_env(env: Any) -> None:

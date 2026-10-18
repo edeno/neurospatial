@@ -25,6 +25,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from neurospatial.environment import CartesianSystem
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -346,6 +348,7 @@ class TestEventOverlayUpdatePattern:
 
         # Create mock environment with proper dimension_ranges format
         mock_env = MagicMock()
+        mock_env.coordinate_system = CartesianSystem()
         mock_env.n_dims = 2
         mock_env.dimension_ranges = [(0.0, 100.0), (0.0, 100.0)]
 
@@ -382,6 +385,7 @@ class TestNativeTimeDimensionOverlays:
         # Create mock env with proper dimension_ranges format
         # dimension_ranges is a list of (min, max) tuples
         mock_env = MagicMock()
+        mock_env.coordinate_system = CartesianSystem()
         mock_env.n_dims = 2
         mock_env.dimension_ranges = [(0.0, 100.0), (0.0, 100.0)]
 
@@ -412,6 +416,7 @@ class TestNativeTimeDimensionOverlays:
 
         # Create mock env with proper dimension_ranges format
         mock_env = MagicMock()
+        mock_env.coordinate_system = CartesianSystem()
         mock_env.n_dims = 2
         mock_env.dimension_ranges = [(0.0, 100.0), (0.0, 100.0)]
 
@@ -442,6 +447,7 @@ class TestNativeTimeDimensionOverlays:
 
         # Create mock env with proper dimension_ranges format
         mock_env = MagicMock()
+        mock_env.coordinate_system = CartesianSystem()
         mock_env.n_dims = 2
         mock_env.dimension_ranges = [(0.0, 100.0), (0.0, 100.0)]
 

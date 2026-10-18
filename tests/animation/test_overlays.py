@@ -30,6 +30,7 @@ from neurospatial.animation.overlays import (
     _validate_temporal_alignment,
 )
 from neurospatial.animation.skeleton import Skeleton
+from neurospatial.environment import CartesianSystem
 from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
 
 
@@ -1329,6 +1330,7 @@ class TestConvertOverlaysToData:
         """Create a mock environment for testing."""
 
         class MockEnv:
+            coordinate_system = CartesianSystem()
             n_dims: ClassVar[int] = 2
             dimension_ranges: ClassVar[list[tuple[float, float]]] = [
                 (0.0, 100.0),
@@ -1977,6 +1979,8 @@ class TestValidateVideoEnv:
         from neurospatial.animation.overlays import _validate_video_env
 
         mock_env = MagicMock()
+
+        mock_env.coordinate_system = CartesianSystem()
         mock_env.n_dims = 2
         mock_env.dimension_ranges = np.array([[0.0, 100.0], [0.0, 100.0]])
 
@@ -2026,6 +2030,8 @@ class TestConvertVideoOverlay:
         from unittest.mock import MagicMock
 
         env = MagicMock()
+
+        env.coordinate_system = CartesianSystem()
         env.n_dims = 2
         env.dimension_ranges = np.array([[0.0, 100.0], [0.0, 100.0]])
         return env
@@ -2115,6 +2121,7 @@ class TestRegionsNormalization:
                 self.kind = "point"
 
         class MockEnv:
+            coordinate_system = CartesianSystem()
             n_dims: ClassVar[int] = 2
             dimension_ranges: ClassVar[list[tuple[float, float]]] = [
                 (0.0, 100.0),

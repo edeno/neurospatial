@@ -1343,6 +1343,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `HeadDirectionOverlay`, `BodypartOverlay`, `ObjectVectorOverlay` and
+  `VideoOverlay` raise `CartesianOnlyError` on an egocentric polar
+  environment. They draw arena coordinates, and a polar environment's axes
+  are `(distance, angle)` around the animal, so the animation used to draw
+  allocentric arrows, poses and camera frames on axes where they mean
+  nothing. `PositionOverlay` and `EventOverlay` still draw `(distance, angle)`
+  rows.
+
 - The multi-session workflow in the user guide compared rate maps with
   `map_probabilities(..., source_probabilities=...)`, which raised
   `TypeError` (the parameter is `source_probs`) and, with the right keyword,
