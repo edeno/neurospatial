@@ -229,3 +229,37 @@ def test_blocked_edges_name_walls_of_a_component_next_to_a_track():
     assert field_bins[table["source"]].all() and field_bins[table["target"]].all()
     subset = env.subset(mask=np.ones(env.n_bins, dtype=bool))
     assert set(subset.get_blocked_edges()["wall"]) == {"divider"}
+
+
+@pytest.mark.parametrize(("area", "accepted"), [(1.0, False), (0.0, True)])
+def test_a_conducting_face_cannot_join_bins_of_different_measure(area, accepted):
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        FaceGeometry,
+        KnownFaces,
+        NearestBinLocator,
+    )
+
+    centers = np.array([[0.0, 0.0], [1.0, 0.0]])
+    binning = Binning(
+        "mixed",
+        SpatialBins.from_arrays(centers, [1.0, 1.0], [1, 2]),
+        BinConnections.from_arrays([[0, 1]], [1.0]),
+        NearestBinLocator(centers, max_distance=0.4),
+        KnownFaces(
+            FaceGeometry(
+                np.array([[0, 1]]),
+                np.array([area]),
+                np.array([1.0]),
+                np.array([1.0, 1.0]),
+            )
+        ),
+    )
+    if accepted:
+        Environment.from_bins(binning)  # a navigation-only link
+    else:
+        with pytest.raises(
+            ValueError, match="dimension 1 to one measured in dimension 2"
+        ):
+            Environment.from_bins(binning)

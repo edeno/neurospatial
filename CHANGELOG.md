@@ -1220,9 +1220,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   Each bin keeps its own measure; occupancy, rate maps, smoothing within each
   component, decoding and storage work on the combined environment, and a
   transform scales each bin by its own dimension. Bridges between bins of
-  different measure are navigation-only: a `bridge_conductances` entry for one
-  is refused, because diffusion between a density per length and one per area
-  would depend on the units.
+  different measure are navigation-only: a `bridge_conductances` entry for one,
+  or a positive face between such bins passed to `from_bins`, is refused,
+  because diffusion between a density per length and one per area would
+  depend on the units.
 
 - `Environment.from_bins(env.binning, arena=env.arena)` rebuilds an
   equivalent environment directly: `from_bins` builds the lazy face recipe
