@@ -15,7 +15,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import KnownFaces
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import Affine2D
+from neurospatial.ops.transforms import Affine2D, AffineND
 
 
 def grid():
@@ -368,3 +368,22 @@ def test_rebinning_after_a_rotation_keeps_the_same_cells():
         np.testing.assert_allclose(
             np.sort(back, axis=0), np.sort(expected, axis=0), atol=1e-9
         )
+
+
+@pytest.mark.parametrize("n_dims", [1, 3, 4])
+def test_rebinning_a_reflected_grid_matches_rebinning_before_the_reflection(n_dims):
+    # Reflection leaves 1-D and 4-D grids without rectangular or framed
+    # cells; their boxes come from the transformed lookup instead.
+    shape = (6,) if n_dims == 1 else (2,) * n_dims
+    edges = tuple(np.arange(size + 1.0) for size in shape)
+    env = Environment.from_grid_mask(np.ones(shape, dtype=bool), grid_edges=edges)
+    reflection = np.eye(n_dims + 1)
+    reflection[0, 0], reflection[0, -1] = -1.0, float(shape[0])
+    reflected = env.apply_transform(AffineND(reflection))
+    expected = env.rebin(bin_size=2).bin_centers
+    actual = reflected.rebin(bin_size=2).bin_centers
+    mirrored = actual.copy()
+    mirrored[:, 0] = shape[0] - mirrored[:, 0]
+    np.testing.assert_allclose(
+        mirrored[np.lexsort(mirrored.T[::-1])], expected[np.lexsort(expected.T[::-1])]
+    )

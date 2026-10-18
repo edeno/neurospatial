@@ -33,6 +33,7 @@ from neurospatial.geometry import (
     KnownFaces,
     NativeFaces,
     apply_walls,
+    cell_boxes,
     get_centers,
     materialize_cells,
     prepare_bins,
@@ -398,16 +399,9 @@ def _overlaps_bins(
         # Clipped cells are not boxes in the lattice: check their area exactly.
         polygons = cells if binning.rectilinear is None else None
     else:
-        frame = binning.grid_frame
-        grid = binning.rectilinear if frame is None else frame.source
-        assert grid is not None  # rebin(bin_size=...) needs rectangular cells
-        to_world = np.eye(len(shape) + 1) if frame is None else frame.forward
-        active = np.argwhere(grid.active_mask)
-        corners = []
-        for index in active:
-            sides = [grid.edges[axis][[i, i + 1]] for axis, i in enumerate(index)]
-            vertices = np.array(list(itertools.product(*sides)))
-            corners.append(vertices @ to_world[:-1, :-1].T + to_world[:-1, -1])
+        # Box cells recovered through subsets and transforms, such as a
+        # reflected 1-D grid, which keeps neither rectilinear nor framed cells.
+        corners = cell_boxes(binning.locator)
     tolerance = np.array([1e-9 * (edge[1] - edge[0]) for edge in edges])
     for number, vertices in enumerate(corners):
         local = vertices @ inverse[:-1, :-1].T + inverse[:-1, -1]
