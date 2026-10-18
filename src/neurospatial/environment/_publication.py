@@ -393,6 +393,14 @@ def _declared_metadata(
     return _Metadata(name, units, frame)
 
 
+def _build_record(env: Environment[Any]) -> _Provenance:
+    """Return the environment's build record, for the file writers to save.
+
+    The record is immutable; its ``build_params`` mapping is copied on access.
+    """
+    return env._provenance
+
+
 _EnvironmentT = TypeVar("_EnvironmentT", bound="Environment[Any]")
 
 

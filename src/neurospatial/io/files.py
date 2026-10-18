@@ -349,6 +349,7 @@ def _environment_payload(
     env: Environment,
 ) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]:
     """Build the shared lossless metadata and numerical-array payload."""
+    from neurospatial.environment import _build_record
     from neurospatial.geometry import encode, encode_arena, graph_to_node_link
 
     binning_meta, binning_arrays = encode(env.binning, "binning")
@@ -364,7 +365,7 @@ def _environment_payload(
         "layout_type": env.layout_type,
         "layout_parameters": env.layout_parameters,
         "derivations": list(env.derivations),
-        "length_scale": env._provenance.length_scale,
+        "length_scale": _build_record(env).length_scale,
         "binning": binning_meta,
         "arena": arena_meta,
         "dimension_ranges": env.dimension_ranges,
