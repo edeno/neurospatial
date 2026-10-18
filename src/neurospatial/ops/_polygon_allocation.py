@@ -232,7 +232,7 @@ def _uses_polygon_allocation(binning: Binning, arena: Arena) -> bool:
             ) from error
         return True
     polygon_cells = isinstance(binning.shapes, PolygonCells)
-    planar_cells = n_dims == 2 and binning.bins.measure_dim == 2
+    planar_cells = n_dims == 2 and binning.bins.has_measure_dim(2)
     if not arena.domain_known:
         return polygon_cells or planar_cells
     if isinstance(arena, MaskArena) and not polygon_cells and not planar_cells:

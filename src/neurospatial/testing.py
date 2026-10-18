@@ -89,7 +89,7 @@ def assert_environment_contract(
 
     check_lookup(env)
     centers = env.bin_centers.copy()
-    sizes = env.bin_sizes.copy()
+    sizes = env.binning.bins.sizes.copy()
     pairs = env.edge_pairs.copy()
     exported = env.bin_centers
     try:
@@ -127,7 +127,7 @@ def assert_environment_contract(
         assert type(restored) is type(env)
         check_lookup(restored)
         np.testing.assert_array_equal(restored.bin_centers, centers)
-        np.testing.assert_array_equal(restored.bin_sizes, sizes)
+        np.testing.assert_array_equal(restored.binning.bins.sizes, sizes)
         np.testing.assert_array_equal(restored.edge_pairs, pairs)
 
     if not env.binning.faces.available:

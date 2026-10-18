@@ -99,7 +99,12 @@ from neurospatial.environment._regions import (
     _region_membership,
 )
 from neurospatial.environment._subset import _subset
-from neurospatial.environment._summary import _info, _repr, _repr_html
+from neurospatial.environment._summary import (
+    _info,
+    _mixed_measure_error,
+    _repr,
+    _repr_html,
+)
 from neurospatial.environment._targets import (
     REGION_TARGET_WHY,
     TARGET_WHY,
@@ -779,6 +784,7 @@ class Environment(Generic[_C]):
             layout_type=self.layout_type,
             n_dims=self.n_dims,
             bin_sizes=self._binning.bins.sizes,
+            measure_dims=self._binning.bins.measure_dims,
             dimension_ranges=self.dimension_ranges,
             grid_edges=self.grid_edges,
             region_names=list(self.regions),
@@ -4324,6 +4330,15 @@ class Environment(Generic[_C]):
         NDArray[np.float64], shape (n_active_bins,)
             An array containing the area/volume/length of each active bin.
 
+        Raises
+        ------
+        ValueError
+            If the bins mix measures, as a track combined with an open field
+            does: a sum, ratio or density over lengths and areas together has
+            no unit. Analyze each component separately, or read each bin's
+            measure with its dimension from ``env.binning.bins.sizes`` and
+            ``env.binning.bins.measure_dims``.
+
         Notes
         -----
         Cell measures are cached internally. Each access returns an independent
@@ -4342,7 +4357,10 @@ class Environment(Generic[_C]):
         True
 
         """
-        sizes: NDArray[np.float64] = self._binning.bins.sizes.copy()
+        bins = self._binning.bins
+        if bins.measure_dim is None and bins.n_bins:
+            raise ValueError(_mixed_measure_error(bins.measure_dims, self.units))
+        sizes: NDArray[np.float64] = bins.sizes.copy()
         sizes.setflags(write=False)
         return sizes
 

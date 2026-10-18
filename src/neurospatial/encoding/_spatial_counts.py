@@ -126,7 +126,7 @@ def prepare_linear_spatial_intervals(
     """
     require_linear_allocation(env)
     binning, arena = env.binning, env.arena
-    if env.n_dims != 2 or binning.bins.measure_dim != 2:
+    if env.n_dims != 2 or not binning.bins.has_measure_dim(2):
         raise NotImplementedError(
             "time_allocation='linear' spatial encoding requires exact planar "
             "Cartesian area cells. Use time_allocation='start' for this environment."

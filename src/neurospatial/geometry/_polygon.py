@@ -122,7 +122,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
 
 def materialize_cells(binning: Binning) -> tuple[Polygon, ...]:
     """Read exact Cartesian 2-D cells from published data, without any builder."""
-    if binning.bins.n_dims != 2 or binning.bins.measure_dim != 2:
+    if binning.bins.n_dims != 2 or not binning.bins.has_measure_dim(2):
         raise _error(
             "Polygon clipping requires planar area-measured cells.",
             "use a Cartesian 2-D grid, hexagonal layout or triangular mesh",
@@ -526,7 +526,9 @@ def _pieces_binning(
     records.sort(key=lambda item: (item[0], item[1]))
     all_pairs = np.array([(u, v) for u, v, *_ in records], dtype=np.intp).reshape(-1, 2)
     is_open = np.array([record[2] for record in records], dtype=bool)
-    bins = SpatialBins(centers, np.array([cell.area for cell in cells.polygons]), 2)
+    bins = SpatialBins.from_arrays(
+        centers, np.array([cell.area for cell in cells.polygons]), 2
+    )
     connections = BinConnections(
         all_pairs,
         np.array([record[4] for record in records], dtype=np.float64),

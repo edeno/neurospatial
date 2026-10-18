@@ -24,6 +24,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   versions (Binning codec versions 1 to 3) no longer load; rebuild them from
   their recording and save them again.
 
+- Each bin records its own measure dimension. `SpatialBins.measure_dims` has
+  one entry per bin (an integer passed to `SpatialBins.from_arrays` applies to
+  all), and `SpatialBins.measure_dim` is the shared value, or None when bins
+  mix lengths and areas. `Environment.bin_sizes` raises on such an environment,
+  since a sum or density over lengths and areas has no unit; the error says how
+  to analyze one component at a time.
+
 - `Binning` no longer has a `clip_mapping` field. The clipped locator already
   holds the mapping, and the stored copy had to agree with it, so
   `Environment.clip_mapping` now reads it from the locator. Drop
@@ -1191,6 +1198,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `Environment.combine` joins components whose bins measure different things,
+  such as a corridor built with `linear_track` and the arena it leads into.
+  Each bin keeps its own measure; occupancy, rate maps, smoothing within each
+  component, decoding and storage work on the combined environment, and a
+  transform scales each bin by its own dimension.
+
 - `Environment.get_blocked_edges()` lists the neighbor pairs that walls close,
   with each pair's navigation distance and the name of the wall that closes
   it, to check that a wall separates the bins you meant.
@@ -1574,6 +1587,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- A combined environment whose components have no polygon cells, such as two
+  tracks, reported no `dimension_ranges`, and `compute_spatial_rate` on it
+  failed with `TypeError: 'NoneType' object is not iterable`. Its extent is now
+  the union of its components' extents, and the default smoothing bandwidth no
+  longer needs a known extent.
 
 - `border_score` (and the border scores in `summary_table` and
   `label_cell_types`) scores circular and other curved or diagonal arenas built

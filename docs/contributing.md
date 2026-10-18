@@ -179,7 +179,8 @@ pairs and pair distances as arrays in `build()`, with vectorized helpers in
 `env.edge_pairs`, the order of edge fields in gradients and divergence), and
 share one rule for bin measures and face directions through
 `assemble_binning` in `layout/_assembly.py`. A binning keeps the bins
-(`SpatialBins`: centers, measures) separate from their neighbor pairs
+(`SpatialBins`: centers, measures and each bin's measure dimension, which
+can differ between combined components) separate from their neighbor pairs
 (`BinConnections`), because they change for different reasons. Walls close
 pairs (`is_open`) instead of deleting them, so environments over the same bins
 keep one pair order; `connections.pairs`, the open pairs, is `env.edge_pairs`,

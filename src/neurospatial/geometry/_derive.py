@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from shapely.affinity import affine_transform
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
@@ -92,7 +93,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     bins = SpatialBins.from_arrays(
         binning.bins.centers[parent_ids],
         binning.bins.sizes[parent_ids],
-        binning.bins.measure_dim,
+        binning.bins.measure_dims[parent_ids],
     )
     # pair_kept selects the open pairs that survive, for arrays aligned with them.
     connections, pair_kept = binning.connections.select(child_of)
@@ -293,6 +294,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     linear = matrix[:-1, :-1]
     kind, scale, logdet = _classification(linear)
     similarity = kind in {"translation", "similarity"}
+    dims = parent.measure_dims
 
     couplings = bridge_values(binning)
     if any(value > 0 for value in couplings.values()):
@@ -302,8 +304,17 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "conductance scaling requires a similarity with a known length scale",
                 "use a translation, rotation, reflection or uniform scaling",
             )
+        ends = np.array([sorted(pair) for pair in couplings], dtype=np.intp)
+        if scale != 1.0 and np.any(dims[ends[:, 0]] != dims[ends[:, 1]]):
+            raise _refusal(
+                f"Cannot apply {kind} to a bridge conductance between a bin "
+                "measured by length and one measured by area.",
+                "such a conductance has no single length dimension to scale by",
+                "scale each component before combining them, or use a "
+                "translation, rotation or reflection",
+            )
         try:
-            factor_c = scale ** (parent.measure_dim - 2)
+            factor_c = per_dimension(dims[ends[:, 0]], lambda dim: scale ** (dim - 2))
             with np.errstate(over="raise", invalid="raise", under="ignore"):
                 transformed_c = np.array(list(couplings.values())) * factor_c
             if np.any(
@@ -316,17 +327,19 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "positive conductances must remain finite and positive",
                 "rescale coordinate units before transforming",
             ) from error
-    if parent.measure_dim < parent.n_dims and not similarity:
+    if np.any(dims < parent.n_dims) and not similarity:
         raise _refusal(
             f"Cannot apply {kind} to embedded track bins.",
             "non-similarity maps change bin lengths according to each segment's direction",
             "rebuild the track from transformed node positions with Environment.from_graph",
         )
     try:
+        # Each bin's measure scales with its own dimension: lengths by
+        # ``scale``, areas by ``scale ** 2``.
         factor = (
-            math.exp(math.log(scale) * parent.measure_dim)
+            per_dimension(dims, lambda dim: math.exp(math.log(scale) * dim))
             if similarity
-            else math.exp(logdet)
+            else np.full(len(dims), math.exp(logdet))
         )
     except OverflowError as exc:
         raise _refusal(
@@ -334,7 +347,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             "bin measures must remain finite and positive",
             "rescale the coordinate units before applying the transform",
         ) from exc
-    if not np.isfinite(factor) or factor <= 0:
+    if not np.all(np.isfinite(factor)) or np.any(factor <= 0):
         raise _refusal(
             "Transformed bin measures are outside floating-point range.",
             "bin measures must remain finite and positive",
@@ -397,7 +410,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         distances = np.linalg.norm(
             centers[all_pairs[:, 1]] - centers[all_pairs[:, 0]], axis=1
         )
-    bins = SpatialBins.from_arrays(centers, sizes, parent.measure_dim)
+    bins = SpatialBins.from_arrays(centers, sizes, dims)
     connections = BinConnections(all_pairs, distances, links.is_open)
     pairs = connections.pairs
     if locator is None:
@@ -435,7 +448,8 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             faces = KnownFaces(
                 FaceGeometry(
                     pairs,
-                    old.A * scale ** (parent.measure_dim - 1),
+                    old.A
+                    * per_dimension(dims[pairs[:, 0]], lambda dim: scale ** (dim - 1)),
                     old.distance * scale,
                     bins.sizes,
                 )
@@ -452,7 +466,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             faces = KnownFaces(
                 FaceGeometry(
                     pairs,
-                    old.A * factor / stretch,
+                    old.A * math.exp(logdet) / stretch,
                     old.distance * face_stretch,
                     bins.sizes,
                 )

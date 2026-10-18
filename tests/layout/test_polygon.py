@@ -116,7 +116,10 @@ def test_subset_then_reclip_does_not_resurrect_point_touch_owner():
     selected = replace(
         child,
         bins=replace(
-            child.bins, centers=child.bins.centers[1:], sizes=child.bins.sizes[1:]
+            child.bins,
+            centers=child.bins.centers[1:],
+            sizes=child.bins.sizes[1:],
+            measure_dims=child.bins.measure_dims[1:],
         ),
         locator=SubsetLocator(child.locator, np.array([-1, 0])),
         shapes=child.shapes.subset([False, True]),

@@ -306,8 +306,8 @@ def _active_map(mapping: NDArray[Any], size: int, name: str) -> None:
 
 
 def _encode_bins(obj: SpatialBins, prefix: str) -> Payload:
-    return {"measure_dim": obj.measure_dim}, _arrays(
-        prefix, centers=obj.centers, sizes=obj.sizes
+    return {}, _arrays(
+        prefix, centers=obj.centers, sizes=obj.sizes, measure_dims=obj.measure_dims
     )
 
 
@@ -317,7 +317,7 @@ def _decode_bins(
     return SpatialBins.from_arrays(
         _array(arrays, prefix, "centers", np.float64),
         _array(arrays, prefix, "sizes", np.float64),
-        meta["measure_dim"],
+        _array(arrays, prefix, "measure_dims", np.intp),
     )
 
 

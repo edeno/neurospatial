@@ -59,15 +59,11 @@ def _combine(
         )
     first = values[0]
     for env in values[1:]:
-        if (env.n_dims, env._binning.bins.measure_dim) != (
-            first.n_dims,
-            first._binning.bins.measure_dim,
-        ):
+        if env.n_dims != first.n_dims:
             raise IncompatibleEnvironmentError(
-                f"[E1003] Components must share coordinate and measure dimensions: "
-                f"first has n_dims={first.n_dims}, measure_dim={first._binning.bins.measure_dim}; "
-                f"another has n_dims={env.n_dims}, measure_dim={env._binning.bins.measure_dim}.",
-                fix="build components with matching coordinate columns and physical measure dimensions",
+                f"[E1003] Components must share coordinate dimensions: first has "
+                f"n_dims={first.n_dims}; another has n_dims={env.n_dims}.",
+                fix="build components with matching coordinate columns",
             )
         if (env.units, env.frame) != (first.units, first.frame):
             raise ValueError(

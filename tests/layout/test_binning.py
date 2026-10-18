@@ -120,7 +120,7 @@ def test_spatial_bins_owns_read_only_arrays(constructor):
     inputs = {name: array[::2] for name, array in bases.items()}
     inputs["centers"] = inputs["centers"][:, ::2]
     expected = {name: array.copy() for name, array in inputs.items()}
-    bins = constructor(**inputs, measure_dim=2)
+    bins = constructor(inputs["centers"], inputs["sizes"], 2)
 
     for name, source in inputs.items():
         published = getattr(bins, name)

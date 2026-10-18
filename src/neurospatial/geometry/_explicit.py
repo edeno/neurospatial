@@ -26,6 +26,7 @@ from neurospatial.geometry._components import (
     Outline,
     TriangleShapes,
 )
+from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._grid_frame import FramedGrid
 from neurospatial.geometry._ownership import _check_binning, _snapshot_binning
 from neurospatial.geometry._polygon_cells import PolygonCells
@@ -59,6 +60,18 @@ def cell_extent(
         return _active_grid_extent(binning.rectilinear)
     if binning.grid_frame is not None:
         return _active_framed_extent(binning.grid_frame)
+    if isinstance(binning.locator, CombinedLocator):
+        # Components such as a track and an open field share no cell shapes;
+        # the combined cells span the union of the components' cells.
+        parts = [
+            cell_extent(child, shapeless=shapeless)
+            for child in binning.locator.children
+        ]
+        if parts and all(part is not None for part in parts):
+            return tuple(
+                (min(axis[0] for axis in axes), max(axis[1] for axis in axes))
+                for axes in zip(*parts, strict=True)
+            )
     extent = component_extent(
         outline=binning.outline,
         shapes=binning.shapes,
@@ -220,7 +233,7 @@ def prepare_bins(binning: object) -> Binning:
     raw, links = snapshot.bins, snapshot.connections
     # Standalone records have writable NumPy headers; revalidate at ingress
     # rather than assuming they remain identical to their constructor inputs.
-    bins = SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dim)
+    bins = SpatialBins.from_arrays(raw.centers, raw.sizes, raw.measure_dims)
     connections = BinConnections.from_arrays(
         links.all_pairs, links.all_distances, links.is_open
     )

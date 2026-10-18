@@ -36,24 +36,30 @@ class SpatialBins(ReadOnlyState):
     A bin's index is its ID everywhere: fields, regions, faces and
     :class:`BinConnections` all refer to bins by their position here.
 
+    Bins can differ in what they measure: a track joined to an open field
+    has bins measured by length next to bins measured by area. Each bin's
+    size is in ``units ** measure_dims[i]``.
+
     Attributes
     ----------
     centers : ndarray of float64, shape (n_bins, n_dims)
         Finite bin centers in the environment's coordinates.
     sizes : ndarray of float64, shape (n_bins,)
-        Finite, strictly positive bin measures in ``units ** measure_dim``.
-    measure_dim : int
-        Dimension of the bin measures: one for track lengths, otherwise the
-        coordinate dimension for areas or volumes.
+        Finite, strictly positive bin measures in ``units ** measure_dims``.
+    measure_dims : ndarray of intp, shape (n_bins,)
+        Dimension of each bin's measure: one for track lengths, otherwise the
+        coordinate dimension for areas or volumes. An integer given at
+        construction applies to every bin.
     """
 
     centers: NDArray[np.float64]
     sizes: NDArray[np.float64]
-    measure_dim: int
+    measure_dims: NDArray[np.intp]
 
     def __post_init__(self) -> None:
         centers = np.array(self.centers, dtype=np.float64, copy=True)
         sizes = np.array(self.sizes, dtype=np.float64, copy=True)
+        raw_dims = np.asarray(self.measure_dims)
 
         if centers.ndim != 2:
             raise ValueError(f"centers must be 2D, got shape {centers.shape}.")
@@ -69,22 +75,42 @@ class SpatialBins(ReadOnlyState):
         if np.any(invalid):
             index = int(np.flatnonzero(invalid)[0])
             raise ValueError(f"sizes[{index}] must be finite and strictly positive.")
-        if (
-            isinstance(self.measure_dim, (bool, np.bool_))
-            or not isinstance(self.measure_dim, (int, np.integer))
-            or not 1 <= self.measure_dim <= n_dims
+        if raw_dims.ndim == 0:
+            if raw_dims.dtype.kind not in "iu" or not 1 <= raw_dims <= n_dims:
+                raise ValueError(
+                    f"measure_dim must be an integer between 1 and {n_dims}, "
+                    f"got {self.measure_dims!r}."
+                )
+            raw_dims = np.full(n_bins, raw_dims)
+        if raw_dims.shape != (n_bins,) or (
+            raw_dims.size and raw_dims.dtype.kind not in "iu"
         ):
             raise ValueError(
-                f"measure_dim must be an integer between 1 and {n_dims}, "
-                f"got {self.measure_dim!r}."
+                f"measure_dims must be one integer per bin, shape ({n_bins},), "
+                f"got {raw_dims.dtype} with shape {raw_dims.shape}."
             )
-        for name, array in (("centers", centers), ("sizes", sizes)):
+        invalid = (raw_dims < 1) | (raw_dims > n_dims)
+        if np.any(invalid):
+            index = int(np.flatnonzero(invalid)[0])
+            raise ValueError(
+                f"measure_dims[{index}] must be between 1 and {n_dims}, "
+                f"got {raw_dims[index]}."
+            )
+        dims = np.array(raw_dims, dtype=np.intp, copy=True)
+        for name, array in (
+            ("centers", centers),
+            ("sizes", sizes),
+            ("measure_dims", dims),
+        ):
             array.setflags(write=False)
             object.__setattr__(self, name, array)
 
     @classmethod
     def from_arrays(
-        cls, centers: ArrayLike, sizes: ArrayLike, measure_dim: int
+        cls,
+        centers: ArrayLike,
+        sizes: ArrayLike,
+        measure_dim: int | ArrayLike,
     ) -> SpatialBins:
         """Validate and own bin centers and measures.
 
@@ -94,8 +120,8 @@ class SpatialBins(ReadOnlyState):
             Finite bin coordinates.
         sizes : array-like, shape (n_bins,)
             Finite, strictly positive bin measures.
-        measure_dim : int
-            Measure dimension in ``[1, n_dims]``.
+        measure_dim : int or array-like of int, shape (n_bins,)
+            Measure dimension in ``[1, n_dims]``, for every bin or per bin.
 
         Returns
         -------
@@ -108,7 +134,19 @@ class SpatialBins(ReadOnlyState):
             If shapes, dimensions or values are invalid. Elementwise errors
             identify the offending array index.
         """
-        return cls(np.asarray(centers), np.asarray(sizes), measure_dim)
+        return cls(np.asarray(centers), np.asarray(sizes), np.asarray(measure_dim))
+
+    def has_measure_dim(self, dim: int) -> bool:
+        """Whether every bin's measure has dimension ``dim`` (True with no bins)."""
+        return bool(np.all(self.measure_dims == dim))
+
+    @property
+    def measure_dim(self) -> int | None:
+        """The measure dimension every bin shares, or None when bins mix them."""
+        dims = self.measure_dims
+        if not len(dims) or np.any(dims != dims[0]):
+            return None
+        return int(dims[0])
 
     @property
     def n_bins(self) -> int:

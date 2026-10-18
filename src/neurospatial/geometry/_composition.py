@@ -11,7 +11,7 @@ from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
 from neurospatial.geometry._arena import Arena
-from neurospatial.geometry._arrays import ReadOnlyState
+from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
 from neurospatial.geometry._binning import BinConnections, Binning, SpatialBins
 from neurospatial.geometry._diffusion import DiffusionGeometry
 from neurospatial.geometry._face_normals import FaceNormals
@@ -62,17 +62,14 @@ class CombinedLocator(ReadOnlyState):
             )
         if any(type(child) is not Binning for child in children):
             raise TypeError("Composition children must be built-in Binning snapshots.")
-        dims, measure = children[0].bins.n_dims, children[0].bins.measure_dim
+        dims = children[0].bins.n_dims
         if any(
             child.bins.n_dims != dims
-            or child.bins.measure_dim != measure
             or arena.n_dims != dims
             or arena.coordinate_kind != "cartesian"
             for child, arena in zip(children, arenas, strict=True)
         ):
-            raise ValueError(
-                "Components need matching Cartesian dimensions and measures."
-            )
+            raise ValueError("Components need matching Cartesian dimensions.")
         centers = np.concatenate([child.bins.centers for child in children])
         bridges = BinConnections.from_arrays(self.bridge_pairs, self.bridge_distances)
         bridges.check_bins(len(centers))
@@ -124,7 +121,7 @@ class CombinedLocator(ReadOnlyState):
         return SpatialBins.from_arrays(
             np.concatenate([child.bins.centers for child in self.children]),
             np.concatenate([child.bins.sizes for child in self.children]),
-            self.children[0].bins.measure_dim,
+            np.concatenate([child.bins.measure_dims for child in self.children]),
         )
 
     def bin_connections(self) -> BinConnections:
@@ -212,7 +209,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
 
     def weights(
         locator: Locator, active: NDArray[np.bool_] | None = None
-    ) -> tuple[sparse.csr_matrix, int] | None:
+    ) -> tuple[sparse.csr_matrix, NDArray[np.intp]] | None:
         if isinstance(locator, CombinedLocator):
             blocks = []
             for child, start, end in zip(
@@ -246,7 +243,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                     ),
                     shape=result.shape,
                 )
-            return result, locator.children[0].bins.measure_dim
+            return result, locator.spatial_bins().measure_dims
         if isinstance(locator, SubsetLocator):
             selected = np.flatnonzero(locator.parent_to_child >= 0)
             selected = selected[np.argsort(locator.parent_to_child[selected])]
@@ -255,13 +252,13 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             result = weights(locator.base, retained)
             if result is None:
                 return None
-            matrix, dim = result
-            return matrix[selected][:, selected].tocsr(), dim
+            matrix, dims = result
+            return matrix[selected][:, selected].tocsr(), dims[selected]
         if isinstance(locator, TransformedLocator):
             result = weights(locator.base, active)
             if result is None:
                 return None
-            matrix, dim = result
+            matrix, dims = result
             linear = np.linalg.inv(locator.inverse)[:-1, :-1]
             scale = float(np.exp(np.linalg.slogdet(linear)[1] / len(linear)))
             normalized = linear / scale
@@ -271,16 +268,29 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                 raise NotImplementedError(
                     "Combined scalar diffusion requires a similarity transform; use the original coordinates."
                 )
-            factor = scale ** (dim - 2)
-            old = matrix.data.copy()
-            matrix = matrix * factor
-            if not np.all(np.isfinite(matrix.data)) or np.any(
-                (old > 0) & (matrix.data == 0)
+            # Conductance has units length ** (measure_dim - 2) of the bins it
+            # joins; a coupling between bins of different measure has no
+            # single scaling, which derivations refuse before this point.
+            coupling = matrix.tocoo()
+            mixed = dims[coupling.row] != dims[coupling.col]
+            if scale != 1.0 and np.any(mixed & (coupling.data != 0)):
+                raise NotImplementedError(
+                    "Combined scalar diffusion cannot rescale a conductance between "
+                    "bins measured by length and by area; use the original coordinates."
+                )
+            data = coupling.data * per_dimension(
+                dims[coupling.row], lambda dim: scale ** (dim - 2)
+            )
+            matrix = sparse.csr_matrix(
+                (data, (coupling.row, coupling.col)), shape=matrix.shape
+            )
+            if not np.all(np.isfinite(data)) or np.any(
+                (coupling.data > 0) & (data == 0)
             ):
                 raise ValueError(
                     "Transformed conductances exceed floating-point range; rescale the coordinates."
                 )
-            return matrix, dim
+            return matrix, dims
         return None
 
     if binning.faces.available:
@@ -342,9 +352,10 @@ def bridge_values(binning: Binning) -> dict[frozenset[int], float]:
     for u, v in binning.connections.pairs:
         pair = frozenset((int(indices[u]), int(indices[v])))
         if pair in original:
-            result[frozenset((int(u), int(v)))] = original[pair] * scale ** (
-                binning.bins.measure_dim - 2
-            )
+            # A positive conductance between bins of different measure is
+            # only kept unscaled (scale 1); derivations refuse to rescale it.
+            dim = int(binning.bins.measure_dims[u])
+            result[frozenset((int(u), int(v)))] = original[pair] * scale ** (dim - 2)
     return result
 
 

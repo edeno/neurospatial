@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -38,6 +39,20 @@ def boolean_selection(keep: ArrayLike, n_items: int) -> NDArray[np.bool_]:
     if mask.dtype.kind != "b" or mask.shape != (n_items,):
         raise ValueError("keep must be a boolean mask with one entry per cell.")
     return mask
+
+
+def per_dimension(
+    dims: NDArray[np.intp], value: Callable[[int], float]
+) -> NDArray[np.float64]:
+    """``value(d)`` for each entry of ``dims``, computed once per distinct ``d``.
+
+    Scalar arithmetic per dimension keeps results identical to evaluating
+    ``value`` on a single shared dimension.
+    """
+    result = np.empty(len(dims), dtype=np.float64)
+    for dim in np.unique(dims):
+        result[dims == dim] = value(int(dim))
+    return result
 
 
 def axis_ranges(
