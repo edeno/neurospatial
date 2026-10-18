@@ -404,6 +404,18 @@ def _polar_coordinates(arena: Arena | None) -> EgocentricPolarSystem:
     return EgocentricPolarSystem(arena.circular)
 
 
+# The version of the private records an Environment pickles. Bump it whenever
+# a pickled record (metadata, provenance, geometry, binning or locators)
+# gains, loses or reinterprets a field, so a pickle from another version is
+# refused with the advice to use environment files instead of failing later.
+STATE_FORMAT = 2
+
+
+def environment_state(env_dict: dict[str, Any]) -> dict[str, Any]:
+    """The state an Environment pickles: its attributes and the format version."""
+    return {**env_dict, "_state_format": STATE_FORMAT}
+
+
 def _restored_state(state: object) -> dict[str, Any]:
     """Validate an unpickled Environment state and re-own its records.
 
@@ -417,6 +429,7 @@ def _restored_state(state: object) -> dict[str, Any]:
         version of neurospatial.
     """
     expected = {
+        "_state_format": int,
         "_metadata": _Metadata,
         "_regions": Regions,
         "_provenance": _Provenance,
@@ -427,6 +440,7 @@ def _restored_state(state: object) -> dict[str, Any]:
         not isinstance(state, dict)
         or state.keys() != expected.keys()
         or not all(isinstance(state[key], kind) for key, kind in expected.items())
+        or state["_state_format"] != STATE_FORMAT
     ):
         found = sorted(state) if isinstance(state, dict) else type(state).__name__
         raise TypeError(
@@ -445,6 +459,7 @@ def _restored_state(state: object) -> dict[str, Any]:
             )
         )
     geometry: _PublishedGeometry = state["_geometry"]
+    state = {key: value for key, value in state.items() if key != "_state_format"}
     return {
         **state,
         "_geometry": replace(geometry, arena=own_arena(geometry.arena)),

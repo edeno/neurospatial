@@ -1334,6 +1334,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- An environment pickled by another version of neurospatial is refused when
+  it is loaded, with the advice to save with `env.to_file(path)` and read with
+  `Environment.from_file(path)`. Before, a pickle from the previous release
+  loaded and then failed on its first `subset`, `apply_transform`, `rebin` or
+  `to_dict` with an `AttributeError`. Pickles now carry a format version.
+
 - On a grid rotated or sheared by `apply_transform`, a position exactly on the
   line (or, in 3-D, the face) between two bins now belongs to the same bin as
   on the grid before the transform: the bin above the line, as on any

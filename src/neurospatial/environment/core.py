@@ -77,6 +77,7 @@ from neurospatial.environment._publication import (
     _restored_state,
     _Unset,
     editable_graph,
+    environment_state,
     publish_derived,
 )
 from neurospatial.environment._queries import (
@@ -348,6 +349,10 @@ class Environment(Generic[_C]):
                 why="Why: a factory builds the geometry and connectivity required by Environment.",
             )
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Return the owned state with the version of its private format."""
+        return environment_state(self.__dict__)
 
     def __setstate__(self, state: object) -> None:
         """Restore owned state; the analysis cache unpickles empty.

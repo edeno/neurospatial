@@ -177,7 +177,7 @@ def test_restoration_refuses_custom_arenas_requiring_snapshot_migration():
         pass
 
     env = _environment()
-    state = vars(env).copy()
+    state = env.__getstate__()
     state["_geometry"] = replace(env._geometry, arena=CustomArena(box(-1, -1, 4, 4)))
     restored = Environment.__new__(Environment)
     with pytest.raises(TypeError, match="arena= takes an arena"):
