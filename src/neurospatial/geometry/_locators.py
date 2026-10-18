@@ -16,7 +16,10 @@ from shapely.geometry import Polygon
 from neurospatial._constants import KDTREE_LEAF_SIZE
 from neurospatial.geometry._arrays import ReadOnlyState, get_centers
 from neurospatial.geometry._hex_lookup import points_to_hex_bin_ind
-from neurospatial.geometry._regular_lookup import points_to_regular_grid_bin_ind
+from neurospatial.geometry._regular_lookup import (
+    outline_cells,
+    points_to_regular_grid_bin_ind,
+)
 
 if TYPE_CHECKING:
     from neurospatial.geometry._grid_frame import FramedGrid
@@ -112,7 +115,15 @@ def _owned_array(array: Any, dtype: Any) -> NDArray[Any]:
 
 @dataclass(frozen=True, eq=False)
 class RectilinearLocator(ReadOnlyState):
-    """Locate points in half-open rectangular cells of an active grid.
+    """Locate points in the rectangular cells of an active grid.
+
+    Cells are half-open, ``[low, high)`` on every axis, so a face shared by
+    two active cells has one owner. The outline of the active cells is
+    closed: a point on a face with no active cell beyond it (the arena's
+    edge, or an arm tip) belongs to the active cell it bounds, as the last
+    bin of ``np.histogram`` includes its right edge. At an outline corner
+    the cell whose upper faces the point touches on the fewest axes wins,
+    the lowest axes first.
 
     Parameters
     ----------
@@ -160,13 +171,48 @@ class RectilinearLocator(ReadOnlyState):
                 f"grid_edges has {len(self.edges)} and grid_shape has "
                 f"{len(self.shape)}. Points must match the grid's dimensionality."
             )
+        located = self.locate_half_open(query_points)
+        unowned = np.flatnonzero(
+            (located < 0) & np.all(np.isfinite(query_points), axis=1)
+        )
+        if unowned.size:
+            located[unowned] = self._outline_owner(query_points[unowned])
+        return located
+
+    def locate_half_open(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Return active-bin indices by half-open cells alone, or -1.
+
+        A combined environment asks every child for this owner before any
+        child claims a point on its outline, so a face shared by two children
+        keeps the half-open owner.
+        """
         return points_to_regular_grid_bin_ind(
-            points=query_points,
+            points=np.atleast_2d(points),
             grid_edges=self.edges,
             grid_shape=self.shape,
             active_mask=self.active_mask,
             inverse_map=self.flat_to_active,
         ).astype(np.intp, copy=False)
+
+    def _outline_owner(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
+        """Active bin each finite, unowned point bounds on the outline, or -1."""
+        flat = outline_cells(points, self.edges, self.shape, self.active_mask)
+        owner = np.full(len(points), -1, dtype=np.intp)
+        found = flat >= 0
+        owner[found] = self._active_index(flat[found])
+        return owner
+
+    def _active_index(self, flat: NDArray[np.intp]) -> NDArray[np.intp]:
+        """Active-bin index of full-grid cells, or -1 for inactive cells."""
+        if self.flat_to_active is not None:
+            return self.flat_to_active[flat]
+        if self.active_mask is None:
+            return flat
+        mapping = np.full(self.active_mask.size, -1, dtype=np.intp)
+        mapping[self.active_mask.ravel()] = np.arange(
+            np.count_nonzero(self.active_mask)
+        )
+        return mapping[flat]
 
     def active_centers(self) -> NDArray[np.float64]:
         """Midpoints of the active cells, in active-bin (row-major) order.

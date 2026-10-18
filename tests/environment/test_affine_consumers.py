@@ -262,7 +262,9 @@ def test_inverse_roundoff_preserves_interpolation_center_planes_without_filling_
 
 @pytest.mark.parametrize("dims", [2, 3])
 @pytest.mark.parametrize("offset", [0.0, 17.0, 1e9])
-def test_boundary_following_paths_keep_half_open_source_ownership(dims, offset):
+def test_boundary_following_paths_keep_source_ownership(dims, offset):
+    """A path along a hole's edge belongs to the cells beside the hole, in the
+    source grid and in its rotated copy alike."""
     env = grid(dims, hole=True)
     angle = 0.3
     linear = np.eye(dims)
@@ -275,7 +277,7 @@ def test_boundary_following_paths_keep_half_open_source_ownership(dims, offset):
     times = np.array([0.0, 1.0])
     options = {"time_allocation": "linear", "max_gap": None}
     expected = env.occupancy(times, points, **options)
-    assert expected.sum() == pytest.approx(0.5)
+    assert expected.sum() == pytest.approx(1.0)
     np.testing.assert_allclose(
         child.occupancy(times, mapping(points), **options), expected, atol=2e-6
     )
@@ -284,5 +286,5 @@ def test_boundary_following_paths_keep_half_open_source_ownership(dims, offset):
         counts, dwell = bin_spike_trains(
             child, spikes, times, mapping(points), **options, warn_on_drop=False
         )
-        assert counts.sum() == 2
+        assert counts.sum() == 4  # every spike falls on the path
         np.testing.assert_allclose(dwell, expected, atol=2e-6)

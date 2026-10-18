@@ -23,7 +23,7 @@ def test_contract_kit_uses_independent_boundary_and_outside_oracles():
     assert_environment_contract(
         env,
         [[0.0, 0.5], [1.0, 0.5], [2.0, 0.5], [-0.1, 0.5]],
-        [0, 1, -1, -1],
+        [0, 1, 1, -1],  # the outer edge x = 2 belongs to the last bin
     )
     with pytest.raises(AssertionError):
         assert_environment_contract(env, [[1.0, 0.5]], [0])

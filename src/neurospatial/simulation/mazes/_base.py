@@ -21,8 +21,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.regions import Regions
 
 
 @dataclass(frozen=True)
@@ -87,3 +90,31 @@ class MazeEnvironments:
 
     env_2d: Environment
     env_track: Environment | None = None
+
+    def __post_init__(self) -> None:
+        # The track names the same wells, arm ends and goals as the 2-D maze,
+        # each point placed at the nearest location on the track.
+        if self.env_track is not None and not self.env_track.regions:
+            self.env_track = self.env_track.with_regions(
+                _regions_on_track(self.env_2d.regions, self.env_track)
+            )
+
+
+def _regions_on_track(regions: Regions, track: Environment) -> Regions:
+    """Copy ``regions``, moving each point onto the track's nearest location.
+
+    A simplified track graph need not pass through every well of the 2-D maze;
+    projecting the point keeps the region on the track, where the animal's
+    linearized position can reach it. Polygon regions are kept unchanged.
+    """
+    from neurospatial.regions import Regions
+
+    on_track = Regions()
+    for name, region in regions.items():
+        if region.kind == "point":
+            point = np.asarray(region.data, dtype=np.float64)[np.newaxis]
+            nearest = track.linear_to_nd(track.to_linear(point))[0]
+            on_track.add(name, point=nearest, metadata=region.metadata)
+        else:
+            on_track.add(name, polygon=region.data, metadata=region.metadata)
+    return on_track

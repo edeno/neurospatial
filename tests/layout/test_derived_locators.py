@@ -28,7 +28,8 @@ def test_subset_locator_masks_outside_parent_before_mapping(full_locator):
     points = np.array(
         [[-1.0, -1.0], [2.0, 2.0], [0.5, 0.5], [0.5, 1.5], [1.5, 1.5], [np.nan, 0.0]]
     )
-    np.testing.assert_array_equal(locator.locate(points), [-1, -1, -1, 0, 1, -1])
+    # (2, 2), the parent grid's outer corner, belongs to its kept corner cell.
+    np.testing.assert_array_equal(locator.locate(points), [-1, 1, -1, 0, 1, -1])
     assert mapping[-1] == 1
 
 

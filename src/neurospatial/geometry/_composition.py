@@ -17,6 +17,7 @@ from neurospatial.geometry._diffusion import DiffusionGeometry
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
     LookupIndexes,
+    RectilinearLocator,
     SubsetLocator,
     TransformedLocator,
 )
@@ -156,15 +157,23 @@ class CombinedLocator(ReadOnlyState):
             raise ValueError(f"Expected positions of shape (n_points, {dims}).")
         result = np.full(len(query), -1, dtype=np.intp)
         finite = np.all(np.isfinite(query), axis=1)
-        for child, arena, offset in zip(
-            self.children, self.arenas, self.offsets[:-1], strict=True
-        ):
-            rows = np.flatnonzero(finite & (result < 0))
-            if arena.domain_known:
-                rows = rows[arena.contains(query[rows])]
-            local = child.locator.locate(query[rows], indexes)
-            valid = local >= 0
-            result[rows[valid]] = offset + local[valid]
+        # A grid child's outline is closed, but a face it shares with another
+        # child keeps its half-open owner: every child is asked for interior
+        # owners before any child claims a point on its outline.
+        for interior in (True, False):
+            for child, arena, offset in zip(
+                self.children, self.arenas, self.offsets[:-1], strict=True
+            ):
+                rows = np.flatnonzero(finite & (result < 0))
+                if arena.domain_known:
+                    rows = rows[arena.contains(query[rows])]
+                locator = child.locator
+                if interior and isinstance(locator, RectilinearLocator):
+                    local = locator.locate_half_open(query[rows])
+                else:
+                    local = locator.locate(query[rows], indexes)
+                valid = local >= 0
+                result[rows[valid]] = offset + local[valid]
         return result
 
 

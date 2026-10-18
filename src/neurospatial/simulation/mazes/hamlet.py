@@ -33,6 +33,7 @@ from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
+    corridor_end_point,
     make_corridor_polygon,
     union_polygons,
 )
@@ -221,8 +222,11 @@ def make_hamlet_maze(
         region_builder.add(f"inner_{i}", point=inner_pos)
 
     # Add regions for outer boxes
-    for i, outer_pos in enumerate(outer_positions):
-        region_builder.add(f"outer_{i}", point=outer_pos)
+    for inner_pos, outer_pos, i in zip(
+        inner_positions, outer_positions, range(n_arms), strict=True
+    ):
+        well = corridor_end_point(inner_pos, outer_pos, dims.corridor_width)
+        region_builder.add(f"outer_{i}", point=well)
     env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
