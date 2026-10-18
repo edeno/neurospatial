@@ -93,31 +93,11 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
     An explicit value is always in environment coordinates.
     """
     if bandwidth is None:
-        unit = str(env.units or "").lower().strip()
-        metric_scales = {
-            "m": 0.05,
-            "meter": 0.05,
-            "meters": 0.05,
-            "metre": 0.05,
-            "metres": 0.05,
-            "cm": 5.0,
-            "centimeter": 5.0,
-            "centimeters": 5.0,
-            "centimetre": 5.0,
-            "centimetres": 5.0,
-            "mm": 50.0,
-            "millimeter": 50.0,
-            "millimeters": 50.0,
-            "millimetre": 50.0,
-            "millimetres": 50.0,
-            "um": 50000.0,
-            "µm": 50000.0,
-            "micrometer": 50000.0,
-            "micrometers": 50000.0,
-            "micrometre": 50000.0,
-        }
-        if unit in metric_scales:
-            bandwidth = metric_scales[unit]
+        from neurospatial._units import units_per_centimeter
+
+        per_cm = units_per_centimeter(env.units)
+        if per_cm is not None:
+            bandwidth = 5.0 * per_cm
         else:
             lengths = np.asarray(
                 [
