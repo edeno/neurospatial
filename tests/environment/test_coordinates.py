@@ -79,7 +79,7 @@ def test_cartesian_declaration_and_fallback_lengths(cartesian_env):
 def test_polar_declaration_and_fallback_lengths(polar_env):
     system = polar_env.coordinate_system
     assert isinstance(system, EgocentricPolarSystem)
-    assert system.circular == polar_env._angular_is_circular
+    assert system.circular == polar_env.arena.circular
     assert system.circular == polar_env.layout_parameters["circular_angle"]
     np.testing.assert_array_equal(system.fallback_lengths(polar_env), np.full(6, 5.0))
 
@@ -103,3 +103,16 @@ def test_clear_cache_rebuilds_an_identical_gaussian_kernel(cartesian_env):
     rebuilt = _get_gaussian_kernel(cartesian_env, 1.0)
     assert rebuilt is not original
     np.testing.assert_array_equal(rebuilt, original)
+
+
+def test_descriptors_say_their_kind_and_which_axes_wrap(cartesian_env, polar_env):
+    cartesian = cartesian_env.coordinate_system
+    assert (cartesian.kind, cartesian.circular, cartesian.periodic_axes) == (
+        "cartesian",
+        False,
+        (),
+    )
+    polar = polar_env.coordinate_system
+    assert polar.kind == polar_env.coordinate_kind == "polar"
+    assert polar.circular == polar_env.layout_parameters["circular_angle"]
+    assert polar.periodic_axes == ((1,) if polar.circular else ())

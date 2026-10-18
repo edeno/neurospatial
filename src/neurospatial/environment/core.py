@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy as copy_module
 import logging
 from collections.abc import Mapping, Sequence
 from typing import (
@@ -340,11 +339,6 @@ class Environment(Generic[_C]):
         """Owned immutable named regions; edit a standalone Regions builder."""
         return self._regions
 
-    @property
-    def _is_polar(self) -> bool:
-        """Coordinate kind from the owned per-instance descriptor."""
-        return isinstance(self._geometry.coordinates, EgocentricPolarSystem)
-
     def __init__(self) -> None:
         """Use an Environment factory to build owned geometry and metadata."""
         raise ValueError(
@@ -466,7 +460,7 @@ class Environment(Generic[_C]):
             binning=self._binning,
             arena=self.arena,
             indexes=self._cache,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
             regions=self.regions if takes_region else None,
             count=count,
         )
@@ -1063,12 +1057,7 @@ class Environment(Generic[_C]):
         Polar radius uses declared length units; angle is always in radians.
         This read-only property replaces public-class checks for dispatch.
         """
-        return "polar" if self._is_polar else "cartesian"
-
-    @property
-    def _coordinate_system(self) -> _C:
-        """Owned coordinate semantics, inferred from the construction factory."""
-        return self._geometry.coordinates
+        return self._geometry.coordinates.kind
 
     @property
     def coordinate_system(self) -> _C:
@@ -1076,16 +1065,11 @@ class Environment(Generic[_C]):
 
         CartesianSystem describes position columns in length units.
         EgocentricPolarSystem describes radius in length units and angle in
-        radians, including whether the angular axis wraps. The descriptor is
-        an independent frozen value; changing it cannot change the environment.
+        radians. Both say their ``kind`` and whether an axis wraps
+        (``circular``, ``periodic_axes``); a polar environment's arena,
+        ``env.arena``, is the record they are derived from.
         """
-        return copy_module.copy(self._coordinate_system)
-
-    @property
-    def _angular_is_circular(self) -> bool:
-        """Normalized polar circularity, retained through copies and storage."""
-        coordinates = self._geometry.coordinates
-        return isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
+        return self._geometry.coordinates
 
     @property
     def _boundary_bins_cached(self) -> NDArray[np.intp]:
@@ -1095,7 +1079,7 @@ class Environment(Generic[_C]):
                 self.connectivity,
                 self.grid_shape,
                 self.active_mask,
-                periodic_axes=(1,) if self._angular_is_circular else (),
+                periodic_axes=self._geometry.coordinates.periodic_axes,
             )
 
         return self._cache.get(BOUNDARY_BINS, build)
@@ -1369,7 +1353,7 @@ class Environment(Generic[_C]):
             self._cache,
             self._binning,
             positions,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
             tie_break=tie_break,
             return_dist=return_dist,
             max_distance=max_distance,
@@ -1825,7 +1809,7 @@ class Environment(Generic[_C]):
             positions,
             binning=self._binning,
             arena=self.arena,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
             cache=self._cache,
             speed=speed,
             min_speed=min_speed,
@@ -4094,7 +4078,7 @@ class Environment(Generic[_C]):
         (3, 2)
 
         """
-        return _bin_center_of(self.bin_centers, bin_indices, self._coordinate_system)
+        return _bin_center_of(self.bin_centers, bin_indices, self._geometry.coordinates)
 
     @keyword_hint(former=("bin_index",), translate=former_targets(1), why=TARGET_WHY)
     def neighbors(
@@ -4347,7 +4331,7 @@ class Environment(Generic[_C]):
             metric=metric,
             bin_centers=self.bin_centers,
             graph=self.connectivity,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
         )
 
     @keyword_hint(former=("source_bin",), translate=former_targets(1), why=TARGET_WHY)
@@ -5144,7 +5128,7 @@ class Environment(Generic[_C]):
             name=self.name,
             layout_type=self.layout_type,
             units=self.units,
-            coordinates=self._coordinate_system,
+            coordinates=self._geometry.coordinates,
         )
 
     @keyword_hint(
@@ -6155,7 +6139,7 @@ class Environment(Generic[_C]):
         clear_cache() releases the cached weights.
         """
         return _compute_gaussian_kernel(
-            self._cache, self.bin_centers, self._coordinate_system, bandwidth
+            self._cache, self.bin_centers, self._geometry.coordinates, bandwidth
         )
 
     def get_diffusion_geometry(self) -> DiffusionGeometry:

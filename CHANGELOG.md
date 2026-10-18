@@ -963,6 +963,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `env.coordinate_system` says what it is: `kind` is `"cartesian"` or
+  `"polar"`, `circular` says whether the angle axis wraps around (always
+  `False` for Cartesian coordinates), and `periodic_axes` lists the axes whose
+  two ends are neighbors (`(1,)` for a full-circle polar environment, otherwise
+  empty). A custom analysis can ask the descriptor directly instead of
+  checking its class. A polar environment's wrap is recorded once, by its
+  `EgocentricSurround` arena (`env.arena.circular`), and the descriptor is
+  derived from it, so the two can never disagree.
+
 - `Environment.with_track_width(width)` gives a track its measured full width
   and keeps its bins, linear coordinates, name, units, frame and regions. Use
   it on a track built without `track_width`, such as one saved by an earlier

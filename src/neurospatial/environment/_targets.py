@@ -106,8 +106,9 @@ def coordinate_hint(
     str
         The ``Fix:`` text for a float or boolean bin target.
     """
-    polar = isinstance(coordinates, EgocentricPolarSystem)
-    rows = "(distance, angle) rows" if polar else "coordinate rows"
+    rows = (
+        "(distance, angle) rows" if coordinates.kind == "polar" else "coordinate rows"
+    )
     if takes_points:
         return f"pass {rows} with points= instead, one row per point"
     return (
@@ -210,11 +211,7 @@ def validate_bin_indices(
         raise BinIndexOutOfRangeError(
             int(indices[out_of_range][0]),
             n_bins=n_bins,
-            coordinate_kind=(
-                "polar"
-                if isinstance(coordinates, EgocentricPolarSystem)
-                else "cartesian"
-            ),
+            coordinate_kind=coordinates.kind,
         )
     return indices.astype(np.intp, copy=False)
 

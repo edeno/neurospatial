@@ -42,7 +42,7 @@ def nearest_bin(
     distance ``inf``. Only finite points are queried.
     """
     resolved = _validate_nearest_options(tie_break, max_distance, max_distance_factor)
-    if isinstance(coordinates, EgocentricPolarSystem):
+    if coordinates.kind == "polar":
         centers, tree = cache.get(
             EMBEDDED_KDTREE, lambda: _embedded_tree(binning, coordinates)
         )

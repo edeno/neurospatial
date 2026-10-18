@@ -28,14 +28,14 @@ def test_one_runtime_class_with_owned_coordinate_meanings():
     )
     polar = _polar()
     assert type(polar) is type(cartesian) is Environment
-    assert isinstance(cartesian._coordinate_system, CartesianSystem)
-    assert isinstance(polar._coordinate_system, EgocentricPolarSystem)
-    assert polar._coordinate_system.axis_labels(
+    assert isinstance(cartesian.coordinate_system, CartesianSystem)
+    assert isinstance(polar.coordinate_system, EgocentricPolarSystem)
+    assert polar.coordinate_system.axis_labels(
         "cm"
-    ) != cartesian._coordinate_system.axis_labels("cm")
+    ) != cartesian.coordinate_system.axis_labels("cm")
     assert not np.array_equal(
-        polar._coordinate_system.squared_distances(polar.bin_centers),
-        cartesian._coordinate_system.squared_distances(polar.bin_centers),
+        polar.coordinate_system.squared_distances(polar.bin_centers),
+        cartesian.coordinate_system.squared_distances(polar.bin_centers),
     )
 
 
@@ -52,7 +52,7 @@ def test_common_class_restoration_keeps_polar_units_and_kernels(restore):
     result = restore(env)
     assert type(result) is Environment
     assert result.units == "cm"
-    assert result._coordinate_system == env._coordinate_system
+    assert result.coordinate_system == env.coordinate_system
     with pytest.raises(CartesianOnlyError):
         result.interpolate(np.ones(result.n_bins), result.bin_centers)
     np.testing.assert_array_equal(

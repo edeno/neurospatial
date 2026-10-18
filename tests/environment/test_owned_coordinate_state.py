@@ -33,13 +33,12 @@ def test_polar_coordinate_state_is_owned(n_angle, circular, restore):
         angle_bin_size=2 * np.pi / n_angle,
         circular_angle=circular,
     )
-    expected = env._coordinate_system
+    expected = env.coordinate_system
     assert isinstance(expected, EgocentricPolarSystem)
     assert expected.circular == circular
-    assert env._coordinate_system is expected
-    assert env._angular_is_circular == circular
+    assert env.arena.circular == circular
     restored = restore(env)
-    assert restored._coordinate_system == expected
+    assert restored.coordinate_system == expected
     np.testing.assert_array_equal(
         restored.compute_kernel(bandwidth=0.8), env.compute_kernel(bandwidth=0.8)
     )

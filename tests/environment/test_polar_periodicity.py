@@ -31,14 +31,14 @@ def _polar(angle_range, **kwargs):
 def test_default_periodicity_follows_the_angular_extent(option, angle_range, circular):
     kwargs = {} if option == "omitted" else {"circular_angle": option}
     env = _polar(angle_range, **kwargs)
-    assert env._angular_is_circular is circular
+    assert env.coordinate_system.circular is circular
     assert env.connectivity.has_edge(0, 3) is circular
 
 
 @pytest.mark.parametrize("option", [False, True])
 def test_full_circle_allows_explicit_open_or_circular_topology(option):
     env = _polar((-np.pi, np.pi), circular_angle=option)
-    assert env._angular_is_circular is option
+    assert env.coordinate_system.circular is option
     assert env.connectivity.has_edge(0, 3) is option
 
 
@@ -71,5 +71,5 @@ def test_inferred_periodicity_survives_copy_and_storage(tmp_path, full_circle):
         Environment.from_dict(env.to_dict()),
         Environment.from_file(tmp_path / "polar"),
     ):
-        assert restored._angular_is_circular is full_circle
+        assert restored.coordinate_system.circular is full_circle
         assert restored.connectivity.has_edge(0, 3) is full_circle

@@ -464,9 +464,6 @@ def _restore_environment(
     from neurospatial.geometry import (
         Arena,
         Binning,
-        CartesianSystem,
-        EgocentricPolarSystem,
-        EgocentricSurround,
         HexLocator,
         MeshLocator,
         TrackLinearization,
@@ -563,15 +560,10 @@ def _restore_environment(
                 key = f"grid_edges_{index}"
                 if key in arrays and not np.array_equal(arrays[key], edges):
                     raise ValueError(f"stored {key} differs from the binning")
-        coordinates: CartesianSystem | EgocentricPolarSystem = CartesianSystem()
-        if coordinate_kind == "polar":
-            coordinates = EgocentricPolarSystem(
-                arena.circular if isinstance(arena, EgocentricSurround) else True
-            )
         env = _publish(
             Environment,
             binning,
-            coordinates=coordinates,
+            coordinate_kind=coordinate_kind,
             provenance=_Provenance(params, derivations),
             metadata=_declared_metadata(
                 name=metadata["name"],

@@ -13,9 +13,8 @@ import pytest
 from environment_helpers import publish_binning, publish_environment
 from shapely.geometry import box
 
-from neurospatial.arena import MaskArena, OpenArena
+from neurospatial.arena import EgocentricSurround, MaskArena, OpenArena
 from neurospatial.geometry._arena import _TransformedArena
-from neurospatial.geometry._coordinates import EgocentricPolarSystem
 from neurospatial.geometry._locators import SubsetLocator, TransformedLocator
 from neurospatial.geometry._ownership import own_arena
 from neurospatial.layout import (
@@ -124,7 +123,11 @@ def test_polar_provenance_cannot_change_published_faces():
         circular_angle=True,
         connect_diagonal_neighbors=False,
     )
-    env = publish_environment(layout=source, _coordinates=EgocentricPolarSystem(True))
+    env = publish_environment(
+        layout=source,
+        arena=EgocentricSurround((0.0, 2.0), (-np.pi, np.pi), circular=True),
+        _coordinate_kind="polar",
+    )
     expected = env._binning.faces.build().A.copy()
     source._build_params_used["circular_angle"] = False
     np.testing.assert_array_equal(env._binning.faces.build().A, expected)
@@ -144,7 +147,11 @@ def test_polar_faces_come_from_the_layout_not_its_parameters():
         connect_diagonal_neighbors=False,
     )
     source._build_params_used["circular_angle"] = False
-    env = publish_environment(layout=source, _coordinates=EgocentricPolarSystem(True))
+    env = publish_environment(
+        layout=source,
+        arena=EgocentricSurround((1.0, 3.0), (-np.pi, np.pi), circular=True),
+        _coordinate_kind="polar",
+    )
     faces = env._binning.faces.build()
     radius = env.bin_centers[env._binning.bins.pairs, 0]
     same_ring = radius[:, 0] == radius[:, 1]

@@ -50,7 +50,7 @@ def _combine(
         raise TypeError("Environment.combine() takes Environment values.")
     for key, env in zip(keys, values, strict=True):
         require_cartesian(
-            env._coordinate_system,
+            env.coordinate_system,
             f"Environment.combine(components[{key!r}])",
             why="It joins the cells of each component, and the bridges between "
             "them, in one shared Cartesian frame.",

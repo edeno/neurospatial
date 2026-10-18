@@ -621,7 +621,7 @@ def test_legacy_polar_parameters_restore_saved_connectivity(circular):
     data = to_dict(original)
     data["layout_parameters"].pop("circular_angle")
     restored = from_dict(data)
-    assert restored._angular_is_circular is circular
+    assert restored.coordinate_system.circular is circular
     assert list(restored.connectivity.edges()) == list(original.connectivity.edges())
     np.testing.assert_allclose(
         restored.compute_kernel(bandwidth=3.0), original.compute_kernel(bandwidth=3.0)

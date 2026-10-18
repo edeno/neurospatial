@@ -250,9 +250,13 @@ function in another package, refuses with
 `neurospatial.geometry.require_cartesian(env.coordinate_system, operation,
 why=..., fix=...)`. Both raise `CartesianOnlyError`, a `TypeError`, with one
 message layout.
-Shared code asks the coordinate descriptor about lengths, axes and
-circularity, or reads `coordinate_kind`; it does not branch on classes or
-layout labels. Every other public member needs a stated polar meaning, which
+Shared code asks the coordinate descriptor about lengths, axes, its `kind`
+and which axes wrap (`circular`, `periodic_axes`), and passes the descriptor
+itself to geometry validators; it does not branch on descriptor classes or
+layout labels. The publisher derives the descriptor from the declared
+coordinate kind and the arena: a polar environment's `EgocentricSurround` is
+the one record of whether its angle wraps, so the arena and the descriptor
+cannot disagree. Every other public member needs a stated polar meaning, which
 `test_every_public_member_is_classified_for_polar` enforces.
 
 #### Derivations

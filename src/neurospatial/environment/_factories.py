@@ -18,7 +18,6 @@ from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _declared_metadata, _Provenance
 from neurospatial.geometry import (
-    CartesianSystem,
     CombinedLocator,
     OpenArena,
     TrackArena,
@@ -77,7 +76,6 @@ def _from_bins(
     result = _publication._publish(
         cls,
         snapshot,
-        coordinates=CartesianSystem(),
         provenance=_Provenance({}),
         metadata=_declared_metadata(name=name, units=units, frame=frame),
         regions=regions,

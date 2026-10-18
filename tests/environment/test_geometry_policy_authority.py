@@ -23,7 +23,7 @@ def test_stored_polar_arena_owns_small_grid_circularity(n_angle, circular):
     record = env.to_dict()
     record["layout_parameters"]["circular_angle"] = not circular
     restored = Environment.from_dict(record)
-    assert restored._angular_is_circular is circular
+    assert restored.coordinate_system.circular is circular
     np.testing.assert_array_equal(restored.boundary_bins, env.boundary_bins)
     np.testing.assert_array_equal(
         restored.compute_kernel(bandwidth=0.7), env.compute_kernel(bandwidth=0.7)

@@ -16,6 +16,7 @@ from neurospatial.geometry._binning import (
     MissingFaces,
     SpatialBins,
 )
+from neurospatial.geometry._coordinates import CartesianSystem
 from neurospatial.geometry._derive import subset_binning, transform_binning
 from neurospatial.geometry._locators import RectilinearLocator
 from neurospatial.geometry._polygon import _representative, certify_faces
@@ -56,7 +57,7 @@ def _binning(polygons, *, pairs=(), known=False):
 
 
 def _publish(binning):
-    validate_components(binning, False, "cartesian")
+    validate_components(binning, CartesianSystem())
 
 
 def _matrix(angle=0.0, offset=0.0):

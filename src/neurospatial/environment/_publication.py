@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Generic,
+    Literal,
     NoReturn,
     TypeVar,
     cast,
@@ -363,12 +364,8 @@ def _declared_metadata(
 _EnvironmentT = TypeVar("_EnvironmentT", bound="Environment[Any]")
 
 
-def _validate_coordinates(
-    coordinates: CartesianSystem | EgocentricPolarSystem, arena: Arena
-) -> None:
-    """Refuse a polar environment whose arena disagrees with its angular axis."""
-    if not isinstance(coordinates, EgocentricPolarSystem):
-        return
+def _polar_coordinates(arena: Arena | None) -> EgocentricPolarSystem:
+    """The polar descriptor of ``arena``, which declares whether the angle wraps."""
     if not isinstance(arena, EgocentricSurround):
         raise ValueError(
             _format_error(
@@ -377,17 +374,7 @@ def _validate_coordinates(
                 fix="build the environment with Environment.from_polar_egocentric, or re-save an older record with this version",
             )
         )
-    if arena.circular != coordinates.circular:
-        raise ValueError(
-            _format_error(
-                f"A polar environment's arena has circular={arena.circular}, but "
-                f"its coordinates have circular={coordinates.circular}.",
-                why="Why: both describe whether the angle wraps around, which "
-                "decides the seam neighbors and angular distances.",
-                fix="pass coordinates matching the arena's circular flag, e.g. "
-                "EgocentricPolarSystem(arena.circular)",
-            )
-        )
+    return EgocentricPolarSystem(arena.circular)
 
 
 def _restored_state(state: object) -> dict[str, Any]:
@@ -442,7 +429,7 @@ def _publish(
     cls: type[_EnvironmentT],
     binning: Binning,
     *,
-    coordinates: CartesianSystem | EgocentricPolarSystem,
+    coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
     provenance: _Provenance,
     metadata: _Metadata,
     regions: Regions | None = None,
@@ -454,7 +441,9 @@ def _publish(
     The binning is owned and validated, including that every bin center
     locates its own bin; the arena's physical walls are applied; and the
     navigation graph, grid index and ``dimension_ranges`` are derived from
-    the resulting binning.
+    the resulting binning. The coordinate descriptor is derived here too: a
+    polar environment's :class:`EgocentricSurround` arena is the one record
+    of whether its angle wraps.
 
     Parameters
     ----------
@@ -463,8 +452,9 @@ def _publish(
     binning : Binning
         Bins, lookup and geometry components. Its ``dimension_ranges``, when
         set, are the environment's; otherwise they come from the cells.
-    coordinates : CartesianSystem or EgocentricPolarSystem
-        Meaning of the bin coordinates.
+    coordinate_kind : {'cartesian', 'polar'}, default='cartesian'
+        Meaning of the bin coordinates. A polar environment needs an
+        :class:`EgocentricSurround` ``arena``.
     provenance : _Provenance
         Build choices and derivation history.
     metadata : _Metadata
@@ -472,34 +462,25 @@ def _publish(
     regions : Regions or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
-        Continuous domain. Omission infers one from the binning.
+        Continuous domain. Omission infers a Cartesian one from the binning.
 
     Returns
     -------
     Environment
         A new instance of ``cls``.
     """
-    if not isinstance(coordinates, (CartesianSystem, EgocentricPolarSystem)):
-        raise TypeError(
-            "coordinates must be a CartesianSystem or EgocentricPolarSystem."
-        )
-    polar = isinstance(coordinates, EgocentricPolarSystem)
-    # Whether the angular axis wraps; False for Cartesian coordinates.
-    circular = isinstance(coordinates, EgocentricPolarSystem) and coordinates.circular
+    coordinates: CartesianSystem | EgocentricPolarSystem = (
+        _polar_coordinates(arena) if coordinate_kind == "polar" else CartesianSystem()
+    )
     binning = own_binning(binning)
     # The published binning carries the environment's ranges, so the two
     # never disagree after a derivation or a read-back.
     binning = replace(binning, dimension_ranges=binning_ranges(binning))
-    validate_components(
-        binning,
-        binning.linearization is not None,
-        "polar" if polar else "cartesian",
-    )
+    validate_components(binning, coordinates)
     if arena is None:
-        arena = infer_arena(binning, polar=polar, circular=circular)
+        arena = infer_arena(binning)
     arena = own_arena(arena)
-    _validate_coordinates(coordinates, arena)
-    validate_arena(arena, binning, polar=polar)
+    validate_arena(arena, binning, coordinates)
     binning = apply_walls(binning, arena)
     # Built here from the validated bins, so its attributes need no check.
     graph = _published_graph(binning)
@@ -529,7 +510,7 @@ def publish_layout(
     metadata: _Metadata,
     regions: Regions | None = None,
     arena: Arena | None = None,
-    coordinates: CartesianSystem | EgocentricPolarSystem | None = None,
+    coordinate_kind: Literal["cartesian", "polar"] = "cartesian",
 ) -> _EnvironmentT:
     """Consume a built layout once and publish only its owned data.
 
@@ -550,9 +531,10 @@ def publish_layout(
     regions : Regions or None, optional
         Named regions to snapshot.
     arena : Arena or None, optional
-        Continuous domain. Omission infers one from the binning.
-    coordinates : CartesianSystem or EgocentricPolarSystem or None, optional
-        Coordinate meaning; ``None`` means Cartesian.
+        Continuous domain. Omission infers a Cartesian one from the binning;
+        a polar layout needs its :class:`EgocentricSurround`.
+    coordinate_kind : {'cartesian', 'polar'}, default='cartesian'
+        Meaning of the bin coordinates.
 
     Returns
     -------
@@ -560,9 +542,7 @@ def publish_layout(
         A new instance of ``cls``.
     """
     binning, resolved = _built_layout_data(layout)
-    coordinates = CartesianSystem() if coordinates is None else coordinates
-    polar = isinstance(coordinates, EgocentricPolarSystem)
-    if arena is not None and arena.domain_known and not polar:
+    if arena is not None and arena.domain_known and coordinate_kind == "cartesian":
         centers = binning.bins.centers
         domain = arena.polygonal_domain()
         keep = (
@@ -575,7 +555,7 @@ def publish_layout(
     return _publish(
         cls,
         binning,
-        coordinates=coordinates,
+        coordinate_kind=coordinate_kind,
         provenance=_Provenance(resolved),
         metadata=metadata,
         regions=regions,
@@ -660,7 +640,7 @@ def publish_derived(
     return _publish(
         type(parent),
         derivation.binning,
-        coordinates=parent._geometry.coordinates,
+        coordinate_kind=parent.coordinate_kind,
         provenance=provenance,
         metadata=metadata,
         regions=parent.regions if derivation.regions is None else derivation.regions,

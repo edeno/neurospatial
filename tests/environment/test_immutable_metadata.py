@@ -128,7 +128,7 @@ def test_polar_replacement_preserves_concrete_type_and_circularity():
     updated = env.with_metadata(name="polar copy")
     assert type(updated) is Environment
     assert updated._geometry is env._geometry
-    assert updated._angular_is_circular == env._angular_is_circular
+    assert updated.coordinate_system.circular == env.coordinate_system.circular
     assert (updated.units, updated.frame) == ("cm", "animal")
 
 

@@ -378,12 +378,11 @@ class TestCircularWrapEdgeArcLength:
 
 
 class TestAngularCircularDerivedFromGraph:
-    """``_angular_is_circular`` is derived from the connectivity graph.
+    """``coordinate_system.circular`` follows the ``circular_angle`` choice.
 
-    It must reflect the ``circular_angle`` build flag and survive every
-    serialization path that persists the connectivity graph
-    (``to_file``/``from_file``, ``copy``), so a reloaded env does not silently
-    revert to the wrong wrapping behavior in polar gaussian_kde smoothing.
+    It must survive every serialization path (``to_file``/``from_file``,
+    derivations), so a reloaded env does not silently revert to the wrong
+    wrapping behavior in polar gaussian_kde smoothing.
     """
 
     @staticmethod
@@ -397,10 +396,10 @@ class TestAngularCircularDerivedFromGraph:
         )
 
     def test_circular_true_detected(self):
-        assert self._env(True)._angular_is_circular is True
+        assert self._env(True).coordinate_system.circular is True
 
     def test_circular_false_detected(self):
-        assert self._env(False)._angular_is_circular is False
+        assert self._env(False).coordinate_system.circular is False
 
     def test_round_trips_through_file(self, tmp_path):
         for circular in (True, False):
@@ -408,11 +407,14 @@ class TestAngularCircularDerivedFromGraph:
             path = str(tmp_path / f"polar_{circular}")
             env.to_file(path)
             loaded = Environment.from_file(path)
-            assert loaded._angular_is_circular is circular
+            assert loaded.coordinate_system.circular is circular
 
     def test_survives_derivation(self):
         for circular in (True, False):
-            assert self._env(circular).with_metadata()._angular_is_circular is circular
+            assert (
+                self._env(circular).with_metadata().coordinate_system.circular
+                is circular
+            )
 
 
 class TestPolarCacheFreshness:
@@ -750,7 +752,7 @@ class TestPolarCoordinateKindFlag:
 
         assert isinstance(polar_env, Environment)
         assert polar_env.coordinate_kind == "polar"
-        assert polar_env._is_polar is True
+        assert polar_env.coordinate_kind == "polar"
 
     def test_cartesian_factories_default_to_cartesian(self, cartesian_env):
         """from_samples / from_polygon / from_grid_mask / etc. produce Cartesian envs."""
@@ -758,7 +760,7 @@ class TestPolarCoordinateKindFlag:
 
         assert isinstance(cartesian_env, Environment)
         assert cartesian_env.coordinate_kind == "cartesian"
-        assert cartesian_env._is_polar is False
+        assert cartesian_env.coordinate_kind == "cartesian"
 
 
 class TestPolarRaisesOnCartesianAssumingMethods:
@@ -963,7 +965,7 @@ class TestPolarSerializationRoundTrip:
         )
         env_copy = env.with_metadata(name="derived")
         assert isinstance(env_copy, Environment)
-        assert env_copy._is_polar is True
+        assert env_copy.coordinate_kind == "polar"
 
     def test_to_file_from_file_preserves_coordinate_kind(self, tmp_path):
         from neurospatial import Environment
@@ -979,7 +981,7 @@ class TestPolarSerializationRoundTrip:
         to_file(env, path)
         loaded = from_file(path)
         assert isinstance(loaded, Environment)
-        assert loaded._is_polar is True
+        assert loaded.coordinate_kind == "polar"
 
     def test_polar_layout_type_is_its_own_and_survives_storage(self, tmp_path):
         """Polar sectors are not described as a Cartesian masked grid."""
@@ -1063,7 +1065,7 @@ class TestPolarBoundaryGuardsExtended:
         data = to_dict(polar_env)
         loaded = from_dict(data)
         assert isinstance(loaded, Environment)
-        assert loaded._is_polar is True
+        assert loaded.coordinate_kind == "polar"
 
 
 class TestSubsetPreservesGraphLayout:
@@ -1427,7 +1429,7 @@ def test_factories_choose_coordinates_independently_of_runtime_class(build):
 
     result = build(Environment)
     assert type(result) is Environment
-    assert not result._is_polar
+    assert result.coordinate_kind == "cartesian"
 
 
 @pytest.mark.parametrize("circular", [True, False])
@@ -1455,7 +1457,7 @@ def test_boundary_bins_respect_the_angular_seam(circular, n_angle, tmp_path):
         Environment.from_dict(env.to_dict()),
     ):
         np.testing.assert_array_equal(restored.boundary_bins, expected)
-        assert restored._angular_is_circular is circular
+        assert restored.coordinate_system.circular is circular
 
 
 def test_cartesian_operations_are_the_capability_methods():
