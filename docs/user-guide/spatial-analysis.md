@@ -112,9 +112,12 @@ print(f"Well-sampled bins: {well_sampled.sum()}")
 **Advanced Usage:**
 
 ```python
-# Speed-filtered occupancy (exclude immobility periods)
-speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
-speed = np.concatenate([[0], speed])  # Pad to match length
+# Speed-filtered occupancy (exclude immobility periods). compute_speed smooths
+# the velocity (0.1 s Gaussian) so tracking jitter at rest is not counted as
+# running; differencing raw positions would keep nearly all of the rest.
+from neurospatial.behavior import compute_speed
+
+speed = compute_speed(times, positions)
 occupancy_moving = env.occupancy(times, positions, speed=speed, min_speed=2.0)
 
 # Smoothed occupancy (preserves total time)

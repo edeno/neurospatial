@@ -26,6 +26,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -61,6 +62,81 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
             "max_lag": float(self.lags.max()) if self.lags.size else float("nan"),
             "final_msd": float(self.msd[-1]) if self.msd.size else float("nan"),
         }
+
+
+def compute_speed(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    smooth_window: float = DEFAULT_SPEED_SMOOTHING,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+) -> NDArray[np.float64]:
+    """Running speed at each tracking sample, robust to tracking jitter.
+
+    The velocity vector is estimated by centered differences and smoothed
+    with a Gaussian of ``smooth_window`` seconds before its magnitude is
+    taken. Differencing raw positions instead turns camera jitter into
+    speed: an animal sitting still with 0.5 cm of jitter reads about
+    20 cm/s at 30 Hz and 200 cm/s at 500 Hz, so a ``min_speed`` filter would
+    keep nearly all of its rest. Every ``min_speed`` gate in the package
+    (rate maps, decoding, ``segment_by_velocity``, decision and goal
+    metrics) uses this speed, so passing ``speed=compute_speed(...)``
+    explicitly gives the same result as leaving it out.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Strictly increasing timestamps in seconds.
+    positions : NDArray[np.float64], shape (n_samples, n_dims) or (n_samples,)
+        Positions in environment units (e.g. cm).
+    smooth_window : float, default=0.1
+        Standard deviation, in seconds, of the Gaussian smoothing applied to
+        each velocity component (the default of spyglass's position
+        pipeline). 0 gives the unsmoothed centered-difference speed.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Each run between longer gaps is smoothed separately. ``None``
+        disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows
+        (seconds, same clock as ``times``). ``None`` (default) means
+        unrestricted.
+
+    Returns
+    -------
+    speed : NDArray[np.float64], shape (n_samples,)
+        Speed in position units per second (e.g. cm/s). NaN at samples with
+        missing positions and at samples in no run of at least two samples
+        (isolated by gaps or outside ``epochs``).
+
+    See Also
+    --------
+    segment_by_velocity : Running bouts from this speed.
+    neurospatial.ops.heading_from_velocity : Movement direction from the
+        same smoothed velocity.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import compute_speed
+    >>> times = np.arange(0.0, 10.0, 1 / 30)
+    >>> rng = np.random.default_rng(0)
+    >>> still = 50.0 + rng.normal(0.0, 0.5, (len(times), 2))  # 0.5 cm jitter
+    >>> bool(np.median(compute_speed(times, still)) < 2.0)
+    True
+    >>> bool(np.median(compute_speed(times, still, smooth_window=0.0)) > 10.0)
+    True
+    """
+    from neurospatial._intervals import observed_interval_mask
+    from neurospatial._validation import validate_times_positions
+    from neurospatial._velocity import smoothed_speed
+
+    times, positions = validate_times_positions(times, positions, call="compute_speed")
+    if len(times) < 2:
+        return np.full(len(times), np.nan)
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    return smoothed_speed(times, positions, mask, smooth_window=smooth_window)
 
 
 def compute_turn_angles(

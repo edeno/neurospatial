@@ -16,6 +16,8 @@ from neurospatial.behavior.navigation import (
     heading_direction_labels,
 )
 from neurospatial.behavior.segmentation import Trial
+from neurospatial.behavior.trajectory import compute_speed
+from neurospatial.ops.egocentric import heading_from_velocity
 
 # -----------------------------------------------------------------------------
 # Fixtures
@@ -314,12 +316,11 @@ class TestHeadingDirectionLabels:
         assert "0" in direction_labels[0]
 
     def test_first_sample_undefined_heading_not_labeled_east(self) -> None:
-        """First sample has undefined heading and must not be labeled East.
+        """The first sample is labeled by its own motion, never a padded East.
 
-        The first sample's velocity (hence heading) is undefined. With
-        ``min_speed=0`` the stationary speed threshold cannot mask it, so the
-        old code that padded ``heading=0`` spuriously labeled it as East
-        (the 0 deg sector). The first sample must instead be 'stationary'.
+        The first sample's velocity is its forward difference. Old code padded
+        ``heading=0``, which with ``min_speed=0`` spuriously labeled it as East
+        (the 0 deg sector).
         """
         n_samples = 50
         times = np.linspace(0.0, 5.0, n_samples)
@@ -335,13 +336,8 @@ class TestHeadingDirectionLabels:
         )
 
         # The undefined first sample must not be assigned a spurious East label.
-        assert labels[0] == "stationary", (
-            f"First sample should be 'stationary' (undefined heading), "
-            f"got {labels[0]!r}"
-        )
-        # Genuine moving samples should reflect the +y (90 deg) heading.
-        moving = [lbl for lbl in labels[1:] if lbl != "stationary"]
-        assert all("90" in lbl for lbl in moving), moving
+        # Every sample, the first included, reflects the +y (90 deg) heading.
+        assert all("90" in lbl for lbl in labels), labels
 
     def test_straight_path_positive_y(self) -> None:
         """Movement in +y direction gives 90° heading label."""
@@ -403,13 +399,9 @@ class TestHeadingDirectionLabels:
             [np.linspace(0.0, 100.0, n_samples), np.linspace(0.0, 50.0, n_samples)]
         )
 
-        # Compute speed and heading manually
-        velocity = np.diff(positions, axis=0) / np.diff(times)[:, np.newaxis]
-        speed_computed = np.linalg.norm(velocity, axis=1)
-        heading_computed = np.arctan2(velocity[:, 1], velocity[:, 0])
-        # Pad first element
-        speed = np.concatenate([[0], speed_computed])
-        heading = np.concatenate([[0], heading_computed])
+        # The same smoothed speed and heading the trajectory path derives
+        speed = compute_speed(times, positions)
+        heading = heading_from_velocity(times, positions)
 
         # Labels from positions/times
         labels_from_positions = heading_direction_labels(

@@ -659,6 +659,25 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Speed is one definition everywhere: the velocity vector smoothed with a
+  0.1 s Gaussian (spyglass's default, as in non_local_detector's
+  `get_velocity`), then its magnitude. New `neurospatial.behavior.compute_speed`
+  returns it. Every `min_speed` gate uses it: rate maps and their significance
+  tests, `decode_session`, `segment_by_velocity`, `heading_from_velocity`,
+  `heading_direction_labels`, and the decision, VTE and goal metrics. Before,
+  speed came from differencing raw positions, so tracking jitter read as
+  running: an animal sitting still with 0.5 cm of jitter passed a 4 cm/s
+  `min_speed` 98-100% of the time at 30-500 Hz (now under 1%), and a 20 cm/s
+  run read 210 cm/s at 500 Hz. `segment_by_velocity` had averaged the speed's
+  magnitude, which does not cancel jitter. Speed-filtered results change, most
+  near movement onsets and stops, which the smoothing widens by about 0.1 s.
+  `heading_from_velocity(bandwidth=)` (Gaussian sigma in samples, default 0)
+  is replaced by `smooth_window=` (seconds, default 0.1), and
+  `segment_by_velocity(smooth_window=)` is now that Gaussian's standard
+  deviation (default 0.1 s) instead of a 0.2 s moving-average width. Velocity
+  is now the centered difference, so a run's first sample has a heading from
+  its forward difference instead of being undefined.
+
 - A position exactly on the outline of a grid environment's bins -- the
   arena's edge, the rim of a hole or the tip of an arm -- now belongs to the
   bin it bounds, as the last bin of `np.histogram` includes its right edge.

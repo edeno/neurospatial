@@ -403,7 +403,7 @@ movement_epochs = segment_by_velocity(
     min_speed=10.0,  # cm/s
     min_duration=0.5,  # seconds
     hysteresis=2.0,  # ratio for exit threshold
-    smooth_window=0.2,  # seconds
+    smooth_window=0.1,  # seconds (Gaussian SD of the velocity smoothing)
 )
 
 # Analyze movement statistics. segment_by_velocity returns list[Run]
@@ -425,7 +425,9 @@ print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1
 - `min_speed`: Velocity threshold (same units as positions/time)
 - `min_duration`: Filter brief epochs
 - `hysteresis`: Exit threshold ratio (default 2.0)
-- `smooth_window`: Velocity smoothing window (seconds)
+- `smooth_window`: Gaussian standard deviation (seconds) of the velocity
+  smoothing, the same speed as `compute_speed`; it keeps tracking jitter at
+  rest from reading as movement
 
 **Applications**:
 - **Rest periods**: Identify stationary epochs

@@ -2905,12 +2905,10 @@ default="diffusion_kde"
         byte-for-byte identical to before.
 
         **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
-        ``None``, speed is derived with a FORWARD difference to match the
-        occupancy interval semantics (``time_allocation="start"``):
-        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
-        times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
-        last sample starts no occupancy interval). This Euclidean default is
-        simple; for geodesic / track environments pass an explicit ``speed``.
+        ``None``, speed is :func:`neurospatial.behavior.compute_speed`: the
+        magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
+        at rest is not counted as running. Pass ``speed`` for another
+        definition, such as speed along a linearized track.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -3147,7 +3145,7 @@ default="diffusion_kde"
     # spike numerator and the occupancy denominator (numerator/denominator
     # alignment by construction). When min_speed is None this returns None and
     # nothing speed-related changes downstream (byte-for-byte unchanged).
-    resolved_speed = resolve_speed(times, positions, speed, min_speed)
+    resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
 
     linear_intervals = (
         prepare_linear_spatial_intervals(
@@ -3440,11 +3438,9 @@ default="diffusion_kde"
         every per-neuron spike numerator using ONE shared per-interval speed
         gate, so firing rates stay correct. When ``None`` (default) NO speed
         filtering is applied and the output is byte-for-byte identical to
-        before. Auto-speed uses a FORWARD difference (matching the
-        ``time_allocation="start"`` occupancy semantics):
-        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
-        times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
-        for geodesic / linearized-track environments.
+        before. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
+        magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
+        ``speed`` for geodesic / linearized-track environments.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -3786,7 +3782,7 @@ default="diffusion_kde"
     # if min_speed excludes ALL intervals — instead of per-neuron in the batch
     # path below. The resolved array is forwarded so bin_spike_trains does not
     # re-derive it.
-    resolved_speed = resolve_speed(times, positions, speed, min_speed)
+    resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
 
     linear_intervals = (
         prepare_linear_spatial_intervals(
@@ -4980,12 +4976,10 @@ def has_place_field(
         byte-for-byte identical to before.
 
         **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
-        ``None``, speed is derived with a FORWARD difference to match the
-        occupancy interval semantics (``time_allocation="start"``):
-        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
-        times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
-        last sample starts no occupancy interval). This Euclidean default is
-        simple; for geodesic / track environments pass an explicit ``speed``.
+        ``None``, speed is :func:`neurospatial.behavior.compute_speed`: the
+        magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
+        at rest is not counted as running. Pass ``speed`` for another
+        definition, such as speed along a linearized track.
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -5241,12 +5235,10 @@ def is_place_cell(
         ``None`` (the default) no speed filtering is applied.
 
         **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
-        ``None``, speed is derived with a FORWARD difference to match the
-        occupancy interval semantics (``time_allocation="start"``):
-        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
-        times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
-        last sample starts no occupancy interval). This Euclidean default is
-        simple; for geodesic / track environments pass an explicit ``speed``.
+        ``None``, speed is :func:`neurospatial.behavior.compute_speed`: the
+        magnitude of the 0.1 s Gaussian-smoothed velocity, so tracking jitter
+        at rest is not counted as running. Pass ``speed`` for another
+        definition, such as speed along a linearized track.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -5659,11 +5651,9 @@ def place_cell_significance(
         every per-neuron spike numerator using ONE shared per-interval speed
         gate, so firing rates stay correct. When ``None`` (default) NO speed
         filtering is applied and the output is byte-for-byte identical to
-        before. Auto-speed uses a FORWARD difference (matching the
-        ``time_allocation="start"`` occupancy semantics):
-        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
-        times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
-        for geodesic / linearized-track environments.
+        before. Auto-speed is :func:`neurospatial.behavior.compute_speed`, the
+        magnitude of the 0.1 s Gaussian-smoothed velocity; pass an explicit
+        ``speed`` for geodesic / linearized-track environments.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -5841,7 +5831,9 @@ def place_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="place_cell_significance")
-    resolved_speed = resolve_speed(times, positions, options["speed"], min_speed)
+    resolved_speed = resolve_speed(
+        times, positions, options["speed"], min_speed, max_gap=max_gap
+    )
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
     mask = _spatial_interval_mask(
         env,

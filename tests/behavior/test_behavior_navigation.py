@@ -353,12 +353,14 @@ def test_goal_alignment_nan_when_stationary(east_stop_north):
 
     positions, times = east_stop_north
     goal = np.array([1000.0, 20.0])
-    stationary = (times >= 1) & (times < 4)
+    # Smoothed speed (0.1 s) ramps over the samples at each end of the stop,
+    # so the stop's interior is stationary and its endpoints still move.
+    stationary = (times > 1) & (times < 4)
     alignment = instantaneous_goal_alignment(times, positions, goal)
-    assert stationary.sum() == 30
+    assert stationary.sum() == 29
     assert np.isnan(alignment[stationary]).all()
     assert np.isfinite(alignment[~stationary]).all()
-    assert goal_bias(times, positions, goal) == pytest.approx(0.5055, abs=1e-4)
+    assert goal_bias(times, positions, goal) == pytest.approx(0.5290, abs=1e-4)
 
 
 def test_goal_bias_all_stationary_is_nan():

@@ -71,7 +71,7 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     return {
         "heading_from_velocity": heading_from_velocity(heading_clock, r.positions),
         "heading_from_velocity_smoothed": heading_from_velocity(
-            heading_clock, r.positions, bandwidth=2.0, min_speed=5.0
+            heading_clock, r.positions, smooth_window=0.04, min_speed=5.0
         ),
         "pre_decision_heading_stats": pre_decision_heading_stats(r.times, r.positions),
         "pre_decision_speed_stats": pre_decision_speed_stats(r.times, r.positions),
