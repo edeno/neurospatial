@@ -293,13 +293,6 @@ def _nearest_bin_query(
 
         # Mark points beyond threshold as outside
         bin_indices[distances > threshold] = -1
-    elif len(bin_centers) > 1:
-        # Backward compatibility: use old heuristic (10× typical spacing)
-        typical_bin_spacing = _estimate_typical_bin_spacing(kdtree, bin_centers)
-
-        # Mark points that are suspiciously far as outside
-        threshold = 10 * typical_bin_spacing
-        bin_indices[distances > threshold] = -1
 
     if return_dist:
         # Set distance to inf for points outside environment
@@ -729,7 +722,13 @@ def resample_field(
         dst_centers,
         lambda points: cast(
             "NDArray[np.int64]",
-            src_env.nearest_bin(points, tie_break=TieBreakStrategy.LOWEST_INDEX),
+            # A destination bin more than 10 typical source spacings from
+            # every source center lies outside the source.
+            src_env.nearest_bin(
+                points,
+                tie_break=TieBreakStrategy.LOWEST_INDEX,
+                max_distance_factor=10.0,
+            ),
         ),
     )
     if method == "nearest":

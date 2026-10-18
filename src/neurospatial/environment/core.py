@@ -1318,8 +1318,9 @@ class Environment(Generic[_C]):
             ID -1.
         max_distance_factor : float or None, optional
             Maximum distance as a multiple of typical center spacing. Cannot
-            be combined with max_distance. Without either limit, the existing
-            ten-times-typical-spacing rule rejects distant points.
+            be combined with max_distance. Without either limit every finite
+            point gets its nearest bin, however far away; use bin_at() or
+            contains() to ask whether a point is inside the environment.
 
         Returns
         -------

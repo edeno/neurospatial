@@ -50,3 +50,18 @@ def test_nearest_bin_refuses_wrong_coordinate_count_even_when_missing(
 ):
     with pytest.raises(ValueError, match="2-D"):
         stretched_grid.nearest_bin(np.full((2, 3), fill))
+
+
+def test_nearest_bin_returns_the_nearest_bin_however_far(stretched_grid):
+    """nearest_bin always answers with a bin; bin_at decides containment."""
+    far = np.array([[1000.0, 150.0]])
+    bins, distances = stretched_grid.nearest_bin(far, return_dist=True)
+    np.testing.assert_allclose(stretched_grid.bin_centers[bins], [[2.5, 150.0]])
+    np.testing.assert_allclose(distances, [997.5])
+    assert stretched_grid.bin_at(far)[0] == -1
+
+
+def test_nearest_bin_cutoff_is_opt_in(stretched_grid):
+    far = np.array([[1000.0, 150.0]])
+    assert stretched_grid.nearest_bin(far, max_distance=10.0)[0] == -1
+    assert stretched_grid.nearest_bin(far, max_distance_factor=2.0)[0] == -1

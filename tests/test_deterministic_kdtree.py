@@ -360,8 +360,8 @@ class TestParameterInteraction:
 class TestBackwardCompatibility:
     """Test that existing behavior is preserved when new parameters not used."""
 
-    def test_no_parameters_unchanged(self):
-        """Without new parameters, uses default heuristic (10× typical spacing)."""
+    def test_no_parameters_no_cutoff(self):
+        """Without a distance limit every finite point gets its nearest bin."""
         data = np.array([[i, j] for i in range(10) for j in range(10)])
         env = Environment.from_samples(data, bin_size=1.0)
 
@@ -369,7 +369,7 @@ class TestBackwardCompatibility:
             [
                 [2.0, 2.0],
                 [5.5, 5.5],
-                [100.0, 100.0],  # Very far outside, should be marked -1 by heuristic
+                [100.0, 100.0],  # far outside: still its nearest bin
             ]
         )
 
@@ -379,8 +379,8 @@ class TestBackwardCompatibility:
         assert bin_indices[0] >= 0
         assert bin_indices[1] >= 0
 
-        # Far outlier should be marked outside with default heuristic
-        assert bin_indices[2] == -1
+        # The far point's nearest bin is the corner (9, 9)
+        np.testing.assert_allclose(env.bin_centers[bin_indices[2]], [9.0, 9.0])
 
     def test_tie_break_still_works(self):
         """tie_break parameter still functions as before."""

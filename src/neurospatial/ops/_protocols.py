@@ -197,7 +197,11 @@ class ResampleSourceConsumer(CartesianBinsConsumer, Protocol):
     """
 
     def nearest_bin(
-        self, positions: NDArray[np.float64], *, tie_break: TieBreakStrategy = ...
+        self,
+        positions: NDArray[np.float64],
+        *,
+        tie_break: TieBreakStrategy = ...,
+        max_distance_factor: float | None = ...,
     ) -> NDArray[np.intp] | tuple[NDArray[np.intp], NDArray[np.float64]]: ...
 
 

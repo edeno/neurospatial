@@ -161,9 +161,9 @@ def _bins_or_nearest(
     bins = np.asarray(env.bin_at(positions), dtype=np.intp)
     outside = bins < 0
     if np.any(outside):
-        # No distance cutoff: every position is measured from its own nearest
-        # bin, however far off the tracking glitch or decode lies.
-        bins[outside] = env.nearest_bin(positions[outside], max_distance=np.inf)
+        # Every position is measured from its own nearest bin, however far
+        # off the tracking glitch or decode lies.
+        bins[outside] = env.nearest_bin(positions[outside])
     return bins
 
 

@@ -434,7 +434,7 @@ def _nearest_bin_center(
     ``bin_at`` cannot clamp: it returns -1 for an outside point, and -1 would
     index the last bin center.
     """
-    nearest = int(env.nearest_bin(position[None, :], max_distance=np.inf)[0])
+    nearest = int(env.nearest_bin(position[None, :])[0])
     center: NDArray[np.float64] = env.bin_centers[nearest].copy()
     return center
 

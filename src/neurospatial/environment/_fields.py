@@ -195,10 +195,9 @@ def _interpolate_nearest(
             coordinates=CartesianSystem(),
             tie_break="lowest_index",
             return_dist=False,
-            # No distance cutoff: the containment check that follows decides
-            # which points are outside, so a point deep in a tall cell keeps
-            # its value.
-            max_distance=np.inf,
+            # The containment check that follows decides which points are
+            # outside, so a point deep in a tall cell keeps its value.
+            max_distance=None,
             max_distance_factor=None,
         ),
     )
