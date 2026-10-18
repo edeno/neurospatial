@@ -283,6 +283,15 @@ def _interpolate_linear(
         points = frame._project_to_planes(
             points, grid_points, operation="Linear interpolation"
         )
+    # Between the grid's edge and its outermost centers, hold the edge value
+    # along that axis; the containment check afterwards still rejects points
+    # outside the environment.
+    points = np.column_stack(
+        [
+            np.clip(points[:, axis], centers[0], centers[-1])
+            for axis, centers in enumerate(grid_points)
+        ]
+    )
 
     # Create interpolator
     # bounds_error=False, fill_value=np.nan → outside points return NaN

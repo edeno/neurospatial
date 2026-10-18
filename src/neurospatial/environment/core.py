@@ -2080,8 +2080,10 @@ class Environment(Generic[_C]):
               ``from_pixel_mask``, ``from_polygon``, and grids read from NWB.
               Rotated, reflected and sheared 2-D/3-D grids use their source axes;
               queries remain in world coordinates.
-              Inactive cells and NaN field values return NaN.
-              Points outside grid bounds return NaN.
+              Inactive cells and NaN field values return NaN. Between the
+              grid's edge and its outermost bin centers the edge value is
+              held along that axis. Points outside the environment return
+              NaN.
 
         Returns
         -------

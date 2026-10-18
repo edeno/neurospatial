@@ -65,3 +65,23 @@ def test_nearest_bin_cutoff_is_opt_in(stretched_grid):
     far = np.array([[1000.0, 150.0]])
     assert stretched_grid.nearest_bin(far, max_distance=10.0)[0] == -1
     assert stretched_grid.nearest_bin(far, max_distance_factor=2.0)[0] == -1
+
+
+def test_linear_interpolation_holds_edge_values_in_the_outer_half_cell(stretched_grid):
+    """Between the arena's edge and the outermost centers, linear mode holds
+    the edge value along the clamped axis instead of reading NaN."""
+    field = stretched_grid.bin_centers[:, 0] + stretched_grid.bin_centers[:, 1]
+    points = np.array([[0.5, 1.0], [1.0, 1.0], [0.0, 150.0], [3.0, 300.0]])
+    assert stretched_grid.contains(points).all()
+    values = stretched_grid.interpolate(field, points, mode="linear")
+    # (0.5, 1) -> center (0.5, 50); (1, 1) -> halfway between x = 0.5 and 1.5
+    # at y = 50; (0, 150) -> x clamped to 0.5; (3, 300) -> corner (2.5, 250).
+    np.testing.assert_allclose(values, [50.5, 51.0, 150.5, 252.5])
+
+
+def test_linear_interpolation_still_refuses_outside_points(stretched_grid):
+    field = np.ones(stretched_grid.n_bins)
+    values = stretched_grid.interpolate(
+        field, np.array([[-0.5, 50.0], [1.0, 301.0]]), mode="linear"
+    )
+    assert np.isnan(values).all()

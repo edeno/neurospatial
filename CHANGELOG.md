@@ -1492,6 +1492,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `env.interpolate(mode="linear")` reads the edge value between the grid's
+  edge and its outermost bin centers instead of NaN. Interpolation runs over
+  the grid of bin centers, so the outer half of every edge bin, inside the
+  environment, had no value; it now holds the edge value along the clamped
+  axis, as `mode="nearest"` does there. Points outside the environment still
+  read NaN.
+
 - Geodesic `decoding_error` (and `error_against`) measures a position far
   outside the environment from its own nearest bin. The nearest-bin lookup's
   distance cutoff returned `-1` for it, which indexed the last bin: a decode
