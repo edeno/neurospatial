@@ -416,6 +416,71 @@ plt.title(f"Boundary field (score = {score:.2f})")
 plt.show()
 ```
 
+### Boundary-vector and egocentric boundary cells
+
+A boundary-vector cell fires when a wall is at a preferred distance in a
+preferred room direction, for example 15 cm to the East (Lever et al., 2009).
+An egocentric boundary cell fires when a wall is at a preferred distance and
+direction relative to the animal's heading, for example 15 cm to its left
+(Hinman et al., 2019; Alexander et al., 2020). A border score cannot tell
+these apart; a rate map over distance and direction to the walls can.
+
+`compute_boundary_vector_rate` casts one ray per direction bin from every
+tracking sample and records how far away the first wall is. Each interval
+adds its duration, and each spike one count, to the (distance, direction) bin
+of every ray. A bin's rate is then the firing rate while a wall lay at that
+distance in that direction. Pass `direction_frame="allocentric"` for
+boundary-vector cells and `direction_frame="egocentric"` with `headings` for
+egocentric boundary cells. The walls are the arena's declared walls
+(`boundary_source="physical"`), so build the environment from the measured
+outline; an unvisited corner is then not a wall.
+
+This example simulates an egocentric boundary cell that fires when a wall is
+about 15 cm to the animal's left:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box
+
+from neurospatial import Environment
+from neurospatial.encoding import compute_boundary_vector_rate
+from neurospatial.ops import compute_boundary_distances
+from neurospatial.simulation import generate_poisson_spikes
+
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+rng = np.random.default_rng(0)
+times = np.arange(0, 600, 1 / 30)  # 10 minutes at 30 Hz
+positions = rng.uniform(2, 98, (len(times), 2))  # cm
+headings = rng.uniform(-np.pi, np.pi, len(times))  # radians, 0 = East
+
+# 18 direction bins of 20 degrees; one is centered straight to the left.
+distances, directions = compute_boundary_distances(
+    env, positions, headings, direction_frame="egocentric", n_directions=18
+)
+wall_left = distances[:, np.isclose(directions, np.pi / 2)][:, 0]  # cm
+rate = 0.5 + 20 * np.exp(-0.5 * ((wall_left - 15) / 4) ** 2)  # Hz
+spike_times = generate_poisson_spikes(rate, times, seed=1)
+
+result = compute_boundary_vector_rate(
+    env, spike_times, times, positions, headings,
+    direction_frame="egocentric", n_direction_bins=18,
+)
+print(f"Preferred direction: {np.degrees(result.preferred_direction()):.0f} deg")
+print(f"Preferred distance: {result.preferred_distance():.1f} cm")
+assert np.isclose(result.preferred_direction(), np.pi / 2)
+```
+
+The peak is at +90° (left) in a distance bin near 15 cm, as simulated.
+`result.plot()` draws the map with distance on one axis and direction on the
+other. A bin whose rate is NaN never had a wall at that distance and
+direction, which means it was not measured, not that the cell was silent.
+Spatial information on this map is biased upward for few spikes, so compare
+it with a shuffled control before calling a cell boundary-tuned.
+`neurospatial.ops.compute_boundary_distances` gives the ray distances
+themselves, and `neurospatial.ops.nearest_boundary` the distance and
+direction to the closest wall at each sample.
+
 ## Specialized tuning recipes
 
 Choose the coordinate system for the scientific question before computing a
@@ -432,6 +497,7 @@ measurement of where the head or eyes point.
 | Is firing associated with head direction? | Circular world-frame heading | `compute_directional_rate` |
 | Is spatial firing hexagonally periodic? | 2D spatial autocorrelation | `spatial_autocorrelation`, `grid_score` |
 | Is firing associated with a vector to an object? | Object distance and allocentric or egocentric bearing | `compute_object_vector_rate`, `compute_egocentric_rate` |
+| Is firing associated with a vector to a wall? | Wall distance and allocentric or egocentric direction | `compute_boundary_vector_rate` |
 | Is firing associated with a viewed location? | Projected gaze location in the arena | `compute_view_rate` |
 
 Keep the same analysis epochs and known spike-recording window across related

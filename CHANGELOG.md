@@ -1053,6 +1053,18 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `compute_boundary_vector_rate` and `compute_boundary_vector_rates` estimate
+  firing by distance and direction to the walls, for boundary-vector cells
+  (`direction_frame="allocentric"`) and egocentric boundary cells
+  (`direction_frame="egocentric"` with `headings`). One ray per direction bin
+  finds the nearest wall from each sample, following Hinman et al. (2019);
+  each interval and spike counts toward the bin of every ray. Walls are the
+  arena's declared walls by default, so unvisited space is not a wall. The
+  results, `BoundaryVectorRateResult` and `BoundaryVectorRatesResult`, have
+  `preferred_distance(s)`, `preferred_direction(s)`, `spatial_information`,
+  `plot` and the shared `summary_table`, `to_dataframe` and `to_xarray`
+  exports. They share their polar-map code with the object-vector results.
+
 - `ops.compute_boundary_distances(env, positions[, headings], direction_frame=...)`
   casts rays in evenly spaced directions from each sample and returns the
   distance to the first wall along each, in the allocentric frame for

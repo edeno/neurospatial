@@ -6,8 +6,9 @@ require headings and measure bearing relative to the animal (0 = ahead,
 +pi/2 = left), following Wang et al. (2018). Both use nearest-object distance,
 Euclidean or geodesic, and return ObjectVectorRateResult/ObjectVectorRatesResult
 with a required ``direction_frame``. Add pi and wrap to obtain the reverse,
-object-to-animal vector. Egocentric boundary-vector coding (Alexander et al.,
-2020) is related work, not the object-vector definition.
+object-to-animal vector. Firing by distance and direction to walls
+(boundary-vector and egocentric boundary cells; Alexander et al., 2020) is in
+:mod:`neurospatial.encoding.boundary_vector`.
 
 Examples
 --------

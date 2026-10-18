@@ -79,11 +79,29 @@ def egocentric_batch():
     )
 
 
+@pytest.fixture
+def boundary_batch():
+    from shapely.geometry import box
+
+    from neurospatial.encoding import compute_boundary_vector_rates
+
+    rng = np.random.default_rng(0)
+    env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
+    times = np.linspace(0, 100, 1000)
+    positions = rng.uniform(10, 90, (1000, 2))
+    headings = rng.uniform(-np.pi, np.pi, 1000)
+    spike_times = [np.sort(rng.uniform(0, 100, k)) for k in (100, 150, 50)]
+    return compute_boundary_vector_rates(
+        env, spike_times, times, positions, headings, direction_frame="egocentric"
+    )
+
+
 BATCH_FIXTURES = [
     "spatial_batch",
     "directional_batch",
     "view_batch",
     "egocentric_batch",
+    "boundary_batch",
 ]
 
 
@@ -128,7 +146,7 @@ def test_batch_summary_table_custom_unit_ids(fixture_name, request):
 
 
 def test_to_dataframe_bin_center_vocabulary_is_consistent(
-    spatial_batch, directional_batch, view_batch, egocentric_batch
+    spatial_batch, directional_batch, view_batch, egocentric_batch, boundary_batch
 ):
     """Bin-center columns use the shared vocabulary per coordinate space."""
     # Cartesian results -> bin_center_x / bin_center_y.
@@ -139,9 +157,10 @@ def test_to_dataframe_bin_center_vocabulary_is_consistent(
     # Directional result (no env, angular) -> bin_center_angle.
     assert "bin_center_angle" in set(directional_batch.to_dataframe().columns)
 
-    # Egocentric polar result -> bin_center_distance / bin_center_angle.
-    ego_cols = set(egocentric_batch.to_dataframe().columns)
-    assert {"bin_center_distance", "bin_center_angle"} <= ego_cols
+    # Egocentric polar results -> bin_center_distance / bin_center_angle.
+    for result in (egocentric_batch, boundary_batch):
+        cols = set(result.to_dataframe().columns)
+        assert {"bin_center_distance", "bin_center_angle"} <= cols
 
 
 def test_single_unit_to_dataframe_carries_unit_id():

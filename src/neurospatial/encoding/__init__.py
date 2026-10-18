@@ -11,6 +11,7 @@ spatial : Spatial rate analysis
 grid : Grid cell analysis
 directional : Head direction and directional-rate analysis
 border : Border/boundary cell analysis
+boundary_vector : Boundary-vector and egocentric boundary cell rate maps
 egocentric : Object-vector and egocentric-rate analysis
 view : Spatial view cell analysis
 phase_precession : Theta phase precession analysis
@@ -54,6 +55,12 @@ from neurospatial.encoding.border import (
 )
 
 # Directional rate (head direction cells)
+from neurospatial.encoding.boundary_vector import (
+    BoundaryVectorRateResult,
+    BoundaryVectorRatesResult,
+    compute_boundary_vector_rate,
+    compute_boundary_vector_rates,
+)
 from neurospatial.encoding.directional import (
     DirectionalRateResult,
     DirectionalRatesResult,
@@ -151,6 +158,11 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
+    # Boundary-vector rate (boundary-vector and egocentric boundary cells)
+    "BoundaryVectorRateResult",
+    "BoundaryVectorRatesResult",
+    "compute_boundary_vector_rate",
+    "compute_boundary_vector_rates",
     # Directional rate (head direction cells)
     "DirectionalRateResult",
     "DirectionalRatesResult",
