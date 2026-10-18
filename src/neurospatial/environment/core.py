@@ -2270,9 +2270,8 @@ class Environment(Generic[_C]):
         coarse_env : Environment
             New environment at the requested resolution. With ``factor``, the grid shape is
             ``original_shape // factor`` in each dimension. A new bin is kept
-            when it holds one of this environment's bins (or, with
-            ``bin_size``, lies within one) and its center lies inside the
-            arena.
+            when it overlaps one of this environment's bins and its center
+            lies inside the arena.
 
         Raises
         ------
@@ -2318,9 +2317,11 @@ class Environment(Generic[_C]):
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
 
-        **Active bins**: A new cell must cover this environment's bins: with
+        **Active bins**: A new cell must overlap this environment's bins: with
         ``factor``, its block of fine cells holds at least one bin; with
-        ``bin_size``, its center lies in a bin or a bin's center lies in it.
+        ``bin_size``, it shares a positive area or volume with a bin (a bin
+        that only touches its boundary does not count, whatever rounding a
+        rotation adds).
         It must also lie in the arena: with ``factor``, its center lies in the
         known arena, including on its boundary, as ``contains`` does; with
         ``bin_size``, strictly inside a polygonal arena, or contained by

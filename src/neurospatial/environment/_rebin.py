@@ -11,6 +11,7 @@ the published result to report source bins and barriers the new bins lose.
 
 from __future__ import annotations
 
+import itertools
 import warnings
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
@@ -20,6 +21,7 @@ import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.geometry import Polygon
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
@@ -362,6 +364,85 @@ def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
     return "build the bins again at the new size with the factory or layout engine that made them"
 
 
+def _overlaps_bins(
+    binning: Binning,
+    forward: NDArray[np.float64],
+    edges: tuple[NDArray[np.float64], ...],
+) -> NDArray[np.bool_]:
+    """Which new lattice cells share a positive measure with a bin.
+
+    Parameters
+    ----------
+    binning : Binning
+        The environment's bins.
+    forward : ndarray, shape (n_dims + 1, n_dims + 1)
+        Homogeneous map from lattice to environment coordinates.
+    edges : tuple of ndarray
+        New cell edges along each lattice axis.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_cells_0, n_cells_1, ...)
+        True for each new cell a bin overlaps. Edges are compared with a
+        tolerance of a billionth of a cell width, so a bin that only touches
+        a cell boundary does not claim the cell however rounding falls, for
+        example after a rotation.
+    """
+    inverse = np.linalg.inv(forward)
+    shape = tuple(len(edge) - 1 for edge in edges)
+    covered = np.zeros(shape, dtype=bool)
+    polygons: tuple[Polygon, ...] | None = None
+    if binning.bins.n_dims == 2:
+        cells = materialize_cells(binning)
+        corners = [np.asarray(cell.exterior.coords) for cell in cells]
+        # Clipped cells are not boxes in the lattice: check their area exactly.
+        polygons = cells if binning.rectilinear is None else None
+    else:
+        frame = binning.grid_frame
+        grid = binning.rectilinear if frame is None else frame.source
+        assert grid is not None  # rebin(bin_size=...) needs rectangular cells
+        to_world = np.eye(len(shape) + 1) if frame is None else frame.forward
+        active = np.argwhere(grid.active_mask)
+        corners = []
+        for index in active:
+            sides = [grid.edges[axis][[i, i + 1]] for axis, i in enumerate(index)]
+            vertices = np.array(list(itertools.product(*sides)))
+            corners.append(vertices @ to_world[:-1, :-1].T + to_world[:-1, -1])
+    tolerance = np.array([1e-9 * (edge[1] - edge[0]) for edge in edges])
+    for number, vertices in enumerate(corners):
+        local = vertices @ inverse[:-1, :-1].T + inverse[:-1, -1]
+        low = local.min(axis=0) + tolerance
+        high = local.max(axis=0) - tolerance
+        first = [
+            max(int(np.searchsorted(edge, value, side="right")) - 1, 0)
+            for edge, value in zip(edges, low, strict=True)
+        ]
+        last = [
+            min(int(np.searchsorted(edge, value, side="left")) - 1, size - 1)
+            for edge, value, size in zip(edges, high, shape, strict=True)
+        ]
+        if any(a > b for a, b in zip(first, last, strict=True)):
+            continue
+        block = tuple(slice(a, b + 1) for a, b in zip(first, last, strict=True))
+        if polygons is None:
+            covered[block] = True
+            continue
+        cell = polygons[number]
+        for index in itertools.product(
+            *(range(a, b + 1) for a, b in zip(first, last, strict=True))
+        ):
+            box = np.array(
+                [
+                    [edges[0][index[0] + i], edges[1][index[1] + j]]
+                    for i, j in ((0, 0), (1, 0), (1, 1), (0, 1))
+                ]
+            )
+            world = Polygon(box @ forward[:-1, :-1].T + forward[:-1, -1])
+            if cell.intersection(world).area > 1e-9 * world.area:
+                covered[index] = True
+    return covered
+
+
 def _rebin_resolution(
     binning: Binning, arena: Arena, bin_size: float | tuple[float, ...]
 ) -> tuple[_Derivation, RebinCheck]:
@@ -434,19 +515,8 @@ def _rebin_resolution(
     else:
         keep = arena.contains(mapped)
     # Keep only cells over the bins the environment has, so rebinning a
-    # subset does not bring back the space it left out: a new cell is kept
-    # when its center lies in a bin, or a bin's center lies in it.
-    in_bins = binning.locator.locate(mapped) >= 0
-    source = (binning.bins.centers - spec.forward[:-1, -1]) @ np.linalg.inv(
-        spec.forward[:-1, :-1]
-    ).T
-    cell = np.floor((source - spec.origin) / spacing).astype(np.intp) - low.astype(
-        np.intp
-    )
-    inside = np.all((cell >= 0) & (cell < np.array(shape)), axis=1)
-    holds_bin = np.zeros(len(centers), dtype=bool)
-    holds_bin[np.ravel_multi_index(tuple(cell[inside].T), shape)] = True
-    keep &= in_bins | holds_bin
+    # subset does not bring back the space it left out.
+    keep &= _overlaps_bins(binning, spec.forward, edges).ravel()
     if not np.any(keep):
         raise ValueError(
             "Rebinning retains no bin center inside the original arena; use a smaller bin_size."

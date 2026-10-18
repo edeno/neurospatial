@@ -15,6 +15,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import KnownFaces
 from neurospatial.layout import create_layout
+from neurospatial.ops.transforms import Affine2D
 
 
 def grid():
@@ -343,3 +344,27 @@ def test_rebinning_a_subset_never_restores_dropped_space(options, n_bins):
     holds = set(coarse.bin_at(west.bin_centers).tolist())
     within = west.bin_at(coarse.bin_centers) >= 0
     assert all(index in holds or within[index] for index in range(coarse.n_bins))
+
+
+def test_rebinning_after_a_rotation_keeps_the_same_cells():
+    # A bin centered on new cell corners overlaps all four cells; rounding from
+    # the rotation must not move which cells it claims.
+    full = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+    )
+    one = full.subset(mask=np.all(full.bin_centers == [1.5, 1.5], axis=1))
+    expected = one.rebin(bin_size=1.5).bin_centers
+    np.testing.assert_array_equal(
+        expected, [[0.75, 0.75], [0.75, 2.25], [2.25, 0.75], [2.25, 2.25]]
+    )
+    for angle in np.linspace(0.01, 6.2, 50):
+        rotation = np.eye(3)
+        rotation[:2, :2] = [
+            [np.cos(angle), -np.sin(angle)],
+            [np.sin(angle), np.cos(angle)],
+        ]
+        rotated = one.apply_transform(Affine2D(rotation)).rebin(bin_size=1.5)
+        back = rotated.bin_centers @ rotation[:2, :2]  # inverse of a rotation
+        np.testing.assert_allclose(
+            np.sort(back, axis=0), np.sort(expected, axis=0), atol=1e-9
+        )
