@@ -384,7 +384,9 @@ def test_inferred_speed_gate_preserves_retained_null_spikes(
     for shifted in recorded[1:]:
         assert len(shifted[0]) == len(trains[0])
         assert np.all(shifted[0] >= 20.0)
-    reference_speed = np.where(r.times < 20, 0.0, 1.0)
+    from neurospatial.behavior import compute_speed
+
+    reference_speed = compute_speed(r.times, r.positions)
     explicit = spatial.place_cell_significance(
         r.env,
         trains,

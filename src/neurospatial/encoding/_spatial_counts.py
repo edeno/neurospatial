@@ -205,6 +205,8 @@ def resolve_speed(
     positions: NDArray[np.float64],
     speed: NDArray[np.float64] | None,
     min_speed: float | None,
+    *,
+    max_gap: float | None,
 ) -> NDArray[np.float64] | None:
     """Resolve the speed array used for the shared speed gate.
 
@@ -241,7 +243,7 @@ def resolve_speed(
     ndarray, shape (n_samples,), or None
         - ``None`` when ``min_speed is None`` (no filtering).
         - The validated ``speed`` array when one was passed.
-        - Otherwise an auto-derived forward-difference speed array.
+        - Otherwise :func:`neurospatial.behavior.compute_speed` (smoothed).
 
     Raises
     ------
@@ -252,25 +254,17 @@ def resolve_speed(
         If a ``speed`` array is passed whose length does not match
         ``times`` (the message names ``speed``).
 
+    max_gap : float or None
+        Longest sampling interval treated as continuous; the derived speed is
+        smoothed separately within each run between longer gaps.
+
     Notes
     -----
-    **Auto-speed convention (forward difference).** When ``speed is None`` and
-    ``min_speed is not None``, speed is derived from the trajectory with a
-    FORWARD difference, matching ``env.occupancy``'s ``time_allocation="start"``
-    interval semantics (interval ``k`` spans ``[t_k, t_{k+1})`` and is assigned
-    to the bin at sample ``k``):
-
-    .. math::
-        \\text{speed}[k] = \\frac{\\lVert p_{k+1} - p_k \\rVert_2}
-                                  {t_{k+1} - t_k}, \\quad k = 0 \\ldots n-2
-
-    The final sample starts no occupancy interval, so its speed is defined by
-    repeating the last finite-difference value: ``speed[n-1] = speed[n-2]``.
-
-    This Euclidean default is intentionally simple. For geodesic / linearized
-    track environments where straight-line distance is not the relevant speed,
-    pass your own precomputed ``speed`` array instead of relying on the
-    auto-derivation.
+    When ``speed is None`` and ``min_speed`` is set, speed is
+    :func:`neurospatial.behavior.compute_speed`: the magnitude of the
+    Gaussian-smoothed (0.1 s) velocity, so tracking jitter at rest does not
+    pass the gate. Pass ``speed=`` to use another definition, for example
+    speed along a linearized track.
     """
     if min_speed is None:
         if speed is not None:
@@ -301,29 +295,15 @@ def resolve_speed(
             )
         return speed_arr
 
-    n_samples = len(times)
-    if n_samples <= 1:
+    from neurospatial._intervals import interval_valid_mask
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
+
+    if len(times) <= 1:
         # No intervals: speed is undefined; return zeros so a min_speed gate
         # consistently excludes the (non-existent) intervals on both sides.
-        return np.zeros(n_samples, dtype=np.float64)
-
-    dt = np.diff(times)
-    # Forward differences in position (Euclidean) over each interval.
-    step = np.linalg.norm(np.diff(positions, axis=0), axis=1)
-
-    # Guard division against non-positive / non-finite dt (duplicate
-    # timestamps). validate_trajectory enforces sorted/finite upstream, but
-    # equal consecutive timestamps (dt == 0) are still possible.
-    interval_speed = np.zeros(n_samples - 1, dtype=np.float64)
-    valid_dt = dt > 0
-    interval_speed[valid_dt] = step[valid_dt] / dt[valid_dt]
-
-    speed_full = np.empty(n_samples, dtype=np.float64)
-    speed_full[: n_samples - 1] = interval_speed
-    # The final sample starts no occupancy interval; repeat the last value so
-    # a spike landing exactly on the final sample is gated consistently.
-    speed_full[n_samples - 1] = interval_speed[-1]
-    return speed_full
+        return np.zeros(len(times), dtype=np.float64)
+    mask = interval_valid_mask(times, max_gap=max_gap, epochs=None)
+    return smoothed_speed(times, positions, mask, smooth_window=DEFAULT_SPEED_SMOOTHING)
 
 
 def require_linear_allocation(env: Environment) -> None:
@@ -1391,7 +1371,7 @@ def bin_spike_trains(
     # Resolve the speed gate ONCE here so the SAME concrete array feeds both
     # the (shared) occupancy denominator and every per-neuron spike numerator.
     # This is what guarantees numerator/denominator alignment by construction.
-    resolved_speed = resolve_speed(times, positions, speed, min_speed)
+    resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
 
     if time_allocation == "linear":
         if linear_intervals is None:

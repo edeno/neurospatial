@@ -14,7 +14,8 @@ def test_heading_from_velocity_ignores_pause(two_epoch_recording):
     from neurospatial.ops.egocentric import heading_from_velocity
 
     r = two_epoch_recording
-    headings = heading_from_velocity(r.times, r.positions)
+    # Unsmoothed, the run's last velocity is its one-sided final difference.
+    headings = heading_from_velocity(r.times, r.positions, smooth_window=0.0)
     previous = r.positions[4999] - r.positions[4998]
     jump = r.positions[5000] - r.positions[4999]
     expected = np.arctan2(previous[1], previous[0])
@@ -85,6 +86,7 @@ def test_heading_from_velocity_rejects_bad_times(times):
 
 
 def test_velocity_heading_uses_actual_intervals():
+    """Unsmoothed velocity is the centered secant over real elapsed times."""
     from neurospatial._intervals import observed_interval_mask
     from neurospatial.ops.egocentric import _velocity_heading_and_speed
 
@@ -94,9 +96,18 @@ def test_velocity_heading_uses_actual_intervals():
         times,
         positions,
         interval_mask=observed_interval_mask(times, max_gap=0.5, epochs=None),
+        smooth_window=0.0,
     )
-    np.testing.assert_allclose(headings, [0, np.pi / 2, np.pi / 2])
-    np.testing.assert_allclose(speed, [10, 20, 20])
+    velocity = np.array(
+        [
+            (positions[1] - positions[0]) / 0.1,
+            (positions[2] - positions[0]) / 0.3,
+            (positions[2] - positions[1]) / 0.2,
+        ]
+    )
+    np.testing.assert_allclose(headings, np.arctan2(velocity[:, 1], velocity[:, 0]))
+    np.testing.assert_allclose(speed, np.hypot(velocity[:, 0], velocity[:, 1]))
+    np.testing.assert_allclose(speed[[0, 2]], [10.0, 20.0])  # one-sided ends
 
 
 def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
@@ -109,17 +120,18 @@ def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
     headings, speed = _velocity_heading_and_speed(
         r.times,
         r.positions,
-        bandwidth=2.0,
+        smooth_window=0.04,  # two 50 Hz samples
         interval_mask=observed_interval_mask(r.times, max_gap=0.5, epochs=None),
     )
     for run in (slice(0, 5000), slice(5000, 10000)):
-        velocity = np.diff(r.positions[run], axis=0) / np.diff(r.times[run])[:, None]
-        velocity = np.vstack([velocity, velocity[-1]])
-        velocity = gaussian_filter1d(velocity, 2.0, axis=0)
+        velocity = np.gradient(r.positions[run], r.times[run], axis=0)
+        velocity = gaussian_filter1d(velocity, 2.0, axis=0, mode="nearest")
         expected_heading = np.arctan2(velocity[:, 1], velocity[:, 0])
         expected_speed = np.hypot(velocity[:, 0], velocity[:, 1])
-        np.testing.assert_allclose(headings[run], expected_heading, rtol=1e-12, atol=0)
-        np.testing.assert_allclose(speed[run], expected_speed, rtol=1e-12, atol=0)
+        np.testing.assert_allclose(
+            headings[run], expected_heading, rtol=1e-9, atol=1e-12
+        )
+        np.testing.assert_allclose(speed[run], expected_speed, rtol=1e-9, atol=1e-12)
 
 
 @pytest.mark.parametrize(
@@ -700,7 +712,7 @@ class TestHeadingFromVelocity:
             positions=positions,
             times=np.arange(len(positions)) * 0.1,
             min_speed=0.5,
-            bandwidth=2.0,
+            smooth_window=0.2,
         )
 
         # Stationary period should have smoothly interpolated headings
@@ -765,10 +777,12 @@ class TestHeadingFromVelocity:
         positions = np.column_stack([t * 10, np.zeros_like(t)]) + noise
 
         headings_no_smooth = heading_from_velocity(
-            positions=positions, times=np.arange(len(positions)) * 0.1, bandwidth=0
+            positions=positions, times=np.arange(len(positions)) * 0.1, smooth_window=0
         )
         headings_smooth = heading_from_velocity(
-            positions=positions, times=np.arange(len(positions)) * 0.1, bandwidth=5
+            positions=positions,
+            times=np.arange(len(positions)) * 0.1,
+            smooth_window=0.5,
         )
 
         # Smoothed version should have less variance
@@ -1115,11 +1129,15 @@ def test_antipodal_turn_has_no_jump_to_zero():
 def test_heading_from_velocity_turn_is_gradual():
     from neurospatial.ops.egocentric import heading_from_velocity
 
+    # East, a 0.3 s stop, then West: the stop's headings are interpolated
+    # along the shorter arc instead of reversing in one step.
     positions = np.column_stack([[0.0, 1.0, 1.0, 1.0, 1.0, 0.0, -1.0], np.zeros(7)])
     heading = heading_from_velocity(
-        np.arange(len(positions)) * 0.1, positions, min_speed=0.5
+        np.arange(len(positions)) * 0.1, positions, min_speed=2.0
     )
-    assert np.max(np.abs(np.diff(heading))) <= np.pi / 4 + 1e-12
+    steps = np.diff(heading)
+    assert np.all(steps >= 0)
+    assert np.max(steps) < np.pi / 2
 
 
 def test_nan_anchor_not_propagated():

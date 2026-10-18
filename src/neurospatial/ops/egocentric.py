@@ -75,8 +75,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage import gaussian_filter1d
 
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
 if TYPE_CHECKING:
@@ -740,29 +740,30 @@ def _velocity_heading_and_speed(
     positions: NDArray[np.float64],
     *,
     interval_mask: NDArray[np.bool_],
-    bandwidth: float = 0.0,
+    smooth_window: float = DEFAULT_SPEED_SMOOTHING,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Compute forward velocity headings and speeds separately per recording.
+    """Movement heading and horizontal speed from the smoothed velocity.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
         Finite, strictly increasing timestamps in seconds.
-    positions : ndarray, shape (n_samples, 2)
-        Position coordinates in environment units.
+    positions : ndarray, shape (n_samples, n_dims)
+        Position coordinates in environment units; heading and speed use the
+        first two (x, y).
     interval_mask : ndarray of bool, shape (n_samples - 1,)
         Observed intervals supplied by the shared mask helper.
-    bandwidth : float, default=0.0
-        Gaussian smoothing sigma in samples, applied separately per run.
+    smooth_window : float, default=0.1
+        Gaussian standard deviation in seconds applied to each velocity
+        component within each run (:func:`neurospatial.behavior.compute_speed`).
 
     Returns
     -------
     heading, speed : ndarray, shape (n_samples,)
-        Radians and position units per second. The final interval's velocity
-        is repeated at each run's last sample; samples in no run are NaN.
+        Radians and position units per second; samples in no run are NaN.
     """
-    from neurospatial._intervals import run_sample_bounds
     from neurospatial._validation import validate_finite
+    from neurospatial._velocity import smoothed_velocity
 
     positions = _validate_velocity_positions(positions)
     times = _validate_velocity_times(times, len(positions))
@@ -775,19 +776,11 @@ def _velocity_heading_and_speed(
             "Fix: pass at least two aligned position/timestamp samples or "
             "use heading_from_body_orientation() for single-frame pose data."
         )
-    headings: NDArray[np.float64] = np.full(len(positions), np.nan)
-    speeds: NDArray[np.float64] = np.full(len(positions), np.nan)
-    for first, last in run_sample_bounds(interval_mask):
-        run = slice(first, last + 1)
-        velocity: NDArray[np.float64] = (
-            np.diff(positions[run], axis=0) / np.diff(times[run])[:, None]
-        )
-        velocity = np.vstack([velocity, velocity[-1:]])
-        if bandwidth > 0:
-            velocity[:, 0] = gaussian_filter1d(velocity[:, 0], bandwidth)
-            velocity[:, 1] = gaussian_filter1d(velocity[:, 1], bandwidth)
-        speeds[run] = np.sqrt(velocity[:, 0] ** 2 + velocity[:, 1] ** 2)
-        headings[run] = np.arctan2(velocity[:, 1], velocity[:, 0])
+    velocity = smoothed_velocity(
+        times, positions[:, :2], interval_mask, smooth_window=smooth_window
+    )
+    speeds = np.hypot(velocity[:, 0], velocity[:, 1])
+    headings = np.arctan2(velocity[:, 1], velocity[:, 0])
     return headings, speeds
 
 
@@ -798,7 +791,7 @@ def heading_from_velocity(
     max_gap: float | None = 0.5,
     epochs: Any = None,
     min_speed: float = 0.0,
-    bandwidth: float = 0.0,
+    smooth_window: float = DEFAULT_SPEED_SMOOTHING,
     allow_all_nan: bool = False,
 ) -> NDArray[np.float64]:
     """Compute heading from position timeseries using velocity direction.
@@ -823,9 +816,12 @@ def heading_from_velocity(
         ``positions``** (e.g. cm/s if positions are in cm). Samples
         with speed below this are interpolated along the shorter arc,
         linearly in angle between surrounding valid samples.
-    bandwidth : float, default 0.0
-        Gaussian smoothing sigma in samples. Applied to velocity before
-        computing heading. Set to 0 to disable smoothing.
+    smooth_window : float, default 0.1
+        Standard deviation, in seconds, of the Gaussian that smooths the
+        velocity before its direction and speed are taken, the same
+        smoothing as :func:`neurospatial.behavior.compute_speed`; without
+        it, tracking jitter at rest gives random headings that pass
+        ``min_speed``. Set to 0 to disable smoothing.
     allow_all_nan : bool, default False
         Controls the degenerate case where **every observed** sample is below
         ``min_speed`` (heading undefined everywhere). ``False`` (the default)
@@ -861,19 +857,11 @@ def heading_from_velocity(
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
     is analyzed as a separate recording; no velocity or heading spans a pause.
 
-    Velocity uses each interval's actual elapsed time. Smoothing bandwidth
-    remains Gaussian sigma in samples and is applied separately per run.
-    Low-speed interpolation uses moving anchors from that run only. A run
-    with no moving anchors and samples touching no valid interval have NaN
-    headings. If no samples belong to any run, the result is all NaN.
-
-    Heading is computed from the forward finite difference of position, which
-    yields ``n_time - 1`` velocity samples for ``n_time`` positions. To return
-    an array aligned to ``positions`` (length ``n_time``), each run's last sample's
-    heading is forward-padded: ``heading[-1]`` is a copy of ``heading[-2]``
-    rather than an independently measured value. For long trajectories this
-    edge effect is negligible; for very short trajectories treat the final
-    sample's heading as approximate.
+    Velocity is the centered secant of position over each sample's actual
+    elapsed time (one-sided at a run's ends), smoothed separately within each
+    run. Low-speed interpolation uses moving anchors from that run only. A
+    run with no moving anchors and samples touching no valid interval have
+    NaN headings. If no samples belong to any run, the result is all NaN.
 
     Examples
     --------
@@ -906,7 +894,7 @@ def heading_from_velocity(
     times = _validate_velocity_times(times, len(positions))
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     heading, speed = _velocity_heading_and_speed(
-        times, positions, interval_mask=interval_mask, bandwidth=bandwidth
+        times, positions, interval_mask=interval_mask, smooth_window=smooth_window
     )
     in_run = np.r_[interval_mask, False] | np.r_[False, interval_mask]
     low_speed_mask = speed < min_speed

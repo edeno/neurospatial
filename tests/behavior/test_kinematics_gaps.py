@@ -54,11 +54,11 @@ def test_interval_velocity_is_empty_without_intervals():
 
 def test_speed_stats_exclude_pause(two_epoch_recording):
     r = two_epoch_recording
+    from neurospatial.behavior import compute_speed
+
     expected = np.concatenate(
         [
-            np.linalg.norm(
-                np.diff(r.positions[s], axis=0) / np.diff(r.times[s])[:, None], axis=1
-            )
+            compute_speed(r.times[s], r.positions[s])
             for s in (slice(0, 5000), slice(5000, 10000))
         ]
     )
@@ -122,7 +122,10 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
 def test_heading_direction_labels_post_pause_sample(two_epoch_recording):
     r = two_epoch_recording
     labels = heading_direction_labels(r.positions, r.times, min_speed=0)
-    assert labels[5000] == "stationary"
+    # The first sample after the pause is labeled from its own run's motion,
+    # never from the jump across the pause.
+    after = heading_direction_labels(r.positions[5000:], r.times[5000:], min_speed=0)
+    assert labels[5000] == after[0] != "stationary"
     assert labels[5001] != "stationary"
 
 
@@ -137,7 +140,16 @@ def test_goal_alignment_nan_outside_runs(two_epoch_recording):
     full = instantaneous_goal_alignment(
         r.times, r.positions, r.positions[-1], min_speed=0
     )
-    velocity = r.positions[4999] - r.positions[4998]
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_velocity
+
+    # The run's own smoothed velocity at its last sample, never across the gap.
+    run = slice(0, 5000)
+    velocity = smoothed_velocity(
+        r.times[run],
+        r.positions[run],
+        np.ones(4999, dtype=bool),
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+    )[-1]
     goal_vector = r.positions[-1] - r.positions[4999]
     expected = np.dot(velocity, goal_vector) / (
         np.linalg.norm(velocity) * np.linalg.norm(goal_vector)

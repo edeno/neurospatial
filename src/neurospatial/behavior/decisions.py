@@ -592,13 +592,14 @@ def pre_decision_speed_stats(
     )
 
     from neurospatial._intervals import observed_interval_mask
-    from neurospatial.behavior._kinematics import interval_velocity
+    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
 
     mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
     if not mask.any():
         return np.nan, np.nan
-    velocity = interval_velocity(times, positions, mask)
-    speeds = np.linalg.norm(velocity, axis=1)
+    speeds = smoothed_speed(
+        times, positions, mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+    )
     return float(np.nanmean(speeds)), float(np.nanmin(speeds))
 
 

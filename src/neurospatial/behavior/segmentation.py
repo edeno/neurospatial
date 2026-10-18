@@ -88,6 +88,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -825,7 +826,7 @@ def segment_by_velocity(
     *,
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
-    smooth_window: float = 0.2,
+    smooth_window: float = DEFAULT_SPEED_SMOOTHING,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> list[Run]:
@@ -854,9 +855,11 @@ def segment_by_velocity(
         - Movement starts when velocity > ``min_speed``
         - Movement ends when velocity < ``min_speed / hysteresis``
         Hysteresis prevents rapid switching near the threshold.
-    smooth_window : float, optional
-        Temporal window for velocity smoothing in seconds. Default: 0.2.
-        Velocities are smoothed with a moving average to reduce noise.
+    smooth_window : float, default=0.1
+        Standard deviation, in seconds, of the Gaussian that smooths the
+        velocity vector before its magnitude is thresholded, as in
+        :func:`compute_speed`, so tracking jitter at rest is not movement.
+        0 thresholds the unsmoothed central-difference speed.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -976,31 +979,18 @@ def _segment_by_velocity_contiguous(
     smooth_window: float = 0.2,
 ) -> list[Run]:
     """Analyze one recording after the public input validation."""
-    # Compute velocities
-    displacements = np.diff(positions, axis=0)
-    distances = np.linalg.norm(displacements, axis=1)
-    dt = _positive_dt(times, name="times")
-    velocities = distances / dt
+    from neurospatial._velocity import smoothed_speed
 
-    # Smooth velocities
-    if smooth_window > 0:
-        # Convert window to samples
-        median_dt = np.median(dt)
-        window_samples = max(1, int(smooth_window / median_dt))
-
-        # Apply moving average. Pad with edge values (reflecting the boundary
-        # velocity) rather than relying on np.convolve(mode="same"), which
-        # implicitly zero-pads and artificially suppresses velocity at the
-        # trajectory edges. Zero-padding would drop edge samples of an
-        # edge-touching movement epoch below threshold and truncate (or drop)
-        # the epoch. The pad widths sum to window_samples - 1 and match the
-        # centering of mode="same".
-        if window_samples > 1:
-            kernel = np.ones(window_samples) / window_samples
-            pad_left = (window_samples - 1) // 2
-            pad_right = window_samples - 1 - pad_left
-            padded = np.pad(velocities, (pad_left, pad_right), mode="edge")
-            velocities = np.convolve(padded, kernel, mode="valid")
+    _positive_dt(times, name="times")
+    # Speed of each transition i -> i+1, read at its end sample (see the
+    # segment loop below); one run, so every interval is observed.
+    speed = smoothed_speed(
+        times,
+        positions,
+        np.ones(len(times) - 1, dtype=bool),
+        smooth_window=smooth_window,
+    )
+    velocities = speed[1:]
 
     # Hysteresis thresholding
     lower_threshold = min_speed / hysteresis

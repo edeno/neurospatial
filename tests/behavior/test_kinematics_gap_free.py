@@ -4,7 +4,9 @@ Frozen inputs from the continuous 50 Hz fixture supply the inventory functions
 and shared composites. Home-range calls use distinct visit counts at 50 Hz to
 avoid depending on the order of tied bins. Structure and labels are exact;
 floating values use rtol=1e-12.
-The baseline heading API uses a scalar dt and smoothing sigma in samples.
+The baseline heading API uses a scalar dt. The speed- and heading-based entries
+were captured again when velocity became the Gaussian-smoothed central
+difference of ``compute_speed`` (``smooth_window`` in seconds).
 """
 
 import json

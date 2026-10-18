@@ -1217,9 +1217,11 @@ def heading_direction_labels(
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
     is analyzed as a separate recording; no velocity or heading spans a pause.
 
-    In trajectory mode, a sample with an invalid backward interval is
-    labeled "stationary", like the first sample. Precomputed speed/heading
-    inputs retain their existing behavior without a time gate.
+    In trajectory mode, speed and heading come from the Gaussian-smoothed
+    velocity of :func:`compute_speed`, so tracking jitter at rest is
+    "stationary"; a sample in no observed run is "stationary" too.
+    Precomputed speed/heading inputs retain their existing behavior without a
+    time gate.
 
     Examples
     --------
@@ -1269,7 +1271,7 @@ def heading_direction_labels(
         n_samples = len(times_arr)
 
         from neurospatial._intervals import observed_interval_mask
-        from neurospatial.behavior._kinematics import interval_velocity
+        from neurospatial.ops import _velocity_heading_and_speed
 
         interval_mask = observed_interval_mask(
             times_arr, max_gap=max_gap, epochs=epochs
@@ -1279,16 +1281,10 @@ def heading_direction_labels(
         if n_samples == 1:
             return np.array(["stationary"], dtype=object)
 
-        velocity = interval_velocity(times_arr, positions_arr, interval_mask)
-
-        speed_computed = np.linalg.norm(velocity, axis=1)
-        heading_computed = np.arctan2(velocity[:, 1], velocity[:, 0])
-
-        speed_arr = np.concatenate([[0.0], speed_computed])
-        # The first sample has no predecessor, so its heading is undefined.
-        # Mark it NaN (not 0.0=East) so it is labeled "stationary" even when
-        # min_speed == 0, rather than spuriously labeled as facing East.
-        heading_arr = np.concatenate([[np.nan], heading_computed])
+        # Samples in no observed run have NaN heading and are "stationary".
+        heading_arr, speed_arr = _velocity_heading_and_speed(
+            times_arr, positions_arr, interval_mask=interval_mask
+        )
 
     else:
         raise ValueError(

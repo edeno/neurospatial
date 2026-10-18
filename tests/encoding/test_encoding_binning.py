@@ -1161,7 +1161,7 @@ class TestBinSpikeTrainWithStatsSharedMask:
         times = np.arange(len(positions)) / 10
         times[9:] += 1.0
         spikes = np.array([0.05, 0.25, 0.55, 0.85, 1.85])
-        speed = resolve_speed(times, positions, None, min_speed)
+        speed = resolve_speed(times, positions, None, min_speed, max_gap=0.5)
         mask = interval_valid_mask(
             times, positions, env, speed=speed, min_speed=min_speed
         )

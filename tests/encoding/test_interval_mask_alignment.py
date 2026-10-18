@@ -392,7 +392,7 @@ def test_combined_mask_alignment(env_1d) -> None:
 
     from neurospatial.encoding._spatial_counts import resolve_speed
 
-    resolved = resolve_speed(times, positions, speed, min_speed)
+    resolved = resolve_speed(times, positions, speed, min_speed, max_gap=0.5)
     counts = bin_spike_train(
         env_1d,
         spike_times,
