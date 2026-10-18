@@ -1653,13 +1653,15 @@ class Environment(Generic[_C]):
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: on an egocentric polar environment, each
             sample's ``(distance, angle)`` of the object or place the bins
-            describe, relative to the animal. An interval
-            that starts at a sample outside the environment, or at a sample
-            with a NaN coordinate (missing; see Missing data in the class
-            Notes), adds no occupancy. With ``time_allocation='linear'`` an
-            interval with a NaN at either end adds none, and an interval with
-            an end outside the environment adds only the time its straight
-            path spends inside.
+            describe, relative to the animal. With the default
+            ``time_allocation='start'``, an interval adds occupancy only when
+            both of its samples are inside the environment: one that starts or
+            ends outside, or at a sample with a NaN coordinate (missing; see
+            Missing data in the class Notes), adds none. This is the rule
+            ``compute_spatial_rate`` applies to its spike counts and occupancy.
+            With ``time_allocation='linear'`` an interval with a NaN at either
+            end adds none, and an interval with an end outside the environment
+            adds only the time its straight path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
             Instantaneous speed at each sample. If provided with min_speed,
             samples below threshold are excluded from occupancy calculation.
@@ -1754,7 +1756,8 @@ class Environment(Generic[_C]):
         where valid intervals satisfy:
         - Δt ≤ max_gap (if max_gap is not None)
         - speed[k] ≥ min_speed (if min_speed is not None)
-        - positions[k] is inside environment
+        - positions[k] and positions[k + 1] are inside the environment
+          (``time_allocation='start'``)
 
         Linear allocation works on grids built with ``from_samples``,
         ``from_grid_mask``, ``from_pixel_mask``, ``from_polygon``, and grids

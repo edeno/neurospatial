@@ -684,8 +684,8 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
         2 cm of overshoot on a 2 cm-bin env). ``bin_sequence`` already
         used ``bin_at`` and correctly reported -1 for this sample.
 
-        Now ``occupancy`` agrees: the interval starting at the
-        out-of-env sample is dropped from the integral.
+        Now ``occupancy`` agrees: every interval with the out-of-env sample
+        at either end is dropped from the integral.
         """
         env = self._build_env()
         # Three timestamps, three samples. The middle one is just
@@ -706,10 +706,9 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
         )
         assert bin_seq[1] == -1
 
-        # The interval (t=1 to t=2) starts at the out-of-env sample and
-        # is therefore dropped. Total occupancy counts only the first
-        # interval (t=0 to t=1, duration 1.0 s).
-        assert occ.sum() == pytest.approx(1.0, abs=1e-9)
+        # Both intervals have the out-of-env sample at one end, so neither
+        # keeps time: the animal's place during them is unknown.
+        assert occ.sum() == pytest.approx(0.0, abs=1e-9)
 
     def test_in_env_sample_consistent_between_occupancy_and_bin_sequence(self):
         """Every in-env sample maps to the same bin index in both methods."""

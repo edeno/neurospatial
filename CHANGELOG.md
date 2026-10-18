@@ -8,6 +8,15 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.occupancy` (with the default `time_allocation="start"`) now
+  counts an interval only when both of its samples are inside the
+  environment, the rule `compute_spatial_rate` already used for its spike
+  counts and occupancy. Before, an interval that ended at a tracking dropout
+  (NaN) or outside the environment kept its time in its start bin, so spike
+  counts divided by `env.occupancy` used a different denominator than the
+  rate maps. Fill short dropouts during tracking preprocessing to keep that
+  time.
+
 - `Environment.animate_fields` raises `TypeError` for an option that no
   backend accepts, naming the closest option, instead of ignoring it: a
   misspelled `frame_label=` used to change nothing. `fps=` raises too (use
