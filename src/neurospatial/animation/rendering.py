@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 from neurospatial.animation._timing import timing
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 
 __all__ = [

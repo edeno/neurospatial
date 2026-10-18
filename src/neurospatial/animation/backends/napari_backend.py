@@ -57,7 +57,7 @@ if TYPE_CHECKING:
         TimeSeriesData,
         VideoData,
     )
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 # Check napari availability
 try:

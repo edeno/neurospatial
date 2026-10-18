@@ -29,7 +29,7 @@ from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 
 @dataclass(frozen=True, repr=False)

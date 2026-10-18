@@ -42,7 +42,7 @@ from neurospatial.animation._region_names import shown_region_names
 if TYPE_CHECKING:
     from matplotlib.artist import Artist
 
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
     from neurospatial.geometry import Binning
 
 

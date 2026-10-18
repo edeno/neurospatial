@@ -94,7 +94,7 @@ from neurospatial.animation._utils import _emit_status
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 logger = logging.getLogger(__name__)
 

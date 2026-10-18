@@ -69,7 +69,7 @@ from neurospatial.stats._utils import _ensure_rng
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 
 # =============================================================================
