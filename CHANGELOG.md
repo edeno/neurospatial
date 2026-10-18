@@ -1302,26 +1302,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   of points × bins. The chosen bin (the lowest-numbered tied bin) is
   unchanged.
 
-- Every environment builds its read-only connectivity graph in one pass,
-  instead of building an ordinary graph, wrapping each attribute record and
-  checking the result again: on a 90,000-bin grid `from_grid_mask` takes
-  3.4 s instead of 4.6 s and `subset` 2.2 s instead of 3.2 s. The graph is
-  unchanged.
-
 - `subset` and `apply_transform` reuse the parent environment's cell faces
   once smoothing or another diffusion analysis has built them, instead of
   building them again: on a 90,000-bin grid `subset` takes 0.43 s instead of
   2.2 s after such an analysis.
 
-- Layout engines find neighboring bins with array operations instead of
-  building a NetworkX graph one bin at a time, which the environment then
-  discarded, and an environment no longer re-checks the attributes of the
-  graph it builds from its already validated bins in a Python loop.
-  `Environment.from_grid_mask` on a 300 × 300 mask builds in 0.70 s instead
-  of 4.0 s, `Environment.from_samples` with 100,000 positions in a
-  100 × 100 box (bin size 1, 10,197 bins) in 0.09 s instead of 0.43 s, and a
-  20,000-bin linear track in 0.07 s instead of 0.21 s. Bins, neighbor
-  pairs (`env.edge_pairs`), their order and their distances are unchanged.
+- Building an environment is much faster. Layout engines find neighboring
+  bins with array operations instead of building a NetworkX graph one bin at
+  a time, which the environment then discarded, and the environment builds
+  its own read-only graph in one pass. On a 300 × 300 grid mask
+  `Environment.from_grid_mask` takes 0.48 s instead of 4.4 s and `subset`
+  0.48 s instead of 3.2 s; `Environment.from_samples` with 100,000 positions
+  (bin size 1, about 10,000 bins) 0.05 s instead of 0.57 s; a 20,000-bin
+  linear track 0.04 s instead of 0.33 s. Bins, neighbor pairs
+  (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
 
