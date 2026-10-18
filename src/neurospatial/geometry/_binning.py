@@ -159,6 +159,54 @@ class SpatialBins(ReadOnlyState):
         return int(self.centers.shape[1])
 
 
+def refuse_mixed_measure_conductance(
+    measure_dims: NDArray[np.intp],
+    pairs: NDArray[np.intp],
+    conducting: NDArray[np.bool_],
+    *,
+    link: str,
+    fix: str,
+) -> None:
+    """Refuse a conducting link between bins measured in different dimensions.
+
+    Diffusion through it would exchange mass between densities of different
+    units, per length and per area, so its result would depend on the length
+    unit whatever the conductance.
+
+    Parameters
+    ----------
+    measure_dims : ndarray of intp, shape (n_bins,)
+        Each bin's measure dimension.
+    pairs : ndarray of intp, shape (n_links, 2)
+        The links' bins.
+    conducting : ndarray of bool, shape (n_links,)
+        Which links carry diffusion.
+    link, fix : str
+        What a link is (``"bridge"``, ``"face"``) and how to avoid the error.
+
+    Raises
+    ------
+    ValueError
+        Naming the first such link.
+    """
+    ends = pairs[conducting]
+    mixed = np.flatnonzero(measure_dims[ends[:, 0]] != measure_dims[ends[:, 1]])
+    if len(mixed):
+        u, v = ends[mixed[0]]
+        raise ValueError(
+            _format_error(
+                f"A conducting {link} joins bin {u}, measured in dimension "
+                f"{measure_dims[u]}, to bin {v}, measured in dimension "
+                f"{measure_dims[v]}.",
+                why="Why: diffusion through it would exchange mass between a "
+                "density per length and a density per area, so the result "
+                "would change with the units (cm or mm), whatever the "
+                "conductance.",
+                fix=fix,
+            )
+        )
+
+
 @dataclass(frozen=True, eq=False)
 class BinConnections(ReadOnlyState):
     """Neighbor pairs between bins, and which of them movement can cross.
@@ -216,7 +264,10 @@ class BinConnections(ReadOnlyState):
         if np.any(self_pairs):
             index = int(np.flatnonzero(self_pairs)[0])
             raise ValueError(f"pairs[{index}] is a self pair.")
-        _, first_indices = np.unique(np.sort(pairs, axis=1), axis=0, return_index=True)
+        # One integer per unordered pair; much faster than unique rows.
+        low, high = np.minimum(pairs[:, 0], pairs[:, 1]), np.maximum(*pairs.T)
+        keys = low * (int(high.max(initial=0)) + 1) + high
+        _, first_indices = np.unique(keys, return_index=True)
         duplicates = np.ones(len(pairs), dtype=bool)
         duplicates[first_indices] = False
         if np.any(duplicates):

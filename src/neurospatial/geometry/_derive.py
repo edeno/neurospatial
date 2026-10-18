@@ -329,10 +329,10 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     try:
         # Each bin's measure scales with its own dimension: lengths by
         # ``scale``, areas by ``scale ** 2``.
-        factor = (
+        factor: float | NDArray[np.float64] = (
             per_dimension(dims, lambda dim: math.exp(math.log(scale) * dim))
             if similarity
-            else np.full(len(dims), math.exp(logdet))
+            else math.exp(logdet)
         )
     except OverflowError as exc:
         raise _refusal(
@@ -459,7 +459,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             faces = KnownFaces(
                 FaceGeometry(
                     pairs,
-                    old.A * math.exp(logdet) / stretch,
+                    old.A * factor / stretch,
                     old.distance * face_stretch,
                     bins.sizes,
                 )

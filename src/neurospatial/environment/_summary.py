@@ -196,10 +196,10 @@ def _info(
 
     # Bin sizes
     lines.append("Bin Sizes:")
-    mixed = len(np.unique(measure_dims)) > 1
-    if mixed:
+    dims = np.unique(measure_dims)
+    if len(dims) > 1:
         # Lengths and areas have no common summary statistic.
-        for dim in np.unique(measure_dims):
+        for dim in dims:
             selected = bin_sizes[measure_dims == dim]
             lines.append(
                 f"  {_MEASURE_NAMES.get(int(dim), 'Volume')} of {len(selected)} bins: "

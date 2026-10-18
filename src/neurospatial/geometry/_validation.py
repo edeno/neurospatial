@@ -15,7 +15,6 @@ from scipy.spatial import cKDTree
 from shapely.affinity import affine_transform
 from shapely.geometry import MultiPolygon, Polygon
 
-from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arrays import get_centers, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
@@ -24,6 +23,7 @@ from neurospatial.geometry._binning import (
     MissingFaces,
     SpatialBins,
     TrackLinearization,
+    refuse_mixed_measure_conductance,
 )
 from neurospatial.geometry._combine_geometry import certify_components
 from neurospatial.geometry._components import HexagonShapes, TriangleShapes
@@ -566,8 +566,11 @@ def _locator_geometry(
         1e-12 + 8 * normalized_error
     )
     cell_dims = geometry.measure_dims
-    lowest = int(cell_dims.min()) if cell_dims is not None and len(cell_dims) else None
-    lowest = min(measure_dims, default=n_dims) if lowest is None else lowest
+    lowest = (
+        int(cell_dims.min())
+        if cell_dims is not None and len(cell_dims)
+        else min(measure_dims, default=n_dims)
+    )
     if lowest < n_dims and not similarity:
         raise ValueError(
             "linearization locator transform must preserve track lengths by a similarity."
@@ -871,28 +874,6 @@ def _validate_cell_faces(binning: Binning, geometry: _LocatorGeometry) -> None:
     _validate_face_distances(binning, geometry, f"{label}.distance")
 
 
-def _refuse_mixed_measure_faces(
-    faces: FaceGeometry, measure_dims: NDArray[np.intp]
-) -> None:
-    """Refuse a conducting face between bins measured in different dimensions."""
-    ends = faces.edges[faces.A > 0]
-    mixed = measure_dims[ends[:, 0]] != measure_dims[ends[:, 1]]
-    if np.any(mixed):
-        u, v = ends[np.flatnonzero(mixed)[0]]
-        raise ValueError(
-            _format_error(
-                f"Face between bins {u} and {v} joins a bin measured in "
-                f"dimension {measure_dims[u]} to one measured in dimension "
-                f"{measure_dims[v]}.",
-                why="Why: diffusion through it would exchange mass between "
-                "densities of different units (per length and per area), so "
-                "the result would change with the length unit.",
-                fix="give that pair a zero face measure (a navigation-only "
-                "link) or use MissingFaces, or measure both bins the same way",
-            )
-        )
-
-
 def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None:
     """Compare shared arrays exactly and recursively check computed geometry."""
     coordinate_kind = coordinates.kind
@@ -910,7 +891,15 @@ def validate_components(binning: Binning, coordinates: CoordinateSystem) -> None
     if isinstance(binning.faces, KnownFaces):
         _equal(binning.faces.faces.edges, links.pairs, "faces.edges")
         _equal(binning.faces.faces.volumes, bins.sizes, "faces.volumes")
-        _refuse_mixed_measure_faces(binning.faces.faces, bins.measure_dims)
+        faces = binning.faces.faces
+        refuse_mixed_measure_conductance(
+            bins.measure_dims,
+            faces.edges,
+            faces.A > 0,
+            link="face",
+            fix="give that pair a zero face measure (a navigation-only link) or "
+            "use MissingFaces, or measure both bins the same way",
+        )
     if binning.face_normals is not None and coordinate_kind != "cartesian":
         raise ValueError("Physical face normals require Cartesian coordinates.")
     validate_normals(binning)

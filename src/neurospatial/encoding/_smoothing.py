@@ -109,8 +109,8 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
             if lengths.size == 0:
                 lengths = env.coordinate_system.fallback_lengths(env)
             bandwidth = 2.5 * float(np.median(lengths))
-    # Bins without cells, such as a subset of combined components, may have
-    # no known extent; the warning below needs one.
+    # Point bins built from_bins without declared ranges have no known
+    # extent; the warning below needs one.
     ranges = (
         ()
         if env.dimension_ranges is None

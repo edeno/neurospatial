@@ -10,10 +10,14 @@ from numpy.typing import NDArray
 from scipy import sparse
 from scipy.sparse.csgraph import connected_components
 
-from neurospatial._exceptions import _format_error
 from neurospatial.geometry._arena import Arena
 from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
-from neurospatial.geometry._binning import BinConnections, Binning, SpatialBins
+from neurospatial.geometry._binning import (
+    BinConnections,
+    Binning,
+    SpatialBins,
+    refuse_mixed_measure_conductance,
+)
 from neurospatial.geometry._diffusion import DiffusionGeometry
 from neurospatial.geometry._face_normals import FaceNormals
 from neurospatial.geometry._locators import (
@@ -101,21 +105,14 @@ class CombinedLocator(ReadOnlyState):
             owners[bridges.pairs[:, 0]] == owners[bridges.pairs[:, 1]]
         ):
             raise ValueError("Bridges must join bins in different components.")
-        measures = np.concatenate([child.bins.measure_dims for child in children])
-        ends = bridges.pairs
-        if np.any((conductances > 0) & (measures[ends[:, 0]] != measures[ends[:, 1]])):
-            raise ValueError(
-                _format_error(
-                    "A bridge conductance joins a bin measured by length to a bin "
-                    "measured by area.",
-                    why="Why: diffusion through it would exchange mass between a "
-                    "density per length and a density per area, so the result "
-                    "would change with the units (cm or mm), whatever the "
-                    "conductance.",
-                    fix="leave that bridge navigation-only (no conductance), or "
-                    "combine components whose bins are measured the same way",
-                )
-            )
+        refuse_mixed_measure_conductance(
+            np.concatenate([child.bins.measure_dims for child in children]),
+            bridges.pairs,
+            conductances > 0,
+            link="bridge",
+            fix="leave that bridge navigation-only (no conductance), or combine "
+            "components whose bins are measured the same way",
+        )
         conductances.setflags(write=False)
         for name, value in (
             ("keys", keys),
@@ -261,7 +258,9 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
                     ),
                     shape=result.shape,
                 )
-            return result, locator.spatial_bins().measure_dims
+            return result, np.concatenate(
+                [child.bins.measure_dims for child in locator.children]
+            )
         if isinstance(locator, SubsetLocator):
             selected = np.flatnonzero(locator.parent_to_child >= 0)
             selected = selected[np.argsort(locator.parent_to_child[selected])]

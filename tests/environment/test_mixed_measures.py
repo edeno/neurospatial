@@ -12,7 +12,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.binning import SpatialBins
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.transforms import scale_2d, translate
+from neurospatial.ops.transforms import Affine2D, scale_2d, translate
 
 
 def _track(**options):
@@ -136,7 +136,8 @@ def test_a_conductance_cannot_join_a_track_bin_to_a_field_bin():
         (row["target_component"], int(row["target_local_bin"])),
     )
     with pytest.raises(
-        ValueError, match="measured by length to a bin measured by area"
+        ValueError,
+        match=r"conducting bridge joins bin \d+, measured in dimension [12], to bin \d+",
     ):
         Environment.combine(
             {"track": track, "field": field}, bridge_conductances={key: 1.0}
@@ -229,6 +230,10 @@ def test_blocked_edges_name_walls_of_a_component_next_to_a_track():
     assert field_bins[table["source"]].all() and field_bins[table["target"]].all()
     subset = env.subset(mask=np.ones(env.n_bins, dtype=bool))
     assert set(subset.get_blocked_edges()["wall"]) == {"divider"}
+    rotated = env.apply_transform(translate(5.0, 0.0)).apply_transform(
+        Affine2D(np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]))
+    )
+    assert list(rotated.get_blocked_edges()["wall"]) == list(table["wall"])
 
 
 @pytest.mark.parametrize(("area", "accepted"), [(1.0, False), (0.0, True)])
@@ -260,6 +265,7 @@ def test_a_conducting_face_cannot_join_bins_of_different_measure(area, accepted)
         Environment.from_bins(binning)  # a navigation-only link
     else:
         with pytest.raises(
-            ValueError, match="dimension 1 to one measured in dimension 2"
+            ValueError,
+            match=r"conducting face joins bin 0, measured in dimension 1, to bin 1, measured in dimension 2",
         ):
             Environment.from_bins(binning)
