@@ -161,14 +161,15 @@ class TestOccupancy:
 
     def test_occupancy_filters_outside_positions(self, medium_2d_env):
         """Test that positions outside environment are filtered."""
-        times = np.array([0.0, 0.1, 0.2, 0.3])
+        times = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
         inside = medium_2d_env.bin_centers[0]
-        positions = np.array([inside, [10000.0, 10000.0], [10000.0, 10000.0], inside])
+        outside = [10000.0, 10000.0]
+        positions = np.array([inside, inside, outside, outside, inside])
 
         occ = medium_2d_env.occupancy(times, positions)
 
-        # Only the first interval starts inside; the two starting outside are
-        # excluded.
+        # Only the first interval has both samples inside; the three with an
+        # outside sample at either end are excluded.
         assert occ.shape == (medium_2d_env.n_bins,)
         assert occ[0] == pytest.approx(0.1)
         assert np.sum(occ) == pytest.approx(0.1)

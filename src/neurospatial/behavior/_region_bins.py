@@ -14,7 +14,10 @@ def region_representative_bin(env: Environment, region_name: str) -> int | None:
     """Return the bin that stands for a (possibly multi-bin) region.
 
     The representative is the region bin whose center is closest to the
-    centroid of the region's bin centers. It always lies inside the region,
+    centroid of the region's bin centers, both measured where distance is
+    physical: on an egocentric polar environment, in the animal's plane, so
+    a region across the angular seam averages its angles correctly. It
+    always lies inside the region,
     also for non-convex regions whose geometric centroid falls outside. When
     several region bins are equally close to the centroid, as in a symmetric
     box on a grid, the lowest bin index among them is chosen.
@@ -35,7 +38,8 @@ def region_representative_bin(env: Environment, region_name: str) -> int | None:
     region_bins = env.bins_in_region(region_name)
     if len(region_bins) == 0:
         return None
-    region_centers = env.bin_centers[region_bins]  # (n_region_bins, n_dims)
-    centroid = region_centers.mean(axis=0)  # (n_dims,)
-    nearest = np.argmin(np.linalg.norm(region_centers - centroid, axis=1))
+    # (n_region_bins, n_dims), in a frame where distance is physical
+    places = env.coordinate_system.cartesian_embedding(env.bin_centers[region_bins])
+    centroid = places.mean(axis=0)  # (n_dims,)
+    nearest = np.argmin(np.linalg.norm(places - centroid, axis=1))
     return int(region_bins[nearest])

@@ -174,8 +174,6 @@ def rate_map_centroid(
     ...     env, firing_rate, field_bins, method="geodesic"
     ... )
     """
-    import networkx as nx
-
     if method == "euclidean":
         require_cartesian(
             env.coordinate_system,
@@ -211,36 +209,18 @@ def rate_map_centroid(
         # Compute weighted medoid using graph distances
         # Find bin that minimizes sum of (rate * graph_distance) to all other bins
 
-        if len(field_bins) == 1:
-            # Single bin - return its position
-            centroid = field_positions[0]
-        else:
-            # Get graph and compute distances between field bins
-            graph = env.connectivity
+        from neurospatial.ops.distance import pairwise_distances
 
-            # Compute weighted cost for each candidate bin
-            min_cost = np.inf
-            best_bin_idx = 0
-
-            for j, candidate_bin in enumerate(field_bins):
-                cost = 0.0
-                for i, source_bin in enumerate(field_bins):
-                    if i != j:
-                        # Get graph distance
-                        try:
-                            dist = nx.shortest_path_length(
-                                graph, source_bin, candidate_bin, weight="distance"
-                            )
-                        except nx.NetworkXNoPath:
-                            # No path - use large penalty
-                            dist = np.inf
-                        cost += field_rates[i] * dist
-
-                if cost < min_cost:
-                    min_cost = cost
-                    best_bin_idx = j
-
-            centroid = field_positions[best_bin_idx]
+        # distances[i, j]: graph distance from field bin i to candidate j,
+        # 0 on the diagonal and inf between disconnected bins.
+        distances = pairwise_distances(env.connectivity, field_bins)
+        with np.errstate(invalid="ignore"):
+            # A zero-rate bin with no path adds 0 * inf = NaN; a NaN cost, like
+            # an infinite one, never wins.
+            costs = field_rates @ distances
+        finite = costs < np.inf
+        best = int(np.argmin(np.where(finite, costs, np.inf))) if finite.any() else 0
+        centroid = field_positions[best]
 
     else:  # pragma: no cover
         # Runtime safety check (type system enforces at compile time)

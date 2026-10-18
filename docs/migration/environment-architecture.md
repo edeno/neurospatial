@@ -1,9 +1,10 @@
 # Environment architecture changes
 
 The `Environment` internals were reorganized so that each kind of data has one
-owner. Rate maps, occupancy, smoothing and decoding give the same numbers as
-before. This page lists what you may need to change in your own code, with the
-old call as a comment above the new one. The examples use `positions` and
+owner. Rate maps, smoothing and decoding give the same numbers as before;
+`env.occupancy` changes only for intervals that end at a dropout or outside the
+environment. This page lists what you may need to change in your own code,
+with the old call as a comment above the new one. The examples use `positions` and
 `times` from your own recording, and `env` built from them:
 
 <!-- docs-test: run -->
@@ -1063,6 +1064,25 @@ smoothed = env.smooth(rate, bandwidth=8.0)
 assert np.allclose(smoothed[np.isfinite(smoothed)], 5.0)
 # Before: env.nearest_bin([[np.nan, 10.0]]) raised a SciPy error
 assert env.nearest_bin(np.array([[np.nan, 10.0]]))[0] == -1
+```
+
+`env.occupancy` gives an interval time only when both of its samples are
+inside the environment, the rule `compute_spatial_rate` uses for spike counts
+and occupancy. An interval that ends at a dropout or outside the environment
+used to keep its time in its start bin, so dividing your own spike counts by
+`env.occupancy` used a different denominator than the rate maps. Fill short
+dropouts during tracking preprocessing if you want that time back.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+
+env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
+times = np.array([0.0, 0.1, 0.2, 0.3])
+positions = np.array([[15.0], [16.0], [np.nan], [45.0]])  # cm; one dropout
+# Before: 0.2 s (the interval ending at the dropout kept its time)
+assert np.isclose(env.occupancy(times, positions).sum(), 0.1)
 ```
 
 `occupancy`, `bin_sequence`, `bin_sequence_with_runs` and trajectory

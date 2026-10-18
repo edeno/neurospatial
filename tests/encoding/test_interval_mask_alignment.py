@@ -724,6 +724,26 @@ def test_interval_ending_in_dropout_is_excluded_from_both_sides():
     assert occupancy[in_last] == pytest.approx(0.1)
 
 
+def test_environment_occupancy_is_the_rate_denominator():
+    """``env.occupancy`` applies the same complete-case rule as the rate maps.
+
+    A scientist dividing spike counts by ``env.occupancy`` must get the
+    denominator ``compute_spatial_rate`` uses, including across a dropout and
+    an excursion outside the environment.
+    """
+    env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
+    times = np.arange(8) * 0.1
+    positions = np.array(
+        [[15.0], [16.0], [np.nan], [45.0], [46.0], [500.0], [75.0], [76.0]]
+    )
+
+    occupancy = env.occupancy(times, positions)
+
+    np.testing.assert_allclose(occupancy, compute_occupancy(env, times, positions))
+    # Only the three intervals with both samples inside keep their time.
+    assert occupancy.sum() == pytest.approx(0.3)
+
+
 def test_isolated_tracking_dropouts_do_not_bias_rate():
     """20% isolated NaN frames used to read a 5 Hz unit as about 3.97 Hz."""
     rng = np.random.default_rng(0)

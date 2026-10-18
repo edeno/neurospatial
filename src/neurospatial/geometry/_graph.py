@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 
 from neurospatial.geometry._arrays import get_centers
 from neurospatial.geometry._binning import Binning, TrackLinearization
+from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
 from neurospatial.geometry._locators import (
     HexLocator,
     Locator,
@@ -125,13 +126,17 @@ def _track_cell_segments(track: TrackLinearization) -> NDArray[np.intp] | None:
 def graph_from_binning(
     binning: Binning,
     *,
+    coordinates: CoordinateSystem = CartesianSystem(),
     graph_class: type[_G] = nx.Graph,
     attributes: Callable[..., dict[str, Any]] = dict,
 ) -> _G:
     """Build navigation attributes without changing bin or neighbor-pair order.
 
     Graph vectors follow graph edge orientation, from the lower to the higher
-    bin ID. Edge IDs identify the original pair-array rows; source-grid IDs
+    bin ID. They are physical displacements between the bin centers placed by
+    ``coordinates.cartesian_embedding``: the centers themselves for Cartesian
+    bins, and the animal's egocentric plane (x ahead, y left) for
+    ``(distance, angle)`` bins, so the angle seam needs no wrapping. Edge IDs identify the original pair-array rows; source-grid IDs
     preserve logical indexing when available. Track bins also carry their
     linear position (``pos_1D``) and track-graph edge (``source_edge_id``).
     Derivations preserving existing graph metadata keep that separate from
@@ -207,9 +212,10 @@ def graph_from_binning(
     # orientation; edge_id links it to the explicit pair-array authority.
     low = np.minimum(bins.pairs[:, 0], bins.pairs[:, 1])
     high = np.maximum(bins.pairs[:, 0], bins.pairs[:, 1])
+    places = coordinates.cartesian_embedding(centers)
     try:
         with np.errstate(over="raise", invalid="raise"):
-            vectors = centers[high] - centers[low]
+            vectors = places[high] - places[low]
     except FloatingPointError as exc:
         raise ValueError(
             "Pair displacement exceeds floating-point range; recenter coordinates."

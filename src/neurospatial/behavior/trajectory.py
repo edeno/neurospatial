@@ -24,11 +24,12 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 
 @dataclass(frozen=True, repr=False)
@@ -410,7 +411,9 @@ def compute_home_range(
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Sequence of bin indices representing the trajectory.
+        Sequence of bin indices representing the trajectory. ``-1`` marks a
+        sample outside the environment or missing; it is in no bin, so it
+        adds nothing to the home range or to the total time.
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps (seconds) for each sample. When provided, occupancy is
         time-weighted: each sample contributes its observed interval dwell rather than a unit count. This is more accurate for
@@ -488,10 +491,23 @@ def compute_home_range(
            Ecology, 75(6), 1393-1405.
     """
     position_bins = np.asarray(position_bins)
+    if (position_bins < -1).any():
+        raise ValueError(
+            _format_error(
+                f"position_bins contains {int(position_bins.min())}, which is "
+                "not a bin.",
+                why="Bin indices are 0 or greater, and -1 marks a sample "
+                "outside the environment.",
+                fix="pass bins from env.bin_at(positions)",
+            )
+        )
+    in_environment = position_bins >= 0
 
     if times is None:
         # Count-based occupancy (assumes uniform sampling).
-        unique_bins, occupancy = np.unique(position_bins, return_counts=True)
+        unique_bins, occupancy = np.unique(
+            position_bins[in_environment], return_counts=True
+        )
         occupancy = occupancy.astype(np.float64)
     else:
         # Time-weighted occupancy: each sample contributes its dwell time.
@@ -506,9 +522,11 @@ def compute_home_range(
         interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
         if len(position_bins) == 0:
             return np.array([], dtype=np.intp)
-        sample_weights = _sample_dwell_times(times, interval_mask)
+        sample_weights = _sample_dwell_times(times, interval_mask)[in_environment]
         # Sum dwell time per bin.
-        unique_bins, inverse = np.unique(position_bins, return_inverse=True)
+        unique_bins, inverse = np.unique(
+            position_bins[in_environment], return_inverse=True
+        )
         occupancy = np.zeros(len(unique_bins), dtype=np.float64)
         np.add.at(occupancy, inverse, sample_weights)
         observed = occupancy != 0

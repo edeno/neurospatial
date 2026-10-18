@@ -6,6 +6,7 @@ import pickle
 
 import numpy as np
 import pytest
+from shapely.geometry import Polygon
 
 from neurospatial import Environment
 
@@ -94,6 +95,26 @@ def test_bin_centers_are_views_of_the_one_published_copy():
     assert np.shares_memory(first, env._binning.bins.centers)
     first.shape = (first.size,)
     assert env.bin_centers.shape == (env.n_bins, 2)
+
+
+def test_reshaping_the_arena_or_clip_mapping_cannot_change_the_environment():
+    """``arena`` and ``clip_mapping`` are detached records, like ``binning``.
+
+    A read-only array still allows ``array.shape = ...``; on a shared record
+    that reshape used to break the environment's own lookups.
+    """
+    env = _grid().clip(Polygon([(0.0, 0.0), (3.0, 0.0), (3.0, 2.0), (0.0, 2.0)]))
+    bins = env.bin_at(env.bin_centers)
+
+    env.arena.active_mask.shape = (-1,)
+    mapping = env.clip_mapping
+    mapping.parent_bin_indices.shape = (1, -1)
+
+    assert not np.shares_memory(
+        mapping.parent_bin_indices, env.clip_mapping.parent_bin_indices
+    )
+    assert env.arena.active_mask.ndim == 2
+    np.testing.assert_array_equal(env.bin_at(env.bin_centers), bins)
 
 
 @pytest.mark.parametrize(

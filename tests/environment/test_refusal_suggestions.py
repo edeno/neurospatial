@@ -399,7 +399,7 @@ CASES: dict[str, Case] = {
         lambda n: Environment.maze(
             kind="t", node_positions={0: 0, 1: 10, 2: 20, 3: 30}, bin_size=1.0
         ),
-        "node_positions={0: (0, 0.0), 1: (10, 0.0), 2: (20, 0.0), 3: (30, 0.0)}",
+        "node_positions={0: (0, 0), 1: (0, 50), 2: (-30, 50), 3: (30, 50)}",
         kind="argument",
         retry=lambda n, kw: Environment.maze(kind="t", bin_size=1.0, **kw),
     ),

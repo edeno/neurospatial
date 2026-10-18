@@ -2,6 +2,7 @@
 
 import networkx as nx
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.ops.distance import (
@@ -322,34 +323,19 @@ class TestGeodesicDistanceBetweenPoints:
         """Test custom default value for no path."""
         graph = nx.Graph()
         graph.add_edge(0, 1, distance=1.0)
+        graph.add_edge(2, 3, distance=1.0)
 
-        # Node 2 doesn't exist
         result = geodesic_distance_between_points(graph, 0, 2, default=-1.0)
         assert result == -1.0
 
-    def test_invalid_source_node(self):
-        """Test with invalid source node."""
+    @pytest.mark.parametrize(("bin_from", "bin_to"), [(999, 0), (0, 999), (-1, 0)])
+    def test_bin_not_in_graph_raises(self, bin_from, bin_to):
+        """A missing bin has no distance; it is not the same as no path."""
         graph = nx.Graph()
         graph.add_edge(0, 1, distance=1.0)
 
-        result = geodesic_distance_between_points(graph, 999, 0, default=np.inf)
-        assert result == np.inf
-
-    def test_invalid_target_node(self):
-        """Test with invalid target node."""
-        graph = nx.Graph()
-        graph.add_edge(0, 1, distance=1.0)
-
-        result = geodesic_distance_between_points(graph, 0, 999, default=np.inf)
-        assert result == np.inf
-
-    def test_both_nodes_invalid(self):
-        """Test with both nodes invalid."""
-        graph = nx.Graph()
-        graph.add_edge(0, 1, distance=1.0)
-
-        result = geodesic_distance_between_points(graph, 999, 888, default=-999.0)
-        assert result == -999.0
+        with pytest.raises(nx.NodeNotFound, match="not nodes of the graph"):
+            geodesic_distance_between_points(graph, bin_from, bin_to, default=-9.0)
 
     def test_shortest_path_selection(self):
         """Test that shortest path is selected when multiple paths exist."""

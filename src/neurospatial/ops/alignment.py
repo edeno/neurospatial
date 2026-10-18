@@ -483,17 +483,28 @@ def map_probabilities(
     Returns
     -------
     target_probabilities : array, shape (n_target_bins,)
-        Each entry is the sum of `source_probabilities` whose (transformed)
+        Each entry is the sum of `source_probs` whose (transformed)
         source bin center is nearest to that target bin center. If `n_target_bins == 0`,
         returns an empty array of shape (0,).
 
     Raises
     ------
     ValueError
-        If `source_probabilities` has incorrect shape, or if dims mismatch.
+        If `source_probs` has incorrect shape, or if dims mismatch.
     CartesianOnlyError
         If either environment is polar: bins are matched by nearest Cartesian
         bin center after a similarity transform.
+
+    See Also
+    --------
+    resample_field : Move a rate map or other intensive field onto other bins.
+
+    Notes
+    -----
+    Probability mass is summed, so the total is kept but a value per bin is
+    not: mapping a 1 Hz rate map onto coarser bins gives several Hz per bin.
+    Use this for posteriors and occupancy probabilities, and
+    :func:`~neurospatial.ops.resample_field` for rate maps.
 
     Examples
     --------

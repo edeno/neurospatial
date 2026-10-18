@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Mapping, Sequence
 from typing import (
@@ -374,6 +375,11 @@ class Environment(Generic[_C]):
         return self._geometry.binning
 
     @property
+    def _arena(self) -> Arena:
+        """The arena published with the current geometry."""
+        return self._geometry.arena
+
+    @property
     def binning(self) -> Binning:
         """Return a detached snapshot of bins, lookup and geometry components.
 
@@ -403,17 +409,19 @@ class Environment(Generic[_C]):
     def arena(self) -> Arena:
         """Continuous domain, distinguished from the active analysis bins.
 
-        The owned, immutable record is returned without copying.
+        The returned record is a detached copy, as for :attr:`binning`: its
+        arrays are read-only, and reshaping one in place cannot change this
+        environment.
         """
-        return self._geometry.arena
+        return copy.deepcopy(self._geometry.arena)
 
     @property
     def clip_mapping(self) -> ClipMapping | None:
         """Most recent clip's source-bin mapping, or None before clipping.
 
-        The owned, immutable record is returned without copying.
+        The returned record is a detached copy, as for :attr:`binning`.
         """
-        return self._binning.clip_mapping
+        return copy.deepcopy(self._binning.clip_mapping)
 
     @property
     def edge_pairs(self) -> NDArray[np.intp]:
@@ -444,7 +452,7 @@ class Environment(Generic[_C]):
 
     def _locate(self, positions: NDArray[np.float64], call: str) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
-        return locate(self._binning, self.arena, positions, self._cache, call=call)
+        return locate(self._binning, self._arena, positions, self._cache, call=call)
 
     def _target_bins(
         self,
@@ -463,7 +471,7 @@ class Environment(Generic[_C]):
             points=points,
             region=region,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             indexes=self._cache,
             coordinates=self._geometry.coordinates,
             regions=self.regions if takes_region else None,
@@ -579,7 +587,7 @@ class Environment(Generic[_C]):
         >>> track.derivations
         ('with_track_width',)
         """
-        derivation = _with_track_width(self._binning, self.arena, width)
+        derivation = _with_track_width(self._binning, self._arena, width)
         return publish_derived(self, derivation)
 
     def __repr__(self) -> str:
@@ -858,7 +866,8 @@ class Environment(Generic[_C]):
 
         Each entry names the method that made a new environment from an
         existing one: ``"subset"``, ``"clip"``, ``"rebin"``,
-        ``"apply_transform"`` or ``"combine"``. A factory-built environment
+        ``"apply_transform"``, ``"with_track_width"`` or ``"combine"``. A
+        factory-built environment
         has none, and ``combine`` starts a new history because the result
         has no single parent. Relabelling with ``with_metadata`` or
         ``with_regions`` is not a derivation.
@@ -1653,13 +1662,15 @@ class Environment(Generic[_C]):
             Position coordinates matching environment dimensions, located as
             :meth:`bin_at` does: on an egocentric polar environment, each
             sample's ``(distance, angle)`` of the object or place the bins
-            describe, relative to the animal. An interval
-            that starts at a sample outside the environment, or at a sample
-            with a NaN coordinate (missing; see Missing data in the class
-            Notes), adds no occupancy. With ``time_allocation='linear'`` an
-            interval with a NaN at either end adds none, and an interval with
-            an end outside the environment adds only the time its straight
-            path spends inside.
+            describe, relative to the animal. With the default
+            ``time_allocation='start'``, an interval adds occupancy only when
+            both of its samples are inside the environment: one that starts or
+            ends outside, or at a sample with a NaN coordinate (missing; see
+            Missing data in the class Notes), adds none. This is the rule
+            ``compute_spatial_rate`` applies to its spike counts and occupancy.
+            With ``time_allocation='linear'`` an interval with a NaN at either
+            end adds none, and an interval with an end outside the environment
+            adds only the time its straight path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
             Instantaneous speed at each sample. If provided with min_speed,
             samples below threshold are excluded from occupancy calculation.
@@ -1754,7 +1765,8 @@ class Environment(Generic[_C]):
         where valid intervals satisfy:
         - Δt ≤ max_gap (if max_gap is not None)
         - speed[k] ≥ min_speed (if min_speed is not None)
-        - positions[k] is inside environment
+        - positions[k] and positions[k + 1] are inside the environment
+          (``time_allocation='start'``)
 
         Linear allocation works on grids built with ``from_samples``,
         ``from_grid_mask``, ``from_pixel_mask``, ``from_polygon``, and grids
@@ -1798,7 +1810,7 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             coordinates=self._geometry.coordinates,
             cache=self._cache,
             speed=speed,
@@ -1910,7 +1922,7 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             call="Environment.bin_sequence",
             dedup=dedup,
@@ -2005,7 +2017,7 @@ class Environment(Generic[_C]):
             times,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             call="Environment.bin_sequence_with_runs",
             dedup=True,
@@ -2128,7 +2140,7 @@ class Environment(Generic[_C]):
             field,
             positions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             mode=mode,
         )
@@ -2292,14 +2304,14 @@ class Environment(Generic[_C]):
         """
         derivation, check = _rebin(
             self._binning,
-            self.arena,
+            self._arena,
             self.connectivity,
             self._provenance,
             factor=factor,
             bin_size=bin_size,
         )
         rebinned = publish_derived(self, derivation, name=name)
-        warn_rebin_losses(self._binning, self.arena, rebinned, check)
+        warn_rebin_losses(self._binning, self._arena, rebinned, check)
         return rebinned
 
     @cartesian_only(
@@ -2432,7 +2444,7 @@ class Environment(Generic[_C]):
         """
         derivation = _subset(
             self._binning,
-            self.arena,
+            self._arena,
             self.regions,
             self._cache,
             mask=mask,
@@ -2481,7 +2493,7 @@ class Environment(Generic[_C]):
             Cartesian planar area cells.
         """
         return publish_derived(
-            self, _clip(self._binning, self.arena, polygon), name=name
+            self, _clip(self._binning, self._arena, polygon), name=name
         )
 
     @cartesian_only(
@@ -2702,7 +2714,7 @@ class Environment(Generic[_C]):
             transform,
             binning=self._binning,
             regions=self.regions,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
         )
         return publish_derived(self, derivation, name=name, frame=frame)
@@ -4908,7 +4920,7 @@ class Environment(Generic[_C]):
             region_name,
             self.regions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             include_boundary=include_boundary,
         )
@@ -5027,7 +5039,7 @@ class Environment(Generic[_C]):
         return _region_membership(
             self.regions if regions is None else regions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             include_boundary=include_boundary,
         )
@@ -5108,7 +5120,7 @@ class Environment(Generic[_C]):
             regions,
             named_regions=self.regions,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             include_boundary=include_boundary,
         )
 
@@ -5930,8 +5942,8 @@ class Environment(Generic[_C]):
         Extract edge attributes as a pandas DataFrame.
 
         Returns a DataFrame where each row corresponds to an edge (connection
-        between bins), with columns for edge attributes like distances, vectors,
-        and any custom metadata.
+        between bins), with columns for edge attributes like distances and
+        vectors.
 
         Returns
         -------
@@ -5941,10 +5953,15 @@ class Environment(Generic[_C]):
             - `'source'`: Source bin ID
             - `'target'`: Target bin ID
             - `'distance'`: Stored navigation distance between bins
-            - `'vector'`: Displacement vector tuple
+            - `'vector'`: Displacement vector tuple from source to target
+              center, in length units. On an egocentric polar environment it
+              is the displacement in the animal's plane (x ahead, y left),
+              not a difference of ``(distance, angle)`` coordinates.
             - `'vector_dim0'`, `'vector_dim1'`, ...: Displacement components
             - `'edge_id'`: Unique edge ID
-            - `'angle_2d'`: Angle for 2D layouts (optional)
+            - `'angle_2d'`: Direction of ``vector`` in radians, for 2D
+              layouts (optional); egocentric on a polar environment
+              (0 = ahead, +π/2 = left)
 
         Notes
         -----
@@ -5980,7 +5997,9 @@ class Environment(Generic[_C]):
     def _edge_attributes_cached(self) -> pd.DataFrame:
         return self._cache.get(
             EDGE_ATTRIBUTES,
-            lambda: _edge_attributes(self.connectivity, self._binning),
+            lambda: _edge_attributes(
+                self.connectivity, self._binning, self.coordinate_system
+            ),
         )
 
     @keyword_hint("bandwidth")
@@ -6383,8 +6402,8 @@ class Environment(Generic[_C]):
         ``S = M^{-1/2}(D − W) M^{-1/2}``, so both time and memory scale with
         ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``), not ``n_bins²``. The
         eigenbasis depends only on geometry, so it is built once and reused across
-        every bandwidth, mode, and neuron (auto-invalidated when the environment
-        is mutated).
+        every bandwidth, mode, and neuron. Environments never change, and a
+        derived environment starts with its own cache.
 
         On fields without NaN, ``diffuse`` is a **pure linear operator**: it
         applies **no output clip and no renormalization**. The always-retained per-component null mode
@@ -6686,7 +6705,7 @@ class Environment(Generic[_C]):
             bins,
             graph=self.connectivity,
             binning=self._binning,
-            arena=self.arena,
+            arena=self._arena,
             cache=self._cache,
             times=times,
             positions=positions,

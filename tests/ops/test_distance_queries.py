@@ -127,15 +127,11 @@ class TestPairwiseDistances:
         assert dists.shape == (1, 1)
         assert dists[0, 0] == 0.0
 
-    def test_pairwise_invalid_node(self, cycle_graph):
-        """Test that invalid nodes result in inf distances."""
-        nodes = [0, 999]  # 999 doesn't exist
-        dists = pairwise_distances(cycle_graph, nodes)
-
-        assert dists[0, 0] == 0.0
-        assert np.isinf(dists[0, 1])
-        assert np.isinf(dists[1, 0])
-        assert np.isinf(dists[1, 1])
+    @pytest.mark.parametrize("missing", [999, -1])
+    def test_pairwise_node_not_in_graph_raises(self, cycle_graph, missing):
+        """A missing bin is refused rather than reported as unreachable."""
+        with pytest.raises(nx.NodeNotFound, match=rf"\[{missing}\]"):
+            pairwise_distances(cycle_graph, [0, missing])
 
 
 class TestNeighborsWithinGeodesic:

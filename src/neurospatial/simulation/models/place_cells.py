@@ -11,6 +11,7 @@ from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops import _typical_bin_spacing
 from neurospatial.ops.distance import distance_field
+from neurospatial.simulation.models.base import geodesic_lookup_bins
 
 
 class PlaceCellModel:
@@ -293,12 +294,7 @@ class PlaceCellModel:
             # Find bin containing the center
             # Always use contains check first to avoid errors
             # Note: contains() returns ndarray, so we need [0] for single point
-            if env.contains(self.center[None, :])[0]:
-                center_bin = int(env.bin_at(self.center[None, :])[0])
-            else:
-                # If center is outside environment, use nearest bin
-                distances = np.linalg.norm(env.bin_centers - self.center, axis=1)
-                center_bin = int(np.argmin(distances))
+            center_bin = int(geodesic_lookup_bins(env, self.center[None, :])[0])
 
             # Compute distance field from center bin
             # Ensure center_bin is valid
@@ -346,7 +342,8 @@ class PlaceCellModel:
 
         For geodesic distance:
 
-        - Map positions to bin indices using env.bin_at()
+        - Map positions to bins: the containing bin, or the nearest bin
+          center for a position outside
         - Precompute distance field from center bin (done in __init__)
         - Lookup distances (O(1) per position)
         """
@@ -362,24 +359,7 @@ class PlaceCellModel:
 
         elif self.metric == "geodesic":
             # Graph-based distance (path through connectivity)
-            # Map positions to bins - vectorized for efficiency
-            # contains() returns ndarray, so we can use it directly for batch check
-            inside_mask = self.env.contains(positions)
-            bin_indices = np.empty(len(positions), dtype=np.int_)
-
-            # For points inside environment, use bin_at
-            if inside_mask.any():
-                bin_indices[inside_mask] = self.env.bin_at(positions[inside_mask])
-
-            # For points outside, use vectorized nearest neighbor
-            if not inside_mask.all():
-                outside_positions = positions[~inside_mask]
-                # Vectorized distance computation: (n_outside, n_bins)
-                distances = np.linalg.norm(
-                    self.env.bin_centers[None, :, :] - outside_positions[:, None, :],
-                    axis=2,
-                )
-                bin_indices[~inside_mask] = np.argmin(distances, axis=1)
+            bin_indices = geodesic_lookup_bins(self.env, positions)
 
             # Lookup distances from precomputed field
             if self._distance_field is None:
@@ -387,7 +367,10 @@ class PlaceCellModel:
                     "Distance field not initialized for geodesic metric. "
                     "This is an internal error - please report this bug."
                 )
-            distances = self._distance_field[bin_indices]
+            # A missing position has no distance, so its rate stays NaN.
+            distances = np.where(
+                bin_indices >= 0, self._distance_field[bin_indices], np.nan
+            )
 
         # Note: No else needed - Literal type ensures all cases covered
 

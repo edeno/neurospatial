@@ -119,8 +119,11 @@ def test_clip_splits_bins_and_preserves_mapping_through_derivation():
     assert child.n_bins == 2
     np.testing.assert_allclose(child.bin_sizes, [0.2, 0.2])
     np.testing.assert_array_equal(child.clip_mapping.parent_bin_indices, [0, 0])
-    # The owned record is immutable, so it is returned without copying.
-    assert child.clip_mapping is child._binning.clip_mapping
+    # A detached copy, so reshaping its arrays cannot reach the owned record.
+    assert not np.shares_memory(
+        child.clip_mapping.parent_bin_indices,
+        child._binning.clip_mapping.parent_bin_indices,
+    )
     assert not child.clip_mapping.parent_bin_indices.flags.writeable
     assert _arena_record(child.arena) == _arena_record(parent.arena)
     assert not child.connectivity.edges

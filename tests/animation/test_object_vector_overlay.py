@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
+from neurospatial.environment import CartesianSystem
+
 
 class TestObjectVectorOverlayModule:
     """Test module structure and imports."""
@@ -184,6 +186,7 @@ class TestObjectVectorOverlayConversion:
         """Create a mock environment for testing."""
 
         class MockEnv:
+            coordinate_system = CartesianSystem()
             n_dims = 2
             dimension_ranges = np.array([[0.0, 100.0], [0.0, 100.0]])
 
@@ -351,6 +354,7 @@ class TestObjectVectorOverlayValidation:
         """Create a mock environment for testing."""
 
         class MockEnv:
+            coordinate_system = CartesianSystem()
             n_dims = 2
             dimension_ranges = np.array([[0.0, 100.0], [0.0, 100.0]])
 

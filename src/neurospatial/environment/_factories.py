@@ -32,6 +32,7 @@ from neurospatial.layout.factories import (
 )
 from neurospatial.layout.helpers.track_graphs import (
     add_edge_with_distance,
+    example_node_positions,
     maze_track_graph,
 )
 from neurospatial.regions import Regions
@@ -509,11 +510,13 @@ def _track_points(
     argument: str,
     factory: str = "linear_track",
     labels: Sequence[Any] | None = None,
+    example: str | None = None,
 ) -> list[tuple[float, ...]]:
     """Read track waypoints as coordinate tuples, refusing bare numbers.
 
     ``labels`` names the points of a mapping (``maze(node_positions=...)``),
-    so the suggested value is a mapping too.
+    so the suggested value is a mapping too. ``example`` replaces the
+    suggestion of points along x, for tracks that cannot lie on one line.
     """
     try:
         array = np.asarray(values, dtype=float)
@@ -522,7 +525,10 @@ def _track_points(
     if array is not None and array.ndim == 2 and array.shape[1] >= 2:
         return [tuple(float(c) for c in row) for row in array]
     flat = np.ravel(array) if array is not None and array.ndim == 1 else None
-    if flat is not None and flat.size and labels is not None:
+    fix: str | None = None
+    if example is not None:
+        fix = f"pass {argument}={example}, in the units of your positions"
+    elif flat is not None and flat.size and labels is not None:
         example = (
             "{"
             + ", ".join(
@@ -535,14 +541,18 @@ def _track_points(
         example = "[" + ", ".join(f"({float(v):g}, 0.0)" for v in flat) + "]"
     else:
         example = "[(0.0, 0.0), (200.0, 0.0)]"
+    if fix is None:
+        fix = (
+            f"pass {argument}={example} for a track along x, or the (x, y) "
+            "positions of the track's ends and corners"
+        )
     raise ValueError(
         _format_error(
             f"{factory}({argument}=...) takes (x, y) points, got {values!r}.",
             why="Why: the track is drawn through these positions in the arena, "
             "so each point needs a coordinate for every axis, in the units of "
             "your positions.",
-            fix=f"pass {argument}={example} for a track along x, or the (x, y) "
-            "positions of the track's ends and corners",
+            fix=fix,
         )
     )
 
@@ -706,6 +716,7 @@ def _maze(
             "node_positions",
             factory="maze",
             labels=list(node_positions),
+            example=example_node_positions(kind_normalized, list(node_positions)),
         )
         node_positions = dict(zip(node_positions, coordinates, strict=True))
         graph, edge_order = maze_track_graph(kind_normalized, node_positions)

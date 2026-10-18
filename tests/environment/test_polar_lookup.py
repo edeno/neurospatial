@@ -134,7 +134,9 @@ def test_occupancy_gives_each_interval_to_its_first_sample_bin():
     times, positions = _samples()
     bins = env.bin_at(positions)
     expected = np.zeros(env.n_bins)
-    np.add.at(expected, bins[:-1][bins[:-1] >= 0], np.diff(times)[bins[:-1] >= 0])
+    # Only intervals with both samples inside the surround keep time.
+    kept = (bins[:-1] >= 0) & (bins[1:] >= 0)
+    np.add.at(expected, bins[:-1][kept], np.diff(times)[kept])
     np.testing.assert_allclose(env.occupancy(times, positions), expected)
     # Time beyond the 40 cm surround is not counted anywhere.
     assert env.occupancy(times, positions).sum() < times[-1] - times[0]

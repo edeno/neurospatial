@@ -163,10 +163,12 @@ def test_member_alternative_gives_the_right_answer(name):
 def _check_start_occupancy(env, result, names):
     bins = _containing_bins(env, SAMPLES)
     expected = np.zeros(env.n_bins)
-    # Each interval counts at its start; the sample beyond 40 cm adds no time.
-    np.add.at(expected, bins[:-1][bins[:-1] >= 0], 0.1)
+    # Each interval counts at its start; the two intervals touching the sample
+    # beyond 40 cm add no time.
+    kept = (bins[:-1] >= 0) & (bins[1:] >= 0)
+    np.add.at(expected, bins[:-1][kept], 0.1)
     np.testing.assert_allclose(result, expected)
-    assert result.sum() == pytest.approx(0.4)
+    assert result.sum() == pytest.approx(0.3)
 
 
 @pytest.mark.parametrize(

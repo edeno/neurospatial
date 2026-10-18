@@ -134,8 +134,8 @@ for geometry records. Importing them does not load layout engines,
 factory, derivation and reader through one function means validation runs in
 one place, and an environment cannot exist in a half-built state. The three
 entry points are `publish_layout` for a built layout engine, `publish_derived`
-for `subset`, `clip`, `rebin`, `apply_transform` and `combine`, and `_publish`
-itself for `from_bins` and the file, dict and NWB readers, which decode stored
+for `subset`, `clip`, `rebin`, `apply_transform`, `with_track_width` and
+`combine`, and `_publish` itself for `from_bins` and the file, dict and NWB readers, which decode stored
 geometry without replaying build parameters.
 
 A published environment never changes. The graph is frozen, geometry arrays
@@ -282,8 +282,8 @@ cannot disagree. Every other public member needs a stated polar meaning, which
 
 #### Derivations
 
-`subset`, `clip`, `rebin`, `apply_transform` and `combine` compute a
-`_Derivation` record in a private module and pass it to `publish_derived`,
+`subset`, `clip`, `rebin`, `apply_transform`, `with_track_width` and
+`combine` compute a `_Derivation` record in a private module and pass it to `publish_derived`,
 which keeps the parent's class, name, units, frame, regions and arena unless
 the record or the caller replaces them. A derivation never changes units,
 never rebuilds through a factory and starts with a fresh cache, so fields and
@@ -293,6 +293,8 @@ fitted models do not transfer. Metadata follows what the operation means:
 - `apply_transform` keeps the name and units, maps the regions and arena with
   the bins, and sets `frame` only from the caller's `frame=`, because a
   transformed environment is no longer in the old frame.
+- `with_track_width` keeps every label and the bins, and replaces only the
+  track's arena with one of the given width.
 - `combine` prefixes each child's regions with its key and has an empty name
   unless `name=` is given.
 

@@ -169,11 +169,13 @@ def test_occupancy_gives_a_missing_sample_no_time(cartesian_env):
     with_missing[[10, 30]] = np.nan
     occupancy = cartesian_env.occupancy(times, with_missing)
 
-    # The intervals that start at the missing samples are the only time lost.
+    # The intervals that start or end at the missing samples are the only
+    # time lost.
     dt = np.diff(times)
-    np.testing.assert_allclose(occupancy.sum(), dt.sum() - dt[10] - dt[30])
+    lost = [9, 10, 29, 30]
+    np.testing.assert_allclose(occupancy.sum(), dt.sum() - dt[lost].sum())
     expected = np.zeros(cartesian_env.n_bins)
-    keep = np.setdiff1d(np.arange(len(dt)), [10, 30])
+    keep = np.setdiff1d(np.arange(len(dt)), lost)
     np.add.at(expected, cartesian_env.bin_at(positions)[keep], dt[keep])
     np.testing.assert_allclose(occupancy, expected)
 

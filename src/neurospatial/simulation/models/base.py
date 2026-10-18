@@ -1,9 +1,12 @@
 """Base protocol for neural models."""
 
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import numpy as np
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from neurospatial.environment import Environment
 
 
 @runtime_checkable
@@ -180,3 +183,30 @@ class NeuralModel(Protocol):
         10.0
         """
         ...
+
+
+def geodesic_lookup_bins(
+    env: "Environment", positions: NDArray[np.float64]
+) -> NDArray[np.intp]:
+    """Bin whose geodesic distance field stands for each position.
+
+    A position inside the environment uses its containing bin, and one outside
+    uses the nearest bin center. A missing (NaN) position gets bin -1.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment the distance fields were computed on.
+    positions : NDArray[np.float64], shape (n_time, n_dims)
+        Positions in the environment's coordinates.
+
+    Returns
+    -------
+    NDArray[np.intp], shape (n_time,)
+        Bin index per position, or -1 for a missing position.
+    """
+    bins = np.asarray(env.nearest_bin(positions, max_distance=np.inf), dtype=np.intp)
+    inside = env.contains(positions)
+    if inside.any():
+        bins[inside] = env.bin_at(positions[inside])
+    return bins

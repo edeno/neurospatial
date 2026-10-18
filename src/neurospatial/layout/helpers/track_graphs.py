@@ -136,4 +136,98 @@ def maze_track_graph(
             )
         )
 
+    _refuse_overlapping_segments(graph, edge_order, kind)
     return graph, edge_order
+
+
+# One valid layout per preset, in the documented node order (units of the
+# caller's positions).
+_EXAMPLE_LAYOUT: dict[str, tuple[tuple[float, float], ...]] = {
+    "plus": ((0, 0), (0, 50), (50, 0), (0, -50), (-50, 0)),
+    "t": ((0, 0), (0, 50), (-30, 50), (30, 50)),
+    "w": ((0, 0), (20, 0), (40, 0), (0, 50), (20, 50), (40, 50)),
+}
+
+
+def example_node_positions(kind: str, labels: Sequence[Any]) -> str | None:
+    """A valid ``node_positions`` for ``kind`` with these labels, as code.
+
+    None when the labels do not number the preset's nodes.
+    """
+    layout = _EXAMPLE_LAYOUT.get(kind)
+    if layout is None or len(labels) != len(layout):
+        return None
+    pairs = (
+        f"{label!r}: ({x:g}, {y:g})"
+        for label, (x, y) in zip(labels, layout, strict=True)
+    )
+    return "{" + ", ".join(pairs) + "}"
+
+
+_NODE_ORDER = {
+    "plus": "[center, arm1, arm2, arm3, arm4]",
+    "t": "[stem_end, junction, arm_left, arm_right]",
+    "w": "[base_left, base_mid, base_right, arm_left, arm_mid, arm_right]",
+}
+
+
+def _refuse_overlapping_segments(
+    graph: nx.Graph, edge_order: list[tuple[Any, Any]], kind: str
+) -> None:
+    """Refuse a maze whose segments cross or run along each other.
+
+    The node order alone sets a preset maze's topology, so nodes listed in the
+    wrong order still build a track, one whose arms overlap. Two segments that
+    share no node must not touch, and two that share a node must leave it in
+    different directions.
+    """
+    positions = {
+        node: np.asarray(graph.nodes[node]["pos"], dtype=float) for node in graph
+    }
+    scale = max(float(graph.edges[edge]["distance"]) for edge in edge_order)
+    tolerance = 1e-9 * scale
+    for (a, b), (c, d) in itertools.combinations(edge_order, 2):
+        shared = {a, b} & {c, d}
+        if shared:
+            (node,) = shared
+            first = positions[b if a == node else a] - positions[node]
+            second = positions[d if c == node else c] - positions[node]
+            cosine = first @ second / (np.linalg.norm(first) * np.linalg.norm(second))
+            overlapping = cosine > 1.0 - 1e-9
+        else:
+            overlapping = (
+                _segment_distance(
+                    positions[a], positions[b], positions[c], positions[d]
+                )
+                <= tolerance
+            )
+        if overlapping:
+            raise ValueError(
+                _format_error(
+                    f"maze(kind={kind!r}): the track segments {a!r}-{b!r} and "
+                    f"{c!r}-{d!r} overlap or cross.",
+                    why="The order of node_positions sets which nodes are joined, "
+                    "so nodes listed out of order join the wrong places.",
+                    fix=f"list node_positions in the order {_NODE_ORDER[kind]}",
+                )
+            )
+
+
+def _segment_distance(
+    p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, q1: np.ndarray
+) -> float:
+    """Shortest distance between segments p0-p1 and q0-q1, in any dimension."""
+    u, v, w = p1 - p0, q1 - q0, p0 - q0
+    a, b, c, d, e = u @ u, u @ v, v @ v, u @ w, v @ w
+    denominator = a * c - b * b
+    # Parallel segments: fix s and let the clamps below find the closest pair.
+    s = (
+        0.0
+        if denominator <= 1e-12 * a * c
+        else float(np.clip((b * e - c * d) / denominator, 0, 1))
+    )
+    t = (b * s + e) / c
+    if t < 0.0 or t > 1.0:
+        t = float(np.clip(t, 0.0, 1.0))
+        s = float(np.clip((b * t - d) / a, 0.0, 1.0))
+    return float(np.linalg.norm(w + s * u - t * v))

@@ -474,7 +474,7 @@ class TestIntegrationWithEnvironment:
     """Test that enhancements integrate properly with Environment methods."""
 
     def test_occupancy_with_outliers(self):
-        """occupancy() gives no time to an interval that starts at an outlier."""
+        """occupancy() gives no time to an interval with an outlier at either end."""
         # Create environment
         data = np.array([[i, j] for i in range(10) for j in range(10)])
         env = Environment.from_samples(data, bin_size=1.0)
@@ -490,13 +490,13 @@ class TestIntegrationWithEnvironment:
             ]
         )
 
-        # Occupancy uses containment, so the outlier is outside: only the two
-        # intervals that start inside count.
+        # Occupancy uses containment, so the outlier is outside: only the
+        # first interval has both samples inside.
         occupancy = env.occupancy(times, positions)
         bins = env.bin_at(positions)
         assert bins[2] == -1
         expected = np.zeros(env.n_bins)
-        np.add.at(expected, bins[:2], 0.1)
+        expected[bins[0]] = 0.1
         np.testing.assert_allclose(occupancy, expected)
 
     def test_bin_sequence_deterministic(self):

@@ -265,6 +265,17 @@ class TestPlaceCellModel:
         assert len(rates) == len(positions)
         assert np.all(rates >= 0)  # All rates non-negative
 
+    def test_geodesic_missing_position_rate_is_nan(self, simple_2d_env):
+        """A NaN position has no rate; it is not the rate at bin 0."""
+        pc = PlaceCellModel(
+            simple_2d_env, center=[5.0, 5.0], width=10.0, metric="geodesic"
+        )
+
+        rates = pc.firing_rate(np.array([[np.nan, np.nan], [5.0, 5.0]]))
+
+        assert np.isnan(rates[0])
+        assert rates[1] == pytest.approx(pc.max_rate)
+
     def test_condition_function_gates_firing(self, simple_2d_env):
         """Test that condition function gates firing correctly."""
 

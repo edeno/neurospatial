@@ -16,7 +16,7 @@ from neurospatial.animation._utils import _emit_status
 _logger = logging.getLogger("neurospatial.animation.backends.widget_backend")
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 # Check ipywidgets availability
 try:

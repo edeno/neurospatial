@@ -8,6 +8,31 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `Environment.maze(kind=..., node_positions=...)` refuses a layout whose
+  track segments cross or run along each other, naming the two segments and
+  the node order the kind expects. The order of `node_positions` sets which
+  nodes are joined, so a W maze listed as base/arm pairs used to build arms on
+  top of each other (25 duplicate bin centers in one example) without an
+  error. When `node_positions` holds bare numbers, the error now suggests a
+  valid layout for the kind instead of points along one line, which no W,
+  plus or T maze can be.
+
+- `ops.geodesic_distance_between_points` and `ops.pairwise_distances` raise
+  `networkx.NodeNotFound` for a bin that is not a node of the graph, such as
+  the outside marker `-1`. Before, they returned `inf` (or `default`), the
+  value they also return for two bins with no path between them, so a
+  missing sample looked like an unreachable place. `default` now applies only
+  when no path exists. Drop `-1` samples before calling (`bins[bins >= 0]`).
+
+- `Environment.occupancy` (with the default `time_allocation="start"`) now
+  counts an interval only when both of its samples are inside the
+  environment, the rule `compute_spatial_rate` already used for its spike
+  counts and occupancy. Before, an interval that ended at a tracking dropout
+  (NaN) or outside the environment kept its time in its start bin, so spike
+  counts divided by `env.occupancy` used a different denominator than the
+  rate maps. Fill short dropouts during tracking preprocessing to keep that
+  time.
+
 - `Environment.animate_fields` raises `TypeError` for an option that no
   backend accepts, naming the closest option, instead of ignoring it: a
   misspelled `frame_label=` used to change nothing. `fps=` raises too (use
@@ -1272,6 +1297,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- `rate_map_centroid(method="geodesic")` computes the field bins' graph
+  distances in one pass instead of one shortest-path search per pair of
+  bins: a 200-bin field takes about 2 ms instead of 3 s, with identical
+  results.
+
 - `from neurospatial import Environment` no longer imports matplotlib or
   `pandas`; they load when you first plot or ask for a table. The import
   takes about 0.19 s instead of 0.42 s, which helps scripts and worker
@@ -1333,6 +1363,66 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- On an egocentric polar environment, the bin that stands for a start or goal
+  region in trial and decision analyses (`trials_to_region_arrays`, decision
+  boundaries) is the region bin nearest the region's center in the animal's
+  plane. Before, the center was an average of `(distance, angle)` rows, which
+  put a wide wedge 10–40 cm ahead at 25 cm instead of about 16 cm.
+
+- `HeadDirectionOverlay`, `BodypartOverlay`, `ObjectVectorOverlay` and
+  `VideoOverlay` raise `CartesianOnlyError` on an egocentric polar
+  environment. They draw arena coordinates, and a polar environment's axes
+  are `(distance, angle)` around the animal, so the animation used to draw
+  allocentric arrows, poses and camera frames on axes where they mean
+  nothing. `PositionOverlay` and `EventOverlay` still draw `(distance, angle)`
+  rows.
+
+- The multi-session workflow in the user guide compared rate maps with
+  `map_probabilities(..., source_probabilities=...)`, which raised
+  `TypeError` (the parameter is `source_probs`) and, with the right keyword,
+  summed rates as if they were probability mass. It now builds one
+  environment for the box, computes both sessions' maps on it, and shows
+  `resample_field` for maps that already have different bins. The example
+  runs in the documentation tests. The alignment guide's
+  `map_probabilities` examples use the right keyword, and its docstring says
+  to use `resample_field` for rate maps.
+
+- `Environment.arena` and `Environment.clip_mapping` return detached copies,
+  as `Environment.binning` does. Their arrays were read-only but shared with
+  the environment, and reshaping one in place
+  (`env.arena.active_mask.shape = (-1,)`) broke the environment's own lookups:
+  `env.contains` then raised `IndexError`.
+
+- On an egocentric polar environment, the edge `vector` and `angle_2d` in
+  `get_edge_attributes()`, `connectivity` and `to_networkx()` are the
+  displacement between neighboring bins in the animal's plane (x ahead,
+  y left, in length units) and its egocentric direction. Before, they were
+  differences of `(distance, angle)` coordinates, mixing a length with
+  radians, and an edge across the angular seam showed an angle step of almost
+  a full turn instead of one bin.
+
+- `simulate_trajectory_ou(boundary_mode="stop")` holds the animal at the
+  wall it reached. Before, the clamp used `bin_at`, which returns `-1` for a
+  position outside, and moved the animal to the last bin center, often the
+  far corner, where it stayed. `boundary_mode="reflect"` used the same clamp
+  after a reflection.
+
+- `PlaceCellModel` and `ObjectVectorCellModel` with `metric="geodesic"` give
+  a NaN rate for a NaN position, as `metric="euclidean"` does. Before, the
+  missing position took the rate at bin 0.
+
+- A sample outside the environment (bin `-1`) is in no bin in
+  `trajectory_similarity`, `compute_home_range` and
+  `detect_goal_directed_runs`. Before, `-1` indexed the last bin:
+  `trajectory_similarity` scored an outside sample as the last bin
+  (Hausdorff, DTW) or as a place both trajectories shared (Jaccard),
+  `compute_home_range` returned `-1` as a home-range bin and counted outside
+  time in the total, and `detect_goal_directed_runs` failed with
+  `NodeNotFound: Node -1`. Now `trajectory_similarity` compares only places
+  inside the environment and refuses a trajectory with none,
+  `compute_home_range` leaves outside samples out, and
+  `detect_goal_directed_runs` ends a recording at an outside sample.
 
 - An environment pickled by another version of neurospatial is refused when
   it is loaded, with the advice to save with `env.to_file(path)` and read with

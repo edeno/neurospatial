@@ -199,6 +199,10 @@ def _occupancy(
         start_bin=None if observation_only else bin_indices,
         epochs=resolved_epochs,
     )
+    if time_allocation == "start":
+        # Complete-case rule, shared with spike binning: the animal's place
+        # during an interval is known only when both samples are inside.
+        valid_mask &= bin_indices[1:] >= 0
     # Intervals that kept time; polygon allocation narrows this below.
     retained_mask = valid_mask
 
