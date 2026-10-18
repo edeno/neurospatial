@@ -309,7 +309,8 @@ class Trial:
     Attributes
     ----------
     start_time : float
-        Time when trial started (start region entry, seconds).
+        Time when trial started: the last sample in the start region before
+        the animal left it (seconds).
     end_time : float
         Time when trial ended (end region entry or timeout, seconds).
     start_region : str
@@ -1895,17 +1896,24 @@ def segment_trials(
 ) -> list[Trial]:
     """Segment trajectory into behavioral trials.
 
-    Identifies discrete behavioral trials defined by entries to a start region
-    followed by navigation to one of several end regions. Commonly used in
+    Identifies discrete behavioral trials defined by departures from a start
+    region followed by navigation to one of several end regions. Commonly used in
     spatial navigation tasks like T-mazes, Y-mazes, and radial arm mazes to
     analyze choice behavior, learning curves, and spatial strategies.
 
     A trial is defined as:
-    1. Entry to start region (trial start)
+    1. Departure from the start region (trial start, at the last sample
+       inside it, so waiting at the start is not part of the trial)
     2. Trajectory through environment
     3. Either:
        - Entry to one of the end regions (successful trial)
        - Timeout after max_duration without reaching end region (failed trial)
+       - Return to the start region before reaching an end region (aborted,
+         emitted as a failed trial when it lasted at least min_duration)
+
+    Samples outside every bin (``-1``, such as lost tracking while the animal
+    waits at a well) keep the region of the last located sample, so a tracking
+    dropout is not a departure or a return.
 
     Parameters
     ----------
@@ -1939,11 +1947,11 @@ def segment_trials(
     -------
     list[Trial]
         List of detected trials. Each trial has:
-        - start_time: time of start region entry
-        - end_time: time of end region entry or timeout
+        - start_time: time of departure from the start region
+        - end_time: time of end region entry, timeout, or return to the start
         - start_region: name of start region
-        - end_region: name of end region reached (or None if timeout)
-        - success: True if end region reached, False if timeout
+        - end_region: name of end region reached (or None if not reached)
+        - success: True if end region reached, False if timed out or aborted
 
     Raises
     ------
@@ -1995,7 +2003,8 @@ def segment_trials(
     If an animal re-enters the start region before reaching an end region,
     the previous (aborted) trial is emitted as a failed trial
     (``success=False``, ``end_region=None``) provided it lasted at least
-    ``min_duration``, and a new trial begins. A trial still in progress when
+    ``min_duration``; the next trial begins when the animal leaves the start
+    region again. A trial still in progress when
     the recording ends is likewise emitted as failed if it meets
     ``min_duration``. This matches the timeout semantics so that aborted and
     in-progress trials are not silently dropped.
@@ -2130,6 +2139,28 @@ def segment_trials(
     return results
 
 
+def _hold_through_unlocated(
+    in_region: NDArray[np.bool_], located: NDArray[np.bool_]
+) -> NDArray[np.bool_]:
+    """Carry each sample's region membership forward over unlocated samples.
+
+    Parameters
+    ----------
+    in_region : NDArray[np.bool_], shape (n_samples,)
+        Region membership of each sample; False where the sample is unlocated.
+    located : NDArray[np.bool_], shape (n_samples,)
+        True where the sample maps to a bin.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (n_samples,)
+        Membership of the last located sample at or before each sample; False
+        before the first located sample.
+    """
+    last_located = np.maximum.accumulate(np.where(located, np.arange(len(located)), -1))
+    return np.where(last_located >= 0, in_region[np.maximum(last_located, 0)], False)
+
+
 def _segment_trials_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
@@ -2147,28 +2178,38 @@ def _segment_trials_contiguous(
     start_mask = regions_to_mask(env, [start_region])
     end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
 
-    # Check which trajectory samples are in which regions
+    # Check which trajectory samples are in which regions. A sample outside
+    # every bin (bin -1, e.g. lost tracking at a reward well) keeps the region
+    # state of the last located sample: losing the animal is not leaving.
     position_bins = np.asarray(position_bins, dtype=np.int64)
-    in_start = _safe_gather(start_mask, position_bins, fill=False)
+    located = position_bins >= 0
+    in_start = _hold_through_unlocated(
+        _safe_gather(start_mask, position_bins, fill=False), located
+    )
     in_end_regions = {
-        region: _safe_gather(mask, position_bins, fill=False)
+        region: _hold_through_unlocated(
+            _safe_gather(mask, position_bins, fill=False), located
+        )
         for region, mask in end_masks.items()
     }
 
-    # Segment into trials
+    # Segment into trials. A trial starts when the animal leaves the start
+    # region, at the last located sample inside it, so time spent waiting at
+    # the start does not count toward the trial.
     trials: list[Trial] = []
     trial_start_idx: int | None = None
     trial_start_time: float | None = None
+    last_start_time: float | None = None
 
     for i in range(len(position_bins)):
-        # Check if entering start region (trial initiation)
-        if in_start[i] and (i == 0 or not in_start[i - 1]):
-            # If we had a previous trial in progress, it was aborted by the
-            # animal re-entering the start region before reaching an end
-            # region. Emit it as a failed trial (subject to min_duration) so
-            # that aborted/in-progress trials are not silently dropped, matching
-            # the timeout semantics below.
-            if trial_start_idx is not None and trial_start_time is not None:
+        if in_start[i]:
+            if located[i]:
+                last_start_time = times[i]
+            if i > 0 and not in_start[i - 1] and trial_start_time is not None:
+                # The animal came back to the start region before reaching an
+                # end region: emit the aborted trial as failed (subject to
+                # min_duration) instead of dropping it, matching the timeout
+                # semantics below.
                 duration = times[i - 1] - trial_start_time
                 if duration >= min_duration:
                     trials.append(
@@ -2180,10 +2221,14 @@ def _segment_trials_contiguous(
                             success=False,
                         )
                     )
+                trial_start_idx = None
+                trial_start_time = None
+            continue
 
-            # Start new trial
+        if i > 0 and in_start[i - 1] and last_start_time is not None:
+            # Departure from the start region begins a trial.
             trial_start_idx = i
-            trial_start_time = times[i]
+            trial_start_time = last_start_time
 
         # If we're in a trial, check for end region entry
         if trial_start_idx is not None and trial_start_time is not None:

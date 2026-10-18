@@ -35,9 +35,9 @@ Time and memory scale with ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``),
 not ``n_bins²``, so these methods scale to large/fine grids. The eigenbasis is
 geometry-only, so it is built once per environment and reused across every
 bandwidth, mode, and neuron. (A near-full-rank request — a light bandwidth on a
-large grid — genuinely needs most modes, so ``env.diffuse`` falls back to a
-transient dense basis there, with the same large-matrix ``UserWarning`` as
-``compute_kernel``.)
+large grid — genuinely needs most modes, so ``env.diffuse`` solves the full
+dense basis once there, with the same large-matrix ``UserWarning`` as
+``compute_kernel``, and reuses it for later calls.)
 
 ``gaussian_kde`` still builds a dense ``(n_bins, n_bins)`` Gaussian weight matrix
 (Euclidean, boundary-ignoring), costing O(n_bins²) memory and time; it is cached

@@ -556,9 +556,20 @@ def test_mode_component_recovery(two_component_env):
         assert int(nonzero_labels[0]) == int(mode_comp[m])
 
 
-def test_dense_basis_not_persisted(open_field_env):
-    """A request past dense_fraction*n returns a valid basis but does not
-    grow the holder (the n x n dense basis is call-local, never stored)."""
+def test_dense_basis_solved_once(open_field_env, monkeypatch):
+    """A request past dense_fraction*n solves the n x n basis once and keeps
+    it, so repeated GLM fits (epochs, folds, other ranks) reuse that solve."""
+    from neurospatial.ops import diffusion
+
+    dense_solves = []
+    original = diffusion._symmetric_eigenbasis
+
+    def counting(S, rank):
+        if rank is None:
+            dense_solves.append(S.shape)
+        return original(S, rank)
+
+    monkeypatch.setattr(diffusion, "_symmetric_eigenbasis", counting)
     env = open_field_env
     occ = np.ones(env.n_bins)
     n = env.n_bins
@@ -567,8 +578,15 @@ def test_dense_basis_not_persisted(open_field_env):
     assert holder.G == 0  # initial empty state
     assert holder.Q.shape == (n, 0)
 
-    # rank=40 on a 64-bin env: G=40 >= 0.5*64=32 -> dense (transient).
+    # rank=40 on a 64-bin env: G=40 >= 0.5*64=32 -> dense.
     basis = env.get_mrf_basis(occ, rank=40)
-
     assert basis.B.shape == (n, 40)
-    assert _cached_holder(env) is holder  # holder stayed at its sparse value
+    grown = _cached_holder(env)
+    assert n == grown.G
+    assert not any(a.flags.writeable for a in (grown.Q, grown.Lam, grown.mode_comp))
+
+    again = env.get_mrf_basis(occ, rank=40)
+    smaller = env.get_mrf_basis(occ, rank=10)
+    assert len(dense_solves) == 1
+    np.testing.assert_array_equal(again.B, basis.B)
+    assert smaller.B.shape == (n, 10)
