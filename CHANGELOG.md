@@ -623,6 +623,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `segment_trials` starts a trial when the animal leaves the start region, at
+  the last sample inside it, instead of when it enters. Waiting at the start
+  well no longer counts toward the trial, so tracking jitter across the well's
+  edge after a wait is no longer recorded as an aborted (failed) trial. On a
+  simulated W-track with 1 cm jitter, 4 of 16 trials came out as false
+  failures before this change. A real return to the start region is still a
+  failed trial when it lasts at least `min_duration`. Samples outside every
+  bin (`-1`, such as lost tracking at a well) keep the last located region,
+  so a dropout is neither a departure nor a return. `Trial.start_time` and
+  trial durations change accordingly.
+
 - The `neurospatial.layout.LayoutEngine` protocol lists only `build()` and
   `binning()`, the two methods an environment uses. A custom engine needs
   nothing else, and type checkers no longer ask it for `bin_centers`,
