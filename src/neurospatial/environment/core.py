@@ -5405,32 +5405,44 @@ class Environment(Generic[_C]):
         )
 
     @keyword_hint(
-        "show_regions", "layout_plot_kwargs", "regions_plot_kwargs", "scale_bar"
+        "show_regions",
+        "show_walls",
+        "show_landmarks",
+        "layout_plot_kwargs",
+        "regions_plot_kwargs",
+        "scale_bar",
     )
     def plot(
         self,
         ax: matplotlib.axes.Axes | None = None,
         *,
-        show_regions: bool = False,
+        show_regions: bool = True,
+        show_walls: bool = True,
+        show_landmarks: bool = True,
         layout_plot_kwargs: dict[str, Any] | None = None,
         regions_plot_kwargs: dict[str, Any] | None = None,
         scale_bar: bool | ScaleBarConfig = False,
         **kwargs: Any,
     ) -> matplotlib.axes.Axes:
-        """Plot the environment's layout and optionally defined regions.
+        """Plot the bins with everything specified in the environment.
 
-        This method delegates plotting of the base layout to the `plot` method
-        of the underlying `LayoutEngine`. If `show_regions` is True, it then
-        overlays any defined spatial regions managed by `self.regions`.
+        Draws the bins and the connections between them, then the declared
+        walls, the named landmarks and the regions, so one figure shows
+        whether the environment matches the apparatus. The axes widen to
+        show landmarks outside the arena, such as a distal cue.
 
         Parameters
         ----------
         ax : Optional[matplotlib.axes.Axes], optional
             The Matplotlib axes to plot on. If None, a new figure and axes
             are created. Defaults to None.
-        show_regions : bool, optional
-            If True, plot defined spatial regions on top of the layout.
-            Defaults to False.
+        show_regions : bool, default=True
+            Draw the regions in ``env.regions``, with a legend.
+        show_walls : bool, default=True
+            Draw the declared walls in ``env.arena.walls``, labeled with their
+            names.
+        show_landmarks : bool, default=True
+            Draw the landmarks in ``env.landmarks``, labeled with their names.
         layout_plot_kwargs : Optional[Dict[str, Any]], optional
             Keyword arguments to pass to the `layout.plot()` method.
             Defaults to None.
@@ -5468,7 +5480,7 @@ class Environment(Generic[_C]):
         >>> regions = Regions(env.regions.values())
         >>> _ = regions.add("goal", point=[5.0, 5.0])
         >>> env = env.with_regions(regions)
-        >>> ax = env.plot(show_regions=True)
+        >>> ax = env.plot()
         >>> ax.get_legend_handles_labels()[1]
         ['goal']
         >>> plt.close("all")
@@ -5481,6 +5493,8 @@ class Environment(Generic[_C]):
             self._plot_labels(),
             ax,
             show_regions,
+            self.arena if show_walls else None,
+            self.landmarks if show_landmarks else None,
             layout_plot_kwargs,
             regions_plot_kwargs,
             scale_bar,

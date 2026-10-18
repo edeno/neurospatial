@@ -733,6 +733,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.plot()` draws everything the environment holds by default: declared
+  walls (labeled with their names), landmarks (labeled, with the axes widened
+  to show any outside the arena) and regions. `show_regions` now defaults to
+  True; `show_walls=False` and `show_landmarks=False` hide the new layers.
 - `env.plot()` fills active grid cells with one light color whether or not
   some bins are inactive (it was white on a full grid and dark gray
   otherwise), leaves inactive cells unfilled, and outlines a polygon grid's

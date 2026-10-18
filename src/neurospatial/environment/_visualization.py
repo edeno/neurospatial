@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
@@ -31,6 +32,8 @@ if TYPE_CHECKING:
     import matplotlib.axes
     from matplotlib.colors import Colormap
 
+    from neurospatial.geometry import Arena
+    from neurospatial.landmarks import Landmark, Landmarks
     from neurospatial.layout import ScaleBarConfig
 
 
@@ -121,13 +124,18 @@ def _plot(
     regions: Regions,
     labels: PlotLabels,
     ax: matplotlib.axes.Axes | None = None,
-    show_regions: bool = False,
+    show_regions: bool = True,
+    arena: Arena | None = None,
+    landmarks: Landmarks | None = None,
     layout_plot_kwargs: dict[str, Any] | None = None,
     regions_plot_kwargs: dict[str, Any] | None = None,
     scale_bar: bool | ScaleBarConfig = False,
     **kwargs: Any,
 ) -> matplotlib.axes.Axes:
-    """Draw the bins and graph, optionally with regions and a scale bar."""
+    """Draw the bins and graph, with walls, landmarks, regions and a scale bar.
+
+    ``arena`` and ``landmarks`` are drawn when given; None skips them.
+    """
     l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
     l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
 
@@ -143,9 +151,15 @@ def _plot(
         if not labels.coordinates.equal_aspect:
             ax.set_aspect("auto")
 
-    if show_regions:
+    if arena is not None and arena.walls:
+        _draw_walls(ax, arena)
+    if show_regions and len(regions):
         r_kwargs = regions_plot_kwargs if regions_plot_kwargs is not None else {}
         plot_regions(regions, ax=ax, **r_kwargs)
+    if landmarks:
+        # Last: drawing regions rescales the axes, which would drop the room
+        # made for landmarks outside the arena.
+        _draw_landmarks(ax, landmarks)
 
     plot_title = labels.name
     if labels.layout_type:
@@ -159,6 +173,87 @@ def _plot(
     _add_scale_bar_if_requested(binning.dimension_ranges, labels.units, ax, scale_bar)
 
     return ax
+
+
+def _draw_walls(ax: matplotlib.axes.Axes, arena: Arena) -> None:
+    """Draw each declared wall as a thick line, its name at its middle."""
+    from matplotlib.collections import LineCollection
+
+    ax.add_collection(
+        LineCollection(
+            [np.asarray(wall.coords) for wall in arena.walls],
+            colors="firebrick",
+            linewidths=3,
+            zorder=4,
+        )
+    )
+    labeled: set[str] = set()
+    for name, wall in zip(arena.wall_names, arena.walls, strict=True):
+        if name in labeled:
+            continue
+        labeled.add(name)
+        x, y = wall.interpolate(0.5, normalized=True).coords[0]
+        ax.annotate(
+            name,
+            (x, y),
+            xytext=(4, 4),
+            textcoords="offset points",
+            color="firebrick",
+            fontsize=9,
+            zorder=6,
+        )
+
+
+def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
+    """Draw each landmark by its kind, labeled, and widen the axes to show it."""
+    from matplotlib.patches import Polygon as PolygonPatch
+
+    color = "darkorange"
+    for landmark in landmarks.values():
+        data = landmark.data
+        if isinstance(data, np.ndarray):
+            ax.plot(*data[:2], marker="*", markersize=14, color=color, zorder=5)
+        elif data.geom_type == "LineString":
+            ax.plot(*np.asarray(data.coords).T, color=color, linewidth=4, zorder=5)
+        else:
+            ax.add_patch(
+                PolygonPatch(
+                    np.asarray(data.exterior.coords),
+                    facecolor=color,
+                    edgecolor=color,
+                    alpha=0.4,
+                    zorder=5,
+                )
+            )
+        ax.annotate(
+            landmark.name,
+            tuple(landmark.position[:2]),
+            xytext=(6, 6),
+            textcoords="offset points",
+            color=color,
+            fontsize=9,
+            zorder=6,
+        )
+    # The renderers fix the limits to the bins; a cue outside the arena
+    # still belongs in the picture.
+    bounds = np.array(
+        [shapely.bounds(_landmark_geometry(item)) for item in landmarks.values()]
+    )
+    (x_low, x_high), (y_low, y_high) = ax.get_xlim(), ax.get_ylim()
+    margin = 0.05 * max(x_high - x_low, y_high - y_low)
+    ax.set_xlim(
+        min(x_low, bounds[:, 0].min() - margin),
+        max(x_high, bounds[:, 2].max() + margin),
+    )
+    ax.set_ylim(
+        min(y_low, bounds[:, 1].min() - margin),
+        max(y_high, bounds[:, 3].max() + margin),
+    )
+
+
+def _landmark_geometry(landmark: Landmark) -> shapely.Geometry:
+    data = landmark.data
+    return shapely.points(data[:2]) if isinstance(data, np.ndarray) else data
 
 
 def _plot_1d(
