@@ -311,9 +311,7 @@ MINIMAL_BUILD_PARAMS["TriangularMesh"] = {
 def test_layout_engine_protocol_adherence(
     layout_kind: str, simple_graph_for_layout: nx.Graph
 ):
-    """
-    Meta-test: checks if all layouts adhere to the LayoutEngine protocol.
-    """
+    """Every built-in layout is a LayoutEngine and offers the shared extras."""
     if layout_kind not in MINIMAL_BUILD_PARAMS:
         pytest.skip(
             f"Minimal build parameters not defined for layout kind: {layout_kind}"
@@ -331,7 +329,8 @@ def test_layout_engine_protocol_adherence(
     except Exception as e:
         pytest.fail(f"Failed to create layout {layout_kind} with params {params}: {e}")
 
-    # 1. Check presence of all protocol attributes
+    # 1. The protocol (build and binning), then the built-in engines' extras
+    assert isinstance(layout, LayoutEngine)
     assert hasattr(layout, "bin_centers"), f"{layout_kind} missing bin_centers"
     assert hasattr(layout, "connectivity"), f"{layout_kind} missing connectivity"
     assert hasattr(layout, "dimension_ranges"), (

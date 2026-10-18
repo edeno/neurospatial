@@ -371,3 +371,8 @@ def test_explicit_mesh_and_track_bins_get_the_layout_node_attributes() -> None:
     ]
     assert flat != list(range(mesh.n_bins))
     assert mesh.active_mask[flat].all()
+
+
+@pytest.mark.parametrize("engine", [_RecordedPoints(), _WrappedEngine()])
+def test_an_engine_with_build_and_binning_is_a_layout_engine(engine):
+    assert isinstance(engine, LayoutEngine)

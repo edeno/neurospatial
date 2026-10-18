@@ -560,6 +560,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- The `neurospatial.layout.LayoutEngine` protocol lists only `build()` and
+  `binning()`, the two methods an environment uses. A custom engine needs
+  nothing else, and type checkers no longer ask it for `bin_centers`,
+  `grid_edges`, `plot()` and the other members that the built-in engines
+  offer for working with an engine directly.
+
 - `to_linear()`, `linear_to_nd()` and `with_track_width()` on a polar
   environment now say what is actually wrong: it is not a track (for example
   "to_linear() needs a linearized track ..., but this is a Polar environment,
