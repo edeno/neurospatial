@@ -623,6 +623,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- A position exactly on the outline of a grid environment's bins -- the
+  arena's edge, the rim of a hole or the tip of an arm -- now belongs to the
+  bin it bounds, as the last bin of `np.histogram` includes its right edge.
+  Before, bins were half-open on every face, so `bin_at` gave `-1` there and
+  occupancy, spike counts and point regions dropped it: every reward well at
+  an arm tip of the built-in W, plus, T and radial-arm mazes covered no bin,
+  and an animal sitting against the wall was not counted. A face shared by two
+  bins still has one owner, `time_allocation="linear"` follows the same rule,
+  and in `Environment.combine` a face shared by two components keeps its
+  half-open owner.
+
 - The `neurospatial.layout.LayoutEngine` protocol lists only `build()` and
   `binning()`, the two methods an environment uses. A custom engine needs
   nothing else, and type checkers no longer ask it for `bin_centers`,

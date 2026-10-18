@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.geometry._regular_lookup import outline_cells
+
 if TYPE_CHECKING:
     from neurospatial.geometry import RectilinearGrid
 
@@ -32,10 +34,14 @@ def _grid_cells(
     points: NDArray[np.float64],
     edges: Sequence[NDArray[np.float64]],
     shape: tuple[int, ...],
+    active_mask: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.intp]:
     """Row-major flat cell index of each point, or ``-1`` outside the grid.
 
-    Cells are half-open, ``[edges[i], edges[i + 1])``, along every axis.
+    Cells are half-open, ``[edges[i], edges[i + 1])``, along every axis. With
+    ``active_mask``, a point whose half-open cell is inactive or outside the
+    grid but which lies on the outline of the active cells takes the active
+    cell it bounds (:func:`outline_cells`).
 
     Parameters
     ----------
@@ -44,6 +50,8 @@ def _grid_cells(
         Cell edges per axis.
     shape : tuple of int
         Number of cells per axis.
+    active_mask : ndarray of bool of shape ``shape``, optional
+        Active cells.
 
     Returns
     -------
@@ -58,6 +66,13 @@ def _grid_cells(
         flat += index * stride
         stride *= shape[axis]
     flat[~inside] = -1
+    if active_mask is not None:
+        active = np.asarray(active_mask).ravel()
+        unowned = np.flatnonzero((flat < 0) | ~active[np.maximum(flat, 0)])
+        if unowned.size:
+            owner = outline_cells(points[unowned], tuple(edges), shape, active_mask)
+            found = owner >= 0
+            flat[unowned[found]] = owner[found]
     return flat
 
 
@@ -112,6 +127,7 @@ def ray_grid_pieces(
     edges: Sequence[NDArray[np.float64]],
     shape: tuple[int, ...],
     durations: NDArray[np.float64],
+    active_mask: NDArray[np.bool_] | None = None,
 ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.float64]]:
     """Split straight intervals at the cell edges they cross.
 
@@ -125,6 +141,11 @@ def ray_grid_pieces(
         Number of cells per axis, active or not.
     durations : ndarray of float64, shape (n_intervals,)
         Time to divide along each interval.
+    active_mask : ndarray of bool of shape ``shape``, optional
+        Active cells. When given, a piece on the outline of the active cells
+        (along the grid's edge, a hole or an arm tip) belongs to the active
+        cell it bounds, as in point lookup; see
+        :func:`~neurospatial.geometry._regular_lookup.outline_cells`.
 
     Returns
     -------
@@ -201,11 +222,11 @@ def ray_grid_pieces(
     low, high = value[:-1][same], value[1:][same]
     intervals = moving[owner]
     midpoint = starts[intervals] + ((low + high) / 2)[:, None] * direction[owner]
-    piece_cells = _grid_cells(midpoint, edges, shape)
+    piece_cells = _grid_cells(midpoint, edges, shape, active_mask)
     piece_time = durations[intervals] * ((high - low) / lengths[intervals])
 
     still_rows = np.flatnonzero(still)
-    still_cells = _grid_cells(starts[still_rows], edges, shape)
+    still_cells = _grid_cells(starts[still_rows], edges, shape, active_mask)
 
     interval = np.concatenate([still_rows, intervals])
     cell = np.concatenate([still_cells, piece_cells])
@@ -309,6 +330,7 @@ def _accumulate_block(
         grid.edges,
         grid.shape,
         dt[crossing],
+        grid.active_mask,
     )
     if not return_seconds:
         # Normalize over every crossed cell, active or not, so mass on

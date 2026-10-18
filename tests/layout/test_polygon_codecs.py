@@ -56,7 +56,7 @@ def test_standalone_polygon_codec_roundtrip(part):
     else:
         np.testing.assert_array_equal(
             restored.locate([[0.5, 1.0], [2.0, 1.0], [3.5, 1.0], [4.0, 1.0]]),
-            [0, -1, 1, -1],
+            [0, -1, 1, 1],  # x = 4 is the outline of the last cell
         )
         assert "tree" not in json.dumps(meta)
 

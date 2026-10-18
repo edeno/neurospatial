@@ -192,8 +192,15 @@ def _rectilinear_cases(draw):
 
 
 def _brute_force_boxes(edges, shape, active, points):
-    """Search half-open boxes independently of digitize or any locator helper."""
+    """Search boxes independently of digitize or any locator helper.
+
+    A point's half-open box owns it. A point no active half-open box owns but
+    an active closed box contains (on the outline of the active cells) goes to
+    the closed box whose upper faces it touches on the fewest axes, the lowest
+    axes first.
+    """
     result = np.full(len(points), -1, dtype=np.intp)
+    best = [None] * len(points)
     active_index = 0
     for cell in np.ndindex(shape):
         if not active[cell]:
@@ -202,14 +209,24 @@ def _brute_force_boxes(edges, shape, active, points):
         high = np.asarray([edges[d][index + 1] for d, index in enumerate(cell)])
         inside = np.all(points >= low, axis=1) & np.all(points < high, axis=1)
         result[inside] = active_index
+        closed = np.all(points >= low, axis=1) & np.all(points <= high, axis=1)
+        for row in np.flatnonzero(closed & ~inside):
+            touched = tuple(int(d) for d in np.flatnonzero(points[row] == high))
+            rank = (len(touched), touched)
+            if best[row] is None or rank < best[row][0]:
+                best[row] = (rank, active_index)
         active_index += 1
+    for row, choice in enumerate(best):
+        if result[row] < 0 and choice is not None:
+            result[row] = choice[1]
     return result
 
 
 @pytest.mark.hypothesis
 @given(_rectilinear_cases())
 def test_rectilinear_locator_matches_brute_force(case):
-    """Arbitrary masks and unequal cell widths retain half-open ownership."""
+    """Arbitrary masks and unequal cell widths keep half-open ownership inside
+    the active cells and close their outline."""
     edges, shape, active, points = case
     mapping = np.full(active.size, -1, dtype=np.intp)
     mapping[active.ravel()] = np.arange(np.count_nonzero(active))
