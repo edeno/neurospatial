@@ -529,12 +529,6 @@ class Environment(Generic[_C]):
         result._regions = snapshot
         return result
 
-    @cartesian_only(
-        why="A track width is a distance from a Cartesian centerline, and a "
-        "polar environment is not a track.",
-        fix="build the track with Environment.linear_track, Environment.maze or "
-        "Environment.from_graph and call with_track_width() on that environment",
-    )
     def with_track_width(
         self: Environment[CartesianSystem], width: float
     ) -> Environment[CartesianSystem]:
@@ -1509,12 +1503,6 @@ class Environment(Generic[_C]):
             self.connectivity, int(start), int(end), weight=edge_weight
         )
 
-    @cartesian_only(
-        why="It projects Cartesian positions onto a track that "
-        "Environment.from_graph built, and a polar environment is not a track.",
-        fix="build the track with Environment.from_graph(...) and call "
-        "to_linear() on that environment",
-    )
     def to_linear(
         self: Environment[CartesianSystem],
         positions: NDArray[np.float64],
@@ -1575,12 +1563,6 @@ class Environment(Generic[_C]):
         """
         return _to_linear(self._binning, positions)
 
-    @cartesian_only(
-        why="It maps positions along a track that Environment.from_graph built "
-        "back to Cartesian positions, and a polar environment is not a track.",
-        fix="build the track with Environment.from_graph(...) and call "
-        "linear_to_nd() on that environment",
-    )
     def linear_to_nd(
         self: Environment[CartesianSystem],
         linear_position: NDArray[np.float64],

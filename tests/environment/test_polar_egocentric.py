@@ -832,17 +832,36 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         ):
             polar_env.interpolate(field, points, mode="nearest")
 
-    def test_to_linear_raises_on_polar_env(self, polar_env):
-        with pytest.raises(
-            CartesianOnlyError, match=r"polar.*to_linear|to_linear.*polar"
-        ):
-            polar_env.to_linear(np.array([[5.0, 0.0]]))
-
-    def test_linear_to_nd_raises_on_polar_env(self, polar_env):
-        with pytest.raises(
-            CartesianOnlyError, match=r"polar.*linear_to_nd|linear_to_nd.*polar"
-        ):
-            polar_env.linear_to_nd(np.array([5.0]))
+    @pytest.mark.parametrize(
+        ("name", "call", "refusal"),
+        [
+            (
+                "to_linear",
+                lambda env: env.to_linear(np.array([[5.0, 0.0]])),
+                "to_linear() needs a linearized track",
+            ),
+            (
+                "linear_to_nd",
+                lambda env: env.linear_to_nd(np.array([5.0])),
+                "linear_to_nd() needs a linearized track",
+            ),
+            (
+                "with_track_width",
+                lambda env: env.with_track_width(5.0),
+                "with_track_width() needs a track environment, but it is not a "
+                "linearized track",
+            ),
+        ],
+    )
+    def test_track_methods_say_a_polar_env_is_not_a_track(
+        self, polar_env, name, call, refusal
+    ):
+        """Track-only methods refuse a polar env as they refuse any non-track."""
+        with pytest.raises(TypeError) as refused:
+            call(polar_env)
+        assert not isinstance(refused.value, CartesianOnlyError)
+        assert str(refused.value).startswith(refusal)
+        assert name not in CARTESIAN_OPERATIONS
 
     def test_rebin_raises_on_polar_env(self, polar_env):
         with pytest.raises(CartesianOnlyError, match=r"polar.*rebin|rebin.*polar"):
@@ -1359,6 +1378,11 @@ _POLAR_INHERITED_MEMBERS = {
         "region_mask",
         "region_membership",
     },
+    "track-only, refused as on every environment that is not a track": {
+        "linear_to_nd",
+        "to_linear",
+        "with_track_width",
+    },
     "plots on distance-by-angle axes": {
         "animate_fields",
         "plot",
@@ -1466,11 +1490,8 @@ def test_cartesian_operations_are_the_capability_methods():
         "apply_transform",
         "clip",
         "interpolate",
-        "linear_to_nd",
         "rebin",
         "subset",
-        "to_linear",
-        "with_track_width",
     } == CARTESIAN_OPERATIONS
     assert set(dir(Environment)) >= CARTESIAN_OPERATIONS
 

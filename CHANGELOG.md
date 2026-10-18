@@ -537,6 +537,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `to_linear()`, `linear_to_nd()` and `with_track_width()` on a polar
+  environment now say what is actually wrong: it is not a track (for example
+  "to_linear() needs a linearized track ..., but this is a Polar environment,
+  which has no track"), with the same advice every other non-track
+  environment gets, such as `env.bin_at(positions)` instead of `to_linear`.
+  They used to answer with the Cartesian-coordinates refusal. The error is
+  still a `TypeError`, but no longer a `CartesianOnlyError`, and these
+  three are no longer listed among the Cartesian-only members.
+
 - Positions or points with the wrong number of columns get the same error from
   every operation that maps them to bins (`bin_at`, `contains`, `occupancy`,
   `bin_sequence`, `bin_sequence_with_runs`, `transitions`, `interpolate`,

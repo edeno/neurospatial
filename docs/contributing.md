@@ -239,13 +239,19 @@ without one, calls `require_position_columns` first with the same `call`.
 There is one runtime `Environment` class; factories give it a static
 coordinate type, `Environment[CartesianSystem]` or
 `Environment[EgocentricPolarSystem]`. Mark a member that is meaningless on
-polar bins with `@cartesian_only(why=..., fix=...)` from
+polar bins with `@cartesian_only(why=..., fix=..., example=...)` from
 `environment/_cartesian.py`, and annotate `self` as
 `Environment[CartesianSystem]`. `why` says what the member does with Cartesian
-coordinates and `fix` names what works on a polar environment. The decorator is
+coordinates, `fix` names what works on a polar environment and `example` is
+code for it, which the tests run. The decorator is
 the only record of the capability: it refuses polar environments when the
 member is called and feeds `CARTESIAN_OPERATIONS`. The member stays visible, so
-`hasattr` is True. A Cartesian-only mode of a shared method, or an analysis
+`hasattr` is True. Track-only members (`to_linear`, `linear_to_nd`,
+`with_track_width`) are not marked, though their `self` is
+`Environment[CartesianSystem]` because every track is Cartesian: a polar
+environment is never a track, so at run time it gets the same "needs a track"
+refusal as every other non-track environment. A
+Cartesian-only mode of a shared method, or an analysis
 function in another package, refuses with
 `neurospatial.geometry.require_cartesian(env.coordinate_system, operation,
 why=..., fix=...)`. Both raise `CartesianOnlyError`, a `TypeError`, with one
