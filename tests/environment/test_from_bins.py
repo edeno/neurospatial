@@ -14,6 +14,7 @@ from shapely.geometry import LineString, Polygon, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.binning import (
+    BinConnections,
     Binning,
     FaceGeometry,
     FaceNormals,
@@ -35,12 +36,11 @@ from neurospatial.regions import Regions
 
 def _nearest(*, faces=None, kind="explicit"):
     centers = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 3.0]])
-    bins = SpatialBins.from_arrays(
-        centers, [1.0, 2.0, 3.0], 2, [[1, 2], [0, 1]], [7.0, 5.0]
-    )
+    bins = SpatialBins.from_arrays(centers, [1.0, 2.0, 3.0], 2)
     return Binning(
         kind,
         bins,
+        BinConnections.from_arrays([[1, 2], [0, 1]], [7.0, 5.0]),
         NearestBinLocator(centers, max_distance=0.25),
         MissingFaces("No finite-volume faces were supplied.")
         if faces is None
@@ -51,12 +51,13 @@ def _nearest(*, faces=None, kind="explicit"):
 def _rectilinear():
     centers = np.array([[0.5, 0.5], [0.5, 1.5], [1.5, 0.5], [1.5, 1.5]])
     pairs = np.array([[3, 1], [2, 3], [0, 2]], dtype=np.intp)
-    bins = SpatialBins.from_arrays(centers, np.ones(4), 2, pairs, [2.0, 3.0, 4.0])
+    bins = SpatialBins.from_arrays(centers, np.ones(4), 2)
     edges = (np.arange(3.0),) * 2
     mask = np.ones((2, 2), dtype=bool)
     return Binning(
         "explicit_grid",
         bins,
+        BinConnections.from_arrays(pairs, [2.0, 3.0, 4.0]),
         RectilinearLocator(edges, (2, 2), mask, None),
         KnownFaces(FaceGeometry(pairs, np.ones(3), np.ones(3), np.ones(4))),
         rectilinear=RectilinearGrid(edges, (2, 2), mask),
@@ -100,7 +101,7 @@ def test_nearest_only_bins_keep_explicit_lookup_and_refuse_cell_capabilities():
 def test_arbitrary_pair_order_and_orientation_define_calculus(restore):
     source = _rectilinear()
     env = restore(Environment.from_bins(source))
-    np.testing.assert_array_equal(env.edge_pairs, source.bins.pairs)
+    np.testing.assert_array_equal(env.edge_pairs, source.connections.pairs)
     assert list(env.connectivity.edges()) != [tuple(pair) for pair in env.edge_pairs]
     assert nx.shortest_path_length(env.connectivity, 0, 1, weight="distance") == 9.0
     np.testing.assert_array_equal(
@@ -144,7 +145,8 @@ def test_clip_preserves_declared_navigation_paths_at_unchanged_endpoints(region)
         )
     restored = Environment.from_dict(child.to_dict())
     np.testing.assert_array_equal(
-        restored._binning.bins.pair_distances, child._binning.bins.pair_distances
+        restored._binning.connections.pair_distances,
+        child._binning.connections.pair_distances,
     )
 
 
@@ -154,7 +156,9 @@ def test_clip_refuses_to_guess_navigation_paths_after_moving_endpoints():
         ValueError, match=r"navigation path.*endpoint|endpoint.*navigation path"
     ):
         env.clip(box(0.25, 0, 2, 2))
-    np.testing.assert_array_equal(env._binning.bins.pair_distances, [2.0, 3.0, 4.0])
+    np.testing.assert_array_equal(
+        env._binning.connections.pair_distances, [2.0, 3.0, 4.0]
+    )
 
 
 def test_clip_can_remove_declared_paths_without_guessing_new_lengths():
@@ -170,10 +174,14 @@ def test_clip_updates_euclidean_edges_without_changing_unaffected_declared_paths
         np.ones((3, 1), dtype=bool),
         grid_edges=(np.arange(4.0), np.arange(2.0)),
     )
-    bins = replace(native._binning.bins, pair_distances=np.array([3.0, 1.0]))
+    connections = BinConnections.from_arrays(
+        native._binning.connections.pairs, np.array([3.0, 1.0])
+    )
     env = Environment.from_bins(
         replace(
-            native._binning, bins=bins, faces=KnownFaces(native._binning.faces.build())
+            native._binning,
+            connections=connections,
+            faces=KnownFaces(native._binning.faces.build()),
         )
     )
     child = env.clip(box(0, 0, 2.8, 1))
@@ -207,11 +215,8 @@ def test_transform_preserves_pair_alignment_with_unequal_edge_lengths(transform_
     from neurospatial.ops.transforms import scale_2d, translate
 
     source = _nearest()
-    bins = source.bins
-    bins = SpatialBins.from_arrays(
-        bins.centers, bins.sizes, bins.measure_dim, bins.pairs, [3.0, 2.0]
-    )
-    env = Environment.from_bins(replace(source, bins=bins))
+    connections = BinConnections.from_arrays(source.connections.pairs, [3.0, 2.0])
+    env = Environment.from_bins(replace(source, connections=connections))
     scale = 1.0 if transform_kind == "translation" else 2.0
     transform = translate(1.0, 2.0) if scale == 1.0 else scale_2d(scale)
     derived = env.apply_transform(transform)
@@ -242,8 +247,8 @@ def test_similarity_preserves_declared_navigation_weights(
     source = source_factory()
     env = Environment.from_bins(source)
     derived = env.apply_transform(Affine2D(np.asarray(matrix, dtype=float)))
-    np.testing.assert_array_equal(derived.edge_pairs, source.bins.pairs)
-    expected = source.bins.pair_distances * scale
+    np.testing.assert_array_equal(derived.edge_pairs, source.connections.pairs)
+    expected = source.connections.pair_distances * scale
     for pair, distance in zip(derived.edge_pairs, expected, strict=True):
         assert derived.connectivity.edges[tuple(pair)]["distance"] == distance
     assert nx.shortest_path_length(derived.connectivity, 0, 1, weight="distance") == (
@@ -256,7 +261,7 @@ def test_similarity_preserves_declared_navigation_weights(
             source.faces.build().distance * scale,
         )
     np.testing.assert_array_equal(
-        env._binning.bins.pair_distances, source.bins.pair_distances
+        env._binning.connections.pair_distances, source.connections.pair_distances
     )
 
 
@@ -292,11 +297,12 @@ def test_non_similarity_keeps_euclidean_navigation_supported(matrix):
 
     source = _nearest()
     bins = source.bins
+    pairs = source.connections.pairs
     euclidean = np.linalg.norm(
-        bins.centers[bins.pairs[:, 1]] - bins.centers[bins.pairs[:, 0]], axis=1
+        bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]], axis=1
     )
     env = Environment.from_bins(
-        replace(source, bins=replace(bins, pair_distances=euclidean))
+        replace(source, connections=BinConnections.from_arrays(pairs, euclidean))
     )
     derived = env.apply_transform(Affine2D(np.asarray(matrix, dtype=float)))
     centers = derived.bin_centers
@@ -312,11 +318,12 @@ def test_euclidean_translation_keeps_existing_center_difference_rounding():
 
     source = _nearest()
     centers = np.array([[0.1, 0.0], [0.3, 0.0], [0.3, 0.7]])
-    pairs = source.bins.pairs
+    pairs = source.connections.pairs
     distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
     source = replace(
         source,
-        bins=replace(source.bins, centers=centers, pair_distances=distances),
+        bins=replace(source.bins, centers=centers),
+        connections=BinConnections.from_arrays(pairs, distances),
         locator=NearestBinLocator(centers, max_distance=0.25),
     )
     derived = Environment.from_bins(source).apply_transform(translate(1, 2))
@@ -332,11 +339,14 @@ def test_declared_zero_weight_survives_restoration_and_nested_similarities():
 
     source = _rectilinear()
     weights = np.array([2.0, 1.0, 0.0])
-    source = replace(source, bins=replace(source.bins, pair_distances=weights))
+    source = replace(
+        source,
+        connections=BinConnections.from_arrays(source.connections.pairs, weights),
+    )
     env = Environment.from_dict(Environment.from_bins(source).to_dict())
     derived = env.apply_transform(translate(1, 2))
     derived = pickle.loads(pickle.dumps(derived)).apply_transform(scale_2d(2))
-    for pair, distance in zip(source.bins.pairs, weights * 2, strict=True):
+    for pair, distance in zip(source.connections.pairs, weights * 2, strict=True):
         assert derived.connectivity.edges[tuple(pair)]["distance"] == distance
 
 
@@ -344,11 +354,12 @@ def test_positive_navigation_weight_cannot_underflow_to_zero():
     from neurospatial.ops.transforms import scale_2d
 
     centers = np.array([[0.0, 0.0], [1.0, 0.0]])
-    bins = SpatialBins.from_arrays(centers, [1.0, 1.0], 2, [[0, 1]], [1e-200])
+    bins = SpatialBins.from_arrays(centers, [1.0, 1.0], 2)
     env = Environment.from_bins(
         Binning(
             "weighted",
             bins,
+            BinConnections.from_arrays([[0, 1]], [1e-200]),
             NearestBinLocator(centers, max_distance=0.25),
             MissingFaces("No finite-volume faces were supplied."),
         )
@@ -370,10 +381,18 @@ def test_regions_and_arena_use_the_normal_ownership_contract():
     assert env.arena.domain_known
 
 
-@pytest.mark.parametrize("field", ["centers", "sizes", "pairs", "pair_distances"])
-def test_mutated_record_arrays_are_revalidated_at_ingress(field):
+@pytest.mark.parametrize(
+    "record,field",
+    [
+        ("bins", "centers"),
+        ("bins", "sizes"),
+        ("connections", "pairs"),
+        ("connections", "pair_distances"),
+    ],
+)
+def test_mutated_record_arrays_are_revalidated_at_ingress(record, field):
     source = _nearest()
-    value = getattr(source.bins, field)
+    value = getattr(getattr(source, record), field)
     value.setflags(write=True)
     value.flat[0] = np.nan if field == "centers" else -1
     with pytest.raises(ValueError, match=field):
@@ -385,9 +404,12 @@ def test_missing_faces_is_explicit_and_delegated_faces_are_refused():
     native = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    for faces in (None, object(), native._binning.faces):
-        with pytest.raises(TypeError, match=r"KnownFaces|MissingFaces"):
+    for faces in (None, object()):
+        with pytest.raises(TypeError, match=r"KnownFaces.*MissingFaces"):
             Environment.from_bins(replace(source, faces=faces))
+    # Another environment's native recipe builds faces for other bins.
+    with pytest.raises(ValueError, match="faces"):
+        Environment.from_bins(replace(source, faces=native._binning.faces))
 
 
 @pytest.mark.parametrize("field,value", [("A", -1), ("distance", 0), ("volumes", -1)])
@@ -421,10 +443,11 @@ def test_nonuniform_cells_are_supported_without_regular_grid_rebinning():
     edges = (np.array([0.0, 1.0, 3.0]), np.array([0.0, 1.0]))
     centers = np.array([[0.5, 0.5], [2.0, 0.5]])
     mask = np.ones((2, 1), dtype=bool)
-    bins = SpatialBins.from_arrays(centers, [1, 2], 2, [[0, 1]], [1.5])
+    bins = SpatialBins.from_arrays(centers, [1, 2], 2)
     source = Binning(
         "RegularGrid",
         bins,
+        BinConnections.from_arrays([[0, 1]], [1.5]),
         RectilinearLocator(edges, (2, 1), mask, None),
         MissingFaces("No finite-volume faces supplied."),
         rectilinear=RectilinearGrid(edges, (2, 1), mask),
@@ -440,12 +463,11 @@ def test_nearly_uniform_variable_measures_are_not_reinterpreted_as_native_cells(
     edges = (np.array([0.0, 1.0, 2.00000005]), np.array([0.0, 1.0]))
     centers = np.array([[0.5, 0.5], [0.5 * (edges[0][1] + edges[0][2]), 0.5]])
     mask = np.ones((2, 1), dtype=bool)
-    bins = SpatialBins.from_arrays(
-        centers, np.diff(edges[0]), 2, [[0, 1]], [centers[1, 0] - centers[0, 0]]
-    )
+    bins = SpatialBins.from_arrays(centers, np.diff(edges[0]), 2)
     source = Binning(
         "RegularGrid",
         bins,
+        BinConnections.from_arrays([[0, 1]], [centers[1, 0] - centers[0, 0]]),
         RectilinearLocator(edges, (2, 1), mask, None),
         MissingFaces("No finite-volume faces supplied."),
         rectilinear=RectilinearGrid(edges, (2, 1), mask),
@@ -472,9 +494,15 @@ def test_rebin_uniformity_guard_preserves_native_large_offset_rounding():
 
 def test_empty_bins_remain_a_valid_explicit_empty_environment():
     centers = np.empty((0, 2))
-    bins = SpatialBins.from_arrays(centers, [], 2, np.empty((0, 2), dtype=int), [])
+    bins = SpatialBins.from_arrays(centers, [], 2)
     env = Environment.from_bins(
-        Binning("empty", bins, NearestBinLocator(centers), MissingFaces("No bins."))
+        Binning(
+            "empty",
+            bins,
+            BinConnections.from_arrays(np.empty((0, 2), dtype=int), []),
+            NearestBinLocator(centers),
+            MissingFaces("No bins."),
+        )
     )
     assert env.n_bins == 0
     assert env.n_dims == 2
@@ -494,7 +522,7 @@ def test_custom_callbacks_are_refused_before_copy_or_lookup():
         Environment.from_bins(replace(_nearest(), locator=CustomLocator()))
 
 
-@pytest.mark.parametrize("slot", ["mapping", "cells", "clip_mapping"])
+@pytest.mark.parametrize("slot", ["mapping", "cells"])
 def test_clipped_records_refuse_nested_custom_providers_before_copy(slot):
     parent = Environment.from_grid_mask(
         np.ones((1, 2), dtype=bool),
@@ -526,10 +554,8 @@ def test_clipped_records_refuse_nested_custom_providers_before_copy(slot):
         source = replace(
             source, locator=replace(source.locator, mapping=ExternalMapping())
         )
-    elif slot == "cells":
-        source = replace(source, locator=replace(source.locator, cells=ExternalCells()))
     else:
-        source = replace(source, clip_mapping=ExternalMapping())
+        source = replace(source, locator=replace(source.locator, cells=ExternalCells()))
     with pytest.raises(TypeError, match=r"owned.*snapshot|supported"):
         Environment.from_bins(source)
 
@@ -659,10 +685,10 @@ def test_explicit_derived_data_preserves_retained_source_indices(derivation):
 def test_explicit_pairs_crossing_walls_are_rejected_without_changing_input():
     source = _rectilinear()
     arena = OpenArena(box(0, 0, 2, 2), walls=(LineString([(1, 0), (1, 2)]),))
-    expected = source.bins.pairs.copy()
+    expected = source.connections.pairs.copy()
     with pytest.raises(ValueError, match=r"supplied.*pairs|Supplied.*pairs"):
         Environment.from_bins(source, arena=arena)
-    np.testing.assert_array_equal(source.bins.pairs, expected)
+    np.testing.assert_array_equal(source.connections.pairs, expected)
 
 
 def test_explicit_outline_is_drawing_geometry_without_physical_wall_evidence():
@@ -711,11 +737,12 @@ def _variable_grid_faces(n_dims):
             np.prod(np.delete(widths[u], moved[0])) if len(moved) == 1 else 0.0
         )
     distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
-    bins = SpatialBins.from_arrays(centers, sizes, n_dims, pairs, distances * 3 + 1)
+    bins = SpatialBins.from_arrays(centers, sizes, n_dims)
     mask = np.ones((2,) * n_dims, dtype=bool)
     return Binning(
         "variable_grid",
         bins,
+        BinConnections.from_arrays(pairs, distances * 3 + 1),
         RectilinearLocator(edges, mask.shape, mask, None),
         KnownFaces(FaceGeometry(pairs, np.array(areas), distances, sizes)),
         rectilinear=RectilinearGrid(edges, mask.shape, mask),
@@ -737,7 +764,7 @@ def test_variable_grid_physical_faces_are_separate_from_navigation_weights(
     np.testing.assert_allclose(
         env.diffuse(np.ones(env.n_bins), bandwidth=0.5, mode="average"), 1
     )
-    assert np.all(exported.bins.pair_distances > exported.faces.build().distance)
+    assert np.all(exported.connections.pair_distances > exported.faces.build().distance)
 
 
 @pytest.mark.parametrize("n_dims", [1, 2, 3])
@@ -777,7 +804,9 @@ def test_transformed_explicit_grid_faces_cannot_be_forged_through_wrappers(histo
     if history == "axis_scale":
         source = replace(
             source,
-            bins=replace(source.bins, pair_distances=source.faces.build().distance),
+            connections=BinConnections.from_arrays(
+                source.connections.pairs, source.faces.build().distance
+            ),
         )
     env = Environment.from_bins(source)
     if history == "axis_scale":
@@ -868,7 +897,7 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
     matrix[:3, :3] = linear
     matrix[:3, 3] = [100, -50, 25]
     centers = source.bins.centers @ linear.T + matrix[:3, 3]
-    pairs = source.bins.pairs
+    pairs = source.connections.pairs
     distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
     source_vectors = source.bins.centers[pairs[:, 1]] - source.bins.centers[pairs[:, 0]]
     axes = np.argmax(np.abs(source_vectors), axis=1)
@@ -879,6 +908,7 @@ def test_three_dimensional_affine_grid_faces_follow_physical_planes():
     transformed = replace(
         source,
         bins=replace(source.bins, centers=centers, sizes=sizes),
+        connections=BinConnections.from_arrays(pairs, distances),
         locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
         faces=KnownFaces(faces),
         rectilinear=None,
@@ -902,7 +932,8 @@ def test_grid_face_validation_preserves_finite_extreme_coordinate_scales(scale):
     mask = np.ones(2, dtype=bool)
     source = Binning(
         "finite_extreme_grid",
-        SpatialBins.from_arrays(centers, sizes, 1, pairs, [scale]),
+        SpatialBins.from_arrays(centers, sizes, 1),
+        BinConnections.from_arrays(pairs, [scale]),
         RectilinearLocator(edges, (2,), mask, None),
         KnownFaces(FaceGeometry(pairs, np.ones(1), np.array([scale]), sizes)),
         rectilinear=RectilinearGrid(edges, (2,), mask),
@@ -1014,14 +1045,13 @@ def test_explicit_cell_faces_cannot_omit_or_invent_shared_faces(kind, change):
             bins.centers[:, None, :] - bins.centers[None, :, :], axis=-1
         )
         u, v = np.unravel_index(np.argmax(separation), separation.shape)
-        pairs = np.vstack([bins.pairs, [[u, v]]]).astype(np.intp)
+        connections = source.connections
+        pairs = np.vstack([connections.pairs, [[u, v]]]).astype(np.intp)
         distance = separation[u, v]
         invalid = replace(
             source,
-            bins=replace(
-                bins,
-                pairs=pairs,
-                pair_distances=np.append(bins.pair_distances, distance),
+            connections=BinConnections.from_arrays(
+                pairs, np.append(connections.pair_distances, distance)
             ),
             faces=KnownFaces(
                 FaceGeometry(
@@ -1055,21 +1085,17 @@ def test_hexagon_faces_refuse_affine_maps_that_shear_the_lattice():
     _, source = _cell_face_source("hex", "native")
     matrix = np.array([[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]])
     bins = source.bins
+    pairs = source.connections.pairs
     centers = bins.centers @ matrix[:2, :2].T
-    distances = np.linalg.norm(
-        centers[bins.pairs[:, 1]] - centers[bins.pairs[:, 0]], axis=1
-    )
+    distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
     faces = source.faces.build()
     sheared = replace(
         source,
-        bins=SpatialBins.from_arrays(
-            centers, bins.sizes * 6.0, 2, bins.pairs, distances
-        ),
+        bins=SpatialBins.from_arrays(centers, bins.sizes * 6.0, 2),
+        connections=BinConnections.from_arrays(pairs, distances),
         locator=TransformedLocator(source.locator, np.linalg.inv(matrix)),
         faces=KnownFaces(
-            FaceGeometry(
-                bins.pairs, faces.A * np.sqrt(6.0), distances, bins.sizes * 6.0
-            )
+            FaceGeometry(pairs, faces.A * np.sqrt(6.0), distances, bins.sizes * 6.0)
         ),
         shapes=None,
     )

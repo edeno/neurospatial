@@ -449,10 +449,11 @@ def test_layout_engine_protocol_adherence(
     np.testing.assert_array_equal(binning.bins.centers, layout.bin_centers)
     np.testing.assert_array_equal(binning.bins.sizes, layout.bin_sizes())
     np.testing.assert_array_equal(
-        binning.bins.pairs, np.array([(u, v) for u, v, _ in edges]).reshape(-1, 2)
+        binning.connections.pairs,
+        np.array([(u, v) for u, v, _ in edges]).reshape(-1, 2),
     )
     np.testing.assert_array_equal(
-        binning.bins.pair_distances, [data["distance"] for _, _, data in edges]
+        binning.connections.pair_distances, [data["distance"] for _, _, data in edges]
     )
     assert binning.bins.measure_dim == (
         1 if layout.is_linearized_track else layout.bin_centers.shape[1]
@@ -461,7 +462,9 @@ def test_layout_engine_protocol_adherence(
         binning.locator.locate(layout.bin_centers), np.arange(len(layout.bin_centers))
     )
     assert binning.faces.available
-    np.testing.assert_array_equal(binning.faces.build().edges, binning.bins.pairs)
+    np.testing.assert_array_equal(
+        binning.faces.build().edges, binning.connections.pairs
+    )
     assert (binning.linearization is not None) == layout.is_linearized_track
 
 
@@ -517,9 +520,9 @@ def test_engine_connectivity_is_derived_from_its_binning(
     assert layout.connectivity is graph
 
     # The graph is a convenience copy: editing it leaves the bins unchanged.
-    pairs = layout.binning().bins.pairs
+    pairs = layout.binning().connections.pairs
     graph.remove_edges_from(list(graph.edges))
-    np.testing.assert_array_equal(layout.binning().bins.pairs, pairs)
+    np.testing.assert_array_equal(layout.binning().connections.pairs, pairs)
 
     # Building again replaces the graph.
     layout.build(**params)

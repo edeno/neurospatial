@@ -12,6 +12,7 @@ from shapely.geometry import Polygon
 
 from neurospatial import Environment
 from neurospatial.binning import (
+    BinConnections,
     Binning,
     FaceGeometry,
     KnownFaces,
@@ -51,13 +52,8 @@ class _RecordedGrid:
         mask = np.ones(shape, dtype=bool)
         self._binning = Binning(
             "RecordedGrid",
-            SpatialBins.from_arrays(
-                centers,
-                np.full(len(centers), bin_size**2),
-                2,
-                pairs,
-                np.full(n_pairs, bin_size),
-            ),
+            SpatialBins.from_arrays(centers, np.full(len(centers), bin_size**2), 2),
+            BinConnections.from_arrays(pairs, np.full(n_pairs, bin_size)),
             RectilinearLocator(edges, shape, mask, None),
             KnownFaces(
                 FaceGeometry(
@@ -86,7 +82,8 @@ class _RecordedPoints:
         distances = np.linalg.norm(centers[pairs[:, 1]] - centers[pairs[:, 0]], axis=1)
         self._binning = Binning(
             "RecordedPoints",
-            SpatialBins.from_arrays(centers, np.ones(n_points), 2, pairs, distances),
+            SpatialBins.from_arrays(centers, np.ones(n_points), 2),
+            BinConnections.from_arrays(pairs, distances),
             NearestBinLocator(centers, max_distance=radius / 4),
             MissingFaces("Ring points have no cells."),
             dimension_ranges=((-radius, radius), (-radius, radius)),
@@ -327,6 +324,7 @@ def test_binning_ranges_need_one_pair_per_axis() -> None:
         Binning(
             binning.kind,
             binning.bins,
+            binning.connections,
             binning.locator,
             binning.faces,
             dimension_ranges=((0.0, 1.0),),

@@ -109,8 +109,14 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
             if lengths.size == 0:
                 lengths = env.coordinate_system.fallback_lengths(env)
             bandwidth = 2.5 * float(np.median(lengths))
-    ranges = env.coordinate_system.length_ranges(env.dimension_ranges)
-    extent = max(stop - start for start, stop in ranges)
+    # Point bins built from_bins without declared ranges have no known
+    # extent; the warning below needs one.
+    ranges = (
+        ()
+        if env.dimension_ranges is None
+        else env.coordinate_system.length_ranges(env.dimension_ranges)
+    )
+    extent = max((stop - start for start, stop in ranges), default=0.0)
     if extent > 0 and bandwidth >= extent:
         warnings.warn(
             f"bandwidth={bandwidth:g} spans the environment (extent {extent:g} "

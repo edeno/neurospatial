@@ -47,18 +47,18 @@ def transform_normals(
 
 def _center_vectors(binning: Binning) -> NDArray[np.float64]:
     """Read cell representatives without subtracting rounded world offsets."""
-    bins = binning.bins
+    bins, pairs = binning.bins, binning.connections.pairs
     frame = binning.grid_frame
     if frame is None:
         retained = _combined_vectors(binning.locator)
         if retained is not None:
-            pairs, vectors = retained
-            if not np.array_equal(pairs, bins.pairs):
+            retained_pairs, vectors = retained
+            if not np.array_equal(retained_pairs, pairs):
                 raise ValueError(
                     "Combined physical vectors must follow retained pair order."
                 )
             return vectors
-        return bins.centers[bins.pairs[:, 1]] - bins.centers[bins.pairs[:, 0]]
+        return bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]]
     source = frame.source
     indices = np.unravel_index(np.flatnonzero(source.active_mask), source.shape)
     centers = np.column_stack(
@@ -68,8 +68,7 @@ def _center_vectors(binning: Binning) -> NDArray[np.float64]:
         ]
     )
     return np.asarray(
-        (centers[bins.pairs[:, 1]] - centers[bins.pairs[:, 0]])
-        @ frame.forward[:-1, :-1].T,
+        (centers[pairs[:, 1]] - centers[pairs[:, 0]]) @ frame.forward[:-1, :-1].T,
         dtype=np.float64,
     )
 
@@ -85,7 +84,7 @@ def _combined_vectors(
             bins.centers[locator.bridge_pairs[:, 1]]
             - bins.centers[locator.bridge_pairs[:, 0]]
         )
-        return bins.pairs, np.concatenate(
+        return locator.bin_connections().pairs, np.concatenate(
             [*[_center_vectors(child) for child in locator.children], bridge_vectors]
         )
     if isinstance(locator, SubsetLocator):

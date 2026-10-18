@@ -1289,13 +1289,13 @@ _POLAR_INHERITED_MEMBERS = {
         "contains",
         "occupancy",
     },
-    "KD-tree over the stored (distance, angle) bin centers": {
-        "bin_center_tree",
-    },
     "combined-component records, empty on a native polar environment": {
         "bin_sources",
         "component_keys",
         "get_bridge_attributes",
+    },
+    "wall records, empty because a polar surround has no walls": {
+        "get_blocked_edges",
     },
     "graph and diffusion operations on physical polar geometry": {
         "bin_sizes",
@@ -1522,6 +1522,7 @@ def test_cartesian_operations_are_the_capability_methods():
     """The @cartesian_only decorators mark exactly these members and grid needs."""
     assert {
         "apply_transform",
+        "bin_center_tree",
         "clip",
         "interpolate",
         "rebin",
@@ -1543,6 +1544,9 @@ def test_polar_environment_reports_no_combined_components():
     bridges = polar_env.get_bridge_attributes()
     assert bridges.empty
     assert "conductance" in bridges.columns
+    blocked = polar_env.get_blocked_edges()
+    assert blocked.empty
+    assert list(blocked.columns) == ["source", "target", "distance", "wall"]
 
 
 def test_combine_refuses_polar_components_with_the_shared_error():

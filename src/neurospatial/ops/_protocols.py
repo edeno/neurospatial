@@ -153,7 +153,8 @@ class GraphLookupConsumer(BinningConsumer, CoordinateConsumer, Protocol):
 class BasisCentersConsumer(GraphConsumer, BinsConsumer, CoordinateConsumer, Protocol):
     """Centers, graph and coordinate meaning for choosing basis centers.
 
-    ``bin_center_tree`` is the environment's cached KD-tree over its centers.
+    ``bin_center_tree`` is a copy of the environment's cached KD-tree over its
+    centers; it refuses polar environments, whose rows are not Cartesian.
     """
 
     def bin_center_tree(self) -> cKDTree: ...
@@ -183,7 +184,8 @@ class ProbabilityTargetConsumer(CartesianBinsConsumer, Protocol):
     """Cartesian bins that receive probabilities from their nearest centers.
 
     ``bin_center_tree`` is read once at the public boundary of
-    ``map_probabilities``: the target environment caches the KD-tree.
+    ``map_probabilities``: the target environment caches the KD-tree and
+    hands out a copy.
     """
 
     def bin_center_tree(self) -> cKDTree: ...

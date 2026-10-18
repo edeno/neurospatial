@@ -17,6 +17,7 @@ from neurospatial.geometry._binning import (
     Binning,
     KnownFaces,
     MissingFaces,
+    SpatialBins,
     TrackLinearization,
 )
 from neurospatial.geometry._codecs import decode, encode
@@ -29,6 +30,7 @@ from neurospatial.layout import create_layout
 @pytest.fixture(
     params=[
         "bins",
+        "connections",
         "faces",
         "known_faces",
         "missing_faces",
@@ -57,6 +59,8 @@ def codec_part(request):
     second = Polygon([(4, 0), (6, 0), (4, 2)])
     if request.param == "bins":
         return binning.bins
+    if request.param == "connections":
+        return binning.connections
     if request.param == "faces":
         return faces
     if request.param == "known_faces":
@@ -129,7 +133,9 @@ def test_codec_round_trip(codec_part):
     encoded = encode(codec_part, "part")
     meta, arrays = encoded
     assert json.loads(json.dumps(meta)) == meta
-    assert meta["codec_version"] == (3 if isinstance(codec_part, Binning) else 1)
+    assert meta["codec_version"] == {Binning: 4, SpatialBins: 2}.get(
+        type(codec_part), 1
+    )
     assert isinstance(meta["codec"], str)
     assert all(name.startswith("part/") for name in arrays)
     restored = decode(meta, arrays, "part")
@@ -201,20 +207,42 @@ def test_unknown_codec_or_version_refused(field, value):
         decode(meta, arrays, "faces")
 
 
-@pytest.mark.parametrize("field", ["centers", "sizes", "pairs", "pair_distances"])
-def test_spatial_bins_decode_validates_geometry(field):
+@pytest.mark.parametrize(
+    "record,key,pattern",
+    [
+        ("bins", "centers", "centers"),
+        ("bins", "sizes", "sizes"),
+        ("connections", "all_pairs", "pairs"),
+        ("connections", "all_distances", "pair_distances"),
+        ("connections", "is_open", "is_open"),
+    ],
+)
+def test_bins_and_connections_decode_validate_geometry(record, key, pattern):
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
-    meta, arrays = encode(env._binning.bins, "bins")
+    meta, arrays = encode(getattr(env._binning, record), record)
     arrays = {name: value.copy() for name, value in arrays.items()}
-    key = f"bins/{field}"
-    if field == "pairs":
-        arrays[key][0, 0] = env.n_bins
+    name = f"{record}/{key}"
+    if key == "all_pairs":
+        arrays[name][0, 0] = -1
+    elif key == "is_open":
+        arrays[name] = arrays[name].astype(int)
     else:
-        arrays[key].flat[0] = np.nan
-    with pytest.raises(ValueError, match=field):
-        decode(meta, arrays, "bins")
+        arrays[name].flat[0] = np.nan
+    with pytest.raises(ValueError, match=pattern):
+        decode(meta, arrays, record)
+
+
+def test_saved_pairs_must_name_existing_bins():
+    """A pair index past the last bin is refused when the binning is published."""
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
+    )
+    payload = env.to_dict()
+    payload["arrays"]["binning/connections/all_pairs"][0][0] = env.n_bins
+    with pytest.raises(ValueError, match=r"pairs\(0, 0\) must be in \[0, 4\)"):
+        Environment.from_dict(payload)
 
 
 @pytest.mark.parametrize(
@@ -238,8 +266,10 @@ def test_decode_refuses_malformed_geometry_payload(corruption):
     )
     if corruption == "invalid_wkb":
         part = Outline(Polygon([(0, 0), (1, 0), (0, 1)]))
-    elif corruption in {"missing", "complex", "fractional_pairs", "overflow_pairs"}:
+    elif corruption in {"missing", "complex"}:
         part = env._binning.bins
+    elif corruption in {"fractional_pairs", "overflow_pairs"}:
+        part = env._binning.connections
     else:
         part = env._binning.locator
     meta, arrays = encode(part, "part")
@@ -251,9 +281,9 @@ def test_decode_refuses_malformed_geometry_payload(corruption):
         arrays["part/centers"][0, 0] += 1j
         pattern = "centers"
     elif corruption in {"fractional_pairs", "overflow_pairs"}:
-        array = arrays["part/pairs"].astype(float)
+        array = arrays["part/all_pairs"].astype(float)
         array[0, 0] = 0.5 if corruption == "fractional_pairs" else 2.0**63
-        arrays["part/pairs"] = array
+        arrays["part/all_pairs"] = array
         pattern = "pairs"
     elif corruption == "duplicate_map":
         arrays["part/flat_to_active"] = np.zeros(4, dtype=np.intp)

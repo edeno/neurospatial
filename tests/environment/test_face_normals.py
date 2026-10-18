@@ -219,34 +219,10 @@ def test_environment_round_trip_keeps_normal_ownership(environment_round_trip):
     assert not np.shares_memory(actual, expected)
 
 
-def test_legacy_binning_keeps_old_transform_capabilities():
-    env = _grid()
-    payload = to_dict(env)
-    payload["binning"]["codec_version"] = 1
-    del payload["binning"]["face_normals"]
-    # Legacy records cannot contain a hidden newer optional component.
-    for key in list(payload["arrays"]):
-        if key.startswith("binning/face_normals/"):
-            del payload["arrays"][key]
-            del payload["array_specs"][key]
-    loaded = from_dict(payload)
-    assert loaded._binning.face_normals is None
-    matrix = np.eye(3)
-    matrix[:2, :2] = [[0.0, -1.0], [1.0, 0.0]]
-    original = env.apply_transform(Affine2D(matrix))
-    legacy = loaded.apply_transform(Affine2D(matrix))
-    for actual, expected in zip(
-        face_geometry(legacy._cache, legacy._binning),
-        face_geometry(original._cache, original._binning),
-        strict=True,
-    ):
-        np.testing.assert_array_equal(actual, expected)
-
-
 def test_current_binning_requires_normal_field_and_other_codecs_stay_version_one():
     env = _grid()
     meta, arrays = encode(env._binning, "binning")
-    assert meta["codec_version"] == 3
+    assert meta["codec_version"] == 4
     assert meta["face_normals"]["codec_version"] == 1
     del meta["face_normals"]
     with pytest.raises(ValueError, match="face_normals"):
@@ -307,17 +283,13 @@ def test_physical_wall_removes_the_matching_normal_rows():
 
 
 def test_explicit_pair_reordering_reverses_only_its_normal():
-    from neurospatial.binning import FaceGeometry, SpatialBins
+    from neurospatial.binning import BinConnections, FaceGeometry
 
     env = _grid(diagonal=False)
     order = np.arange(len(env.edge_pairs))[::-1]
     pairs = env.edge_pairs[order, ::-1]
-    bins = SpatialBins(
-        env.bin_centers,
-        env.bin_sizes,
-        2,
-        pairs,
-        env._binning.bins.pair_distances[order],
+    connections = BinConnections.from_arrays(
+        pairs, env._binning.connections.pair_distances[order]
     )
     old = face_geometry(env._cache, env._binning)
     faces = KnownFaces(
@@ -325,7 +297,12 @@ def test_explicit_pair_reordering_reverses_only_its_normal():
     )
     normals = -env._binning.face_normals.values[order]
     child = Environment.from_bins(
-        replace(env._binning, bins=bins, faces=faces, face_normals=FaceNormals(normals))
+        replace(
+            env._binning,
+            connections=connections,
+            faces=faces,
+            face_normals=FaceNormals(normals),
+        )
     )
     np.testing.assert_array_equal(child.edge_pairs, pairs)
     np.testing.assert_array_equal(child._binning.face_normals.values, normals)
@@ -358,12 +335,8 @@ def test_restored_mesh_normal_validation_keeps_lookup_lazy(built_environment):
     assert len(loaded._cache) == 0
 
 
-def test_storage_refuses_normal_downgrade_and_boolean_arrays():
+def test_storage_refuses_boolean_normal_arrays():
     env = _grid()
-    meta, arrays = encode(env._binning, "binning")
-    meta["codec_version"] = 1
-    with pytest.raises(ValueError, match="requires Binning codec_version 2"):
-        decode(meta, arrays, "binning")
     meta, arrays = encode(env._binning.face_normals, "normals")
     arrays["normals/values"] = arrays["normals/values"].astype(bool)
     with pytest.raises(ValueError, match="face normals"):
@@ -372,6 +345,7 @@ def test_storage_refuses_normal_downgrade_and_boolean_arrays():
 
 def test_non_geometric_bins_do_not_invent_normals():
     from neurospatial.binning import (
+        BinConnections,
         Binning,
         MissingFaces,
         NearestBinLocator,
@@ -379,11 +353,12 @@ def test_non_geometric_bins_do_not_invent_normals():
     )
 
     centers = np.array([[0.0, 0.0], [1.0, 0.0]])
-    bins = SpatialBins(centers, np.ones(2), 2, np.array([[0, 1]]), np.ones(1))
+    bins = SpatialBins(centers, np.ones(2), 2)
     env = Environment.from_bins(
         Binning(
             "sites",
             bins,
+            BinConnections.from_arrays(np.array([[0, 1]]), np.ones(1)),
             NearestBinLocator(centers),
             MissingFaces("No physical faces."),
         )

@@ -74,7 +74,7 @@ def test_graph_follows_the_binning(published):
     assert list(graph.nodes) == list(range(published.n_bins))
     pairs = {frozenset(map(int, pair)) for pair in published.edge_pairs}
     assert {frozenset(edge) for edge in graph.edges} == pairs
-    distances = published._binning.bins.pair_distances
+    distances = published._binning.connections.pair_distances
     for row, (u, v) in enumerate(published.edge_pairs):
         assert graph.edges[int(u), int(v)]["distance"] == distances[row]
 

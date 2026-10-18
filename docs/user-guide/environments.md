@@ -185,20 +185,30 @@ the [region guide](regions.md) shows that workflow.
 ## Bring explicit bins
 
 Use `from_bins()` when another tool already defines the bin centers, measures,
-neighbor pairs and lookup rule. Supply the measures and navigation distances
-explicitly; nearest-center lookup does not establish cell boundaries or faces.
+neighbor pairs and lookup rule. `SpatialBins` holds the bins and their measures,
+`BinConnections` their neighbor pairs and navigation distances. Supply the
+measures and distances explicitly; nearest-center lookup does not establish cell
+boundaries or faces.
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 
 centers = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]])
 bins = SpatialBins.from_arrays(
     centers=centers,
     sizes=np.array([1.0, 1.0, 1.0]),  # supplied areas, in cm squared
     measure_dim=2,
+)
+connections = BinConnections.from_arrays(
     pairs=np.array([[1, 2], [1, 0]]),
     pair_distances=np.array([3.0, 4.0]),  # supplied navigation path lengths
 )
@@ -206,6 +216,7 @@ env = Environment.from_bins(
     Binning(
         kind="sample_sites",
         bins=bins,
+        connections=connections,
         locator=NearestBinLocator(centers, max_distance=0.25),
         faces=MissingFaces("Only centers and navigation distances were measured."),
     ),
@@ -234,22 +245,18 @@ to convert an external provider into these built-in records.
 
 `env.binning` returns an independent snapshot for inspecting or preparing geometry.
 Changing its array shapes, writable flags or values cannot change the environment.
-Reading it keeps native face recipes lazy. `from_bins()` requires explicit faces;
-materialize them when rebuilding a native Cartesian snapshot:
+Reading it keeps native face recipes lazy; `from_bins()` builds them and checks
+them against the bins, so a Cartesian snapshot rebuilds directly:
 
 <!-- docs-test: run -->
 ```python
-from dataclasses import replace
 import numpy as np
 from neurospatial import Environment
-from neurospatial.binning import KnownFaces
 
 original = Environment.from_grid_mask(
     np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
 )
-snapshot = original.binning
-explicit = replace(snapshot, faces=KnownFaces(snapshot.faces.build()))
-rebuilt = Environment.from_bins(explicit, arena=original.arena)
+rebuilt = Environment.from_bins(original.binning, arena=original.arena)
 np.testing.assert_array_equal(rebuilt.bin_centers, original.bin_centers)
 ```
 
@@ -355,6 +362,19 @@ lies exactly on bin edges, so the factories that build bins (`from_samples`,
   wall-distance measures such as boundary-vector maps, where the exact wall
   matters.
 
+Name each wall by passing a mapping, `walls={"divider": line}`, and errors,
+warnings and saved files refer to it by that name (`arena.wall_names`). Walls
+given as a sequence are named `"wall_0"`, `"wall_1"`, and so on.
+
+A wall closes the neighbor pairs on either side of it rather than deleting
+them. For a wall on bin edges (including a snapped one), the bins, their order
+and the list of pairs (`env.binning.connections`) are the same as without the
+wall, and only the pairs' `is_open` flags differ; `wall_fit="split"` makes new
+bins, and the pieces on either side of the wall are closed pairs.
+Paths, distances, smoothing and gradients use the open pairs, `env.edge_pairs`.
+`env.get_blocked_edges()` lists each closed pair and the wall that closes it, a
+quick check that a wall separates the bins you meant.
+
 `from_bins`, `rebin` and saved environments keep the bins they are given, so a
 wall through one of their bins raises an error naming the wall and the bin.
 Declare walls in the original coordinates before clipping or transforming so
@@ -369,7 +389,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 
-arena = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 4)]),))
+arena = OpenArena(box(0, 0, 4, 4), walls={"divider": LineString([(2, 0), (2, 4)])})
 env = Environment.from_grid_mask(
     np.ones((4, 4), dtype=bool),
     grid_edges=(np.arange(5.0), np.arange(5.0)),
@@ -381,7 +401,7 @@ assert all(left[u] == left[v] for u, v in env.connectivity.edges)
 # A barrier at x = 2.4 runs through bins: by default it moves to x = 2.
 import warnings
 
-barrier = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2.4, 0), (2.4, 4)]),))
+barrier = OpenArena(box(0, 0, 4, 4), walls={"barrier": LineString([(2.4, 0), (2.4, 4)])})
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
     snapped = Environment.from_grid_mask(
@@ -390,6 +410,12 @@ with warnings.catch_warnings(record=True) as caught:
         arena=barrier,
     )
 assert "moved the walls onto bin edges by up to 0.4" in str(caught[0].message)
+assert snapped.arena.wall_names == ("barrier",)
+
+# The wall closes the pairs across it; the bins and their pair order stay.
+blocked = env.get_blocked_edges()
+assert set(blocked["wall"]) == {"divider"}
+assert all(left[u] != left[v] for u, v in zip(blocked["source"], blocked["target"]))
 split = Environment.from_grid_mask(
     np.ones((4, 4), dtype=bool),
     grid_edges=(np.arange(5.0), np.arange(5.0)),
@@ -730,11 +756,12 @@ track footprints still require a separate exact wall representation. For a
 position-derived environment with supported planar cells, explicitly select
 `boundary_source="analysis"` when that approximation is the intended model.
 
-## Change bin size while retaining the arena
+## Change bin size
 
-`env.rebin(bin_size=...)` builds a new rectangular lattice over the retained
-arena. It keeps the original grid frame, lattice anchor, units, frame label and
-regions. The argument is a physical length along each retained grid axis;
+`env.rebin(bin_size=...)` builds a new rectangular lattice over the bins the
+environment has, within its arena: rebinning a subset keeps the selection
+rather than bringing back the space it left out. It keeps the original grid
+frame, lattice anchor, units, frame label and regions. The argument is a physical length along each retained grid axis;
 a tuple gives different lengths along different axes. It can refine or coarsen.
 
 <!-- docs-test: run -->
@@ -748,13 +775,13 @@ env = Environment.from_grid_mask(
 )
 crop = env.subset(mask=env.bin_centers[:, 0] < 2)
 coarse = crop.rebin(bin_size=2.0)
-assert coarse.n_bins == 9  # rebuild the whole retained arena
+assert coarse.n_bins == 3  # the cropped column, at the new size
 np.testing.assert_allclose(coarse.bin_sizes, 4.0)
-assert coarse.rebin(bin_size=1.0).n_bins == env.n_bins
+assert coarse.rebin(bin_size=1.0).n_bins == crop.n_bins
 ```
 
-Whole-bin selection keeps centers inside the arena; it does not promise exact
-clipped areas. Original bins in a new perimeter cell whose center lies outside
+Whole-bin selection keeps new cells that cover the environment's bins and whose
+centers lie inside the arena; it does not promise exact clipped areas. Original bins in a new perimeter cell whose center lies outside
 the arena take the neighboring new bin, like any position in a sliver. When
 original bins are still left without a new bin (beyond the new grid, or in a
 cell a subset removed),

@@ -76,6 +76,14 @@ def _check_interpolate(env, result, names):
     assert np.isnan(result[-1])
 
 
+def _check_nearest(env, result, names):
+    # The nearest bin by physical distance, angles a turn apart alike.
+    embed = env.coordinate_system.cartesian_embedding
+    places, points = embed(env.bin_centers), embed(POINTS)
+    gaps = np.linalg.norm(points[:, None] - places[None], axis=2)
+    np.testing.assert_array_equal(result, np.argmin(gaps, axis=1))
+
+
 def _check_rebin(env, result, names):
     assert result.coordinate_kind == "polar"
     assert result.n_bins == 8
@@ -115,6 +123,7 @@ def _check_distance(env, result, names):
 
 
 CHECKS = {
+    "bin_center_tree": (lambda: {"positions": POINTS}, _check_nearest),
     "interpolate": (lambda: {"positions": POINTS}, _check_interpolate),
     "rebin": (dict, _check_rebin),
     "subset": (dict, _check_mask(lambda centers: centers[:, 0] < 20.0)),
@@ -205,3 +214,14 @@ def test_nearest_bin_alone_would_put_the_outside_row_in_an_edge_bin():
     env = _surround()
     assert _containing_bins(env, POINTS)[-1] == -1
     assert env.nearest_bin(POINTS)[-1] >= 0
+
+
+def test_wavelet_basis_works_on_a_polar_environment():
+    from neurospatial.ops import heat_kernel_wavelet_basis
+
+    env = _surround()
+    basis = heat_kernel_wavelet_basis(
+        env, centers=np.array([0, 5]), scales=(1.0,), center_method="farthest_point"
+    )
+    assert basis.shape[1] == env.n_bins
+    assert np.all(np.isfinite(basis))

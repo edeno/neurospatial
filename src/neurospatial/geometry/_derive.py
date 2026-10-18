@@ -10,7 +10,9 @@ from numpy.typing import NDArray
 from shapely.affinity import affine_transform
 
 from neurospatial._exceptions import _format_error
+from neurospatial.geometry._arrays import per_dimension
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     FacesSource,
     KnownFaces,
@@ -41,7 +43,6 @@ from neurospatial.geometry._locators import (
 )
 from neurospatial.geometry._polygon import materialize_cells
 from neurospatial.geometry._polygon_cells import (
-    ClipMapping,
     PolygonCells,
     transform_polygon_cells,
 )
@@ -89,21 +90,19 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     parent_ids = np.flatnonzero(keep)
     child_of = np.full(len(keep), -1, dtype=np.intp)
     child_of[parent_ids] = np.arange(len(parent_ids))
-    pairs = binning.bins.pairs
-    pair_kept = keep[pairs[:, 0]] & keep[pairs[:, 1]]
     bins = SpatialBins.from_arrays(
         binning.bins.centers[parent_ids],
         binning.bins.sizes[parent_ids],
-        binning.bins.measure_dim,
-        child_of[pairs[pair_kept]],
-        binning.bins.pair_distances[pair_kept],
+        binning.bins.measure_dims[parent_ids],
     )
+    # pair_kept selects the open pairs that survive, for arrays aligned with them.
+    connections, pair_kept = binning.connections.select(child_of)
     faces: FacesSource = binning.faces
     if faces.available:
         old_faces = faces.build()
         faces = KnownFaces(
             FaceGeometry(
-                bins.pairs,
+                connections.pairs,
                 old_faces.A[pair_kept],
                 old_faces.distance[pair_kept],
                 bins.sizes,
@@ -137,6 +136,7 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
     return Binning(
         binning.kind,
         bins,
+        connections,
         locator,
         faces,
         rectilinear=grid,
@@ -159,14 +159,6 @@ def subset_binning(binning: Binning, keep: NDArray[np.bool_]) -> Binning:
         face_normals=(
             FaceNormals(binning.face_normals.values[pair_kept])
             if binning.face_normals is not None
-            else None
-        ),
-        clip_mapping=(
-            ClipMapping(
-                binning.clip_mapping.parent_bin_indices[keep],
-                binning.clip_mapping.n_parent_bins,
-            )
-            if binning.clip_mapping is not None
             else None
         ),
     )
@@ -302,6 +294,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     linear = matrix[:-1, :-1]
     kind, scale, logdet = _classification(linear)
     similarity = kind in {"translation", "similarity"}
+    dims = parent.measure_dims
 
     couplings = bridge_values(binning)
     if any(value > 0 for value in couplings.values()):
@@ -311,8 +304,10 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "conductance scaling requires a similarity with a known length scale",
                 "use a translation, rotation, reflection or uniform scaling",
             )
+        # Positive conductances only join bins of one measure dimension.
+        ends = np.array([min(pair) for pair in couplings], dtype=np.intp)
         try:
-            factor_c = scale ** (parent.measure_dim - 2)
+            factor_c = per_dimension(dims[ends], lambda dim: scale ** (dim - 2))
             with np.errstate(over="raise", invalid="raise", under="ignore"):
                 transformed_c = np.array(list(couplings.values())) * factor_c
             if np.any(
@@ -325,15 +320,17 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "positive conductances must remain finite and positive",
                 "rescale coordinate units before transforming",
             ) from error
-    if parent.measure_dim < parent.n_dims and not similarity:
+    if np.any(dims < parent.n_dims) and not similarity:
         raise _refusal(
             f"Cannot apply {kind} to embedded track bins.",
             "non-similarity maps change bin lengths according to each segment's direction",
             "rebuild the track from transformed node positions with Environment.from_graph",
         )
     try:
-        factor = (
-            math.exp(math.log(scale) * parent.measure_dim)
+        # Each bin's measure scales with its own dimension: lengths by
+        # ``scale``, areas by ``scale ** 2``.
+        factor: float | NDArray[np.float64] = (
+            per_dimension(dims, lambda dim: math.exp(math.log(scale) * dim))
             if similarity
             else math.exp(logdet)
         )
@@ -343,7 +340,7 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             "bin measures must remain finite and positive",
             "rescale the coordinate units before applying the transform",
         ) from exc
-    if not np.isfinite(factor) or factor <= 0:
+    if not np.all(np.isfinite(factor)) or np.any(factor <= 0):
         raise _refusal(
             "Transformed bin measures are outside floating-point range.",
             "bin measures must remain finite and positive",
@@ -373,12 +370,14 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
             "bin centers and strictly positive measures must remain finite and representable",
             "rescale the coordinate units before applying the transform",
         )
+    links = binning.connections
+    all_pairs = links.all_pairs
     original_distances = np.linalg.norm(
-        parent.centers[parent.pairs[:, 1]] - parent.centers[parent.pairs[:, 0]],
+        parent.centers[all_pairs[:, 1]] - parent.centers[all_pairs[:, 0]],
         axis=1,
     )
     declared_paths = not np.allclose(
-        parent.pair_distances,
+        links.all_distances,
         original_distances,
         rtol=64 * np.finfo(np.float64).eps,
         atol=0.0,
@@ -391,8 +390,8 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
                 "use a translation, rotation, reflection or uniform scaling, or rebuild "
                 "the bins with transformed path distances",
             )
-        distances = parent.pair_distances * scale
-        if np.any((parent.pair_distances > 0) & (distances == 0)):
+        distances = links.all_distances * scale
+        if np.any((links.all_distances > 0) & (distances == 0)):
             raise _refusal(
                 "Transformed navigation path distances are outside floating-point range.",
                 "positive path lengths must remain positive after scaling",
@@ -402,11 +401,11 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         # Keep the existing center-based calculation, including its rounding,
         # for native Euclidean connectivity.
         distances = np.linalg.norm(
-            centers[parent.pairs[:, 1]] - centers[parent.pairs[:, 0]], axis=1
+            centers[all_pairs[:, 1]] - centers[all_pairs[:, 0]], axis=1
         )
-    bins = SpatialBins.from_arrays(
-        centers, sizes, parent.measure_dim, parent.pairs, distances
-    )
+    bins = SpatialBins.from_arrays(centers, sizes, dims)
+    connections = BinConnections(all_pairs, distances, links.is_open, links.closed_by)
+    pairs = connections.pairs
     if locator is None:
         locator = TransformedLocator(
             binning.locator, np.asarray(np.linalg.inv(matrix), dtype=np.float64)
@@ -441,26 +440,25 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
         if similarity:
             faces = KnownFaces(
                 FaceGeometry(
-                    bins.pairs,
-                    old.A * scale ** (parent.measure_dim - 1),
+                    pairs,
+                    old.A
+                    * per_dimension(dims[pairs[:, 0]], lambda dim: scale ** (dim - 1)),
                     old.distance * scale,
                     bins.sizes,
                 )
             )
         elif kind == "axis-aligned scaling" and binning.rectilinear is not None:
-            vectors = (
-                parent.centers[parent.pairs[:, 1]] - parent.centers[parent.pairs[:, 0]]
-            )
+            vectors = parent.centers[pairs[:, 1]] - parent.centers[pairs[:, 0]]
             axis = np.argmax(np.abs(vectors), axis=1)
             stretch = np.abs(np.diag(linear))[axis]
             face_stretch = stretch.copy()
             diagonal_links = old.A == 0
-            face_stretch[diagonal_links] = distances[diagonal_links] / np.linalg.norm(
-                vectors[diagonal_links], axis=1
-            )
+            face_stretch[diagonal_links] = connections.pair_distances[
+                diagonal_links
+            ] / np.linalg.norm(vectors[diagonal_links], axis=1)
             faces = KnownFaces(
                 FaceGeometry(
-                    bins.pairs,
+                    pairs,
                     old.A * factor / stretch,
                     old.distance * face_stretch,
                     bins.sizes,
@@ -536,13 +534,13 @@ def _transform_binning(binning: Binning, transform: AffineMatrix) -> Binning:
     return Binning(
         binning.kind,
         bins,
+        connections,
         locator,
         faces,
         rectilinear=grid,
         linearization=track,
         shapes=shapes,
         outline=outline,
-        clip_mapping=binning.clip_mapping,
         grid_frame=frame,
         face_normals=normal_data[0] if normal_data is not None else None,
         grid_spec=(

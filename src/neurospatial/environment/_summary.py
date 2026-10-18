@@ -8,6 +8,8 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
+
 
 def _html_table_row(label: str, value: str, highlight: bool = False) -> str:
     """Generate a single HTML table row.
@@ -125,12 +127,37 @@ def _repr_html(
     )
 
 
+_MEASURE_NAMES = {1: "Length", 2: "Area", 3: "Volume"}
+
+
+def _mixed_measure_error(measure_dims: NDArray[np.intp], units: str | None) -> str:
+    """Explain why one array cannot hold lengths and areas together."""
+    unit = units or "units"
+    counts = ", ".join(
+        f"{int(np.count_nonzero(measure_dims == dim))} by "
+        f"{_MEASURE_NAMES.get(int(dim), 'volume').lower()} ({unit}"
+        f"{'' if dim == 1 else f'^{int(dim)}'})"
+        for dim in np.unique(measure_dims)
+    )
+    return _format_error(
+        f"bin_sizes would mix measures: {counts}.",
+        why="Why: these bins come from components of different dimension, such "
+        "as a track combined with an open field, so a sum, ratio or density "
+        "over all bin sizes has no unit.",
+        fix="analyze one component at a time with env.subset(mask=...), using "
+        "env.bin_sources to find each component's bins, or read each bin's "
+        "measure and its dimension from env.binning.bins.sizes and "
+        "env.binning.bins.measure_dims",
+    )
+
+
 def _info(
     *,
     name: str,
     layout_type: str,
     n_dims: int,
     bin_sizes: NDArray[np.float64],
+    measure_dims: NDArray[np.intp],
     dimension_ranges: Sequence[tuple[float, float]] | None,
     grid_edges: tuple[NDArray[np.float64], ...] | None,
     region_names: Sequence[str],
@@ -169,8 +196,17 @@ def _info(
 
     # Bin sizes
     lines.append("Bin Sizes:")
-    # Check if all bins have the same size (uniform)
-    if np.allclose(bin_sizes, bin_sizes[0]):
+    dims = np.unique(measure_dims)
+    if len(dims) > 1:
+        # Lengths and areas have no common summary statistic.
+        for dim in dims:
+            selected = bin_sizes[measure_dims == dim]
+            lines.append(
+                f"  {_MEASURE_NAMES.get(int(dim), 'Volume')} of {len(selected)} bins: "
+                f"mean {np.mean(selected):.2f}, "
+                f"range [{np.min(selected):.2f}, {np.max(selected):.2f}]"
+            )
+    elif np.allclose(bin_sizes, bin_sizes[0]):
         # Uniform bin size - for grids, extract per-dimension from grid_edges
         if grid_edges and all(len(e) > 1 for e in grid_edges):
             for dim_idx, edges in enumerate(grid_edges):

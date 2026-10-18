@@ -16,25 +16,21 @@ ordered neighbor pairs, lookup data and optional geometry components. Native
 face geometry stays lazy until requested. Mutating an exported array header or
 a locator's local query cache cannot change the environment.
 
-Use an editable array copy when preparing different geometry. To reuse a native
-Cartesian snapshot in `from_bins`, resolve its face recipe explicitly:
+Use an editable array copy when preparing different geometry. `from_bins`
+builds a native Cartesian snapshot's face recipe and checks it, so the snapshot
+can be passed back directly:
 
 <!-- docs-test: run -->
 ```python
-from dataclasses import replace
-
 import numpy as np
 from neurospatial import Environment
-from neurospatial.binning import KnownFaces
 
 env = Environment.from_grid_mask(
     np.ones((3, 3), dtype=bool),
     grid_edges=(np.arange(4.0),) * 2,
     units="cm",
 )
-binning = env.binning
-explicit = replace(binning, faces=KnownFaces(binning.faces.build()))
-restored = Environment.from_bins(explicit, units=env.units, arena=env.arena)
+restored = Environment.from_bins(env.binning, units=env.units, arena=env.arena)
 np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
 np.testing.assert_array_equal(restored.edge_pairs, env.edge_pairs)
 ```

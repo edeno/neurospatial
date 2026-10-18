@@ -77,3 +77,18 @@ def test_polar_nearest_queries_reuse_one_embedded_tree():
         env.nearest_bin(points)
         env.nearest_bin(points)
         assert build.call_count == 1
+
+
+def test_exported_tree_is_an_independent_copy():
+    env = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+    )
+    expected = env.nearest_bin(env.bin_centers)
+    tree = env.bin_center_tree()
+    assert tree is not env.bin_center_tree()
+    tree.indices[:] = tree.indices[::-1]
+    tree.data.shape = (-1,)  # an in-place header change on the copy only
+    assert env.bin_centers.shape == (9, 2)
+    np.testing.assert_array_equal(env.nearest_bin(env.bin_centers), expected)
+    _, nearest = env.bin_center_tree().query(env.bin_centers)
+    np.testing.assert_array_equal(nearest, np.arange(env.n_bins))

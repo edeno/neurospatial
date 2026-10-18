@@ -9,7 +9,12 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial.geometry._binning import Binning, MissingFaces, SpatialBins
+from neurospatial.geometry._binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    SpatialBins,
+)
 from neurospatial.geometry._codecs import decode, encode
 from neurospatial.geometry._locators import (
     RectilinearLocator,
@@ -22,28 +27,29 @@ from neurospatial.geometry._polygon_cells import (
     PolygonCells,
 )
 
+NO_CONNECTIONS = BinConnections.from_arrays(np.empty((0, 2), int), [])
+
 
 def clipped_binning():
     cells = PolygonCells((box(0, 0, 1, 4), box(3, 0, 4, 4)))
     mapping = ClipMapping(np.array([0, 0]), 1)
     base = RectilinearLocator((np.array([0.0, 4.0]),) * 2, (1, 1), None, None)
     locator = ClippedLocator(base, cells, mapping)
-    bins = SpatialBins.from_arrays(
-        [[0.5, 2.0], [3.5, 2.0]], [4.0, 4.0], 2, np.empty((0, 2), int), []
-    )
+    bins = SpatialBins.from_arrays([[0.5, 2.0], [3.5, 2.0]], [4.0, 4.0], 2)
     return Binning(
         "clipped",
         bins,
+        NO_CONNECTIONS,
         locator,
         MissingFaces("fixture"),
         shapes=cells,
-        clip_mapping=mapping,
     )
 
 
-@pytest.mark.parametrize("part", ["shapes", "clip_mapping", "locator"])
+@pytest.mark.parametrize("part", ["shapes", "mapping", "locator"])
 def test_standalone_polygon_codec_roundtrip(part):
-    original = getattr(clipped_binning(), part)
+    binning = clipped_binning()
+    original = binning.locator.mapping if part == "mapping" else getattr(binning, part)
     meta, arrays = encode(original, "part")
     json.dumps(meta, allow_nan=False)
     restored = decode(meta, arrays, "part")
@@ -69,14 +75,13 @@ def test_binning_tables_store_each_snapshot_once_and_restore_shared_identity():
     assert sum(key.endswith("/wkb") for key in arrays) == 1
     restored = decode(meta, arrays, "binning")
     assert restored.shapes is restored.locator.cells
-    assert restored.clip_mapping is restored.locator.mapping
     np.testing.assert_array_equal(
         restored.locator.locate(original.bins.centers), [0, 1]
     )
     for array in arrays.values():
         assert array.flags.writeable
         array[...] = 0
-    np.testing.assert_array_equal(restored.clip_mapping.parent_bin_indices, [0, 0])
+    np.testing.assert_array_equal(restored.locator.mapping.parent_bin_indices, [0, 0])
     np.testing.assert_array_equal(
         restored.locator.locate(original.bins.centers), [0, 1]
     )
@@ -87,41 +92,36 @@ def test_present_polygon_snapshot_is_distinct_from_historical_locator_frame(oper
     original = clipped_binning()
     if operation == "subset":
         cells = PolygonCells((original.shapes.polygons[1],))
-        mapping = ClipMapping(np.array([0]), 1)
         locator = SubsetLocator(original.locator, np.array([-1, 0]))
         centers, sizes = original.bins.centers[1:], original.bins.sizes[1:]
     else:
         cells = PolygonCells((box(10, 0, 11, 4), box(13, 0, 14, 4)))
-        mapping = ClipMapping(np.array([0, 0]), 1)
         inverse = np.eye(3)
         inverse[0, 2] = -10
         locator = TransformedLocator(original.locator, inverse)
         centers, sizes = original.bins.centers + np.array([10, 0]), original.bins.sizes
-    bins = SpatialBins.from_arrays(centers, sizes, 2, np.empty((0, 2), int), [])
+    bins = SpatialBins.from_arrays(centers, sizes, 2)
     derived = Binning(
-        "derived", bins, locator, original.faces, shapes=cells, clip_mapping=mapping
+        "derived", bins, NO_CONNECTIONS, locator, original.faces, shapes=cells
     )
     meta, arrays = encode(derived, "binning")
     assert len(meta["snapshots"]["polygon_cells"]) == 2
     restored = decode(meta, arrays, "binning")
     assert restored.shapes is not restored.locator.base.cells
-    if operation == "subset":
-        assert restored.clip_mapping is not restored.locator.base.mapping
-    else:
-        # Equal immutable mapping data can be shared across coordinate frames.
-        assert restored.clip_mapping is restored.locator.base.mapping
     np.testing.assert_array_equal(
         restored.locator.locate(centers), np.arange(len(centers))
     )
     assert restored.locator.base.cells.polygons[0].bounds == (0, 0, 1, 4)
 
 
-@pytest.mark.parametrize("field", ["shapes", "clip_mapping"])
+@pytest.mark.parametrize("field", ["shapes", "mapping"])
 @pytest.mark.parametrize("bad_id", [-1, 999, True, 0.5])
 def test_snapshot_reference_corruption_is_rejected(field, bad_id):
     meta, arrays = encode(clipped_binning(), "binning")
-    key = "polygon_cells_ref" if field == "shapes" else "clip_mapping_ref"
-    meta[field][key] = bad_id
+    if field == "shapes":
+        meta["shapes"]["polygon_cells_ref"] = bad_id
+    else:
+        meta["locator"]["mapping_ref"] = bad_id
     with pytest.raises(ValueError, match=r"snapshot|reference"):
         decode(meta, arrays, "binning")
 
@@ -147,20 +147,6 @@ def test_polygon_packed_arrays_reject_corruption(corruption):
         decode(meta, arrays, "cells")
 
 
-def test_binning_without_new_mapping_field_is_backward_compatible():
-    original = clipped_binning()
-    plain = Binning(
-        "plain",
-        original.bins,
-        RectilinearLocator((np.arange(3.0),) * 2, (2, 2), None, None),
-        original.faces,
-    )
-    meta, arrays = encode(plain, "binning")
-    meta.pop("clip_mapping", None)
-    restored = decode(meta, arrays, "binning")
-    assert restored.clip_mapping is None
-
-
 def test_locator_reference_and_mapping_payload_corruption_is_rejected():
     meta, arrays = encode(clipped_binning(), "binning")
     bad = copy.deepcopy(meta)
@@ -178,17 +164,14 @@ def test_repeated_clip_reuses_current_snapshot_and_keeps_original_ownership_data
     cells = PolygonCells((box(0, 0, 1, 2), box(3, 2, 4, 4)))
     mapping = ClipMapping(np.array([0, 1]), 2)
     locator = ClippedLocator(first.locator, cells, mapping)
-    bins = SpatialBins.from_arrays(
-        [[0.5, 1.0], [3.5, 3.0]], [2.0, 2.0], 2, np.empty((0, 2), int), []
-    )
+    bins = SpatialBins.from_arrays([[0.5, 1.0], [3.5, 3.0]], [2.0, 2.0], 2)
     second = Binning(
-        "clipped_twice", bins, locator, first.faces, shapes=cells, clip_mapping=mapping
+        "clipped_twice", bins, NO_CONNECTIONS, locator, first.faces, shapes=cells
     )
     meta, arrays = encode(second, "binning")
     restored = decode(meta, arrays, "binning")
     assert len(meta["snapshots"]["polygon_cells"]) == 2
     assert restored.shapes is restored.locator.cells
-    assert restored.clip_mapping is restored.locator.mapping
     assert restored.locator.base.cells is not restored.shapes
     np.testing.assert_array_equal(
         restored.locator.locate([[0.5, 1.0], [0.5, 3.0], [3.5, 1.0], [3.5, 3.0]]),

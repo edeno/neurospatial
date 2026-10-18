@@ -205,7 +205,9 @@ def test_closed_wall_endpoint_blocks_corner_navigation_before_and_after_clip():
     env = _grid((2, 2), arena=arena, diagonals=True)
     assert not env.connectivity.has_edge(0, 3)
     clipped = env.clip(box(0, 0, 2, 2))
-    np.testing.assert_array_equal(clipped._binning.bins.pairs, env._binning.bins.pairs)
+    np.testing.assert_array_equal(
+        clipped._binning.connections.pairs, env._binning.connections.pairs
+    )
     assert not clipped.connectivity.has_edge(0, 3)
 
 
@@ -397,7 +399,9 @@ def test_transformed_physical_walls_use_the_shared_source_frame(offset, scale, c
     if clipped:
         parent = parent.clip(box(0.25, 0.25, 3.75, 3.75))
     child = parent.apply_transform(_wall_transform(offset, scale))
-    np.testing.assert_array_equal(child._binning.bins.pairs, parent._binning.bins.pairs)
+    np.testing.assert_array_equal(
+        child._binning.connections.pairs, parent._binning.connections.pairs
+    )
     assert child.arena.physical_footprint_known
     import networkx as nx
 
@@ -425,7 +429,9 @@ def test_transformed_physical_walls_survive_history_and_transport(
         child = child.subset(mask=np.arange(child.n_bins) % 4 != 3)
         child = child.apply_transform(_wall_transform(0.0, 0.75))
     loaded = round_trip_environment(child)
-    np.testing.assert_array_equal(loaded._binning.bins.pairs, child._binning.bins.pairs)
+    np.testing.assert_array_equal(
+        loaded._binning.connections.pairs, child._binning.connections.pairs
+    )
     np.testing.assert_array_equal(loaded.bin_sizes, child.bin_sizes)
     np.testing.assert_array_equal(
         loaded.bin_at(child.bin_centers), np.arange(child.n_bins)
@@ -457,5 +463,5 @@ def test_saved_transformed_walls_still_refuse_cell_interior_crossings(matching_f
             "shape": list(array.shape),
             "dtype": array.dtype.str,
         }
-    with pytest.raises(ValueError, match="wall cuts through bin"):
+    with pytest.raises(ValueError, match=r"wall 'wall_0' cuts through bin"):
         from_dict(payload)

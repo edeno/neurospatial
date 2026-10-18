@@ -16,6 +16,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.binning import (
+    BinConnections,
     Binning,
     MissingFaces,
     NearestBinLocator,
@@ -32,24 +33,32 @@ def _times(positions: np.ndarray) -> np.ndarray:
 def _point_bins() -> Environment:
     """Bins known only by their centers: no cells, and no known arena."""
     centers = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]])
-    bins = SpatialBins.from_arrays(
-        centers, np.ones(4), 2, [[0, 1], [1, 2], [2, 3], [3, 0]], np.full(4, 2.0)
+    bins = SpatialBins.from_arrays(centers, np.ones(4), 2)
+    connections = BinConnections.from_arrays(
+        [[0, 1], [1, 2], [2, 3], [3, 0]], np.full(4, 2.0)
     )
     locator = NearestBinLocator(centers, max_distance=1.0)
     return Environment.from_bins(
-        Binning("explicit", bins, locator, MissingFaces("No faces were supplied."))
+        Binning(
+            "explicit",
+            bins,
+            connections,
+            locator,
+            MissingFaces("No faces were supplied."),
+        )
     )
 
 
 def _grid_without_arena() -> Environment:
     """Rectangular cells without a known arena, the lookup's direct path."""
     centers = np.array([[0.5, 0.5], [0.5, 1.5], [1.5, 0.5], [1.5, 1.5]])
-    bins = SpatialBins.from_arrays(
-        centers, np.ones(4), 2, [[0, 1], [0, 2], [1, 3], [2, 3]], np.ones(4)
+    bins = SpatialBins.from_arrays(centers, np.ones(4), 2)
+    connections = BinConnections.from_arrays(
+        [[0, 1], [0, 2], [1, 3], [2, 3]], np.ones(4)
     )
     locator = RectilinearLocator((np.arange(3.0),) * 2, (2, 2), None, None)
     return Environment.from_bins(
-        Binning("explicit_grid", bins, locator, MissingFaces("No faces."))
+        Binning("explicit_grid", bins, connections, locator, MissingFaces("No faces."))
     )
 
 

@@ -63,6 +63,7 @@ from neurospatial.environment._fields import (
 from neurospatial.environment._lookup import center_tree, nearest_bin
 from neurospatial.environment._metrics import (
     _bin_attributes,
+    _blocked_edges,
     _copy_attributes,
     _edge_attributes,
     _get_bridge_attributes,
@@ -98,7 +99,12 @@ from neurospatial.environment._regions import (
     _region_membership,
 )
 from neurospatial.environment._subset import _subset
-from neurospatial.environment._summary import _info, _repr, _repr_html
+from neurospatial.environment._summary import (
+    _info,
+    _mixed_measure_error,
+    _repr,
+    _repr_html,
+)
 from neurospatial.environment._targets import (
     REGION_TARGET_WHY,
     TARGET_WHY,
@@ -123,6 +129,7 @@ from neurospatial.geometry import (
     CartesianSystem,
     EgocentricPolarSystem,
     boundary_bins,
+    clip_mapping_of,
     composition_bin_sources,
     composition_component_keys,
     locate,
@@ -405,9 +412,10 @@ class Environment(Generic[_C]):
         raises, and reshaping one in place (``array.shape = ...``), which a
         read-only array allows, cannot change this environment.
         Native face recipes remain lazy; reading this property does not build
-        numerical geometry. To pass a native Cartesian snapshot to from_bins(),
-        explicitly replace its faces with KnownFaces(snapshot.faces.build()).
-        MissingFaces is already explicit and retains its refusal reason.
+        numerical geometry. ``Environment.from_bins(env.binning,
+        arena=env.arena)`` builds and checks them, so a Cartesian snapshot
+        rebuilds an equivalent environment. MissingFaces is already explicit
+        and retains its refusal reason.
 
         Polar snapshots retain radius/angle coordinates and are not inputs to
         the Cartesian from_bins() factory. Use environment storage to restore
@@ -431,7 +439,7 @@ class Environment(Generic[_C]):
 
         The returned record is a detached copy, as for :attr:`binning`.
         """
-        return copy.deepcopy(self._binning.clip_mapping)
+        return copy.deepcopy(clip_mapping_of(self._binning.locator))
 
     @property
     def edge_pairs(self) -> NDArray[np.intp]:
@@ -440,7 +448,7 @@ class Environment(Generic[_C]):
         This order preserves explicit bin input, and can differ from NetworkX
         edge iteration. The returned array is read-only.
         """
-        pairs: NDArray[np.intp] = self._binning.bins.pairs.view()
+        pairs: NDArray[np.intp] = self._binning.connections.pairs.view()
         return pairs
 
     def to_networkx(self) -> nx.Graph:
@@ -777,6 +785,7 @@ class Environment(Generic[_C]):
             layout_type=self.layout_type,
             n_dims=self.n_dims,
             bin_sizes=self._binning.bins.sizes,
+            measure_dims=self._binning.bins.measure_dims,
             dimension_ranges=self.dimension_ranges,
             grid_edges=self.grid_edges,
             region_names=list(self.regions),
@@ -1218,6 +1227,55 @@ class Environment(Generic[_C]):
         """
         return _get_bridge_attributes(self._binning)
 
+    def get_blocked_edges(self) -> pd.DataFrame:
+        """Return the neighbor pairs that walls close, and the wall closing each.
+
+        A wall along the edge between two bins closes that pair: paths,
+        distances, smoothing and gradients do not cross it. The pair stays
+        recorded, so this table shows which bins each wall separates.
+
+        Returns
+        -------
+        pd.DataFrame, shape (n_closed_pairs, 4)
+            One row per closed pair, in the binning's pair order:
+
+            - ``'source'``, ``'target'``: bin IDs of the pair.
+            - ``'distance'``: navigation distance the pair would have.
+            - ``'wall'``: name of the wall covering most of the shared edge
+              (``arena.wall_names``), or None for a pair no current wall
+              closes, such as one passed closed to :meth:`from_bins`.
+
+            Empty when nothing is closed. A wall that covers only part of an
+            edge leaves the pair open with a narrower face, so it is not
+            listed.
+
+        See Also
+        --------
+        get_edge_attributes : The open pairs, ``edge_pairs``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from shapely.geometry import LineString, box
+        >>> from neurospatial import Environment
+        >>> from neurospatial.arena import OpenArena
+        >>> arena = OpenArena(
+        ...     box(0, 0, 4, 2), walls={"divider": LineString([(2, 0), (2, 2)])}
+        ... )
+        >>> env = Environment.from_grid_mask(
+        ...     np.ones((4, 2), dtype=bool),
+        ...     grid_edges=(np.arange(5.0), np.arange(3.0)),
+        ...     arena=arena,
+        ... )
+        >>> env.get_blocked_edges()  # the two neighbors across x = 2 and both diagonals
+           source  target  distance     wall
+        0       2       4  1.000000  divider
+        1       2       5  1.414214  divider
+        2       3       4  1.414214  divider
+        3       3       5  1.000000  divider
+        """
+        return _blocked_edges(self._binning, self.arena)
+
     def bin_at(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-dimensional points to bins using geometric containment.
 
@@ -1382,19 +1440,24 @@ class Environment(Generic[_C]):
             max_distance_factor=max_distance_factor,
         )
 
-    def bin_center_tree(self) -> cKDTree:
-        """Return the KD-tree over ``bin_centers``.
+    @cartesian_only(
+        why="A KD-tree over (distance, angle) rows would add centimeters to "
+        "radians and treat angles a turn apart as far apart, so its neighbors "
+        "would disagree with nearest_bin, which measures physical distance.",
+        fix="use env.nearest_bin, which finds the nearest bin by physical "
+        "distance on a polar environment",
+        example="env.nearest_bin(positions)",
+    )
+    def bin_center_tree(self: Environment[CartesianSystem]) -> cKDTree:
+        """Return the KD-tree over ``bin_centers``, the one ``nearest_bin`` searches.
 
-        On Cartesian environments it is the tree ``nearest_bin`` searches. On
-        an egocentric polar environment it is over the stored
-        ``(distance, angle)`` columns, while ``nearest_bin`` searches the
-        centers' Cartesian embedding.
-
-        The tree is built on first use and kept in the analysis cache: it is
-        shared with relabelled copies and released by ``clear_cache()``. Use
-        it for queries that ``nearest_bin`` does not answer, such as the
-        ``k`` nearest bin centers with their distances. Tree indices are bin
-        indices. Query it, but do not modify it.
+        The tree is built on first use and kept in the analysis cache, shared
+        with relabelled copies and released by ``clear_cache()``. Each call
+        returns an independent copy of it (about a millisecond for 200,000
+        bins), so changing the copy's arrays cannot change this environment
+        or its lookups. Use it for queries that ``nearest_bin`` does not
+        answer, such as the ``k`` nearest bin centers with their distances.
+        Tree indices are bin indices.
 
         Returns
         -------
@@ -1412,9 +1475,9 @@ class Environment(Generic[_C]):
         >>> bins.tolist()
         [[0, 1]]
         >>> env.bin_center_tree() is env.bin_center_tree()
-        True
+        False
         """
-        return center_tree(self._cache, self._binning)
+        return copy.deepcopy(center_tree(self._cache, self._binning))
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Check if N-dimensional continuous points fall within any active bin.
@@ -2179,10 +2242,12 @@ class Environment(Generic[_C]):
         the number of bins. This method only modifies the grid geometry and
         connectivity; it does not aggregate any field values.
 
-        Pass exactly one of ``factor`` or ``bin_size``. The new-size mode
-        reconstructs over the retained arena using stored rectangular-lattice
-        data; analysis crops do not change the arena. It preserves the grid
-        frame and lattice anchor, independently of descriptive provenance.
+        Pass exactly one of ``factor`` or ``bin_size``. Either mode covers the
+        bins this environment has, within its arena: rebinning a ``subset`` or
+        ``clip`` keeps that selection rather than restoring the space it left
+        out. The new-size mode uses stored rectangular-lattice data and
+        preserves the grid frame and lattice anchor, independently of
+        descriptive provenance.
 
         Parameters
         ----------
@@ -2204,8 +2269,9 @@ class Environment(Generic[_C]):
         -------
         coarse_env : Environment
             New environment at the requested resolution. With ``factor``, the grid shape is
-            ``original_shape // factor`` in each dimension. Keep coarse bins
-            whose centers lie inside the original arena.
+            ``original_shape // factor`` in each dimension. A new bin is kept
+            when it overlaps one of this environment's bins and its center
+            lies inside the arena.
 
         Raises
         ------
@@ -2251,13 +2317,17 @@ class Environment(Generic[_C]):
         **Bin centers**: New bin centers are computed from the coarsened grid
         edges as midpoints between edge positions.
 
-        **Active bins**: With ``factor``, keep coarse cells whose centers lie
-        in the known arena, including on its boundary, as ``contains`` does;
-        a factor of 2 therefore merges every fine bin of a grid mask. With
-        ``bin_size``, keep new cells whose centers lie strictly inside a
-        polygonal arena, or are contained by another known arena. Unknown
-        domains retain the full coarse grid. Rebinning preserves the arena
-        rather than filling its holes. When original bins (inside the
+        **Active bins**: A new cell must overlap this environment's bins: with
+        ``factor``, its block of fine cells holds at least one bin; with
+        ``bin_size``, it shares a positive area or volume with a bin (a bin
+        that only touches its boundary does not count, whatever rounding a
+        rotation adds).
+        It must also lie in the arena: with ``factor``, its center lies in the
+        known arena, including on its boundary, as ``contains`` does; with
+        ``bin_size``, strictly inside a polygonal arena, or contained by
+        another known arena. A factor of 2 therefore merges every fine bin of
+        a grid mask, and rebinning keeps both a subset's selection and the
+        arena's holes. When original bins (inside the
         truncated extent) are left without a new bin, a ``UserWarning`` gives
         their count and share of the area, since positions in them map to -1.
 
@@ -4273,6 +4343,15 @@ class Environment(Generic[_C]):
         NDArray[np.float64], shape (n_active_bins,)
             An array containing the area/volume/length of each active bin.
 
+        Raises
+        ------
+        ValueError
+            If the bins mix measures, as a track combined with an open field
+            does: a sum, ratio or density over lengths and areas together has
+            no unit. Analyze each component separately, or read each bin's
+            measure with its dimension from ``env.binning.bins.sizes`` and
+            ``env.binning.bins.measure_dims``.
+
         Notes
         -----
         Cell measures are cached internally. Each access returns an independent
@@ -4291,7 +4370,10 @@ class Environment(Generic[_C]):
         True
 
         """
-        sizes: NDArray[np.float64] = self._binning.bins.sizes.copy()
+        bins = self._binning.bins
+        if bins.measure_dim is None and bins.n_bins:
+            raise ValueError(_mixed_measure_error(bins.measure_dims, self.units))
+        sizes: NDArray[np.float64] = bins.sizes.copy()
         sizes.setflags(write=False)
         return sizes
 

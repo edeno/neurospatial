@@ -69,20 +69,21 @@ def test_public_binning_read_does_not_build_native_faces(monkeypatch):
     np.testing.assert_array_equal(exported.bins.centers, env.bin_centers)
 
 
-def test_from_bins_requires_explicit_faces_for_native_binning():
+def test_from_bins_builds_and_checks_the_faces_of_an_exported_binning():
     env = Environment.from_grid_mask(
         np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
     )
     exported = env.binning
-    with pytest.raises(TypeError, match="needs the cell faces themselves") as caught:
-        Environment.from_bins(exported)
-    fix = str(caught.value).split("Fix:")[1]
-    assert "replace(binning, faces=KnownFaces(binning.faces.build()))" in fix
-    assert "NativeFaces" not in str(caught.value)
-    rebuilt = Environment.from_bins(
-        replace(exported, faces=KnownFaces(exported.faces.build())), arena=env.arena
-    )
+    assert isinstance(exported.faces, NativeFaces)
+    rebuilt = Environment.from_bins(exported, arena=env.arena)
+    assert isinstance(rebuilt._binning.faces, KnownFaces)
     np.testing.assert_array_equal(rebuilt.bin_centers, env.bin_centers)
+    # The recipe describes its own bins; faces built for other measures fail.
+    resized = replace(
+        exported, bins=replace(exported.bins, sizes=exported.bins.sizes * 2)
+    )
+    with pytest.raises(ValueError, match=r"faces\.volumes"):
+        Environment.from_bins(resized, arena=env.arena)
     np.testing.assert_array_equal(
         rebuilt.compute_kernel(bandwidth=0.5, mode="density"),
         env.compute_kernel(bandwidth=0.5, mode="density"),

@@ -69,6 +69,7 @@ class TestNearestBin:
         """lowest_index should consider all equidistant bins, not only KDTree k."""
         from neurospatial import Environment
         from neurospatial.binning import (
+            BinConnections,
             Binning,
             MissingFaces,
             NearestBinLocator,
@@ -81,9 +82,8 @@ class TestNearestBin:
         env = Environment.from_bins(
             Binning(
                 "sites",
-                SpatialBins.from_arrays(
-                    bin_centers, np.ones(n_bins), 2, np.empty((0, 2), dtype=int), []
-                ),
+                SpatialBins.from_arrays(bin_centers, np.ones(n_bins), 2),
+                BinConnections.from_arrays(np.empty((0, 2), dtype=int), []),
                 NearestBinLocator(bin_centers),
                 MissingFaces("Only point sites were measured."),
             )

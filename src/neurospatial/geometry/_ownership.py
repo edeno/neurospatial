@@ -17,6 +17,7 @@ from neurospatial.geometry._arena import (
     _TransformedArena,
 )
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -83,13 +84,12 @@ def _check_locator(locator: Locator) -> None:
 
 def _check_binning(binning: Binning) -> None:
     """Refuse opaque callbacks before any provider can be deep-copied."""
-    if type(binning) is not Binning or type(binning.bins) is not SpatialBins:
-        _migration(binning)
     if (
-        binning.clip_mapping is not None
-        and type(binning.clip_mapping) is not ClipMapping
+        type(binning) is not Binning
+        or type(binning.bins) is not SpatialBins
+        or type(binning.connections) is not BinConnections
     ):
-        _migration(binning.clip_mapping)
+        _migration(binning)
     _check_locator(binning.locator)
     faces = binning.faces
     if type(faces) not in (KnownFaces, MissingFaces, NativeFaces):

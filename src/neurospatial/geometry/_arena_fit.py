@@ -11,7 +11,7 @@ import numpy as np
 import shapely
 import shapely.ops
 from numpy.typing import NDArray
-from shapely.geometry import LineString, MultiLineString, Polygon
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon
 from shapely.ops import linemerge, unary_union
 
 from neurospatial._exceptions import _format_error
@@ -25,7 +25,7 @@ from neurospatial.geometry._arena import (
     _CombinedArena,
     _TransformedArena,
 )
-from neurospatial.geometry._binning import KnownFaces, SpatialBins
+from neurospatial.geometry._binning import BinConnections, KnownFaces
 from neurospatial.geometry._codecs import encode_arena
 from neurospatial.geometry._composition import CombinedLocator
 from neurospatial.geometry._coordinates import CartesianSystem, CoordinateSystem
@@ -123,7 +123,9 @@ def validate_arena(
                 validate_arena(child_arena, child, CartesianSystem())
                 if child_arena.walls:
                     checked = apply_walls(child, child_arena)
-                    if not np.array_equal(checked.bins.pairs, child.bins.pairs):
+                    if not np.array_equal(
+                        checked.connections.pairs, child.connections.pairs
+                    ):
                         raise ValueError(
                             "Component connectivity crosses its declared physical walls."
                         )
@@ -201,8 +203,8 @@ def _wall_cut_message(
     )
     center = ", ".join(f"{value:g}" for value in binning.bins.centers[index])
     return _format_error(
-        f"Physical wall cuts through bin {index} (center ({center})): wall "
-        f"{crossing} of the arena, from {ends}.",
+        f"Physical wall {arena.wall_names[crossing]!r} cuts through bin {index} "
+        f"(center ({center})), from {ends}.",
         why="Why: a wall blocks movement between the bins on either side, so "
         "it must run along cell edges; a wall through the middle of a cell "
         "would put one bin on both sides.",
@@ -257,15 +259,17 @@ def fit_walls(
                 "OpenArena(outline, walls=...)",
             )
         )
-    snapped = _snapped_walls(binning, cells, arena.walls)
-    moved = max(
+    snapped = _snapped_walls(binning, cells, arena.walls, arena.wall_names)
+    moves = [
         wall.hausdorff_distance(MultiLineString(parts))
         for wall, parts in zip(arena.walls, snapped, strict=True)
-    )
+    ]
+    farthest = int(np.argmax(moves))
     warnings.warn(
         _format_error(
-            f"wall_fit='snap' moved the walls onto bin edges by up to {moved:.3g} "
-            "(in the units of the positions).",
+            f"wall_fit='snap' moved the walls onto bin edges by up to "
+            f"{moves[farthest]:.3g} (in the units of the positions), most for "
+            f"wall {arena.wall_names[farthest]!r}.",
             why="Why: snapping keeps every bin whole, so a wall that ran "
             "through bins now runs along the edges between them; paths, "
             "occupancy and distances to walls all use the moved walls.",
@@ -275,7 +279,15 @@ def fit_walls(
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
-    return binning, replace(arena, walls=tuple(p for parts in snapped for p in parts))
+    return binning, replace(
+        arena,
+        walls=tuple(part for parts in snapped for part in parts),
+        wall_names=tuple(
+            name
+            for name, parts in zip(arena.wall_names, snapped, strict=True)
+            for _ in parts
+        ),
+    )
 
 
 def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.bool_]:
@@ -305,19 +317,22 @@ def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.boo
 
 
 def _snapped_walls(
-    binning: Binning, cells: Sequence[Polygon], walls: Sequence[LineString]
+    binning: Binning,
+    cells: Sequence[Polygon],
+    walls: Sequence[LineString],
+    names: Sequence[str],
 ) -> list[tuple[LineString, ...]]:
     """Each wall as the cell edges between the bins whose centers it separates.
 
     Returns one tuple of lines per wall: its edges joined where they meet.
     """
     centers = binning.bins.centers
-    pairs = binning.bins.pairs
+    pairs = binning.connections.pairs
     links = shapely.linestrings(
         np.stack((centers[pairs[:, 0]], centers[pairs[:, 1]]), 1)
     )
     snapped = []
-    for wall in walls:
+    for wall, name in zip(walls, names, strict=True):
         left = _wall_sides(wall, centers)
         crossing = np.flatnonzero(
             shapely.intersects(links, wall) & (left[pairs[:, 0]] != left[pairs[:, 1]])
@@ -330,8 +345,9 @@ def _snapped_walls(
         if not edges:
             raise ValueError(
                 _format_error(
-                    f"wall_fit='snap' cannot place the wall {list(wall.coords)} on "
-                    "bin edges: it separates no two bin centers.",
+                    f"wall_fit='snap' cannot place wall {name!r} "
+                    f"{list(wall.coords)} on bin edges: it separates no two bin "
+                    "centers.",
                     why="Why: the wall is shorter than a bin, so the nearest bin "
                     "edges would remove it.",
                     fix="use wall_fit='split', or a smaller bin_size",
@@ -344,38 +360,81 @@ def _snapped_walls(
     return snapped
 
 
+def _wall_geometry(
+    binning: Binning, arena: Arena
+) -> tuple[
+    Sequence[Polygon | MultiPolygon], Sequence[LineString], NDArray[np.float64], bool
+]:
+    """Cells, wall segments and centers in the frame walls are checked in.
+
+    The last value says whether that is a stored source frame recovered through
+    transforms, rather than the published cells and walls.
+    """
+    frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
+    if frame is None:
+        return materialize_cells(binning), arena.walls, binning.bins.centers, False
+    # Shared snapshots avoid independently rounded collinear vertices.
+    # Retained source-frame cells preserve current clipping and ownership.
+    cells, segments, centers, _, _ = frame
+    return cells, segments, centers, True
+
+
+def _closing_walls(
+    connections: BinConnections,
+    cells: Sequence[Polygon | MultiPolygon],
+    segments: Sequence[LineString],
+    centers: NDArray[np.float64],
+) -> NDArray[np.intp]:
+    """Index of the wall closing each closed pair; see ``BinConnections.closed_by``."""
+    closed_by = np.full(len(connections.all_pairs), -1, dtype=np.intp)
+    for row in np.flatnonzero(~connections.is_open):
+        u, v = connections.all_pairs[row]
+        contact = cells[u].boundary.intersection(cells[v].boundary)
+        if contact.length > 0:
+            cover = [contact.intersection(wall).length for wall in segments]
+        else:
+            link = LineString(centers[[u, v]])
+            cover = [float(link.intersects(wall)) for wall in segments]
+        best = int(np.argmax(cover))
+        if cover[best] > 0:
+            closed_by[row] = best
+    return closed_by
+
+
 def apply_walls(binning: Binning, arena: Arena) -> Binning:
-    """Remove complete blocked cell interfaces from paths and finite-volume faces."""
+    """Close the neighbor pairs whose shared edge a wall blocks completely.
+
+    A closed pair stays listed in ``binning.connections`` but leaves paths and
+    finite-volume faces. A partly covered edge stays open with the open share
+    of its face. Pairs already closed stay closed, and every closed pair
+    records the wall that closes it (``connections.closed_by``).
+    """
     if _composition_arena(binning.locator) is not None:
         # Each owned child already carries its certified wall geometry. Rechecking
         # its independently rounded global polygons loses the native source frame.
         # New bridge crossings are checked when constructing/validating the root.
         return binning
+    links = binning.connections
     if not arena.walls:
-        return binning
+        if np.all(links.closed_by < 0):
+            return binning
+        # No wall of this arena closes a pair; drop indices into other walls.
+        unattributed = np.full(len(links.closed_by), -1, dtype=np.intp)
+        return replace(binning, connections=replace(links, closed_by=unattributed))
 
-    wall_frame = wall_source_frame(binning.locator, arena, binning.bins.centers)
-    if wall_frame is None:
-        cells, wall_segments, centers = (
-            materialize_cells(binning),
-            arena.walls,
-            binning.bins.centers,
-        )
-    else:
-        # Shared snapshots avoid independently rounded collinear vertices.
-        # Retained source-frame cells preserve current clipping and ownership.
-        cells, wall_segments, centers, _, _ = wall_frame
+    cells, wall_segments, centers, in_source_frame = _wall_geometry(binning, arena)
     walls = unary_union(wall_segments)
     for index, cell in enumerate(cells):
         if _divides(cell, walls):
             raise ValueError(
                 _wall_cut_message(binning, arena, wall_segments, cell, index)
             )
-    keep = np.ones(len(binning.bins.pairs), dtype=bool)
+    pairs = binning.connections.pairs
+    keep = np.ones(len(pairs), dtype=bool)
     # A face partly covered by a wall keeps its open share of the conductance.
-    open_share = np.ones(len(binning.bins.pairs))
+    open_share = np.ones(len(pairs))
     current_cells = None
-    for index, (u, v) in enumerate(binning.bins.pairs):
+    for index, (u, v) in enumerate(pairs):
         contact = cells[u].boundary.intersection(cells[v].boundary)
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
@@ -386,7 +445,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         elif contact.length == 0:
             link = LineString(centers[[u, v]])
             crosses = link.crosses(walls)
-            if wall_frame is not None and crosses:
+            if in_source_frame and crosses:
                 if current_cells is None:
                     current_cells = materialize_cells(binning)
                 if (
@@ -400,16 +459,13 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                         "Declare walls before clipping or transforming, or recenter coordinates."
                     )
             keep[index] = contact.intersection(walls).is_empty and not crosses
-    if np.all(keep) and np.all(open_share == 1.0):
-        return binning
-    bins = binning.bins
-    updated = SpatialBins(
-        bins.centers,
-        bins.sizes,
-        bins.measure_dim,
-        bins.pairs[keep],
-        bins.pair_distances[keep],
+    connections = links.closed(keep)
+    connections = replace(
+        connections,
+        closed_by=_closing_walls(connections, cells, wall_segments, centers),
     )
+    if np.all(keep) and np.all(open_share == 1.0):
+        return replace(binning, connections=connections)
     faces = binning.faces
     if faces.available:
         source = faces.build()
@@ -422,14 +478,17 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
             if current_cells is None:
                 current_cells = materialize_cells(binning)
             for index in partial:
-                u, v = binning.bins.pairs[index]
+                u, v = pairs[index]
                 full = (
                     current_cells[u].boundary.intersection(current_cells[v].boundary)
                 ).length
                 area[index] = min(area[index], open_share[index] * full)
         faces = KnownFaces(
             FaceGeometry(
-                updated.pairs, area[keep], source.distance[keep], updated.sizes
+                connections.pairs,
+                area[keep],
+                source.distance[keep],
+                binning.bins.sizes,
             )
         )
     normals = (
@@ -437,4 +496,4 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
         if binning.face_normals is not None
         else None
     )
-    return replace(binning, bins=updated, faces=faces, face_normals=normals)
+    return replace(binning, connections=connections, faces=faces, face_normals=normals)

@@ -36,7 +36,7 @@ from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.geometry import Arena
+    from neurospatial.geometry import Arena, SpatialBins
 
 
 class SpatialRatesLike(Protocol):
@@ -93,6 +93,13 @@ def _same_arena(first: Arena, second: Arena) -> bool:
     )
 
 
+def _same_measures(first: SpatialBins, second: SpatialBins) -> bool:
+    """Whether two sets of bins have equal measures, in equal dimensions."""
+    return np.array_equal(first.sizes, second.sizes) and np.array_equal(
+        first.measure_dims, second.measure_dims
+    )
+
+
 def _validate_encoding_environment(
     env: Environment, encoding_models: Any, *, context: str
 ) -> None:
@@ -113,23 +120,25 @@ def _validate_encoding_environment(
         mismatch = "units or coordinate frames"
     elif not np.array_equal(source.bin_centers, env.bin_centers):
         mismatch = "bin coordinates or ordering"
-    elif not np.array_equal(source.bin_sizes, env.bin_sizes):
-        mismatch = "bin measures"
     else:
-        source_graph, target_graph = source.connectivity, env.connectivity
-        if source_graph.number_of_edges() != target_graph.number_of_edges() or any(
-            not target_graph.has_edge(u, v)
-            or data["distance"] != target_graph.edges[u, v]["distance"]
-            for u, v, data in source_graph.edges(data=True)
-        ):
-            mismatch = "weighted connectivity"
+        # Detached copies, made once for the measure and cell comparisons below.
+        source_binning, target_binning = source.binning, env.binning
+        if not _same_measures(source_binning.bins, target_binning.bins):
+            mismatch = "bin measures"
+        else:
+            source_graph, target_graph = source.connectivity, env.connectivity
+            if source_graph.number_of_edges() != target_graph.number_of_edges() or any(
+                not target_graph.has_edge(u, v)
+                or data["distance"] != target_graph.edges[u, v]["distance"]
+                for u, v, data in source_graph.edges(data=True)
+            ):
+                mismatch = "weighted connectivity"
     if mismatch is None:
         from neurospatial.geometry import PolygonCells, materialize_cells
 
         if not _same_arena(source.arena, env.arena):
             mismatch = "continuous arena or physical walls"
         else:
-            source_binning, target_binning = source.binning, env.binning
             if isinstance(source_binning.shapes, PolygonCells) or isinstance(
                 target_binning.shapes, PolygonCells
             ):

@@ -18,6 +18,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.extensions import SnapshotAdapter
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     MissingFaces,
     SpatialBins,
@@ -413,7 +414,8 @@ def test_public_locator_ingress_detaches_caller_buffers_and_provider(_registry):
     provider = _ExternalLocator()
     source = Binning(
         "sample_sites",
-        SpatialBins.from_arrays(provider.centers, [1.0, 1.0], 2, [[0, 1]], [2.0]),
+        SpatialBins.from_arrays(provider.centers, [1.0, 1.0], 2),
+        BinConnections.from_arrays([[0, 1]], [2.0]),
         provider,
         MissingFaces("No physical faces are available."),
     )
@@ -445,11 +447,7 @@ def test_public_adapter_result_still_requires_cross_component_consistency(_regis
     inconsistent = replace(
         data,
         bins=SpatialBins.from_arrays(
-            data.bins.centers + 0.1,
-            data.bins.sizes,
-            data.bins.measure_dim,
-            data.bins.pairs,
-            data.bins.pair_distances,
+            data.bins.centers + 0.1, data.bins.sizes, data.bins.measure_dim
         ),
     )
     _registry.append(_EntryPoint("binning", _data_adapter(_ExternalBinning, "binning")))
@@ -674,7 +672,8 @@ def test_public_contract_kit_accepts_an_adapter_published_environment(_registry)
     centers = np.array([[0.0, 0.0], [2.0, 0.0]])
     data = Binning(
         "sample_sites",
-        SpatialBins.from_arrays(centers, [1.0, 1.0], 2, [[0, 1]], [2.0]),
+        SpatialBins.from_arrays(centers, [1.0, 1.0], 2),
+        BinConnections.from_arrays([[0, 1]], [2.0]),
         NearestBinLocator(centers, max_distance=0.1),
         MissingFaces("No physical faces are available."),
     )

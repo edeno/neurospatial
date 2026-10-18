@@ -11,6 +11,7 @@ the published result to report source bins and barriers the new bins lose.
 
 from __future__ import annotations
 
+import itertools
 import warnings
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
@@ -20,17 +21,20 @@ import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from shapely.geometry import Polygon
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry import (
     Arena,
+    BinConnections,
     Binning,
     KnownFaces,
     NativeFaces,
-    SpatialBins,
+    PolygonCells,
     apply_walls,
+    cell_boxes,
     get_centers,
     materialize_cells,
     prepare_bins,
@@ -159,7 +163,7 @@ def _warn_outline_crossings(
         Mode-specific advice for resolving the barrier.
     """
     domain = arena.polygonal_domain()
-    pairs = rebinned._binning.bins.pairs
+    pairs = rebinned._binning.connections.pairs
     if domain is None or len(pairs) == 0:
         return
     centers = rebinned.bin_centers
@@ -362,6 +366,98 @@ def _rebuild_call(binning: Binning, arena: Arena, size: float | None) -> str:
     return "build the bins again at the new size with the factory or layout engine that made them"
 
 
+def _overlaps_bins(
+    binning: Binning,
+    forward: NDArray[np.float64],
+    edges: tuple[NDArray[np.float64], ...],
+) -> NDArray[np.bool_]:
+    """Which new lattice cells share a positive measure with a bin.
+
+    Parameters
+    ----------
+    binning : Binning
+        The environment's bins.
+    forward : ndarray, shape (n_dims + 1, n_dims + 1)
+        Homogeneous map from lattice to environment coordinates.
+    edges : tuple of ndarray
+        New cell edges along each lattice axis.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_cells_0, n_cells_1, ...)
+        True for each new cell a bin overlaps. Edges are compared with a
+        tolerance of a billionth of a cell width, so a bin that only touches
+        a cell boundary does not claim the cell however rounding falls, for
+        example after a rotation.
+    """
+    inverse = np.linalg.inv(forward)
+    shape = tuple(len(edge) - 1 for edge in edges)
+    n_dims = len(shape)
+    pieces = binning.shapes if isinstance(binning.shapes, PolygonCells) else None
+    # Each bin's bounds in lattice coordinates, shape (n_bins, n_dims).
+    if pieces is None:
+        # Box cells recovered through subsets and transforms, such as a
+        # reflected 1-D grid, which keeps neither rectilinear nor framed cells.
+        corners = np.array(cell_boxes(binning.locator))  # (n_bins, 2**n_dims, n_dims)
+        local = corners @ inverse[:-1, :-1].T + inverse[:-1, -1]
+        low, high = local.min(axis=1), local.max(axis=1)
+    else:
+        coordinates, owner = shapely.get_coordinates(pieces.polygons, return_index=True)
+        local = coordinates @ inverse[:-1, :-1].T + inverse[:-1, -1]
+        low = np.full((len(pieces.polygons), n_dims), np.inf)
+        high = np.full((len(pieces.polygons), n_dims), -np.inf)
+        np.minimum.at(low, owner, local)
+        np.maximum.at(high, owner, local)
+    tolerance = np.array([1e-9 * (edge[1] - edge[0]) for edge in edges])
+    first = np.column_stack(
+        [
+            np.searchsorted(edge, low[:, axis] + tolerance[axis], side="right") - 1
+            for axis, edge in enumerate(edges)
+        ]
+    ).clip(min=0)
+    last = np.column_stack(
+        [
+            np.searchsorted(edge, high[:, axis] - tolerance[axis], side="left") - 1
+            for axis, edge in enumerate(edges)
+        ]
+    ).clip(max=np.array(shape) - 1)
+    spans = np.all(first <= last, axis=1)
+    whole = spans.copy()
+    if pieces is not None:
+        # A clipped piece that is not a whole lattice box can touch a cell
+        # of its bounding block without overlapping it: check those exactly.
+        box_volume = np.prod(high - low, axis=1) * abs(np.linalg.det(forward[:-1, :-1]))
+        areas = shapely.area(np.asarray(pieces.polygons, dtype=object))
+        whole &= areas >= box_volume * (1 - 1e-9)
+    # Mark every bin's block of cells at once with a difference array.
+    marks = np.zeros(tuple(size + 1 for size in shape), dtype=np.intp)
+    for upper in itertools.product((False, True), repeat=n_dims):
+        ends = np.where(upper, last[whole] + 1, first[whole])
+        np.add.at(marks, tuple(ends.T), (-1) ** sum(upper))
+    for axis in range(n_dims):
+        marks = np.cumsum(marks, axis=axis)
+    covered = marks[tuple(slice(0, size) for size in shape)] > 0
+    if pieces is not None:
+        for number in np.flatnonzero(spans & ~whole):
+            cell = pieces.polygons[number]
+            for index in itertools.product(
+                *(
+                    range(a, b + 1)
+                    for a, b in zip(first[number], last[number], strict=True)
+                )
+            ):
+                box = np.array(
+                    [
+                        [edges[0][index[0] + i], edges[1][index[1] + j]]
+                        for i, j in ((0, 0), (1, 0), (1, 1), (0, 1))
+                    ]
+                )
+                world = Polygon(box @ forward[:-1, :-1].T + forward[:-1, -1])
+                if cell.intersection(world).area > 1e-9 * world.area:
+                    covered[index] = True
+    return covered
+
+
 def _rebin_resolution(
     binning: Binning, arena: Arena, bin_size: float | tuple[float, ...]
 ) -> tuple[_Derivation, RebinCheck]:
@@ -433,6 +529,9 @@ def _rebin_resolution(
         keep = shapely.contains_xy(domain, mapped[:, 0], mapped[:, 1])
     else:
         keep = arena.contains(mapped)
+    # Keep only cells over the bins the environment has, so rebinning a
+    # subset does not bring back the space it left out.
+    keep &= _overlaps_bins(binning, spec.forward, edges).ravel()
     if not np.any(keep):
         raise ValueError(
             "Rebinning retains no bin center inside the original arena; use a smaller bin_size."
@@ -473,9 +572,9 @@ def _require_native_grid_navigation(
     binning: Binning, arena: Arena, *, connect_diagonal: bool
 ) -> None:
     """Require the native grid paths that factor rebinning knows how to rebuild."""
-    bins = binning.bins
+    bins, links = binning.bins, binning.connections
     direct_distances = np.hypot.reduce(
-        bins.centers[bins.pairs[:, 1]] - bins.centers[bins.pairs[:, 0]], axis=1
+        bins.centers[links.pairs[:, 1]] - bins.centers[links.pairs[:, 0]], axis=1
     )
     message = (
         "rebin() cannot reconstruct custom navigation paths or connections. "
@@ -483,7 +582,7 @@ def _require_native_grid_navigation(
         "and their navigation geometry."
     )
     if not np.allclose(
-        bins.pair_distances,
+        links.pair_distances,
         direct_distances,
         rtol=64 * np.finfo(np.float64).eps,
         atol=0.0,
@@ -508,10 +607,7 @@ def _require_native_grid_navigation(
     ).connectivity
     assert graph is not None
     pairs = np.asarray(list(graph.edges()), dtype=np.intp).reshape(-1, 2)
-    candidate_bins = SpatialBins(
-        bins.centers,
-        bins.sizes,
-        bins.measure_dim,
+    candidate_links = BinConnections.from_arrays(
         pairs,
         np.hypot.reduce(bins.centers[pairs[:, 1]] - bins.centers[pairs[:, 0]], axis=1),
     )
@@ -519,17 +615,18 @@ def _require_native_grid_navigation(
     # aligned to the candidate graph rather than the source's selected pairs.
     candidate = replace(
         binning,
-        bins=candidate_bins,
+        connections=candidate_links,
         faces=NativeFaces(
-            candidate_bins,
+            bins,
+            candidate_links,
             "grid",
             (np.array([edge[1] - edge[0] for edge in grid.edges]),),
         ),
         face_normals=None,
     )
     candidate = apply_walls(candidate, arena)
-    expected_pairs = {frozenset(pair) for pair in candidate.bins.pairs}
-    if expected_pairs != {frozenset(pair) for pair in bins.pairs}:
+    expected_pairs = {frozenset(pair) for pair in candidate.connections.pairs}
+    if expected_pairs != {frozenset(pair) for pair in links.pairs}:
         raise NotImplementedError(message)
 
 
@@ -684,9 +781,15 @@ def _rebin_factor(
     # environment. The original arena remains the continuous authority. Its
     # closed containment keeps a coarse cell centered on the domain boundary,
     # such as the corner beside a missing fine cell, in every dimension.
-    keep = np.ones(len(coarse_bin_centers), dtype=bool)
+    # A coarse cell is a block of fine cells; keep only blocks holding one of
+    # the environment's bins, so rebinning a subset keeps the selection.
+    block_shape = [
+        n for pair in zip(coarse_shape, factor_tuple, strict=True) for n in pair
+    ]
+    active = grid.active_mask[tuple(slice(0, size) for size in truncated_shape)]
+    keep = active.reshape(block_shape).any(axis=tuple(range(1, 2 * n_dims, 2))).ravel()
     if arena.domain_known:
-        keep = arena.contains(coarse_bin_centers)
+        keep &= arena.contains(coarse_bin_centers)
         if not np.any(keep):
             raise ValueError(
                 "Rebinning retains no coarse bin center inside the original arena. "

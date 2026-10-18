@@ -559,7 +559,7 @@ class TestSubsetKeepsParentConnectivity:
             (x0, y0), (x1, y1) = centers[u], centers[v]
             return (x0 - 3.0) * (x1 - 3.0) < 0 and min(y0, y1) > 2.0
 
-        native = layout.binning().bins
+        native = layout.binning().connections
         kept = [not crosses_wall(u, v) for u, v in native.pairs.tolist()]
         layout._set_neighbor_pairs(native.pairs[kept], native.pair_distances[kept])
         walled = publish_environment(layout=layout, layout_type_used="MaskedGrid")

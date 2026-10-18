@@ -288,13 +288,6 @@ CASES: dict[str, Case] = {
         lambda n: n["env"].apply_transform(translate_3d(1, 2, 3)),
         "from neurospatial.ops import AffineND; env.apply_transform(AffineND(np.eye(3)))",
     ),
-    "from_bins(env.binning)": Case(
-        lambda: {"env": _grid(), "binning": _grid().binning},
-        lambda n: Environment.from_bins(n["binning"]),
-        "from dataclasses import replace; from neurospatial.binning import KnownFaces; "
-        "binning = replace(binning, faces=KnownFaces(binning.faces.build())); "
-        "Environment.from_bins(binning, arena=env.arena)",
-    ),
     "from_polygon(points)": Case(
         lambda: {"polygon": [(0, 0), (10, 0), (10, 10)]},
         lambda n: Environment.from_polygon(n["polygon"], bin_size=1.0),

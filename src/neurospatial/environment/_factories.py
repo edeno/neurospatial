@@ -107,10 +107,11 @@ def _from_bins(
             )
         )
 
-    if not np.array_equal(result.edge_pairs, snapshot.bins.pairs):
+    if not np.array_equal(result.edge_pairs, snapshot.connections.pairs):
         raise ValueError(
-            "Supplied neighbor pairs cross physical walls. Remove those pairs "
-            "and their aligned face data explicitly before calling from_bins."
+            "Supplied open neighbor pairs cross physical walls. Close those pairs "
+            "(BinConnections.from_arrays(pairs, distances, is_open=...)) and drop "
+            "their aligned face data explicitly before calling from_bins."
         )
     return result
 

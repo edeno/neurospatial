@@ -8,6 +8,53 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- A binning keeps its bins and their neighbor pairs in separate records.
+  `SpatialBins` holds centers, measures and `measure_dim`; the new
+  `BinConnections` holds the neighbor pairs, their navigation distances,
+  `is_open`, and `closed_by` (the index in `arena.walls` of the wall closing
+  each closed pair, recorded when walls are applied), and `Binning` takes it
+  after the bins:
+  `Binning(kind, bins, connections, locator, faces)`. Replace
+  `SpatialBins.from_arrays(centers, sizes, dim, pairs, distances)` with
+  `SpatialBins.from_arrays(centers, sizes, dim)` and
+  `BinConnections.from_arrays(pairs, distances)`, and read
+  `binning.connections.pairs` where you read `binning.bins.pairs`. Walls now
+  close the pairs across them instead of deleting them, so an environment with
+  a wall on bin edges lists the same pairs, in the same order, as one without
+  it;
+  `connections.pairs` and `env.edge_pairs` are still the open pairs, and every
+  analysis gives the same numbers as before. Environments saved by earlier
+  versions (Binning codec versions 1 to 3) no longer load; rebuild them from
+  their recording and save them again.
+
+- Each bin records its own measure dimension. `SpatialBins.measure_dims` has
+  one entry per bin (an integer passed to `SpatialBins.from_arrays` applies to
+  all), and `SpatialBins.measure_dim` is the shared value, or None when bins
+  mix lengths and areas. `Environment.bin_sizes` raises on such an environment,
+  since a sum or density over lengths and areas has no unit; the error says how
+  to analyze one component at a time.
+
+- `Environment.rebin` keeps a subset's or clip's selection. A new bin is
+  kept only where it covers the environment's own bins (and lies in the
+  arena); before, rebinning re-covered the whole arena, so an 8-bin subset
+  became 16 bins after `rebin(factor=1)`. Environments that were never
+  subset or clipped rebin exactly as before.
+
+- `Environment.bin_center_tree()` returns an independent copy of the cached
+  KD-tree (about a millisecond for 200,000 bins), so `tree1 is tree2` is now
+  False, and it refuses polar environments: a tree over `(distance, angle)`
+  rows adds centimeters to radians and treats angles a turn apart as far
+  apart, disagreeing with `nearest_bin`. Use `env.nearest_bin` there.
+  `heat_kernel_wavelet_basis` on a polar environment now measures bin spacing
+  physically instead of in those rows. Before, it returned the cached tree itself, and changing its
+  `indices` or reshaping its `data` in place changed the environment's own
+  lookups and bin centers.
+
+- `Binning` no longer has a `clip_mapping` field. The clipped locator already
+  holds the mapping, and the stored copy had to agree with it, so
+  `Environment.clip_mapping` now reads it from the locator. Drop
+  `clip_mapping=` when building a `Binning` for `from_bins`.
+
 - `Environment.from_samples` (and `open_field`) tile the arena's bounds when
   given an `arena=` with a known outline and no `dimension_ranges`, so cell
   edges start at the arena's edge. Walls on that lattice now fall on cell
@@ -1170,6 +1217,31 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `Environment.combine` joins components whose bins measure different things,
+  such as a corridor built with `linear_track` and the arena it leads into.
+  Each bin keeps its own measure; occupancy, rate maps, smoothing within each
+  component, decoding and storage work on the combined environment, and a
+  transform scales each bin by its own dimension. Bridges between bins of
+  different measure are navigation-only: a `bridge_conductances` entry for one,
+  or a positive face between such bins passed to `from_bins`, is refused,
+  because diffusion between a density per length and one per area would
+  depend on the units.
+
+- `Environment.from_bins(env.binning, arena=env.arena)` rebuilds an
+  equivalent environment directly: `from_bins` builds the lazy face recipe
+  that `env.binning` carries and checks it against the bins, instead of
+  refusing it.
+
+- `Environment.get_blocked_edges()` lists the neighbor pairs that walls close,
+  with each pair's navigation distance and the name of the wall that closes
+  it, to check that a wall separates the bins you meant.
+
+- Walls have names. `OpenArena(outline, walls={"divider": line})` names each
+  wall; walls given as a sequence are named `"wall_0"`, `"wall_1"`, ... (or
+  pass `wall_names=`). `arena.wall_names` lists them, snapped walls keep their
+  wall's name, files store them (saved arenas now require them), and the errors and warnings about a wall
+  through a bin or a snapped wall name it.
+
 - `compute_boundary_vector_rate` and `compute_boundary_vector_rates` estimate
   firing by distance and direction to the walls, for boundary-vector cells
   (`direction_frame="allocentric"`) and egocentric boundary cells
@@ -1543,6 +1615,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- The default smoothing bandwidth for an environment with no neighbor pairs and
+  no metric units used each bin's measure to the power `1 / n_dims`, so a track
+  bin 2 long in 2-D coordinates counted as 1.41 long. It now uses each bin's
+  own measure dimension: a track bin's length, the side of an area bin.
+
+- A combined environment whose components have no polygon cells, such as two
+  tracks, reported no `dimension_ranges`, and `compute_spatial_rate` on it
+  failed with `TypeError: 'NoneType' object is not iterable`. Its extent is now
+  the union of its components' extents, and the default smoothing bandwidth no
+  longer needs a known extent.
 
 - `border_score` (and the border scores in `summary_table` and
   `label_cell_types`) scores circular and other curved or diagonal arenas built

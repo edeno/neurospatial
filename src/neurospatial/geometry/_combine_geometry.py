@@ -212,7 +212,7 @@ def arena_pieces(arena: Arena) -> list[_Piece]:
 def _pieces(binning: Binning, arena: Arena) -> list[_Piece]:
     if not binning.bins.n_bins:
         return []
-    if binning.bins.n_dims == 2 and binning.bins.measure_dim == 2:
+    if binning.bins.n_dims == 2 and binning.bins.has_measure_dim(2):
         try:
             polygons = materialize_cells(binning)
         except ValueError:
@@ -340,6 +340,12 @@ def _overlap(a: _Piece, b: _Piece) -> bool:
         return bool(b.data.distance(Point(center)) < radius)
     if b.kind == "ball" and a.kind == "polygon":
         return _overlap(b, a)
+    if {a.kind, b.kind} == {"capsule", "polygon"}:
+        # A track of half-width r around its centerline shares area with a
+        # cell exactly when the cell comes closer than r to the centerline.
+        capsule, cell = (a, b) if a.kind == "capsule" else (b, a)
+        segment, radius = capsule.data
+        return bool(cell.data.distance(LineString(segment)) < radius)
     raise ValueError(
         "Cannot certify disjoint mixed geometry with intersecting bounds; restrict the domains or use a shared supported representation."
     )
@@ -606,7 +612,11 @@ def segment_enters_component(
     if not binning.bins.n_bins or np.array_equal(segment[0], segment[1]):
         return False
     intervals = _grid_segment_intervals(binning.locator, segment)
-    if intervals is None and binning.bins.n_dims == 2 and binning.bins.measure_dim == 2:
+    if (
+        intervals is None
+        and binning.bins.n_dims == 2
+        and binning.bins.has_measure_dim(2)
+    ):
         try:
             polygons = materialize_cells(binning)
         except ValueError:
@@ -933,12 +943,13 @@ def combine_binnings(
         keys, children_tuple, arenas, bridge_pairs, np.array(distances), conductances
     )
     bins = locator.spatial_bins()
+    connections = locator.bin_connections()
     faces: KnownFaces | MissingFaces
     if not len(pairs) and all(child.faces.available for child in children):
         child_faces = [child.faces.build() for child in children]
         faces = KnownFaces(
             FaceGeometry(
-                bins.pairs,
+                connections.pairs,
                 np.concatenate([part.A for part in child_faces]),
                 np.concatenate([part.distance for part in child_faces]),
                 bins.sizes,
@@ -949,11 +960,19 @@ def combine_binnings(
             "Combined navigation bridges have no physical face geometry; use scalar diffusion when child geometry is certified."
         )
     shapes = None
-    if n_dims == 2 and bins.measure_dim == 2:
+    if n_dims == 2 and bins.has_measure_dim(2):
         with suppress(ValueError):
             shapes = PolygonCells(cells_from_locator(locator))
     normals = combined_normals(locator) if not len(pairs) else None
     combined = prepare_bins(
-        Binning(kind, bins, locator, faces, shapes=shapes, face_normals=normals)
+        Binning(
+            kind,
+            bins,
+            connections,
+            locator,
+            faces,
+            shapes=shapes,
+            face_normals=normals,
+        )
     )
     return combined, len(pairs)

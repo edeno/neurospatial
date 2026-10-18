@@ -15,6 +15,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
 from neurospatial.binning import KnownFaces
 from neurospatial.layout import create_layout
+from neurospatial.ops.transforms import Affine2D, AffineND
 
 
 def grid():
@@ -26,16 +27,14 @@ def grid():
     )
 
 
-def test_rebin_new_resolution_restores_arena_after_analysis_crop():
+def test_rebin_new_resolution_keeps_the_selection_after_an_analysis_crop():
     env = grid().subset(mask=grid().bin_centers[:, 0] < 2)
     coarse = env.rebin(bin_size=2.0)
-    expected = np.array([[x, y] for x in [1, 3, 5] for y in [1, 3, 5]])
+    expected = np.array([[1, y] for y in [1, 3, 5]])
     np.testing.assert_array_equal(coarse.bin_centers, expected)
     np.testing.assert_allclose(coarse.bin_sizes, 4.0)
     assert coarse.units == "cm" and coarse.frame == "lab"
-    np.testing.assert_array_equal(
-        coarse.rebin(bin_size=1).bin_centers, grid().bin_centers
-    )
+    np.testing.assert_array_equal(coarse.rebin(bin_size=1).bin_centers, env.bin_centers)
 
 
 def test_rebin_reports_original_area_left_without_a_new_bin():
@@ -156,10 +155,11 @@ def test_rebin_retains_grid_frame_and_uses_physical_axis_lengths():
     np.testing.assert_allclose(restored.bin_centers, coarse.bin_centers)
 
 
-def test_clip_keeps_spec_but_does_not_turn_crop_into_new_arena():
+def test_clip_keeps_spec_and_rebinning_keeps_the_crop():
     clipped = grid().clip(box(0.2, 0.2, 1.8, 1.8))
     assert clipped._binning.grid_spec is not None
-    assert clipped.rebin(bin_size=2).n_bins == 9
+    coarse = clipped.rebin(bin_size=2)
+    np.testing.assert_array_equal(coarse.bin_centers, [[1.0, 1.0]])
 
 
 def test_rebin_preserves_complete_face_walls_and_refuses_splitting_cells():
@@ -173,7 +173,7 @@ def test_rebin_preserves_complete_face_walls_and_refuses_splitting_cells():
         (coarse.bin_centers[u, 0] < 2) == (coarse.bin_centers[v, 0] < 2)
         for u, v in coarse.edge_pairs
     )
-    with pytest.raises(ValueError, match="wall cuts"):
+    with pytest.raises(ValueError, match=r"wall 'wall_0' cuts through bin"):
         env.rebin(bin_size=3)
 
 
@@ -227,9 +227,9 @@ def test_grid_spec_owns_inputs_and_survives_copy_restore():
         assert not owned.origin.flags.writeable and not owned.forward.flags.writeable
 
 
-def test_legacy_payload_does_not_infer_spec_from_provenance():
+def test_payload_without_spec_does_not_infer_one_from_provenance():
     data = grid().to_dict()
-    data["binning"].pop("grid_spec")
+    data["binning"]["grid_spec"] = None
     restored = Environment.from_dict(data)
     assert restored._binning.grid_spec is None
     with pytest.raises(NotImplementedError, match="do not record"):
@@ -323,4 +323,67 @@ def test_factor_rebin_without_spec_records_the_choice_it_built():
     assert any(
         np.count_nonzero(refined.bin_centers[u] != refined.bin_centers[v]) > 1
         for u, v in refined.edge_pairs
+    )
+
+
+@pytest.mark.parametrize(
+    ("options", "n_bins"),
+    [
+        ({"factor": 1}, 18),
+        ({"factor": 2}, 6),  # coarse columns 0-1 and 2-3 hold retained bins
+        ({"bin_size": 2.0}, 6),
+        ({"bin_size": 0.5}, 72),
+    ],
+)
+def test_rebinning_a_subset_never_restores_dropped_space(options, n_bins):
+    full = grid()
+    west = full.subset(mask=full.bin_centers[:, 0] < 3)  # 3 of 6 columns
+    coarse = west.rebin(**options)
+    assert coarse.n_bins == n_bins
+    # Every new bin holds a retained bin, or lies within one.
+    holds = set(coarse.bin_at(west.bin_centers).tolist())
+    within = west.bin_at(coarse.bin_centers) >= 0
+    assert all(index in holds or within[index] for index in range(coarse.n_bins))
+
+
+def test_rebinning_after_a_rotation_keeps_the_same_cells():
+    # A bin centered on new cell corners overlaps all four cells; rounding from
+    # the rotation must not move which cells it claims.
+    full = Environment.from_grid_mask(
+        np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
+    )
+    one = full.subset(mask=np.all(full.bin_centers == [1.5, 1.5], axis=1))
+    expected = one.rebin(bin_size=1.5).bin_centers
+    np.testing.assert_array_equal(
+        expected, [[0.75, 0.75], [0.75, 2.25], [2.25, 0.75], [2.25, 2.25]]
+    )
+    for angle in np.linspace(0.01, 6.2, 50):
+        rotation = np.eye(3)
+        rotation[:2, :2] = [
+            [np.cos(angle), -np.sin(angle)],
+            [np.sin(angle), np.cos(angle)],
+        ]
+        rotated = one.apply_transform(Affine2D(rotation)).rebin(bin_size=1.5)
+        back = rotated.bin_centers @ rotation[:2, :2]  # inverse of a rotation
+        np.testing.assert_allclose(
+            np.sort(back, axis=0), np.sort(expected, axis=0), atol=1e-9
+        )
+
+
+@pytest.mark.parametrize("n_dims", [1, 3, 4])
+def test_rebinning_a_reflected_grid_matches_rebinning_before_the_reflection(n_dims):
+    # Reflection leaves 1-D and 4-D grids without rectangular or framed
+    # cells; their boxes come from the transformed lookup instead.
+    shape = (6,) if n_dims == 1 else (2,) * n_dims
+    edges = tuple(np.arange(size + 1.0) for size in shape)
+    env = Environment.from_grid_mask(np.ones(shape, dtype=bool), grid_edges=edges)
+    reflection = np.eye(n_dims + 1)
+    reflection[0, 0], reflection[0, -1] = -1.0, float(shape[0])
+    reflected = env.apply_transform(AffineND(reflection))
+    expected = env.rebin(bin_size=2).bin_centers
+    actual = reflected.rebin(bin_size=2).bin_centers
+    mirrored = actual.copy()
+    mirrored[:, 0] = shape[0] - mirrored[:, 0]
+    np.testing.assert_allclose(
+        mirrored[np.lexsort(mirrored.T[::-1])], expected[np.lexsort(expected.T[::-1])]
     )

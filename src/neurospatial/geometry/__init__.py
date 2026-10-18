@@ -20,6 +20,7 @@ from neurospatial.geometry._arena_fit import fit_walls as fit_walls
 from neurospatial.geometry._arena_fit import infer_arena as infer_arena
 from neurospatial.geometry._arena_fit import validate_arena as validate_arena
 from neurospatial.geometry._arrays import get_centers as get_centers
+from neurospatial.geometry._binning import BinConnections as BinConnections
 from neurospatial.geometry._binning import Binning as Binning
 from neurospatial.geometry._binning import KnownFaces as KnownFaces
 from neurospatial.geometry._binning import MissingFaces as MissingFaces
@@ -131,6 +132,7 @@ from neurospatial.geometry._polygon import materialize_cells as materialize_cell
 from neurospatial.geometry._polygon_cells import ClipMapping as ClipMapping
 from neurospatial.geometry._polygon_cells import ClippedLocator as ClippedLocator
 from neurospatial.geometry._polygon_cells import PolygonCells as PolygonCells
+from neurospatial.geometry._polygon_cells import clip_mapping_of as clip_mapping_of
 from neurospatial.geometry._rebin_spec import GridBinningSpec as GridBinningSpec
 from neurospatial.geometry._region_bins import polygon_bin_mask as polygon_bin_mask
 from neurospatial.geometry._region_bins import region_bin_mask as region_bin_mask

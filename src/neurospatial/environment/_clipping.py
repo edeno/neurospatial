@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial.environment._publication import _Derivation
@@ -34,11 +32,11 @@ def _clip(
             "Exact clipping requires a polygonal representation of the known "
             "arena domain. Provide polygon geometry or use whole-bin subset()."
         )
-    clipped, mapping = clip_binning(
+    clipped, _ = clip_binning(
         binning,
         polygon,
         domain=domain,
         walls=arena.walls,
     )
     # Publication records the clipped cells' extent as the ranges.
-    return _Derivation(replace(clipped, clip_mapping=mapping), "clip")
+    return _Derivation(clipped, "clip")

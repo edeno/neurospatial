@@ -58,7 +58,7 @@ def test_lookup_keeps_child_support_and_nonfinite_sentinels(restore):
         value.locate(np.zeros((1, 3)))
     assert not value.bridge_pairs.flags.writeable
     assert not value.bridge_conductances.flags.writeable
-    np.testing.assert_array_equal(value.spatial_bins().pairs, [[0, 1]])
+    np.testing.assert_array_equal(value.bin_connections().pairs, [[0, 1]])
 
 
 @pytest.mark.parametrize(
@@ -88,6 +88,7 @@ def test_combined_snapshot_publishes_and_round_trips(tmp_path):
         Binning(
             "combined",
             source.spatial_bins(),
+            source.bin_connections(),
             source,
             MissingFaces("Bridges have no physical faces."),
             shapes=PolygonCells(cells_from_locator(source)),
@@ -109,13 +110,20 @@ def test_combined_snapshot_publishes_and_round_trips(tmp_path):
 
 
 def test_publication_rejects_stale_parent_geometry():
-    from neurospatial.binning import Binning, MissingFaces
+    from neurospatial.binning import BinConnections, Binning, MissingFaces
 
     source = snapshot()
-    wrong = replace(source.spatial_bins(), pair_distances=np.array([99.0]))
+    links = source.bin_connections()
+    wrong = BinConnections.from_arrays(links.all_pairs, [99.0])
     with pytest.raises(ValueError, match="combined path distances"):
         Environment.from_bins(
-            Binning("combined", wrong, source, MissingFaces("unavailable"))
+            Binning(
+                "combined",
+                source.spatial_bins(),
+                wrong,
+                source,
+                MissingFaces("unavailable"),
+            )
         )
 
 
@@ -131,7 +139,13 @@ def test_nested_child_faces_cannot_disagree_with_child_measures():
     )
     with pytest.raises(ValueError, match=r"faces\.volumes"):
         Environment.from_bins(
-            Binning("combined", bad.spatial_bins(), bad, MissingFaces("bridge"))
+            Binning(
+                "combined",
+                bad.spatial_bins(),
+                bad.bin_connections(),
+                bad,
+                MissingFaces("bridge"),
+            )
         )
 
 
@@ -173,6 +187,10 @@ def test_mutated_nested_face_array_is_revalidated():
     with pytest.raises(ValueError, match="face areas"):
         Environment.from_bins(
             Binning(
-                "combined", combined.spatial_bins(), combined, MissingFaces("missing")
+                "combined",
+                combined.spatial_bins(),
+                combined.bin_connections(),
+                combined,
+                MissingFaces("missing"),
             )
         )

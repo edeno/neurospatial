@@ -10,7 +10,7 @@ from shapely.geometry import LineString, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena, UnknownArena
-from neurospatial.binning import FaceGeometry, FaceNormals, KnownFaces, SpatialBins
+from neurospatial.binning import BinConnections, FaceGeometry, FaceNormals, KnownFaces
 from neurospatial.environment._fields import face_geometry
 
 
@@ -27,9 +27,10 @@ def _explicit_grid(source, *, spec, navigation=None):
     """Retain exact cells and faces while changing only declared navigation."""
     binning = source._binning
     bins = binning.bins
+    pairs = binning.connections.pairs
     faces = face_geometry(source._cache, source._binning)
-    keep = np.ones(len(bins.pairs), dtype=bool)
-    distances = bins.pair_distances.copy()
+    keep = np.ones(len(pairs), dtype=bool)
+    distances = binning.connections.pair_distances.copy()
     if navigation == "long_path":
         distances[0] *= 7.0
     elif navigation == "missing_link":
@@ -38,16 +39,10 @@ def _explicit_grid(source, *, spec, navigation=None):
         replace(
             binning,
             kind="RecordedGrid",
-            bins=SpatialBins(
-                bins.centers,
-                bins.sizes,
-                bins.measure_dim,
-                bins.pairs[keep],
-                distances[keep],
-            ),
+            connections=BinConnections.from_arrays(pairs[keep], distances[keep]),
             faces=KnownFaces(
                 FaceGeometry(
-                    bins.pairs[keep],
+                    pairs[keep],
                     faces.A[keep],
                     faces.distance[keep],
                     bins.sizes,
@@ -80,8 +75,8 @@ def test_native_explicit_grid_navigation_survives_copy_and_load(spec, diagonal):
         np.testing.assert_array_equal(actual.bin_centers, expected.bin_centers)
         np.testing.assert_array_equal(actual.edge_pairs, expected.edge_pairs)
         np.testing.assert_allclose(
-            actual._binning.bins.pair_distances,
-            expected._binning.bins.pair_distances,
+            actual._binning.connections.pair_distances,
+            expected._binning.connections.pair_distances,
             rtol=0,
             atol=0,
         )
@@ -93,16 +88,16 @@ def test_factor_rebin_accepts_subset_and_wall_filtered_native_graph(diagonal):
     source = _grid(diagonal=diagonal, arena=arena)
     for parent in (source, source.subset(mask=source.bin_centers[:, 1] < 2)):
         child = parent.rebin(1)
-        # The original arena still determines the target support, including when
-        # the input is a selected analysis region within that physical arena.
-        np.testing.assert_array_equal(child.bin_centers, source.bin_centers)
-        assert set(child.connectivity.edges()) == set(source.connectivity.edges())
+        # Rebinning keeps the selected bins and the wall that splits them.
+        np.testing.assert_array_equal(child.bin_centers, parent.bin_centers)
+        assert set(child.connectivity.edges()) == set(parent.connectivity.edges())
         assert nx.number_connected_components(child.connectivity) == 2
 
 
 def test_owned_diagonal_policy_applies_when_source_has_no_diagonal_edges():
     active = np.zeros((4, 4), dtype=bool)
     active[0] = True
+    active[3, 3] = True  # far from row 0, so no diagonal neighbor in the source
     source = Environment.from_grid_mask(
         active,
         grid_edges=(np.arange(5.0),) * 2,
@@ -113,8 +108,8 @@ def test_owned_diagonal_policy_applies_when_source_has_no_diagonal_edges():
         np.count_nonzero(source.bin_centers[u] != source.bin_centers[v]) == 1
         for u, v in source.edge_pairs
     )
-    # An unknown domain retains the existing full-coarse-grid behavior. The
-    # stored construction choice remains authoritative for its new diagonal links.
+    # The stored construction choice remains authoritative for new diagonal
+    # links: the coarse blocks holding bins are (0, 0), (0, 1) and (1, 1).
     child = source.rebin(2)
-    assert child.n_bins == 4
-    assert child.connectivity.number_of_edges() == 6
+    assert child.n_bins == 3
+    assert child.connectivity.number_of_edges() == 3

@@ -23,7 +23,7 @@ from neurospatial.geometry._polygon_cells import ClippedLocator
 
 @dataclass(frozen=True, eq=False)
 class FaceNormals(ReadOnlyState):
-    """Physical face normals in ``Binning.bins.pairs`` order.
+    """Physical face normals in ``Binning.connections.pairs`` (open pair) order.
 
     Parameters
     ----------

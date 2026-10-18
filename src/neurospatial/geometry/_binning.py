@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import pickle
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol
 
 import networkx as nx
@@ -26,41 +26,40 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 from neurospatial.geometry._track import project_1d_to_2d
 
 if TYPE_CHECKING:
-    from neurospatial.geometry._polygon_cells import ClipMapping, PolygonCells
+    from neurospatial.geometry._polygon_cells import PolygonCells
 
 
 @dataclass(frozen=True, eq=False)
 class SpatialBins(ReadOnlyState):
-    """Discrete bins with owned, read-only geometry arrays.
+    """Ordered bins and their physical measures, without their connections.
+
+    A bin's index is its ID everywhere: fields, regions, faces and
+    :class:`BinConnections` all refer to bins by their position here.
+
+    Bins can differ in what they measure: a track joined to an open field
+    has bins measured by length next to bins measured by area. Each bin's
+    size is in ``units ** measure_dims[i]``.
 
     Attributes
     ----------
     centers : ndarray of float64, shape (n_bins, n_dims)
         Finite bin centers in the environment's coordinates.
     sizes : ndarray of float64, shape (n_bins,)
-        Finite, strictly positive bin measures in ``units ** measure_dim``.
-    measure_dim : int
-        Dimension of the bin measures: one for track lengths, otherwise the
-        coordinate dimension for areas or volumes.
-    pairs : ndarray of intp, shape (n_pairs, 2)
-        Neighbor pairs in authoritative edge order and orientation, exposed as
-        ``env.edge_pairs``. NetworkX edge iteration may use a different order.
-    pair_distances : ndarray of float64, shape (n_pairs,)
-        Finite, non-negative navigation distances, distinct from the flux
-        distances used by finite-volume faces at track junctions.
+        Finite, strictly positive bin measures in ``units ** measure_dims``.
+    measure_dims : ndarray of intp, shape (n_bins,)
+        Dimension of each bin's measure: one for track lengths, otherwise the
+        coordinate dimension for areas or volumes. An integer given at
+        construction applies to every bin.
     """
 
     centers: NDArray[np.float64]
     sizes: NDArray[np.float64]
-    measure_dim: int
-    pairs: NDArray[np.intp]
-    pair_distances: NDArray[np.float64]
+    measure_dims: NDArray[np.intp]
 
     def __post_init__(self) -> None:
         centers = np.array(self.centers, dtype=np.float64, copy=True)
         sizes = np.array(self.sizes, dtype=np.float64, copy=True)
-        raw_pairs = np.asarray(self.pairs)
-        distances = np.array(self.pair_distances, dtype=np.float64, copy=True)
+        raw_dims = np.asarray(self.measure_dims)
 
         if centers.ndim != 2:
             raise ValueError(f"centers must be 2D, got shape {centers.shape}.")
@@ -76,19 +75,185 @@ class SpatialBins(ReadOnlyState):
         if np.any(invalid):
             index = int(np.flatnonzero(invalid)[0])
             raise ValueError(f"sizes[{index}] must be finite and strictly positive.")
-        if (
-            isinstance(self.measure_dim, (bool, np.bool_))
-            or not isinstance(self.measure_dim, (int, np.integer))
-            or not 1 <= self.measure_dim <= n_dims
+        if raw_dims.ndim == 0:
+            if raw_dims.dtype.kind not in "iu" or not 1 <= raw_dims <= n_dims:
+                raise ValueError(
+                    f"measure_dim must be an integer between 1 and {n_dims}, "
+                    f"got {self.measure_dims!r}."
+                )
+            raw_dims = np.full(n_bins, raw_dims)
+        if raw_dims.shape != (n_bins,) or (
+            raw_dims.size and raw_dims.dtype.kind not in "iu"
         ):
             raise ValueError(
-                f"measure_dim must be an integer between 1 and {n_dims}, "
-                f"got {self.measure_dim!r}."
+                f"measure_dims must be one integer per bin, shape ({n_bins},), "
+                f"got {raw_dims.dtype} with shape {raw_dims.shape}."
             )
+        invalid = (raw_dims < 1) | (raw_dims > n_dims)
+        if np.any(invalid):
+            index = int(np.flatnonzero(invalid)[0])
+            raise ValueError(
+                f"measure_dims[{index}] must be between 1 and {n_dims}, "
+                f"got {raw_dims[index]}."
+            )
+        dims = np.array(raw_dims, dtype=np.intp, copy=True)
+        for name, array in (
+            ("centers", centers),
+            ("sizes", sizes),
+            ("measure_dims", dims),
+        ):
+            array.setflags(write=False)
+            object.__setattr__(self, name, array)
+
+    @classmethod
+    def from_arrays(
+        cls,
+        centers: ArrayLike,
+        sizes: ArrayLike,
+        measure_dim: int | ArrayLike,
+    ) -> SpatialBins:
+        """Validate and own bin centers and measures.
+
+        Parameters
+        ----------
+        centers : array-like, shape (n_bins, n_dims)
+            Finite bin coordinates.
+        sizes : array-like, shape (n_bins,)
+            Finite, strictly positive bin measures.
+        measure_dim : int or array-like of int, shape (n_bins,)
+            Measure dimension in ``[1, n_dims]``, for every bin or per bin.
+
+        Returns
+        -------
+        SpatialBins
+            Validated independent snapshot with read-only arrays.
+
+        Raises
+        ------
+        ValueError
+            If shapes, dimensions or values are invalid. Elementwise errors
+            identify the offending array index.
+        """
+        return cls(np.asarray(centers), np.asarray(sizes), np.asarray(measure_dim))
+
+    def has_measure_dim(self, dim: int) -> bool:
+        """Whether every bin's measure has dimension ``dim`` (True with no bins)."""
+        return bool(np.all(self.measure_dims == dim))
+
+    @property
+    def measure_dim(self) -> int | None:
+        """The measure dimension every bin shares, or None when bins mix them."""
+        dims = self.measure_dims
+        if not len(dims) or np.any(dims != dims[0]):
+            return None
+        return int(dims[0])
+
+    @property
+    def n_bins(self) -> int:
+        """Number of active bins."""
+        return int(self.centers.shape[0])
+
+    @property
+    def n_dims(self) -> int:
+        """Number of coordinate columns."""
+        return int(self.centers.shape[1])
+
+
+def refuse_mixed_measure_conductance(
+    measure_dims: NDArray[np.intp],
+    pairs: NDArray[np.intp],
+    conducting: NDArray[np.bool_],
+    *,
+    link: str,
+    fix: str,
+) -> None:
+    """Refuse a conducting link between bins measured in different dimensions.
+
+    Diffusion through it would exchange mass between densities of different
+    units, per length and per area, so its result would depend on the length
+    unit whatever the conductance.
+
+    Parameters
+    ----------
+    measure_dims : ndarray of intp, shape (n_bins,)
+        Each bin's measure dimension.
+    pairs : ndarray of intp, shape (n_links, 2)
+        The links' bins.
+    conducting : ndarray of bool, shape (n_links,)
+        Which links carry diffusion.
+    link, fix : str
+        What a link is (``"bridge"``, ``"face"``) and how to avoid the error.
+
+    Raises
+    ------
+    ValueError
+        Naming the first such link.
+    """
+    ends = pairs[conducting]
+    mixed = np.flatnonzero(measure_dims[ends[:, 0]] != measure_dims[ends[:, 1]])
+    if len(mixed):
+        u, v = ends[mixed[0]]
+        raise ValueError(
+            _format_error(
+                f"A conducting {link} joins bin {u}, measured in dimension "
+                f"{measure_dims[u]}, to bin {v}, measured in dimension "
+                f"{measure_dims[v]}.",
+                why="Why: diffusion through it would exchange mass between a "
+                "density per length and a density per area, so the result "
+                "would change with the units (cm or mm), whatever the "
+                "conductance.",
+                fix=fix,
+            )
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class BinConnections(ReadOnlyState):
+    """Neighbor pairs between bins, and which of them movement can cross.
+
+    A binning defines its neighbor pairs once. Walls close pairs instead of
+    removing them, so two environments over the same bins list their pairs in
+    the same order and differ only in ``is_open``. Everything that moves
+    between bins (paths, distances, smoothing, gradients) uses the open pairs,
+    ``pairs``, which is ``env.edge_pairs``.
+
+    Attributes
+    ----------
+    all_pairs : ndarray of intp, shape (n_all_pairs, 2)
+        Every neighbor pair, open or closed, in authoritative order and
+        orientation.
+    all_distances : ndarray of float64, shape (n_all_pairs,)
+        Finite, non-negative navigation distances, distinct from the flux
+        distances used by finite-volume faces at track junctions.
+    is_open : ndarray of bool, shape (n_all_pairs,)
+        False where a wall closes the edge between the pair's bins.
+    closed_by : ndarray of intp, shape (n_all_pairs,)
+        Index into the arena's ``walls`` of the wall that closes each pair:
+        the one covering most of the edge the pair's cells share, or for
+        cells that meet only at a corner, the first wall the link between
+        their centers crosses. -1 for open pairs and for closed pairs no wall
+        of the arena closes. Publication records it when it applies walls.
+    pairs : ndarray of intp, shape (n_pairs, 2)
+        The open pairs, in the order of ``all_pairs``.
+    pair_distances : ndarray of float64, shape (n_pairs,)
+        Navigation distances of the open pairs.
+    """
+
+    all_pairs: NDArray[np.intp]
+    all_distances: NDArray[np.float64]
+    is_open: NDArray[np.bool_]
+    closed_by: NDArray[np.intp]
+    pairs: NDArray[np.intp] = field(init=False, repr=False)
+    pair_distances: NDArray[np.float64] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        raw_pairs = np.asarray(self.all_pairs)
+        distances = np.array(self.all_distances, dtype=np.float64, copy=True)
         if raw_pairs.ndim != 2 or raw_pairs.shape[1] != 2:
             raise ValueError(
                 f"pairs must have shape (n_pairs, 2), got {raw_pairs.shape}."
             )
+        index: int | tuple[int, ...]
         if raw_pairs.size and raw_pairs.dtype.kind not in "iu":
             if raw_pairs.dtype.kind == "f":
                 invalid = ~np.isfinite(raw_pairs) | (raw_pairs != np.floor(raw_pairs))
@@ -97,16 +262,19 @@ class SpatialBins(ReadOnlyState):
                     raise ValueError(f"pairs{index} must contain integer bin indices.")
             else:
                 raise ValueError("pairs(0, 0) must contain integer bin indices.")
-        invalid = (raw_pairs < 0) | (raw_pairs >= n_bins)
+        invalid = raw_pairs < 0
         if np.any(invalid):
             index = tuple(int(i) for i in np.argwhere(invalid)[0])
-            raise ValueError(f"pairs{index} must be in [0, {n_bins}).")
+            raise ValueError(f"pairs{index} must be a nonnegative bin index.")
         pairs = np.array(raw_pairs, dtype=np.intp, copy=True)
         self_pairs = pairs[:, 0] == pairs[:, 1]
         if np.any(self_pairs):
             index = int(np.flatnonzero(self_pairs)[0])
             raise ValueError(f"pairs[{index}] is a self pair.")
-        _, first_indices = np.unique(np.sort(pairs, axis=1), axis=0, return_index=True)
+        # One integer per unordered pair; much faster than unique rows.
+        low, high = np.minimum(pairs[:, 0], pairs[:, 1]), np.maximum(*pairs.T)
+        keys = low * (int(high.max(initial=0)) + 1) + high
+        _, first_indices = np.unique(keys, return_index=True)
         duplicates = np.ones(len(pairs), dtype=bool)
         duplicates[first_indices] = False
         if np.any(duplicates):
@@ -123,68 +291,140 @@ class SpatialBins(ReadOnlyState):
             raise ValueError(
                 f"pair_distances[{index}] must be finite and non-negative."
             )
-
-        for name, array in (
-            ("centers", centers),
-            ("sizes", sizes),
-            ("pairs", pairs),
-            ("pair_distances", distances),
+        is_open = np.asarray(self.is_open)
+        if is_open.dtype.kind != "b" or is_open.shape != (len(pairs),):
+            raise ValueError(
+                f"is_open must be a boolean array of shape ({len(pairs)},), "
+                f"got {is_open.dtype} with shape {is_open.shape}."
+            )
+        is_open = np.array(is_open, dtype=bool, copy=True)
+        closed_by = np.asarray(self.closed_by)
+        if (
+            closed_by.shape != (len(pairs),)
+            or (closed_by.size and closed_by.dtype.kind not in "iu")
+            or np.any(closed_by < -1)
+            or np.any(closed_by[is_open] != -1)
         ):
+            raise ValueError(
+                f"closed_by must hold one wall index >= -1 per pair, shape "
+                f"({len(pairs)},), and -1 for every open pair."
+            )
+        closed_by = np.array(closed_by, dtype=np.intp, copy=True)
+        values = {
+            "all_pairs": pairs,
+            "all_distances": distances,
+            "is_open": is_open,
+            "closed_by": closed_by,
+            "pairs": pairs if is_open.all() else pairs[is_open],
+            "pair_distances": distances if is_open.all() else distances[is_open],
+        }
+        for name, array in values.items():
             array.setflags(write=False)
             object.__setattr__(self, name, array)
 
     @classmethod
     def from_arrays(
         cls,
-        centers: ArrayLike,
-        sizes: ArrayLike,
-        measure_dim: int,
         pairs: ArrayLike,
         pair_distances: ArrayLike,
-    ) -> SpatialBins:
-        """Validate and own bin centers, measures and ordered neighbor pairs.
+        is_open: ArrayLike | None = None,
+        closed_by: ArrayLike | None = None,
+    ) -> BinConnections:
+        """Validate and own neighbor pairs, their distances and openness.
 
         Parameters
         ----------
-        centers : array-like, shape (n_bins, n_dims)
-            Finite bin coordinates.
-        sizes : array-like, shape (n_bins,)
-            Finite, strictly positive bin measures.
-        measure_dim : int
-            Measure dimension in ``[1, n_dims]``.
         pairs : array-like of int, shape (n_pairs, 2)
             Distinct unordered neighbor pairs, kept in their input order.
         pair_distances : array-like, shape (n_pairs,)
             Finite, non-negative navigation distances.
+        is_open : array-like of bool, shape (n_pairs,), optional
+            Which pairs movement can cross. All pairs are open by default.
+        closed_by : array-like of int, shape (n_pairs,), optional
+            Index of the arena wall closing each pair, -1 for none (the
+            default). Publication recomputes it from the arena's walls.
 
         Returns
         -------
-        SpatialBins
+        BinConnections
             Validated independent snapshot with read-only arrays.
 
         Raises
         ------
         ValueError
-            If shapes, dimensions or values are invalid. Elementwise errors
-            identify the offending array index.
+            If shapes or values are invalid. Elementwise errors identify the
+            offending array index.
         """
+        all_pairs = np.asarray(pairs)
+        if all_pairs.size == 0:
+            all_pairs = all_pairs.reshape(-1, 2)
         return cls(
-            np.asarray(centers),
-            np.asarray(sizes),
-            measure_dim,
-            np.asarray(pairs),
+            all_pairs,
             np.asarray(pair_distances),
+            np.ones(len(all_pairs), dtype=bool)
+            if is_open is None
+            else np.asarray(is_open),
+            np.full(len(all_pairs), -1, dtype=np.intp)
+            if closed_by is None
+            else np.asarray(closed_by),
         )
 
-    @property
-    def n_bins(self) -> int:
-        """Number of active bins."""
-        return int(self.centers.shape[0])
+    def closed(self, keep_open: NDArray[np.bool_]) -> BinConnections:
+        """Close the open pairs where ``keep_open`` is False.
 
-    @property
-    def n_dims(self) -> int:
-        """Number of coordinate columns."""
-        return int(self.centers.shape[1])
+        Parameters
+        ----------
+        keep_open : ndarray of bool, shape (n_pairs,)
+            One flag per open pair, in ``pairs`` order.
+
+        Returns
+        -------
+        BinConnections
+            The same pairs, with the given open pairs closed. Closed pairs
+            stay closed; newly closed pairs have no closing wall (-1) until
+            one is recorded.
+        """
+        is_open = self.is_open.copy()
+        is_open[np.flatnonzero(self.is_open)[~keep_open]] = False
+        return BinConnections(
+            self.all_pairs, self.all_distances, is_open, self.closed_by
+        )
+
+    def select(
+        self, child_of: NDArray[np.intp]
+    ) -> tuple[BinConnections, NDArray[np.bool_]]:
+        """Keep the pairs between kept bins, renumbered as the kept bins are.
+
+        Parameters
+        ----------
+        child_of : ndarray of intp, shape (n_bins,)
+            New index of each bin, or -1 for a dropped bin.
+
+        Returns
+        -------
+        connections : BinConnections
+            Pairs whose bins are both kept, in their original order, with
+            their openness.
+        open_kept : ndarray of bool, shape (n_pairs,)
+            Which open pairs survive, in ``pairs`` order, to select arrays
+            aligned with the open pairs such as faces and normals.
+        """
+        mapped = child_of[self.all_pairs]
+        kept = np.all(mapped >= 0, axis=1)
+        connections = BinConnections(
+            mapped[kept].reshape(-1, 2),
+            self.all_distances[kept],
+            self.is_open[kept],
+            self.closed_by[kept],
+        )
+        return connections, kept[self.is_open]
+
+    def check_bins(self, n_bins: int) -> None:
+        """Raise if a pair names a bin outside ``range(n_bins)``."""
+        invalid = self.all_pairs >= n_bins
+        if np.any(invalid):
+            index = tuple(int(i) for i in np.argwhere(invalid)[0])
+            raise ValueError(f"pairs{index} must be in [0, {n_bins}).")
 
 
 class FacesSource(Protocol):
@@ -446,10 +686,11 @@ class TrackLinearization(ReadOnlyState):
 
 @dataclass(frozen=True, eq=False)
 class Binning:
-    """Published bins, lookup, faces and optional structural components.
+    """Published bins, their connections, lookup, faces and optional components.
 
-    ``face_normals`` holds physical directions in ``bins.pairs`` order. It is
-    independent of solver availability: only ``faces`` grants that capability.
+    ``faces`` and ``face_normals`` are aligned with the open pairs,
+    ``connections.pairs``. Face normals are independent of solver
+    availability: only ``faces`` grants that capability.
 
     ``dimension_ranges`` is the ``(low, high)`` extent of each coordinate
     axis that the bins' cells cover: a grid's active cells, the outline or
@@ -465,13 +706,13 @@ class Binning:
 
     kind: str
     bins: SpatialBins
+    connections: BinConnections
     locator: Locator
     faces: FacesSource
     rectilinear: RectilinearGrid | None = None
     linearization: TrackLinearization | None = None
     shapes: HexagonShapes | TriangleShapes | PolygonCells | None = None
     outline: Outline | None = None
-    clip_mapping: ClipMapping | None = None
     grid_spec: GridBinningSpec | None = None
     face_normals: FaceNormals | None = None
     grid_frame: FramedGrid | None = None

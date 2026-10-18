@@ -61,12 +61,12 @@ def test_rebin_preserves_walls_in_the_layout_facade(factor):
     if factor == 1:
         np.testing.assert_array_equal(child.bin_centers, parent.bin_centers)
         np.testing.assert_array_equal(
-            child._binning.bins.pairs, parent._binning.bins.pairs
+            child._binning.connections.pairs, parent._binning.connections.pairs
         )
 
 
 def test_rebin_refuses_a_physical_wall_inside_a_coarse_cell():
-    with pytest.raises(ValueError, match="wall cuts through bin"):
+    with pytest.raises(ValueError, match=r"wall 'wall_0' cuts through bin"):
         _walled().rebin(3)
 
 
@@ -254,6 +254,6 @@ def test_rebin_arena_survives_subset_copy_and_dict_roundtrip():
         assert variant.arena.polygonal_domain().equals(box(0, 0, 6, 6))
         assert variant.arena.walls[0].equals(LineString([(2, 0), (2, 6)]))
         np.testing.assert_array_equal(
-            variant._binning.bins.pairs, child._binning.bins.pairs
+            variant._binning.connections.pairs, child._binning.connections.pairs
         )
         assert nx.number_connected_components(variant.connectivity) == 2

@@ -523,7 +523,7 @@ class TestWriteEnvironment:
 
         write_environment(empty_nwb, sample_environment)
         table = empty_nwb.scratch["spatial_environment"]
-        edges = _stored_array(table, "binning/bins/pairs")
+        edges = _stored_array(table, "binning/connections/all_pairs")
         np.testing.assert_array_equal(
             edges, list(sample_environment.connectivity.edges)
         )
@@ -534,7 +534,7 @@ class TestWriteEnvironment:
 
         write_environment(empty_nwb, sample_environment)
         table = empty_nwb.scratch["spatial_environment"]
-        actual = _stored_array(table, "binning/bins/pair_distances")
+        actual = _stored_array(table, "binning/connections/all_distances")
         expected = [
             d["distance"]
             for _, _, d in sample_environment.connectivity.edges(data=True)
@@ -708,7 +708,7 @@ class TestWriteEnvironment:
         write_environment(empty_nwb, sample_environment)
         table = empty_nwb.scratch["spatial_environment"]
         np.testing.assert_array_equal(
-            _stored_array(table, "binning/bins/pairs"), expected
+            _stored_array(table, "binning/connections/all_pairs"), expected
         )
 
 

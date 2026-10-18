@@ -152,7 +152,7 @@ def test_clip_splits_bins_and_preserves_mapping_through_derivation():
     # A detached copy, so reshaping its arrays cannot reach the owned record.
     assert not np.shares_memory(
         child.clip_mapping.parent_bin_indices,
-        child._binning.clip_mapping.parent_bin_indices,
+        child._binning.locator.mapping.parent_bin_indices,
     )
     assert not child.clip_mapping.parent_bin_indices.flags.writeable
     assert _arena_record(child.arena) == _arena_record(parent.arena)

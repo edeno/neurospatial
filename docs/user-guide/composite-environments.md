@@ -99,6 +99,44 @@ track coordinate, and rebinning requires a separately supported representation.
 Clip children before adding bridges, or combine with `auto_bridge=False` before
 clipping: splitting bridge endpoints needs an explicit reconnection rule.
 
+## A corridor joined to an arena
+
+Components can differ in what their bins measure. An approach corridor built as
+a track has bins measured by length; the arena it leads into has bins measured
+by area. Combining them keeps each bin's own measure, so occupancy, rate maps,
+smoothing within each component and decoding all work on the combined
+environment, while `bin_sizes` refuses, because a sum or density over lengths
+and areas together has no unit:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+import pytest
+from neurospatial import Environment
+
+corridor = Environment.linear_track(
+    endpoints=[[-3.0, 5.0], [-23.0, 5.0]], bin_size=2.0, track_width=2.0, units="cm"
+)
+edges = np.arange(0.0, 11.0, 2.0)
+arena = Environment.from_grid_mask(
+    np.ones((5, 5), dtype=bool), grid_edges=(edges, edges), units="cm"
+)
+env = Environment.combine({"corridor": corridor, "arena": arena})
+dims = env.binning.bins.measure_dims  # 1 for corridor bins, 2 for arena bins
+assert set(dims.tolist()) == {1, 2}
+with pytest.raises(ValueError, match="mix measures"):
+    env.bin_sizes
+in_arena = np.array([key == "arena" for key, _ in env.bin_sources])
+np.testing.assert_allclose(env.subset(mask=in_arena).bin_sizes, 4.0)  # cm^2
+```
+
+A transform scales each bin by its own dimension: doubling lengths doubles the
+corridor bins and quadruples the arena bins. The bridge between the corridor and
+the arena is navigation-only, and `combine` refuses a `bridge_conductances`
+entry for it: diffusion between a density per length and a density per area
+would give different answers in centimeters and millimeters, whatever the
+conductance.
+
 ## Migration
 
 `CompositeEnvironment` has been removed. Replace its constructor with

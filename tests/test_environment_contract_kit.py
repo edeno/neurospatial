@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.binning import Binning, MissingFaces, NearestBinLocator, SpatialBins
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 from neurospatial.testing import assert_environment_contract
 
 
@@ -34,7 +40,8 @@ def test_contract_kit_exercises_missing_face_refusal():
     env = Environment.from_bins(
         Binning(
             "sample_sites",
-            SpatialBins.from_arrays(centers, [1.0, 1.0], 2, [[0, 1]], [2.0]),
+            SpatialBins.from_arrays(centers, [1.0, 1.0], 2),
+            BinConnections.from_arrays([[0, 1]], [2.0]),
             NearestBinLocator(centers, max_distance=0.1),
             MissingFaces("No physical faces are available."),
         )

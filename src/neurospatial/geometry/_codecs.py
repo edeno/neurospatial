@@ -41,6 +41,7 @@ from neurospatial.geometry._arena import (
     _TransformedArena,
 )
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -71,6 +72,9 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 Payload = tuple[dict[str, Any], dict[str, NDArray[Any]]]
 
+# Version 2 added the required wall names of an OpenArena.
+_ARENA_VERSION = 2
+
 
 @dataclass(frozen=True, eq=False)
 class Codec:
@@ -79,6 +83,8 @@ class Codec:
     kind: type[Any]
     encode: Callable[[Any, str], Payload]
     decode: Callable[[dict[str, Any], Mapping[str, NDArray[Any]], str], object]
+    # The one version this codec writes and reads.
+    version: int = 1
 
 
 def encode(obj: object, prefix: str) -> Payload:
@@ -114,7 +120,7 @@ def encode(obj: object, prefix: str) -> Payload:
             "layout-backed lookup and custom layout linearization cannot be saved."
         )
     meta, arrays = codec.encode(obj, prefix)
-    return _json_safe({"codec": name, "codec_version": 1, **meta}), arrays
+    return _json_safe({"codec": name, "codec_version": codec.version, **meta}), arrays
 
 
 def decode(
@@ -154,11 +160,10 @@ def decode(
             "Fix: use a neurospatial version supporting this geometry codec."
         )
     version = meta.get("codec_version")
-    supported = (1, 2, 3) if name == "Binning" else (1,)
-    if type(version) is not int or version not in supported:
-        version_hint = "1, 2 or 3" if name == "Binning" else "1"
+    supported = codec.version
+    if type(version) is not int or version != supported:
         raise ValueError(
-            f"cannot load {name} codec_version {version!r}; supported version is {version_hint}.\n"
+            f"cannot load {name} codec_version {version!r}; supported version is {supported}.\n"
             "Fix: recreate and save the environment with this neurospatial version."
         )
     try:
@@ -301,12 +306,8 @@ def _active_map(mapping: NDArray[Any], size: int, name: str) -> None:
 
 
 def _encode_bins(obj: SpatialBins, prefix: str) -> Payload:
-    return {"measure_dim": obj.measure_dim}, _arrays(
-        prefix,
-        centers=obj.centers,
-        sizes=obj.sizes,
-        pairs=obj.pairs,
-        pair_distances=obj.pair_distances,
+    return {}, _arrays(
+        prefix, centers=obj.centers, sizes=obj.sizes, measure_dims=obj.measure_dims
     )
 
 
@@ -316,9 +317,28 @@ def _decode_bins(
     return SpatialBins.from_arrays(
         _array(arrays, prefix, "centers", np.float64),
         _array(arrays, prefix, "sizes", np.float64),
-        meta["measure_dim"],
-        _array(arrays, prefix, "pairs", np.intp),
-        _array(arrays, prefix, "pair_distances", np.float64),
+        _array(arrays, prefix, "measure_dims", np.intp),
+    )
+
+
+def _encode_connections(obj: BinConnections, prefix: str) -> Payload:
+    return {}, _arrays(
+        prefix,
+        all_pairs=obj.all_pairs,
+        all_distances=obj.all_distances,
+        is_open=obj.is_open,
+        closed_by=obj.closed_by,
+    )
+
+
+def _decode_connections(
+    meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
+) -> BinConnections:
+    return BinConnections.from_arrays(
+        _array(arrays, prefix, "all_pairs", np.intp),
+        _array(arrays, prefix, "all_distances", np.float64),
+        _array(arrays, prefix, "is_open", np.bool_),
+        _array(arrays, prefix, "closed_by", np.intp),
     )
 
 
@@ -736,7 +756,7 @@ def _decode_nearest_locator(
 
 
 def _encode_binning(obj: Binning, prefix: str) -> Payload:
-    meta: dict[str, Any] = {"kind": obj.kind, "codec_version": 3}
+    meta: dict[str, Any] = {"kind": obj.kind}
     arrays: dict[str, NDArray[Any]] = {}
     cells: list[PolygonCells] = []
     mappings: list[ClipMapping] = []
@@ -771,8 +791,6 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
     # Current components precede historical locator frames in snapshot order.
     if isinstance(obj.shapes, PolygonCells):
         reference(obj.shapes)
-    if obj.clip_mapping is not None:
-        reference(obj.clip_mapping)
 
     def locator_payload(locator: object, path: str) -> Payload:
         if not isinstance(locator, (ClippedLocator, SubsetLocator, TransformedLocator)):
@@ -797,12 +815,12 @@ def _encode_binning(obj: Binning, prefix: str) -> Payload:
     for name in (
         "locator",
         "bins",
+        "connections",
         "faces",
         "rectilinear",
         "linearization",
         "shapes",
         "outline",
-        "clip_mapping",
         "grid_spec",
         "face_normals",
         "grid_frame",
@@ -950,10 +968,6 @@ def _decode_transformed_locator(
 def _decode_binning(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> Binning:
-    if meta["codec_version"] < 3 and meta.get("grid_frame") is not None:
-        raise ValueError("grid_frame requires Binning codec_version 3.")
-    if meta["codec_version"] == 1 and meta.get("face_normals") is not None:
-        raise ValueError("face_normals requires Binning codec_version 2.")
     parts: dict[str, Any] = {}
     cells: list[PolygonCells] = []
     mappings: list[ClipMapping] = []
@@ -1022,25 +1036,20 @@ def _decode_binning(
 
     expected: dict[str, type | tuple[type, ...]] = {
         "bins": SpatialBins,
+        "connections": BinConnections,
         "locator": _LOCATOR_TYPES,
         "faces": (KnownFaces, MissingFaces),
         "rectilinear": RectilinearGrid,
         "linearization": TrackLinearization,
         "shapes": (HexagonShapes, TriangleShapes, PolygonCells),
         "outline": Outline,
-        "clip_mapping": ClipMapping,
         "grid_spec": GridBinningSpec,
         "face_normals": FaceNormals,
         "grid_frame": FramedGrid,
     }
     part: object | None
     for name, kind in expected.items():
-        optional_legacy = (
-            name in {"clip_mapping", "grid_spec"}
-            or (name == "face_normals" and meta["codec_version"] == 1)
-            or (name == "grid_frame" and meta["codec_version"] < 3)
-        )
-        value = meta.get(name) if optional_legacy else meta[name]
+        value = meta[name]
         if value is None:
             part = None
         elif (
@@ -1049,12 +1058,6 @@ def _decode_binning(
             and "polygon_cells_ref" in value
         ):
             part = referenced(value, "polygon_cells_ref")
-        elif (
-            name == "clip_mapping"
-            and isinstance(value, dict)
-            and "clip_mapping_ref" in value
-        ):
-            part = referenced(value, "clip_mapping_ref")
         elif name == "locator":
             part = locator_value(value, f"{prefix}/{name}")
         else:
@@ -1063,13 +1066,14 @@ def _decode_binning(
                 raise ValueError(
                     "polygon components in a binning need typed snapshot references."
                 )
-        if part is None and name in {"bins", "locator", "faces"}:
+        if part is None and name in {"bins", "connections", "locator", "faces"}:
             raise ValueError(f"{name} is required for a binning.")
         if part is not None and not isinstance(part, kind):
             raise ValueError(f"{name} has the wrong geometry codec kind.")
         parts[name] = part
     if not isinstance(meta["kind"], str):
         raise ValueError("kind must be a descriptive string.")
+    parts["connections"].check_bins(parts["bins"].n_bins)
     return Binning(kind=meta["kind"], **parts)
 
 
@@ -1183,7 +1187,8 @@ def _decode_grid_frame(
 _CODECS: dict[str, Codec] = {
     "GridBinningSpec": Codec(GridBinningSpec, _encode_grid_spec, _decode_grid_spec),
     "CombinedLocator": Codec(CombinedLocator, _encode_combined, _decode_combined),
-    "SpatialBins": Codec(SpatialBins, _encode_bins, _decode_bins),
+    "SpatialBins": Codec(SpatialBins, _encode_bins, _decode_bins, version=2),
+    "BinConnections": Codec(BinConnections, _encode_connections, _decode_connections),
     "KnownFaces": Codec(KnownFaces, _encode_faces, _decode_faces),
     "MissingFaces": Codec(MissingFaces, _encode_missing, _decode_missing),
     "RectilinearGrid": Codec(RectilinearGrid, _encode_grid, _decode_grid),
@@ -1212,7 +1217,7 @@ _CODECS: dict[str, Codec] = {
     "TransformedLocator": Codec(
         TransformedLocator, _encode_transformed_locator, _decode_transformed_locator
     ),
-    "Binning": Codec(Binning, _encode_binning, _decode_binning),
+    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=4),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
     "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }
@@ -1240,7 +1245,10 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
     arrays : dict of ndarray
         Independent writable numerical arrays using local field names.
     """
-    meta: dict[str, Any] = {"codec": type(arena).__name__, "codec_version": 1}
+    meta: dict[str, Any] = {
+        "codec": type(arena).__name__,
+        "codec_version": _ARENA_VERSION,
+    }
     arrays: dict[str, NDArray[Any]] = {}
     if type(arena) is _CombinedArena:
         entries = []
@@ -1256,6 +1264,7 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
     elif type(arena) is OpenArena:
         meta.update(
             n_walls=len(arena.walls),
+            wall_names=list(arena.wall_names),
             physical_footprint_known=arena.physical_footprint_known,
         )
         arrays["polygon_wkb"] = _wkb(arena.polygon)
@@ -1372,7 +1381,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
             if not isinstance(snapshot, Arena):
                 raise ValueError("The installed adapter must decode an arena snapshot.")
             return snapshot
-        if _count(meta, "codec_version", minimum=1) != 1:
+        if _count(meta, "codec_version", minimum=1) != _ARENA_VERSION:
             raise _error(
                 "Unsupported arena codec version.",
                 "read this record with a version that supports its arena codec",
@@ -1404,6 +1413,7 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
                     cast("LineString", _read_wkb(arrays, f"walls_wkb_{i}"))
                     for i in range(_count(meta, "n_walls"))
                 ),
+                wall_names=meta["wall_names"],
                 physical_footprint_known=_boolean(
                     meta["physical_footprint_known"], "physical_footprint_known"
                 ),

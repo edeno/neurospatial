@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import shapely
@@ -14,6 +14,7 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import linemerge, unary_union
 
 from neurospatial.geometry._binning import (
+    BinConnections,
     Binning,
     KnownFaces,
     MissingFaces,
@@ -121,7 +122,7 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
 
 def materialize_cells(binning: Binning) -> tuple[Polygon, ...]:
     """Read exact Cartesian 2-D cells from published data, without any builder."""
-    if binning.bins.n_dims != 2 or binning.bins.measure_dim != 2:
+    if binning.bins.n_dims != 2 or not binning.bins.has_measure_dim(2):
         raise _error(
             "Polygon clipping requires planar area-measured cells.",
             "use a Cartesian 2-D grid, hexagonal layout or triangular mesh",
@@ -389,8 +390,8 @@ def split_binning(
 
     A cell crossed from edge to edge by a wall becomes one exact polygon cell
     per side; a cell holding only a wall's end stays whole. The pieces of
-    one cell are not neighbors, and the walls themselves are applied later
-    by :func:`apply_walls`, which removes the paths they block.
+    one cell are closed neighbors, and the walls themselves are applied later
+    by :func:`apply_walls`, which closes the paths they block.
 
     Returns
     -------
@@ -411,7 +412,22 @@ def split_binning(
     mapping = ClipMapping(
         np.array([parent for parent, _ in records], dtype=np.intp), len(source)
     )
-    return _pieces_binning(binning, source, cells, mapping, ()), mapping
+    # The walls only divide pieces here; apply_walls applies them at
+    # publication, narrowing a partly covered face by its open share. Passing
+    # them as walls instead makes face certification refuse such faces.
+    return _pieces_binning(
+        binning, source, cells, mapping, (), dividers=(wall,)
+    ), mapping
+
+
+class _PairRecord(NamedTuple):
+    """One neighbor pair of clipped or split pieces, ``u < v``."""
+
+    u: int
+    v: int
+    is_open: bool
+    path_only: bool
+    distance: float
 
 
 def _pieces_binning(
@@ -420,12 +436,20 @@ def _pieces_binning(
     cells: PolygonCells,
     mapping: ClipMapping,
     walls: Sequence[shapely.Geometry],
+    *,
+    dividers: Sequence[shapely.Geometry] | None = None,
 ) -> Binning:
     """Bins, paths and faces of cells cut from ``source``, keeping ancestry.
 
+    ``dividers`` are the walls that separate pieces into closed pairs; they
+    default to ``walls``. Splitting passes its walls here but not as
+    ``walls``, which publication applies afterwards.
+
     Pieces of neighboring source cells are neighbors where their shared
     boundary has an opening past ``walls``; path lengths and face roles come
-    from the source pairs.
+    from the source pairs. Pieces that meet only along or at a wall, and
+    touching pieces of source pairs that were already closed, are closed
+    neighbors.
     """
     centers = np.array([_representative(cell) for cell in cells.polygons])
     by_parent: dict[int, list[int]] = defaultdict(list)
@@ -433,24 +457,67 @@ def _pieces_binning(
         by_parent[int(parent)].append(child)
     old_faces = binning.faces.build() if binning.faces.available else None
     wall = unary_union(walls)
-    records: list[tuple[int, int, bool, float]] = []
+    divider = wall if dividers is None else unary_union(dividers)
+
+    def contact(u: int, v: int) -> shapely.Geometry:
+        """The boundary two pieces share, possibly a single corner point."""
+        return cells.polygons[u].boundary.intersection(cells.polygons[v].boundary)
+
+    def divided(shared: shapely.Geometry) -> bool:
+        """Whether pieces meet, possibly only at a corner, and only on a wall."""
+        return (
+            not divider.is_empty
+            and not shared.is_empty
+            and shared.difference(divider).is_empty
+        )
+
+    records: list[_PairRecord] = []
+
+    links = binning.connections
     parent_distances = np.hypot.reduce(
-        binning.bins.centers[binning.bins.pairs[:, 1]]
-        - binning.bins.centers[binning.bins.pairs[:, 0]],
+        binning.bins.centers[links.all_pairs[:, 1]]
+        - binning.bins.centers[links.all_pairs[:, 0]],
         axis=1,
     )
-    declared_paths = ~np.isclose(
-        binning.bins.pair_distances,
+    # A declared navigation distance differs from the straight center link.
+    declared = ~np.isclose(
+        links.all_distances,
         parent_distances,
         rtol=64 * np.finfo(np.float64).eps,
         atol=0.0,
     )
+    open_rows = np.flatnonzero(links.is_open)
+
+    def distance(u: int, v: int, parent: int | None) -> float:
+        """The parent pair's declared distance, or the new center link."""
+        if parent is None or not declared[parent]:
+            return float(np.hypot.reduce(centers[v] - centers[u]))
+        parent_u, parent_v = links.all_pairs[parent]
+        if not np.array_equal(
+            centers[[u, v]], binning.bins.centers[[parent_u, parent_v]]
+        ):
+            raise _error(
+                "Clipping moved an endpoint of declared navigation "
+                f"path ({parent_u}, {parent_v}).",
+                "use subset() to retain whole bins, or construct "
+                "clipped bins with updated navigation path lengths "
+                "using Environment.from_bins()",
+            )
+        return float(links.all_distances[parent])
+
+    def record(
+        u: int, v: int, parent: int | None, *, is_open: bool, path_only: bool = False
+    ) -> _PairRecord:
+        return _PairRecord(
+            min(u, v), max(u, v), is_open, path_only, distance(u, v, parent)
+        )
+
     reason = (
         None
         if old_faces is not None
         else "The parent has no certified face geometry; inherited path-only or partial-face roles cannot be reconstructed."
     )
-    for index, (parent_u, parent_v) in enumerate(binning.bins.pairs):
+    for index, (parent_u, parent_v) in enumerate(links.pairs):
         old_opening = _opening(source[parent_u], source[parent_v], wall)
         path_only = old_faces is not None and old_faces.A[index] == 0
         if old_faces is not None and not path_only:
@@ -472,33 +539,46 @@ def _pieces_binning(
                 > tolerance
             ):
                 reason = f"Parent pair ({parent_u}, {parent_v}) has an unlocated partial or non-geometric face conductance."
+        row = int(open_rows[index])
         for u in by_parent[int(parent_u)]:
             for v in by_parent[int(parent_v)]:
-                opening = _opening(cells.polygons[u], cells.polygons[v], wall)
+                shared = contact(u, v)
+                opening = shared if wall.is_empty else shared.difference(wall)
                 if opening.length > 0 or (
                     (path_only or old_faces is None) and not opening.is_empty
                 ):
-                    if declared_paths[index]:
-                        if not np.array_equal(
-                            centers[[u, v]], binning.bins.centers[[parent_u, parent_v]]
-                        ):
-                            raise _error(
-                                "Clipping moved an endpoint of declared navigation "
-                                f"path ({parent_u}, {parent_v}).",
-                                "use subset() to retain whole bins, or construct "
-                                "clipped bins with updated navigation path lengths "
-                                "using Environment.from_bins()",
-                            )
-                        distance = float(binning.bins.pair_distances[index])
-                    else:
-                        distance = float(np.hypot.reduce(centers[v] - centers[u]))
-                    records.append((min(u, v), max(u, v), bool(path_only), distance))
-    records.sort(key=lambda item: (item[0], item[1]))
-    pairs = np.array([(u, v) for u, v, _, _ in records], dtype=np.intp).reshape(-1, 2)
-    distances = np.array([distance for _, _, _, distance in records], dtype=np.float64)
-    bins = SpatialBins(
-        centers, np.array([cell.area for cell in cells.polygons]), 2, pairs, distances
+                    records.append(
+                        record(u, v, row, is_open=True, path_only=bool(path_only))
+                    )
+                elif divided(shared):
+                    # Contact only where a wall runs: the wall closes the pair.
+                    records.append(record(u, v, row, is_open=False))
+    for parent in np.flatnonzero(~links.is_open):
+        parent_u, parent_v = links.all_pairs[parent]
+        for u in by_parent[int(parent_u)]:
+            for v in by_parent[int(parent_v)]:
+                # Corner contact counts: a diagonal across a wall stays closed.
+                if not contact(u, v).is_empty:
+                    records.append(record(u, v, int(parent), is_open=False))
+    for children in by_parent.values():
+        # Pieces of one cell that meet on the wall that divided it.
+        for position, u in enumerate(children):
+            for v in children[position + 1 :]:
+                if divided(contact(u, v)):
+                    records.append(record(u, v, None, is_open=False))
+    records.sort(key=lambda item: (item.u, item.v))
+    all_pairs = np.array([(r.u, r.v) for r in records], dtype=np.intp).reshape(-1, 2)
+    is_open = np.array([r.is_open for r in records], dtype=bool)
+    bins = SpatialBins.from_arrays(
+        centers, np.array([cell.area for cell in cells.polygons]), 2
     )
+    # Publication records the wall that closes each closed pair.
+    connections = BinConnections.from_arrays(
+        all_pairs,
+        np.array([r.distance for r in records], dtype=np.float64),
+        is_open,
+    )
+    pairs = connections.pairs
     faces = (
         MissingFaces(reason)
         if reason is not None
@@ -507,25 +587,23 @@ def _pieces_binning(
             centers,
             pairs,
             walls=walls,
-            path_only=np.array([path for _, _, path, _ in records], dtype=bool),
+            path_only=np.array([r.path_only for r in records if r.is_open], dtype=bool),
         )
     )
 
     locator = ClippedLocator(binning.locator, cells, mapping)
     normal_values = (
-        geometric_normals(locator, bins.centers, bins.pairs)
-        if faces.available
-        else None
+        geometric_normals(locator, bins.centers, pairs) if faces.available else None
     )
     if normal_values is not None:
         normal_values[faces.build().A == 0] = 0
     return Binning(
         binning.kind,
         bins,
+        connections,
         locator,
         faces,
         face_normals=FaceNormals(normal_values) if normal_values is not None else None,
         shapes=cells,
-        clip_mapping=mapping,
         grid_spec=binning.grid_spec,
     )

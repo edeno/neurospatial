@@ -8,6 +8,7 @@ import networkx as nx
 import numpy as np
 
 from neurospatial.geometry import (
+    Arena,
     Binning,
     CoordinateSystem,
     bridge_values,
@@ -64,7 +65,7 @@ def _edge_attributes(
         frozenset((source, target)): (source, target)
         for source, target in graph.edges()
     }
-    for source, target in binning.bins.pairs:
+    for source, target in binning.connections.pairs:
         attrs = graph.edges[source, target].copy()
         if graph_orientation[frozenset((source, target))] != (source, target):
             # Undirected graph insertion order does not establish the
@@ -91,6 +92,27 @@ def _edge_attributes(
     return df
 
 
+def _blocked_edges(binning: Binning, arena: Arena) -> pd.DataFrame:
+    """Closed neighbor pairs with their path length and the wall closing each."""
+    import pandas as pd
+
+    links = binning.connections
+    closed = ~links.is_open
+    pairs = links.all_pairs[closed]
+    walls = [
+        arena.wall_names[index] if index >= 0 else None
+        for index in links.closed_by[closed]
+    ]
+    return pd.DataFrame(
+        {
+            "source": pairs[:, 0].copy(),
+            "target": pairs[:, 1].copy(),
+            "distance": links.all_distances[closed].copy(),
+            "wall": pd.Series(walls, dtype=object),
+        }
+    )
+
+
 def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
     """Export retained navigation bridge data as an independent table."""
     import pandas as pd
@@ -114,7 +136,7 @@ def _get_bridge_attributes(binning: Binning) -> pd.DataFrame:
     offsets = root.offsets
     records = []
     for (source, target), distance in zip(
-        binning.bins.pairs, binning.bins.pair_distances, strict=True
+        binning.connections.pairs, binning.connections.pair_distances, strict=True
     ):
         pair = frozenset((int(source), int(target)))
         if pair not in by_pair:
