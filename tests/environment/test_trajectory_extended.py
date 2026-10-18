@@ -136,15 +136,6 @@ class TestOccupancy:
         with pytest.raises(ValueError, match="same length"):
             small_2d_env.occupancy(times, positions)
 
-    def test_occupancy_validates_dimensions(self, small_2d_env):
-        """Test that wrong position dimensions raise error."""
-        rng = np.random.default_rng(42)
-        times = np.array([0.0, 1.0, 2.0])
-        positions = rng.random((3, 3))  # Wrong n_dims
-
-        with pytest.raises(ValueError, match="dimensions"):
-            small_2d_env.occupancy(times, positions)
-
     def test_occupancy_validates_min_speed_requires_speed(self, small_2d_env):
         """Test that min_speed requires speed parameter."""
         times = np.array([0.0, 1.0, 2.0])
@@ -333,15 +324,6 @@ class TestBinSequence:
         positions = np.tile(small_2d_env.bin_centers[0:1], (3, 1))
 
         with pytest.raises(ValueError, match="monotonically non-decreasing"):
-            small_2d_env.bin_sequence(times, positions)
-
-    def test_bin_sequence_validates_dimensions(self, small_2d_env):
-        """Test that wrong dimensions raise error."""
-        rng = np.random.default_rng(42)
-        times = np.array([0.0, 1.0, 2.0])
-        positions = rng.random((3, 3))  # Wrong n_dims
-
-        with pytest.raises(ValueError, match="dimensions"):
             small_2d_env.bin_sequence(times, positions)
 
     def test_bin_sequence_all_outside_with_none(self, small_2d_env):

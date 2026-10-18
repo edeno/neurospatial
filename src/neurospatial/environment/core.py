@@ -443,9 +443,9 @@ class Environment(Generic[_C]):
         """
         return editable_graph(self.connectivity)
 
-    def _locate(self, positions: NDArray[np.float64]) -> NDArray[np.intp]:
+    def _locate(self, positions: NDArray[np.float64], call: str) -> NDArray[np.intp]:
         """Apply known arena containment before assigning active bins."""
-        return locate(self._binning, self.arena, positions, self._cache)
+        return locate(self._binning, self.arena, positions, self._cache, call=call)
 
     def _target_bins(
         self,
@@ -1282,7 +1282,7 @@ class Environment(Generic[_C]):
         """
         # Normalize to the portable ``np.intp`` index dtype at the Environment
         # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
-        return self._locate(positions)
+        return self._locate(positions, "Environment.bin_at")
 
     def nearest_bin(
         self,
@@ -1455,7 +1455,7 @@ class Environment(Generic[_C]):
         array([ True, False])
 
         """
-        indices = self._locate(positions)
+        indices = self._locate(positions, "Environment.contains")
         return np.asarray(indices != -1, dtype=np.bool_)
 
     @keyword_hint(
@@ -1938,6 +1938,7 @@ class Environment(Generic[_C]):
             binning=self._binning,
             arena=self.arena,
             cache=self._cache,
+            call="Environment.bin_sequence",
             dedup=dedup,
             outside_value=outside_value,
             gap_splits_runs=False,
@@ -2032,6 +2033,7 @@ class Environment(Generic[_C]):
             binning=self._binning,
             arena=self.arena,
             cache=self._cache,
+            call="Environment.bin_sequence_with_runs",
             dedup=True,
             outside_value=outside_value,
             gap_splits_runs=True,

@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 
 BoundarySource = Literal["physical", "analysis"]
 Interior = Callable[[NDArray[np.float64]], NDArray[np.bool_]]
+# Names the analysis in a lookup error; its points are 2-D by construction.
+_ANALYSIS_WALLS = "the boundary_source='analysis' wall search"
 
 
 def boundary_geometry(
@@ -346,7 +348,8 @@ def analysis_interior(
     ``indexes`` keeps the locator's search structures across calls.
     """
     return lambda points: np.asarray(
-        locate(binning, arena, points, indexes) >= 0, dtype=np.bool_
+        locate(binning, arena, points, indexes, call=_ANALYSIS_WALLS) >= 0,
+        dtype=np.bool_,
     )
 
 
@@ -378,7 +381,9 @@ def valid_observers(
     """
     valid = np.asarray(np.all(np.isfinite(positions), axis=1), dtype=np.bool_)
     if source == "analysis":
-        valid[valid] = locate(binning, arena, positions[valid], indexes) >= 0
+        valid[valid] = (
+            locate(binning, arena, positions[valid], indexes, call=_ANALYSIS_WALLS) >= 0
+        )
     elif arena.physical_footprint_known:
         valid[valid] = arena.contains(positions[valid])
     return valid

@@ -100,7 +100,7 @@ def test_all_factories_publish_metadata_without_coordinate_conversion(kind):
     np.testing.assert_array_equal(env.bin_centers, baseline.bin_centers)
     np.testing.assert_array_equal(env.bin_sizes, baseline.bin_sizes)
     np.testing.assert_array_equal(
-        env._locate(env.bin_centers), baseline._locate(baseline.bin_centers)
+        env.bin_at(env.bin_centers), baseline.bin_at(baseline.bin_centers)
     )
 
 

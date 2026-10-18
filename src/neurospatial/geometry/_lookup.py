@@ -21,6 +21,8 @@ def locate(
     arena: Arena,
     positions: NDArray[np.float64],
     indexes: LookupIndexes | None = None,
+    *,
+    call: str,
 ) -> NDArray[np.intp]:
     """Assign positions to active bins, applying known arena containment first.
 
@@ -37,6 +39,9 @@ def locate(
     indexes : LookupIndexes, optional
         Keeps the locator's search structures, usually the environment's
         analysis cache. None builds them for this call only.
+    call : str
+        The operation the scientist called, such as ``"Environment.bin_at"``,
+        named in the error for positions with the wrong number of columns.
 
     Returns
     -------
@@ -45,19 +50,15 @@ def locate(
 
     Raises
     ------
+    ValueError
+        If ``positions`` is not one row of ``n_dims`` coordinates per position
+        (see :func:`require_position_columns`).
     NotImplementedError
         If the bins lie along a track in two or more dimensions whose width
         is unknown (see :func:`require_track_width`).
     """
-    if not arena.domain_known and binning.linearization is None:
-        return binning.locator.locate(positions, indexes).astype(np.intp, copy=False)
-    n_dims = binning.bins.n_dims
     positions = np.atleast_2d(np.asarray(positions, dtype=np.float64))
-    if positions.ndim != 2 or positions.shape[1] != n_dims:
-        raise ValueError(
-            f"Dimensionality mismatch: expected positions with shape "
-            f"(n_positions, {n_dims}), got {positions.shape}."
-        )
+    require_position_columns(positions, binning.bins.n_dims, call=call)
     if not arena.domain_known:
         require_track_width(binning, arena)
         return binning.locator.locate(positions, indexes).astype(np.intp, copy=False)
@@ -69,6 +70,63 @@ def locate(
     if np.any(inside):
         indices[inside] = binning.locator.locate(positions[inside], indexes)
     return indices
+
+
+def require_position_columns(
+    positions: NDArray[np.float64],
+    n_dims: int,
+    *,
+    call: str,
+    name: str = "positions",
+) -> None:
+    """Refuse positions that are not one row of ``n_dims`` coordinates each.
+
+    Every lookup of positions in an environment's bins applies this rule, so
+    the same mistake gets the same message from every operation.
+
+    Parameters
+    ----------
+    positions : ndarray of float64
+        The array as given, expected shape (n_positions, n_dims).
+    n_dims : int
+        Number of coordinates of each bin center.
+    call : str
+        The operation the scientist called, named in the message.
+    name : str, default="positions"
+        The argument that held ``positions``, such as ``"points"``.
+
+    Raises
+    ------
+    ValueError
+        If ``positions`` is not two-dimensional with ``n_dims`` columns.
+    """
+    if positions.ndim == 2 and positions.shape[1] == n_dims:
+        return
+    one = name.removesuffix("s")
+    why = (
+        f"Why: each row is one {one}, with one column per coordinate of "
+        "env.bin_centers."
+    )
+    fix = f"pass an array of shape (n_{name}, {n_dims}), one row per {one}"
+    if n_dims == 1:
+        fix += f"; make a 1-D array one column with np.reshape({name}, (-1, 1))"
+    elif positions.shape == (n_dims,):
+        fix += f"; one {one} is one row, np.reshape({name}, (1, -1))"
+    elif positions.ndim == 1 or (positions.ndim == 2 and positions.shape[1] == 1):
+        why += (
+            " Linearized positions from to_linear() are distances along a "
+            "track, not bin coordinates."
+        )
+        fix += f"; use the original {n_dims}-D coordinates, not linearized ones"
+    raise ValueError(
+        _format_error(
+            f"{call} got {name} with shape {positions.shape}, but this "
+            f"environment's bins are {n_dims}-D, so {name} needs shape "
+            f"(n_{name}, {n_dims}).",
+            why=why,
+            fix=fix,
+        )
+    )
 
 
 TRACK_WIDTH_FIX = (

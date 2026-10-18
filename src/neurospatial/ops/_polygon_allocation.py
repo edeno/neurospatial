@@ -39,6 +39,9 @@ from neurospatial.ops._linear_allocation import crossing_blocks, ray_grid_pieces
 if TYPE_CHECKING:
     from neurospatial.geometry import FramedGrid
 
+# Names the analysis in a lookup error; its points come from validated positions.
+_LINEAR_CALL = "occupancy with time_allocation='linear'"
+
 
 def _source_grid(
     frame: FramedGrid, positions: NDArray[np.float64]
@@ -375,7 +378,7 @@ def retained_linear_intervals(
 
     def owner_of(queries):
         if source_locator is None:
-            return locate(binning, arena, queries, indexes)
+            return locate(binning, arena, queries, indexes, call=_LINEAR_CALL)
         owners = source_locator.locate(queries, indexes)
         if domain is not None:
             owners[~shapely.covers(domain, shapely.points(queries))] = -1
@@ -597,7 +600,7 @@ def _retained_box_intervals(
             stop - start
         )
         if frame is None:
-            bins = locate(binning, arena, midpoints, indexes)
+            bins = locate(binning, arena, midpoints, indexes, call=_LINEAR_CALL)
         else:
             bins = source_locator.locate(midpoints, indexes)
             if arena.domain_known:

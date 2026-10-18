@@ -433,18 +433,6 @@ class TestBinSequenceValidation:
         with pytest.raises(ValueError, match=r"times and positions.*same length"):
             env.bin_sequence(times, positions)
 
-    def test_wrong_position_dimensions(self):
-        """Test that wrong position dimensions raises ValueError."""
-        # Create 2D environment
-        samples = np.array([[0, 0], [5, 0], [0, 5], [5, 5]])
-        env = Environment.from_samples(samples, bin_size=5.0)
-
-        times = np.array([0.0, 1.0, 2.0])
-        positions_1d = np.array([[2.5], [3.5], [4.5]])  # Wrong: 1D not 2D
-
-        with pytest.raises(ValueError, match=r"positions.*dimensions"):
-            env.bin_sequence(times, positions_1d)
-
     def test_non_monotonic_times_error(self):
         """Test error for non-monotonic timestamps."""
         env = Environment.from_samples(

@@ -52,7 +52,7 @@ def _run(code: str, names: dict[str, Any]) -> Any:
 
 def _containing_bins(env: Environment, rows: np.ndarray) -> np.ndarray:
     """Polar containment, the lookup ``points=`` queries use; -1 outside."""
-    return locate(env.binning, env.arena, rows)
+    return locate(env.binning, env.arena, rows, call="points=")
 
 
 def _recording() -> dict[str, Any]:

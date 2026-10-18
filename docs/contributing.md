@@ -227,6 +227,13 @@ points repeatedly on a binning outside an environment, such as the copy
 `env.binning` returns, passes one `CallIndexes` to every call; `None` builds
 the structure for that call only.
 
+A scientist's positions reach the bins through `geometry.locate(binning,
+arena, positions, indexes, call=...)`, not a locator's own `locate`. It checks
+the column count with `require_position_columns` on every path, with or
+without a known arena, so the error names `call`, the operation the scientist
+called. A method that uses positions before the lookup, or returns early
+without one, calls `require_position_columns` first with the same `call`.
+
 #### Cartesian-only members
 
 There is one runtime `Environment` class; factories give it a static

@@ -39,6 +39,7 @@ from neurospatial.geometry import (
     get_centers,
     locate,
     require_grid_context,
+    require_position_columns,
 )
 from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.ops import (
@@ -111,24 +112,11 @@ def _interpolate(
             "Infinite values are not supported in interpolation operations."
         )
 
-    # Input validation - points
+    # Before interpolating, which reads the coordinates before the lookup.
     points = np.asarray(points, dtype=np.float64)
-
-    # Check points dimensionality
-    if points.ndim != 2:
-        raise ValueError(
-            f"Points must be 2-D array (got {points.ndim}-D array). "
-            f"Expected shape (n_points, n_dims), got shape {points.shape}."
-        )
-
-    # Check points dimension matches environment
-    n_dims = binning.bins.n_dims
-    if points.shape[1] != n_dims:
-        raise ValueError(
-            f"Points dimension {points.shape[1]} must match environment "
-            f"dimension {n_dims}. Expected shape (n_points, {n_dims}), "
-            f"got shape {points.shape}."
-        )
+    require_position_columns(
+        points, binning.bins.n_dims, call="Environment.interpolate", name="points"
+    )
 
     # Validate mode
     valid_modes = {"nearest", "linear"}
@@ -169,7 +157,7 @@ def _interpolate_points(
         values = _interpolate_nearest(cache, binning, field, points)
     else:  # mode == "linear"
         values = _interpolate_linear(binning, field, points)
-    owners = locate(binning, arena, points, cache)
+    owners = locate(binning, arena, points, cache, call="Environment.interpolate")
     values[owners < 0] = np.nan
     return values
 

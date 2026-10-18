@@ -345,16 +345,6 @@ class TestOccupancyValidation:
         with pytest.raises(ValueError, match=r".*length.*"):
             env.occupancy(times, positions)
 
-    def test_occupancy_wrong_dimensions(self, minimal_2d_grid_env):
-        """Test that positions with wrong dimensions raises error."""
-        env = minimal_2d_grid_env
-
-        times = np.array([0.0, 1.0, 2.0])
-        positions = np.array([[5.0], [5.0], [5.0]])  # 1D instead of 2D
-
-        with pytest.raises(ValueError, match=r".*dimension.*"):
-            env.occupancy(times, positions)
-
     def test_occupancy_swapped_args_gives_shape_error_not_monotonic(
         self, minimal_2d_grid_env
     ):

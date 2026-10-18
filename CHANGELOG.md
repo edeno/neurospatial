@@ -537,6 +537,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Positions or points with the wrong number of columns get the same error from
+  every operation that maps them to bins (`bin_at`, `contains`, `occupancy`,
+  `bin_sequence`, `bin_sequence_with_runs`, `transitions`, `interpolate`,
+  `points=` queries such as `distance_to`, geodesic
+  `compute_egocentric_distance`). It names the operation, the shape given and
+  the shape needed, for example `Environment.occupancy got positions with
+  shape (500, 3), but this environment's bins are 2-D, so positions needs
+  shape (n_positions, 2).`, and says how to fix it, such as reshaping a 1-D
+  array on a 1-D environment or using the original coordinates instead of
+  linearized ones. It is still a `ValueError`; only the wording changed.
+
 - `Environment.from_bins(binning)` is annotated as taking a `Binning`. An
   object from another package that an installed snapshot adapter converts
   still works at runtime, but a static type checker now flags the call; wrap

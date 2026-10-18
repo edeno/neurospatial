@@ -210,16 +210,6 @@ class TestMaskForRegionErrorPaths:
 class TestContainsErrorPaths:
     """Test error handling in Environment.contains()."""
 
-    def test_contains_wrong_dimensionality_raises(self):
-        """Test contains with points of wrong dimensionality raises ValueError."""
-        env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-
-        # Try 1D point for 2D environment - this now raises loudly
-        point_1d = np.array([[5.0]])
-
-        with pytest.raises(ValueError, match="Dimensionality mismatch"):
-            env.contains(point_1d)
-
     def test_contains_wrong_shape(self):
         """Test contains with malformed point array."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
@@ -315,16 +305,6 @@ class TestDistanceBetweenErrorPaths:
 
 class TestBinAtErrorPaths:
     """Test error handling in Environment.bin_at()."""
-
-    def test_bin_at_wrong_dimensionality_raises(self):
-        """Test bin_at with points of wrong dimensionality raises ValueError."""
-        env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
-
-        # Try 1D points for 2D environment - now raises loudly
-        points_1d = np.array([[5.0], [10.0]])
-
-        with pytest.raises(ValueError, match="Dimensionality mismatch"):
-            env.bin_at(points_1d)
 
     def test_bin_at_linearized_positions_on_graph_env_raises(self):
         """bin_at on a graph/track env raises on 1-D linearized positions.

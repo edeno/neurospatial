@@ -39,6 +39,7 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     locate,
     require_cartesian,
+    require_position_columns,
     require_rectilinear,
 )
 from neurospatial.ops import (
@@ -115,17 +116,8 @@ def _occupancy(
     times, positions = validate_times_positions(
         times, positions, call="Environment.occupancy"
     )
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be 2-dimensional array (n_samples, n_dims), "
-            f"got shape {positions.shape}"
-        )
-
-    if positions.shape[1] != n_dims:
-        raise ValueError(
-            f"positions must have {n_dims} dimensions to match environment. "
-            f"Got {positions.shape[1]} dimensions."
-        )
+    # Before the empty and single-sample returns, which never look positions up.
+    require_position_columns(positions, n_dims, call="Environment.occupancy")
 
     # Validate speed parameters
     if min_speed is not None and speed is None:
@@ -188,7 +180,7 @@ def _occupancy(
     # bind to the nearest edge bin, so a tracking-error overshoot
     # inflated occupancy at the boundary while bin_sequence
     # correctly flagged the same sample as -1.
-    bin_indices = locate(binning, arena, positions, cache)
+    bin_indices = locate(binning, arena, positions, cache, call="Environment.occupancy")
     if time_allocation == "linear" and n_dims != 2 and binning.grid_frame is not None:
         source_locator, source_positions = _source_grid(binning.grid_frame, positions)
         bin_indices = source_locator.locate(source_positions)
@@ -289,6 +281,7 @@ def _bin_sequence(
     binning: Binning,
     arena: Arena,
     cache: AnalysisCache,
+    call: str,
     dedup: bool,
     outside_value: int | None,
     gap_splits_runs: bool,
@@ -298,23 +291,11 @@ def _bin_sequence(
     """Shared implementation for ``bin_sequence`` and
     ``bin_sequence_with_runs``: always computes both bins and runs;
     the public methods choose which fields of the result to expose.
+    ``call`` names the public method in error messages.
     """
-    times, positions = validate_times_positions(
-        times, positions, call="Environment.bin_sequence"
-    )
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be a 2-dimensional array (n_samples, n_dims), "
-            f"got shape {positions.shape}"
-        )
-
-    # Validate dimensions match environment
-    n_dims = binning.bins.n_dims
-    if positions.shape[1] != n_dims:
-        raise ValueError(
-            f"positions must have {n_dims} dimensions to match environment. "
-            f"Got positions.shape[1] = {positions.shape[1]}"
-        )
+    times, positions = validate_times_positions(times, positions, call=call)
+    # Before the gap warnings, so wrong positions are reported first.
+    require_position_columns(positions, binning.bins.n_dims, call=call)
 
     mask = observed_interval_mask(
         times, max_gap=max_gap, epochs=epochs, result="the bin sequence is empty"
@@ -336,7 +317,7 @@ def _bin_sequence(
 
     # Map positions to bin indices
     # Use bin_at which returns -1 for points outside environment
-    bin_indices = locate(binning, arena, positions, cache).astype(np.intp)
+    bin_indices = locate(binning, arena, positions, cache, call=call)
 
     # Samples belong to a recording only if they touch a valid interval.
     if outside_value is None:
@@ -600,6 +581,7 @@ def _empirical_transitions(
             binning=binning,
             arena=arena,
             cache=cache,
+            call="Environment.transitions",
             dedup=False,
             outside_value=-1,
             gap_splits_runs=False,

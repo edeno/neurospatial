@@ -195,7 +195,8 @@ def region_bin_masks(
                     fix=f"give the point {n_dims} coordinates",
                 )
             )
-        index = int(locate(binning, arena, point, indexes)[0])
+        call = f"Point region {region.name!r}"
+        index = int(locate(binning, arena, point, indexes, call=call)[0])
         if index >= 0:
             masks[index, column] = True
     return masks

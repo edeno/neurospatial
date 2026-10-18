@@ -359,18 +359,6 @@ class TestBinSequenceAdvanced:
         )
         assert_array_equal(bins_no_dedup, [0, 0])
 
-    def test_bin_sequence_validates_1d_positions(self, small_2d_env):
-        """Test that 1D position array raises error.
-
-        Tests validation that positions must be 2D array (n_samples, n_dims),
-        not 1D array.
-        """
-        times = np.array([0.0, 1.0, 2.0])
-        positions = np.array([0.0, 1.0, 2.0])  # 1D array
-
-        with pytest.raises(ValueError, match="2-dimensional array"):
-            small_2d_env.bin_sequence(times, positions)
-
 
 class TestTransitionMatrixNormalization:
     """Transition matrix with all normalization modes.
