@@ -34,7 +34,6 @@ Concrete exceptions inherit their standard Python type first, followed by `Neuro
 | `RegionNotFoundError` | `KeyError`, `ValueError` | Unknown region name anywhere a region is looked up by name, including `env.regions[name]`; suggests the closest existing name |
 | `BinIndexOutOfRangeError` | `ValueError` | Graph-query bin index outside `[0, env.n_bins)` |
 | `IncompatibleEnvironmentError` | `ValueError` | Incompatible dimensions or decoding model bins |
-| `GraphValidationError` | `ValueError` | Invalid layout connectivity metadata |
 | `LayoutNotBuiltError` | `RuntimeError` | Access to layout geometry before `build()` |
 | `CartesianOnlyError` | `TypeError` | An operation that reads positions as Cartesian `(x, y)` called on a polar environment |
 

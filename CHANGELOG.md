@@ -550,6 +550,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   and values are Python numbers instead of NumPy scalars. Neighbor pairs,
   their order and their distances are unchanged.
 
+- `neurospatial.GraphValidationError` and
+  `neurospatial.layout.validation.validate_connectivity_graph` are removed.
+  Layout engines no longer build graphs, and an environment's graph is made
+  from bins that are checked when they are created: a non-finite or negative
+  pair distance, a bin paired with itself or a repeated pair raises
+  `ValueError`. Code that caught `GraphValidationError` can catch
+  `ValueError`, its parent class.
+
 ### Changed
 
 - `to_linear()`, `linear_to_nd()` and `with_track_width()` on a polar
@@ -1307,10 +1315,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 - Layout engines find neighboring bins with array operations instead of
   building a NetworkX graph one bin at a time, which the environment then
-  discarded. `Environment.from_grid_mask` on a 300 × 300 mask builds in
-  1.0 s instead of 4.0 s, `Environment.from_samples` with 100,000 positions
-  in a 100 × 100 box (bin size 1, 10,197 bins) in 0.15 s instead of 0.43 s,
-  and a 20,000-bin linear track in 0.14 s instead of 0.21 s. Bins, neighbor
+  discarded, and an environment no longer re-checks the attributes of the
+  graph it builds from its already validated bins in a Python loop.
+  `Environment.from_grid_mask` on a 300 × 300 mask builds in 0.70 s instead
+  of 4.0 s, `Environment.from_samples` with 100,000 positions in a
+  100 × 100 box (bin size 1, 10,197 bins) in 0.09 s instead of 0.43 s, and a
+  20,000-bin linear track in 0.07 s instead of 0.21 s. Bins, neighbor
   pairs (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
