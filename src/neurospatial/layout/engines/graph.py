@@ -401,15 +401,3 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
 
         all_1d_bin_lengths = np.diff(self.grid_edges[0])
         return all_1d_bin_lengths[self.active_mask]
-
-
-def _shared_track_node(
-    track_edges: list[tuple[Any, Any]], seg_a: int, seg_b: int
-) -> Any | None:
-    """Track-graph node shared by two track segments, or None if not exactly one."""
-    if not (0 <= seg_a < len(track_edges) and 0 <= seg_b < len(track_edges)):
-        return None
-    shared = set(track_edges[seg_a]) & set(track_edges[seg_b])
-    if len(shared) != 1:
-        return None
-    return next(iter(shared))
