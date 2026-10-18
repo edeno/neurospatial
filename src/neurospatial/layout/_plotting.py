@@ -24,6 +24,33 @@ if TYPE_CHECKING:
     )
 
 
+def _draw_connections(ax: Axes, connectivity: nx.Graph, **style: Any) -> None:
+    """Draw every connection between bin centers as one line collection.
+
+    One collection draws in about the time of one line; a line per connection
+    takes seconds at ten thousand bins.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to draw on.
+    connectivity : networkx.Graph
+        Bin graph whose nodes carry two-dimensional ``pos``.
+    **style
+        Passed to :class:`matplotlib.collections.LineCollection`.
+    """
+    from matplotlib.collections import LineCollection
+
+    positions = nx.get_node_attributes(connectivity, "pos")
+    segments = np.array(
+        [(positions[u], positions[v]) for u, v in connectivity.edges],
+        dtype=np.float64,
+    ).reshape(-1, 2, 2)
+    # An (n, 2, 2) array is a sequence of segments; the stubs ask for a list.
+    lines = LineCollection(cast("Sequence[NDArray[np.float64]]", segments), **style)
+    ax.add_collection(lines, autolim=False)
+
+
 def _polygon_patches(shapes: PolygonCells) -> list[Any]:
     """Build compound paths whose interior rings remain unfilled."""
     from matplotlib.patches import PathPatch
@@ -138,18 +165,26 @@ def plot_grid(
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     x, y = _grid_mesh(rectilinear, frame)
+    # Fill only the active cells, light whatever the mix of active and
+    # inactive cells, so the same bin looks the same in every grid.
+    active = rectilinear.active_mask.T
     ax.pcolormesh(
         x,
         y,
-        rectilinear.active_mask.T,
+        np.ma.masked_where(~active, np.ones(active.shape)),
         cmap=cmap,
+        vmin=0.0,
+        vmax=4.0,
         alpha=alpha,
-        shading="auto",
+        shading="flat",
     )
     if frame is None:
-        ax.set_xticks(grid_edges[0])
-        ax.set_yticks(grid_edges[1])
-        ax.grid(True, ls="-", lw=0.5, c="gray")
+        # Cell edges as unlabeled minor ticks: a label per edge is unreadable
+        # beyond a few dozen bins and dominates the drawing time.
+        ax.set_xticks(grid_edges[0], minor=True)
+        ax.set_yticks(grid_edges[1], minor=True)
+        ax.tick_params(which="minor", length=0)
+        ax.grid(True, which="minor", ls="-", lw=0.5, c="gray")
     ax.set_aspect("equal")
     ax.set_title(f"{title} (2D Grid)")
     ax.set_xlabel("Dimension 0")
@@ -166,9 +201,7 @@ def plot_grid(
             node_size=node_size,
             node_color=node_color,
         )
-        for node_id1, node_id2 in connectivity.edges:
-            pos = np.stack((node_position[node_id1], node_position[node_id2]))
-            ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
+        _draw_connections(ax, connectivity, colors="black", zorder=-1)
     return ax
 
 
@@ -188,7 +221,7 @@ def plot_polygon_grid(
     node_size: float = 20,
     node_color: str = "blue",
 ) -> Axes:
-    """Draw a masked rectangular grid and fill the defining polygon exterior."""
+    """Draw a masked rectangular grid and the outline of its defining polygon."""
     ax = plot_grid(
         ax,
         title=title,
@@ -204,7 +237,7 @@ def plot_polygon_grid(
         node_color=node_color,
     )
     polygon = outline.geometry
-    poly_patch_kwargs = {"alpha": 0.3, "fc": "gray", "ec": "black"}
+    poly_patch_kwargs = {"fc": "none", "ec": "black", "lw": 1.5}
     if hasattr(polygon, "geoms"):
         for geom in polygon.geoms:
             if hasattr(geom, "exterior"):
@@ -371,13 +404,11 @@ def plot_triangles(
         scatter_func = cast("Any", ax.scatter)
         scatter_func(bin_centers[:, 0], bin_centers[:, 1], **_centroid_kwargs)
     if show_connectivity:
-        plot_func2 = cast("Any", ax.plot)
-        for u, v in connectivity.edges():
-            pos_u = connectivity.nodes[u]["pos"]
-            pos_v = connectivity.nodes[v]["pos"]
-            plot_func2(
-                [pos_u[0], pos_v[0]], [pos_u[1], pos_v[1]], **_connectivity_kwargs
-            )
+        line_style = dict(_connectivity_kwargs)
+        line_style["colors"] = line_style.pop("color", "black")
+        if "linewidth" in line_style:
+            line_style["linewidths"] = line_style.pop("linewidth")
+        _draw_connections(ax, connectivity, **line_style)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlim(dimension_ranges[0])
     ax.set_ylim(dimension_ranges[1])
@@ -421,20 +452,18 @@ def plot_track(
     nx.draw_networkx_nodes(
         connectivity, bin_node_pos, ax=ax, node_size=30, node_color="black"
     )
-    for node_id1, node_id2 in connectivity.edges:
-        pos = np.stack((bin_node_pos[node_id1], bin_node_pos[node_id2]))
-        ax.plot(pos[:, 0], pos[:, 1], color="black", zorder=-1)
+    _draw_connections(ax, connectivity, colors="black", zorder=-1)
     if grid_edges is not None:
-        grid_line_nd = linearization.linear_to_nd(grid_edges[0])
-        for grid_line in grid_line_nd:
-            ax.plot(
-                grid_line[0],
-                grid_line[1],
-                color="gray",
-                marker="+",
-                alpha=0.8,
-                label="bin edges",
-            )
+        edge_points = linearization.linear_to_nd(grid_edges[0])
+        ax.plot(
+            edge_points[:, 0],
+            edge_points[:, 1],
+            color="gray",
+            marker="+",
+            linestyle="none",
+            alpha=0.8,
+            label="bin edges",
+        )
     return ax
 
 

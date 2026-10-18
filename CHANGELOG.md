@@ -733,6 +733,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.plot()` fills active grid cells with one light color whether or not
+  some bins are inactive (it was white on a full grid and dark gray
+  otherwise), leaves inactive cells unfilled, and outlines a polygon grid's
+  polygon instead of shading over the bins.
+
 - Speed is one definition everywhere: the velocity vector smoothed with a
   0.1 s Gaussian (spyglass's default, as in non_local_detector's
   `get_velocity`), then its magnitude. New `neurospatial.behavior.compute_speed`
@@ -1547,6 +1552,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Performance
+
+- `env.plot()` draws the connections between bins as one collection rather
+  than a line each, and marks grid cell edges with unlabeled minor ticks. A
+  10,201-bin grid draws in 0.15 s instead of 4.0 s, and a 114,352-bin grid in
+  1.1 s instead of 31 s.
 
 - `summary_table()` and `label_cell_types()` prepare the physical wall
   geometry once per environment instead of once per cell. For a 2,500-bin

@@ -224,13 +224,14 @@ def _assert_mesh_artists(env, figure, operation):
         )
         outline = env._binning.outline.geometry
         rings = [outline.exterior, *outline.interiors]
-        assert len(axes.lines) == len(rings) + env.connectivity.number_of_edges()
-        for line, ring in zip(axes.lines[: len(rings)], rings, strict=True):
+        assert len(axes.lines) == len(rings)
+        for line, ring in zip(axes.lines, rings, strict=True):
             np.testing.assert_array_equal(line.get_xydata(), np.asarray(ring.coords))
-        for line, (u, v) in zip(
-            axes.lines[len(rings) :], env.connectivity.edges(), strict=True
-        ):
-            np.testing.assert_array_equal(line.get_xydata(), env.bin_centers[[u, v]])
+        # The connections are one collection, a segment per graph edge.
+        segments = axes.collections[2].get_segments()
+        assert len(segments) == env.connectivity.number_of_edges()
+        for segment, (u, v) in zip(segments, env.connectivity.edges(), strict=True):
+            np.testing.assert_array_equal(segment, env.bin_centers[[u, v]])
     assert axes.get_xlabel() == "X Position"
     assert axes.get_ylabel() == "Y Position"
 
