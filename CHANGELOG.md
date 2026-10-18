@@ -4,6 +4,11 @@
 
 ### Breaking
 
+- `AnnotationResult` from `annotate_video` has four fields,
+  `(environment, regions, walls, landmarks)`; unpack it as
+  `env, regions, walls, landmarks = result` or use the attributes.
+  `RegionType` adds `"wall"` and `"landmark"`.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
@@ -1216,6 +1221,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   are reported.
 
 ### Added
+
+- `annotate_video` draws walls and landmarks as well as the boundary, holes
+  and regions. Press M to reach wall mode, which switches to the path tool
+  (magenta), and landmark mode (orange), where the shape sets the kind: an
+  ellipse marks a point at its center (a reward port or a cue), a path a line
+  (a monitor), a polygon or rectangle an area (an object). The returned
+  environment holds the named walls, clipped to the boundary, and the
+  landmarks; `result.walls` and `result.landmarks` hold them too.
 
 - Landmarks: named cues, monitors, objects and reward ports, stored with the
   environment. `env.with_landmarks(Landmarks([Landmark("monitor", "line",

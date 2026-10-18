@@ -9,6 +9,7 @@ from hypothesis import strategies as st
 from neurospatial.annotation.converters import (
     env_from_boundary_region,
     shapes_to_regions,
+    shapes_to_walls_and_landmarks,
 )
 from neurospatial.ops.transforms import Affine2D, VideoCalibration
 from neurospatial.regions import Region
@@ -806,3 +807,93 @@ class TestHypothesisCalibrationRoundTrip:
 
         # Use both relative and absolute tolerance for numerical stability
         np.testing.assert_allclose(pts_back, pts_px, rtol=1e-10, atol=1e-10)
+
+
+def _rc(points):
+    """Napari (row, col) vertices from (x, y) points."""
+    return np.asarray(points, dtype=float)[:, ::-1]
+
+
+class TestShapesToWallsAndLandmarks:
+    """Walls and landmarks from drawn shapes; a landmark's kind is its shape."""
+
+    def test_kinds_follow_the_drawn_shape(self):
+        shapes = [
+            _rc([(50, 0), (50, 60)]),  # wall drawn as a path
+            _rc([(10, 10), (20, 10), (20, 20), (10, 20)]),  # wall as a rectangle
+            _rc([(4, 4), (8, 4), (8, 6), (4, 6)]),  # landmark ellipse: a point
+            _rc([(10, 80), (90, 80)]),  # landmark path: a monitor
+            _rc([(60, 20), (70, 20), (70, 30)]),  # landmark polygon: an object
+            _rc([(0, 0), (100, 0), (100, 80), (0, 80)]),  # a region, ignored here
+        ]
+        walls, landmarks = shapes_to_walls_and_landmarks(
+            shapes,
+            ["divider", "pillar", "port", "monitor", "object", "arena"],
+            ["wall", "wall", "landmark", "landmark", "landmark", "environment"],
+            ["path", "rectangle", "ellipse", "path", "polygon", "polygon"],
+        )
+        assert walls["divider"].equals(shp.LineString([(50, 0), (50, 60)]))
+        assert walls["pillar"].is_closed
+        assert list(landmarks) == ["port", "monitor", "object"]
+        assert [landmark.kind for landmark in landmarks.values()] == [
+            "point",
+            "line",
+            "polygon",
+        ]
+        np.testing.assert_allclose(landmarks["port"].data, [6.0, 5.0])  # the center
+
+    def test_calibration_puts_them_in_world_coordinates(self):
+        calibration = VideoCalibration(
+            Affine2D(np.diag([0.5, 0.5, 1.0])), frame_size_px=(640, 480)
+        )
+        walls, landmarks = shapes_to_walls_and_landmarks(
+            [_rc([(0, 0), (40, 0)]), _rc([(0, 0), (20, 0), (0, 20), (20, 20)])],
+            ["wall", "port"],
+            ["wall", "landmark"],
+            ["path", "ellipse"],
+            calibration=calibration,
+        )
+        np.testing.assert_allclose(walls["wall"].coords, [(0, 0), (20, 0)])
+        np.testing.assert_allclose(landmarks["port"].data, [5.0, 5.0])
+
+    def test_unusable_shapes_are_skipped_with_a_warning(self):
+        with pytest.warns(UserWarning, match="Skipping wall 'round'"):
+            walls, landmarks = shapes_to_walls_and_landmarks(
+                [_rc([(0, 0), (2, 0), (2, 2), (0, 2)]), _rc([(1, 1), (1, 1)])],
+                ["round", "dot"],
+                ["wall", "landmark"],
+                ["ellipse", "path"],
+            )
+        assert walls == {}
+        assert len(landmarks) == 0
+
+
+class TestEnvFromBoundaryWithWalls:
+    """Drawn walls are clipped to the boundary and close the pairs they cross."""
+
+    BOUNDARY = Region(
+        name="arena",
+        kind="polygon",
+        data=shp.Polygon([(0, 0), (100, 0), (100, 80), (0, 80)]),
+    )
+
+    def test_a_wall_drawn_past_the_edge_is_clipped_and_named(self):
+        poke = shp.LineString([(50, -4), (50, 60)])  # starts past the edge
+        with pytest.warns(UserWarning, match=r"kept the 94% of it inside"):
+            env = env_from_boundary_region(
+                self.BOUNDARY, bin_size=5.0, walls={"divider": poke}
+            )
+        assert env.arena.wall_names == ("divider",)
+        assert env.arena.walls[0].equals(shp.LineString([(50, 0), (50, 60)]))
+        blocked = env.get_blocked_edges()
+        assert set(blocked["wall"]) == {"divider"}
+        left = env.bin_centers[:, 0] < 50
+        assert all(left[blocked["source"]] != left[blocked["target"]])
+
+    def test_a_wall_entirely_outside_is_skipped(self):
+        outside = shp.LineString([(120, 0), (120, 50)])
+        with pytest.warns(UserWarning, match="Skipping wall 'far'"):
+            env = env_from_boundary_region(
+                self.BOUNDARY, bin_size=5.0, walls={"far": outside}
+            )
+        assert env.arena.walls == ()

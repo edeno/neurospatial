@@ -60,23 +60,36 @@ class TestAnnotationModeState:
 
         assert state.region_type == "region"
 
-    def test_cycle_region_type_region_to_environment(self):
-        """Cycle from region back to environment."""
+    def test_cycle_region_type_region_to_wall_to_landmark_to_environment(self):
+        """Regions are followed by walls and landmarks, then environment again."""
         state = AnnotationModeState(region_type="region")
 
-        state.cycle_region_type()
+        visited = []
+        for _ in range(3):
+            state.cycle_region_type()
+            visited.append(state.region_type)
 
-        assert state.region_type == "environment"
+        assert visited == ["wall", "landmark", "environment"]
 
     def test_full_cycle(self):
         """Complete cycle returns to original role."""
         state = AnnotationModeState(region_type="environment")
 
-        state.cycle_region_type()  # hole
-        state.cycle_region_type()  # region
-        state.cycle_region_type()  # environment
+        for _ in range(5):  # hole, region, wall, landmark, environment
+            state.cycle_region_type()
 
         assert state.region_type == "environment"
+
+    def test_walls_and_landmarks_are_auto_named_and_counted(self):
+        """Each new type numbers its own shapes."""
+        state = AnnotationModeState(region_type="wall")
+        assert state.default_name() == ""
+        assert state.generate_auto_name([]) == "wall_1"
+        state.record_shape_added("wall")
+        state.region_type = "landmark"
+        assert state.generate_auto_name(["wall_1"]) == "landmark_1"
+        state.sync_counts_from_region_types(["wall", "landmark", "landmark"])
+        assert (state.wall_count, state.landmark_count) == (1, 2)
 
     def test_default_name_for_environment(self):
         """Default name for environment is 'arena'."""
@@ -198,7 +211,9 @@ class TestAnnotationModeState:
 
         text = state.status_text()
 
-        assert text == "Annotations: 1 environment, 2 holes, 3 regions"
+        assert text == (
+            "Annotations: 1 environment, 2 holes, 3 regions, 0 walls, 0 landmarks"
+        )
 
     def test_status_text_zeros(self):
         """Status text with all zeros."""
@@ -206,7 +221,9 @@ class TestAnnotationModeState:
 
         text = state.status_text()
 
-        assert text == "Annotations: 0 environment, 0 holes, 0 regions"
+        assert text == (
+            "Annotations: 0 environment, 0 holes, 0 regions, 0 walls, 0 landmarks"
+        )
 
     def test_has_environment_false(self):
         """has_environment False when no environment drawn."""
@@ -255,7 +272,9 @@ class TestAnnotationModeStateIntegration:
         assert state.environment_count == 1
         assert state.hole_count == 2
         assert state.region_count == 3
-        assert state.status_text() == "Annotations: 1 environment, 2 holes, 3 regions"
+        assert state.status_text() == (
+            "Annotations: 1 environment, 2 holes, 3 regions, 0 walls, 0 landmarks"
+        )
 
     def test_region_only_workflow(self):
         """Simulate region-only annotation (no environment)."""

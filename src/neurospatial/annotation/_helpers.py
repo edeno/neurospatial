@@ -30,7 +30,12 @@ REGION_TYPE_COLORS: dict[str, str] = {
     "environment": "cyan",
     "hole": "red",
     "region": "yellow",
+    "wall": "magenta",
+    "landmark": "orange",
 }
+# Walls and landmarks are often paths, which have no face: they show their
+# type by their line color. Areas keep a white outline over their fill.
+LINE_COLORED_TYPES = frozenset({"wall", "landmark"})
 REGION_TYPE_COLOR_CYCLE = [REGION_TYPE_COLORS[cat] for cat in REGION_TYPE_CATEGORIES]
 
 
@@ -63,11 +68,13 @@ def rebuild_features(region_types: list[RegionType], names: list[str]) -> pd.Dat
     )
 
 
-def sync_face_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:
-    """Update face colors to match feature roles.
+def sync_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:
+    """Update face and edge colors to match feature roles.
 
     Napari's face_color_cycle doesn't always work reliably when features
     are updated programmatically. This function explicitly syncs colors.
+    Walls and landmarks also take their role's color for their edges, so a
+    path shows what it is.
 
     Parameters
     ----------
@@ -81,3 +88,7 @@ def sync_face_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:
     region_types = shapes_layer.features.get("role", [])
     face_colors = [REGION_TYPE_COLORS.get(str(r), "yellow") for r in region_types]
     shapes_layer.face_color = face_colors
+    shapes_layer.edge_color = [
+        REGION_TYPE_COLORS[str(r)] if str(r) in LINE_COLORED_TYPES else "white"
+        for r in region_types
+    ]

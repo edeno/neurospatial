@@ -1,4 +1,4 @@
-"""Convert between napari shapes and neurospatial Regions."""
+"""Convert between napari shapes and neurospatial regions, walls and landmarks."""
 
 from __future__ import annotations
 
@@ -11,11 +11,112 @@ from shapely import Polygon
 from neurospatial.annotation._types import MultipleBoundaryStrategy, RegionType
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from numpy.typing import NDArray
 
     from neurospatial.environment import Environment
+    from neurospatial.landmarks import Landmarks
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Region, Regions
+
+# Napari shape types that are drawn as open lines, and as closed areas.
+_LINE_SHAPES = frozenset({"path", "line"})
+_AREA_SHAPES = frozenset({"polygon", "rectangle"})
+
+
+def _to_world(
+    vertices_rc: NDArray[np.float64], calibration: VideoCalibration | None
+) -> NDArray[np.float64]:
+    """Napari (row, col) vertices as (x, y), in cm with a calibration."""
+    pts_px = vertices_rc[:, ::-1].astype(np.float64)
+    return pts_px if calibration is None else calibration.transform_px_to_cm(pts_px)
+
+
+def shapes_to_walls_and_landmarks(
+    shapes_data: list[NDArray[np.float64]],
+    names: list[str],
+    region_types: list[RegionType],
+    shape_types: list[str],
+    *,
+    calibration: VideoCalibration | None = None,
+) -> tuple[dict[str, shp.LineString], Landmarks]:
+    """Convert napari wall and landmark shapes to walls and landmarks.
+
+    A wall drawn as a path or line is that line; one drawn as a polygon or
+    rectangle is its closed outline. A landmark's kind follows from its shape:
+    an ellipse marks a point at its center (a reward port or a cue), a path or
+    line a line (a monitor), and a polygon or rectangle an area (an object).
+    Shapes of other annotation types are ignored.
+
+    Parameters
+    ----------
+    shapes_data : list of NDArray
+        Vertices of each shape, shape (n_vertices, 2), in napari (row, col)
+        order.
+    names : list of str
+        Name for each shape.
+    region_types : list of RegionType
+        Annotation type for each shape.
+    shape_types : list of str
+        Napari shape type for each shape, such as "path" or "ellipse".
+    calibration : VideoCalibration, optional
+        If provided, transforms pixel coordinates to world coordinates (cm).
+
+    Returns
+    -------
+    walls : dict of str to LineString
+        Each wall by name.
+    landmarks : Landmarks
+        The landmarks, in drawing order.
+
+    Warns
+    -----
+    UserWarning
+        For a shape that cannot become a wall or landmark (an ellipse drawn as
+        a wall, or too few vertices); it is skipped.
+    """
+    import warnings
+
+    from neurospatial.landmarks import Landmark, Landmarks
+
+    walls: dict[str, shp.LineString] = {}
+    landmarks: list[Landmark] = []
+    for vertices_rc, name, region_type, shape_type in zip(
+        shapes_data, names, region_types, shape_types, strict=True
+    ):
+        if region_type not in ("wall", "landmark"):
+            continue
+        points = _to_world(vertices_rc, calibration)
+        if region_type == "wall":
+            if shape_type in _AREA_SHAPES:
+                points = np.vstack([points, points[:1]])
+            if shape_type == "ellipse" or len(points) < 2:
+                warnings.warn(
+                    f"Skipping wall '{name}': draw a wall as a path, a line or a "
+                    f"polygon, not a {shape_type} with {len(points)} vertices.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                continue
+            walls[str(name)] = shp.LineString(points)
+            continue
+        try:
+            if shape_type == "ellipse":
+                landmark = Landmark(str(name), "point", points.mean(axis=0))
+            elif shape_type in _LINE_SHAPES:
+                landmark = Landmark(str(name), "line", points)
+            else:
+                landmark = Landmark(str(name), "polygon", points)
+        except ValueError as error:
+            warnings.warn(
+                f"Skipping landmark '{name}': {error}",
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
+        landmarks.append(landmark)
+    return walls, Landmarks(landmarks)
 
 
 def shapes_to_regions(
@@ -92,22 +193,14 @@ def shapes_to_regions(
     holes_list: list[Region] = []
     env_boundaries: list[Region] = []
 
+    coord_system = "pixels" if calibration is None else "cm"
     for poly_rc, name, region_type in zip(
         shapes_data,
         names,
         region_types,
         strict=True,
     ):
-        # Convert napari (row, col) to video (x, y) pixels
-        pts_px = poly_rc[:, ::-1].astype(np.float64)
-
-        # Apply calibration if available
-        if calibration is not None:
-            pts_world = calibration.transform_px_to_cm(pts_px)
-            coord_system = "cm"
-        else:
-            pts_world = pts_px
-            coord_system = "pixels"
+        pts_world = _to_world(poly_rc, calibration)
 
         # Skip degenerate polygons (need ≥3 vertices to form an area), but warn
         # so the user knows a drawn shape was dropped rather than annotated.
@@ -269,6 +362,7 @@ def env_from_boundary_region(
     boundary: Region,
     bin_size: float,
     holes: list[Region] | None = None,
+    walls: Mapping[str, shp.LineString] | None = None,
     **from_polygon_kwargs,
 ) -> Environment:
     """Create Environment from an annotated boundary polygon.
@@ -282,8 +376,16 @@ def env_from_boundary_region(
     holes : list of Region, optional
         Hole polygons to subtract from the boundary before creating the
         environment. These create excluded areas within the environment.
+    walls : mapping of str to LineString, optional
+        Named walls inside the boundary. Each is clipped to the boundary, so a
+        hand-drawn wall may start on or just past the boundary's edge.
     **from_polygon_kwargs
         Additional arguments passed to ``Environment.from_polygon()``.
+
+    Warns
+    -----
+    UserWarning
+        When clipping removes more than 1% of a wall's length, or all of it.
 
     Returns
     -------
@@ -311,8 +413,49 @@ def env_from_boundary_region(
         boundary = subtract_holes_from_boundary(boundary, holes)
 
     # Cast is safe because we validated kind=="polygon" above
+    polygon = cast("Polygon", boundary.data)
+    if walls:
+        from neurospatial.arena import OpenArena
+
+        segments, wall_names = _clipped_walls(walls, polygon)
+        from_polygon_kwargs["arena"] = OpenArena(
+            polygon, walls=segments, wall_names=wall_names
+        )
     return Environment.from_polygon(
-        polygon=cast("Polygon", boundary.data),
+        polygon=polygon,
         bin_size=bin_size,
         **from_polygon_kwargs,
     )
+
+
+def _clipped_walls(
+    walls: Mapping[str, shp.LineString], polygon: Polygon
+) -> tuple[list[shp.LineString], list[str]]:
+    """Each wall's pieces inside ``polygon``, with the wall's name for each piece."""
+    import warnings
+
+    import shapely
+
+    segments: list[shp.LineString] = []
+    wall_names: list[str] = []
+    for name, wall in walls.items():
+        inside = wall.intersection(polygon)
+        pieces = [
+            piece
+            for piece in shapely.get_parts(inside)
+            if isinstance(piece, shp.LineString) and piece.length > 0
+        ]
+        kept = sum(piece.length for piece in pieces)
+        if kept < 0.99 * wall.length:
+            warnings.warn(
+                f"Wall '{name}' extends past the environment boundary; kept the "
+                f"{kept / wall.length:.0%} of it inside."
+                if pieces
+                else f"Skipping wall '{name}': it lies outside the environment "
+                "boundary.",
+                UserWarning,
+                stacklevel=3,
+            )
+        segments.extend(pieces)
+        wall_names.extend([name] * len(pieces))
+    return segments, wall_names
