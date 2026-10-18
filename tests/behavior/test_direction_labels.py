@@ -299,7 +299,9 @@ class TestHeadingDirectionLabels:
             [np.linspace(0.0, 100.0, n_samples), np.zeros(n_samples)]
         )
 
-        labels = heading_direction_labels(positions=positions, times=times)
+        labels = heading_direction_labels(
+            positions=positions, times=times, min_speed=5.0
+        )
 
         # All moving samples should have the same direction label (near 0°)
         # First sample is stationary (padded speed=0), rest should move
@@ -347,7 +349,9 @@ class TestHeadingDirectionLabels:
             [np.zeros(n_samples), np.linspace(0.0, 100.0, n_samples)]
         )
 
-        labels = heading_direction_labels(positions=positions, times=times)
+        labels = heading_direction_labels(
+            positions=positions, times=times, min_speed=5.0
+        )
 
         moving_labels = [lbl for lbl in labels[1:] if lbl != "stationary"]
         assert len(set(moving_labels)) == 1
@@ -405,11 +409,15 @@ class TestHeadingDirectionLabels:
 
         # Labels from positions/times
         labels_from_positions = heading_direction_labels(
-            positions=positions, times=times
+            positions=positions,
+            times=times,
+            min_speed=5.0,
         )
 
         # Labels from precomputed speed/heading
-        labels_from_precomputed = heading_direction_labels(speed=speed, heading=heading)
+        labels_from_precomputed = heading_direction_labels(
+            speed=speed, heading=heading, min_speed=5.0
+        )
 
         np.testing.assert_array_equal(labels_from_positions, labels_from_precomputed)
 
@@ -428,7 +436,11 @@ class TestHeadingDirectionLabels:
         heading = np.full(n_samples, np.pi / 2)  # 90 degrees
 
         labels = heading_direction_labels(
-            positions=positions, times=times, speed=speed, heading=heading
+            positions=positions,
+            times=times,
+            speed=speed,
+            heading=heading,
+            min_speed=5.0,
         )
 
         # Should use precomputed, so labels should be 90° not 0°
@@ -439,26 +451,26 @@ class TestHeadingDirectionLabels:
     def test_error_no_inputs(self) -> None:
         """Raises ValueError if neither (positions, times) nor (speed, heading) provided."""
         with pytest.raises(ValueError, match="Must provide either"):
-            heading_direction_labels()
+            heading_direction_labels(min_speed=5.0)
 
     def test_error_incomplete_positions(self, rng) -> None:
         """Raises ValueError if positions provided without times."""
         positions = rng.random((100, 2))
         with pytest.raises(ValueError, match="positions and times"):
-            heading_direction_labels(positions=positions)
+            heading_direction_labels(positions=positions, min_speed=5.0)
 
     def test_error_incomplete_precomputed(self, rng) -> None:
         """Raises ValueError if speed provided without heading."""
         speed = rng.random(100)
         with pytest.raises(ValueError, match="speed and heading"):
-            heading_direction_labels(speed=speed)
+            heading_direction_labels(speed=speed, min_speed=5.0)
 
     def test_error_mismatched_lengths(self, rng) -> None:
         """Raises ValueError if speed and heading have different lengths."""
         speed = rng.random(100)
         heading = rng.random(50)  # Different length
         with pytest.raises(ValueError, match="same length"):
-            heading_direction_labels(speed=speed, heading=heading)
+            heading_direction_labels(speed=speed, heading=heading, min_speed=5.0)
 
     def test_n_directions_default_8(self) -> None:
         """Default n_directions=8 produces 8 bins (45° each)."""
@@ -471,7 +483,9 @@ class TestHeadingDirectionLabels:
         radius = 100.0
         positions = np.column_stack([radius * np.cos(angles), radius * np.sin(angles)])
 
-        labels = heading_direction_labels(positions=positions, times=times)
+        labels = heading_direction_labels(
+            positions=positions, times=times, min_speed=5.0
+        )
 
         # Get unique non-stationary labels
         direction_labels = {lbl for lbl in labels if lbl != "stationary"}
@@ -491,14 +505,20 @@ class TestHeadingDirectionLabels:
 
         # Test with n_directions=4 (90° bins)
         labels_4 = heading_direction_labels(
-            positions=positions, times=times, n_directions=4
+            positions=positions,
+            times=times,
+            n_directions=4,
+            min_speed=5.0,
         )
         direction_labels_4 = {lbl for lbl in labels_4 if lbl != "stationary"}
         assert len(direction_labels_4) == 4
 
         # Test with n_directions=16 (22.5° bins)
         labels_16 = heading_direction_labels(
-            positions=positions, times=times, n_directions=16
+            positions=positions,
+            times=times,
+            n_directions=16,
+            min_speed=5.0,
         )
         direction_labels_16 = {lbl for lbl in labels_16 if lbl != "stationary"}
         assert len(direction_labels_16) == 16
@@ -512,7 +532,10 @@ class TestHeadingDirectionLabels:
         heading_45 = np.full(n_samples, np.pi / 4)  # 45°
 
         labels = heading_direction_labels(
-            speed=speed, heading=heading_45, n_directions=8
+            speed=speed,
+            heading=heading_45,
+            n_directions=8,
+            min_speed=5.0,
         )
 
         # 45° should be exactly at boundary between 0-45° and 45-90°
@@ -530,7 +553,10 @@ class TestHeadingDirectionLabels:
         heading_neg = np.full(n_samples, -np.pi / 2)  # -90° = 270°
 
         labels = heading_direction_labels(
-            speed=speed, heading=heading_neg, n_directions=8
+            speed=speed,
+            heading=heading_neg,
+            n_directions=8,
+            min_speed=5.0,
         )
 
         direction_labels = {lbl for lbl in labels if lbl != "stationary"}
@@ -546,7 +572,9 @@ class TestHeadingDirectionLabels:
         times = np.linspace(0.0, 12.3, n_samples)
         positions = rng.random((n_samples, 2)) * 100.0
 
-        labels = heading_direction_labels(positions=positions, times=times)
+        labels = heading_direction_labels(
+            positions=positions, times=times, min_speed=5.0
+        )
 
         assert len(labels) == n_samples
         assert labels.dtype == object
@@ -556,7 +584,9 @@ class TestHeadingDirectionLabels:
         times = np.array([], dtype=np.float64)
         positions = np.zeros((0, 2), dtype=np.float64)
 
-        labels = heading_direction_labels(positions=positions, times=times)
+        labels = heading_direction_labels(
+            positions=positions, times=times, min_speed=5.0
+        )
 
         assert len(labels) == 0
         assert labels.dtype == object
@@ -566,7 +596,9 @@ class TestHeadingDirectionLabels:
         times = np.array([0.0])
         positions = np.array([[10.0, 20.0]])
 
-        labels = heading_direction_labels(positions=positions, times=times)
+        labels = heading_direction_labels(
+            positions=positions, times=times, min_speed=5.0
+        )
 
         assert len(labels) == 1
         assert labels[0] == "stationary"  # Can't compute velocity from single point

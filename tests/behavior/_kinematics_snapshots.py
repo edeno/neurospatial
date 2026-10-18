@@ -73,12 +73,20 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         "heading_from_velocity_smoothed": heading_from_velocity(
             heading_clock, r.positions, smooth_window=0.04, min_speed=5.0
         ),
-        "pre_decision_heading_stats": pre_decision_heading_stats(r.times, r.positions),
+        "pre_decision_heading_stats": pre_decision_heading_stats(
+            r.times, r.positions, min_speed=5.0
+        ),
         "pre_decision_speed_stats": pre_decision_speed_stats(r.times, r.positions),
-        "head_sweep_from_positions": head_sweep_from_positions(r.times, r.positions),
-        "heading_direction_labels": heading_direction_labels(r.positions, r.times),
+        "head_sweep_from_positions": head_sweep_from_positions(
+            r.times, r.positions, min_speed=5.0
+        ),
+        "heading_direction_labels": heading_direction_labels(
+            r.positions, r.times, min_speed=5.0
+        ),
         "heading_direction_precomputed": heading_direction_labels(
-            speed=np.ones(len(r.times)) * 10, heading=r.headings
+            speed=np.ones(len(r.times)) * 10,
+            heading=r.headings,
+            min_speed=5.0,
         ),
         "compute_path_efficiency": compute_path_efficiency(
             r.env, r.times, r.positions, goal, metric="euclidean", reference_speed=10
@@ -87,9 +95,12 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             r.env, r.times, r.positions, goal, reference_speed=10
         ),
         "instantaneous_goal_alignment": instantaneous_goal_alignment(
-            r.times, r.positions, goal
+            r.times,
+            r.positions,
+            goal,
+            min_speed=5.0,
         ),
-        "goal_bias": goal_bias(r.times, r.positions, goal),
+        "goal_bias": goal_bias(r.times, r.positions, goal, min_speed=5.0),
         "approach_rate": approach_rate(r.times, r.positions, goal),
         "approach_rate_geodesic": approach_rate(
             r.times, r.positions, goal, metric="geodesic", env=r.env
@@ -111,10 +122,18 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             positions=r.positions,
         ).to_dict("list"),
         "compute_pre_decision_metrics": compute_pre_decision_metrics(
-            r.times, r.positions, entry_time=100.0, window_duration=2.0
+            r.times,
+            r.positions,
+            entry_time=100.0,
+            window_duration=2.0,
+            min_speed=5.0,
         ),
         "compute_vte_trial": compute_vte_trial(
-            r.times, r.positions, entry_time=100.0, window_duration=2.0
+            r.times,
+            r.positions,
+            entry_time=100.0,
+            window_duration=2.0,
+            min_speed=5.0,
         ),
         "compute_vte_session": session,
     }

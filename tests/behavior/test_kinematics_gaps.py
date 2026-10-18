@@ -70,10 +70,10 @@ def test_speed_stats_exclude_pause(two_epoch_recording):
 def test_head_sweep_sums_runs(two_epoch_recording):
     r = two_epoch_recording
     expected = sum(
-        head_sweep_from_positions(r.times[s], r.positions[s])
+        head_sweep_from_positions(r.times[s], r.positions[s], min_speed=5.0)
         for s in (slice(0, 5000), slice(5000, 10000))
     )
-    actual = head_sweep_from_positions(r.times, r.positions)
+    actual = head_sweep_from_positions(r.times, r.positions, min_speed=5.0)
     assert expected > 0
     assert actual == pytest.approx(expected, rel=1e-12, abs=0)
 
@@ -238,18 +238,31 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
         times[selected], positions[selected], max_gap=None
     )
     expected_heading = pre_decision_heading_stats(
-        times[selected], positions[selected], max_gap=None
+        times[selected],
+        positions[selected],
+        max_gap=None,
+        min_speed=5.0,
     )
     metrics = compute_pre_decision_metrics(
-        times, positions, entry, duration, max_gap=None
+        times,
+        positions,
+        entry,
+        duration,
+        max_gap=None,
+        min_speed=5.0,
     )
     assert metrics.mean_speed == expected_mean
     assert metrics.min_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
-    trial = compute_vte_trial(times, positions, entry, duration, max_gap=None)
+    trial = compute_vte_trial(
+        times, positions, entry, duration, max_gap=None, min_speed=5.0
+    )
     assert trial.mean_speed == expected_mean
     expected_sweep = head_sweep_from_positions(
-        times[selected], positions[selected], max_gap=None
+        times[selected],
+        positions[selected],
+        max_gap=None,
+        min_speed=5.0,
     )
     assert expected_sweep > 0
     assert trial.head_sweep_magnitude == expected_sweep
@@ -271,7 +284,10 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
         times[selected], positions[selected], max_gap=None
     )[0]
     expected_sweep = head_sweep_from_positions(
-        times[selected], positions[selected], max_gap=None
+        times[selected],
+        positions[selected],
+        max_gap=None,
+        min_speed=5.0,
     )
     assert expected_sweep > 0
     with pytest.warns(UserWarning, match="No variation"):

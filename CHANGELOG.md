@@ -647,6 +647,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   peak memory of 72,000 errors drops from 808 MB to 327 MB, at the same speed
   and with identical values.
 
+- Speed thresholds no longer assume centimeters. `min_speed` is in position
+  units per second, so its 5 cm/s default was 5 m/s for positions in meters
+  (every sample excluded; `goal_bias` returned NaN). The seven behavior
+  functions that take no environment (`goal_bias`,
+  `instantaneous_goal_alignment`, `heading_direction_labels`,
+  `head_sweep_from_positions`, `pre_decision_heading_stats`,
+  `compute_pre_decision_metrics`, `compute_vte_trial`) now require
+  `min_speed`; pass `min_speed=5.0` for the old behavior with positions in cm.
+  `compute_decision_analysis`, `compute_goal_directed_metrics` and
+  `compute_vte_session` take `min_speed=None`, meaning 5 cm/s in `env.units`
+  (0.05 for meters, 50 for millimeters), and ask for an explicit value when
+  the environment's units are not a metric length.
+
 ### Changed
 
 - Speed is one definition everywhere: the velocity vector smoothed with a

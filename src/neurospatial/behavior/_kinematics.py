@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -38,3 +40,49 @@ def interval_velocity(
     )
     velocity[defined] = np.diff(positions, axis=0)[defined] / dt[defined, np.newaxis]
     return velocity
+
+
+#: Speed below which an animal counts as stationary, in centimeters per second.
+DEFAULT_MIN_SPEED_CM_PER_S = 5.0
+
+
+def resolve_min_speed(env: Any, min_speed: float | None, *, call: str) -> float:
+    """``min_speed``, or 5 cm/s expressed in ``env.units`` when it is None.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose ``units`` give the positions' length unit.
+    min_speed : float or None
+        Threshold in position units per second, or None for the default.
+    call : str
+        Public function name, used in the error.
+
+    Returns
+    -------
+    float
+        The threshold in position units per second.
+
+    Raises
+    ------
+    ValueError
+        If ``min_speed`` is None and ``env.units`` is not a metric length.
+    """
+    from neurospatial._exceptions import _format_error
+    from neurospatial._units import units_per_centimeter
+
+    if min_speed is not None:
+        return float(min_speed)
+    per_cm = units_per_centimeter(env.units)
+    if per_cm is None:
+        raise ValueError(
+            _format_error(
+                f"{call} needs min_speed: the environment's units "
+                f"({env.units!r}) are not a known length, so the 5 cm/s default "
+                "cannot be expressed in them.",
+                why="Why: min_speed is in position units per second.",
+                fix="pass min_speed=<threshold in position units per second>, "
+                "or declare the units with env.with_metadata(units='cm')",
+            )
+        )
+    return DEFAULT_MIN_SPEED_CM_PER_S * per_cm

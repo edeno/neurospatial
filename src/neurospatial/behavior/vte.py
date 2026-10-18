@@ -320,7 +320,7 @@ def head_sweep_from_positions(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    min_speed: float = 5.0,
+    min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> float:
@@ -332,7 +332,10 @@ def head_sweep_from_positions(
         Timestamps in seconds.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates.
-    min_speed : float, default=5.0
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
+        with positions in cm): this function sees no environment, so it
+        cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded.
     max_gap : float or None, default=0.5
@@ -563,7 +566,7 @@ def compute_vte_trial(
     entry_time: float,
     window_duration: float,
     *,
-    min_speed: float = 5.0,
+    min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> VTETrialResult:
@@ -579,7 +582,10 @@ def compute_vte_trial(
         Time of decision region entry (seconds).
     window_duration : float
         Duration of pre-decision window (seconds).
-    min_speed : float, default=5.0
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
+        with positions in cm): this function sees no environment, so it
+        cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
@@ -613,7 +619,7 @@ def compute_vte_trial(
     >>> times = np.linspace(0, 3, 90)
     >>> positions = np.column_stack([np.linspace(0, 50, 90), np.ones(90) * 50])
     >>> result = compute_vte_trial(
-    ...     times, positions, entry_time=2.0, window_duration=1.0
+    ...     times, positions, entry_time=2.0, window_duration=1.0, min_speed=5.0
     ... )
     >>> result.window_start
     1.0
@@ -682,7 +688,7 @@ def compute_vte_session(
     decision_region: str,
     trials: list[Trial],
     window_duration: float = 1.0,
-    min_speed: float = 5.0,
+    min_speed: float | None = None,
     alpha: float = 0.5,
     vte_threshold: float = 0.5,
     max_gap: float | None = 0.5,
@@ -707,7 +713,10 @@ def compute_vte_session(
         Typical values: 0.5-2.0s depending on maze size and task.
         The window is clipped at the trial start; samples before
         ``trial.start_time`` are never used.
-    min_speed : float, default=5.0
+    min_speed : float or None, default=None
+        In position units per second. None is 5 cm/s expressed in
+        ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
+        units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s).
     alpha : float, default=0.5
         Weight for head sweep in VTE index (1-alpha for speed).
@@ -772,12 +781,14 @@ def compute_vte_session(
         operation="compute_vte_session()",
         argument="decision_region",
     )
+    from neurospatial.behavior._kinematics import resolve_min_speed
     from neurospatial.behavior.decisions import (
         decision_region_entry_time,
         extract_pre_decision_window,
         pre_decision_speed_stats,
     )
 
+    min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session()")
     # First pass: compute raw metrics for all trials
     raw_head_sweeps: list[float] = []
     raw_speeds: list[float] = []

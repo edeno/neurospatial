@@ -443,7 +443,7 @@ def pre_decision_heading_stats(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    min_speed: float = 5.0,
+    min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> tuple[float, float, float]:
@@ -455,7 +455,10 @@ def pre_decision_heading_stats(
         Timestamps (seconds).
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates.
-    min_speed : float, default=5.0
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
+        with positions in cm): this function sees no environment, so it
+        cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded from statistics.
     max_gap : float or None, default=0.5
@@ -608,7 +611,7 @@ def compute_pre_decision_metrics(
     entry_time: float,
     window_duration: float,
     *,
-    min_speed: float = 5.0,
+    min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> PreDecisionMetrics:
@@ -624,7 +627,10 @@ def compute_pre_decision_metrics(
         Time of decision region entry (seconds).
     window_duration : float
         Duration of pre-decision window to analyze (seconds).
-    min_speed : float, default=5.0
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
+        with positions in cm): this function sees no environment, so it
+        cannot know the positions' unit.
         Minimum speed for valid heading (units/s).
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
@@ -981,7 +987,7 @@ def compute_decision_analysis(
     decision_region: str,
     goal_regions: list[str],
     pre_window: float = 1.0,
-    min_speed: float = 5.0,
+    min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> DecisionAnalysisResult:
@@ -1001,7 +1007,10 @@ def compute_decision_analysis(
         Names of goal regions (e.g., ["left", "right"]).
     pre_window : float, default=1.0
         Duration of pre-decision window to analyze (seconds).
-    min_speed : float, default=5.0
+    min_speed : float or None, default=None
+        In position units per second. None is 5 cm/s expressed in
+        ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
+        units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s).
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
@@ -1081,6 +1090,9 @@ def compute_decision_analysis(
         position_bins, times, env, region=decision_region
     )
 
+    from neurospatial.behavior._kinematics import resolve_min_speed
+
+    min_speed = resolve_min_speed(env, min_speed, call="compute_decision_analysis()")
     # Compute pre-decision metrics
     pre_decision = compute_pre_decision_metrics(
         times,

@@ -431,6 +431,7 @@ class TestSafeGatherVoronoiLabels:
             decision_region="center",
             goal_regions=["left", "right"],
             max_gap=None,
+            min_speed=5.0,
         )
 
         assert result.boundary is not None

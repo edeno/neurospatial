@@ -92,7 +92,11 @@ def capture_segmentation_outputs(pause, laps):
             p.times, p.positions, entry_time=100.5, window_duration=2.0
         ),
         "compute_pre_decision_metrics": compute_pre_decision_metrics(
-            p.times, p.positions, entry_time=100.5, window_duration=2.0
+            p.times,
+            p.positions,
+            entry_time=100.5,
+            window_duration=2.0,
+            min_speed=5.0,
         ),
         "compute_decision_analysis": compute_decision_analysis(
             p.env,
@@ -103,7 +107,11 @@ def capture_segmentation_outputs(pause, laps):
             pre_window=2.0,
         ),
         "compute_vte_trial": compute_vte_trial(
-            p.times, p.positions, entry_time=100.5, window_duration=2.0
+            p.times,
+            p.positions,
+            entry_time=100.5,
+            window_duration=2.0,
+            min_speed=5.0,
         ),
         "compute_vte_session": compute_vte_session(
             p.env,
