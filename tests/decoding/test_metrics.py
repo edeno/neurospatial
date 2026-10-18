@@ -8,6 +8,16 @@ support both Euclidean and graph-based distance metrics.
 import numpy as np
 import pytest
 
+from neurospatial import Environment
+
+
+def _space_for(positions):
+    """An environment fixing only the number of dimensions, for Euclidean error."""
+    n_dims = np.asarray(positions).shape[1]
+    return Environment.from_samples(
+        np.array([[0.0] * n_dims, [1.0] * n_dims]), bin_size=1.0
+    )
+
 
 class TestDecodingError:
     """Test decoding_error function."""
@@ -23,7 +33,9 @@ class TestDecodingError:
         decoded = rng.uniform(0, 10, (n_time_bins, n_dims))
         actual = rng.uniform(0, 10, (n_time_bins, n_dims))
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert result.shape == (n_time_bins,)
         assert result.dtype == np.float64
@@ -38,7 +50,9 @@ class TestDecodingError:
 
         positions = rng.uniform(0, 10, (n_time_bins, n_dims))
 
-        result = decoding_error(positions, positions)
+        result = decoding_error(
+            _space_for(positions), positions, positions, metric="euclidean"
+        )
 
         np.testing.assert_array_almost_equal(result, np.zeros(n_time_bins))
 
@@ -51,7 +65,9 @@ class TestDecodingError:
         # Expected: |0-1|=1, |1-1|=0, |2-0|=2, |3-6|=3
         expected = np.array([1.0, 0.0, 2.0, 3.0])
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         np.testing.assert_array_almost_equal(result, expected)
 
@@ -64,7 +80,9 @@ class TestDecodingError:
         # Expected: 0, 3, 4 (3-4-5 triangle components)
         expected = np.array([0.0, 3.0, 4.0])
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         np.testing.assert_array_almost_equal(result, expected)
 
@@ -78,7 +96,9 @@ class TestDecodingError:
         # Expected: 5.0, sqrt(3)
         expected = np.array([5.0, np.sqrt(3.0)])
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         np.testing.assert_array_almost_equal(result, expected)
 
@@ -93,12 +113,14 @@ class TestDecodingError:
         decoded = rng.uniform(-10, 10, (n_time_bins, n_dims))
         actual = rng.uniform(-10, 10, (n_time_bins, n_dims))
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert np.all(result >= 0)
 
     def test_decoding_error_symmetry(self):
-        """decoding_error(a, b) should equal decoding_error(b, a)."""
+        """Euclidean error is symmetric in the decoded and actual positions."""
         from neurospatial.decoding.metrics import decoding_error
 
         n_time_bins = 10
@@ -108,8 +130,12 @@ class TestDecodingError:
         positions_a = rng.uniform(0, 10, (n_time_bins, n_dims))
         positions_b = rng.uniform(0, 10, (n_time_bins, n_dims))
 
-        error_ab = decoding_error(positions_a, positions_b)
-        error_ba = decoding_error(positions_b, positions_a)
+        error_ab = decoding_error(
+            _space_for(positions_a), positions_a, positions_b, metric="euclidean"
+        )
+        error_ba = decoding_error(
+            _space_for(positions_b), positions_b, positions_a, metric="euclidean"
+        )
 
         np.testing.assert_array_almost_equal(error_ab, error_ba)
 
@@ -124,7 +150,9 @@ class TestDecodingErrorNaNHandling:
         decoded = np.array([[1.0, 2.0], [np.nan, 3.0], [4.0, 5.0]])
         actual = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert np.isfinite(result[0])
         assert np.isnan(result[1])  # NaN propagates
@@ -137,7 +165,9 @@ class TestDecodingErrorNaNHandling:
         decoded = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
         actual = np.array([[0.0, 0.0], [np.nan, 0.0], [0.0, 0.0]])
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert np.isfinite(result[0])
         assert np.isnan(result[1])  # NaN propagates
@@ -150,7 +180,9 @@ class TestDecodingErrorNaNHandling:
         decoded = np.full((3, 2), np.nan)
         actual = np.full((3, 2), np.nan)
 
-        result = decoding_error(decoded, actual)
+        result = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert np.all(np.isnan(result))
 
@@ -166,21 +198,24 @@ class TestDecodingErrorGraphMetric:
         decoded = np.array([bin_centers[0], [np.nan, np.nan], bin_centers[1]])
         actual = np.array([bin_centers[1], bin_centers[0], bin_centers[0]])
 
-        result = decoding_error(decoded, actual, metric="geodesic", env=small_2d_env)
+        result = decoding_error(small_2d_env, decoded, actual, metric="geodesic")
 
         assert np.isfinite(result[0])
         assert np.isnan(result[1])  # NaN propagates even with graph metric
         assert np.isfinite(result[2])
 
-    def test_decoding_error_graph_metric_requires_env(self):
-        """Graph metric should raise ValueError if env is None."""
+    def test_decoding_error_measures_along_the_environment_by_default(
+        self, small_2d_env
+    ):
+        """The default metric is geodesic: distance along the connectivity graph."""
         from neurospatial.decoding.metrics import decoding_error
 
-        decoded = np.array([[1.0, 2.0], [3.0, 4.0]])
-        actual = np.array([[0.0, 0.0], [0.0, 0.0]])
-
-        with pytest.raises(ValueError, match=r"env.*required.*geodesic"):
-            decoding_error(decoded, actual, metric="geodesic")
+        centers = small_2d_env.bin_centers
+        decoded, actual = centers[[0]], centers[[-1]]
+        np.testing.assert_array_equal(
+            decoding_error(small_2d_env, decoded, actual),
+            decoding_error(small_2d_env, decoded, actual, metric="geodesic"),
+        )
 
     def test_decoding_error_graph_metric_uses_env(self, small_2d_env):
         """Graph metric should use environment's distance_between method."""
@@ -198,7 +233,7 @@ class TestDecodingErrorGraphMetric:
         decoded = bin_centers[decoded_idx]
         actual = bin_centers[actual_idx]
 
-        result = decoding_error(decoded, actual, metric="geodesic", env=small_2d_env)
+        result = decoding_error(small_2d_env, decoded, actual, metric="geodesic")
 
         assert result.shape == (n_time_bins,)
         assert np.all(result >= 0)
@@ -215,8 +250,10 @@ class TestDecodingErrorGraphMetric:
         decoded = bin_centers[[0]]
         actual = bin_centers[[len(bin_centers) - 1]]
 
-        euclidean = decoding_error(decoded, actual, metric="euclidean")
-        graph = decoding_error(decoded, actual, metric="geodesic", env=small_2d_env)
+        euclidean = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
+        graph = decoding_error(small_2d_env, decoded, actual, metric="geodesic")
 
         # Graph distance should be >= Euclidean (triangle inequality)
         assert graph[0] >= euclidean[0] - 1e-10  # Small tolerance
@@ -229,7 +266,74 @@ class TestDecodingErrorGraphMetric:
         actual = np.array([[0.0, 0.0]])
 
         with pytest.raises(ValueError, match=r"metric.*euclidean.*geodesic"):
-            decoding_error(decoded, actual, metric="manhattan")
+            decoding_error(_space_for(decoded), decoded, actual, metric="manhattan")
+
+
+class TestErrorAlongTheEnvironment:
+    """Default (geodesic) error follows the maze, not the straight line."""
+
+    @pytest.fixture(scope="class")
+    def w_track(self):
+        nodes = {
+            "base_left": (0.0, 0.0),
+            "base_mid": (60.0, 0.0),
+            "base_right": (120.0, 0.0),
+            "arm_left": (0.0, 80.0),
+            "arm_mid": (60.0, 80.0),
+            "arm_right": (120.0, 80.0),
+        }
+        return Environment.maze(
+            kind="w", node_positions=nodes, bin_size=2.0, track_width=8.0, units="cm"
+        )
+
+    def test_error_between_arm_tips_is_measured_along_the_track(self, w_track):
+        from neurospatial.decoding.metrics import decoding_error
+
+        decoded = np.array([[0.0, 79.0]])  # left arm tip
+        actual = np.array([[60.0, 79.0]])  # middle arm tip
+        straight = decoding_error(w_track, decoded, actual, metric="euclidean")
+        along = decoding_error(w_track, decoded, actual)
+        np.testing.assert_allclose(straight, [60.0])
+        # down the left arm, along the base, up the middle arm
+        np.testing.assert_allclose(along, [79.0 + 60.0 + 79.0], atol=2.0)
+
+    def test_position_between_arms_is_measured_from_its_nearest_bin(self, w_track):
+        """A posterior mean between two arms lies off the track; it is measured
+        from the nearest track bin, not by a straight-line fallback."""
+        from neurospatial.decoding.metrics import decoding_error
+
+        decoded = np.array([[30.0, 79.0]])  # between left and middle arms
+        actual = np.array([[60.0, 79.0]])
+        nearest = w_track.bin_centers[w_track.nearest_bin(decoded)]
+        np.testing.assert_allclose(
+            decoding_error(w_track, decoded, actual),
+            decoding_error(w_track, nearest, actual),
+        )
+        assert decoding_error(w_track, decoded, actual)[0] > 100.0
+
+    def test_geodesic_matches_all_pairs_shortest_paths(self, small_2d_env):
+        from neurospatial.decoding.metrics import decoding_error
+        from neurospatial.ops.distance import geodesic_distance_matrix
+
+        rng = np.random.default_rng(0)
+        decoded_bins = rng.integers(0, small_2d_env.n_bins, 200)
+        actual_bins = rng.integers(0, small_2d_env.n_bins, 200)
+        expected = geodesic_distance_matrix(
+            small_2d_env.connectivity, small_2d_env.n_bins
+        )[decoded_bins, actual_bins]
+        centers = small_2d_env.bin_centers
+        np.testing.assert_allclose(
+            decoding_error(small_2d_env, centers[decoded_bins], centers[actual_bins]),
+            expected,
+        )
+
+    def test_positions_must_match_the_environment_dimensions(self, small_2d_env):
+        from neurospatial.decoding.metrics import decoding_error
+
+        with pytest.raises(ValueError, match="2 columns"):
+            decoding_error(
+                small_2d_env, np.zeros((3, 1)), np.zeros((3, 1)), metric="euclidean"
+            )
 
 
 class TestMedianDecodingError:
@@ -241,7 +345,9 @@ class TestMedianDecodingError:
 
         positions = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
 
-        result = median_decoding_error(positions, positions)
+        result = median_decoding_error(
+            _space_for(positions), positions, positions, metric="euclidean"
+        )
 
         assert result == 0.0
 
@@ -253,7 +359,9 @@ class TestMedianDecodingError:
         decoded = np.array([[0.0], [0.0], [0.0], [0.0], [0.0]])
         actual = np.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
 
-        result = median_decoding_error(decoded, actual)
+        result = median_decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert result == pytest.approx(3.0)
 
@@ -265,7 +373,9 @@ class TestMedianDecodingError:
         decoded = np.array([[0.0], [0.0], [0.0], [0.0]])
         actual = np.array([[1.0], [2.0], [3.0], [4.0]])
 
-        result = median_decoding_error(decoded, actual)
+        result = median_decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert result == pytest.approx(2.5)
 
@@ -281,7 +391,9 @@ class TestMedianDecodingErrorNaNHandling:
         decoded = np.array([[0.0], [np.nan], [0.0]])
         actual = np.array([[1.0], [0.0], [3.0]])
 
-        result = median_decoding_error(decoded, actual)
+        result = median_decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert result == pytest.approx(2.0)
 
@@ -292,7 +404,9 @@ class TestMedianDecodingErrorNaNHandling:
         decoded = np.full((3, 2), np.nan)
         actual = np.full((3, 2), np.nan)
 
-        result = median_decoding_error(decoded, actual)
+        result = median_decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         assert np.isnan(result)
 
@@ -311,10 +425,14 @@ class TestEdgeCases:
         decoded = np.array([[1.0, 2.0]])
         actual = np.array([[3.0, 4.0]])
 
-        errors = decoding_error(decoded, actual)
+        errors = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
         assert errors.shape == (1,)
 
-        median = median_decoding_error(decoded, actual)
+        median = median_decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
         assert isinstance(median, (float, np.floating))
         # For single time bin, median equals the only value
         np.testing.assert_almost_equal(median, errors[0])
@@ -326,13 +444,17 @@ class TestEdgeCases:
         decoded = np.array([[0.0, 0.0], [1e6, 1e6]])
         actual = np.array([[1e6, 1e6], [0.0, 0.0]])
 
-        errors = decoding_error(decoded, actual)
+        errors = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
 
         # Both should be sqrt(2) * 1e6
         expected = np.sqrt(2) * 1e6
         np.testing.assert_array_almost_equal(errors, [expected, expected])
 
-        median = median_decoding_error(decoded, actual)
+        median = median_decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
         assert median == pytest.approx(expected)
 
     def test_high_dimensional_positions(self):
@@ -346,11 +468,15 @@ class TestEdgeCases:
         decoded = rng.uniform(0, 1, (n_time_bins, n_dims))
         actual = rng.uniform(0, 1, (n_time_bins, n_dims))
 
-        errors = decoding_error(decoded, actual)
+        errors = decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
         assert errors.shape == (n_time_bins,)
         assert np.all(errors >= 0)
 
-        median = median_decoding_error(decoded, actual)
+        median = median_decoding_error(
+            _space_for(decoded), decoded, actual, metric="euclidean"
+        )
         assert np.isfinite(median)
         assert median >= 0
 
@@ -362,7 +488,7 @@ class TestEdgeCases:
         actual = np.array([[1.0, 2.0, 3.0]])  # (1, 3) - wrong shape
 
         with pytest.raises((ValueError, IndexError)):
-            decoding_error(decoded, actual)
+            decoding_error(_space_for(decoded), decoded, actual, metric="euclidean")
 
 
 class TestConfusionMatrix:

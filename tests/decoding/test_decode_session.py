@@ -210,8 +210,7 @@ class TestDecodeSessionGoldenPath:
         true_y = np.interp(decoded_times, times, positions[:, 1])
         true_positions_at_decode = np.column_stack([true_x, true_y])
 
-        # decoding_error(decoded_positions, actual_positions)
-        errors = decoding_error(result.map_position, true_positions_at_decode)
+        errors = decoding_error(env, result.map_position, true_positions_at_decode)
         med_err = float(np.nanmedian(errors))
 
         # On a 100-cm track with 20 neurons, median error well below 25 cm
