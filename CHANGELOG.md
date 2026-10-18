@@ -1482,6 +1482,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- Geodesic `decoding_error` (and `error_against`) measures a position far
+  outside the environment from its own nearest bin. The nearest-bin lookup's
+  distance cutoff returned `-1` for it, which indexed the last bin: a decode
+  1000 cm left of a row of bins was measured from its rightmost bin.
+
 - `env.nearest_bin` checks the number of coordinates before skipping missing
   rows. An all-NaN array with the wrong number of columns returned `-1` for
   every row instead of naming the shape mistake, and a finite one failed with
