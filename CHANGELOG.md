@@ -1461,6 +1461,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- `summary_table()` and `label_cell_types()` prepare the physical wall
+  geometry once per environment instead of once per cell. For a 2,500-bin
+  arena, 100 cells take 0.35 s instead of 14.6 s and 1,000 cells 1.1 s instead
+  of about 150 s, with identical border scores. `border_score` reuses the same
+  cached geometry across calls on one environment.
+
 - Shuffle tests and other repeated `diffusion_kde` maps no longer repeat the
   environment's eigendecomposition on every call when the bandwidth is small
   for the arena. `env.diffuse` now solves that full basis once and keeps it
@@ -1537,6 +1543,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- `border_score` (and the border scores in `summary_table` and
+  `label_cell_types`) scores circular and other curved or diagonal arenas built
+  with `from_polygon`. With `boundary_source="physical"` (the default) it had
+  refused them, because the wall runs through grid cells that were not kept,
+  leaving wall pieces with no bin. Those pieces belong to the neighboring bin,
+  the same bin that owns positions there, so a border cell in a 50 cm circle
+  scores above 0.5 and a field at the center below 0. An axis-aligned grid on a
+  rotated square now scores like the same square built in its own frame
+  (within 0.05). Walls that no bin can reach still refuse.
 
 - `env.interpolate(mode="linear")` reads the edge value between the grid's
   edge and its outermost bin centers instead of NaN. Interpolation runs over

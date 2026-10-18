@@ -233,14 +233,25 @@ def test_position_footprint_inset_from_measured_walls_is_unavailable(metric):
     assert border_score(env, field, boundary_source="analysis") > 0.8
 
 
-def test_rebuilding_a_rotated_arena_cannot_report_partial_wall_coverage_as_a_score():
+def test_rebuilt_rotated_arena_owns_its_whole_wall():
+    """An axis-aligned grid on a rotated square leaves slivers along every wall;
+    their wall pieces belong to the neighboring bins, so a field over the whole
+    arena covers the whole wall instead of reporting partial coverage."""
     from shapely.affinity import rotate
+
+    from neurospatial.encoding._physical_border import physical_border_geometry
+    from neurospatial.geometry import boundary_geometry
 
     env = Environment.from_polygon(
         rotate(box(0, 0, 10, 10), 45, origin=(5, 5)), bin_size=0.2
     )
-    with pytest.raises(NotImplementedError, match="Physical-wall coverage"):
-        border_score(env, np.ones(env.n_bins))
+    walls = boundary_geometry(env.binning, env.arena, "physical")
+    geometry = physical_border_geometry(env, walls)
+    owned = [piece for pieces in geometry.contact for piece in pieces]
+    from shapely.ops import unary_union
+
+    assert unary_union(owned).length == pytest.approx(walls.length, rel=1e-9)
+    assert np.isfinite(border_score(env, np.ones(env.n_bins)))
 
 
 @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])

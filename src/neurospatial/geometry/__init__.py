@@ -113,6 +113,9 @@ from neurospatial.geometry._locators import SubsetLocator as SubsetLocator
 from neurospatial.geometry._locators import TransformedLocator as TransformedLocator
 from neurospatial.geometry._lookup import locate as locate
 from neurospatial.geometry._lookup import (
+    locate_outline_points as locate_outline_points,
+)
+from neurospatial.geometry._lookup import (
     require_position_columns as require_position_columns,
 )
 from neurospatial.geometry._lookup import require_track_width as require_track_width

@@ -102,9 +102,14 @@ def _snap_outline_slivers(
         return
     shape = np.asarray(locator.shape)
     rows = np.flatnonzero(orphan)
+    # A point on the grid's last edge lies in the last cell (closed outline).
     cells = np.column_stack(
         [
-            np.searchsorted(edge, positions[rows, axis], side="right") - 1
+            np.where(
+                positions[rows, axis] == edge[-1],
+                len(edge) - 2,
+                np.searchsorted(edge, positions[rows, axis], side="right") - 1,
+            )
             for axis, edge in enumerate(locator.edges)
         ]
     )
@@ -275,3 +280,40 @@ def require_track_width(binning: Binning, arena: Arena) -> None:
                 fix=TRACK_WIDTH_FIX,
             )
         )
+
+
+def locate_outline_points(
+    binning: Binning,
+    arena: Arena,
+    points: NDArray[np.float64],
+    indexes: LookupIndexes | None = None,
+) -> NDArray[np.intp]:
+    """Assign points of the arena's own outline, such as wall pieces, to bins.
+
+    Like :func:`locate` for a position inside the arena, without testing the
+    containment that floating-point roundoff makes unreliable on the outline
+    itself: the bin whose cell holds the point, else (in a sliver whose grid
+    cell was not kept) the neighboring bin that owns positions there, else -1.
+
+    Parameters
+    ----------
+    binning : Binning
+        Published bins and their point locator.
+    arena : Arena
+        The arena whose outline the points lie on.
+    points : ndarray of float64, shape (n_points, n_dims)
+        Points on the outline, in the environment's coordinates.
+    indexes : LookupIndexes, optional
+        The locator's search structures, as for :func:`locate`.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_points,)
+        Bin of each point, or -1 when no bin owns it.
+    """
+    points = np.asarray(points, dtype=np.float64)
+    indices = binning.locator.locate(points, indexes).astype(np.intp, copy=False)
+    _snap_outline_slivers(
+        binning, arena, points, np.ones(len(points), dtype=bool), indices
+    )
+    return indices
