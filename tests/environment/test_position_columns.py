@@ -135,6 +135,16 @@ def test_flat_positions_on_a_one_dimensional_environment_suggest_a_column():
     )
 
 
+@pytest.mark.parametrize("method", ["bin_at", "contains"])
+def test_flat_positions_are_reported_as_given(method):
+    """A flat array of several values is not silently read as one row."""
+    with pytest.raises(
+        ValueError,
+        match=r"got positions with shape \(5,\)[\s\S]*Linearized positions",
+    ):
+        getattr(_open_field(), method)(np.arange(5.0))
+
+
 def test_bin_at_still_takes_one_flat_point(env):
     np.testing.assert_array_equal(env.bin_at(env.bin_centers[1]), [1])
 

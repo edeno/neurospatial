@@ -57,8 +57,12 @@ def locate(
         If the bins lie along a track in two or more dimensions whose width
         is unknown (see :func:`require_track_width`).
     """
-    positions = np.atleast_2d(np.asarray(positions, dtype=np.float64))
-    require_position_columns(positions, binning.bins.n_dims, call=call)
+    positions = np.asarray(positions, dtype=np.float64)
+    n_dims = binning.bins.n_dims
+    if positions.shape == (n_dims,):
+        # One point given as a flat array is one row.
+        positions = positions[np.newaxis]
+    require_position_columns(positions, n_dims, call=call)
     if not arena.domain_known:
         require_track_width(binning, arena)
         return binning.locator.locate(positions, indexes).astype(np.intp, copy=False)
