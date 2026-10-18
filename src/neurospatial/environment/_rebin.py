@@ -32,6 +32,7 @@ from neurospatial.geometry import (
     Binning,
     KnownFaces,
     NativeFaces,
+    PolygonCells,
     apply_walls,
     cell_boxes,
     get_centers,
@@ -391,49 +392,69 @@ def _overlaps_bins(
     """
     inverse = np.linalg.inv(forward)
     shape = tuple(len(edge) - 1 for edge in edges)
-    covered = np.zeros(shape, dtype=bool)
-    polygons: tuple[Polygon, ...] | None = None
-    if binning.bins.n_dims == 2:
-        cells = materialize_cells(binning)
-        corners = [np.asarray(cell.exterior.coords) for cell in cells]
-        # Clipped cells are not boxes in the lattice: check their area exactly.
-        polygons = cells if binning.rectilinear is None else None
-    else:
+    n_dims = len(shape)
+    pieces = binning.shapes if isinstance(binning.shapes, PolygonCells) else None
+    # Each bin's bounds in lattice coordinates, shape (n_bins, n_dims).
+    if pieces is None:
         # Box cells recovered through subsets and transforms, such as a
         # reflected 1-D grid, which keeps neither rectilinear nor framed cells.
-        corners = cell_boxes(binning.locator)
+        corners = np.array(cell_boxes(binning.locator))  # (n_bins, 2**n_dims, n_dims)
+        local = corners @ inverse[:-1, :-1].T + inverse[:-1, -1]
+        low, high = local.min(axis=1), local.max(axis=1)
+    else:
+        coordinates, owner = shapely.get_coordinates(pieces.polygons, return_index=True)
+        local = coordinates @ inverse[:-1, :-1].T + inverse[:-1, -1]
+        low = np.full((len(pieces.polygons), n_dims), np.inf)
+        high = np.full((len(pieces.polygons), n_dims), -np.inf)
+        np.minimum.at(low, owner, local)
+        np.maximum.at(high, owner, local)
     tolerance = np.array([1e-9 * (edge[1] - edge[0]) for edge in edges])
-    for number, vertices in enumerate(corners):
-        local = vertices @ inverse[:-1, :-1].T + inverse[:-1, -1]
-        low = local.min(axis=0) + tolerance
-        high = local.max(axis=0) - tolerance
-        first = [
-            max(int(np.searchsorted(edge, value, side="right")) - 1, 0)
-            for edge, value in zip(edges, low, strict=True)
+    first = np.column_stack(
+        [
+            np.searchsorted(edge, low[:, axis] + tolerance[axis], side="right") - 1
+            for axis, edge in enumerate(edges)
         ]
-        last = [
-            min(int(np.searchsorted(edge, value, side="left")) - 1, size - 1)
-            for edge, value, size in zip(edges, high, shape, strict=True)
+    ).clip(min=0)
+    last = np.column_stack(
+        [
+            np.searchsorted(edge, high[:, axis] - tolerance[axis], side="left") - 1
+            for axis, edge in enumerate(edges)
         ]
-        if any(a > b for a, b in zip(first, last, strict=True)):
-            continue
-        block = tuple(slice(a, b + 1) for a, b in zip(first, last, strict=True))
-        if polygons is None:
-            covered[block] = True
-            continue
-        cell = polygons[number]
-        for index in itertools.product(
-            *(range(a, b + 1) for a, b in zip(first, last, strict=True))
-        ):
-            box = np.array(
-                [
-                    [edges[0][index[0] + i], edges[1][index[1] + j]]
-                    for i, j in ((0, 0), (1, 0), (1, 1), (0, 1))
-                ]
-            )
-            world = Polygon(box @ forward[:-1, :-1].T + forward[:-1, -1])
-            if cell.intersection(world).area > 1e-9 * world.area:
-                covered[index] = True
+    ).clip(max=np.array(shape) - 1)
+    spans = np.all(first <= last, axis=1)
+    whole = spans.copy()
+    if pieces is not None:
+        # A clipped piece that is not a whole lattice box can touch a cell
+        # of its bounding block without overlapping it: check those exactly.
+        box_volume = np.prod(high - low, axis=1) * abs(np.linalg.det(forward[:-1, :-1]))
+        areas = shapely.area(np.asarray(pieces.polygons, dtype=object))
+        whole &= areas >= box_volume * (1 - 1e-9)
+    # Mark every bin's block of cells at once with a difference array.
+    marks = np.zeros(tuple(size + 1 for size in shape), dtype=np.intp)
+    for upper in itertools.product((False, True), repeat=n_dims):
+        ends = np.where(upper, last[whole] + 1, first[whole])
+        np.add.at(marks, tuple(ends.T), (-1) ** sum(upper))
+    for axis in range(n_dims):
+        marks = np.cumsum(marks, axis=axis)
+    covered = marks[tuple(slice(0, size) for size in shape)] > 0
+    if pieces is not None:
+        for number in np.flatnonzero(spans & ~whole):
+            cell = pieces.polygons[number]
+            for index in itertools.product(
+                *(
+                    range(a, b + 1)
+                    for a, b in zip(first[number], last[number], strict=True)
+                )
+            ):
+                box = np.array(
+                    [
+                        [edges[0][index[0] + i], edges[1][index[1] + j]]
+                        for i, j in ((0, 0), (1, 0), (1, 1), (0, 1))
+                    ]
+                )
+                world = Polygon(box @ forward[:-1, :-1].T + forward[:-1, -1])
+                if cell.intersection(world).area > 1e-9 * world.area:
+                    covered[index] = True
     return covered
 
 
