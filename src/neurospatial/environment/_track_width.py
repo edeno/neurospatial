@@ -3,26 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
-from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment._publication import _Derivation
-from neurospatial.geometry import Arena, Binning, TrackArena, _TransformedArena
-
-
-def _centerline(arena: Arena) -> NDArray[np.float64] | None:
-    """Return a track arena's centerline segments in its current coordinates."""
-    if isinstance(arena, TrackArena):
-        return arena.segments
-    if isinstance(arena, _TransformedArena):
-        segments = _centerline(arena.base)
-        if segments is None:
-            return None
-        forward = arena.forward
-        return np.asarray(
-            segments @ forward[:-1, :-1].T + forward[:-1, -1], dtype=np.float64
-        )
-    return None
+from neurospatial.geometry import Arena, Binning, TrackArena, track_in_frame
 
 
 def _with_track_width(binning: Binning, arena: Arena, width: float) -> _Derivation:
@@ -51,8 +35,8 @@ def _with_track_width(binning: Binning, arena: Arena, width: float) -> _Derivati
     ValueError
         If ``width`` is not a finite positive number.
     """
-    segments = _centerline(arena)
-    if binning.linearization is None or segments is None:
+    track = track_in_frame(arena)
+    if binning.linearization is None or track is None:
         what = (
             "it is not a linearized track"
             if binning.linearization is None
@@ -86,5 +70,5 @@ def _with_track_width(binning: Binning, arena: Arena, width: float) -> _Derivati
             )
         )
     return _Derivation(
-        binning, "with_track_width", arena=TrackArena(segments, width=width)
+        binning, "with_track_width", arena=TrackArena(track.segments, width=width)
     )
