@@ -9,7 +9,7 @@ from dataclasses import replace
 import networkx as nx
 import numpy as np
 import pytest
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
@@ -29,6 +29,7 @@ from neurospatial.environment._fields import face_geometry
 from neurospatial.geometry._components import Outline
 from neurospatial.layout import create_layout
 from neurospatial.ops.calculus import divergence, gradient
+from neurospatial.ops.transforms import AffineND
 from neurospatial.regions import Regions
 
 
@@ -1111,3 +1112,60 @@ def test_reserved_layout_labels_are_refused(kind, factory):
 )
 def test_bin_labels_are_spelled_canonically_or_kept(kind, label):
     assert Environment.from_bins(_grid_binning(kind)).layout_type == label
+
+
+def _cell_descriptions():
+    """A binning of each cell description, without face geometry."""
+
+    def own(env):
+        return replace(env.binning, faces=MissingFaces("Not under test."))
+
+    mask = np.ones((3, 3), dtype=bool)
+    grid = Environment.from_grid_mask(mask, grid_edges=(np.arange(4.0),) * 2)
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(6.0, 0.0))
+    graph.add_edge(0, 1, distance=6.0)
+    track = Environment.from_graph(
+        graph, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0, track_width=1.0
+    )
+    hexagons = Environment.from_layout(
+        create_layout("Hexagonal", hexagon_width=1.0, dimension_ranges=[(0, 3), (0, 3)])
+    )
+    rotation = np.eye(3)
+    rotation[:2, :2] = [[0.0, -1.0], [1.0, 0.0]]
+    framed = grid.apply_transform(AffineND(rotation))
+    polygons = grid.clip(Polygon([(0, 0), (3, 0), (0, 3)]))
+    return {
+        name: own(env)
+        for name, env in {
+            "grid": grid,
+            "track": track,
+            "hexagons": hexagons,
+            "framed": framed,
+            "polygons": polygons,
+        }.items()
+    }
+
+
+@pytest.mark.parametrize(
+    "base,component,source",
+    [
+        ("grid", "linearization", "track"),
+        ("track", "rectilinear", "grid"),
+        ("hexagons", "rectilinear", "grid"),
+        ("grid", "shapes", "hexagons"),
+        ("grid", "shapes", "polygons"),
+        ("polygons", "rectilinear", "grid"),
+        ("framed", "shapes", "hexagons"),
+        ("track", "shapes", "hexagons"),
+        ("polygons", "grid_frame", "framed"),
+    ],
+)
+def test_bins_carry_one_cell_description(base, component, source):
+    """Drawing and cell geometry read one description: a second one is refused."""
+    binnings = _cell_descriptions()
+    Environment.from_bins(binnings[base])  # each description alone is accepted
+    mixed = replace(binnings[base], **{component: getattr(binnings[source], component)})
+    with pytest.raises(ValueError, match=r"locator|shapes\.centers"):
+        Environment.from_bins(mixed)
