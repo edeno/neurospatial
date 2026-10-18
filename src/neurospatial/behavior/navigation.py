@@ -1173,7 +1173,7 @@ def heading_direction_labels(
     speed: NDArray[np.float64] | None = None,
     heading: NDArray[np.float64] | None = None,
     n_directions: int = 8,
-    min_speed: float = 5.0,
+    min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> NDArray[np.object_]:
@@ -1194,7 +1194,10 @@ def heading_direction_labels(
         Precomputed heading angle in radians.
     n_directions : int, default=8
         Number of direction bins. Default 8 creates 45 deg bins.
-    min_speed : float, default=5.0
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
+        with positions in cm): this function sees no environment, so it
+        cannot know the positions' unit.
         Minimum speed threshold below which a sample is labeled "stationary".
         In the same spatial-units-per-second as ``positions``/``times`` (e.g.
         cm/s if positions are in cm). The 5.0 default assumes cm/s.
@@ -1874,7 +1877,7 @@ def instantaneous_goal_alignment(
     positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
-    min_speed: float = 5.0,
+    min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> NDArray[np.float64]:
@@ -1888,7 +1891,10 @@ def instantaneous_goal_alignment(
         Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
-    min_speed : float, default=5.0
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
+        with positions in cm): this function sees no environment, so it
+        cannot know the positions' unit.
         Minimum speed threshold in environment units per second.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
@@ -1957,7 +1963,7 @@ def goal_bias(
     positions: NDArray[np.float64],
     goal: NDArray[np.float64],
     *,
-    min_speed: float = 5.0,
+    min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
 ) -> float:
@@ -1971,7 +1977,10 @@ def goal_bias(
         Position coordinates.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
-    min_speed : float, default=5.0
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
+        with positions in cm): this function sees no environment, so it
+        cannot know the positions' unit.
         Speed threshold in position units per second. Samples slower than this
         are excluded from the mean.
     max_gap : float or None, default=0.5
@@ -2144,7 +2153,7 @@ def compute_goal_directed_metrics(
     goal: NDArray[np.float64],
     *,
     metric: Literal["geodesic", "euclidean"] = "euclidean",
-    min_speed: float = 5.0,
+    min_speed: float | None = None,
     goal_radius: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -2163,7 +2172,10 @@ def compute_goal_directed_metrics(
         Goal position.
     metric : {"geodesic", "euclidean"}, default="euclidean"
         Distance metric for approach rate and distance computations.
-    min_speed : float, default=5.0
+    min_speed : float or None, default=None
+        In position units per second. None is 5 cm/s expressed in
+        ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
+        units that are not a metric length, pass it explicitly.
         Minimum speed for valid heading (units/s).
     goal_radius : float, optional
         Radius for goal arrival detection.
@@ -2208,6 +2220,11 @@ def compute_goal_directed_metrics(
     )
     goal = np.asarray(goal)
 
+    from neurospatial.behavior._kinematics import resolve_min_speed
+
+    min_speed = resolve_min_speed(
+        env, min_speed, call="compute_goal_directed_metrics()"
+    )
     bias = goal_bias(
         times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
     )

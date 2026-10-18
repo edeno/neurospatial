@@ -224,7 +224,11 @@ def test_pre_decision_window_stays_in_run(pause_track):
     np.testing.assert_array_equal(times, r.times[1000:1005])
     np.testing.assert_array_equal(positions, r.positions[1000:1005])
     metrics = compute_pre_decision_metrics(
-        r.times, r.positions, entry_time=1100.5, window_duration=1001
+        r.times,
+        r.positions,
+        entry_time=1100.5,
+        window_duration=1001,
+        min_speed=5.0,
     )
     assert metrics.n_samples == 5
     assert metrics.window_duration <= 0.5
@@ -247,12 +251,14 @@ def test_entry_outside_observed_runs_has_empty_window(pause_track, entry):
 )
 def test_window_callers_forward_epochs(pause_track, function):
     r = pause_track
+    speed_gate = {} if function is extract_pre_decision_window else {"min_speed": 5.0}
     result = function(
         r.times,
         r.positions,
         entry_time=1100.5,
         window_duration=1001,
         epochs=(0, 100),
+        **speed_gate,
     )
     if function is extract_pre_decision_window:
         assert result[1].size == 0
@@ -266,7 +272,11 @@ def test_window_callers_forward_epochs(pause_track, function):
 def test_vte_trial_uses_only_entry_run(pause_track):
     r = pause_track
     result = compute_vte_trial(
-        r.times, r.positions, entry_time=1100.5, window_duration=1001
+        r.times,
+        r.positions,
+        entry_time=1100.5,
+        window_duration=1001,
+        min_speed=5.0,
     )
     assert result.mean_speed == 0
     assert result.min_speed == 0

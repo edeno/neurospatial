@@ -141,7 +141,11 @@ def test_geodesic_steps_preserve_missing_positions(missing):
 def test_absent_pre_decision_evidence_cannot_label_deliberation(entry):
     times = np.array([0.0, 0.1, 10.0, 10.1])
     result = compute_pre_decision_metrics(
-        times, np.c_[times, np.zeros(len(times))], entry, 1.0
+        times,
+        np.c_[times, np.zeros(len(times))],
+        entry,
+        1.0,
+        min_speed=5.0,
     )
     assert not result.is_valid
     assert not result.suggests_deliberation()
@@ -151,7 +155,9 @@ def test_absent_pre_decision_evidence_cannot_label_deliberation(entry):
 
 def test_stationary_tracking_is_not_head_scanning():
     times = np.arange(21) / 10
-    result = compute_pre_decision_metrics(times, np.ones((21, 2)), 2.0, 1.0)
+    result = compute_pre_decision_metrics(
+        times, np.ones((21, 2)), 2.0, 1.0, min_speed=5.0
+    )
     assert result.mean_speed == 0.0
     assert not result.is_valid
     assert not result.suggests_deliberation()

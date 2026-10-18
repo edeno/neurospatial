@@ -560,6 +560,7 @@ class TestComputeDecisionAnalysis:
             decision_region="center",
             goal_regions=["left", "right"],
             pre_window=1.0,
+            min_speed=5.0,
         )
 
         # Should choose right (index 1)
@@ -720,6 +721,7 @@ class TestErrorHandling:
                 positions,
                 decision_region="nonexistent",
                 goal_regions=["left", "right"],
+                min_speed=5.0,
             )
 
     def test_mismatched_array_lengths(self, t_maze_environment):
@@ -737,6 +739,7 @@ class TestErrorHandling:
                 positions,
                 decision_region="center",
                 goal_regions=["left", "right"],
+                min_speed=5.0,
             )
 
 
@@ -745,7 +748,7 @@ def test_pre_decision_heading_stats_excludes_stationary(east_stop_north):
 
     positions, times = east_stop_north
     np.testing.assert_allclose(
-        pre_decision_heading_stats(times, positions),
+        pre_decision_heading_stats(times, positions, min_speed=5.0),
         # 11 eastward samples (the stop's first sample still moves) and 10
         # northward ones
         [0.7378, 0.2921, 0.7079],
@@ -757,7 +760,7 @@ def test_pre_decision_heading_stats_all_stationary():
     from neurospatial.behavior import pre_decision_heading_stats
 
     assert np.isnan(
-        pre_decision_heading_stats(np.arange(10) / 10, np.ones((10, 2)))
+        pre_decision_heading_stats(np.arange(10) / 10, np.ones((10, 2)), min_speed=5.0)
     ).all()
 
 
@@ -788,7 +791,12 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
     positions = np.c_[np.linspace(5.0, 95.0, times.size), np.full(times.size, 5.0)]
 
     result = compute_decision_analysis(
-        env, times, positions, decision_region="middle", goal_regions=["west", "east"]
+        env,
+        times,
+        positions,
+        decision_region="middle",
+        goal_regions=["west", "east"],
+        min_speed=5.0,
     )
 
     trial = Trial(times[0], times[-1], "west", "east", True)

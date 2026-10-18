@@ -114,7 +114,12 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
         ),
         "compute_decision_analysis": (
             lambda value: compute_decision_analysis(
-                env, times, positions, decision_region="reward", goal_regions=value
+                env,
+                times,
+                positions,
+                decision_region="reward",
+                goal_regions=value,
+                min_speed=5.0,
             ),
             ["rewrd"],
             "pass goal_regions=['reward']",

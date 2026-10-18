@@ -66,8 +66,16 @@ def test_old_order_raises(name, recording):
         "extract_pre_decision_window",
     }:
         kwargs.update(entry_time=5.0, window_duration=2.0)
-    if name == "segment_by_velocity":
-        kwargs["min_speed"] = 5.0
+    if name in {
+        "segment_by_velocity",
+        "compute_pre_decision_metrics",
+        "compute_vte_trial",
+        "goal_bias",
+        "head_sweep_from_positions",
+        "instantaneous_goal_alignment",
+        "pre_decision_heading_stats",
+    }:
+        kwargs["min_speed"] = 5.0  # required: no environment gives the units
     if name == "time_efficiency":
         kwargs.update(reference_speed=20.0, optimal_distance=50.0)
     if name == "compute_trajectory_curvature":

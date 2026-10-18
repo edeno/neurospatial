@@ -963,6 +963,7 @@ def test_session_window_clamped_to_trial_start(zig_zag_then_run):
             decision_region="decision",
             trials=[Trial(5.0, 9.9, "start", "decision", True)],
             window_duration=1.0,
+            min_speed=5.0,
         )
 
     (trial,) = result.trial_results
@@ -988,6 +989,7 @@ def test_session_warns_when_trial_window_too_short(zig_zag_then_run):
             decision_region="decision",
             trials=[Trial(5.2, 9.9, "start", "decision", True)],
             window_duration=1.0,
+            min_speed=5.0,
         )
 
     assert result.trial_results == []
