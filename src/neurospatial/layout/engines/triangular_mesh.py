@@ -4,7 +4,6 @@ import math
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial import Delaunay
@@ -22,14 +21,15 @@ from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_triangles
 from neurospatial.layout.base import capture_build_params
+from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.triangular_mesh import (
-    _build_mesh_connectivity_graph,
     _filter_active_simplices_by_centroid,
     _generate_interior_points_for_mesh,
     _sample_polygon_boundary,
     _triangulate_points,
+    mesh_pairs,
 )
-from neurospatial.layout.validation import validate_connectivity_graph
+from neurospatial.layout.mixins import _NeighborPairsMixin
 
 if TYPE_CHECKING:
     import matplotlib.axes
@@ -38,7 +38,7 @@ _MESH_SKEW_ANGLE_DEG = 30.0
 _MESH_SKEW_FRACTION = 0.05
 
 
-class TriangularMeshLayout:
+class TriangularMeshLayout(_NeighborPairsMixin):
     """A LayoutEngine that builds a triangular mesh over interior points
     (auto-generated) clipped to a boundary polygon. Each triangle whose centroid
     lies inside the polygon is kept as an active bin. Connectivity by shared faces.
@@ -48,7 +48,6 @@ class TriangularMeshLayout:
     _build_params_used: dict[str, Any]
 
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph
     dimension_ranges: Sequence[tuple[float, float]] | None
     grid_edges: tuple[()]  # Explicitly empty tuple for non-grid
     grid_shape: tuple[int, ...] | None
@@ -65,7 +64,6 @@ class TriangularMeshLayout:
 
     def __init__(self) -> None:
         self.bin_centers = np.empty((0, 2), dtype=float)
-        self.connectivity = nx.Graph()
         self.dimension_ranges = None
         self.grid_edges = ()  # For non-grid layouts, this is typically empty
         self.grid_shape = None
@@ -153,16 +151,11 @@ class TriangularMeshLayout:
         # 5. Populate core attributes for active triangles
         self.bin_centers = all_centroids[active_original_indices]
 
-        # 6. Build connectivity graph for active triangles
-        self.connectivity = _build_mesh_connectivity_graph(
-            active_original_indices,
-            all_centroids,
-            self._original_simplex_to_active_idx_map,
-            self._full_delaunay_tri,
+        # 6. Pair active triangles that share a side
+        pairs = mesh_pairs(active_original_indices, self._full_delaunay_tri.neighbors)
+        self._set_neighbor_pairs(
+            pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
-
-        # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=2)
 
         # 7. Cell extent: the mesh boundary's bounds
         self.dimension_ranges = component_extent(
@@ -224,8 +217,10 @@ class TriangularMeshLayout:
         tri = self._full_delaunay_tri
         if tri is None or self._active_original_simplex_indices is None:
             raise LayoutNotBuiltError(type(self).__name__, "_full_delaunay_tri")
+        pairs, distances = self._neighbor_pairs()
         return assemble_binning(
-            self.connectivity,
+            pairs,
+            distances,
             kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
@@ -299,7 +294,6 @@ class TriangularMeshLayout:
             self._full_delaunay_tri is None
             or self._active_original_simplex_indices is None
             or self.bin_centers is None
-            or self.connectivity is None
             or self.dimension_ranges is None
         ):
             raise LayoutNotBuiltError(
@@ -310,7 +304,6 @@ class TriangularMeshLayout:
                         "_full_delaunay_tri",
                         "_active_original_simplex_indices",
                         "bin_centers",
-                        "connectivity",
                         "dimension_ranges",
                     )
                     if getattr(self, name) is None

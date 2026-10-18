@@ -208,28 +208,27 @@ class TestPublishedGeometryIsReadOnly:
             )
 
     @pytest.mark.parametrize("container", [list, np.array])
-    def test_published_graph_owns_coordinate_index_and_vector_values(
-        self, container
-    ) -> None:
+    def test_published_graph_ignores_edits_to_the_engine_graph(self, container) -> None:
         from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
         layout = MaskedGridLayout()
         layout.build(
             active_mask=np.ones((3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 2
         )
-        graph = layout.connectivity.copy()
+        graph = layout.connectivity
         pos = container(graph.nodes[0]["pos"])
         index = container(graph.nodes[0]["original_grid_nd_index"])
         vector = container(graph.edges[0, 1]["vector"])
         graph.nodes[0]["pos"] = pos
         graph.nodes[0]["original_grid_nd_index"] = index
         graph.edges[0, 1]["vector"] = vector
-        layout.connectivity = graph
+        pos[0] = index[0] = vector[0] = 99
+        graph.remove_edge(0, 3)
         published = publish_environment(
             name="", layout=layout, layout_type_used=layout.layout_type
         )
 
-        pos[0] = index[0] = vector[0] = 99
+        assert published.connectivity.has_edge(0, 3)
         assert tuple(published.connectivity.nodes[0]["pos"]) == (0.5, 0.5)
         assert tuple(published.connectivity.nodes[0]["original_grid_nd_index"]) == (
             0,

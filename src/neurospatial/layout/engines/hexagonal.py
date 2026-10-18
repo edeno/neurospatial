@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -12,20 +11,21 @@ from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_hexagons
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.hexagonal import (
-    _create_hex_connectivity_graph,
     _create_hex_grid,
     _infer_active_bins_from_hex_grid,
+    hex_grid_pairs,
 )
+from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
 from neurospatial.layout.helpers.utils import (
     check_grid_size_safety,
 )
-from neurospatial.layout.validation import validate_connectivity_graph
+from neurospatial.layout.mixins import _NeighborPairsMixin
 
 if TYPE_CHECKING:
     import matplotlib.axes
 
 
-class HexagonalLayout:
+class HexagonalLayout(_NeighborPairsMixin):
     """2D layout that tiles a rectangular area with a hexagonal lattice.
 
     Bin centers are the centers of the hexagons. Hexagons are connected to their
@@ -34,7 +34,6 @@ class HexagonalLayout:
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
 
     grid_edges: tuple[NDArray[np.float64], ...] | None = ()
@@ -57,7 +56,6 @@ class HexagonalLayout:
         """Initialize a HexagonalLayout engine."""
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2))
-        self.connectivity = None
         self.dimension_ranges = None
         self.grid_edges = ()
         self.grid_shape = None
@@ -159,20 +157,16 @@ class HexagonalLayout:
 
         self.bin_centers = full_grid_bin_centers[active_bin_original_flat_indices]
 
-        self.connectivity = _create_hex_connectivity_graph(
-            active_original_flat_indices=active_bin_original_flat_indices,
-            full_grid_bin_centers=full_grid_bin_centers,
-            centers_shape=self.grid_shape,
+        pairs = hex_grid_pairs(active_bin_original_flat_indices, self.grid_shape)
+        self._set_neighbor_pairs(
+            pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
-
-        # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=2)
         # The extent of the active hexagons, corners included.
         self.dimension_ranges = component_extent(shapes=self.bin_shapes())
 
         self._source_flat_to_active_id_map = {
-            data["source_grid_flat_index"]: node_id
-            for node_id, data in self.connectivity.nodes(data=True)
+            source: node_id
+            for node_id, source in enumerate(active_bin_original_flat_indices.tolist())
         }
         self._build_locator()
 
@@ -213,10 +207,10 @@ class HexagonalLayout:
         LayoutNotBuiltError
             If the layout has not been built.
         """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        pairs, distances = self._neighbor_pairs()
         return assemble_binning(
-            self.connectivity,
+            pairs,
+            distances,
             kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),

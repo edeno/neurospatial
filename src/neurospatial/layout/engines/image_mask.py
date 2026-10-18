@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from typing import Any
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -25,7 +24,6 @@ class ImageMaskLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
 
     grid_edges: tuple[NDArray[np.float64], ...] | None = None
@@ -39,7 +37,6 @@ class ImageMaskLayout(_GridMixin):
         """Initialize an ImageMaskLayout engine."""
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 2), dtype=np.float64)
-        self.connectivity = None
         self.dimension_ranges = None
         self.grid_edges = None
         self.grid_shape = None

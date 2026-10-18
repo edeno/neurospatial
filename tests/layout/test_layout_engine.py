@@ -6,8 +6,9 @@ import pytest
 from shapely.geometry import Polygon as ShapelyPoly
 from shapely.geometry import box
 
-from neurospatial import Regions
+from neurospatial import LayoutNotBuiltError, Regions
 from neurospatial.environment import Environment
+from neurospatial.geometry import graph_from_binning
 from neurospatial.layout.base import LayoutEngine
 from neurospatial.layout.factories import (
     create_layout,
@@ -462,6 +463,38 @@ def test_layout_engine_protocol_adherence(
     assert binning.faces.available
     np.testing.assert_array_equal(binning.faces.build().edges, binning.bins.pairs)
     assert (binning.linearization is not None) == layout.is_linearized_track
+
+
+@pytest.mark.parametrize("layout_kind", list_available_layouts())
+def test_engine_connectivity_is_derived_from_its_binning(
+    layout_kind: str, simple_graph_for_layout: nx.Graph
+):
+    """``connectivity`` is the binning's graph, built once per build, never fed back."""
+    params = MINIMAL_BUILD_PARAMS[layout_kind].copy()
+    if layout_kind == "Graph":
+        params["graph_definition"] = simple_graph_for_layout
+        params["edge_order"] = list(simple_graph_for_layout.edges())
+    layout = create_layout(layout_kind, **params)
+    unbuilt = type(layout)()
+    with pytest.raises(LayoutNotBuiltError):
+        _ = unbuilt.connectivity
+
+    graph = layout.connectivity
+    expected = graph_from_binning(layout.binning())
+    assert type(graph) is nx.Graph
+    assert list(graph.nodes(data=True)) == list(expected.nodes(data=True))
+    assert list(graph.edges(data=True)) == list(expected.edges(data=True))
+    assert layout.connectivity is graph
+
+    # The graph is a convenience copy: editing it leaves the bins unchanged.
+    pairs = layout.binning().bins.pairs
+    graph.remove_edges_from(list(graph.edges))
+    np.testing.assert_array_equal(layout.binning().bins.pairs, pairs)
+
+    # Building again replaces the graph.
+    layout.build(**params)
+    assert layout.connectivity is not graph
+    assert layout.connectivity.number_of_edges() == len(pairs)
 
 
 def test_located_bin_dtype_is_intp():

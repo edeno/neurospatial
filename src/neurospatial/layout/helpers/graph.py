@@ -6,9 +6,8 @@ such as an animal's track in an experiment. These functions handle:
 
 - Discretizing a linearized graph track into 1D bins, accounting for edge
   lengths and specified spacing between segments (`_get_graph_bins`).
-- Creating a connectivity graph from these binned segments, where nodes
-  represent active 1D bin centers and edges connect adjacent bins
-  (`_create_graph_layout_connectivity_graph`).
+- Pairing adjacent bins of these binned segments, along each segment and
+  across the track-graph nodes where segments meet (`track_pairs`).
 - Projecting 1D linearized positions back to their corresponding N-D
   coordinates on the original track graph (`project_1d_to_2d`).
 - Finding the appropriate 1D bin index for a given linear position
@@ -17,8 +16,6 @@ such as an animal's track in an experiment. These functions handle:
 These utilities are primarily used by the `GraphLayout` engine.
 """
 
-import itertools
-import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -26,6 +23,10 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.layout.helpers.neighbor_pairs import (
+    euclidean_pair_distances,
+    order_neighbor_pairs,
+)
 from neurospatial.layout.helpers.utils import get_centers
 
 Edge = tuple[Any, Any]
@@ -163,28 +164,27 @@ def _get_graph_bins(
     return bin_centers_1d, (bin_edges_arr,), active_mask_1d, edge_ids_for_active_bins
 
 
-def _create_graph_layout_connectivity_graph(
+def track_pairs(
     graph: nx.Graph,
     bin_centers_nd: NDArray[np.float64],
-    linear_bin_centers: NDArray[np.float64],
     original_edge_ids: NDArray[np.int_],
     edge_order: list[tuple[object, object]],
-) -> nx.Graph:
-    """Create a connectivity graph from binned graph segments.
+) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
+    """Pair adjacent bins of a binned track, along and between its segments.
 
-    Nodes in the connectivity graph represent centers of active bins.
-    Edges connect adjacent bins, both within the same original graph edge
-    (intra-segment) and between bins at a junction of original graph edges
-    (inter-segment).
+    Bins on the same track segment (original graph edge) are paired with the
+    next bin along it, segment by segment in order of first appearance. Then,
+    at each track-graph node, the end bins of the segments that meet there
+    are paired in ``edge_order`` order. The proposals are put in
+    authoritative order by
+    :func:`~neurospatial.layout.helpers.neighbor_pairs.order_neighbor_pairs`.
 
     Parameters
     ----------
     graph : networkx.Graph
-        The original graph from which bins were derived.
-    bin_centers_nd : NDArray[np.float64], shape (n_active_bins, 2)
+        The track graph from which bins were derived.
+    bin_centers_nd : NDArray[np.float64], shape (n_active_bins, n_dims)
         n-D coordinates of the centers of active bins.
-    linear_bin_centers : NDArray[np.float64], shape (n_total_bins,)
-        1D coordinates of all bin centers (active and inactive).
     original_edge_ids : NDArray[np.int_], shape (n_active_bins,)
         Integer IDs of the original graph edge for each active bin.
     edge_order : list of tuples
@@ -193,132 +193,41 @@ def _create_graph_layout_connectivity_graph(
 
     Returns
     -------
-    networkx.Graph
-        A new graph where nodes are indexed `0` to `n_active_bins - 1`.
-        Node attributes:
-        - 'pos': tuple (x, y, ...), N-D position of the active bin center.
-        - 'source_grid_flat_index': int, Original flat index of this bin in
-          the `linear_bin_centers_all` array (the 1D "grid").
-        - 'original_grid_nd_index': tuple (int,), N-D (here, 1D) index in
-          the `linear_bin_centers_all` array.
-        - 'pos_1D': float, 1D linearized position of the active bin center.
-        - 'source_edge_id': int, ID of the original graph edge this bin is on.
-        Edge attributes:
-        - 'distance': float, Euclidean distance between connected N-D bin centers.
-        - 'vector': tuple, Displacement vector in N-D.
-        - 'angle_2d': float, (For 2D) angle of the displacement vector.
-        - 'edge_id': int, Unique ID for this edge within the connectivity graph.
+    pairs : ndarray of intp, shape (n_pairs, 2)
+        Pairs ``(lower, higher)`` of bin IDs in authoritative order.
+    distances : ndarray of float64, shape (n_pairs,)
+        Euclidean distance between the n-D centers of each pair.
 
     """
-    # Create a new graph
-    connectivity_graph = nx.Graph()
+    # --- 1. Intra-segment pairs: consecutive bins on the same original edge ---
+    _, first_bin, segment = np.unique(
+        original_edge_ids, return_index=True, return_inverse=True
+    )
+    # Rank segments by their first bin so they are visited in track order.
+    rank = np.argsort(np.argsort(first_bin))[segment.ravel()]
+    by_segment = np.argsort(rank, kind="stable")
+    ranks = rank[by_segment]
+    same = ranks[1:] == ranks[:-1]
+    first = [by_segment[:-1][same]]
+    second = [by_segment[1:][same]]
+    starts = np.flatnonzero(np.r_[True, ~same])
+    ends = np.r_[starts[1:] - 1, len(by_segment) - 1]
+    bin_edge_order_arr = np.column_stack((by_segment[starts], by_segment[ends]))
 
-    # --- 1. Add Nodes (representing active bin centers) ---
-    nodes_to_add = []
-
-    bin_ind = np.arange(len(linear_bin_centers))
-
-    # Add active bin centers to the graph
-    for node_id, (center_2d, center_1d, original_edge_id, b_ind) in enumerate(
-        zip(
-            bin_centers_nd,
-            linear_bin_centers,
-            original_edge_ids,
-            bin_ind,
-            strict=False,
-        ),
-    ):
-        nodes_to_add.append(
-            (
-                int(node_id),
-                {
-                    "pos": tuple(center_2d),
-                    "source_grid_flat_index": b_ind,
-                    "original_grid_nd_index": np.unravel_index(
-                        b_ind,
-                        linear_bin_centers.shape,
-                    ),
-                    "pos_1D": center_1d,
-                    "source_edge_id": original_edge_id,
-                },
-            ),
-        )
-    connectivity_graph.add_nodes_from(nodes_to_add)
-
-    # --- 2. Add Intra-Segment Edges (connecting bins on the same original edge) ---
-    edges_to_add = []
-    _, sort_ind = np.unique(original_edge_ids, return_index=True)
-    unsorted_unique_edge_ids = [int(original_edge_ids[ind]) for ind in sorted(sort_ind)]
-    bin_edge_order = []
-    for original_edge_id in unsorted_unique_edge_ids:
-        edge_active_bin_ind = np.where(np.isin(original_edge_ids, original_edge_id))[0]
-
-        for bin_ind1, bin_ind2 in itertools.pairwise(edge_active_bin_ind):
-            displacement_vector = bin_centers_nd[bin_ind1] - bin_centers_nd[bin_ind2]
-            dist = float(np.linalg.norm(displacement_vector))
-
-            edge_attrs = {
-                "distance": dist,
-                "vector": tuple(displacement_vector.tolist()),
-            }
-            # Only compute angle_2d for 2D or higher dimensional data
-            if len(displacement_vector) >= 2:
-                edge_attrs["angle_2d"] = math.atan2(
-                    displacement_vector[1],
-                    displacement_vector[0],
-                )
-
-            edges_to_add.append(
-                (
-                    int(bin_ind1),
-                    int(bin_ind2),
-                    edge_attrs,
-                ),
-            )
-
-        bin_edge_order.append(
-            (int(edge_active_bin_ind[0]), int(edge_active_bin_ind[-1])),
-        )
-    connectivity_graph.add_edges_from(edges_to_add)
-    bin_edge_order_arr: NDArray[np.int_] = np.asarray(bin_edge_order, dtype=int)
-
-    # --- 3. Add Inter-Segment Edges (connecting end/start bins of adjacent original edges) ---
+    # --- 2. Inter-segment pairs: end bins of the segments meeting at a node ---
     edge_order_array = np.asarray(edge_order)
-    bins_to_connect = []
     for node_id in graph.nodes:
         connections = bin_edge_order_arr[edge_order_array == node_id]
-        if len(connections) > 1:
-            for i in range(len(connections) - 1):
-                displacement_vector = (
-                    bin_centers_nd[connections[i]] - bin_centers_nd[connections[i + 1]]
-                )
-                edge_attrs = {
-                    "distance": float(np.linalg.norm(displacement_vector)),
-                    "vector": tuple(displacement_vector.tolist()),
-                }
-                # Only compute angle_2d for 2D or higher dimensional data
-                if len(displacement_vector) >= 2:
-                    edge_attrs["angle_2d"] = math.atan2(
-                        displacement_vector[1],
-                        displacement_vector[0],
-                    )
+        first.append(connections[:-1])
+        second.append(connections[1:])
 
-                bins_to_connect.append(
-                    (
-                        int(connections[i]),
-                        int(connections[i + 1]),
-                        edge_attrs,
-                    ),
-                )
-    connectivity_graph.add_edges_from(bins_to_connect)
-
-    # Add edge IDs to the graph
-    # This is a unique ID for each edge in the graph, starting from 0
-    # and incrementing by 1 for each edge
-    for edge_id_counter, (u, v) in enumerate(connectivity_graph.edges()):
-        connectivity_graph.edges[u, v]["edge_id"] = edge_id_counter
-
-    return connectivity_graph
+    lower = np.concatenate(first).astype(np.intp)
+    upper = np.concatenate(second).astype(np.intp)
+    return order_neighbor_pairs(
+        lower,
+        upper,
+        euclidean_pair_distances(bin_centers_nd, np.column_stack((lower, upper))),
+    )
 
 
 def _find_bin_for_linear_position(

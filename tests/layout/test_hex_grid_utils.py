@@ -1,4 +1,3 @@
-import networkx as nx
 import numpy as np
 import pytest
 
@@ -124,33 +123,23 @@ def test_get_hex_grid_neighbor_deltas():
         assert isinstance(delta, tuple) and len(delta) == 2
 
 
-def test_create_hex_connectivity_graph():
-    # Create a small grid and mark all bins as active
-    positions = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.float64)
+def test_hex_grid_pairs_join_hexagons_one_width_apart():
+    """Neighbor hexagons are exactly the pairs one hexagon width apart."""
+    positions = np.array([[0, 0], [5, 0], [0, 5], [5, 5]], dtype=np.float64)
     bin_centers, centers_shape, _hex_radius, _, _min_x, _min_y, _ = (
         hgu._create_hex_grid(positions, hexagon_width=1.0)
     )
-    n_bins = bin_centers.shape[0]
-    active_indices = np.arange(n_bins, dtype=int)
-    G = hgu._create_hex_connectivity_graph(active_indices, bin_centers, centers_shape)
-    assert isinstance(G, nx.Graph)
-    assert G.number_of_nodes() == n_bins
-    # Each node should have 'pos', 'source_grid_flat_index', 'original_grid_nd_index'
-    for node in G.nodes:
-        attrs = G.nodes[node]
-        assert (
-            "pos" in attrs
-            and "source_grid_flat_index" in attrs
-            and "original_grid_nd_index" in attrs
-        )
-    # Edges should have 'distance', 'vector', 'angle_2d', 'edge_id'
-    for _u, _v, attrs in G.edges(data=True):
-        assert (
-            "distance" in attrs
-            and "vector" in attrs
-            and "angle_2d" in attrs
-            and "edge_id" in attrs
-        )
+    active = np.flatnonzero(np.random.default_rng(0).random(len(bin_centers)) < 0.7)
+    centers = bin_centers[active]
+    gaps = np.linalg.norm(centers[:, None] - centers[None], axis=-1)
+    expected = {tuple(pair) for pair in np.argwhere(np.triu(np.isclose(gaps, 1.0)))}
+
+    pairs = hgu.hex_grid_pairs(active, centers_shape)
+
+    assert pairs.dtype == np.intp
+    assert {tuple(pair) for pair in pairs.tolist()} == expected
+    assert len(pairs) == len(expected)
+    assert np.all(np.diff(pairs[:, 0]) >= 0)
 
 
 def test_points_to_hex_bin_ind_nan_handling():

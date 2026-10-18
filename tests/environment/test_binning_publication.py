@@ -292,16 +292,12 @@ def test_faces_reject_changed_pair_order() -> None:
             np.ones((2, 2), dtype=bool), grid_edges=(np.arange(3.0),) * 2
         )
     )
-    reordered = nx.Graph()
-    reordered.add_nodes_from(reversed(list(env.connectivity.nodes)))
-    reordered.add_edges_from(env.connectivity.edges(data=True))
-    assert set(map(frozenset, reordered.edges)) == set(
-        map(frozenset, env.connectivity.edges)
-    )
-    assert list(reordered.edges) != list(env.connectivity.edges)
     layout = _source_layout(env)
-    layout.connectivity = reordered
+    native = layout.binning().bins
+    # Reverse both the pair order and each pair's orientation.
+    layout._set_neighbor_pairs(native.pairs[::-1, ::-1], native.pair_distances[::-1])
     binning = layout.binning()
+    assert not np.array_equal(binning.bins.pairs, native.pairs)
     faces = binning.faces.build()
     np.testing.assert_array_equal(faces.edges, binning.bins.pairs)
     expected = face_geometry(env._cache, env._binning)
@@ -390,7 +386,6 @@ def test_polar_publication_refuses_an_arena_without_the_angle_wrap():
 
 
 def _center_lookup_paths():
-    import networkx as nx
     from shapely.geometry import box
 
     from neurospatial.binning import KnownFaces

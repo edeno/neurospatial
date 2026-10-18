@@ -4,7 +4,7 @@ Instead of requiring the user to supply sample points, this layout generates a u
 inside the polygon is kept as an active bin. Connectivity is inferred by shared faces.
 
 Conforms to the LayoutEngine protocol:
-  - Attributes:    bin_centers, connectivity, dimension_ranges,
+  - Attributes:    bin_centers, connectivity (derived), dimension_ranges,
                    grid_edges, grid_shape, active_mask,
                    layout_type, _build_params_used
   - Properties:    is_linearized_track
@@ -12,7 +12,6 @@ Conforms to the LayoutEngine protocol:
                    plot(ax, ...), bin_sizes()
 """
 
-import networkx as nx
 import numpy as np
 import shapely
 from numpy.typing import NDArray
@@ -118,85 +117,43 @@ def _filter_active_simplices_by_centroid(
     return active_original_indices, all_centroids
 
 
-def _build_mesh_connectivity_graph(
-    active_original_simplex_indices: NDArray[np.int_],
-    all_centroids: NDArray[np.float64],
-    original_simplex_to_active_idx_map: dict[int, int],
-    delaunay_obj: Delaunay,
-) -> nx.Graph:
-    """Build a NetworkX graph for active simplices (triangles).
+def mesh_pairs(
+    active_simplices: NDArray[np.int_], simplex_neighbors: NDArray[np.int_]
+) -> NDArray[np.intp]:
+    """Pair active triangles with the active triangles sharing one of their sides.
 
-    Nodes correspond to active triangles. Edges connect adjacent active triangles.
+    Bins are the active triangles in ``active_simplices`` order. Each bin
+    pairs with its higher-numbered active neighbors, in the order of its row
+    of ``simplex_neighbors``.
 
     Parameters
     ----------
-    active_original_simplex_indices : NDArray[np.int_]
-        Original Delaunay indices of simplices that are active.
-    all_centroids : NDArray[np.float64]
-        Centroids of ALL original Delaunay simplices, indexed by original simplex index.
-    original_simplex_to_active_idx_map : Dict[int, int]
-        Maps an original Delaunay simplex index to a contiguous active triangle index (0..N-1).
-    delaunay_obj : scipy.spatial.Delaunay
-        The full Delaunay triangulation object.
+    active_simplices : ndarray of int, shape (n_bins,)
+        Increasing triangulation indices of the active triangles.
+    simplex_neighbors : ndarray of int, shape (n_simplices, 3)
+        Neighboring triangle across each side, or -1 on the hull, as in
+        ``scipy.spatial.Delaunay.neighbors``.
 
     Returns
     -------
-    nx.Graph
-        The connectivity graph of active triangles.
+    ndarray of intp, shape (n_pairs, 2)
+        Pairs ``(lower, higher)`` of bin IDs in authoritative order.
 
+    Examples
+    --------
+    >>> neighbors = np.array([[1, -1, -1], [2, 0, -1], [-1, 1, -1]])
+    >>> mesh_pairs(np.array([0, 1, 2]), neighbors).tolist()
+    [[0, 1], [1, 2]]
     """
-    n_active_triangles = len(active_original_simplex_indices)
-    graph = nx.Graph()
-    graph.add_nodes_from(range(n_active_triangles))
-
-    # Add node attributes
-    for active_idx, original_simplex_idx in enumerate(active_original_simplex_indices):
-        centroid_coords = all_centroids[original_simplex_idx]
-        graph.nodes[active_idx]["pos"] = tuple(centroid_coords)
-        # `source_grid_flat_index` refers to the index in the full Delaunay triangulation
-        graph.nodes[active_idx]["source_grid_flat_index"] = int(original_simplex_idx)
-        # `original_grid_nd_index` for a list of triangles can be a 1-tuple of that index
-        graph.nodes[active_idx]["original_grid_nd_index"] = (int(original_simplex_idx),)
-
-    # Add edges between adjacent active triangles
-    delaunay_neighbors = delaunay_obj.neighbors  # shape (n_total_simplices, 3)
-
-    edge_id = 0
-    for active_idx_u, original_simplex_idx_u in enumerate(
-        active_original_simplex_indices,
-    ):
-        for neighbor_original_idx_v in delaunay_neighbors[original_simplex_idx_u]:
-            # If neighbor is -1, it's a boundary of the convex hull
-            # If neighbor is not in our map, it means it wasn't an active triangle
-            if (
-                neighbor_original_idx_v != -1
-                and neighbor_original_idx_v in original_simplex_to_active_idx_map
-            ):
-                active_idx_v = original_simplex_to_active_idx_map[
-                    neighbor_original_idx_v
-                ]
-
-                # Avoid duplicate edges (graph is undirected)
-                if active_idx_u < active_idx_v:
-                    pos_u = np.array(graph.nodes[active_idx_u]["pos"])
-                    pos_v = np.array(graph.nodes[active_idx_v]["pos"])
-
-                    distance = float(np.linalg.norm(pos_u - pos_v))
-                    displacement_vector = pos_v - pos_u
-                    angle = float(
-                        np.arctan2(displacement_vector[1], displacement_vector[0]),
-                    )
-
-                    graph.add_edge(
-                        active_idx_u,
-                        active_idx_v,
-                        distance=distance,
-                        vector=tuple(displacement_vector.tolist()),
-                        angle_2d=angle,
-                        edge_id=edge_id,
-                    )
-                    edge_id += 1
-    return graph
+    active_simplices = np.asarray(active_simplices, dtype=np.intp)
+    n_bins = len(active_simplices)
+    bin_of_simplex = np.full(len(simplex_neighbors) + 1, -1, dtype=np.intp)
+    bin_of_simplex[active_simplices] = np.arange(n_bins, dtype=np.intp)
+    # Index -1 (hull side) reads the extra trailing -1 entry.
+    other = bin_of_simplex[np.asarray(simplex_neighbors)[active_simplices]]
+    lower = np.broadcast_to(np.arange(n_bins, dtype=np.intp)[:, None], other.shape)
+    keep = other > lower
+    return np.column_stack((lower[keep], other[keep]))
 
 
 def _sample_polygon_boundary(

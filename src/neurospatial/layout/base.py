@@ -10,7 +10,6 @@ from typing import (
     runtime_checkable,
 )
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -213,43 +212,35 @@ def capture_build_params(
 class LayoutEngine(Protocol):
     """Protocol defining the interface for all spatial layout engines.
 
-    A LayoutEngine is responsible for discretizing a continuous N-dimensional
-    space into a set of bins or elements and constructing a graph representation
-    of their connectivity.
+    A LayoutEngine discretizes a continuous N-dimensional space into bins and
+    lists which bins are neighbors.
 
-    A built engine publishes its geometry through ``binning()``: a
-    ``Binning`` holding owned bins in connectivity node order, neighbor pairs
-    in connectivity edge order, point lookup, finite-volume faces and the
-    optional grid, track, shape and outline components, all derived from the
-    engine's own state. Environments are
-    constructed from that record; diffusion, gradients and divergence use its
-    faces. Custom engines implement the same method. An environment derives
-    its graph, grid index and ranges from the record and reads only two other,
-    optional members: ``layout_type`` and the build choices that
-    :func:`capture_build_params` records in ``_build_params_used``. The other
-    members below describe the built-in engines.
+    An engine supplies two methods. ``build()`` computes the bins from its
+    arguments, and ``binning()`` returns them as a ``Binning``: owned bin
+    centers and measures, neighbor pairs with their distances in
+    authoritative order, point lookup, finite-volume faces and the optional
+    grid, track, shape and outline components, all derived from the engine's
+    own state. Environments are constructed from that record; diffusion,
+    gradients and divergence use its faces. Custom engines implement the same
+    two methods. An environment derives its graph, grid index and ranges from
+    the record and reads only two other, optional members: ``layout_type``
+    and the build choices that :func:`capture_build_params` records in
+    ``_build_params_used``. The other members below describe the built-in
+    engines.
+
+    The built-in engines also offer ``connectivity``, a convenience
+    ``networkx.Graph`` derived from their binning by
+    :func:`neurospatial.geometry.graph_from_binning`: nodes are bin IDs
+    ``0..n_bins - 1`` with ``pos``, ``source_grid_flat_index`` and
+    ``original_grid_nd_index``; edges are the neighbor pairs with
+    ``distance``, ``vector``, ``edge_id`` and, in 2-D, ``angle_2d``. It is
+    built on first access and is not part of the protocol.
 
     Attributes
     ----------
     bin_centers : NDArray[np.float64]
         Coordinates of the center of each *active* bin/node.
         Shape is (n_active_bins, n_dims).
-    connectivity : Optional[nx.Graph]
-        Graph where nodes are integers from `0` to `n_active_bins - 1`,
-        directly corresponding to rows in `bin_centers`.
-        **Mandatory Node Attributes**:
-            - 'pos': Tuple[float, ...] - N-D coordinates of the active bin center.
-            - 'source_grid_flat_index': int - Flat index in the original
-              full conceptual grid from which this active bin originated.
-            - 'original_grid_nd_index': Tuple[int, ...] - N-D tuple index
-              in the original full conceptual grid.
-        **Mandatory Edge Attributes**:
-            - 'distance': float - Euclidean distance between connected bin centers.
-            - 'vector': Tuple[float, ...] - Displacement vector between centers.
-            - 'edge_id': int - Unique ID for the edge within this graph.
-        **Recommended Edge Attributes**:
-            - 'angle_2d': Optional[float] - Angle of displacement for 2D layouts.
-
     is_linearized_track : bool
         True if the layout represents a primarily 1-dimensional structure
         (e.g., a linearized track), False otherwise.
@@ -284,7 +275,6 @@ class LayoutEngine(Protocol):
 
     # --- Required Data Attributes ---
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph
     dimension_ranges: Sequence[tuple[float, float]] | None
 
     # Attributes primarily for GRID-BASED Layouts
@@ -322,11 +312,11 @@ class LayoutEngine(Protocol):
 
     # --- Required Methods ---
     def build(self, **kwargs) -> None:
-        """Construct the layout's geometry, bins, and connectivity graph.
+        """Construct the layout's bins and their neighbor pairs.
 
         This method is responsible for populating all the attributes defined
-        in the `LayoutEngine` protocol (e.g., `bin_centers`,
-        `connectivity`, etc.) based on the provided keyword arguments.
+        in the `LayoutEngine` protocol (e.g., `bin_centers`) and the state
+        that ``binning()`` reads, based on the provided keyword arguments.
         The specific arguments required will vary depending on the concrete
         implementation of the layout engine.
         """
@@ -335,10 +325,10 @@ class LayoutEngine(Protocol):
     def binning(self) -> Binning:
         """Return the built layout's owned geometry record.
 
-        Bins follow node order of ``connectivity`` and neighbor pairs follow
-        its edge iteration order, with each edge's ``"distance"`` as the
-        navigation distance. Every component must be a built-in geometry
-        record (no callbacks to the layout), so the environment can own it.
+        Neighbor pairs are in authoritative order: it becomes
+        ``env.edge_pairs``, the order of edge fields in gradients and
+        divergence. Every component must be a built-in geometry record (no
+        callbacks to the layout), so the environment can own it.
 
         Returns
         -------

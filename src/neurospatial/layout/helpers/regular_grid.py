@@ -9,9 +9,8 @@ This module provides a collection of helper functions used primarily by
 - Inferring which bins within this grid are "active" based on the density of
   provided data samples, often involving morphological operations to refine
   the active area (`_infer_active_bins_from_regular_grid`).
-- Constructing a `networkx.Graph` that represents the connectivity between
-  these active grid bins, allowing for orthogonal and diagonal connections
-  (`_create_regular_grid_connectivity_graph`).
+- Pairing neighboring active grid bins, allowing for orthogonal and
+  diagonal connections (`regular_grid_pairs`).
 - Mapping continuous N-D points to their corresponding discrete bin indices
   within the grid, taking into account active areas (`points_to_regular_grid_bin_ind`).
 
@@ -26,12 +25,12 @@ import math
 import warnings
 from collections.abc import Sequence
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy import ndimage
 
 from neurospatial._exceptions import _format_error
+from neurospatial.layout.helpers.neighbor_pairs import lattice_neighbor_pairs
 from neurospatial.layout.helpers.utils import get_centers, get_n_bins
 
 # Hard ceiling on the full (dense) grid's bin-center array, allocated in
@@ -46,135 +45,52 @@ from neurospatial.layout.helpers.utils import get_centers, get_n_bins
 _MAX_GRID_CENTERS_BYTES = 8 * 1024**3
 
 
-def _create_regular_grid_connectivity_graph(
-    full_grid_bin_centers: NDArray[np.float64],
-    active_mask_nd: NDArray[np.bool_],
-    grid_shape: tuple[int, ...],
-    connect_diagonal: bool = False,
-) -> nx.Graph:
-    """Create a graph connecting centers of active bins in an N-D grid.
+def regular_grid_pairs(
+    active_mask: NDArray[np.bool_], *, connect_diagonal: bool = False
+) -> NDArray[np.intp]:
+    """Pair active cells of an N-D grid with their adjacent active cells.
 
-    Nodes in the returned graph are indexed from `0` to `n_active_bins - 1`.
-    Each node stores attributes:
-    - 'pos': N-D coordinates of the active bin center.
-    - 'source_grid_flat_index': Original flat index in the full conceptual grid.
-    - 'original_grid_nd_index': Original N-D tuple index in the full grid.
-
-    Edges connect active bins that are adjacent (orthogonally or, optionally,
-    diagonally) in the N-D grid. Edges store 'distance', 'vector', and 'angle_2d'
-    attributes.
+    Bins are the active cells numbered in row-major order. Each bin pairs
+    with its higher-numbered active neighbors, visited in a fixed step order:
+    along each axis in turn when only face neighbors connect, otherwise every
+    step in ``{-1, 0, 1}^n_dims`` in lexicographic order.
 
     Parameters
     ----------
-    full_grid_bin_centers : NDArray[np.float64], shape (n_total_bins, n_dims)
-        Coordinates of centers of *all* bins in the original full grid,
-        ordered by flattened grid index (row-major).
-    active_mask_nd : NDArray[np.bool_], shape (dim0_size, dim1_size, ...)
-        N-dimensional boolean mask indicating active bins in the full grid.
-        Must match `grid_shape`.
-    grid_shape : Tuple[int, ...]
-        The N-D shape (number of bins in each dimension) of the original full grid.
+    active_mask : ndarray of bool, shape (n_0, ..., n_{d-1})
+        Active cells of the full grid.
     connect_diagonal : bool, default=False
-        If True, connect diagonally adjacent active bins. Otherwise, only
-        orthogonally adjacent active bins are connected.
+        Also pair cells that share only an edge or a corner.
 
     Returns
     -------
-    connectivity_graph : nx.Graph
-        Graph of active bins. Nodes are re-indexed `0` to `n_active_bins - 1`.
+    ndarray of intp, shape (n_pairs, 2)
+        Pairs ``(lower, higher)`` of bin IDs in authoritative order.
 
-    Raises
-    ------
-    ValueError
-        If input shapes (`full_grid_bin_centers`, `active_mask_nd`,
-        `grid_shape`) are inconsistent.
-
-    Notes
-    -----
-    This function now delegates to the generic connectivity graph builder,
-    providing a regular grid-specific neighbor-finding callback.
-
+    Examples
+    --------
+    >>> regular_grid_pairs(np.ones((2, 2), dtype=bool)).tolist()
+    [[0, 2], [0, 1], [1, 3], [2, 3]]
+    >>> len(regular_grid_pairs(np.ones((2, 2), dtype=bool), connect_diagonal=True))
+    6
     """
-    # Import the generic helper (local import to avoid circular dependencies)
-    from neurospatial.layout.helpers.graph_building import (
-        _create_connectivity_graph_generic,
-    )
-
-    # Validate inputs
-    if full_grid_bin_centers.shape[0] != np.prod(grid_shape):
-        raise ValueError(
-            f"Mismatch: full_grid_bin_centers length ({full_grid_bin_centers.shape[0]}) "
-            f"and product of grid_shape ({np.prod(grid_shape)}).",
-        )
-    if active_mask_nd.shape != grid_shape:
-        raise ValueError(
-            f"Shape of active_mask_nd {active_mask_nd.shape} "
-            f"does not match grid_shape {grid_shape}.",
-        )
-
-    # Extract active bin indices from mask
-    active_original_flat_indices = np.flatnonzero(active_mask_nd)
-
-    # Define neighbor-finding callback for regular grids
-    def get_regular_grid_neighbors(
-        flat_index: int, grid_shape: tuple[int, ...]
-    ) -> list[int]:
-        """Get neighbor flat indices for a regular grid bin.
-
-        Parameters
-        ----------
-        flat_index : int
-            Flat index of the current bin.
-        grid_shape : tuple[int, ...]
-            Shape of the grid.
-
-        Returns
-        -------
-        list[int]
-            List of flat indices of neighbors in the grid.
-        """
-        n_dims = len(grid_shape)
-
-        # Convert flat index to N-D index
-        nd_index = np.array(np.unravel_index(flat_index, grid_shape))
-
-        # Define neighbor offsets based on connectivity mode
-        if connect_diagonal:
-            # All combinations of -1, 0, 1 across n_dims, excluding (0,0,...)
-            neighbor_offsets = [
-                offset
-                for offset in itertools.product([-1, 0, 1], repeat=n_dims)
-                if not all(o == 0 for o in offset)
-            ]
-        else:  # Orthogonal neighbors only
-            neighbor_offsets = []
-            for dim_idx in range(n_dims):
-                for offset_val in [-1, 1]:
-                    offset = [0] * n_dims
-                    offset[dim_idx] = offset_val
-                    neighbor_offsets.append(tuple(offset))
-
-        # Find neighbors
-        neighbors = []
-        for offset_tuple in neighbor_offsets:
-            neighbor_nd_index = nd_index + np.array(offset_tuple)
-
-            # Check if neighbor is within grid bounds
-            if all(0 <= neighbor_nd_index[d] < grid_shape[d] for d in range(n_dims)):
-                # Convert back to flat index
-                neighbor_flat_idx = int(
-                    np.ravel_multi_index(tuple(neighbor_nd_index), grid_shape)
-                )
-                neighbors.append(neighbor_flat_idx)
-
-        return neighbors
-
-    # Use generic helper to build the graph
-    return _create_connectivity_graph_generic(
-        active_original_flat_indices,
-        full_grid_bin_centers,
-        grid_shape,
-        get_regular_grid_neighbors,
+    n_dims = active_mask.ndim
+    if connect_diagonal:
+        steps = [
+            step for step in itertools.product([-1, 0, 1], repeat=n_dims) if any(step)
+        ]
+    else:
+        steps = [
+            tuple(value if axis == dim else 0 for axis in range(n_dims))
+            for dim in range(n_dims)
+            for value in (-1, 1)
+        ]
+    # A step whose first nonzero component is negative reaches a lower
+    # row-major index, so it never proposes a higher-numbered bin.
+    forward = [step for step in steps if next(v for v in step if v) > 0]
+    offsets = np.array(forward, dtype=np.intp).reshape(len(forward), 1, n_dims)
+    return lattice_neighbor_pairs(
+        np.flatnonzero(active_mask), active_mask.shape, offsets
     )
 
 

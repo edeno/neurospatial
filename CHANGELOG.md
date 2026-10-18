@@ -535,6 +535,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   the order of `position_bins` already sets the direction of travel, and the
   result did not depend on them. Drop the two arguments from the call.
 
+- A built-in layout engine's `connectivity` graph (for example
+  `create_layout("RegularGrid", ...).connectivity`) is now made from the
+  engine's `binning()` when you first read it, so it is the same graph as
+  `env.connectivity`. It can no longer be assigned, and editing it no longer
+  changes the engine's bins or an environment built from it; return other
+  neighbor pairs from your own engine's `binning()` instead. Reading it
+  before `build()` raises `LayoutNotBuiltError` instead of returning `None`.
+  Its attributes now match `env.connectivity`: on a track, edge `vector`
+  and `angle_2d` point from the lower to the higher bin (along a segment
+  they pointed the other way), `source_grid_flat_index` counts the gap cells
+  of a track with `edge_spacing > 0`, a 3-D track has no `angle_2d`, the
+  angular-seam edges of a polar grid number their `edge_id` by pair row,
+  and values are Python numbers instead of NumPy scalars. Neighbor pairs,
+  their order and their distances are unchanged.
+
 ### Changed
 
 - `to_linear()`, `linear_to_nd()` and `with_track_width()` on a polar
@@ -1289,6 +1304,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   once smoothing or another diffusion analysis has built them, instead of
   building them again: on a 90,000-bin grid `subset` takes 0.43 s instead of
   2.2 s after such an analysis.
+
+- Layout engines find neighboring bins with array operations instead of
+  building a NetworkX graph one bin at a time, which the environment then
+  discarded. `Environment.from_grid_mask` on a 300 × 300 mask builds in
+  1.0 s instead of 4.0 s, `Environment.from_samples` with 100,000 positions
+  in a 100 × 100 box (bin size 1, 10,197 bins) in 0.15 s instead of 0.43 s,
+  and a 20,000-bin linear track in 0.14 s instead of 0.21 s. Bins, neighbor
+  pairs (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
 

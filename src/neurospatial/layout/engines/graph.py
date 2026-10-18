@@ -18,29 +18,27 @@ from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import _plot_track_linear, plot_track
 from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
-    _create_graph_layout_connectivity_graph,
     _find_bin_for_linear_position,
     _get_graph_bins,
+    track_pairs,
 )
-from neurospatial.layout.mixins import _KDTreeMixin
-from neurospatial.layout.validation import validate_connectivity_graph
+from neurospatial.layout.mixins import _KDTreeMixin, _NeighborPairsMixin
 
 if TYPE_CHECKING:
     import matplotlib.axes
 
 
-class GraphLayout(_KDTreeMixin):
+class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
     """Layout defined by a user-provided graph, typically for 1D tracks.
 
     The graph's nodes (with 'pos' attributes) and a specified edge order
     are used to create a linearized representation of the space, which is
-    then binned. Connectivity is derived from this binned structure.
+    then binned. Neighbor pairs are derived from this binned structure.
     Uses `_KDTreeMixin` for point mapping and neighbor finding on the
     N-D embeddings of the linearized bin centers.
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
 
     grid_edges: tuple[NDArray[np.float64], ...] | None = None
@@ -57,13 +55,13 @@ class GraphLayout(_KDTreeMixin):
         """Initialize a GraphLayout engine."""
         self._build_params_used = {}
         self.bin_centers = np.empty((0, 0), dtype=np.float64)
-        self.connectivity = None
         self.dimension_ranges = None
         self.grid_edges = None
         self.grid_shape = None
         self.active_mask = None
         self.linear_bin_centers_ = None
         self._linearization: TrackLinearization | None = None
+        self._segment_ids: NDArray[np.int_] | None = None
 
     @capture_build_params(data=("graph_definition", "edge_order"))
     def build(
@@ -135,16 +133,15 @@ class GraphLayout(_KDTreeMixin):
             edge_spacing,
         )
         self.grid_shape = (len(self.grid_edges[0]) - 1,)
-        self.connectivity = _create_graph_layout_connectivity_graph(
-            graph=track_graph,
-            bin_centers_nd=self.bin_centers,
-            linear_bin_centers=self.linear_bin_centers_,
-            original_edge_ids=edge_ids,
-            edge_order=edge_order,
+        self._segment_ids = edge_ids
+        self._set_neighbor_pairs(
+            *track_pairs(
+                graph=track_graph,
+                bin_centers_nd=self.bin_centers,
+                original_edge_ids=edge_ids,
+                edge_order=edge_order,
+            )
         )
-
-        # Validate connectivity graph has required attributes
-        validate_connectivity_graph(self.connectivity, n_dims=self.bin_centers.shape[1])
 
         # --- Build KDTree ---
         self._build_kdtree(points_for_tree=self.bin_centers)
@@ -302,11 +299,12 @@ class GraphLayout(_KDTreeMixin):
         LayoutNotBuiltError
             If the layout has not been built.
         """
-        if self.connectivity is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        pairs, distances = self._neighbor_pairs()
+        assert self._segment_ids is not None
         track = self.linearization()
         return assemble_binning(
-            self.connectivity,
+            pairs,
+            distances,
             kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
@@ -315,7 +313,7 @@ class GraphLayout(_KDTreeMixin):
             faces="track",
             face_arrays=(
                 track_junctions(
-                    self.connectivity, track.graph, self.bin_centers.shape[1]
+                    pairs, self._segment_ids, track.graph, self.bin_centers.shape[1]
                 ),
             ),
             face_normals=False,

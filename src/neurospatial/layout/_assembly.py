@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Literal
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -26,7 +25,8 @@ from neurospatial.geometry import (
 
 
 def assemble_binning(
-    connectivity: nx.Graph,
+    pairs: NDArray[np.intp],
+    pair_distances: NDArray[np.float64],
     *,
     kind: str,
     centers: NDArray[np.float64],
@@ -45,22 +45,24 @@ def assemble_binning(
     outline: Outline | None = None,
     dimension_ranges: Sequence[tuple[float, float]] | None = None,
 ) -> Binning:
-    """Snapshot bins in graph node order and pairs in edge order, faces lazily.
+    """Snapshot bins and neighbor pairs, computing faces lazily.
 
-    Every layout engine's ``binning()`` passes its own state here, so all
-    engines share one rule for neighbor-pair order, bin measures and face
-    directions.
+    Every built-in layout engine's ``binning()`` passes its own state here,
+    so all engines share one rule for bin measures and face directions. The
+    engine computes its neighbor pairs during ``build()`` in authoritative
+    order (see :mod:`neurospatial.layout.helpers.neighbor_pairs`); that order
+    becomes ``env.edge_pairs``.
 
     Parameters
     ----------
-    connectivity : networkx.Graph
-        Built navigation graph; its edge iteration order becomes the
-        authoritative pair order and each edge's ``"distance"`` its
-        navigation distance.
+    pairs : ndarray of intp, shape (n_pairs, 2)
+        Neighbor bin pairs in authoritative order.
+    pair_distances : ndarray of float64, shape (n_pairs,)
+        Navigation distance of each pair.
     kind : str
         Descriptive layout name stored as ``Binning.kind``.
     centers : ndarray of float64, shape (n_bins, n_dims)
-        Active bin centers, row ``i`` for graph node ``i``.
+        Active bin centers, row ``i`` for bin ``i``.
     sizes : ndarray of float64, shape (n_bins,)
         Bin measures in ``units ** measure_dim``.
     measure_dim : int
@@ -90,15 +92,12 @@ def assemble_binning(
     Binning
         Validated bins with read-only arrays and the supplied components.
     """
-    edges = list(connectivity.edges(data=True))
-    pairs = np.array([(u, v) for u, v, _ in edges], dtype=np.intp).reshape(-1, 2)
-    distances = np.array([data["distance"] for _, _, data in edges], dtype=np.float64)
     bins = SpatialBins.from_arrays(
         centers=np.asarray(centers, dtype=np.float64),
         sizes=sizes,
         measure_dim=measure_dim,
         pairs=pairs,
-        pair_distances=distances,
+        pair_distances=pair_distances,
     )
     normals = (
         geometric_normals(locator, bins.centers, bins.pairs)

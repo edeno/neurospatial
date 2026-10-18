@@ -12,16 +12,69 @@ from neurospatial.geometry import (
     NearestBinLocator,
     RectilinearGrid,
     RectilinearLocator,
+    graph_from_binning,
 )
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._plotting import plot_grid
-from neurospatial.layout.helpers.regular_grid import (
-    _create_regular_grid_connectivity_graph,
-)
-from neurospatial.layout.validation import validate_connectivity_graph
+from neurospatial.layout.helpers.neighbor_pairs import euclidean_pair_distances
+from neurospatial.layout.helpers.regular_grid import regular_grid_pairs
 
 if TYPE_CHECKING:
     import matplotlib.axes
+
+
+# ---------------------------------------------------------------------------
+# Neighbor pairs and the graph derived from them
+# ---------------------------------------------------------------------------
+class _NeighborPairsMixin:
+    """Neighbor pairs computed by ``build()`` and a graph derived on request.
+
+    An engine's ``build()`` stores its neighbor pairs and their distances with
+    ``_set_neighbor_pairs``, and its ``binning()`` passes them on. The
+    ``connectivity`` graph is a convenience built from that binning on first
+    access; rebuilding the engine discards it.
+    """
+
+    _pairs: NDArray[np.intp] | None = None
+    _pair_distances: NDArray[np.float64] | None = None
+    _connectivity: nx.Graph | None = None
+
+    def binning(self) -> Binning:  # pragma: no cover - every engine overrides it
+        raise NotImplementedError
+
+    def _set_neighbor_pairs(
+        self, pairs: NDArray[np.intp], distances: NDArray[np.float64]
+    ) -> None:
+        """Store the built neighbor pairs and discard any derived graph."""
+        self._pairs = pairs
+        self._pair_distances = distances
+        self._connectivity = None
+
+    def _neighbor_pairs(self) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
+        """Return the built neighbor pairs and distances, or raise if unbuilt."""
+        if self._pairs is None or self._pair_distances is None:
+            raise LayoutNotBuiltError(type(self).__name__, "binning")
+        return self._pairs, self._pair_distances
+
+    @property
+    def connectivity(self) -> nx.Graph:
+        """Navigation graph of the built bins, derived from ``binning()``.
+
+        Nodes are bin IDs ``0..n_bins - 1`` and edges are the binning's
+        neighbor pairs, with the node and edge attributes of
+        :func:`neurospatial.geometry.graph_from_binning` (the same as
+        ``env.connectivity``). The graph is built on first access and cached
+        until the engine is built again. It is an ordinary graph: editing it
+        does not change the engine's bins or its ``binning()``.
+
+        Raises
+        ------
+        LayoutNotBuiltError
+            If the layout has not been built.
+        """
+        if self._connectivity is None:
+            self._connectivity = graph_from_binning(self.binning())
+        return self._connectivity
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +139,7 @@ class _KDTreeMixin:
         return self._locator
 
 
-class _GridMixin:
+class _GridMixin(_NeighborPairsMixin):
     """Mixin for grid-based layout engines (e.g., RegularGrid, ShapelyPolygon).
 
     Provides common functionality for layouts that are based on an underlying
@@ -94,15 +147,13 @@ class _GridMixin:
     default plotting, and `bin_size` for uniform grids.
 
     Assumes the inheriting class defines grid-specific attributes like
-    `grid_edges`, `grid_shape`, `active_mask`, `bin_centers`, and
-    `connectivity`.
+    `grid_edges`, `grid_shape`, `active_mask` and `bin_centers`.
     """
 
     grid_edges: tuple[NDArray[np.float64], ...] | None = None
     grid_shape: tuple[int, ...] | None = None
     active_mask: NDArray[np.bool_] | None = None
     bin_centers: NDArray[np.float64] | None = None
-    connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
     layout_type: str
     _active_mask_inverse_map: NDArray[np.intp] | None = None
@@ -172,7 +223,7 @@ class _GridMixin:
     def _assign_cells(
         self, full_grid_bin_centers: NDArray[np.float64], *, connect_diagonal: bool
     ) -> None:
-        """Keep the active cells, connect them and snapshot lookup and grid choices.
+        """Keep the active cells, pair neighbors and snapshot lookup and grid choices.
 
         Every Cartesian grid engine finishes ``build()`` here once it has set
         ``grid_edges``, ``grid_shape`` and ``active_mask``.
@@ -187,13 +238,10 @@ class _GridMixin:
         """
         assert self.active_mask is not None and self.grid_shape is not None
         self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
-        self.connectivity = _create_regular_grid_connectivity_graph(
-            full_grid_bin_centers=full_grid_bin_centers,
-            active_mask_nd=self.active_mask,
-            grid_shape=self.grid_shape,
-            connect_diagonal=connect_diagonal,
+        pairs = regular_grid_pairs(self.active_mask, connect_diagonal=connect_diagonal)
+        self._set_neighbor_pairs(
+            pairs, euclidean_pair_distances(self.bin_centers, pairs)
         )
-        validate_connectivity_graph(self.connectivity, n_dims=len(self.grid_shape))
         self._build_locator(connect_diagonal=connect_diagonal)
 
     def binning(self) -> Binning:
@@ -208,10 +256,11 @@ class _GridMixin:
         LayoutNotBuiltError
             If the layout has not been built.
         """
-        if self.connectivity is None or self.bin_centers is None:
-            raise LayoutNotBuiltError(type(self).__name__, "connectivity")
+        pairs, distances = self._neighbor_pairs()
+        assert self.bin_centers is not None
         return assemble_binning(
-            self.connectivity,
+            pairs,
+            distances,
             kind=self.layout_type,
             centers=self.bin_centers,
             sizes=self.bin_sizes(),
@@ -277,7 +326,6 @@ class _GridMixin:
             or self.grid_edges is None
             or self.active_mask is None
             or self.grid_shape is None
-            or self.connectivity is None
         ):
             raise LayoutNotBuiltError(
                 type(self).__name__,
@@ -288,7 +336,6 @@ class _GridMixin:
                         "grid_edges",
                         "active_mask",
                         "grid_shape",
-                        "connectivity",
                     )
                     if getattr(self, name) is None
                 ),

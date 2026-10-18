@@ -166,13 +166,19 @@ or NWB for storage.
 
 #### Layout engines own their binning
 
-Every layout engine, built-in or custom, implements `binning()`, which
-returns a `Binning` assembled from the engine's own state. The environment
-never inspects engine classes or reads build parameters for geometry, so a
-custom engine needs no registration: build it and pass it to
-`Environment.from_layout(engine)`. Built-in engines share one rule for pair
-order, bin measures and face directions through `assemble_binning` in
-`layout/_assembly.py`. Polar environments use a masked grid over
+Every layout engine, built-in or custom, implements `build()` and
+`binning()`, which returns a `Binning` assembled from the engine's own state.
+The environment never inspects engine classes or reads build parameters for
+geometry, so a custom engine needs no registration: build it and pass it to
+`Environment.from_layout(engine)`. Built-in engines compute their neighbor
+pairs and pair distances as arrays in `build()`, with vectorized helpers in
+`layout/helpers/neighbor_pairs.py` that fix the pair order (it becomes
+`env.edge_pairs`, the order of edge fields in gradients and divergence), and
+share one rule for bin measures and face directions through
+`assemble_binning` in `layout/_assembly.py`. Engines do not build graphs: a
+built-in engine's `connectivity` is a convenience derived on first access
+from its binning with `geometry.graph_from_binning`, the same graph an
+environment publishes, and editing it changes nothing the engine publishes. Polar environments use a masked grid over
 (distance, angle) with circular seam edges and are built only by
 `Environment.from_polar_egocentric`.
 

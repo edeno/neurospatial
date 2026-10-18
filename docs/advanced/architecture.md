@@ -93,10 +93,11 @@ Use `Environment.from_bins(...)` for explicit Cartesian `Binning` records, or
 from `neurospatial.layout.create_layout(...)` or your own engine after its
 `build(...)`. A custom engine needs no registration. Every layout engine,
 built-in or custom, hands its geometry to the environment through `binning()`,
-which returns a `Binning` built from the engine's own state: bins in the order
-of the connectivity graph's nodes, neighbor pairs in the order of its edges,
-point lookup, lazily computed faces and any grid, track, shape or outline
-records. The environment keeps that record, not the engine, so live lookup or
+which returns a `Binning` built from the engine's own state: bins, neighbor
+pairs with their distances (their order becomes `env.edge_pairs`), point
+lookup, lazily computed faces and any grid, track, shape or outline records.
+A built-in engine's `connectivity` graph is derived from that record, so
+editing it does not change the bins. The environment keeps that record, not the engine, so live lookup or
 track-conversion callbacks do not remain attached. It derives the
 connectivity graph, `grid_edges`, `grid_shape`, `active_mask` and
 `dimension_ranges` from the record, so `build(...)` and `binning()` are all

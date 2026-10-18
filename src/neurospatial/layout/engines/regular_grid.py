@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from typing import Any
 
-import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
@@ -30,7 +29,6 @@ class RegularGridLayout(_GridMixin):
     """
 
     bin_centers: NDArray[np.float64]
-    connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
     grid_edges: tuple[NDArray[np.float64], ...] | None = None
     grid_shape: tuple[int, ...] | None = None
@@ -44,7 +42,6 @@ class RegularGridLayout(_GridMixin):
         self._build_params_used = {}
         # Initialize all protocol attributes to satisfy type checkers, even if None
         self.bin_centers = np.empty((0, 0))
-        self.connectivity = None
         self.dimension_ranges = None
         self.grid_edges = None
         self.grid_shape = None
