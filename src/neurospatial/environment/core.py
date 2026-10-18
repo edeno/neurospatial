@@ -866,7 +866,8 @@ class Environment(Generic[_C]):
 
         Each entry names the method that made a new environment from an
         existing one: ``"subset"``, ``"clip"``, ``"rebin"``,
-        ``"apply_transform"`` or ``"combine"``. A factory-built environment
+        ``"apply_transform"``, ``"with_track_width"`` or ``"combine"``. A
+        factory-built environment
         has none, and ``combine`` starts a new history because the result
         has no single parent. Relabelling with ``with_metadata`` or
         ``with_regions`` is not a derivation.
@@ -6401,8 +6402,8 @@ class Environment(Generic[_C]):
         ``S = M^{-1/2}(D − W) M^{-1/2}``, so both time and memory scale with
         ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``), not ``n_bins²``. The
         eigenbasis depends only on geometry, so it is built once and reused across
-        every bandwidth, mode, and neuron (auto-invalidated when the environment
-        is mutated).
+        every bandwidth, mode, and neuron. Environments never change, and a
+        derived environment starts with its own cache.
 
         On fields without NaN, ``diffuse`` is a **pure linear operator**: it
         applies **no output clip and no renormalization**. The always-retained per-component null mode

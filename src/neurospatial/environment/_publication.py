@@ -322,8 +322,8 @@ class _Provenance:
         The build choices, in recorded order.
     derivations : tuple of str
         Names of the derivations (``"subset"``, ``"clip"``, ``"rebin"``,
-        ``"apply_transform"``, ``"combine"``) applied since the bins were
-        built, oldest first.
+        ``"apply_transform"``, ``"with_track_width"``, ``"combine"``) applied
+        since the bins were built, oldest first.
     length_scale : float or None
         How long one unit of length in the build choices is in the current
         coordinates. It is 1.0 while the bins are in the coordinates the
