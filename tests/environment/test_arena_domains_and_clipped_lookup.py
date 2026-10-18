@@ -457,5 +457,5 @@ def test_saved_transformed_walls_still_refuse_cell_interior_crossings(matching_f
             "shape": list(array.shape),
             "dtype": array.dtype.str,
         }
-    with pytest.raises(ValueError, match="wall cuts through bin"):
+    with pytest.raises(ValueError, match=r"wall 'wall_0' cuts through bin"):
         from_dict(payload)

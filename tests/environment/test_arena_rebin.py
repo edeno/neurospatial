@@ -66,7 +66,7 @@ def test_rebin_preserves_walls_in_the_layout_facade(factor):
 
 
 def test_rebin_refuses_a_physical_wall_inside_a_coarse_cell():
-    with pytest.raises(ValueError, match="wall cuts through bin"):
+    with pytest.raises(ValueError, match=r"wall 'wall_0' cuts through bin"):
         _walled().rebin(3)
 
 

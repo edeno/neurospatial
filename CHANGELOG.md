@@ -1176,6 +1176,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- Walls have names. `OpenArena(outline, walls={"divider": line})` names each
+  wall; walls given as a sequence are named `"wall_0"`, `"wall_1"`, ... (or
+  pass `wall_names=`). `arena.wall_names` lists them, snapped walls keep their
+  wall's name, files store them, and the errors and warnings about a wall
+  through a bin or a snapped wall name it.
+
 - `compute_boundary_vector_rate` and `compute_boundary_vector_rates` estimate
   firing by distance and direction to the walls, for boundary-vector cells
   (`direction_frame="allocentric"`) and egocentric boundary cells

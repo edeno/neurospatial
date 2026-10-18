@@ -201,8 +201,8 @@ def _wall_cut_message(
     )
     center = ", ".join(f"{value:g}" for value in binning.bins.centers[index])
     return _format_error(
-        f"Physical wall cuts through bin {index} (center ({center})): wall "
-        f"{crossing} of the arena, from {ends}.",
+        f"Physical wall {arena.wall_names[crossing]!r} cuts through bin {index} "
+        f"(center ({center})), from {ends}.",
         why="Why: a wall blocks movement between the bins on either side, so "
         "it must run along cell edges; a wall through the middle of a cell "
         "would put one bin on both sides.",
@@ -257,15 +257,17 @@ def fit_walls(
                 "OpenArena(outline, walls=...)",
             )
         )
-    snapped = _snapped_walls(binning, cells, arena.walls)
-    moved = max(
+    snapped = _snapped_walls(binning, cells, arena.walls, arena.wall_names)
+    moves = [
         wall.hausdorff_distance(MultiLineString(parts))
         for wall, parts in zip(arena.walls, snapped, strict=True)
-    )
+    ]
+    farthest = int(np.argmax(moves))
     warnings.warn(
         _format_error(
-            f"wall_fit='snap' moved the walls onto bin edges by up to {moved:.3g} "
-            "(in the units of the positions).",
+            f"wall_fit='snap' moved the walls onto bin edges by up to "
+            f"{moves[farthest]:.3g} (in the units of the positions), most for "
+            f"wall {arena.wall_names[farthest]!r}.",
             why="Why: snapping keeps every bin whole, so a wall that ran "
             "through bins now runs along the edges between them; paths, "
             "occupancy and distances to walls all use the moved walls.",
@@ -275,7 +277,15 @@ def fit_walls(
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
-    return binning, replace(arena, walls=tuple(p for parts in snapped for p in parts))
+    return binning, replace(
+        arena,
+        walls=tuple(part for parts in snapped for part in parts),
+        wall_names=tuple(
+            name
+            for name, parts in zip(arena.wall_names, snapped, strict=True)
+            for _ in parts
+        ),
+    )
 
 
 def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.bool_]:
@@ -305,7 +315,10 @@ def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.boo
 
 
 def _snapped_walls(
-    binning: Binning, cells: Sequence[Polygon], walls: Sequence[LineString]
+    binning: Binning,
+    cells: Sequence[Polygon],
+    walls: Sequence[LineString],
+    names: Sequence[str],
 ) -> list[tuple[LineString, ...]]:
     """Each wall as the cell edges between the bins whose centers it separates.
 
@@ -317,7 +330,7 @@ def _snapped_walls(
         np.stack((centers[pairs[:, 0]], centers[pairs[:, 1]]), 1)
     )
     snapped = []
-    for wall in walls:
+    for wall, name in zip(walls, names, strict=True):
         left = _wall_sides(wall, centers)
         crossing = np.flatnonzero(
             shapely.intersects(links, wall) & (left[pairs[:, 0]] != left[pairs[:, 1]])
@@ -330,8 +343,9 @@ def _snapped_walls(
         if not edges:
             raise ValueError(
                 _format_error(
-                    f"wall_fit='snap' cannot place the wall {list(wall.coords)} on "
-                    "bin edges: it separates no two bin centers.",
+                    f"wall_fit='snap' cannot place wall {name!r} "
+                    f"{list(wall.coords)} on bin edges: it separates no two bin "
+                    "centers.",
                     why="Why: the wall is shorter than a bin, so the nearest bin "
                     "edges would remove it.",
                     fix="use wall_fit='split', or a smaller bin_size",

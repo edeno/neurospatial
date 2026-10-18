@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
 
@@ -54,6 +55,11 @@ class Arena(Protocol):
 
     @property
     def walls(self) -> tuple[LineString, ...]: ...
+
+    @property
+    def wall_names(self) -> tuple[str, ...]:
+        """The name of the wall each segment of ``walls`` belongs to."""
+        ...
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         """Test ``(n_positions, n_dims)`` native coordinates, including boundaries."""
@@ -230,6 +236,7 @@ class UnknownArena:
     domain_known: ClassVar[bool] = False
     physical_footprint_known: ClassVar[bool] = False
     walls: ClassVar[tuple[LineString, ...]] = ()
+    wall_names: ClassVar[tuple[str, ...]] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -278,7 +285,7 @@ class UnknownArena:
         return None
 
 
-@dataclass(frozen=True, eq=False)
+@dataclass(frozen=True, eq=False, init=False)
 class OpenArena:
     """A known planar polygonal domain with separately asserted internal walls.
 
@@ -286,22 +293,78 @@ class OpenArena:
     ----------
     polygon : Polygon or MultiPolygon
         Valid finite support, including any holes.
-    walls : tuple of LineString, optional
+    walls : mapping of str to LineString, or sequence of LineString, optional
         Explicit internal physical walls; analysis boundaries are not inferred.
+        A mapping names each wall, for example ``{"divider": line}``; walls
+        given as a sequence are named ``"wall_0"``, ``"wall_1"``, ... unless
+        ``wall_names`` is given.
+    wall_names : sequence of str, optional
+        One name per wall in a sequence of walls. Several segments of one wall
+        may share its name. Not allowed with a mapping of walls.
     physical_footprint_known : bool, default=True
         False for a computational domain inferred from observations.
+
+    Attributes
+    ----------
+    walls : tuple of LineString
+        The wall segments, in the order given.
+    wall_names : tuple of str, shape (n_walls,)
+        The name of the wall each segment belongs to. Errors and warnings
+        report walls by these names.
     """
 
     polygon: Polygon | MultiPolygon
-    walls: tuple[LineString, ...] = field(default=(), kw_only=True)
-    physical_footprint_known: bool = field(default=True, kw_only=True)
+    walls: tuple[LineString, ...]
+    wall_names: tuple[str, ...]
+    physical_footprint_known: bool
     n_dims: ClassVar[int] = 2
     coordinate_kind: ClassVar[_CoordinateKind] = "cartesian"
     domain_known: ClassVar[bool] = True
 
+    def __init__(
+        self,
+        polygon: Polygon | MultiPolygon,
+        *,
+        walls: Mapping[str, LineString] | Sequence[LineString] = (),
+        wall_names: Sequence[str] | None = None,
+        physical_footprint_known: bool = True,
+    ) -> None:
+        if isinstance(walls, Mapping):
+            if wall_names is not None:
+                raise _error(
+                    "wall_names cannot be combined with a mapping of walls.",
+                    "name the walls with the mapping keys, or pass walls as a "
+                    "sequence with wall_names",
+                )
+            names = tuple(walls)
+            segments = tuple(walls.values())
+        else:
+            segments = tuple(walls)
+            names = (
+                tuple(f"wall_{index}" for index in range(len(segments)))
+                if wall_names is None
+                else tuple(wall_names)
+            )
+        if len(names) != len(segments):
+            raise _error(
+                f"wall_names has {len(names)} names for {len(segments)} walls.",
+                "give one name per wall",
+            )
+        for name in names:
+            if not isinstance(name, str) or not name:
+                raise _error(
+                    f"Wall names must be nonempty strings, got {name!r}.",
+                    'name each wall with a string such as "divider"',
+                )
+        object.__setattr__(self, "polygon", polygon)
+        object.__setattr__(self, "walls", segments)
+        object.__setattr__(self, "wall_names", names)
+        object.__setattr__(self, "physical_footprint_known", physical_footprint_known)
+        self.__post_init__()
+
     def __post_init__(self) -> None:
         _polygon(self.polygon)
-        walls = tuple(self.walls)
+        walls = self.walls
         for index, wall in enumerate(walls):
             if (
                 not isinstance(wall, LineString)
@@ -313,15 +376,15 @@ class OpenArena:
                 or wall.length <= 0
             ):
                 raise _error(
-                    f"walls[{index}] must be a finite nonempty 2-D LineString.",
+                    f"Wall {self.wall_names[index]!r} must be a finite nonempty "
+                    "2-D LineString.",
                     "supply explicit physical wall segments",
                 )
             if not self.polygon.covers(wall):
                 raise _error(
-                    f"walls[{index}] lies outside the arena domain.",
+                    f"Wall {self.wall_names[index]!r} lies outside the arena domain.",
                     "provide walls within the polygonal domain",
                 )
-        object.__setattr__(self, "walls", walls)
         object.__setattr__(
             self,
             "physical_footprint_known",
@@ -372,6 +435,7 @@ class MaskArena(ReadOnlyState):
     coordinate_kind: ClassVar[_CoordinateKind] = "cartesian"
     domain_known: ClassVar[bool] = True
     walls: ClassVar[tuple[LineString, ...]] = ()
+    wall_names: ClassVar[tuple[str, ...]] = ()
 
     def __post_init__(self) -> None:
         edges = tuple(
@@ -525,6 +589,7 @@ class TrackArena(ReadOnlyState):
     width: float | None
     coordinate_kind: ClassVar[_CoordinateKind] = "cartesian"
     walls: ClassVar[tuple[LineString, ...]] = ()
+    wall_names: ClassVar[tuple[str, ...]] = ()
 
     def __post_init__(self) -> None:
         segments = _real_array(self.segments, "segments")
@@ -665,6 +730,7 @@ class EgocentricSurround:
     domain_known: ClassVar[bool] = True
     physical_footprint_known: ClassVar[bool] = False
     walls: ClassVar[tuple[LineString, ...]] = ()
+    wall_names: ClassVar[tuple[str, ...]] = ()
 
     def __post_init__(self) -> None:
         for name in ("distance_range", "angle_range"):
@@ -826,6 +892,10 @@ class _TransformedArena(ReadOnlyState):
     @property
     def walls(self) -> tuple[LineString, ...]:
         return tuple(mapped_geometry(wall, self.forward) for wall in self.base.walls)
+
+    @property
+    def wall_names(self) -> tuple[str, ...]:
+        return self.base.wall_names
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)
@@ -1045,6 +1115,10 @@ class _CombinedArena:
     @property
     def walls(self) -> tuple[LineString, ...]:
         return tuple(wall for child in self.children for wall in child.walls)
+
+    @property
+    def wall_names(self) -> tuple[str, ...]:
+        return tuple(name for child in self.children for name in child.wall_names)
 
     def contains(self, positions: NDArray[np.float64]) -> NDArray[np.bool_]:
         query, finite = _query(positions, self.n_dims)

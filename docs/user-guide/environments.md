@@ -355,6 +355,10 @@ lies exactly on bin edges, so the factories that build bins (`from_samples`,
   wall-distance measures such as boundary-vector maps, where the exact wall
   matters.
 
+Name each wall by passing a mapping, `walls={"divider": line}`, and errors,
+warnings and saved files refer to it by that name (`arena.wall_names`). Walls
+given as a sequence are named `"wall_0"`, `"wall_1"`, and so on.
+
 `from_bins`, `rebin` and saved environments keep the bins they are given, so a
 wall through one of their bins raises an error naming the wall and the bin.
 Declare walls in the original coordinates before clipping or transforming so
@@ -369,7 +373,7 @@ from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 
-arena = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2, 0), (2, 4)]),))
+arena = OpenArena(box(0, 0, 4, 4), walls={"divider": LineString([(2, 0), (2, 4)])})
 env = Environment.from_grid_mask(
     np.ones((4, 4), dtype=bool),
     grid_edges=(np.arange(5.0), np.arange(5.0)),
@@ -381,7 +385,7 @@ assert all(left[u] == left[v] for u, v in env.connectivity.edges)
 # A barrier at x = 2.4 runs through bins: by default it moves to x = 2.
 import warnings
 
-barrier = OpenArena(box(0, 0, 4, 4), walls=(LineString([(2.4, 0), (2.4, 4)]),))
+barrier = OpenArena(box(0, 0, 4, 4), walls={"barrier": LineString([(2.4, 0), (2.4, 4)])})
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
     snapped = Environment.from_grid_mask(
@@ -390,6 +394,7 @@ with warnings.catch_warnings(record=True) as caught:
         arena=barrier,
     )
 assert "moved the walls onto bin edges by up to 0.4" in str(caught[0].message)
+assert snapped.arena.wall_names == ("barrier",)
 split = Environment.from_grid_mask(
     np.ones((4, 4), dtype=bool),
     grid_edges=(np.arange(5.0), np.arange(5.0)),

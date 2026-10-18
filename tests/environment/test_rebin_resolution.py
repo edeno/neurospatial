@@ -173,7 +173,7 @@ def test_rebin_preserves_complete_face_walls_and_refuses_splitting_cells():
         (coarse.bin_centers[u, 0] < 2) == (coarse.bin_centers[v, 0] < 2)
         for u, v in coarse.edge_pairs
     )
-    with pytest.raises(ValueError, match="wall cuts"):
+    with pytest.raises(ValueError, match=r"wall 'wall_0' cuts through bin"):
         env.rebin(bin_size=3)
 
 

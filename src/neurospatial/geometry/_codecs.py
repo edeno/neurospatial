@@ -1246,6 +1246,7 @@ def encode_arena(arena: Arena) -> tuple[dict[str, Any], dict[str, NDArray[Any]]]
     elif type(arena) is OpenArena:
         meta.update(
             n_walls=len(arena.walls),
+            wall_names=list(arena.wall_names),
             physical_footprint_known=arena.physical_footprint_known,
         )
         arrays["polygon_wkb"] = _wkb(arena.polygon)
@@ -1394,6 +1395,8 @@ def decode_arena(meta: Mapping[str, Any], arrays: Mapping[str, NDArray[Any]]) ->
                     cast("LineString", _read_wkb(arrays, f"walls_wkb_{i}"))
                     for i in range(_count(meta, "n_walls"))
                 ),
+                # Records written before walls had names get the default names.
+                wall_names=meta.get("wall_names"),
                 physical_footprint_known=_boolean(
                     meta["physical_footprint_known"], "physical_footprint_known"
                 ),
