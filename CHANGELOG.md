@@ -8,6 +8,13 @@ These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
+- `ops.geodesic_distance_between_points` and `ops.pairwise_distances` raise
+  `networkx.NodeNotFound` for a bin that is not a node of the graph, such as
+  the outside marker `-1`. Before, they returned `inf` (or `default`), the
+  value they also return for two bins with no path between them, so a
+  missing sample looked like an unreachable place. `default` now applies only
+  when no path exists. Drop `-1` samples before calling (`bins[bins >= 0]`).
+
 - `Environment.occupancy` (with the default `time_allocation="start"`) now
   counts an interval only when both of its samples are inside the
   environment, the rule `compute_spatial_rate` already used for its spike

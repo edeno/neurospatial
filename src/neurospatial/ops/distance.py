@@ -21,9 +21,13 @@ neighbors_within
     Bins within a given distance of a source bin.
 """
 
+from collections.abc import Iterable
+
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial._exceptions import _format_error
 
 
 def euclidean_distance_matrix(centers: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -123,7 +127,7 @@ def geodesic_distance_between_points(
     bin_to : int
         Target node/bin index.
     default : float, default=np.inf
-        Value to return if no path exists or nodes are invalid.
+        Value to return if no path exists.
     weight : str or None, default="distance"
         Edge attribute holding each edge's length. None counts edges (hops).
 
@@ -131,9 +135,16 @@ def geodesic_distance_between_points(
     -------
     float
         Shortest path length from bin_from to bin_to, summing ``weight``.
-        Returns `default` if either index is invalid or no path exists.
+        Returns `default` if no path exists.
+
+    Raises
+    ------
+    networkx.NodeNotFound
+        If either bin is not a node of ``G``, such as the outside marker -1:
+        a missing bin has no distance, which is not the same as no path.
 
     """
+    _require_nodes(G, [bin_from, bin_to], "geodesic_distance_between_points()")
     try:
         length = nx.shortest_path_length(
             G,
@@ -142,8 +153,23 @@ def geodesic_distance_between_points(
             weight=weight,
         )
         return float(length)
-    except (nx.NetworkXNoPath, nx.NodeNotFound):
+    except nx.NetworkXNoPath:
         return default
+
+
+def _require_nodes(G: nx.Graph, nodes: Iterable[int], operation: str) -> None:
+    """Refuse bins that are not graph nodes, naming the outside marker -1."""
+    missing = [int(node) for node in nodes if node not in G]
+    if missing:
+        raise nx.NodeNotFound(
+            _format_error(
+                f"{operation}: bin(s) {missing} are not nodes of the graph.",
+                why="-1 marks a sample outside the environment, which has no "
+                "graph distance; other values are not bins of this graph.",
+                fix="drop the -1 samples first (bins[bins >= 0]), or pass bins "
+                "from env.bin_at() of positions inside the environment",
+            )
+        )
 
 
 def _validate_source_nodes(
@@ -424,6 +450,11 @@ def pairwise_distances(
         Pairwise distance matrix where element (i, j) is the shortest path
         length between nodes[i] and nodes[j]. Disconnected nodes have distance np.inf.
 
+    Raises
+    ------
+    networkx.NodeNotFound
+        If a node is not in ``G``, such as the outside marker -1.
+
     Examples
     --------
     >>> import networkx as nx
@@ -452,45 +483,19 @@ def pairwise_distances(
     if n == 0:
         return np.empty((0, 0), dtype=np.float64)
 
-    if G.number_of_nodes() == 0:
-        return np.full((n, n), np.inf, dtype=np.float64)
-
-    # Validate which nodes exist in the graph
-    valid_mask = np.array([node in G.nodes for node in nodes_array])
-
-    if not np.any(valid_mask):
-        # No valid nodes - return all inf
-        return np.full((n, n), np.inf, dtype=np.float64)
-
-    # Get valid node indices (positions in nodes_array)
-    valid_positions = np.where(valid_mask)[0]
-    valid_nodes = nodes_array[valid_positions]
+    _require_nodes(G, nodes_array, "pairwise_distances()")
 
     # Convert graph to sparse matrix (vectorized approach)
     adjacency = nx.to_scipy_sparse_array(G, weight=weight, format="csr")
 
-    # Run Dijkstra from all valid source nodes at once
-    # Returns shape (n_valid_sources, n_all_nodes_in_graph)
+    # Run Dijkstra from all nodes at once; shape (n_nodes, n_graph_nodes).
     dist_from_sources = dijkstra(
         csgraph=adjacency,
         directed=False,
-        indices=valid_nodes,
+        indices=nodes_array,
         return_predecessors=False,
     )
-
-    # Build result matrix
-    dist_matrix = np.full((n, n), np.inf, dtype=np.float64)
-
-    # Extract distances to only the nodes we care about (vectorized)
-    # dist_from_sources[i, :] has distances from valid_nodes[i] to all graph nodes
-    # We need dist_from_sources[i, valid_nodes[j]] for all valid i, j
-    #
-    # Use advanced indexing: extract submatrix and assign to output positions
-    # dist_from_sources[:, valid_nodes] gives (n_valid, n_valid) submatrix
-    dist_matrix[np.ix_(valid_positions, valid_positions)] = dist_from_sources[
-        :, valid_nodes
-    ]
-
+    dist_matrix: NDArray[np.float64] = dist_from_sources[:, nodes_array]
     return dist_matrix
 
 
