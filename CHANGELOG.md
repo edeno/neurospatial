@@ -1281,6 +1281,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- `rate_map_centroid(method="geodesic")` computes the field bins' graph
+  distances in one pass instead of one shortest-path search per pair of
+  bins: a 200-bin field takes about 2 ms instead of 3 s, with identical
+  results.
+
 - `from neurospatial import Environment` no longer imports matplotlib or
   `pandas`; they load when you first plot or ask for a table. The import
   takes about 0.19 s instead of 0.42 s, which helps scripts and worker
