@@ -72,8 +72,6 @@ from neurospatial.geometry._rebin_spec import GridBinningSpec
 
 Payload = tuple[dict[str, Any], dict[str, NDArray[Any]]]
 
-# The one version each codec writes and reads; every other codec is version 1.
-_VERSIONS: dict[str, int] = {"Binning": 4, "SpatialBins": 2}
 # Version 2 added the required wall names of an OpenArena.
 _ARENA_VERSION = 2
 
@@ -85,6 +83,8 @@ class Codec:
     kind: type[Any]
     encode: Callable[[Any, str], Payload]
     decode: Callable[[dict[str, Any], Mapping[str, NDArray[Any]], str], object]
+    # The one version this codec writes and reads.
+    version: int = 1
 
 
 def encode(obj: object, prefix: str) -> Payload:
@@ -120,9 +120,7 @@ def encode(obj: object, prefix: str) -> Payload:
             "layout-backed lookup and custom layout linearization cannot be saved."
         )
     meta, arrays = codec.encode(obj, prefix)
-    return _json_safe(
-        {"codec": name, "codec_version": _VERSIONS.get(name, 1), **meta}
-    ), arrays
+    return _json_safe({"codec": name, "codec_version": codec.version, **meta}), arrays
 
 
 def decode(
@@ -162,7 +160,7 @@ def decode(
             "Fix: use a neurospatial version supporting this geometry codec."
         )
     version = meta.get("codec_version")
-    supported = _VERSIONS.get(codec.kind.__name__, 1)
+    supported = codec.version
     if type(version) is not int or version != supported:
         raise ValueError(
             f"cannot load {name} codec_version {version!r}; supported version is {supported}.\n"
@@ -335,13 +333,10 @@ def _encode_connections(obj: BinConnections, prefix: str) -> Payload:
 def _decode_connections(
     meta: dict[str, Any], arrays: Mapping[str, NDArray[Any]], prefix: str
 ) -> BinConnections:
-    is_open = np.asarray(arrays[f"{prefix}/is_open"])
-    if is_open.dtype != np.bool_:
-        raise ValueError("is_open must be a boolean array.")
     return BinConnections.from_arrays(
         _array(arrays, prefix, "all_pairs", np.intp),
         _array(arrays, prefix, "all_distances", np.float64),
-        is_open,
+        _array(arrays, prefix, "is_open", np.bool_),
     )
 
 
@@ -1190,7 +1185,7 @@ def _decode_grid_frame(
 _CODECS: dict[str, Codec] = {
     "GridBinningSpec": Codec(GridBinningSpec, _encode_grid_spec, _decode_grid_spec),
     "CombinedLocator": Codec(CombinedLocator, _encode_combined, _decode_combined),
-    "SpatialBins": Codec(SpatialBins, _encode_bins, _decode_bins),
+    "SpatialBins": Codec(SpatialBins, _encode_bins, _decode_bins, version=2),
     "BinConnections": Codec(BinConnections, _encode_connections, _decode_connections),
     "KnownFaces": Codec(KnownFaces, _encode_faces, _decode_faces),
     "MissingFaces": Codec(MissingFaces, _encode_missing, _decode_missing),
@@ -1220,7 +1215,7 @@ _CODECS: dict[str, Codec] = {
     "TransformedLocator": Codec(
         TransformedLocator, _encode_transformed_locator, _decode_transformed_locator
     ),
-    "Binning": Codec(Binning, _encode_binning, _decode_binning),
+    "Binning": Codec(Binning, _encode_binning, _decode_binning, version=4),
     "FaceNormals": Codec(FaceNormals, _encode_face_normals, _decode_face_normals),
     "FramedGrid": Codec(FramedGrid, _encode_grid_frame, _decode_grid_frame),
 }
