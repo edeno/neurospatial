@@ -505,6 +505,28 @@ def test_suggested_coarser_bins_are_coarser():
         assert rebuilt.layout_type == names["env"].layout_type
 
 
+def test_suggested_track_rebuild_keeps_a_transformed_track_width():
+    """A track moved and scaled by apply_transform is rebuilt at its new width."""
+    from neurospatial.ops.transforms import AffineND
+
+    names = _track()
+    rotation = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
+    names["env"] = names["env"].apply_transform(AffineND(rotation))
+    with pytest.raises(NotImplementedError) as caught:
+        names["env"].rebin(2)
+    fix = str(caught.value).splitlines()[-1]
+    # The 10 cm wide track doubled in size.
+    assert "track_width=20)" in fix, fix
+    code = fix[fix.index("Environment.from_graph(") : fix.index("track_width=20)") + 15]
+    rebuilt = _run(code, names)
+    assert rebuilt.arena.width == 20.0
+    # The first segment now runs along +y; a point 9 units to its side is
+    # on the 20-wide track (it would be off a 10-wide one).
+    nodes = names["env"].binning.linearization.graph.nodes
+    middle = (np.asarray(nodes[0]["pos"]) + np.asarray(nodes[1]["pos"])) / 2
+    assert rebuilt.bin_at(middle[None] + [9.0, 0.0])[0] >= 0
+
+
 @pytest.mark.parametrize(
     "build",
     [_widthless_track, _widthless_track_subset, _widthless_track_transformed],

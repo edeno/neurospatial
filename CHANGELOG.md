@@ -1292,6 +1292,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- After `apply_transform`, a track with a known width still says so. The
+  `rebin` refusal on such a track suggested an `Environment.from_graph(...)`
+  rebuild without `track_width=`, so following it lost the width; it now
+  passes the width in the transformed units (20 for a 10 cm track scaled by
+  two).
+
 - `apply_transform` accepts a rotation by an angle so small that its sine is
   below the normal floating-point range (about 1e-308), such as 2e-313
   radians. The check that the stored grid frame matches the transform used
