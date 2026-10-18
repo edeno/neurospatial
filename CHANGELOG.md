@@ -642,6 +642,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   is now the centered difference, so a run's first sample has a heading from
   its forward difference instead of being undefined.
 
+- `segment_trials` starts a trial when the animal leaves the start region, at
+  the last sample inside it, instead of when it enters. Waiting at the start
+  well no longer counts toward the trial, so tracking jitter across the well's
+  edge after a wait is no longer recorded as an aborted (failed) trial. On a
+  simulated W-track with 1 cm jitter, 4 of 16 trials came out as false
+  failures before this change. A real return to the start region is still a
+  failed trial when it lasts at least `min_duration`. Samples outside every
+  bin (`-1`, such as lost tracking at a well) keep the last located region,
+  so a dropout is neither a departure nor a return. `Trial.start_time` and
+  trial durations change accordingly.
+
 - The `neurospatial.layout.LayoutEngine` protocol lists only `build()` and
   `binning()`, the two methods an environment uses. A custom engine needs
   nothing else, and type checkers no longer ask it for `bin_centers`,
@@ -1375,6 +1386,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Performance
+
+- Shuffle tests and other repeated `diffusion_kde` maps no longer repeat the
+  environment's eigendecomposition on every call when the bandwidth is small
+  for the arena. `env.diffuse` now solves that full basis once and keeps it
+  for later calls at any bandwidth, with identical results. On a 2,500-bin
+  open field at `bandwidth=5`, each extra shuffle in `place_cell_significance`
+  for 10 cells takes about 35 ms instead of 2 s. The basis takes
+  `8 * n_bins**2` bytes (50 MB for 2,500 bins) until `env.clear_cache()`.
+  `method="glm"` fits that need the full smoothness basis (a `rank` of half
+  the bins or more) likewise solve it once per environment.
 
 - `rate_map_centroid(method="geodesic")` computes the field bins' graph
   distances in one pass instead of one shortest-path search per pair of

@@ -21,6 +21,36 @@ def test_shuffle_detects_field_cell_fast(ou_2min_env, ou_2min, strong_field_spik
     assert result.observed_score > np.nanmax(result.null_scores)
 
 
+def test_shuffles_reuse_one_dense_eigensolve(monkeypatch, ou_2min, strong_field_spikes):
+    """A light bandwidth needs the full eigenbasis; every shuffle reuses it."""
+    from neurospatial import Environment
+    from neurospatial.environment._fields import diffusion_eigenbasis
+    from neurospatial.ops import diffusion
+
+    dense_solves = []
+    original = diffusion._symmetric_eigenbasis
+
+    def counting(S, rank):
+        if rank is None:
+            dense_solves.append(S.shape)
+        return original(S, rank)
+
+    monkeypatch.setattr(diffusion, "_symmetric_eigenbasis", counting)
+    times, positions, _ = ou_2min
+    env = Environment.from_samples(positions, bin_size=5.0)  # cold cache
+    encoding.place_cell_significance(
+        env,
+        [strong_field_spikes],
+        times,
+        positions,
+        bandwidth=2.0,
+        n_shuffles=10,
+        rng=0,
+    )
+    assert "dense" in diffusion_eigenbasis(env._cache).resolved.values()
+    assert len(dense_solves) == 1
+
+
 def test_threshold_flags_noise_as_object_vector_cell(
     ou_env, ou_10min, noise_trains, obj
 ):
