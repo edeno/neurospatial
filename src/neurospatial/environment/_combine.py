@@ -15,6 +15,7 @@ from neurospatial.geometry import (
     combine_binnings,
     require_cartesian,
 )
+from neurospatial.landmarks import Landmarks
 from neurospatial.layout import LayoutType
 from neurospatial.regions import Regions
 
@@ -87,6 +88,12 @@ def _combine(
         ]
     )
 
+    landmarks = Landmarks(
+        replace(landmark, name=f"{key}/{landmark.name}")
+        for key, env in components.items()
+        for landmark in env.landmarks.values()
+    )
+
     log_environment_combine(len(values), binning.bins.n_bins, n_bridges)
 
     # The components have no single parent: the history starts here and no
@@ -97,6 +104,7 @@ def _combine(
         build_params={},
         continues_history=False,
         regions=regions,
+        landmarks=landmarks,
         arena=_CombinedArena(arenas),
     )
     # Units and frame come from the first component; all components share them.

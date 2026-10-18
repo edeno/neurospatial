@@ -45,6 +45,7 @@ from neurospatial.geometry import (
     validate_components,
 )
 from neurospatial.geometry import grid_index as compute_grid_index
+from neurospatial.landmarks import Landmarks
 from neurospatial.layout import _built_layout_data
 from neurospatial.layout.base import build_choices
 from neurospatial.regions import Regions
@@ -422,7 +423,7 @@ def _polar_coordinates(arena: Arena | None) -> EgocentricPolarSystem:
 # a pickled record (metadata, provenance, geometry, binning or locators)
 # gains, loses or reinterprets a field, so a pickle from another version is
 # refused with the advice to use environment files instead of failing later.
-STATE_FORMAT = 3
+STATE_FORMAT = 4
 
 
 def environment_state(env_dict: dict[str, Any]) -> dict[str, Any]:
@@ -446,6 +447,7 @@ def _restored_state(state: object) -> dict[str, Any]:
         "_state_format": int,
         "_metadata": _Metadata,
         "_regions": Regions,
+        "_landmarks": Landmarks,
         "_provenance": _Provenance,
         "_geometry": _PublishedGeometry,
         "_cache": AnalysisCache,
@@ -478,7 +480,47 @@ def _restored_state(state: object) -> dict[str, Any]:
         **state,
         "_geometry": replace(geometry, arena=own_arena(geometry.arena)),
         "_regions": _owned_regions(state["_regions"], geometry.binning.bins.n_dims),
+        "_landmarks": owned_landmarks(
+            state["_landmarks"],
+            geometry.binning.bins.n_dims,
+            geometry.coordinates.kind,
+        ),
     }
+
+
+def owned_landmarks(landmarks: object, n_dims: int, coordinate_kind: str) -> Landmarks:
+    """Check landmarks belong to an ``n_dims`` Cartesian environment.
+
+    Raises
+    ------
+    TypeError
+        If ``landmarks`` is not a Landmarks collection.
+    ValueError
+        If their dimension differs, or the environment is polar.
+    """
+    if not isinstance(landmarks, Landmarks):
+        raise TypeError("landmarks must be a Landmarks instance.")
+    if landmarks and coordinate_kind != "cartesian":
+        raise ValueError(
+            _format_error(
+                "A polar environment cannot hold landmarks.",
+                why="Why: its bins are (distance, angle) around the animal, so a "
+                "landmark fixed in the room has no fixed place in them.",
+                fix="attach landmarks to the allocentric environment the "
+                "positions were recorded in",
+            )
+        )
+    for landmark in landmarks.values():
+        if landmark.n_dims != n_dims:
+            raise ValueError(
+                _format_error(
+                    f"Landmark {landmark.name!r} has {landmark.n_dims} coordinates; "
+                    f"the environment has {n_dims}.",
+                    fix="give landmarks coordinates in the environment's frame",
+                )
+            )
+    # Landmarks own immutable records, so the collection is already a snapshot.
+    return landmarks
 
 
 def _publish(
@@ -489,6 +531,7 @@ def _publish(
     provenance: _Provenance,
     metadata: _Metadata,
     regions: Regions | None = None,
+    landmarks: Landmarks | None = None,
     arena: Arena | None = None,
 ) -> _EnvironmentT:
     """Validate owned geometry and publish it as one new environment.
@@ -517,6 +560,8 @@ def _publish(
         Name, units and frame.
     regions : Regions or None, optional
         Named regions to snapshot.
+    landmarks : Landmarks or None, optional
+        Named landmarks, in the bins' coordinates.
     arena : Arena or None, optional
         Continuous domain. Omission infers a Cartesian one from the binning.
 
@@ -548,6 +593,11 @@ def _publish(
     )
     env._regions = _owned_regions(
         Regions() if regions is None else regions, binning.bins.n_dims
+    )
+    env._landmarks = owned_landmarks(
+        Landmarks() if landmarks is None else landmarks,
+        binning.bins.n_dims,
+        coordinates.kind,
     )
     env._cache = AnalysisCache()
     log_environment_created(
@@ -654,6 +704,8 @@ class _Derivation:
         a new history at ``step``, for a result with no single parent.
     regions : Regions or None, optional
         Replacement regions; ``None`` keeps the parent's regions.
+    landmarks : Landmarks or None, optional
+        Replacement landmarks; ``None`` keeps the parent's landmarks.
     arena : Arena or None, optional
         Replacement arena; ``None`` keeps the parent's arena.
     """
@@ -664,6 +716,7 @@ class _Derivation:
     length_scale: float | None = 1.0
     continues_history: bool = True
     regions: Regions | None = None
+    landmarks: Landmarks | None = None
     arena: Arena | None = None
 
 
@@ -729,5 +782,8 @@ def publish_derived(
         provenance=provenance,
         metadata=metadata,
         regions=parent.regions if derivation.regions is None else derivation.regions,
+        landmarks=(
+            parent.landmarks if derivation.landmarks is None else derivation.landmarks
+        ),
         arena=parent._geometry.arena if derivation.arena is None else derivation.arena,
     )

@@ -803,20 +803,65 @@ supply a `GridBinningSpec` describing future rectangular construction.
 The existing `env.rebin(factor=2)` remains available for uniform regular grids,
 including its truncation warning. Supply exactly one of `factor` and `bin_size`.
 
+## Name cues, monitors and objects { #landmarks }
+
+Landmarks are the things the animal sees or approaches: a cue card, a monitor,
+an object, a reward port. Give each one a name and its geometry in the
+environment's coordinates: a point, a line (a monitor or a card along a wall)
+or a polygon (an object's footprint). Landmarks are not bins, so they may lie
+outside the arena, as a cue on the room wall does, and they neither block
+movement nor block the view; declare a wall for that. The name is the
+landmark's identity: keep it the same in every session, so a cue rotated or an
+object moved between sessions is still the same landmark.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.landmarks import Landmark, Landmarks
+
+edges = np.arange(0.0, 101.0, 5.0)
+arena = Environment.from_grid_mask(
+    np.ones((20, 20), dtype=bool), grid_edges=(edges, edges), units="cm"
+)
+arena = arena.with_landmarks(
+    Landmarks(
+        [
+            Landmark("cue_card", "point", [50.0, 108.0], {"role": "cue"}),
+            Landmark("monitor", "line", [(10.0, 100.0), (90.0, 100.0)]),
+            Landmark("object", "polygon", [(20, 20), (30, 20), (30, 30), (20, 30)]),
+        ]
+    )
+)
+# Each landmark's nearest point to the animal, shape (n_time, n_landmarks, 2):
+# a line or polygon is measured from its closest edge, not its center.
+positions = np.array([[50.0, 90.0], [15.0, 40.0]])
+nearest = arena.landmarks.nearest_points(positions, ["monitor", "object"])
+assert nearest[0, 0].tolist() == [50.0, 100.0]
+
+# Whether projected gaze lands on the monitor, within 2 cm:
+gaze = np.array([[60.0, 99.5], [60.0, 80.0]])
+assert arena.landmarks.near(gaze, "monitor", tolerance=2.0).tolist() == [True, False]
+```
+
+Encoding functions that take `object_positions` accept landmark names
+instead of coordinates, and record the names in the result; see
+[object vectors](neuroscience-metrics.md#allocentric-and-egocentric-object-vectors).
+`subset`, `clip` and `rebin` keep the landmarks, `apply_transform` moves them
+with the bins, and `combine` prefixes their names with the component key, as
+it does for regions. A polar environment, centered on the animal, holds none.
+
 ## Save the environment with the analysis
 
 `env.to_file(path)` writes JSON metadata and NPZ arrays;
-`env.to_dict()` supplies an in-memory equivalent. Both use `Environment-v3`.
-NWB environment records use schema `3.0`. They preserve the arena, explicit
-walls, exact cells, clip mapping, coordinate metadata and supported numerical
-geometry without running a layout builder on load.
+`env.to_dict()` supplies an in-memory equivalent, and
+`neurospatial.io.nwb.write_environment` stores the same record in an NWB file.
+They preserve the arena, named walls, regions, landmarks, exact cells,
+coordinate metadata and supported numerical geometry without running a layout
+builder on load.
 
-Version 2 files/dictionaries and NWB schema `2.0` remain readable with an
-explicitly unknown arena. Their stored bins and capabilities remain available,
-but an old outline or active mask does not establish a measured footprint.
-Recreate the environment from its source inputs with a known arena if the
-analysis requires that information, then save it again. Version 1 files and
-NWB schemas `1.0`/`1.1` must be recreated before loading with this version.
+Environments saved by earlier versions of neurospatial do not load: recreate
+them from their source inputs and save them again.
 
 ## See also
 

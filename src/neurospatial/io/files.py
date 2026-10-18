@@ -372,6 +372,7 @@ def _environment_payload(
         "grid_shape": env.grid_shape,
         "graph": graph_to_node_link(env.connectivity),
         "regions": [region.to_dict() for region in env.regions.values()],
+        "landmarks": env.landmarks.to_list(),
         "coordinate_kind": env.coordinate_kind,
     }
     for attribute in ("units", "frame"):
@@ -474,6 +475,7 @@ def _restore_environment(
         decode_arena,
         grid_index,
     )
+    from neurospatial.landmarks import Landmarks
     from neurospatial.regions import Region, Regions
 
     try:
@@ -574,6 +576,7 @@ def _restore_environment(
                 frame=metadata.get("frame"),
             ),
             regions=Regions([Region.from_dict(r) for r in metadata.get("regions", [])]),
+            landmarks=Landmarks.from_list(metadata["landmarks"]),
             arena=arena,
         )
         return env

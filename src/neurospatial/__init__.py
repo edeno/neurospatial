@@ -250,6 +250,8 @@ if TYPE_CHECKING:
     from neurospatial.events.alignment import (
         peri_event_histogram as peri_event_histogram,
     )
+    from neurospatial.landmarks import Landmark as Landmark
+    from neurospatial.landmarks import Landmarks as Landmarks
     from neurospatial.regions import Region as Region
     from neurospatial.regions import Regions as Regions
 
@@ -268,6 +270,7 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
     "behavior",
     "events",
     "ops",
+    "landmarks",
     "layout",
     "regions",
     "stats",
@@ -286,6 +289,8 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 # Maps the attribute name to its ``(submodule, attribute)`` source.
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "Environment": ("environment", "Environment"),
+    "Landmark": ("landmarks", "Landmark"),
+    "Landmarks": ("landmarks", "Landmarks"),
     "Region": ("regions", "Region"),
     "Regions": ("regions", "Regions"),
     "compute_spatial_rate": ("encoding.spatial", "compute_spatial_rate"),
@@ -325,6 +330,8 @@ __all__ = [
     "DecodingResult",
     "Environment",
     "IncompatibleEnvironmentError",
+    "Landmark",
+    "Landmarks",
     "LayoutNotBuiltError",
     "NeurospatialError",
     "PeriEventResult",
@@ -344,6 +351,7 @@ __all__ = [
     "encoding",
     "events",
     "io",
+    "landmarks",
     "layout",
     "ops",
     "peri_event_histogram",
