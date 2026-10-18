@@ -435,7 +435,8 @@ def _nearest_bin_center(
     index the last bin center.
     """
     nearest = int(env.nearest_bin(position[None, :], max_distance=np.inf)[0])
-    return env.bin_centers[nearest].copy()
+    center: NDArray[np.float64] = env.bin_centers[nearest].copy()
+    return center
 
 
 def simulate_trajectory_sinusoidal(

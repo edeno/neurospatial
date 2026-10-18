@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from neurospatial.environment.core import Environment
+    from neurospatial.environment import Environment
 
 
 @dataclass(frozen=True)
