@@ -63,7 +63,7 @@ rates = compute_spatial_rates(env, spike_times, times, positions)
 result = decode_session(env, spike_times, times, positions, dt=0.1)
 actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
 print(f"array-first median error: "
-      f"{np.nanmedian(decoding_error(result.map_position, actual)):.1f} cm")
+      f"{np.nanmedian(decoding_error(env, result.map_position, actual)):.1f} cm")
 
 # --- BayesianDecoder: optional wrapper, byte-exact vs decode_session -------
 decoder = BayesianDecoder(env, dt=0.1).fit(spike_times, times, positions)
@@ -150,7 +150,8 @@ adapters and unsupported versions raise with installation guidance.
 Use the public contract helper with boundary answers derived independently
 from the intended geometry. It checks lookup, outside sentinels, ownership,
 missing-face refusal and copy/storage round trips. This native grid example
-specifies the internal boundary owner and excludes the upper outer edge:
+specifies the internal boundary owner (the bin above a shared face), the outer
+edge (which belongs to the last bin) and a point outside:
 
 <!-- docs-test: run -->
 ```python
@@ -165,7 +166,7 @@ env = Environment.from_grid_mask(
 assert_environment_contract(
     env,
     points=[[0.0, 0.5], [1.0, 0.5], [2.0, 0.5], [-0.1, 0.5]],
-    expected_bins=[0, 1, -1, -1],
+    expected_bins=[0, 1, 1, -1],
 )
 ```
 

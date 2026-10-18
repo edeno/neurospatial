@@ -80,7 +80,7 @@ from numpy.typing import NDArray
 from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
-from neurospatial._exceptions import RegionNotFoundError, _format_error
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     observed_interval_mask,
     observed_runs,
@@ -90,6 +90,7 @@ from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -437,11 +438,9 @@ def detect_region_crossings(
     True
     """
     # Validate inputs
-    if region_name not in env.regions:
-        available = list(env.regions.keys())
-        raise RegionNotFoundError(
-            region_name, available=available, argument="region_name"
-        )
+    _require_region_mask(
+        env, region_name, operation="detect_region_crossings()", argument="region_name"
+    )
 
     if len(position_bins) != len(times):
         raise ValueError(
@@ -669,13 +668,10 @@ def detect_runs_between_regions(
             fix="pass min_speed=None to detect runs from region entries alone",
         )
     # Validate inputs
-    if source not in env.regions:
-        available = list(env.regions.keys())
-        raise RegionNotFoundError(source, available=available, argument="source")
-
-    if target not in env.regions:
-        available = list(env.regions.keys())
-        raise RegionNotFoundError(target, available=available, argument="target")
+    for name, argument in ((source, "source"), (target, "target")):
+        _require_region_mask(
+            env, name, operation="detect_runs_between_regions()", argument=argument
+        )
 
     if len(position_bins) != len(times):
         raise ValueError(
@@ -1360,12 +1356,9 @@ def detect_laps(
                     why="Why: a region-based lap starts and ends at a named region.",
                 )
             )
-        if start_region not in env.regions:
-            raise RegionNotFoundError(
-                start_region,
-                available=list(env.regions.keys()),
-                argument="start_region",
-            )
+        _require_region_mask(
+            env, start_region, operation="detect_laps()", argument="start_region"
+        )
 
     if len(position_bins) != len(times):
         raise ValueError(
@@ -1821,6 +1814,20 @@ def running_direction_labels(
         end_region_names: list[str] = [end_regions]
     else:
         end_region_names = list(end_regions)
+    _require_region_mask(
+        env,
+        start_region,
+        operation="running_direction_labels()",
+        argument="start_region",
+    )
+    for end_region in end_region_names:
+        _require_region_mask(
+            env,
+            end_region,
+            operation="running_direction_labels()",
+            argument="end_regions",
+            in_list=not isinstance(end_regions, str),
+        )
 
     intervals: list[tuple[float, float, object]] = []
     for end_region in end_region_names:
@@ -2060,11 +2067,9 @@ def segment_trials(
            27(3), 623-633.
     """
     # Validate inputs
-    if start_region not in env.regions:
-        available = list(env.regions.keys())
-        raise RegionNotFoundError(
-            start_region, available=available, argument="start_region"
-        )
+    _require_region_mask(
+        env, start_region, operation="segment_trials()", argument="start_region"
+    )
 
     if len(end_regions) == 0:
         raise ValueError(
@@ -2076,11 +2081,13 @@ def segment_trials(
         )
 
     for region in end_regions:
-        if region not in env.regions:
-            available = list(env.regions.keys())
-            raise RegionNotFoundError(
-                region, available=available, argument="end_regions", in_list=True
-            )
+        _require_region_mask(
+            env,
+            region,
+            operation="segment_trials()",
+            argument="end_regions",
+            in_list=True,
+        )
 
     # Prevent start_region from being in end_regions (typical neuroscience practice)
     if start_region in end_regions:
@@ -2701,11 +2708,12 @@ def detect_goal_directed_runs(
            497(7447), 74-79.
     """
     # Input validation
-    if goal_region not in env.regions:
-        available = list(env.regions.keys())
-        raise RegionNotFoundError(
-            goal_region, available=available, argument="goal_region"
-        )
+    _require_region_mask(
+        env,
+        goal_region,
+        operation="detect_goal_directed_runs()",
+        argument="goal_region",
+    )
 
     if not 0.0 <= directedness_threshold <= 1.0:
         raise ValueError(
@@ -2739,9 +2747,6 @@ def detect_goal_directed_runs(
     from neurospatial.ops.mapping import regions_to_mask
 
     goal_bin_indices = np.flatnonzero(regions_to_mask(env, [goal_region]))
-    if len(goal_bin_indices) == 0:
-        # No bins in goal region
-        return []
     # Compute distance from each bin to nearest goal bin using graph distance,
     # once for every run. A single multi-source Dijkstra (via distance_field)
     # computes, for every bin, the shortest-path distance to the nearest goal

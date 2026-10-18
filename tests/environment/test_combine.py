@@ -868,9 +868,11 @@ def test_symmetric_mnn_tie_uses_local_id_and_cutoff_is_inclusive(reverse):
 
 
 def test_shared_grid_boundary_keeps_child_half_open_rule():
+    """Alone, each grid owns x = 1: left on its closed outline, right by its
+    half-open cell. Combined, the half-open owner wins in either order."""
     left, right = grid(count=1), grid(1.0, count=1)
     point = np.array([[1.0, 0.5]])
-    np.testing.assert_array_equal(left.bin_at(point), [-1])
+    np.testing.assert_array_equal(left.bin_at(point), [0])
     np.testing.assert_array_equal(right.bin_at(point), [0])
     for components in ({"left": left, "right": right}, {"right": right, "left": left}):
         env = Environment.combine(components)

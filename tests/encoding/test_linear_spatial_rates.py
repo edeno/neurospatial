@@ -221,7 +221,9 @@ def test_linear_internal_boundary_owner_does_not_depend_on_motion_direction(reve
     np.testing.assert_allclose(result.firing_rate, [0.0, 1.0])
 
 
-def test_linear_native_exclusive_upper_edge_keeps_its_inherited_owner():
+def test_linear_native_upper_edge_belongs_to_the_last_bin():
+    """The spike at t = 1, as the animal enters at the grid's outer edge
+    (x = 2), counts in the last bin, which owns that edge."""
     result = compute_spatial_rate(
         grid(),
         np.array([1.0, 2.0, 3.0]),
@@ -234,7 +236,7 @@ def test_linear_native_exclusive_upper_edge_keeps_its_inherited_owner():
         warn_on_drop=False,
     )
     np.testing.assert_allclose(result.occupancy, [1.0, 1.0])
-    np.testing.assert_allclose(result.firing_rate, [0.0, 1.0])
+    np.testing.assert_allclose(result.firing_rate, [0.0, 2.0])
 
 
 def test_linear_speed_windows_and_provenance_snapshot_share_retained_support():

@@ -621,6 +621,32 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `ValueError`. Code that caught `GraphValidationError` can catch
   `ValueError`, its parent class.
 
+- Decoding error is measured along the environment by default.
+  `DecodingResult.error_against`, `decoding_error`, `median_decoding_error`
+  and `BayesianDecoder.score` default to `metric="geodesic"` (`distance=` for
+  `score`): the shortest path between the decoded and actual bins on the
+  environment's connectivity graph, so a decode in the wrong arm of a maze
+  counts the path between the arms. Before, the default was the straight
+  line: on a simulated W-track the mean error read 39 cm instead of 59 cm
+  along the track. Pass `metric="euclidean"` for the straight-line error.
+  `decoding_error` and `median_decoding_error` now take the environment
+  first, like `confusion_matrix`:
+
+  ```python
+  # before
+  decoding_error(decoded, actual)  # straight line
+  # after
+  decoding_error(env, decoded, actual)  # along the environment
+  decoding_error(env, decoded, actual, metric="euclidean")  # straight line
+  ```
+
+  A geodesic position outside every bin, such as a posterior mean between two
+  arms, is measured from its nearest bin instead of falling back to the
+  straight line. Distances come from shortest paths run from the decoded bins
+  in blocks instead of a dense all-pairs matrix: on a 10,000-bin arena the
+  peak memory of 72,000 errors drops from 808 MB to 327 MB, at the same speed
+  and with identical values.
+
 ### Changed
 
 - Speed is one definition everywhere: the velocity vector smoothed with a
@@ -641,6 +667,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   deviation (default 0.1 s) instead of a 0.2 s moving-average width. Velocity
   is now the centered difference, so a run's first sample has a heading from
   its forward difference instead of being undefined.
+
+- A position exactly on the outline of a grid environment's bins -- the
+  arena's edge, the rim of a hole or the tip of an arm -- now belongs to the
+  bin it bounds, as the last bin of `np.histogram` includes its right edge.
+  Before, bins were half-open on every face, so `bin_at` gave `-1` there and
+  occupancy, spike counts and point regions dropped it: every reward well at
+  an arm tip of the built-in W, plus, T and radial-arm mazes covered no bin,
+  and an animal sitting against the wall was not counted. A face shared by two
+  bins still has one owner, `time_allocation="linear"` follows the same rule,
+  and in `Environment.combine` a face shared by two components keeps its
+  half-open owner.
 
 - `segment_trials` starts a trial when the animal leaves the start region, at
   the last sample inside it, instead of when it enters. Waiting at the start
@@ -1463,6 +1500,28 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- Behavior and event analyses that take a region name (`segment_trials`,
+  `detect_region_crossings`, `detect_region_visits`,
+  `detect_runs_between_regions`, `running_direction_labels`,
+  `detect_laps(method="region")`, `detect_goal_directed_runs`,
+  `decision_region_entry_time`, `compute_decision_analysis`,
+  `compute_vte_session`, `region_reward_field` and
+  `distance_to_boundary(boundary_type="region")`) raise a `ValueError` when
+  the region covers no bins. Before, a point region outside every bin or a
+  polygon around no bin center silently gave no trials, visits or runs (or a
+  misleading "trajectory never enters region" error). For a point region the
+  message gives the distance to the nearest bin center and suggests a polygon
+  region around the point, the same refusal `env.distance_to(region=...)`
+  already gave.
+
+- Every named region of the built-in mazes in `neurospatial.simulation.mazes`
+  now covers a bin. Radial-arm arm ends and Hamlet outer boxes sit at the
+  center of each arm's end square instead of on its tip, Hampton Court builds
+  the central goal area its docstring describes (the goal point lay in
+  empty space), and each maze's linearized `env_track` carries the same
+  regions, every point moved to the nearest location on the track. Before,
+  the track had no regions and several 2-D regions covered no bin.
 
 - On an egocentric polar environment, the bin that stands for a start or goal
   region in trial and decision analyses (`trials_to_region_arrays`, decision

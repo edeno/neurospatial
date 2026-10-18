@@ -14,9 +14,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import RegionNotFoundError
 from neurospatial._intervals import as_intervals, intervals_contain
-from neurospatial.ops.mapping import regions_to_mask
+from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -215,11 +214,13 @@ def detect_region_visits(
     # unvisited overlap is still ambiguous geometry, not a name-order policy.
     labels = np.full(env.n_bins, -1, dtype=np.intp)
     for label, name in enumerate(names):
-        if name not in env.regions:
-            raise RegionNotFoundError(
-                name, available=list(env.regions), argument="region_names", in_list=True
-            )
-        mask = regions_to_mask(env, name)
+        mask = _require_region_mask(
+            env,
+            name,
+            operation="detect_region_visits()",
+            argument="region_names",
+            in_list=True,
+        )
         overlap = mask & (labels >= 0)
         if overlap.any():
             other = sorted({names[index] for index in labels[overlap]})

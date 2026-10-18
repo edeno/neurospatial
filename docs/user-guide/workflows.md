@@ -273,7 +273,7 @@ print(f"Decoded {result.posterior.shape[0]} time bins over {env.n_bins} bins")
 
 # Step 3: Inspect in-sample error: these spikes also fitted the rate maps.
 actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
-median_err = np.nanmedian(decoding_error(result.map_position, actual))
+median_err = np.nanmedian(decoding_error(env, result.map_position, actual))
 print(f"Median in-sample decoding error: {median_err:.1f} cm")
 
 # Step 4: Plot decoded vs. actual position.
@@ -357,7 +357,7 @@ for ax, (name, decoder_times) in zip(axes, clocks.items(), strict=True):
     np.testing.assert_allclose(
         result.error_against(decoder_times, actual, max_gap=0.5), 0.0
     )
-    assert median_decoding_error(result.map_position, actual) == 0.0
+    assert median_decoding_error(env, result.map_position, actual) == 0.0
     ax.set_title(name)
     ax.legend()
 plt.show()

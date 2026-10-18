@@ -1,6 +1,12 @@
-"""Pure point assignment on half-open rectilinear cells."""
+"""Pure point assignment on rectilinear cells.
+
+Cells are half-open inside the active cells; their outline is closed
+(:func:`outline_cells`).
+"""
 
 from __future__ import annotations
+
+import itertools
 
 import numpy as np
 from numpy.typing import NDArray
@@ -146,3 +152,78 @@ def points_to_regular_grid_bin_ind(
 
     output_indices[valid_input_mask] = final_mapped_indices_for_valid_points
     return output_indices
+
+
+def outline_cells(
+    points: NDArray[np.float64],
+    grid_edges: tuple[NDArray[np.float64], ...] | list[NDArray[np.float64]],
+    grid_shape: tuple[int, ...],
+    active_mask: NDArray[np.bool_] | None,
+) -> NDArray[np.intp]:
+    """Full-grid cell each point bounds on the outline of the active cells.
+
+    A point on a face with no active cell beyond it (the grid's edge, a hole
+    or an arm tip) belongs to the active cell the face bounds from below, as
+    the last bin of ``np.histogram`` includes its right edge. At an outline
+    corner the cell whose upper faces the point touches on the fewest axes
+    wins, the lowest axes first.
+
+    Parameters
+    ----------
+    points : NDArray[np.float64], shape (n_points, n_dims)
+        Finite points whose half-open cell is inactive or outside the grid.
+    grid_edges : tuple of NDArray[np.float64]
+        Increasing cell edges per axis; ``grid_edges[d]`` has shape
+        ``(grid_shape[d] + 1,)``.
+    grid_shape : tuple of int
+        Number of cells per axis.
+    active_mask : NDArray[np.bool_] of shape ``grid_shape``, or None
+        Active cells; None treats every cell as active.
+
+    Returns
+    -------
+    NDArray[np.intp], shape (n_points,)
+        Row-major full-grid index of the owning active cell, or -1 when the
+        point is not on the outline.
+    """
+    shape = np.asarray(grid_shape)
+    n_dims = len(grid_shape)
+    # Half-open cell of each point per axis; -1 below and shape[d] above.
+    cells = np.column_stack(
+        [
+            np.searchsorted(edge, points[:, axis], side="right") - 1
+            for axis, edge in enumerate(grid_edges)
+        ]
+    ).astype(np.intp)
+    # On axis d the point lies on the lower face of its half-open cell, which
+    # is the upper face of the cell below it.
+    on_face = np.column_stack(
+        [
+            (cells[:, axis] >= 1)
+            & (cells[:, axis] <= shape[axis])
+            & (points[:, axis] == edge[np.clip(cells[:, axis], 0, len(edge) - 1)])
+            for axis, edge in enumerate(grid_edges)
+        ]
+    )
+    active = None if active_mask is None else np.asarray(active_mask).ravel()
+    owner = np.full(len(points), -1, dtype=np.intp)
+    for size in range(1, n_dims + 1):
+        for axes in itertools.combinations(range(n_dims), size):
+            shift = np.zeros(n_dims, dtype=np.intp)
+            shift[list(axes)] = 1
+            candidate = cells - shift
+            ok = (
+                (owner < 0)
+                & np.all(on_face[:, list(axes)], axis=1)
+                & np.all((candidate >= 0) & (candidate < shape), axis=1)
+            )
+            if not ok.any():
+                continue
+            flat = np.ravel_multi_index(tuple(candidate[ok].T), grid_shape)
+            if active is not None:
+                ok_rows = np.flatnonzero(ok)[active[flat]]
+                flat = flat[active[flat]]
+            else:
+                ok_rows = np.flatnonzero(ok)
+            owner[ok_rows] = flat
+    return owner

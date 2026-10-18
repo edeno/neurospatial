@@ -931,7 +931,7 @@ warn_on_drop
         epochs: Any = None,
         spike_window: Any = None,
         metric: str = "median_error",
-        distance: str = "euclidean",
+        distance: str = "geodesic",
     ) -> float:
         """Decode and report position error against ground truth (lower is better).
 
@@ -969,11 +969,11 @@ warn_on_drop
         metric : {"median_error", "mean_error"}, default="median_error"
             Reduction over the per-time-bin errors. ``"median_error"`` ->
             ``nanmedian``; ``"mean_error"`` -> ``nanmean``. Lower is better.
-        distance : {"euclidean", "geodesic"}, default="euclidean"
+        distance : {"geodesic", "euclidean"}, default="geodesic"
             Distance metric forwarded to ``error_against`` for the per-time-bin
-            error. ``"geodesic"`` uses the environment's connectivity graph
-            (shortest-path along the track / masked field), the differentiator
-            over straight-line euclidean error; ``"euclidean"`` is the default.
+            error. ``"geodesic"`` measures along the environment's connectivity
+            graph (along the track, around walls); ``"euclidean"`` gives the
+            straight-line distance.
 
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,

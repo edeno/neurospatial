@@ -72,12 +72,12 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import RegionNotFoundError
 from neurospatial._intervals import observed_runs
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _safe_gather
 from neurospatial.geometry import require_cartesian
+from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -349,10 +349,9 @@ def decision_region_entry_time(
     ... )  # doctest: +SKIP
     >>> print(f"Entered decision region at t={entry_time:.2f}s")  # doctest: +SKIP
     """
-    if region not in env.regions:
-        raise RegionNotFoundError(
-            region, available=list(env.regions), argument="region"
-        )
+    _require_region_mask(
+        env, region, operation="decision_region_entry_time()", argument="region"
+    )
 
     # Get bins in the region
     region_bins = env.bins_in_region(region)
@@ -1059,19 +1058,20 @@ def compute_decision_analysis(
     )
 
     # Validate regions exist
-    if decision_region not in env.regions:
-        raise RegionNotFoundError(
-            decision_region, available=list(env.regions), argument="decision_region"
-        )
-
+    _require_region_mask(
+        env,
+        decision_region,
+        operation="compute_decision_analysis()",
+        argument="decision_region",
+    )
     for goal_region in goal_regions:
-        if goal_region not in env.regions:
-            raise RegionNotFoundError(
-                goal_region,
-                available=list(env.regions),
-                argument="goal_regions",
-                in_list=True,
-            )
+        _require_region_mask(
+            env,
+            goal_region,
+            operation="compute_decision_analysis()",
+            argument="goal_regions",
+            in_list=True,
+        )
 
     # Get position bins
     position_bins = env.bin_at(positions)

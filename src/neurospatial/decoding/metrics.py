@@ -1,7 +1,8 @@
 """Decoding quality metrics for evaluating position decoding accuracy.
 
 This module provides functions for computing error metrics between decoded
-and actual positions, including Euclidean and graph-based distance metrics.
+and actual positions, measured along the environment's connectivity graph by
+default or as straight-line distance.
 
 Functions
 ---------
@@ -30,34 +31,39 @@ if TYPE_CHECKING:
 
 
 def decoding_error(
+    env: Environment,
     decoded_positions: NDArray[np.float64],
     actual_positions: NDArray[np.float64],
     *,
-    env: Environment | None = None,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "geodesic",
 ) -> NDArray[np.float64]:
     """Compute position error for each time bin.
 
-    Calculates the distance between decoded and actual positions using either
-    Euclidean distance (straight-line) or geodesic distance (shortest path along
-    environment connectivity graph).
+    By default the error is the shortest path between the decoded and actual
+    positions along the environment's connectivity graph, so a decode in the
+    wrong arm of a maze, or across a wall, is as far off as the animal would
+    have to travel. ``metric="euclidean"`` gives the straight-line distance.
 
     Parameters
     ----------
+    env : Environment
+        Environment the positions are in. Its connectivity graph gives
+        geodesic distances and its ``n_dims`` the number of position columns.
     decoded_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Decoded position estimates (e.g., MAP or mean positions).
     actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Ground truth positions.
-    env : Environment, optional
-        Required when ``metric="geodesic"``. Used to compute geodesic distances
-        via ``env.distance_between()``.
-    metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"geodesic", "euclidean"}, default="geodesic"
         Distance metric to use:
 
-        - "euclidean": Straight-line Euclidean distance. Fast and simple.
-        - "geodesic": Shortest-path distance along the environment's
-          connectivity graph. Useful for mazes where Euclidean distance
-          is misleading. Requires ``env`` parameter.
+        - "geodesic": Shortest-path distance between the positions' bins
+          along the environment's connectivity graph (along the track on a
+          linearized track). A position outside every bin, such as a
+          posterior mean between two arms, is measured from its nearest bin.
+          Bins in disconnected components are ``inf`` apart. On an open grid
+          the graph path can exceed the straight line by up to about 8%
+          (8-connected neighbors).
+        - "euclidean": Straight-line distance between the positions.
 
     Returns
     -------
@@ -68,8 +74,10 @@ def decoding_error(
     Raises
     ------
     ValueError
-        If ``metric="geodesic"`` but ``env`` is None.
-        If ``metric`` is not "euclidean" or "geodesic".
+        If the position arrays differ in shape or do not have ``env.n_dims``
+        columns, or if ``metric`` is not "euclidean" or "geodesic".
+    CartesianOnlyError
+        If ``metric="geodesic"`` on an egocentric polar environment.
 
     Notes
     -----
@@ -80,19 +88,25 @@ def decoding_error(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.decoding.metrics import decoding_error
+    >>> env = Environment.linear_track(
+    ...     node_positions=[(0, 0), (50, 0), (50, 50)], bin_size=1.0, track_width=4.0
+    ... )
 
-    Simple 2D Euclidean errors:
+    Along the L-shaped track the end bins are about 99 cm apart, though only
+    about 70 cm in a straight line:
 
-    >>> decoded = np.array([[0.0, 0.0], [3.0, 0.0], [0.0, 4.0]])
-    >>> actual = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
-    >>> errors = decoding_error(decoded, actual)
-    >>> bool(np.allclose(errors, [0.0, 3.0, 4.0]))
-    True
+    >>> ends = np.array([[0.5, 0.0]]), np.array([[50.0, 49.5]])
+    >>> round(float(decoding_error(env, *ends)[0]))
+    99
+    >>> round(float(decoding_error(env, *ends, metric="euclidean")[0]))
+    70
 
     See Also
     --------
     median_decoding_error : Median error summary statistic.
+    DecodingResult.error_against : Error against separately sampled tracking.
     """
     decoded_positions = np.asarray(decoded_positions, dtype=np.float64)
     actual_positions = np.asarray(actual_positions, dtype=np.float64)
@@ -103,108 +117,118 @@ def decoding_error(
             f"Shape mismatch: decoded_positions has shape {decoded_positions.shape}, "
             f"but actual_positions has shape {actual_positions.shape}"
         )
-
-    errors: NDArray[np.float64]
+    if decoded_positions.ndim != 2 or decoded_positions.shape[1] != env.n_dims:
+        raise ValueError(
+            f"decoding_error() needs positions with {env.n_dims} columns, one per "
+            f"dimension of the environment; got shape {decoded_positions.shape}. "
+            "Pass (n_time_bins, n_dims) positions in the environment's coordinates."
+        )
 
     if metric == "euclidean":
-        # Euclidean distance: sqrt(sum((decoded - actual)^2, axis=1))
         diff = decoded_positions - actual_positions
-        errors = cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
-
-    elif metric == "geodesic":
-        if env is None:
-            raise ValueError(
-                "env is required when metric='geodesic'. "
-                "Provide an Environment instance for geodesic distance computation."
-            )
-        require_cartesian(
-            env.coordinate_system,
-            "decoding_error(metric='geodesic')",
-            why="It locates the decoded and actual positions as allocentric "
-            "positions in the environment's bins.",
-            fix="decode on the allocentric environment the positions were "
-            "recorded in, or use metric='euclidean' on Cartesian positions",
-        )
-
-        from neurospatial.ops.distance import geodesic_distance_matrix
-
-        n_time_bins = decoded_positions.shape[0]
-
-        # Identify NaN positions (vectorized)
-        nan_mask = np.any(np.isnan(decoded_positions), axis=1) | np.any(
-            np.isnan(actual_positions), axis=1
-        )
-
-        # Initialize errors array
-        errors = np.empty(n_time_bins, dtype=np.float64)
-        errors[nan_mask] = np.nan
-
-        # Process non-NaN positions
-        valid_mask = ~nan_mask
-        if np.any(valid_mask):
-            valid_decoded = decoded_positions[valid_mask]
-            valid_actual = actual_positions[valid_mask]
-
-            # Map positions to bins (vectorized)
-            decoded_bins = env.bin_at(valid_decoded)
-            actual_bins = env.bin_at(valid_actual)
-
-            # Identify positions outside environment (bin_at returns -1)
-            outside_mask = (decoded_bins < 0) | (actual_bins < 0)
-            inside_mask = ~outside_mask
-
-            # For positions inside environment, use graph distance
-            if np.any(inside_mask):
-                # Compute geodesic distance matrix (cached per environment)
-                dist_matrix = geodesic_distance_matrix(
-                    env.connectivity,
-                    env.n_bins,
-                    weight="distance",
-                )
-                # Look up graph distances (vectorized)
-                inside_decoded = decoded_bins[inside_mask]
-                inside_actual = actual_bins[inside_mask]
-                graph_errors = dist_matrix[inside_decoded, inside_actual]
-
-                # Assign to valid positions that are inside
-                valid_indices = np.where(valid_mask)[0]
-                errors[valid_indices[inside_mask]] = graph_errors
-
-            # For positions outside environment, fall back to Euclidean
-            if np.any(outside_mask):
-                outside_decoded = valid_decoded[outside_mask]
-                outside_actual = valid_actual[outside_mask]
-                euclidean_errors = np.linalg.norm(
-                    outside_decoded - outside_actual, axis=1
-                )
-
-                # Assign to valid positions that are outside
-                valid_indices = np.where(valid_mask)[0]
-                errors[valid_indices[outside_mask]] = euclidean_errors
-
-    else:
+        return cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
+    if metric != "geodesic":
         raise ValueError(
             f"Invalid metric '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
 
+    require_cartesian(
+        env.coordinate_system,
+        "decoding_error(metric='geodesic')",
+        why="It locates the decoded and actual positions as allocentric "
+        "positions in the environment's bins.",
+        fix="decode on the allocentric environment the positions were "
+        "recorded in, or use metric='euclidean' on Cartesian positions",
+    )
+    errors = np.full(len(decoded_positions), np.nan, dtype=np.float64)
+    valid = ~(
+        np.any(np.isnan(decoded_positions), axis=1)
+        | np.any(np.isnan(actual_positions), axis=1)
+    )
+    if np.any(valid):
+        errors[valid] = _graph_distances(
+            env,
+            _bins_or_nearest(env, decoded_positions[valid]),
+            _bins_or_nearest(env, actual_positions[valid]),
+        )
     return errors
 
 
-def median_decoding_error(
-    decoded_positions: NDArray[np.float64],
-    actual_positions: NDArray[np.float64],
-) -> float:
-    """Compute median Euclidean decoding error (ignoring NaN).
+def _bins_or_nearest(
+    env: Environment, positions: NDArray[np.float64]
+) -> NDArray[np.intp]:
+    """Bin of each finite position, or its nearest bin when outside every bin."""
+    bins = np.asarray(env.bin_at(positions), dtype=np.intp)
+    outside = bins < 0
+    if np.any(outside):
+        bins[outside] = env.nearest_bin(positions[outside])
+    return bins
 
-    Convenience function equivalent to:
-    ``np.nanmedian(decoding_error(decoded, actual))``
+
+# Distances computed per block of source bins: (block, n_bins) float64 rows
+# stay near 160 MB however large the environment.
+_GRAPH_DISTANCE_BLOCK_VALUES = 20_000_000
+
+
+def _graph_distances(
+    env: Environment, sources: NDArray[np.intp], targets: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """Shortest-path length along ``env.connectivity`` for each bin pair.
+
+    Runs Dijkstra only from the distinct source bins, in blocks, instead of
+    building the dense ``(n_bins, n_bins)`` all-pairs matrix.
 
     Parameters
     ----------
+    env : Environment
+        Environment whose connectivity graph (``distance`` weights) is used.
+    sources, targets : NDArray[np.intp], shape (n_pairs,)
+        Bin index pairs.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_pairs,)
+        Path length per pair; ``inf`` between disconnected components.
+    """
+    import networkx as nx
+    from scipy.sparse.csgraph import dijkstra
+
+    adjacency = nx.to_scipy_sparse_array(
+        env.connectivity, nodelist=range(env.n_bins), weight="distance", format="csr"
+    )
+    unique_sources, source_row = np.unique(sources, return_inverse=True)
+    out = np.empty(len(sources), dtype=np.float64)
+    block = max(1, _GRAPH_DISTANCE_BLOCK_VALUES // max(env.n_bins, 1))
+    for start in range(0, len(unique_sources), block):
+        rows = np.arange(start, min(start + block, len(unique_sources)))
+        lengths = dijkstra(adjacency, directed=False, indices=unique_sources[rows])
+        in_block = (source_row >= rows[0]) & (source_row <= rows[-1])
+        out[in_block] = lengths[source_row[in_block] - rows[0], targets[in_block]]
+    return out
+
+
+def median_decoding_error(
+    env: Environment,
+    decoded_positions: NDArray[np.float64],
+    actual_positions: NDArray[np.float64],
+    *,
+    metric: Literal["euclidean", "geodesic"] = "geodesic",
+) -> float:
+    """Compute the median decoding error, ignoring NaN.
+
+    Convenience function equivalent to
+    ``np.nanmedian(decoding_error(env, decoded, actual, metric=metric))``.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment the positions are in.
     decoded_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Decoded position estimates (e.g., MAP or mean positions).
     actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Ground truth positions.
+    metric : {"geodesic", "euclidean"}, default="geodesic"
+        Distance metric; see :func:`decoding_error`.
 
     Returns
     -------
@@ -213,26 +237,24 @@ def median_decoding_error(
         time bins where either position contains NaN.
         Returns NaN if all time bins contain NaN.
 
-    Notes
-    -----
-    Uses ``np.nanmedian`` internally, so NaN values from position errors
-    are automatically excluded from the median calculation.
-
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.decoding.metrics import median_decoding_error
-
-    >>> decoded = np.array([[0.0], [0.0], [0.0], [0.0], [0.0]])
-    >>> actual = np.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
-    >>> median_decoding_error(decoded, actual)
+    >>> env = Environment.linear_track(
+    ...     endpoints=[(0, 0), (10, 0)], bin_size=1.0, track_width=2.0
+    ... )
+    >>> decoded = np.zeros((5, 2)) + [0.5, 0.0]
+    >>> actual = np.column_stack([np.arange(1.5, 6.5), np.zeros(5)])
+    >>> median_decoding_error(env, decoded, actual)
     3.0
 
     See Also
     --------
     decoding_error : Per-time-bin error computation.
     """
-    errors = decoding_error(decoded_positions, actual_positions, metric="euclidean")
+    errors = decoding_error(env, decoded_positions, actual_positions, metric=metric)
     return float(np.nanmedian(errors))
 
 

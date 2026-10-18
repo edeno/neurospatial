@@ -33,6 +33,7 @@ from dataclasses import dataclass
 
 import networkx as nx
 import numpy as np
+from shapely.geometry import box
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
@@ -219,12 +220,14 @@ def make_hampton_court_maze(
     # Dead end 3: from inner ring left side going left
     corridors.append(((-inner_r, -inner_r * 0.3), (-inner_r * 1.4, -inner_r * 0.3)))
 
-    # Create polygon for each corridor and union them
+    # Create polygon for each corridor and union them with the central goal
+    # area, which the inner-ring connector enters from the top.
     corridor_polygons = [
         make_corridor_polygon(seg_start, seg_end, dims.corridor_width)
         for seg_start, seg_end in corridors
     ]
-    labyrinth_polygon = union_polygons(corridor_polygons)
+    goal_area = box(-half_center, -half_center, half_center, half_center)
+    labyrinth_polygon = union_polygons([*corridor_polygons, goal_area])
 
     # Create 2D environment
     env_2d = Environment.from_polygon(

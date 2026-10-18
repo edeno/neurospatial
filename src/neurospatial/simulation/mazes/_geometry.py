@@ -87,6 +87,35 @@ def make_corridor_polygon(
     return Polygon(corners)
 
 
+def corridor_end_point(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    width: float,
+) -> tuple[float, float]:
+    """Return the center of a corridor's end square, where a well sits.
+
+    The point lies on the corridor's axis, half a corridor width back from
+    ``end``, so a region there covers the bins at the end of the arm. The end
+    point itself lies on the corridor's outline.
+
+    Parameters
+    ----------
+    start, end : tuple of float
+        Corridor axis endpoints, as for :func:`make_corridor_polygon`.
+    width : float
+        Corridor width.
+
+    Returns
+    -------
+    tuple of float
+        ``(x, y)`` of the end square's center.
+    """
+    start_xy, end_xy = np.asarray(start, dtype=float), np.asarray(end, dtype=float)
+    axis = end_xy - start_xy
+    point = end_xy - axis / np.linalg.norm(axis) * (width / 2.0)
+    return (float(point[0]), float(point[1]))
+
+
 def make_buffered_line(
     start: tuple[float, float],
     end: tuple[float, float],

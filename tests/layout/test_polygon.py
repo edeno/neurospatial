@@ -94,7 +94,8 @@ def test_clipped_locator_preserves_parent_boundary_and_nonfinite_semantics():
     locator = ClippedLocator(base, cells, mapping)
     points = np.array([[0.5, 2], [2, 2], [3.5, 2], [4, 2], [np.nan, 2], [np.inf, 2]])
     untouched = points.copy()
-    np.testing.assert_array_equal(locator.locate(points), [0, -1, 1, -1, -1, -1])
+    # (4, 2) lies on the parent grid's outline, which belongs to the last cell.
+    np.testing.assert_array_equal(locator.locate(points), [0, -1, 1, 1, -1, -1])
     np.testing.assert_array_equal(points, untouched)
     for restored in (copy.deepcopy(locator), pickle.loads(pickle.dumps(locator))):
         np.testing.assert_array_equal(restored.locate(points), locator.locate(points))

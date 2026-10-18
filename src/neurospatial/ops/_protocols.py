@@ -136,6 +136,13 @@ class RegionMaskConsumer(BinningConsumer, Protocol):
     def regions(self) -> Regions: ...
 
 
+class NamedRegionConsumer(RegionMaskConsumer, BinCentersConsumer, Protocol):
+    """Region masks plus centers and units for explaining an empty region."""
+
+    @property
+    def units(self) -> str | None: ...
+
+
 class GraphLookupConsumer(BinningConsumer, CoordinateConsumer, Protocol):
     """Point lookup, coordinate meaning and graph for geodesic distances."""
 
