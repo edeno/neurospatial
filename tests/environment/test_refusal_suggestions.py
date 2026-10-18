@@ -22,8 +22,9 @@ from shapely.geometry import Polygon, box
 from neurospatial import Environment, Regions
 from neurospatial.binning import KnownFaces
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout import create_layout
-from neurospatial.ops.transforms import translate_3d
+from neurospatial.ops.transforms import AffineND, scale_2d, translate_3d
 
 _RNG = np.random.default_rng(0)
 _POSITIONS = _RNG.uniform(0.0, 100.0, size=(3000, 2))
@@ -511,6 +512,75 @@ def test_suggested_coarser_bins_are_coarser():
         rebuilt = _run(code, names)
         assert rebuilt.n_bins < names["env"].n_bins
         assert rebuilt.layout_type == names["env"].layout_type
+
+
+# A quarter turn that doubles lengths, then a shift.
+_SIMILARITY = np.array([[0.0, -2.0, 5.0], [2.0, 0.0, -3.0], [0.0, 0.0, 1.0]])
+
+
+def _doubled(build: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """The names of ``build`` after ``_SIMILARITY``, positions included."""
+    names = build()
+    names["env"] = names["env"].apply_transform(AffineND(_SIMILARITY))
+    if "positions" in names:
+        names["positions"] = (
+            names["positions"] @ _SIMILARITY[:2, :2].T + _SIMILARITY[:2, 2]
+        )
+    return names
+
+
+def _rebin_fix(env: Environment) -> str:
+    with pytest.raises(NotImplementedError) as caught:
+        env.rebin(2)
+    return str(caught.value).splitlines()[-1]
+
+
+@pytest.mark.parametrize(
+    ("build", "size"),
+    [
+        (_hexagons, "bin_size=16"),
+        (_track, "bin_size=8"),
+        (_mesh, "point_spacing=8"),
+        (_clipped, "bin_size=20"),
+    ],
+    ids=["hexagons", "track", "mesh", "clipped grid"],
+)
+def test_rebin_suggests_sizes_in_transformed_coordinates(build, size):
+    """After apply_transform doubles the cells, rebin(2) suggests twice their new size.
+
+    The recorded build size (4, 2, 2 and 5) is in the coordinates the bins
+    were built in; the suggestion is in the coordinates they are in now.
+    """
+    names = _doubled(build)
+    env = names["env"]
+    fix = _rebin_fix(env)
+    assert size in fix, fix
+    code = fix.split(": ", 2)[2].split("; or smooth")[0]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # rebin-loss warnings
+        rebuilt = _run(code, names)
+    # Merging two bins along each axis: cells 2**measure_dim times larger.
+    np.testing.assert_allclose(
+        np.median(rebuilt.bin_sizes),
+        2**env.binning.bins.measure_dim * np.median(env.bin_sizes),
+        rtol=0.25,
+    )
+
+
+def test_rebin_suggests_no_size_after_a_stretch():
+    """A stretch leaves no single cell size, so the suggestion gives none."""
+    env = _hexagons()["env"].apply_transform(scale_2d(2.0, 3.0))
+    fix = _rebin_fix(env)
+    assert "bin_size=...," in fix, fix
+    assert "bandwidth" not in fix
+
+
+def test_rebin_suggestion_survives_saving(tmp_path):
+    """A saved transformed environment suggests the same size when read back."""
+    env = _doubled(_hexagons)["env"]
+    to_file(env, tmp_path / "env")
+    for restored in (from_dict(to_dict(env)), from_file(tmp_path / "env")):
+        assert _rebin_fix(restored) == _rebin_fix(env)
 
 
 def test_suggested_track_rebuild_keeps_a_transformed_track_width():

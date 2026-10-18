@@ -1346,6 +1346,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `hexagon_width`), and the suggestion reads that option. Bins from a custom
   engine no longer get a size guessed from a recorded `bin_size`.
 
+- After `apply_transform` scales the bins, a refused `rebin(2)` suggests
+  twice their current size. It used to double the size they were built at,
+  so hexagons built 4 cm wide and scaled by two were suggested a rebuild at
+  `bin_size=8`, the width they already had, instead of 16; tracks, meshes
+  and clipped grids had the same error. After a transform that stretches
+  some directions more than others, the suggestion gives no size, since
+  the cells no longer have one. Files, dictionaries and NWB files save the
+  scale as `length_scale`; files saved earlier give no size after a
+  transform.
+
 - After `apply_transform`, a track with a known width still says so. The
   `rebin` refusal on such a track suggested an `Environment.from_graph(...)`
   rebuild without `track_width=`, so following it lost the width; it now

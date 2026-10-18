@@ -319,19 +319,33 @@ class _Provenance:
         Names of the derivations (``"subset"``, ``"clip"``, ``"rebin"``,
         ``"apply_transform"``, ``"combine"``) applied since the bins were
         built, oldest first.
+    length_scale : float or None
+        How long one unit of length in the build choices is in the current
+        coordinates. It is 1.0 while the bins are in the coordinates the
+        choices were recorded in, is multiplied by the scale of each later
+        similarity transform, and is None after any other transform, which
+        stretches lengths differently along different directions. A
+        ``bin_size`` of 2 with a ``length_scale`` of 3 describes cells 6
+        wide now.
 
     Raises
     ------
     TypeError
         If a build choice is not a scalar or a flat sequence of scalars, or a
         derivation name is not a string.
+    ValueError
+        If ``length_scale`` is not None or a finite positive number.
     """
 
     choices: tuple[tuple[str, Any], ...]
     derivations: tuple[str, ...]
+    length_scale: float | None
 
     def __init__(
-        self, build_params: Mapping[str, Any], derivations: tuple[str, ...] = ()
+        self,
+        build_params: Mapping[str, Any],
+        derivations: tuple[str, ...] = (),
+        length_scale: float | None = 1.0,
     ) -> None:
         choices = build_choices(build_params, owner="layout_parameters")
         object.__setattr__(self, "choices", tuple(choices.items()))
@@ -339,6 +353,19 @@ class _Provenance:
         if not all(isinstance(step, str) for step in derivations):
             raise TypeError("Derivation names must be strings.")
         object.__setattr__(self, "derivations", derivations)
+        if length_scale is not None:
+            if (
+                isinstance(length_scale, bool)
+                or not isinstance(length_scale, (int, float, np.number))
+                or not np.isfinite(length_scale)
+                or length_scale <= 0
+            ):
+                raise ValueError(
+                    "length_scale must be None or a finite positive number, "
+                    f"got {length_scale!r}."
+                )
+            length_scale = float(length_scale)
+        object.__setattr__(self, "length_scale", length_scale)
 
     @property
     def build_params(self) -> dict[str, Any]:
@@ -575,7 +602,12 @@ class _Derivation:
     step : str
         Name of the derivation, appended to the derivation history.
     build_params : mapping or None, optional
-        Build choices of new bins; ``None`` keeps the parent's choices.
+        Build choices of new bins, in their coordinates; ``None`` keeps the
+        parent's choices.
+    length_scale : float or None, default=1.0
+        The factor by which the derivation multiplies lengths when it keeps
+        the parent's choices: the scale of a similarity transform, or None
+        for a transform that has no single scale.
     continues_history : bool, default=True
         Append ``step`` to the parent's derivation history. ``False`` starts
         a new history at ``step``, for a result with no single parent.
@@ -588,6 +620,7 @@ class _Derivation:
     binning: Binning
     step: str
     build_params: Mapping[str, Any] | None = None
+    length_scale: float | None = 1.0
     continues_history: bool = True
     regions: Regions | None = None
     arena: Arena | None = None
@@ -631,12 +664,18 @@ def publish_derived(
     )
     inherited = parent._provenance
     history = inherited.derivations if derivation.continues_history else ()
-    provenance = _Provenance(
-        inherited.build_params
-        if derivation.build_params is None
-        else derivation.build_params,
-        (*history, derivation.step),
-    )
+    params: Mapping[str, Any]
+    scale: float | None
+    if derivation.build_params is None:
+        params = inherited.build_params
+        scale = (
+            None
+            if inherited.length_scale is None or derivation.length_scale is None
+            else inherited.length_scale * derivation.length_scale
+        )
+    else:
+        params, scale = derivation.build_params, 1.0
+    provenance = _Provenance(params, (*history, derivation.step), scale)
     return _publish(
         type(parent),
         derivation.binning,

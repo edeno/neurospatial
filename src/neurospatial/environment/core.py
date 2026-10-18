@@ -802,7 +802,10 @@ class Environment(Generic[_C]):
         ``fill_holes=False``: no bin was filled.
 
         ``subset``, ``clip`` and ``apply_transform`` keep the bins they were
-        given, so they keep these choices. ``rebin`` builds new bins and
+        given, so they keep these choices, and lengths such as ``bin_size``
+        stay in the coordinates the bins were built in: after
+        ``apply_transform(scale_2d(2.0))`` the bins are twice as wide as the
+        recorded ``bin_size``. ``rebin`` builds new bins and
         records their ``bin_size`` and ``connect_diagonal_neighbors``.
         ``combine`` records none. :attr:`derivations` lists what was applied.
 
@@ -2286,7 +2289,7 @@ class Environment(Generic[_C]):
             self._binning,
             self.arena,
             self.connectivity,
-            self._provenance.build_params,
+            self._provenance,
             factor=factor,
             bin_size=bin_size,
         )

@@ -148,8 +148,11 @@ assigned, and equality is by identity, so cached analyses and
 `with_regions` return a new object over the same geometry and cache.
 
 The build record (`_Provenance`) only describes how the bins were built, as
-scalar choices such as `bin_size`, and the derivations applied since
-(`env.derivations`). It never holds input data: an engine
+scalar choices such as `bin_size`, the derivations applied since
+(`env.derivations`) and how long a unit of the choices' lengths is in the
+current coordinates (`length_scale`: multiplied by each similarity
+`apply_transform`, None after any other transform, reset by `rebin`). It never
+holds input data: an engine
 declares its data arguments once, with `@capture_build_params(data=(...))` on
 its `build` method, and any other argument that is not a scalar or a flat
 sequence of scalars is refused when the engine is built. The layout label is

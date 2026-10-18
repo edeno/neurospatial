@@ -20,6 +20,7 @@ from neurospatial.geometry import (
     mapped_geometry,
     transform_binning,
 )
+from neurospatial.geometry._derive import _classification
 from neurospatial.ops.transforms import Affine2D, AffineND
 from neurospatial.regions import Region, Regions
 
@@ -100,9 +101,13 @@ def _apply_transform(
             ),
         )
 
+    # The build choices keep their lengths; record how much longer those
+    # lengths are now, when the transform scales every direction alike.
+    kind, scale, _ = _classification(np.asarray(transform.A)[:-1, :-1])
     return _Derivation(
         transformed,
         "apply_transform",
+        length_scale=scale if kind in ("translation", "similarity") else None,
         regions=Regions(
             _transformed_region(region, transform) for region in regions.values()
         ),

@@ -15,6 +15,7 @@ from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout import create_layout
+from neurospatial.ops.transforms import scale_2d
 
 _SCALARS = (bool, int, float, str, type(None))
 
@@ -75,6 +76,11 @@ FACTORIES = {
         angle_range=(-np.pi, np.pi),
         distance_bin_size=2.0,
         angle_bin_size=np.pi / 4,
+    ),
+    # Built lengths are 3 times longer now, and have no single scale.
+    "scaled_track": lambda: _track().apply_transform(scale_2d(3.0)),
+    "stretched_hexagonal": lambda: FACTORIES["hexagonal"]().apply_transform(
+        scale_2d(2.0, 3.0)
     ),
 }
 
@@ -176,6 +182,32 @@ def test_round_trips_reproduce_environment_and_provenance(factory, how, tmp_path
     np.testing.assert_array_equal(restored.bin_centers, env.bin_centers)
     np.testing.assert_array_equal(restored.edge_pairs, env.edge_pairs)
     np.testing.assert_array_equal(restored.bin_sizes, env.bin_sizes)
+
+
+@pytest.mark.filterwarnings("ignore:Rebinning leaves")
+def test_transforms_scale_the_lengths_of_recorded_choices():
+    """The record says how long its lengths are now; a rebin starts again."""
+    assert FACTORIES["from_graph"]()._provenance.length_scale == 1.0
+    scaled = FACTORIES["scaled_track"]()
+    assert scaled.layout_parameters == FACTORIES["from_graph"]().layout_parameters
+    assert scaled._provenance.length_scale == pytest.approx(3.0)
+    assert FACTORIES["stretched_hexagonal"]()._provenance.length_scale is None
+    grid = FACTORIES["from_polygon"]().apply_transform(scale_2d(2.0))
+    assert grid.subset(mask=np.arange(grid.n_bins) < 20)._provenance.length_scale == 2.0
+    assert grid.rebin(2)._provenance.length_scale == 1.0
+
+
+@pytest.mark.parametrize(
+    ("factory", "expected"),
+    [("from_graph", 1.0), ("scaled_track", None)],
+)
+def test_files_without_a_length_scale_read_as_unknown_after_a_transform(
+    factory, expected
+):
+    """Earlier files did not save the scale; a transform since leaves it unknown."""
+    saved = to_dict(FACTORIES[factory]())
+    del saved["length_scale"]
+    assert from_dict(saved)._provenance.length_scale == expected
 
 
 def _saved_size(n_samples: int, directory: Path) -> int:

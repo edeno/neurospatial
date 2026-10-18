@@ -12,7 +12,6 @@ the published result to report source bins and barriers the new bins lose.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
@@ -24,7 +23,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.environment._publication import _Derivation
+from neurospatial.environment._publication import _Derivation, _Provenance
 from neurospatial.geometry import (
     Arena,
     Binning,
@@ -210,7 +209,7 @@ def _rebin(
     binning: Binning,
     arena: Arena,
     connectivity: nx.Graph,
-    layout_parameters: Mapping[str, Any],
+    provenance: _Provenance,
     *,
     factor: int | tuple[int, ...] | None,
     bin_size: float | tuple[float, ...] | None,
@@ -231,7 +230,7 @@ def _rebin(
     if (factor is None) == (bin_size is None):
         raise ValueError("Pass exactly one of factor or bin_size to rebin().")
     refuse_unsupported_rebin(
-        binning, arena, layout_parameters, factor=factor, bin_size=bin_size
+        binning, arena, provenance, factor=factor, bin_size=bin_size
     )
     if bin_size is not None:
         return _rebin_resolution(binning, arena, bin_size)
@@ -242,7 +241,7 @@ def _rebin(
 def refuse_unsupported_rebin(
     binning: Binning,
     arena: Arena,
-    layout_parameters: Mapping[str, Any],
+    provenance: _Provenance,
     *,
     factor: object,
     bin_size: object,
@@ -258,7 +257,7 @@ def refuse_unsupported_rebin(
     needs_lattice = bin_size is not None
     if (binning.grid_spec if needs_lattice else binning.rectilinear) is not None:
         return
-    size = _requested_size(layout_parameters, binning, factor, bin_size)
+    size = _requested_size(provenance, binning, factor, bin_size)
     if not needs_lattice and binning.grid_spec is not None:
         # A clipped grid keeps its lattice but not whole rectangular cells.
         target = f"env.rebin(bin_size={size:g})" if size else "env.rebin(bin_size=...)"
@@ -303,28 +302,31 @@ def refuse_unsupported_rebin(
 
 
 def _requested_size(
-    layout_parameters: Mapping[str, Any],
+    provenance: _Provenance,
     binning: Binning,
     factor: object,
     bin_size: object,
 ) -> float | None:
     """The new cell size the call asks for, when it is one known number.
 
-    A factor multiplies the recorded value of the option that sets the
-    layout's cell size (its engine's ``size_parameter``).
+    A factor multiplies the current cell size: the recorded value of the
+    option that sets the layout's cell size (its engine's
+    ``size_parameter``), in the coordinates the bins are in now.
     """
     if bin_size is not None:
         sizes = np.ravel(np.asarray(bin_size, dtype=float))
         return float(sizes[0]) if sizes.size and np.all(sizes == sizes[0]) else None
     factors = np.ravel(np.asarray(factor, dtype=float))
     option = _size_parameter(binning.kind)
-    current = None if option is None else layout_parameters.get(option)
+    recorded = None if option is None else provenance.build_params.get(option)
+    scale = provenance.length_scale
     if (
-        isinstance(current, (int, float))
+        isinstance(recorded, (int, float))
+        and scale is not None
         and factors.size
         and np.all(factors == factors[0])
     ):
-        return float(current) * float(factors[0])
+        return float(recorded) * scale * float(factors[0])
     return None
 
 
