@@ -649,9 +649,8 @@ class TestCountPlaceCells:
         """Test default threshold of 0.5 bits/spike."""
         spatial_information = np.array([0.3, 0.5, 0.6, 0.4, 1.0])
         count = count_place_cells(spatial_information)
-        # Default threshold is 0.5, so count cells with > 0.5
-        # Values: 0.6, 1.0 are above threshold
-        assert count == 2
+        # Default threshold is 0.5, inclusive: 0.5, 0.6 and 1.0 count
+        assert count == 3
 
     def test_count_place_cells_none_qualify(self) -> None:
         """Test when no cells exceed threshold."""
@@ -666,11 +665,10 @@ class TestCountPlaceCells:
         assert count == 4
 
     def test_count_place_cells_boundary(self) -> None:
-        """Test behavior at threshold boundary."""
+        """A value exactly at the threshold counts (inclusive >=)."""
         spatial_information = np.array([0.5, 0.50001, 0.49999])
         count = count_place_cells(spatial_information, threshold=0.5)
-        # Only values strictly greater than threshold
-        assert count == 1  # Only 0.50001
+        assert count == 2  # 0.5 and 0.50001
 
     def test_count_place_cells_nan_handling(self) -> None:
         """Test handling of NaN values in spatial information."""

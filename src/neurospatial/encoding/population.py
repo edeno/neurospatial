@@ -579,7 +579,7 @@ def count_place_cells(
     spatial_information: NDArray[np.float64], threshold: float = 0.5
 ) -> int:
     """
-    Count cells exceeding spatial information threshold.
+    Count cells at or above a spatial information threshold.
 
     Determines number of spatially selective cells in a population based on
     Skaggs spatial information criterion. Standard method for identifying
@@ -591,13 +591,14 @@ def count_place_cells(
         Spatial information (bits/spike) for each cell.
         Typically computed using `spatial_information()`.
     threshold : float, default=0.5
-        Minimum spatial information (bits/spike) to classify as place cell.
-        Default of 0.5 bits/spike is standard in literature (Skaggs et al., 1996).
+        Minimum spatial information (bits/spike) to count a cell. The cutoff
+        is inclusive: a cell exactly at the threshold counts. Default of 0.5
+        bits/spike is standard in literature (Skaggs et al., 1996).
 
     Returns
     -------
     count : int
-        Number of cells with spatial information > threshold.
+        Number of cells with spatial information >= threshold.
 
     Examples
     --------
@@ -606,7 +607,7 @@ def count_place_cells(
     >>> # Population with mix of place cells and non-selective cells
     >>> spatial_info = np.array([0.2, 0.8, 1.5, 0.3, 1.2, 0.1])
     >>> n_place_cells = count_place_cells(spatial_info, threshold=0.5)
-    >>> print(n_place_cells)  # 3 cells exceed 0.5 bits/spike
+    >>> print(n_place_cells)  # 3 cells reach 0.5 bits/spike
     3
 
     See Also
@@ -617,7 +618,7 @@ def count_place_cells(
     -----
     **Classification criteria**:
 
-    - **Place cells**: Spatial information > 0.5 bits/spike
+    - **Place cells**: Spatial information >= 0.5 bits/spike
     - **Interneurons**: Mean firing rate > 10 Hz (handled separately)
     - **Non-selective**: Low spatial information or uniform firing
 
@@ -633,8 +634,8 @@ def count_place_cells(
     valid_mask = ~np.isnan(spatial_information)
     valid_info = spatial_information[valid_mask]
 
-    # Count cells strictly exceeding threshold
-    return int(np.sum(valid_info > threshold))
+    # Inclusive cutoff, as in the cell-type threshold screens
+    return int(np.sum(valid_info >= threshold))
 
 
 def field_overlap(

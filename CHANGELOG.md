@@ -1744,6 +1744,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `count_place_cells` counts a cell whose spatial information equals
+  `threshold`, matching the inclusive `>=` cutoff of `classify()` and the other
+  threshold screens. Before, it required information strictly above the
+  threshold.
 - `detect_assemblies` orients each ICA and PCA pattern so its largest-magnitude
   weight is positive, and flips its activation with it. Before, the sign was
   arbitrary, so an assembly's members could have negative weights and
