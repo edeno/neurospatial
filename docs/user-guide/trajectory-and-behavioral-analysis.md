@@ -11,6 +11,7 @@ coverage before reducing movement metrics; a missing interval is not zero moveme
 Neurospatial provides a comprehensive suite of tools for analyzing animal trajectories and automatically detecting behavioral epochs:
 
 **Trajectory Metrics**:
+- Distance traveled across recordings, and resampling at equal distances
 - Turn angles between movement vectors
 - Step lengths along the path
 - Home range estimation (core territory)
@@ -27,6 +28,7 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
 ## Table of Contents
 
 1. [Trajectory Characterization](#trajectory-characterization)
+   - [Distance Traveled Across Recordings and Distance Resampling](#distance-traveled-across-recordings-and-distance-resampling)
    - [Turn Angles](#turn-angles)
    - [Step Lengths](#step-lengths)
    - [Home Range](#home-range)
@@ -62,6 +64,251 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
 
 ## Trajectory Characterization
 
+### Distance Traveled Across Recordings and Distance Resampling
+
+**The question.** Did the animal take the same route in two sessions? One
+session was filmed at 30 Hz while the animal ran at 22 cm/s; the other at
+120 Hz while it ran at 47 cm/s. Each session is two recordings joined into one
+array, and the tracker lost the animal for 0.3 s in each. Comparing the
+sessions frame by frame or second by second mixes route differences with
+frame-rate and speed differences, and the joins and dropouts add distance the
+animal never ran.
+
+Two choices answer it. First, count distance only over intervals that were
+actually observed: lost frames are `NaN`, and the first frame of a new
+recording is marked with `break_before`, so neither adds distance. Second,
+resample each path at equal distances along the route (here every 2 cm), so
+sample *k* is the same distance from the run's start in both sessions,
+whatever the speed or frame rate. Sample *k* is then the same place only if
+the runs start at the same place; here the first run of each session starts
+at the same point on the track.
+
+The simulation runs the animal counterclockwise around a circular track of
+40 cm radius. The two recordings share one clock, as when files are
+concatenated, and the animal is put back on the track at a random place for
+the second one.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial.behavior import compute_cumulative_distance, traveled_path_length
+
+rng = np.random.default_rng(0)
+radius = 40.0  # cm, circular track
+
+
+def simulate_session(frame_rate, running_speed):
+    """Two 20 s recordings on one clock, with a 0.3 s tracking dropout.
+
+    The animal runs counterclockwise at a constant speed (cm/s). The second
+    recording starts wherever the animal was put back on the track.
+    """
+    times = np.arange(int(40 * frame_rate)) / frame_rate  # seconds
+    recording_id = (times >= 20.0).astype(int)
+    put_back_angle = rng.uniform(0.0, 2 * np.pi)
+    angle = np.where(
+        recording_id == 0,
+        running_speed * times / radius,
+        put_back_angle + running_speed * (times - 20.0) / radius,
+    )
+    positions = radius * np.column_stack([np.cos(angle), np.sin(angle)])  # cm
+    dropout_start = rng.uniform(5.0, 15.0)
+    lost = (times >= dropout_start) & (times < dropout_start + 0.3)
+    positions[lost] = np.nan  # lost frames are missing, not zero
+    return times, positions, recording_id
+
+
+sessions = {
+    "30 Hz, 22 cm/s": simulate_session(frame_rate=30.0, running_speed=22.0),
+    "120 Hz, 47 cm/s": simulate_session(frame_rate=120.0, running_speed=47.0),
+}
+
+for name, (times, positions, recording_id) in sessions.items():
+    # True at the first frame of the second recording
+    new_recording = np.r_[False, np.diff(recording_id) != 0]
+    distance = compute_cumulative_distance(times, positions, break_before=new_recording)
+    observed_time = np.diff(distance.run_time_bounds, axis=1).sum()
+    total = traveled_path_length(times, positions, break_before=new_recording)
+    runs = ", ".join(f"{length:.1f}" for length in distance.run_path_lengths)
+    print(f"{name}: runs of {runs} cm")
+    print(f"  total {total:.1f} cm in {observed_time:.2f} s observed")
+    print(f"  without break_before: {traveled_path_length(times, positions):.1f} cm")
+```
+
+Each session splits into three **runs**, stretches of continuous observation:
+the dropout ends the first and the new recording ends the second. The 30 Hz
+session prints runs of 168.7, 263.3 and 439.3 cm and a total of 871.2 cm in
+39.60 s of observed time, which is 22 cm/s times 39.60 s: nothing was added
+across the dropout or the join, and the lost frames did not turn the total
+into `NaN`. The 120 Hz session gives 1864.7 cm, likewise 47 cm/s times its
+observed time. `compute_cumulative_distance` returns the distance at every
+frame (`run_distance` restarts at 0 in each run, `cumulative_distance` keeps
+adding across runs); `traveled_path_length` returns only the total.
+
+Without `break_before` the totals are 898.5 and 1929.8 cm. The clock runs
+straight from one file into the next, so nothing marks the join, and the
+27.3 cm and 65.1 cm jumps to where the animal was put back are counted as
+running. A break is seen only when you declare it: a time gap longer than
+`max_gap` (0.5 s by default), `break_before`, or `epochs`.
+
+Now resample both sessions every 2 cm and compare them. The spacing sets the
+distance scale of the comparison: choose it larger than your tracking jitter
+and smaller than the turns you want to resolve. The example rebuilds the same
+two sessions so that it runs on its own.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial.behavior import (
+    compute_planar_curvature,
+    compute_speed,
+    compute_trajectory_curvature,
+    resample_by_distance,
+)
+
+rng = np.random.default_rng(0)
+radius = 40.0  # cm, circular track
+
+
+def simulate_session(frame_rate, running_speed):
+    """Two 20 s recordings on one clock, with a 0.3 s tracking dropout.
+
+    The animal runs counterclockwise at a constant speed (cm/s). The second
+    recording starts wherever the animal was put back on the track.
+    """
+    times = np.arange(int(40 * frame_rate)) / frame_rate  # seconds
+    recording_id = (times >= 20.0).astype(int)
+    put_back_angle = rng.uniform(0.0, 2 * np.pi)
+    angle = np.where(
+        recording_id == 0,
+        running_speed * times / radius,
+        put_back_angle + running_speed * (times - 20.0) / radius,
+    )
+    positions = radius * np.column_stack([np.cos(angle), np.sin(angle)])  # cm
+    dropout_start = rng.uniform(5.0, 15.0)
+    lost = (times >= dropout_start) & (times < dropout_start + 0.3)
+    positions[lost] = np.nan  # lost frames are missing, not zero
+    return times, positions, recording_id
+
+
+sessions = {
+    "30 Hz, 22 cm/s": simulate_session(frame_rate=30.0, running_speed=22.0),
+    "120 Hz, 47 cm/s": simulate_session(frame_rate=120.0, running_speed=47.0),
+}
+
+resampled = {}
+for name, (times, positions, recording_id) in sessions.items():
+    new_recording = np.r_[False, np.diff(recording_id) != 0]
+    path = resample_by_distance(
+        times, positions, spacing=2.0, break_before=new_recording
+    )
+    resampled[name] = path
+    print(f"{name}: {len(times)} frames -> {path.times.size} samples 2 cm apart")
+
+# Both sessions start at the same place. Compare them 1 s after the start ...
+(t_slow, xy_slow, _), (t_fast, xy_fast, _) = sessions.values()
+apart = np.linalg.norm(
+    xy_slow[np.searchsorted(t_slow, 1.0)] - xy_fast[np.searchsorted(t_fast, 1.0)]
+)
+print(f"Same time (1 s): {apart:.1f} cm apart")
+# ... and at the same distances along the first run
+slow, fast = (path.positions[path.run_ids == 0] for path in resampled.values())
+n_shared = min(len(slow), len(fast))
+apart = np.linalg.norm(slow[:n_shared] - fast[:n_shared], axis=1).max()
+print(f"Same distance ({n_shared} samples): at most {apart:.4f} cm apart")
+
+for name, (times, positions, recording_id) in sessions.items():
+    path = resampled[name]
+    # compute_speed has no break_before: compute it in each recording
+    speed = np.concatenate(
+        [
+            compute_speed(times[recording_id == k], positions[recording_id == k])
+            for k in np.unique(recording_id)
+        ]
+    )
+    speed_at_samples = path.interpolate_signal(speed)
+    # Feed the resampled path onward with its own breaks and no time-gap limit
+    curvature = compute_planar_curvature(
+        path.times, path.positions, max_gap=None, break_before=path.break_before
+    )
+    # The legacy function cannot see the join between recordings; the median
+    # hides the one large turn there, but other statistics would not
+    turn_per_frame = compute_trajectory_curvature(positions, times)
+    print(f"{name}:")
+    print(f"  median speed at the samples: {np.median(speed_at_samples):.1f} cm/s")
+    for label, statistic in [("median", np.nanmedian), ("mean", np.nanmean)]:
+        value = statistic(curvature)
+        print(f"  {label} curvature: {value:.4f} /cm (radius {1 / value:.2f} cm)")
+    print(f"  legacy median turn per frame: {np.nanmedian(turn_per_frame):.4f} rad")
+```
+
+**Equal distances, not equal times.** The 1200 frames at 30 Hz become 437
+samples and the 4800 frames at 120 Hz become 934: the faster animal covered
+more track, and the frame rate no longer sets the number of samples. One
+second after the start the two animals are 24.6 cm apart on the track, but the
+85 resampled samples of the first run (up to the dropout of the 30 Hz
+session) agree to within 0.0022 cm. Each run is resampled from its own start,
+so samples never bridge the dropout or the join. Each resampled sample keeps
+its time on the original clock (`path.times`) and the two original frames
+around it (`source_left`, `source_right`, `weights`); `path.samples_table()`
+lists them in one table.
+
+**Carrying a signal onto the samples.** `interpolate_signal` combines a
+per-frame signal from the two frames around each sample. The median speed at
+the samples is 22.0 and 46.7 cm/s. The second is slightly below 47 cm/s
+because `compute_speed` smooths the velocity over 0.1 s, and averaging
+velocity directions around a curve shortens it. Use `interpolate_signal` for
+continuous signals such as speed or LFP amplitude; take labels and counts at
+`source_left`.
+
+**Path shape.** `compute_planar_curvature` measures how sharply the path
+bends, in 1/cm: 1/40 = 0.025 /cm on this track. On the resampled paths the
+mean curvature gives a radius of 40.00 cm in both sessions, although their
+speed and frame rate differ. The medians give radii of 40.39 cm at 30 Hz and
+40.02 cm at 120 Hz, within 1% of each other. The small difference comes from
+resampling: a sample that falls between two frames is placed on the straight
+line joining them, so the resampled path is made of straight pieces that bend
+only at the original frames. The bend measured at a sample then depends on
+where the frames fall between it and its neighbors: some samples measure
+slightly less bend than the circle and others more. At 30 Hz the straight
+pieces are longer, so this scatter is larger and the median lands on a
+slightly larger radius. The mean averages the scatter out and recovers the
+track.
+
+The legacy `compute_trajectory_curvature` instead returns the turn per frame
+in radians (despite its name, it is not a curvature): 0.0183 rad at 30 Hz and
+0.0098 rad at 120 Hz, the speed divided by the radius and by the frame rate. It differs between the sessions although the route is the
+same, so do not compare it across frame rates or speeds.
+
+The resampled path is passed on with `max_gap=None` and
+`break_before=path.break_before`. Resampled samples are not evenly spaced in
+time (a slow animal can take more than `max_gap` to cover 2 cm), so the time-gap
+limit would break the path where the animal was merely slow; the run starts in
+`path.break_before` keep the real breaks.
+
+**Using your own recording.**
+
+- Pass `times` in seconds on one clock, strictly increasing. If each recording
+  restarts its clock at 0, map them to one clock first or analyze them in
+  separate calls.
+- Set dropped or low-confidence frames to `NaN` in `positions`. Do not fill
+  them with zeros, and do not interpolate across them first: interpolated
+  frames add distance that was never observed.
+- To compare runs sample by sample, start each run at a shared landmark, for
+  example with one `epochs` window per lap or trial that begins where the lap
+  or trial begins.
+- Build `break_before` from your recording or epoch IDs:
+  `break_before = np.r_[False, recording_id[1:] != recording_id[:-1]]`. A gap
+  in the clock longer than `max_gap` breaks the path on its own.
+- Choose `spacing` in the units of your positions (cm here), at the distance
+  scale of your question.
+- When feeding a resampled path into another time-and-position function, pass
+  `max_gap=None` and `break_before=path.break_before`.
+
+---
+
 ### Turn Angles
 
 Turn angles quantify changes in movement direction at each position along the trajectory.
@@ -86,7 +333,14 @@ print(f"Turn variance: {turn_variance:.3f}")
 - **Uses continuous positions** for sub-bin precision (ecology standard)
 - Returns angles in radians `[-π, π]`
 - Positive = left turns, Negative = right turns, 0 = straight
-- Stationary periods (consecutive duplicate positions) are filtered out
+- Meaningful for 2-D (x, y) positions only. With more columns the cross
+  product uses x and y but the dot product uses every column, so the angle is
+  neither the horizontal-plane nor the 3-D angle; pass `positions[:, :2]`
+- Stationary periods (consecutive duplicate positions) are filtered out, so the
+  output is shorter than `positions` and not aligned with your frames. It does
+  not use times, so it bridges time gaps and recording breaks. For one angle per
+  frame that is `NaN` next to a dropout, gap or break, use
+  `compute_planar_turn_angles(times, positions)`
 - Uses vectorized NumPy operations for efficiency
 
 **Applications**:

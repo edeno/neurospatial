@@ -15,6 +15,7 @@ navigation : Path efficiency, goal-directed metrics, path progress
 decisions : Decision analysis, choice points, Voronoi boundaries
 vte : VTE (Vicarious Trial and Error) detection, head sweeping
 reward : Reward field computations
+resampling : Distance resampling
 visits : Observed region visits and entry-to-entry transitions
 """
 
@@ -62,6 +63,10 @@ from neurospatial.behavior.navigation import (
     traveled_path_length,
     trials_to_region_arrays,
 )
+from neurospatial.behavior.resampling import (
+    ResampledPathResult,
+    resample_by_distance,
+)
 from neurospatial.behavior.reward import (
     goal_reward_field,
     region_reward_field,
@@ -83,7 +88,12 @@ from neurospatial.behavior.segmentation import (
     trajectory_similarity,
 )
 from neurospatial.behavior.trajectory import (
+    CumulativeDistanceResult,
+    compute_cumulative_distance,
     compute_home_range,
+    compute_movement_angular_velocity,
+    compute_planar_curvature,
+    compute_planar_turn_angles,
     compute_speed,
     compute_step_lengths,
     compute_trajectory_curvature,
@@ -180,11 +190,19 @@ __all__ = [  # noqa: RUF022
     "RegionVisit",
     "detect_region_visits",
     "region_transitions",
+    # resampling module
+    "ResampledPathResult",
+    "resample_by_distance",
     # reward module
     "goal_reward_field",
     "region_reward_field",
     # trajectory module
+    "CumulativeDistanceResult",
+    "compute_cumulative_distance",
     "compute_home_range",
+    "compute_movement_angular_velocity",
+    "compute_planar_curvature",
+    "compute_planar_turn_angles",
     "compute_speed",
     "compute_step_lengths",
     "compute_trajectory_curvature",

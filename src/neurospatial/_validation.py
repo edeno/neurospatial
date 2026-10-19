@@ -206,6 +206,43 @@ def validate_times_positions(
     return t, p
 
 
+def validate_strictly_increasing(times: NDArray[np.float64], *, call: str) -> None:
+    """Raise ValueError when ``times`` repeat a timestamp.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Timestamps in seconds, already validated as finite and non-decreasing
+        (``validate_times_positions`` rejects decreasing clocks).
+    call : str
+        Public function name, used in the message.
+
+    Raises
+    ------
+    ValueError
+        Naming the first repeated timestamp and how to resolve it.
+    """
+    repeated = np.flatnonzero(np.diff(times) <= 0)
+    if repeated.size == 0:
+        return
+    k = int(repeated[0])
+    raise ValueError(
+        _format_error(
+            f"{call}() needs strictly increasing times; times[k] == times[k+1] "
+            f"== {times[k]:g} at index {k} ({repeated.size} repeated timestamps).",
+            why=(
+                "interpolation and derivatives need positive elapsed time "
+                "between samples."
+            ),
+            fix=(
+                "drop repeated rows (keep = np.r_[True, np.diff(times) > 0]); "
+                "if the recordings restart their clocks, analyze each recording "
+                "in its own call or map them to one clock."
+            ),
+        )
+    )
+
+
 def format_times_positions_error(
     problems: list[str], looks_swapped: bool, *, call: str, order: str
 ) -> str:

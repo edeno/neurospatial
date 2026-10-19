@@ -25,9 +25,13 @@ def recording():
     "name",
     [
         "approach_rate",
+        "compute_cumulative_distance",
         "compute_decision_analysis",
         "compute_goal_directed_metrics",
+        "compute_movement_angular_velocity",
         "compute_path_efficiency",
+        "compute_planar_curvature",
+        "compute_planar_turn_angles",
         "compute_pre_decision_metrics",
         "compute_vte_session",
         "compute_vte_trial",
@@ -38,8 +42,10 @@ def recording():
         "mean_square_displacement",
         "pre_decision_heading_stats",
         "pre_decision_speed_stats",
+        "resample_by_distance",
         "segment_by_velocity",
         "time_efficiency",
+        "traveled_path_length",
         "heading_from_velocity",
         "compute_trajectory_curvature",
     ],
@@ -78,6 +84,8 @@ def test_old_order_raises(name, recording):
         kwargs["min_speed"] = 5.0  # required: no environment gives the units
     if name == "time_efficiency":
         kwargs.update(reference_speed=20.0, optimal_distance=50.0)
+    if name == "resample_by_distance":
+        kwargs["spacing"] = 1.0
     if name == "compute_trajectory_curvature":
         args = (times, positions)
     with pytest.raises(ValueError, match="did you pass"):

@@ -986,6 +986,25 @@ def heading_from_body_orientation(
     ValueError
         If all keypoints are NaN.
 
+    Notes
+    -----
+    NaN keypoints are interpolated by sample index across any gap, including a
+    gap that spans a recording break; this function has no ``times`` argument
+    and cannot see breaks. When several recordings are concatenated, call it
+    once per recording segment, splitting where a recording-id array (or a
+    ``break_before`` array) changes, so that no fill bridges two recordings::
+
+        starts = np.flatnonzero(break_before)  # break_before[0] is ignored
+        segments = np.split(np.arange(len(nose)), starts[starts > 0])
+        headings = np.concatenate(
+            [heading_from_body_orientation(nose[s], tail[s]) for s in segments]
+        )
+
+    Do not split at every missing frame (for example at the runs of
+    ``compute_cumulative_distance``): that would leave the NaN frames unfilled.
+    If a gap within a recording is too long for the filled heading to be
+    trusted, set the samples inside it back to NaN afterwards.
+
     Examples
     --------
     >>> import numpy as np
