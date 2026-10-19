@@ -4,18 +4,22 @@ Per-feature metadata (value kind, interpolation, units, category labels) is
 validated once into a frozen :class:`_FeatureSpec`, and category codes in the
 data are checked against it. :func:`_sample_feature` samples one feature at
 arbitrary times without crossing an unusable interval or leaving a run.
+:func:`_window_status` decides which events are kept and why,
+:func:`_sample_events` samples event chunks for every feature, and
+:class:`_Summaries` accumulates per-kind sufficient statistics chunk by chunk.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import intervals_contain
 from neurospatial._results import as_label_array, read_only_copy
 
 if TYPE_CHECKING:
@@ -28,6 +32,14 @@ _ALLOWED_INTERPOLATION = {
     "categorical": ("previous",),
 }
 _RADIAN_UNITS = frozenset({"rad", "radian", "radians"})
+_EVENT_STATUSES = (
+    "retained",
+    "outside_recording",
+    "outside_epochs",
+    "incomplete_support",
+    "no_support",
+)
+_MAX_CHUNK_CELLS = 2**22  # events * n_times * n_features per chunk
 
 
 @dataclass(frozen=True)
@@ -442,3 +454,276 @@ def _sample_feature(
     if kind == "circular":
         sampled[supported] = _wrap(sampled[supported])
     return sampled, supported
+
+
+def _window_status(
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    times: NDArray[np.float64],
+    supports: Sequence[ObservationSupport],
+    epochs: NDArray[np.float64] | None,
+    window_coverage: str,
+) -> NDArray[np.str_]:
+    """Decide from each event's window interval whether the event is kept.
+
+    The decision tests the interval ``[event + start, event + stop)`` itself,
+    independently of the query grid, so an unusable interval between two
+    queries or an unobserved tail after the last query is not missed.
+
+    Parameters
+    ----------
+    event_times : ndarray of float64, shape (n_events,)
+        Event times in seconds, input order.
+    window : tuple of float
+        ``(start, stop)`` in seconds relative to each event.
+    times : ndarray of float64, shape (n_samples,)
+        Sample times in seconds, strictly increasing.
+    supports : sequence of ObservationSupport
+        One resolved support per feature.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Normalized ``[start, stop)`` rows (from ``as_intervals``).
+    window_coverage : {"complete", "partial"}
+        ``"complete"``: kept only when the whole window lies inside the
+        recording, inside one epoch row (when given) and, for every feature,
+        inside one run's ``[t_first, t_last]``. ``"partial"``: kept unless the
+        window misses ``[times[0], times[-1]]`` entirely; whether any cell is
+        supported is decided after sampling.
+
+    Returns
+    -------
+    ndarray of str, shape (n_events,)
+        ``"retained"`` or the first failing reason, in the order
+        ``"outside_recording"``, ``"outside_epochs"``, ``"incomplete_support"``.
+    """
+    starts = event_times + window[0]
+    stops = event_times + window[1]
+    width = max(len(name) for name in _EVENT_STATUSES)
+    status = np.full(event_times.shape, "retained", dtype=f"<U{width}")
+    if window_coverage == "partial":
+        status[(stops <= times[0]) | (starts > times[-1])] = "outside_recording"
+        return status
+
+    covered = np.ones(event_times.shape, dtype=bool)
+    for support in supports:
+        covered &= intervals_contain(support.run_time_bounds, starts, stops)
+    status[~covered] = "incomplete_support"
+    if epochs is not None:
+        status[~intervals_contain(epochs, starts, stops)] = "outside_epochs"
+    status[(starts < times[0]) | (stops > times[-1])] = "outside_recording"
+    return status
+
+
+def _overlapping(
+    event_times: NDArray[np.float64],
+    window: tuple[float, float],
+    retained: NDArray[np.bool_],
+) -> NDArray[np.bool_]:
+    """Flag retained events whose window intersects another retained window.
+
+    Parameters
+    ----------
+    event_times : ndarray of float64, shape (n_events,)
+        Event times in seconds, input order.
+    window : tuple of float
+        ``(start, stop)`` in seconds relative to each event; half-open.
+    retained : ndarray of bool, shape (n_events,)
+        Events kept by :func:`_window_status`.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_events,)
+        True when the event is retained and its window shares time with
+        another retained event's window. Duplicate times overlap each other;
+        windows that only touch do not. Excluded events are False.
+    """
+    kept = np.flatnonzero(retained)
+    starts = event_times[kept] + window[0]
+    order = np.argsort(starts, kind="stable")
+    starts = starts[order]
+    stops = event_times[kept][order] + window[1]
+    # Sorted by start: a window overlaps an earlier one iff it starts before
+    # the latest earlier stop, and a later one iff the next window starts
+    # before it stops.
+    latest_stop = np.maximum.accumulate(stops)
+    with_earlier = np.r_[False, starts[1:] < latest_stop[:-1]]
+    with_later = np.r_[starts[1:] < stops[:-1], False]
+    out = np.zeros(event_times.shape, dtype=bool)
+    out[kept[order]] = with_earlier | with_later
+    return out
+
+
+def _sample_events(
+    event_times: NDArray[np.float64],
+    relative_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    signals: NDArray[np.float64],
+    supports: Sequence[ObservationSupport],
+    spec: _FeatureSpec,
+    epochs: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Sample every feature around each event, in input order.
+
+    Parameters
+    ----------
+    event_times : ndarray of float64, shape (n_chunk,)
+        Event times in seconds.
+    relative_times : ndarray of float64, shape (n_times,)
+        Query offsets in seconds (:func:`_relative_times`).
+    times : ndarray of float64, shape (n_samples,)
+        Sample times in seconds.
+    signals : ndarray of float64, shape (n_samples, n_features)
+        Signal values.
+    supports : sequence of ObservationSupport
+        One resolved support per feature, built with ``epochs``.
+    spec : _FeatureSpec
+        Per-feature value kind and interpolation.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        The normalized epochs used to resolve ``supports``.
+
+    Returns
+    -------
+    values : ndarray of float64, shape (n_chunk, n_times, n_features)
+        Sampled values; NaN where unsupported. Categorical codes as floats.
+    support : ndarray of bool, shape (n_chunk, n_times, n_features)
+        True where the value was observed.
+    """
+    queries = event_times[:, None] + relative_times[None, :]
+    shape = (*queries.shape, signals.shape[1])
+    values = np.empty(shape, dtype=np.float64)
+    support = np.empty(shape, dtype=bool)
+    for f, feature_support in enumerate(supports):
+        values[..., f], support[..., f] = _sample_feature(
+            times,
+            signals[:, f],
+            feature_support,
+            queries,
+            interpolation=spec.interpolation[f],
+            kind=spec.value_kinds[f],
+            epochs=epochs,
+        )
+    return values, support
+
+
+def _event_chunks(
+    n_events: int, cells_per_event: int, max_cells: int = _MAX_CHUNK_CELLS
+) -> Iterator[slice]:
+    """Split ``range(n_events)`` into consecutive slices of bounded size.
+
+    Each slice holds at most ``max_cells // cells_per_event`` events, and at
+    least one event even when a single event exceeds ``max_cells``.
+    """
+    per_chunk = max(1, max_cells // max(1, cells_per_event))
+    for first in range(0, n_events, per_chunk):
+        yield slice(first, min(first + per_chunk, n_events))
+
+
+@dataclass
+class _Summaries:
+    """Per-cell sufficient statistics, accumulated one event chunk at a time.
+
+    Attributes
+    ----------
+    counts : ndarray of int64, shape (n_times, n_features)
+        Supported events per cell.
+    sums : ndarray of float64, shape (n_times, n_features)
+        Sum of supported values; NaN columns for non-linear features.
+    sin_sums, cos_sums : ndarray of float64, shape (n_times, n_features)
+        Sum of sine and cosine of supported angles; NaN columns for
+        non-circular features.
+    category_counts : ndarray of int64, shape (n_times, n_categories)
+        Supported events holding each category row's code.
+    spec : _FeatureSpec
+        Value kinds and category rows of the features.
+    """
+
+    counts: NDArray[np.int64]
+    sums: NDArray[np.float64]
+    sin_sums: NDArray[np.float64]
+    cos_sums: NDArray[np.float64]
+    category_counts: NDArray[np.int64]
+    spec: _FeatureSpec = field(repr=False)
+
+    @classmethod
+    def empty(cls, n_times: int, spec: _FeatureSpec) -> _Summaries:
+        """Return zeroed statistics, NaN in columns that do not apply."""
+        kinds = np.asarray(spec.value_kinds)
+        n_features = kinds.size
+        sums = np.zeros((n_times, n_features))
+        sums[:, kinds != "linear"] = np.nan
+        sin_sums = np.zeros((n_times, n_features))
+        sin_sums[:, kinds != "circular"] = np.nan
+        return cls(
+            counts=np.zeros((n_times, n_features), dtype=np.int64),
+            sums=sums,
+            sin_sums=sin_sums,
+            cos_sums=sin_sums.copy(),
+            category_counts=np.zeros(
+                (n_times, spec.category_codes.size), dtype=np.int64
+            ),
+            spec=spec,
+        )
+
+    def add(self, values: NDArray[np.float64], support: NDArray[np.bool_]) -> None:
+        """Add one chunk of sampled events.
+
+        Parameters
+        ----------
+        values : ndarray of float64, shape (n_chunk, n_times, n_features)
+            Sampled values (:func:`_sample_events`).
+        support : ndarray of bool, shape (n_chunk, n_times, n_features)
+            Where ``values`` were observed; other cells are ignored.
+        """
+        kinds = np.asarray(self.spec.value_kinds)
+        self.counts += support.sum(axis=0, dtype=np.int64)
+        linear = kinds == "linear"
+        self.sums[:, linear] += np.where(
+            support[..., linear], values[..., linear], 0.0
+        ).sum(axis=0)
+        circular = kinds == "circular"
+        angles = values[..., circular]
+        observed = support[..., circular]
+        self.sin_sums[:, circular] += np.where(observed, np.sin(angles), 0.0).sum(
+            axis=0
+        )
+        self.cos_sums[:, circular] += np.where(observed, np.cos(angles), 0.0).sum(
+            axis=0
+        )
+        columns = self.spec.category_features
+        matches = support[..., columns] & (
+            values[..., columns] == self.spec.category_codes
+        )
+        self.category_counts += matches.sum(axis=0, dtype=np.int64)
+
+
+def _circular_means(
+    sin_sums: NDArray[np.float64],
+    cos_sums: NDArray[np.float64],
+    counts: NDArray[np.int64],
+    threshold: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
+    """Mean direction and resultant length from summed sines and cosines.
+
+    Parameters
+    ----------
+    sin_sums, cos_sums : ndarray of float64, shape (n_times, n_features)
+        Summed sine and cosine; NaN columns for non-circular features.
+    counts : ndarray of int64, shape (n_times, n_features)
+        Number of summed angles per cell.
+    threshold : float
+        Resultant lengths at or below it have no defined direction.
+
+    Returns
+    -------
+    means : ndarray of float64, shape (n_times, n_features)
+        ``atan2(sin_sums, cos_sums)`` in ``(-pi, pi]``; NaN unless defined.
+    resultant_lengths : ndarray of float64, shape (n_times, n_features)
+        ``hypot(sin_sums, cos_sums) / counts``; NaN where ``counts == 0``.
+    defined : ndarray of bool, shape (n_times, n_features)
+        ``counts > 0`` and resultant length ``> threshold``.
+    """
+    observed = counts > 0
+    lengths = np.full(counts.shape, np.nan)
+    np.divide(np.hypot(sin_sums, cos_sums), counts, out=lengths, where=observed)
+    defined: NDArray[np.bool_] = observed & (lengths > threshold)
+    means = np.where(defined, np.arctan2(sin_sums, cos_sums), np.nan)
+    return means, lengths, defined
