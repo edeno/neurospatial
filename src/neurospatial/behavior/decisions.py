@@ -145,6 +145,27 @@ class PreDecisionMetrics:
     is_valid : bool
         Whether observed movement and heading support interpretation of these
         metrics. Missing or insufficient observations have NaN metrics.
+
+    Examples
+    --------
+    A 10 cm/s eastward approach with two lost frames in the 1 s window. Only
+    observed samples count, and the duration runs from the first to the last
+    of them:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import compute_pre_decision_metrics
+    >>> times = np.arange(40) / 10  # s
+    >>> positions = np.column_stack([10 * times, np.zeros(40)])  # cm
+    >>> positions[[22, 25]] = np.nan
+    >>> metrics = compute_pre_decision_metrics(
+    ...     times, positions, entry_time=3.0, window_duration=1.0, min_speed=5.0
+    ... )
+    >>> metrics.n_samples
+    8
+    >>> round(metrics.window_duration, 6)
+    0.9
+    >>> metrics.is_valid
+    True
     """
 
     mean_speed: float

@@ -145,6 +145,26 @@ class VTETrialResult(ResultMixin):
         session analysis. Available samples may start later after a pause.
     window_end : float
         End time of window (decision region entry time, seconds).
+
+    Examples
+    --------
+    A trial whose window holds a single observed sample has no speed and no
+    heading, so its metrics are NaN and it is not classified:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior.vte import compute_vte_trial
+    >>> times = np.linspace(0, 3, 90)
+    >>> positions = np.column_stack([np.linspace(0, 50, 90), np.ones(90) * 50])
+    >>> result = compute_vte_trial(
+    ...     times,
+    ...     positions,
+    ...     entry_time=2.0,
+    ...     window_duration=1.0,
+    ...     min_speed=5.0,
+    ...     break_before=times == times[59],
+    ... )
+    >>> result.head_sweep_magnitude, result.mean_speed, result.is_vte
+    (nan, nan, None)
     """
 
     head_sweep_magnitude: float
