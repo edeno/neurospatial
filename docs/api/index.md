@@ -200,6 +200,18 @@ Allocentric ↔ egocentric coordinate transforms.
 - `compute_egocentric_bearing()`, `compute_egocentric_distance()`:
   Relate animal to external targets
 
+### [neurospatial.ops.feature_sampling](neurospatial/ops/feature_sampling.md)
+
+Read bin-valued feature maps (floor texture, zones, heights) along the path.
+
+**Key Functions:**
+
+- `sample_spatial_features(env, fields, positions)`: Value of the bin that
+  contains each position, NaN outside the environment
+- `sample_egocentric_features(env, fields, positions, headings, ego_points)`:
+  The same at points fixed in the animal's frame (ahead, left)
+- `SpatialFeatureResult`: Sampled values with per-sample support and bins
+
 ### [neurospatial.ops.visibility](neurospatial/ops/visibility.md)
 
 Visibility / gaze / viewshed computations.

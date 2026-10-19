@@ -179,6 +179,7 @@ nav:
       - Differential Operators: user-guide/differential-operators.md
       - Neuroscience Metrics: user-guide/neuroscience-metrics.md
       - Trajectory & Behavioral Analysis: user-guide/trajectory-and-behavioral-analysis.md
+      - Behavior Around Events: user-guide/behavior-around-events.md
       - RL Primitives: user-guide/rl-primitives.md
   - Visualization:
       - Field Animation: user-guide/animation.md
