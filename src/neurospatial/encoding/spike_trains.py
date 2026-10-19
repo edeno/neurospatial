@@ -13,7 +13,7 @@ Interop role
 ------------
 ``SpikeTrains`` **duck-types as a spike group** so it flows
 straight into the batch encoding/decoding functions through the shared
-spike-input adapter (``neurospatial.encoding._spikes._as_spike_trains_with_ids``).
+spike-input adapter (``neurospatial._spikes._as_spike_trains_with_ids``).
 That adapter detects a group via a non-callable ``.index`` and then extracts
 trains in one of two ways:
 

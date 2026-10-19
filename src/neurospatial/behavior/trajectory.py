@@ -651,7 +651,7 @@ def compute_planar_curvature(
         Signed curvature in inverse position units (for example 1/cm), aligned
         with ``times``. NaN at the first and last sample, at samples next to a
         missing sample, time gap or break, where the incoming or outgoing
-        displacement is zero, and at an exact reversal (no circle passes
+        displacement is zero, and at a reversal of direction (no circle passes
         through the three points).
 
     Raises
@@ -668,7 +668,10 @@ def compute_planar_curvature(
     With ``a = positions[i] - positions[i - 1]`` and
     ``b = positions[i + 1] - positions[i]``, this is the discrete Menger
     curvature ``2 (a_x b_y - a_y b_x) / (|a| |b| |a + b|)``. It is exact for any
-    three points on a circle, however unevenly they are spaced. For a path of
+    three points on a circle, however unevenly they are spaced. It is NaN at
+    any reversal (``a`` and ``b`` point in opposite directions, a turn of
+    ``pi``), whatever the two step lengths, because no circle passes through
+    three collinear points that double back. For a path of
     constant curvature it therefore does not depend on frame rate or running
     speed; on a general path it estimates curvature at the scale of the step
     length (speed times the sampling interval), and noise amplification grows
@@ -727,9 +730,10 @@ def compute_planar_curvature(
     cross = _cross_2d(a, b)
     chord = np.linalg.norm(a + b, axis=1)
     denominator = np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) * chord
-    with np.errstate(invalid="ignore"):  # 0 / 0 at an exact reversal
+    with np.errstate(invalid="ignore"):  # 0 / 0 at an equal-length reversal
         curvature: NDArray[np.float64] = 2.0 * cross / denominator
-    curvature[chord == 0] = np.nan
+    # Opposite directions (turn of +-pi, any step lengths): no circle fits.
+    curvature[(cross == 0) & (np.sum(a * b, axis=1) < 0)] = np.nan
     return curvature
 
 
