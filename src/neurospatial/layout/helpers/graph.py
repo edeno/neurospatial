@@ -164,6 +164,48 @@ def _get_graph_bins(
     return bin_centers_1d, (bin_edges_arr,), active_mask_1d, edge_ids_for_active_bins
 
 
+def set_straight_distances(graph: nx.Graph) -> None:
+    """Give every edge its straight-line length as ``distance``, in place.
+
+    An edge of a track graph is the straight segment between its nodes'
+    ``pos``. The bins are laid out along that segment, while bin centers,
+    cell ends and linear positions are measured with ``distance``, so the
+    two must agree: a missing ``distance`` is filled in, and one that
+    differs is refused.
+
+    Raises
+    ------
+    ValueError
+        If an edge's ``distance`` is not its nodes' straight-line distance.
+    """
+    positions = nx.get_node_attributes(graph, "pos")
+    mismatched = []
+    for u, v, data in graph.edges(data=True):
+        length = float(
+            np.linalg.norm(
+                np.asarray(positions[v], dtype=float)
+                - np.asarray(positions[u], dtype=float)
+            )
+        )
+        given = data.get("distance")
+        if given is not None and not np.isclose(float(given), length):
+            mismatched.append(
+                f"({u!r}, {v!r}): distance={float(given):g}, {length:g} apart"
+            )
+        data["distance"] = length
+    if mismatched:
+        raise ValueError(
+            f"{len(mismatched)} track-graph edge(s) have a 'distance' that is not "
+            f"the distance between their nodes' 'pos': {'; '.join(mismatched[:3])}"
+            f"{'; ...' if len(mismatched) > 3 else ''}. Why: an edge is the "
+            "straight segment between its nodes; the bins are laid out along "
+            "it and positions are measured along it with 'distance', so the "
+            "two lengths must agree. Fix: drop the 'distance' attributes (they "
+            "are computed from 'pos'), or move the nodes; a curved track needs "
+            "more nodes along the curve."
+        )
+
+
 def track_pairs(
     graph: nx.Graph,
     bin_centers_nd: NDArray[np.float64],

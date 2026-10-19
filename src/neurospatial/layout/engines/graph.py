@@ -20,6 +20,7 @@ from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.graph import (
     _find_bin_for_linear_position,
     _get_graph_bins,
+    set_straight_distances,
     track_pairs,
 )
 from neurospatial.layout.mixins import _KDTreeMixin, _NeighborPairsMixin
@@ -79,8 +80,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         ----------
         graph_definition : nx.Graph
             The original NetworkX graph. Nodes must have a 'pos' attribute
-            (e.g., `(x, y)` coordinates) and edges should ideally have a
-            'distance' attribute if not relying on Euclidean distance calculation.
+            (e.g., `(x, y)` coordinates). An edge is the straight segment
+            between its nodes; its 'distance', if given, must be that length
+            (it is computed when missing).
             ``edge_id`` is numbered by ``graph.edges()`` order on an internal
             copy; any ``edge_id`` on the input graph is ignored.
         edge_order : List[Tuple[Any, Any]]
@@ -99,7 +101,8 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
         TypeError
             If `graph_definition` is not a NetworkX graph.
         ValueError
-            If `edge_order` is empty or `bin_size` is not positive.
+            If `edge_order` is empty, `bin_size` is not positive, or an
+            edge's 'distance' is not the distance between its nodes.
 
         """
         if not isinstance(graph_definition, nx.Graph):
@@ -126,6 +129,9 @@ class GraphLayout(_KDTreeMixin, _NeighborPairsMixin):
             )
         )
 
+        # The bins follow each edge's straight segment; everything measured
+        # along the track uses "distance", which must be that length.
+        set_straight_distances(track_graph)
         self.linear_bin_centers_ = linear_bin_centers[self.active_mask]
         self.bin_centers = project_1d_to_2d(
             self.linear_bin_centers_,

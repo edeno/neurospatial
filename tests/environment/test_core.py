@@ -36,30 +36,35 @@ class TestEnvironmentFromGraph:
         assert graph_env.active_mask is not None
         assert np.all(graph_env.active_mask)
 
-    def test_from_graph_missing_edge_distance_raises_clear_error(self):
-        """A track graph whose edges lack 'distance' raises an actionable error.
+    def test_from_graph_measures_edges_between_their_nodes(self):
+        """An edge's length is the distance between its nodes' positions.
 
-        Regression: from_graph on an external graph (e.g. from
-        track_linearization or hand-built) without the required 'distance' edge
-        attribute bottomed out in a bare ``KeyError: 'distance'`` deep in an
-        internal helper, naming neither the offending edge nor how to add it.
+        Without a 'distance', it is computed, and the bins, their centers
+        and linear positions all follow the segments. A 'distance' that
+        disagrees used to lay the bins out by one length and place and
+        linearize positions by the other: every center landed on the first
+        segment, and a point on the second was linearized past the track's
+        end. It is refused, naming the edge.
         """
         g = nx.Graph()
         g.add_node(0, pos=(0.0, 0.0))
         g.add_node(1, pos=(10.0, 0.0))
-        g.add_edge(0, 1)  # deliberately no 'distance' attribute
-
-        with pytest.raises(ValueError, match=r"(?i)distance"):
-            Environment.from_graph(
-                g, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
-            )
-
-        # With a numeric distance on the edge, construction succeeds.
-        g.edges[0, 1]["distance"] = 10.0
+        g.add_node(2, pos=(10.0, 10.0))
+        g.add_edge(0, 1)  # no 'distance': computed from 'pos'
+        g.add_edge(1, 2)
         env = Environment.from_graph(
-            g, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
+            g, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.5
         )
-        assert env.is_linearized_track
+        np.testing.assert_allclose(env.bin_centers[3:5], [[8.75, 0.0], [10.0, 1.25]])
+        assert env.to_linear(np.array([[10.0, 5.0]])) == pytest.approx([15.0])
+        assert env._binning.linearization.grid_edges[0][-1] == pytest.approx(20.0)
+        assert "distance" not in g.edges[0, 1]  # the caller's graph is unchanged
+
+        g.edges[0, 1]["distance"] = 20.0
+        with pytest.raises(ValueError, match=r"\(0, 1\): distance=20, 10 apart"):
+            Environment.from_graph(
+                g, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.5
+            )
 
     def test_bin_at(self, graph_env: Environment):
         """Test mapping points to bin indices."""
