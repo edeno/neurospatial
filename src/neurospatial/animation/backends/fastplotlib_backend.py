@@ -704,7 +704,7 @@ class _PositionTime:
         middle = (self.lower[bin_index] + self.upper[bin_index]) / 2
         return "\n".join(
             [
-                f"t = {self.start + self.clock[frame]:.3f} s",
+                f"t = {self.clock[frame]:.3f} s",
                 f"bin {bin_index}, {self.axis}: {middle:.4g}",
                 f"value: {'missing' if np.isnan(value) else f'{value:.4g}'}",
             ]
@@ -852,7 +852,7 @@ class _Raster:
         """The tooltip for the spike under the pointer."""
         spike = int(pick_info["vertex_index"]) // 3
         unit = self.data.unit_ids[self.row[spike]]
-        return f"unit {unit}\nt = {self.times[spike]:.4f} s"
+        return f"unit {unit}\nt = {self.times[spike] - self.start:.4f} s"
 
     def describe_row(self, pick_info: dict[str, Any]) -> str:
         """The tooltip for a row, away from its spikes."""
@@ -1136,9 +1136,10 @@ class FastplotlibAnimation:
     Jupyter it displays itself; elsewhere call :meth:`show` (in a script,
     then ``fastplotlib.loop.run()``).
 
-    The slider and the time-series axes count seconds from the first frame,
-    so session timestamps (such as 1.7e9 s) keep their precision on the GPU;
-    the title shows each frame's own time.
+    Every time shown (the slider, the time axes, the title and the
+    tooltips) counts seconds from the first frame, so session timestamps
+    (such as 1.7e9 s) keep their precision on the GPU; the title also gives
+    the first frame's own time ("t = 4.50 s from 1700000000.00 s").
 
     Keyboard, with the figure focused (click it first):
 
@@ -1588,8 +1589,11 @@ class FastplotlibAnimation:
         label = (
             self._labels[frame]
             if self._labels is not None
-            else f"t = {self._frame_times[frame]:.2f} s"
+            else f"t = {self._clock[frame]:.2f} s"
         )
+        if self._start != 0.0 and self._labels is None:
+            # Every time shown counts from the first frame; its own, once.
+            label += f" from {self._start:.2f} s"
         parts = [self._title, label, *self._epochs_at(self._start + time)]
         if len(self._plots) > 1:
             # The shared time over the first field; each field its name.

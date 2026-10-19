@@ -433,7 +433,9 @@ def test_session_timestamps_keep_their_precision(apparatus, walk):
     (line,) = animation.widget[subplot]["speed"].graphic.graphics
     x = line.data[:][:, 0]
     assert len(np.unique(x[np.isfinite(x)])) >= 99  # not collapsed by float32
-    assert animation._plot.title.text.endswith(f"t = {session[60]:.2f} s")
+    assert animation._plot.title.text.endswith(
+        f"t = {t[60]:.2f} s from 1700000000.00 s"
+    )
 
 
 def test_a_series_without_values_at_the_start_is_drawn_from_its_first_value(
@@ -591,7 +593,7 @@ def test_a_raster_draws_each_spike_in_its_units_row_on_the_clock(apparatus, walk
     )
     assert layer.describe({"vertex_index": 4}).splitlines() == [
         "unit CA1-a",
-        "t = 100.5000 s",
+        "t = 0.5000 s",  # from the first frame, at 100 s
     ]
     assert panel.y_range == pytest.approx((-0.5, 2.5))
     (marks,) = [g for g in panel.graphics if g.name == "reward times"]

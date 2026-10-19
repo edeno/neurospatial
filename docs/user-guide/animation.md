@@ -404,9 +404,11 @@ animation  # in Jupyter: the plot, a time slider and playback controls
 
 The animation is a fastplotlib `NDWidget`: a slider in seconds, buttons to
 play, step and loop, and a frame rate box. Each frame is shown from its time
-until the next frame's. The slider counts seconds from the first frame, so
-session timestamps such as 1.7e9 s keep their precision; the title shows each
-frame's own time. Hovering over a bin shows its position and value.
+until the next frame's. Every time shown (the slider, the time axes, the
+title and the tooltips) counts seconds from the first frame, so session
+timestamps such as 1.7e9 s keep their precision; the title gives the first
+frame's own time once ("t = 4.50 s from 1700000000.00 s"). Hovering over a bin
+shows its position and value.
 
 Position, pose, head direction, object vectors and video each move at their
 own sampling rate when given their own `times`, so a field shown once a
