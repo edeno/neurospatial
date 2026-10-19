@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import warnings
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
@@ -32,16 +33,28 @@ __all__ = [
 _EXACT_RANGE_MAX_FRAMES = 200_000
 
 
+# Color limits of an animation: these percentiles of the frames' minima and
+# maxima.
+_ROBUST_PERCENTILES = (1.0, 99.0)
+
+
 def animation_colormap_range(
-    fields: list[NDArray[np.float64]] | NDArray[np.float64],
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     vmin: float | None,
     vmax: float | None,
 ) -> tuple[float, float]:
-    """Color range for an animation, sampling frames of a very long one.
+    """Color limits for an animation, robust to a few extreme frames.
+
+    The top of the colormap is the 99th percentile of the frames' maxima
+    and the bottom the 1st percentile of their minima: about 1% of frames
+    reach past each end and are drawn in its color, and a single outlier
+    frame cannot wash out the rest. A percentile of all bin values would
+    not do, because a sharp posterior fills few bins: its peak would pass
+    the top in every frame. Very long recordings use every n-th frame.
 
     Parameters
     ----------
-    fields : list of ndarray or ndarray, shape (n_frames, n_bins)
+    fields : sequence of ndarray, or ndarray of shape (n_frames, n_bins)
         The frames.
     vmin, vmax : float or None
         Given limits; None computes them.
@@ -49,6 +62,8 @@ def animation_colormap_range(
     Returns
     -------
     vmin, vmax : float
+        (0, 1) when no value is finite; a constant field gets limits half a
+        unit around it.
 
     Warns
     -----
@@ -58,7 +73,7 @@ def animation_colormap_range(
     if vmin is not None and vmax is not None:
         return vmin, vmax
     n_frames = len(fields)
-    stride = None
+    stride = 1
     if n_frames > _EXACT_RANGE_MAX_FRAMES and isinstance(fields, np.ndarray):
         stride = max(1, n_frames // 50_000)
         warnings.warn(
@@ -68,10 +83,41 @@ def animation_colormap_range(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    low, high = compute_global_colormap_range(
-        fields, vmin=vmin, vmax=vmax, sample_stride=stride
-    )
+    lows, highs = _frame_extremes(fields, stride)
+    finite = np.isfinite(highs)
+    if not finite.any():
+        low, high = 0.0, 1.0
+    else:
+        low = float(np.percentile(lows[finite], _ROBUST_PERCENTILES[0]))
+        high = float(np.percentile(highs[finite], _ROBUST_PERCENTILES[1]))
+        if low == high:
+            low, high = low - 0.5, high + 0.5
     return (low if vmin is None else vmin), (high if vmax is None else vmax)
+
+
+def _frame_extremes(
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64], stride: int
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Each frame's smallest and largest finite value; NaN for none.
+
+    Every ``stride``-th frame, read 10,000 frames at a time.
+    """
+    frames = range(0, len(fields), stride)
+    lows, highs = [], []
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "All-NaN slice encountered")
+        for start in range(0, len(frames), 10_000):
+            index = frames[start : start + 10_000]
+            if isinstance(fields, np.ndarray):
+                chunk = np.asarray(
+                    fields[index.start : index.stop : stride], dtype=float
+                )
+            else:
+                chunk = np.stack([np.asarray(fields[i], dtype=float) for i in index])
+            chunk = np.where(np.isfinite(chunk), chunk, np.nan)
+            lows.append(np.nanmin(chunk.reshape(len(chunk), -1), axis=1))
+            highs.append(np.nanmax(chunk.reshape(len(chunk), -1), axis=1))
+    return np.concatenate(lows), np.concatenate(highs)
 
 
 def compute_global_colormap_range(

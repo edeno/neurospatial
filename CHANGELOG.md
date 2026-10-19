@@ -733,6 +733,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `animate_fields` color limits default to robust ones in every backend: the
+  1st percentile of the frames' minima and the 99th of their maxima, instead
+  of the minimum and maximum over all frames. One extreme frame no longer
+  dims the whole animation; about 1% of frames reach past each limit and show
+  its color. Pass `vmin` and `vmax` to keep the old range or to compare
+  animations on one scale.
 - `env.plot()` draws everything the environment holds by default: declared
   walls (labeled with their names), landmarks (labeled, with the axes widened
   to show any outside the arena) and regions. `show_regions` now defaults to

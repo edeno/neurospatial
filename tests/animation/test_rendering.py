@@ -689,3 +689,25 @@ def test_field_to_rgb_for_napari_orientation():
     # (max x, max y) -> top-right (row 0, col 3)
     top_right = int(np.lexsort((-centers[:, 0], -centers[:, 1]))[0])
     assert bright_pixel(top_right) == (0, 3)
+
+
+def test_animation_color_limits_ignore_a_few_extreme_frames():
+    """The limits are percentiles of the frames' extremes, not all values."""
+    from neurospatial.animation.rendering import animation_colormap_range
+
+    rng = np.random.default_rng(0)
+    # A sharp bump in a few of 1000 bins each frame, as a posterior.
+    fields = np.zeros((200, 1000))
+    peaks = rng.uniform(0.2, 0.3, 200)
+    fields[np.arange(200), rng.integers(0, 1000, 200)] = peaks
+    fields[7, 3] = 50.0  # one outlier frame
+    fields[:, 500] = np.nan
+    low, high = animation_colormap_range(fields, None, None)
+    assert low == 0.0
+    # Close to the bumps' heights, not the outlier, and not the 99th
+    # percentile of all values (0), which every bump would pass.
+    assert np.percentile(peaks, 95) < high < 0.31
+    assert np.mean(np.nanmax(fields, axis=1) > high) <= 0.01 + 1 / 200
+    assert animation_colormap_range(fields, -1.0, None)[0] == -1.0
+    assert animation_colormap_range(np.full((3, 4), np.nan), None, None) == (0.0, 1.0)
+    assert animation_colormap_range([np.full(4, 2.0)] * 3, None, None) == (1.5, 2.5)

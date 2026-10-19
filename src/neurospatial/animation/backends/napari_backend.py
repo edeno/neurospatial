@@ -2807,11 +2807,12 @@ def render_napari(
     cmap : str, default="viridis"
         Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
     vmin : float, optional
-        Minimum value for color scale normalization. If None, computed from
-        all fields using NaN-robust min.
+        Minimum value for color scale normalization. If None, the 1st
+        percentile of the frames' minima.
     vmax : float, optional
-        Maximum value for color scale normalization. If None, computed from
-        all fields using NaN-robust max.
+        Maximum value for color scale normalization. If None, the 99th
+        percentile of the frames' maxima, so one extreme frame does not
+        wash out the rest; values beyond either limit get its color.
     frame_labels : list of str, optional
         Frame labels (e.g., ["Trial 1", "Trial 2", ...])
         Displayed in the enhanced playback control widget alongside
@@ -3092,7 +3093,7 @@ def render_napari(
     # - list[NDArray] if fields_is_array is False (not multi-field)
     from neurospatial.animation.rendering import animation_colormap_range
 
-    # Compute global color scale, sampling the frames of a very long recording
+    # One color scale, sampling the frames of a very long recording
     vmin, vmax = animation_colormap_range(fields, vmin, vmax)  # type: ignore[arg-type]
 
     # Note: contrast_limits parameter is ignored for RGB images
@@ -3431,17 +3432,11 @@ def _render_multi_field_napari(
         _report_napari_dry_run(sequence_lengths[0], fps)
         return None
 
-    from neurospatial.animation.rendering import compute_global_colormap_range
+    from neurospatial.animation.rendering import animation_colormap_range
 
-    # Compute global color scale across ALL sequences for consistent comparison
-    if vmin is None or vmax is None:
-        # Flatten all fields from all sequences
-        all_fields = [field for sequence in field_sequences for field in sequence]
-        vmin_computed, vmax_computed = compute_global_colormap_range(
-            all_fields, vmin, vmax
-        )
-        vmin = vmin if vmin is not None else vmin_computed
-        vmax = vmax if vmax is not None else vmax_computed
+    # One color scale across ALL sequences for consistent comparison
+    all_fields = [field for sequence in field_sequences for field in sequence]
+    vmin, vmax = animation_colormap_range(all_fields, vmin, vmax)
 
     # Pre-compute colormap lookup table (shared across all layers)
     cmap_obj = plt.get_cmap(cmap)

@@ -5932,9 +5932,14 @@ class Environment(Generic[_C]):
         cmap : str, default="viridis"
             Matplotlib colormap name (e.g., "hot", "Blues", "viridis", "RdBu_r")
         vmin : float, optional
-            Minimum value for colormap normalization. If None, computed from all frames.
+            Minimum value for colormap normalization. If None, the 1st
+            percentile of the frames' minima.
         vmax : float, optional
-            Maximum value for colormap normalization. If None, computed from all frames.
+            Maximum value for colormap normalization. If None, the 99th
+            percentile of the frames' maxima: about 1% of frames reach past
+            it and show its color, so one extreme frame does not wash out the
+            rest (a sharp posterior keeps its shape). Pass a value to compare
+            animations on one scale.
         frame_labels : Sequence[str], optional
             Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
             auto-generated as "Frame 1", "Frame 2", etc.

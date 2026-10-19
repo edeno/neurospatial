@@ -774,11 +774,12 @@ def render_widget(
     cmap : str, default="viridis"
         Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
     vmin : float, optional
-        Minimum value for color scale normalization. If None, computed from
-        all fields using NaN-robust min.
+        Minimum value for color scale normalization. If None, the 1st
+        percentile of the frames' minima.
     vmax : float, optional
-        Maximum value for color scale normalization. If None, computed from
-        all fields using NaN-robust max.
+        Maximum value for color scale normalization. If None, the 99th
+        percentile of the frames' maxima, so one extreme frame does not
+        wash out the rest; values beyond either limit get its color.
     frame_labels : list of str, optional
         Frame labels (e.g., ["Trial 1", "Trial 2", ...]). If None,
         generates default labels "Frame 1", "Frame 2", etc.
@@ -880,12 +881,11 @@ def render_widget(
 
     from neurospatial.animation.rendering import (
         _validate_frame_labels,
-        compute_global_colormap_range,
+        animation_colormap_range,
         render_field_to_png_bytes,
     )
 
-    # Compute global color scale
-    vmin, vmax = compute_global_colormap_range(fields, vmin, vmax)
+    vmin, vmax = animation_colormap_range(fields, vmin, vmax)
 
     # Validate frame_labels length if provided
     n_frames = len(fields)

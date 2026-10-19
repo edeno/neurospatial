@@ -780,8 +780,9 @@ class FastplotlibAnimation:
     fps : float
         Steps per second while playing; changeable in the controls.
     cmap, vmin, vmax
-        Colormap and its limits; limits default to the range over all frames,
-        estimated from a sample of a very long recording.
+        Colormap and its limits; limits default to the 1st percentile of the
+        frames' minima and the 99th of their maxima, estimated from a sample
+        of a very long recording.
     frame_labels : sequence of str, optional
         A label per frame; the frame times by default.
     title : str, optional
@@ -890,7 +891,7 @@ class FastplotlibAnimation:
         self._plot = self.figure["field"]
         self._plot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
 
-        low, high = animation_colormap_range(fields, vmin, vmax)  # type: ignore[arg-type]
+        low, high = animation_colormap_range(fields, vmin, vmax)
         scale = ColorScale(cmap, low, high, "lightgray")
         first = np.asarray(fields[0], dtype=np.float64)
         self._field = FieldGraphic(self._plot, env, first, scale)

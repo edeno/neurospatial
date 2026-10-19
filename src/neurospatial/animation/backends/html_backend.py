@@ -490,11 +490,12 @@ def render_html(
     cmap : str, default="viridis"
         Matplotlib colormap name (e.g., "viridis", "hot", "plasma").
     vmin : float, optional
-        Minimum value for color scale normalization. If None, computed from
-        all fields using NaN-robust min.
+        Minimum value for color scale normalization. If None, the 1st
+        percentile of the frames' minima.
     vmax : float, optional
-        Maximum value for color scale normalization. If None, computed from
-        all fields using NaN-robust max.
+        Maximum value for color scale normalization. If None, the 99th
+        percentile of the frames' maxima, so one extreme frame does not
+        wash out the rest; values beyond either limit get its color.
     frame_labels : list of str, optional
         Frame labels for each frame.
     dpi : int, default=100
@@ -591,7 +592,7 @@ def render_html(
     from neurospatial._validation import check_writable
     from neurospatial.animation.rendering import (
         _validate_frame_labels,
-        compute_global_colormap_range,
+        animation_colormap_range,
         render_field_to_image_bytes,
     )
 
@@ -757,10 +758,7 @@ def render_html(
         _emit_status("\n".join(report))
         return None
 
-    # Compute global color scale
-    vmin_computed, vmax_computed = compute_global_colormap_range(fields, vmin, vmax)
-    vmin = vmin if vmin is not None else vmin_computed
-    vmax = vmax if vmax is not None else vmax_computed
+    vmin, vmax = animation_colormap_range(fields, vmin, vmax)
 
     # ---- Non-embedded mode: write frames to disk, lightweight HTML ----
     if not embed:

@@ -490,12 +490,19 @@ Every backend uses these parameters:
 | `speed` | float | 1.0 | Playback speed relative to real time |
 | `max_playback_fps` | int | 60 | Upper bound for displayed playback frame rate |
 | `cmap` | str | `"viridis"` | Matplotlib colormap |
-| `vmin` | float | None | Minimum value for colormap (auto if None) |
-| `vmax` | float | None | Maximum value for colormap (auto if None) |
+| `vmin` | float | None | Minimum value for colormap; if None, the 1st percentile of the frames' minima |
+| `vmax` | float | None | Maximum value for colormap; if None, the 99th percentile of the frames' maxima |
 | `frame_labels` | list[str] | None | Custom labels for each frame |
 | `overlays` | list | None | Position, pose, heading and other overlays |
 | `show_regions` | bool/list[str] | False | Draw all regions, or the named ones |
 | `dry_run` | bool | False | Report what would be rendered without rendering |
+
+The default color limits ignore the most extreme 1% of frames at each end:
+about 1% of frames reach past the top and show its color, so a single noisy
+frame cannot dim the rest. They are percentiles of each frame's extremes, not
+of all values: a sharp posterior covers few bins, and a percentile of all
+values would put the top below its peak in every frame. Pass `vmin` and `vmax`
+to compare animations on one scale.
 
 Some parameters apply only to some backends:
 
