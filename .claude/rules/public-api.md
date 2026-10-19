@@ -39,7 +39,9 @@ Each terminal verb means the same thing on every result class:
   `unit_ids` raise. Decode results use `("time", "bin")` with no unit axis.
   Never conflate the two. PSTH results have no `to_xarray()`.
 - `summary()` returns a flat dict of scalars; `plot(ax=None, ...)` returns the
-  `Axes`.
+  `Axes`. `Environment.plot` and `plot_field` also take
+  `backend="fastplotlib"`, which returns the fastplotlib figure; typing
+  overloads keep the `Axes` return for the default.
 
 Results keep no raw input arrays or recompute closures. Rate and peri-event
 results inherit `ReadOnlyArraysMixin` and call `self._own_arrays()` last in

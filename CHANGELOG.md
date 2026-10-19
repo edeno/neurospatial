@@ -1226,6 +1226,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `backend="fastplotlib"` for `env.plot` and `env.plot_field` draws on the
+  GPU (`pip install "neurospatial[fastplotlib]"`, Python 3.11 or newer). Each
+  bin is drawn as its own cell (grid, hexagon, triangle or clipped polygon)
+  or, for tracks and 3-D environments, a point the size of a bin; 3-D fields
+  fade low values so the high ones show through the volume. Missing bins keep
+  their own color rather than the colormap's top color. Inside Jupyter the
+  figure renders on the machine running the kernel and streams to the
+  browser, so it works on a remote GPU server. Matplotlib stays the default
+  and returns an `Axes`; with `backend="fastplotlib"` the methods return the
+  fastplotlib figure, and Matplotlib-only options raise a `TypeError`.
+
 - Landmarks: named cues, monitors, objects and reward ports, stored with the
   environment. `env.with_landmarks(Landmarks([Landmark("monitor", "line",
   [(10, 100), (90, 100)]), ...]))` attaches them; each is a point, a line or a

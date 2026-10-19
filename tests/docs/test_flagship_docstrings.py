@@ -10,7 +10,7 @@ import pytest
 
 from ._flagship import FLAGSHIP, NWB_FLAGSHIP, resolve
 
-_ALLOWED_SKIP = re.compile(r"backend\s*=\s*[\"'](napari|video)[\"']")
+_ALLOWED_SKIP = re.compile(r"backend\s*=\s*[\"'](napari|video|fastplotlib)[\"']")
 
 
 def _run_examples(dotted: str) -> None:
