@@ -1319,3 +1319,40 @@ def test_one_dimensional_positions_raise(t_maze_environment, name, n_samples):
     match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
     with pytest.raises(ValueError, match=match):
         calls[name](10 * times)
+
+
+def test_session_summary_counts_classified_trials(t_maze_environment):
+    """The text and the summary say which trials the VTE fraction is over."""
+    from neurospatial.behavior.vte import compute_vte_session
+
+    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 8.0], creep=2)
+    result = compute_vte_session(
+        t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS
+    )
+    summary = result.summary()
+    assert summary["n_trials"] == 4
+    assert summary["n_classified"] == result.n_classified == 3
+    assert summary["n_vte_trials"] == result.n_vte_trials
+    first_line = str(result).splitlines()[0]
+    assert first_line == (
+        f"VTE session: {result.n_vte_trials}/3 classified trials VTE "
+        f"({result.vte_fraction:.1%}), 1 unclassified"
+    )
+
+
+def test_session_text_without_classified_trials():
+    from neurospatial.behavior.vte import VTESessionResult
+
+    empty = VTESessionResult(
+        trial_results=[],
+        mean_head_sweep=np.nan,
+        std_head_sweep=np.nan,
+        mean_speed=np.nan,
+        std_speed=np.nan,
+        n_vte_trials=0,
+        vte_fraction=np.nan,
+    )
+    text = str(empty)
+    assert "nan%" not in text
+    assert text.splitlines()[0] == "VTE session: no trial could be classified"
+    assert empty.summary()["n_classified"] == 0

@@ -150,6 +150,12 @@
   trial speeds) or `nan` (heading statistics), and a 1-D session whose
   trials were all skipped used to return an empty result.
 
+  `VTESessionResult` has `n_classified`, the number of trials with a VTE
+  verdict, and `summary()` reports it next to `n_trials`. `str(result)` reads
+  `VTE session: 1/3 classified trials VTE (33.3%), 1 unclassified`, or
+  `VTE session: no trial could be classified`; it used to read
+  `VTE session: 1/4 VTE trials (25.0%)`, counting every analyzed trial.
+
 - `heading_direction_labels` takes `times` before `positions`, like every
   other behavior function. The old order raises an error that names the swap.
 

@@ -223,6 +223,39 @@ class VTESessionResult(ResultMixin):
     vte_fraction : float
         Fraction of classified trials (``is_vte`` not None) that are VTE.
         NaN when no trial was classified.
+
+    Examples
+    --------
+    >>> from neurospatial.behavior import VTESessionResult, VTETrialResult
+    >>> def trial(head_sweep, is_vte):
+    ...     return VTETrialResult(
+    ...         head_sweep_magnitude=head_sweep,
+    ...         z_head_sweep=None,
+    ...         mean_speed=10.0,
+    ...         min_speed=8.0,
+    ...         z_speed_inverse=None,
+    ...         vte_index=None,
+    ...         is_vte=is_vte,
+    ...         window_start=0.0,
+    ...         window_end=1.0,
+    ...     )
+    >>> session = VTESessionResult(
+    ...     trial_results=[
+    ...         trial(3.0, True),
+    ...         trial(1.0, False),
+    ...         trial(float("nan"), None),
+    ...     ],
+    ...     mean_head_sweep=2.0,
+    ...     std_head_sweep=1.0,
+    ...     mean_speed=10.0,
+    ...     std_speed=0.0,
+    ...     n_vte_trials=1,
+    ...     vte_fraction=0.5,
+    ... )
+    >>> print(session)
+    VTE session: 1/2 classified trials VTE (50.0%), 1 unclassified
+      Head sweep: mean=2.00, std=1.00
+      Speed: mean=10.0, std=0.0
     """
 
     trial_results: list[VTETrialResult]
@@ -244,13 +277,40 @@ class VTESessionResult(ResultMixin):
         """Alias for std_head_sweep (IdPhi terminology)."""
         return self.std_head_sweep
 
+    @property
+    def n_classified(self) -> int:
+        """Number of trials classified as VTE or not (``is_vte`` not None).
+
+        ``vte_fraction`` is ``n_vte_trials / n_classified``. A trial without
+        an observed head sweep or speed is analyzed but not classified.
+
+        Examples
+        --------
+        >>> from neurospatial.behavior import VTESessionResult
+        >>> nan = float("nan")
+        >>> VTESessionResult([], nan, nan, nan, nan, 0, nan).n_classified
+        0
+        """
+        return sum(trial.is_vte is not None for trial in self.trial_results)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar session-level VTE metrics.
 
-        For a human-readable multi-line string use ``str(result)``.
+        ``n_trials`` counts the analyzed trials and ``n_classified`` those
+        with a VTE verdict, the denominator of ``vte_fraction``. For a
+        human-readable multi-line string use ``str(result)``.
+
+        Examples
+        --------
+        >>> from neurospatial.behavior import VTESessionResult
+        >>> nan = float("nan")
+        >>> summary = VTESessionResult([], nan, nan, nan, nan, 0, nan).summary()
+        >>> summary["n_trials"], summary["n_classified"], summary["vte_fraction"]
+        (0, 0, nan)
         """
         return {
             "n_trials": len(self.trial_results),
+            "n_classified": self.n_classified,
             "n_vte_trials": self.n_vte_trials,
             "vte_fraction": self.vte_fraction,
             "mean_head_sweep": self.mean_head_sweep,
@@ -260,9 +320,21 @@ class VTESessionResult(ResultMixin):
         }
 
     def __str__(self) -> str:
+        n_classified = self.n_classified
+        n_unclassified = len(self.trial_results) - n_classified
+        if n_classified:
+            verdict = (
+                f"{self.n_vte_trials}/{n_classified} classified trials VTE "
+                f"({self.vte_fraction:.1%})"
+            )
+            if n_unclassified:
+                verdict += f", {n_unclassified} unclassified"
+        else:
+            verdict = "no trial could be classified"
+            if n_unclassified:
+                verdict += f" ({n_unclassified} unclassified)"
         return (
-            f"VTE session: {self.n_vte_trials}/{len(self.trial_results)} "
-            f"VTE trials ({self.vte_fraction:.1%})\n"
+            f"VTE session: {verdict}\n"
             f"  Head sweep: mean={self.mean_head_sweep:.2f}, std={self.std_head_sweep:.2f}\n"
             f"  Speed: mean={self.mean_speed:.1f}, std={self.std_speed:.1f}"
         )
