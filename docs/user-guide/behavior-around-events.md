@@ -72,6 +72,7 @@ reward_times = np.arange(4.0, 120.0, 8.0)  # s, each arrival at the port (x = 90
 lost = (times > 35.6) & (times < 36.4)
 times, positions = times[~lost], positions[~lost]
 print(f"{lost.sum()} frames dropped; {times.size} frames kept; {reward_times.size} rewards")
+assert (lost.sum(), times.size, reward_times.size) == (23, 3577, 15)
 
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
 
@@ -85,6 +86,7 @@ texture = sample_spatial_features(env, texture_map, positions, feature_ids=["tex
 # heading_from_velocity fills slow frames by interpolation; they are not observations
 heading_observed = speed >= 2.0
 
+around = {}
 for t in (11.0, 12.0, 13.0):  # 1 s before, at, and 1 s after the second reward
     i = np.argmin(np.abs(times - t))
     print(
@@ -92,6 +94,14 @@ for t in (11.0, 12.0, 13.0):  # 1 s before, at, and 1 s after the second reward
         f"(observed: {heading_observed[i]}), wall {wall_distance[i]:4.1f} cm, "
         f"texture code {texture.values[i, 0]:.0f}"
     )
+    around[t] = (speed[i], heading[i], wall_distance[i], texture.values[i, 0])
+
+# Rows: speed, heading, wall distance, texture at 11, 12 and 13 s (atol = 0.6 * 10**-decimals)
+speed_12, heading_12, wall_12, texture_12 = np.array(list(around.values())).T
+assert np.allclose(speed_12, [22.2, 0.0, 22.2], atol=0.06)
+assert np.allclose(heading_12, [-0.06, 1.51, 3.08], atol=0.006)
+assert np.allclose(wall_12, [21.7, 10.0, 21.7], atol=0.06)
+assert (texture_12 == 1).all()
 ```
 
 The tracker lost 23 frames, leaving 3577 frames and 15 rewards. Around the
@@ -153,6 +163,7 @@ events["reward_time"] = reward_times
 print(events[events["status"] != "retained"])
 print(f"{result.n_events} rewards kept, {result.n_events_dropped} excluded")
 assert events.loc[events["reward_time"] == 36.0, "status"].item() == "incomplete_support"
+assert (result.n_events, result.n_events_dropped) == (14, 1)
 ```
 
 `events_table()` has one row per input event, in input order, and `status`
@@ -209,6 +220,15 @@ table["rough"] = rough.set_index("relative_time")["proportion"]
 shown = table.index.round(2).isin([-3.0, -2.1, -1.9, -1.0, -0.5, 0.0, 0.5, 1.0, 1.9, 2.1])
 print(table.loc[shown, ["speed", "wall_distance", "rough"]].round(1))
 print(f"events per cell: {result.counts.min()} to {result.counts.max()}")
+assert result.counts.min() == result.counts.max() == 14
+
+# The table below: speed, wall distance and proportion on rough floor
+expected = [
+    [22.2, 21.7, 0.0], [31.3, 46.4, 0.0], [31.3, 46.0, 1.0], [22.2, 21.7, 1.0],
+    [12.0, 13.0, 1.0], [0.0, 10.0, 1.0], [12.0, 13.0, 1.0], [22.2, 21.7, 1.0],
+    [31.3, 46.0, 1.0], [31.3, 46.4, 0.0],
+]  # fmt: skip
+assert np.allclose(table.loc[shown, ["speed", "wall_distance", "rough"]], expected, atol=0.06)
 
 at_reward = np.argmin(np.abs(result.relative_times))
 speed_mean, wall_mean = result.means[at_reward, :2]
@@ -299,6 +319,7 @@ partial = align_continuous_to_events(
     window_coverage="partial",
 )
 print(partial.events_table()["status"].value_counts().to_string())
+assert partial.n_events == 15
 
 course = partial.time_course_table()
 shown = course["relative_time"].round(2).isin([-1.0, -0.4, -0.35, 0.0, 0.35, 0.4, 1.0])
@@ -309,11 +330,27 @@ print(
     .to_string(index=False)
 )
 
+# Counts, heading means and resultant length quoted below (atol = 0.6 * 10**-decimals)
+by_time = course.assign(time=course["relative_time"].round(2)).set_index(["feature_id", "time"])
+assert by_time.loc[("speed", -0.4), "count"] == by_time.loc[("speed", 0.4), "count"] == 15
+assert by_time.loc[("speed", -0.35), "count"] == by_time.loc[("speed", 0.35), "count"] == 14
+assert by_time.loc[("heading", 0.0), "count"] == 0
+assert by_time.loc[("heading", 0.0), "status"] == "no_support"
+assert np.isclose(by_time.loc[("heading", -1.0), "mean"], 0.008, atol=0.0006)
+assert np.isclose(by_time.loc[("heading", -1.0), "resultant_length"], 0.996, atol=0.0006)
+after_means = [by_time.loc[("heading", t), "mean"] for t in (0.35, 0.4, 1.0)]
+assert np.min(after_means) > -3.1396 and np.max(after_means) < -3.1334  # -3.139 to -3.134
+
 # Averaging angles as plain numbers goes wrong across the +-pi wrap
 after = np.argmin(np.abs(partial.relative_times - 1.0))
 angles = partial.values[:, after, 1]
 print(f"headings 1 s after reward: {np.round(np.sort(angles), 2)}")
 print(f"circular mean {partial.means[after, 1]:.2f} rad, arithmetic mean {np.mean(angles):.2f} rad")
+below, above = angles[angles < 0], angles[angles > 0]
+assert np.allclose([below.min(), below.max()], [-3.13, -3.03], atol=0.006)
+assert np.allclose([above.min(), above.max()], [3.02, 3.08], atol=0.006)
+assert np.isclose(partial.means[after, 1], -3.13, atol=0.006)
+assert np.isclose(np.mean(angles), -1.04, atol=0.006)
 
 at_reward = np.argmin(np.abs(partial.relative_times))
 assert partial.mean_status[at_reward, 1] == "no_support"
@@ -464,6 +501,7 @@ print(
 )
 assert np.allclose(joined, separate)
 assert not north.any()
+assert (north.sum(), north_bridged.sum(), near_join.sum()) == (0, 14, 29)
 ```
 
 `summary()` lists the number of events kept and excluded, the window and the

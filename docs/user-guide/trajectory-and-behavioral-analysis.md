@@ -124,6 +124,7 @@ sessions = {
     "120 Hz, 47 cm/s": simulate_session(frame_rate=120.0, running_speed=47.0),
 }
 
+quoted = {}
 for name, (times, positions, recording_id) in sessions.items():
     # True at the first frame of the second recording
     new_recording = np.r_[False, np.diff(recording_id) != 0]
@@ -133,7 +134,17 @@ for name, (times, positions, recording_id) in sessions.items():
     runs = ", ".join(f"{length:.1f}" for length in distance.run_path_lengths)
     print(f"{name}: runs of {runs} cm")
     print(f"  total {total:.1f} cm in {observed_time:.2f} s observed")
-    print(f"  without break_before: {traveled_path_length(times, positions):.1f} cm")
+    unbroken = traveled_path_length(times, positions)
+    print(f"  without break_before: {unbroken:.1f} cm")
+    quoted[name] = (distance.run_path_lengths, total, observed_time, unbroken)
+
+# The numbers the text below quotes (atol = 0.6 * 10**-decimals)
+runs_30, total_30, time_30, unbroken_30 = quoted["30 Hz, 22 cm/s"]
+assert np.allclose(runs_30, [168.7, 263.3, 439.3], atol=0.06)
+assert np.allclose([total_30, unbroken_30], [871.2, 898.5], atol=0.06)
+assert np.isclose(time_30, 39.60, atol=0.006)
+_, total_120, _, unbroken_120 = quoted["120 Hz, 47 cm/s"]
+assert np.allclose([total_120, unbroken_120], [1864.7, 1929.8], atol=0.06)
 ```
 
 Each session splits into three **runs**, stretches of continuous observation:
@@ -198,7 +209,7 @@ sessions = {
     "120 Hz, 47 cm/s": simulate_session(frame_rate=120.0, running_speed=47.0),
 }
 
-resampled = {}
+resampled, counts = {}, []
 for name, (times, positions, recording_id) in sessions.items():
     new_recording = np.r_[False, np.diff(recording_id) != 0]
     path = resample_by_distance(
@@ -206,6 +217,8 @@ for name, (times, positions, recording_id) in sessions.items():
     )
     resampled[name] = path
     print(f"{name}: {len(times)} frames -> {path.times.size} samples 2 cm apart")
+    counts.append((len(times), path.times.size))
+assert counts == [(1200, 437), (4800, 934)]
 
 # Both sessions start at the same place. Compare them 1 s after the start ...
 (t_slow, xy_slow, _), (t_fast, xy_fast, _) = sessions.values()
@@ -213,12 +226,15 @@ apart = np.linalg.norm(
     xy_slow[np.searchsorted(t_slow, 1.0)] - xy_fast[np.searchsorted(t_fast, 1.0)]
 )
 print(f"Same time (1 s): {apart:.1f} cm apart")
+assert np.isclose(apart, 24.6, atol=0.06)
 # ... and at the same distances along the first run
 slow, fast = (path.positions[path.run_ids == 0] for path in resampled.values())
 n_shared = min(len(slow), len(fast))
 apart = np.linalg.norm(slow[:n_shared] - fast[:n_shared], axis=1).max()
 print(f"Same distance ({n_shared} samples): at most {apart:.4f} cm apart")
+assert n_shared == 85 and np.isclose(apart, 0.0022, atol=0.00006)
 
+stats = {}
 for name, (times, positions, recording_id) in sessions.items():
     path = resampled[name]
     new_recording = np.r_[False, np.diff(recording_id) != 0]
@@ -236,7 +252,21 @@ for name, (times, positions, recording_id) in sessions.items():
     for label, statistic in [("median", np.nanmedian), ("mean", np.nanmean)]:
         value = statistic(curvature)
         print(f"  {label} curvature: {value:.4f} /cm (radius {1 / value:.2f} cm)")
-    print(f"  legacy median turn per frame: {np.nanmedian(turn_per_frame):.4f} rad")
+    legacy_turn = np.nanmedian(turn_per_frame)
+    print(f"  legacy median turn per frame: {legacy_turn:.4f} rad")
+    stats[name] = (
+        np.median(speed_at_samples),
+        np.nanmean(curvature),
+        np.nanmedian(curvature),
+        legacy_turn,
+    )
+
+# The numbers the text below quotes (atol = 0.6 * 10**-decimals)
+slow_stats, fast_stats = stats.values()
+assert np.allclose([slow_stats[0], fast_stats[0]], [22.0, 46.7], atol=0.06)
+assert np.allclose([1 / slow_stats[1], 1 / fast_stats[1]], 40.00, atol=0.006)
+assert np.allclose([1 / slow_stats[2], 1 / fast_stats[2]], [40.39, 40.02], atol=0.006)
+assert np.allclose([slow_stats[3], fast_stats[3]], [0.0183, 0.0098], atol=6e-5)
 ```
 
 **Equal distances, not equal times.** The 1200 frames at 30 Hz become 437

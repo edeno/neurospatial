@@ -69,6 +69,9 @@ information = rates.spatial_information()  # bits/spike, one value per unit
 n_spatial = count_place_cells(information, threshold=0.5)
 print(f"Units at or above 0.5 bits/spike: {n_spatial} of {len(unit_ids)}")
 print("Information of the untuned units:", np.round(information[20:], 2))
+# Quoted numbers: atol = 0.6 * 10**-decimals
+assert n_spatial == 20
+assert 0.01 - 0.006 <= information[20:].min() and information[20:].max() <= 0.04 + 0.006
 ```
 
 All 20 simulated place cells pass the 0.5 bits/spike screen and none of the
@@ -96,6 +99,8 @@ print("Uncovered positions, rounded to 10 cm:",
       np.unique(np.round(gap_positions, -1)))
 print("Uncovered bins the animal never visited:",
       int((~rates.spatial_support[coverage.uncovered_bins]).sum()))
+assert np.isclose(coverage.coverage_fraction, 0.69, atol=0.006)
+assert np.isclose(coverage.fields_per_place_cell, 1.0, atol=0.06)
 ```
 
 With all 25 maps the track looks fully covered, but only because the detector
@@ -115,6 +120,7 @@ how many fields include each bin:
 density = field_density_map(coverage.place_fields, env.n_bins)
 covered = density[coverage.covered_bins]
 print(f"Fields per covered bin: median {np.median(covered):.0f}, max {covered.max()}")
+assert covered.max() == 4
 
 fig, ax = plt.subplots(figsize=(8, 2.5))
 plot_population_coverage(env, coverage, show_field_count=True, ax=ax)
@@ -188,6 +194,8 @@ map_similarity = population_vector_correlation(np.vstack([before, after]))
 per_cell = np.diag(map_similarity[:n_units, n_units:])
 print("Map correlation, cells that kept their field:", np.round(per_cell[~moves], 2))
 print("Map correlation, cells that moved their field:", np.round(per_cell[moves], 2))
+assert per_cell[~moves].min() >= 0.99 - 0.006  # 0.99-1.00
+assert (per_cell[moves] > -0.15).all() and (per_cell[moves] < 0).all()
 
 
 def standardize(x):
@@ -219,6 +227,7 @@ if np.isnan(pv_median):
 else:
     print(f"Population-vector correlation per location: median {pv_median:.2f} "
           f"({n_undefined} of {before.shape[1]} locations undefined)")
+assert np.isclose(pv_median, 0.27, atol=0.006) and n_undefined == 0
 ```
 
 The cells that kept their field have map correlations of 0.99-1.00, and the
@@ -270,6 +279,8 @@ overlap = np.array([
 ])
 print("Field overlap, cells that kept their field:", np.round(overlap[~moves], 2))
 print("Field overlap, cells that moved their field:", np.round(overlap[moves], 2))
+assert 0.86 - 0.006 <= overlap[~moves].min() and overlap[~moves].max() <= 1.0
+assert (overlap[moves] == 0).all()
 ```
 
 Cells that kept their field share most of their field bins (overlap
@@ -378,6 +389,7 @@ for pair in strongest:
           f"r = {run_correlations[pair]:.2f}")
 print(f"Pairs with r > 0.1: {(run_correlations > 0.1).sum()} "
       f"of {run_correlations.size}")
+assert ((run_correlations > 0.1).sum(), run_correlations.size) == (18, 378)
 ```
 
 The most correlated pairs are cells of the same assembly. Only 18 of the 378
@@ -401,10 +413,14 @@ assemblies = detect_assemblies(counts["run"], rng=0)
 print(f"Marchenko-Pastur threshold: {threshold:.2f}")
 print("Largest eigenvalues:", np.round(assemblies.eigenvalues[:5], 2))
 print("Dimensions above threshold:", assemblies.n_significant)
+planted = []
 for pattern in assemblies.patterns:
     members = pattern.member_indices
     print(f"Core members {members.tolist()} -> planted assembly "
           f"{np.unique(assembly_of[members]).tolist()}")
+    planted.append(np.unique(assembly_of[members]).tolist())
+assert assemblies.n_significant == 3
+assert all(len(assembly) == 1 for assembly in planted)  # each pattern: one assembly
 ```
 
 Three eigenvalues exceed the threshold, matching the three planted
@@ -425,6 +441,7 @@ positive weights are the members; the bins where those members fire together
 then have positive activation.
 
 ```python
+reactivated = []
 for k, pattern in enumerate(assemblies.patterns):
     assembly = assembly_of[pattern.member_indices[0]]
     activation = assembly_activation(counts["post_rest"], pattern)
@@ -437,6 +454,13 @@ for k, pattern in enumerate(assemblies.patterns):
     print(f"Pattern {k}: activation {activation[in_event].mean():.1f} during "
           f"its events vs {activation[~in_event].mean():.1f} otherwise; "
           f"strength pre {strength_pre:.2f}, post {strength_post:.2f}")
+    reactivated.append((activation[in_event].mean(), activation[~in_event].mean(),
+                        strength_pre, strength_post))
+in_events, otherwise, pre, post = np.array(reactivated).T
+assert 3.45 - 0.06 <= in_events.min() and in_events.max() <= 3.65 + 0.06
+assert np.allclose(otherwise, -0.2, atol=0.06)
+assert 1.05 - 0.006 <= pre.min() and pre.max() <= 1.07 + 0.006
+assert 1.07 - 0.006 <= post.min() and post.max() <= 1.13 + 0.006
 ```
 
 In post-task rest, each pattern's activation averages about 3.5 standard
@@ -475,6 +499,8 @@ reactivation = explained_variance_reactivation(
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
       f"REV = {reactivation.reversed_ev:.3f}, over {reactivation.n_pairs} pairs")
+assert np.isclose(reactivation.explained_variance, 0.75, atol=0.006)
+assert np.isclose(reactivation.reversed_ev, 0.015, atol=0.0006)
 ```
 
 EV (0.75) is far above REV (0.015): the correlation structure of running
