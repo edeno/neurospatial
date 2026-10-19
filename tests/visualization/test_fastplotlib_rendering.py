@@ -536,7 +536,9 @@ def test_a_track_shows_its_fields_against_position_and_time(track, decoded):
     )
     (line,) = animation._track.lines
     column = 15 - animation._track.first
-    np.testing.assert_allclose(line.data[column, :2], [times[15], 45.0], rtol=1e-6)
+    points = line.data[:][:, :2]
+    (at,) = np.flatnonzero(np.isclose(points[:, 0], times[15]))
+    np.testing.assert_allclose(points[at], [times[15], 45.0], rtol=1e-6)
     face = 2 * (column * track.n_bins + 3)
     assert animation._track.mesh.tooltip_format({"face_index": face}).splitlines() == [
         f"t = {times[15]:.3f} s",
@@ -947,6 +949,52 @@ def test_side_by_side_fields_are_drawn_the_same_size(apparatus, walk):
         for g in explicit._plot.docks["right"].graphics
         if type(g).__name__ == "MeshGraphic" and len(g.positions) == 3
     ]
+
+
+def test_track_lines_break_between_segments_and_across_gaps(track):
+    # Out along segment 0-1, then on 1-2 past the spacing; tracking stops for
+    # a second in between.
+    times = np.concatenate([np.arange(0.0, 1.0, 0.1), np.arange(2.0, 3.0, 0.1)])
+    along = np.concatenate([np.linspace(5, 25, 10), np.linspace(45, 65, 10)])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            np.zeros((4, track.n_bins)),
+            frame_times=np.arange(4.0),
+            backend="fastplotlib",
+            window_seconds=4.0,
+            overlays=[
+                PositionOverlay(positions=track.linear_to_nd(along), times=times)
+            ],
+        )
+    animation.widget.indices = {"time": 1.5}
+    _render(animation)
+    (line,) = animation._track.lines
+    y = line.data[:][:, 1]
+    runs = np.split(y, np.flatnonzero(np.isnan(y)))
+    drawn = [run[np.isfinite(run)] for run in runs if np.isfinite(run).any()]
+    assert [len(run) for run in drawn] == [10, 10]  # one break, at the gap
+    np.testing.assert_allclose(drawn[0][[0, -1]], [5, 25], atol=0.01)
+
+    # Without the gap, the change of segment breaks the line alone.
+    times = np.arange(0.0, 2.0, 0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            np.zeros((4, track.n_bins)),
+            frame_times=np.arange(4.0),
+            backend="fastplotlib",
+            window_seconds=4.0,
+            overlays=[
+                PositionOverlay(positions=track.linear_to_nd(along), times=times)
+            ],
+        )
+    animation.widget.indices = {"time": 1.0}
+    _render(animation)
+    (line,) = animation._track.lines
+    y = line.data[:][:, 1]
+    first_gap = np.flatnonzero(np.isnan(y))[0]
+    assert first_gap == 10  # after the last sample on segment 0-1
 
 
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):

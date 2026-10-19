@@ -526,7 +526,9 @@ class _PositionTime:
     A column starts at its frame's time and lasts until the next frame, as
     the field panel holds it, or one typical frame interval at a gap, which
     stays empty. Rows span each bin along the track. Positions are drawn as
-    lines along the track, every sample of their own.
+    lines along the track, every sample of their own, broken where the
+    samples change segment of a maze or leave a gap in time, so no line
+    crosses space or time that was not seen.
     """
 
     def __init__(
@@ -560,6 +562,7 @@ class _PositionTime:
         self.set_window(window)
         # Segment boundaries, and each segment's name at the window's left.
         segments = track_segments(env) if env.is_linearized_track else []
+        self.segment_starts = np.array([low for _, low, _ in segments])
         self.labels = []
         if len(segments) > 1:
             bounds = np.unique([end for _, *ends in segments for end in ends])
@@ -610,7 +613,10 @@ class _PositionTime:
         self.mesh.tooltip_format = self.describe
         self.lines = [
             self.subplot.add_line(
-                np.full((self._most_in_window(samples), 3), np.nan, dtype=np.float32),
+                # Room for a break between every two samples.
+                np.full(
+                    (2 * self._most_in_window(samples), 3), np.nan, dtype=np.float32
+                ),
                 colors=data.color,
                 thickness=2,
             )
@@ -657,15 +663,23 @@ class _PositionTime:
         half = self.window / 2
         for line, (track, clock) in zip(self.lines, self.tracks, strict=True):
             if clock.times is None:
-                shown, times = frames, self.clock[frames]
+                shown, times, ends = frames, self.clock[frames], self.ends[frames]
             else:
                 shown = np.arange(
                     np.searchsorted(clock.times, time - half, side="left"),
                     np.searchsorted(clock.times, time + half, side="right"),
-                )[: len(line.data)]
-                times = clock.times[shown]
+                )[: len(line.data) // 2]
+                times, ends = clock.times[shown], clock.ends[shown]
+            along = track[shown]
+            segment = np.searchsorted(self.segment_starts, along, side="right")
+            # A sample shown until its end: the next one after it is a gap.
+            gap = times[1:] - ends[:-1] > 1e-9
+            breaks = np.flatnonzero((np.diff(segment) != 0) | gap)
+            drawn = np.insert(
+                np.column_stack([times, along]), breaks + 1, np.nan, axis=0
+            )
             points = np.full((len(line.data), 2), np.nan)
-            points[: len(shown)] = np.column_stack([times, track[shown]])
+            points[: len(drawn)] = drawn
             line.data = xyz(points)
         for label, middle in self.labels:
             label.offset = (time - half, middle, 1.0)
