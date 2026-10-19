@@ -27,14 +27,14 @@ Performance Considerations
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import to_hex
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.animation._region_names import shown_region_names
 from neurospatial.geometry import require_cartesian
@@ -130,6 +130,7 @@ class OverlayProtocol(Protocol):
         | VideoData
         | EventData
         | TimeSeriesData
+        | SpikeRasterData
         | ObjectVectorData
     ):
         """Convert overlay to internal data representation.
@@ -145,7 +146,7 @@ class OverlayProtocol(Protocol):
 
         Returns
         -------
-        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | ObjectVectorData
+        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | SpikeRasterData | ObjectVectorData
             Internal data container aligned to frame times.
 
         Notes
@@ -1916,6 +1917,145 @@ class TimeSeriesOverlay:
 
 
 @dataclass
+class SpikeRasterOverlay:
+    """Spikes of many units as a raster beside the field, on the same clock.
+
+    Each unit is a row of ticks at its spike times, and the panel shows
+    ``window_seconds`` around the current time, so replay or theta sequences
+    can be read against a decoded posterior or the animal's position.
+    Hovering over a spike names its unit. Drawn by ``backend="fastplotlib"``;
+    the other backends skip it with a warning.
+
+    Parameters
+    ----------
+    spike_times : sequence of ndarray, ndarray, or spike group
+        Spike times of each unit, in seconds, on the clock of
+        ``frame_times``: one array per unit, a 2-D NaN-padded array, or a
+        group such as a pynapple ``TsGroup``.
+    order : array-like of int, shape (n_units,), optional
+        The units from the bottom row up, as indices into ``spike_times``.
+        On a track, sort by place-field peak with
+        ``np.argsort(env.to_linear(rates.peak_locations()))``, or
+        ``np.argsort(rates.peak_locations()[:, 0])`` on a 1-D environment.
+        Default: the order of ``spike_times``.
+    unit_ids : array-like, shape (n_units,), optional
+        Unit labels, in the order of ``spike_times``. Default: the labels a
+        spike group carries, else ``0 .. n_units - 1``.
+    window_seconds : float, default=2.0
+        Seconds shown, centered on the current time.
+    color : str, default="white"
+        Tick color.
+    linewidth : float, default=1.5
+        Tick width, in screen pixels.
+
+    Raises
+    ------
+    ValueError
+        If there are no units, ``order`` is not a permutation of the units,
+        ``unit_ids`` has the wrong length or repeats a label, a spike time is
+        not finite, or ``window_seconds`` is not positive.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.animation import SpikeRasterOverlay
+    >>> spike_times = [np.array([0.1, 0.5]), np.array([0.3])]
+    >>> raster = SpikeRasterOverlay(spike_times, order=[1, 0])
+    >>> raster.window_seconds
+    2.0
+    """
+
+    spike_times: Any
+    _: KW_ONLY
+    order: ArrayLike | None = None
+    unit_ids: ArrayLike | None = None
+    window_seconds: float = 2.0
+    color: str = "white"
+    linewidth: float = 1.5
+    # Protocol attributes: spikes are drawn at their own times.
+    times: NDArray[np.float64] | None = field(default=None, init=False, repr=False)
+    interp: Literal["linear", "nearest"] = field(
+        default="nearest", init=False, repr=False
+    )
+    # The spike trains and labels, bottom row first.
+    _rows: tuple[list[NDArray[np.float64]], NDArray[Any]] = field(
+        init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        """Check the spikes, the order and the labels."""
+        from neurospatial._results import resolve_unit_ids
+        from neurospatial.encoding._spikes import _as_spike_trains_with_ids
+
+        trains, carried = _as_spike_trains_with_ids(self.spike_times)
+        if not trains:
+            raise ValueError(
+                "SpikeRasterOverlay needs the spikes of at least one unit."
+            )
+        ids = resolve_unit_ids(
+            None if self.unit_ids is None else np.asarray(self.unit_ids),
+            len(trains),
+            context="SpikeRasterOverlay",
+            input_ids=carried,
+        )
+        order = (
+            np.arange(len(trains))
+            if self.order is None
+            else np.asarray(self.order).astype(np.intp, casting="same_kind")
+        )
+        if not np.array_equal(np.sort(order), np.arange(len(trains))):
+            raise ValueError(
+                f"order must list each of the {len(trains)} units once, as "
+                f"indices into spike_times; got {order.tolist()}. Why: each "
+                "row of the raster is one unit. Fix: pass a permutation, such "
+                "as np.argsort of each unit's place-field peak."
+            )
+        for i, train in enumerate(trains):
+            if not np.all(np.isfinite(train)):
+                raise ValueError(
+                    f"Unit {ids[i].item()!r} has spike times that are NaN or infinite. "
+                    "Why: a spike is drawn at its time. Fix: drop them, e.g. "
+                    "train[np.isfinite(train)]."
+                )
+        if not self.window_seconds > 0:
+            raise ValueError(
+                f"window_seconds must be positive, got {self.window_seconds}."
+            )
+        self._rows = [trains[i] for i in order], ids[order]
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> SpikeRasterData:
+        """The raster's rows, bottom row first.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,); unused, the
+            spikes keep their own times.
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            The environment; unused.
+
+        Returns
+        -------
+        SpikeRasterData
+        """
+        spike_times, unit_ids = self._rows
+        return SpikeRasterData(
+            spike_times=spike_times,
+            unit_ids=unit_ids,
+            window_seconds=self.window_seconds,
+            color=self.color,
+            linewidth=self.linewidth,
+        )
+
+
+@dataclass
 class ObjectVectorOverlay:
     """Vector overlay showing lines from animal to objects for object-vector cell analysis.
 
@@ -3021,6 +3161,33 @@ class TimeSeriesData:
 
 
 @dataclass
+class SpikeRasterData:
+    """Internal container for a spike raster, one row per unit.
+
+    Created by the conversion pipeline from a SpikeRasterOverlay.
+
+    Attributes
+    ----------
+    spike_times : list of ndarray of float64
+        Each row's spike times, in seconds, bottom row first.
+    unit_ids : ndarray, shape (n_units,)
+        Each row's unit label.
+    window_seconds : float
+        Seconds shown, centered on the current time.
+    color : str
+        Tick color.
+    linewidth : float
+        Tick width, in screen pixels.
+    """
+
+    spike_times: list[NDArray[np.float64]]
+    unit_ids: NDArray[Any]
+    window_seconds: float
+    color: str
+    linewidth: float
+
+
+@dataclass
 class ObjectVectorData:
     """Internal container for object-vector overlay data aligned to animation frames.
 
@@ -3106,6 +3273,8 @@ class OverlayData:
         List of event overlays. Default is empty list.
     timeseries : list[TimeSeriesData], optional
         List of time series overlays. Default is empty list.
+    spike_rasters : list[SpikeRasterData], optional
+        List of spike rasters. Default is empty list.
     object_vectors : list[ObjectVectorData], optional
         List of object-vector overlays. Default is empty list.
     regions : dict[int, list[str]] | None, optional
@@ -3131,6 +3300,8 @@ class OverlayData:
         List of event overlays.
     timeseries : list[TimeSeriesData]
         List of time series overlays.
+    spike_rasters : list[SpikeRasterData]
+        List of spike rasters.
     object_vectors : list[ObjectVectorData]
         List of object-vector overlays.
     regions : dict[int, list[str]] | None
@@ -3163,6 +3334,7 @@ class OverlayData:
     videos: list[VideoData] = field(default_factory=list)
     events: list[EventData] = field(default_factory=list)
     timeseries: list[TimeSeriesData] = field(default_factory=list)
+    spike_rasters: list[SpikeRasterData] = field(default_factory=list)
     object_vectors: list[ObjectVectorData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
     frame_times: NDArray[np.float64] | None = None
@@ -4235,6 +4407,7 @@ def _convert_overlays_to_data(
     video_data_list: list[VideoData] = []
     event_data_list: list[EventData] = []
     timeseries_data_list: list[TimeSeriesData] = []
+    spike_raster_data_list: list[SpikeRasterData] = []
     object_vector_data_list: list[ObjectVectorData] = []
 
     # Process each overlay using protocol dispatch
@@ -4263,13 +4436,16 @@ def _convert_overlays_to_data(
             event_data_list.append(internal_data)
         elif isinstance(internal_data, TimeSeriesData):
             timeseries_data_list.append(internal_data)
+        elif isinstance(internal_data, SpikeRasterData):
+            spike_raster_data_list.append(internal_data)
         elif isinstance(internal_data, ObjectVectorData):
             object_vector_data_list.append(internal_data)
         else:
             raise TypeError(
                 f"convert_to_data() must return PositionData, BodypartData, "
                 f"HeadDirectionData, VideoData, EventData, TimeSeriesData, "
-                f"or ObjectVectorData, got {type(internal_data).__name__}."
+                f"SpikeRasterData or ObjectVectorData, got "
+                f"{type(internal_data).__name__}."
             )
 
     # Normalize regions to dict[int, list[str]] format
@@ -4286,6 +4462,7 @@ def _convert_overlays_to_data(
         videos=video_data_list,
         events=event_data_list,
         timeseries=timeseries_data_list,
+        spike_rasters=spike_raster_data_list,
         object_vectors=object_vector_data_list,
         regions=normalized_regions,
         frame_times=frame_times,

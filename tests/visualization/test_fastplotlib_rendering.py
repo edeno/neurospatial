@@ -545,8 +545,50 @@ def test_a_track_shows_its_fields_against_position_and_time(track, decoded):
     np.testing.assert_allclose(
         _pixel(animation.figure, panel, times[19] + 0.3, 15.0), 0.0, atol=0.05
     )
-    animation._track.cursor.selection = times[12]  # dragging the cursor
+    animation._track.view.cursor.selection = times[12]  # dragging the cursor
     assert animation.widget.indices["time"] == pytest.approx(times[12])
+
+
+def test_a_raster_draws_each_spike_in_its_units_row_on_the_clock(apparatus, walk):
+    from neurospatial.animation import SpikeRasterOverlay
+
+    t, path, fields = walk
+    session = 100.0 + t  # the clock counts from the first frame
+    spikes = [100.0 + np.array([0.5, 1.0]), 100.0 + np.array([2.0]), np.array([])]
+    raster = SpikeRasterOverlay(
+        spikes,
+        order=[1, 2, 0],
+        unit_ids=["CA1-a", "CA1-b", "CA1-c"],
+        window_seconds=1.0,
+    )
+    rewards = EventOverlay(
+        event_times={"reward": session[[20]]}, event_positions={"reward": path[[20]]}
+    )
+    animation = apparatus.animate_fields(
+        fields, frame_times=session, backend="fastplotlib", overlays=[raster, rewards]
+    )
+    panel = animation.figure["raster 0"]
+    (layer,) = animation._rasters
+    # Unit 1 in the bottom row, unit 0 in the top one: a tick a spike.
+    ticks = layer.ticks.data[:][:, :2]
+    np.testing.assert_allclose(
+        ticks[0::3], [[2.0, -0.4], [0.5, 1.6], [1.0, 1.6]], rtol=1e-6
+    )
+    np.testing.assert_allclose(
+        ticks[1::3], [[2.0, 0.4], [0.5, 2.4], [1.0, 2.4]], rtol=1e-6
+    )
+    assert layer.describe({"vertex_index": 4}).splitlines() == [
+        "unit CA1-a",
+        "t = 100.5000 s",
+    ]
+    assert panel.y_range == pytest.approx((-0.5, 2.5))
+    (marks,) = [g for g in panel.graphics if g.name == "reward times"]
+    np.testing.assert_allclose(marks.data[:], t[[20]], rtol=1e-5)
+    animation.frame = 60
+    _render(animation)
+    assert panel.x_range == pytest.approx((t[60] - 0.5, t[60] + 0.5))
+    layer.view.cursor.selection = t[30]  # dragging the cursor
+    assert animation.widget.indices["time"] == pytest.approx(t[30])
 
 
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):

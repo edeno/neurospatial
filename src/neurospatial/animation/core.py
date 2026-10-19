@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -681,6 +682,16 @@ def animate_fields(
     if backend == "auto":
         backend = _select_backend(n_frames, save_path)
         auto_reason = _auto_reason(backend, n_frames, save_path)
+
+    if overlay_data and overlay_data.spike_rasters and backend != "fastplotlib":
+        warnings.warn(
+            f"The {backend} backend does not draw SpikeRasterOverlay, so the "
+            "raster is skipped; the other overlays are drawn. Use "
+            "backend='fastplotlib' to show it beside the field.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        overlay_data = replace(overlay_data, spike_rasters=[])
 
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)

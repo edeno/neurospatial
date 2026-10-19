@@ -87,8 +87,8 @@ Choose the right backend for your workflow:
 | **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Fastplotlib also draws event, time-series and object-vector overlays, walls
-and landmarks.
+Fastplotlib also draws event, time-series, spike-raster and object-vector
+overlays, walls and landmarks.
 
 See [Animation Overlays](../animation_overlays.md) for detailed overlay documentation including VideoOverlay calibration.
 
@@ -440,6 +440,12 @@ recording gap the column ends after one typical frame interval and the gap
 stays empty. On a track built from several segments, the spacing between them
 (`edge_spacing`) stays empty too. Hovering over a cell shows its time,
 position and value; drag the cursor to move every panel.
+
+A `SpikeRasterOverlay` draws each unit's spikes as a row of ticks beside the
+field on the same clock; pass `order=np.argsort(env.to_linear(rates.peak_locations()))`
+to sort the rows by place-field peak along the track, so a replay or theta
+sequence reads as a diagonal under the posterior. See [Spike Raster
+Overlay](../animation_overlays.md#spike-raster-overlay).
 
 Play and the step buttons move by a fixed time, short enough to reach every
 frame when frames are evenly spaced (camera jitter included). For frames with

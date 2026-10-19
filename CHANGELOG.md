@@ -1248,7 +1248,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`linear_track`, `from_graph` or a 1-D environment) the fields are also
   drawn as position along the track against time, over `window_seconds`
   around the current time, with position overlays as lines: the usual view of
-  a decoded posterior. Frame times
+  a decoded posterior. `SpikeRasterOverlay` draws many units' spikes as a
+  raster beside the field on the same clock, rows in a chosen order (by
+  place-field peak, say); other backends skip it with a warning. Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an

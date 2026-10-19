@@ -9,8 +9,9 @@ to the browser, so this works on a remote GPU server.
 
 Drawn: position (marker and fading trail), body parts with skeleton, head
 direction, object vectors, events, video placed through its calibration,
-time series beside the field on the same clock (with event times marked),
-regions, walls and landmarks.
+time series and spike rasters beside the field on the same clock (with event
+times marked), a track's fields against position and time, regions, walls
+and landmarks.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
         ObjectVectorData,
         OverlayData,
         PositionData,
+        SpikeRasterData,
         TimeSeriesData,
         VideoData,
     )
@@ -393,14 +395,44 @@ def track_position(
     return np.asarray(positions, dtype=np.float64)[:, 0]
 
 
+class _TimeWindow:
+    """A panel's view of ``window`` seconds around the slider's time.
+
+    A cursor marks the time; dragging it moves every panel.
+    """
+
+    def __init__(
+        self, subplot: Any, window: float, move_to: Callable[[float], None]
+    ) -> None:
+        from fastplotlib import LinearSelector
+
+        self.subplot, self.window = subplot, window
+        self.cursor = LinearSelector(
+            0.0, limits=(-np.inf, np.inf), edge_color="lightgray"
+        )
+        self.cursor.add_event_handler(
+            lambda event: move_to(event.info["value"]), "selection"
+        )
+        subplot.add_graphic(self.cursor)
+        subplot.camera.maintain_aspect = False
+
+    def follow(self, time: float) -> None:
+        """Center the view and the cursor on ``time``."""
+        from fastplotlib.graphics.utils import pause_events
+
+        with pause_events(self.cursor):
+            self.cursor.selection = time
+        half = self.window / 2
+        self.subplot.x_range = (time - half, time + half)
+
+
 class _PositionTime:
     """A track's fields over time: a column per frame, a row per bin.
 
     A column starts at its frame's time and lasts until the next frame, as
     the field panel holds it, or one typical frame interval at a gap, which
     stays empty. Rows span each bin along the track. Positions are drawn as
-    lines along the track, and the slider's time as a cursor that can be
-    dragged.
+    lines along the track.
     """
 
     def __init__(
@@ -415,9 +447,7 @@ class _PositionTime:
         start: float,
         move_to: Callable[[float], None],
     ) -> None:
-        from fastplotlib import LinearSelector
-
-        self.subplot, self.scale, self.clock, self.start = subplot, scale, clock, start
+        self.scale, self.clock, self.start = scale, clock, start
         self.window = window
         self.lower, self.upper = extents
         typical = float(np.median(np.diff(clock))) if len(clock) > 1 else 1.0
@@ -451,15 +481,8 @@ class _PositionTime:
             for item in positions
         ]
         self.first, self.rows = 0, np.empty((0, n_bins))
-        self.cursor = LinearSelector(
-            0.0, limits=(-np.inf, np.inf), edge_color="lightgray"
-        )
-        self.cursor.add_event_handler(
-            lambda event: move_to(event.info["value"]), "selection"
-        )
-        subplot.add_graphic(self.cursor)
+        self.view = _TimeWindow(subplot, window, move_to)
         subplot.title = self.axis
-        subplot.camera.maintain_aspect = False
         subplot.y_range = (float(self.lower.min()), float(self.upper.max()))
 
     def frames_at(self, time: float) -> slice:
@@ -472,8 +495,6 @@ class _PositionTime:
 
     def show(self, time: float, first: int, rows: NDArray[np.float64]) -> None:
         """Draw ``rows``, the fields from frame ``first``, around ``time``."""
-        from fastplotlib.graphics.utils import pause_events
-
         self.first, self.rows = first, rows
         n_frames, n_bins = rows.shape
         frames = np.arange(first, first + n_frames)
@@ -495,10 +516,7 @@ class _PositionTime:
             points = np.full((self.n_columns, 2), np.nan)
             points[:n_frames] = np.column_stack([self.clock[frames], track[frames]])
             line.data = xyz(points)
-        with pause_events(self.cursor):
-            self.cursor.selection = time
-        half = self.window / 2
-        self.subplot.x_range = (time - half, time + half)
+        self.view.follow(time)
 
     def describe(self, pick_info: dict[str, Any]) -> str:
         """The tooltip for the cell under the pointer."""
@@ -513,6 +531,46 @@ class _PositionTime:
                 f"value: {'missing' if np.isnan(value) else f'{value:.4g}'}",
             ]
         )
+
+
+class _Raster:
+    """Spikes as ticks, a row per unit, around the slider's time.
+
+    Every spike is drawn once, as a vertical segment most of its row's
+    height; the view follows the time.
+    """
+
+    def __init__(
+        self,
+        subplot: Any,
+        data: SpikeRasterData,
+        start: float,
+        move_to: Callable[[float], None],
+    ) -> None:
+        self.data, self.start = data, start
+        counts = [len(train) for train in data.spike_times]
+        self.row = np.repeat(np.arange(len(counts)), counts)
+        self.times = np.concatenate(data.spike_times)
+        x = self.times - start
+        # Three vertices a spike: its segment's ends and a gap.
+        segments = pair_segments(
+            np.column_stack([x, self.row - 0.4]), np.column_stack([x, self.row + 0.4])
+        )
+        if not len(segments):
+            segments = np.full((1, 3), np.nan, dtype=np.float32)
+        self.ticks = subplot.add_line(
+            segments, colors=data.color, thickness=data.linewidth
+        )
+        self.ticks.tooltip_format = self.describe
+        self.view = _TimeWindow(subplot, data.window_seconds, move_to)
+        subplot.title = f"spikes, {len(counts)} units"
+        subplot.y_range = (-0.5, len(counts) - 0.5)
+
+    def describe(self, pick_info: dict[str, Any]) -> str:
+        """The tooltip for the spike under the pointer."""
+        spike = int(pick_info["vertex_index"]) // 3
+        unit = self.data.unit_ids[self.row[spike]]
+        return f"unit {unit}\nt = {self.times[spike]:.4f} s"
 
 
 def playback_step(frame_times: NDArray[np.float64]) -> float:
@@ -616,7 +674,7 @@ class FastplotlibAnimation:
     fastplotlib ``NDWidget``: a slider in seconds, play, step and loop
     buttons, and a frame rate box. Time-series overlays are drawn beside the
     field on the same clock, each showing its window around the current
-    time, with event times marked. On a track (a linearized track or a 1-D
+    time, with event times marked, and so are spike rasters. On a track (a linearized track or a 1-D
     environment) the fields are also drawn over time, position along the
     track against time, with the positions as lines over them: a decoded
     posterior beside the animal's position, say. Hovering over a bin shows
@@ -712,10 +770,13 @@ class FastplotlibAnimation:
         step = playback_step(self._frame_times)
         extents_along_track = track_extents(env)
         # Panels on the clock fill the right, stacked top to bottom: the
-        # track's fields over time, then the time series.
+        # track's fields over time, the rasters, then the time series; the
+        # field narrows when the right holds more than time series.
+        rasters = overlay_data.spike_rasters if overlay_data else []
         panels = [("track", 2.0)] if extents_along_track is not None else []
+        panels += [(f"raster {i}", 2.0) for i in range(len(rasters))]
         panels += [(f"series {i}", 1.0) for i in range(len(groups))]
-        split = (0.4 if extents_along_track is not None else 0.6) if panels else 1.0
+        split = (0.4 if len(panels) > len(groups) else 0.6) if panels else 1.0
         extents = {"field": (0.0, split, 0.0, 1.0)}
         total, top = sum(weight for _, weight in panels), 0.0
         for name, weight in panels:
@@ -796,9 +857,15 @@ class FastplotlibAnimation:
                 window_seconds,
                 overlay_data.positions if overlay_data else [],
                 self._start,
-                lambda time: setattr(self.widget, "indices", {"time": time}),
+                self._move_to,
             )
             _mark_events(self.figure["track"], events, self._start)
+        self._rasters = [
+            _Raster(self.figure[f"raster {i}"], item, self._start, self._move_to)
+            for i, item in enumerate(rasters)
+        ]
+        for i in range(len(rasters)):
+            _mark_events(self.figure[f"raster {i}"], events, self._start)
         frames = _frames_graphic(
             self.widget[self._plot],
             self.widget.indices,
@@ -819,6 +886,10 @@ class FastplotlibAnimation:
         frame_view(self._plot, env)
         self._canvas: Any = None
         self._show(0.0, self._read(0.0))
+
+    def _move_to(self, time: float) -> None:
+        """Move the slider, and so every panel, to ``time`` on the clock."""
+        self.widget.indices = {"time": time}
 
     def _frame_of(self, time: float) -> int:
         """The frame shown at ``time`` on the clock: the last one that started."""
@@ -844,6 +915,8 @@ class FastplotlibAnimation:
         frame, values, images = data.frame, data.values, data.images
         if self._track is not None:
             self._track.show(time, data.first, data.rows)
+        for raster in self._rasters:
+            raster.view.follow(time)
         self._field.update(values)
         for video, image in zip(self._videos, images, strict=True):
             video.show(image)

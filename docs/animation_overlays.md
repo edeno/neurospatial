@@ -238,6 +238,34 @@ env.animate_fields(
 - Not supported for 1D linearized tracks or 3D environments
 - Non-grid 2D environments work with approximate alignment (warning emitted)
 
+### Spike Raster Overlay
+
+Draws the spikes of many units beside the field, one row per unit, over
+`window_seconds` around the current time, so replay or theta sequences can be
+read against a decoded posterior. Sort the rows by place-field peak to see a
+sequence as a diagonal:
+
+```python
+from neurospatial.animation import SpikeRasterOverlay
+from neurospatial.encoding import compute_spatial_rates
+
+rates = compute_spatial_rates(env, spike_times, times, positions)
+# Along the track; on a 1-D environment use rates.peak_locations()[:, 0].
+order = np.argsort(env.to_linear(rates.peak_locations()))
+
+env.animate_fields(
+    result.posterior,
+    frame_times=result.times,
+    backend="fastplotlib",
+    overlays=[SpikeRasterOverlay(spike_times, order=order, window_seconds=1.0)],
+)
+```
+
+`order` lists the units from the bottom row up. Hovering over a spike shows
+its unit's label (`unit_ids`, or the labels of a pynapple `TsGroup`) and time.
+Only `backend="fastplotlib"` draws rasters; the other backends skip them with
+a warning.
+
 ## Multi-Animal Support
 
 Track multiple animals by passing **multiple overlays of the same type**:
@@ -371,6 +399,9 @@ Not all backends support all overlay types.
 | **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+Spike rasters are drawn only by the fastplotlib backend.
 
 **HTML backend limitations:**
 
