@@ -352,7 +352,7 @@ class TestPathEfficiency:
 
 
 class TestPathEfficiencyObservedSupport:
-    """Gap-free traveled length is the plain sum of step lengths."""
+    """Traveled length and efficiency under lost frames, declared breaks, single samples and invalid input."""
 
     @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
     def test_gap_free_lengths_equal_step_length_sum(self, continuous_recording, metric):
