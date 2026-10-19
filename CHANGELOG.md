@@ -1744,6 +1744,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `plot_population_coverage` draws 1-D environments, such as the one from
+  `linear_track_session`, as a line with a vertical mark at each gap. Before,
+  it raised `IndexError` when any bin was uncovered. On a track built from a
+  2-D graph, gap marks are now at each gap's linearized position; before, they
+  were drawn at its x and y coordinates.
 - The `method="glm"` warnings (smoothing penalty near its search bound, fit did
   not converge, no spikes, no occupancy) now point at your own call. Before,
   they pointed at a line inside neurospatial.

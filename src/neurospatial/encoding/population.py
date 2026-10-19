@@ -418,7 +418,9 @@ def plot_population_coverage(
 
     Notes
     -----
-    For 1D environments, uses `env.plot_1d()` with vertical lines for gaps.
+    For 1-D environments (``env.n_dims == 1``) and linearized tracks, plots the
+    coverage as a line along the track and marks each gap with a vertical
+    line at its position (the linearized position on a track).
 
     Examples
     --------
@@ -439,8 +441,8 @@ def plot_population_coverage(
     if ax is None:
         _, ax = plt.subplots()
 
-    # Handle 1D environments
-    if env.is_linearized_track:
+    # 1-D environments: a native 1-D grid or a track drawn in its linear coordinate
+    if env.n_dims == 1 or env.is_linearized_track:
         if show_field_count:
             field_to_plot = result.field_count.astype(float)
             env.plot_field(field_to_plot, ax=ax)
@@ -452,7 +454,17 @@ def plot_population_coverage(
 
         # Highlight gaps as vertical lines with legend
         if highlight_gaps and len(result.uncovered_bins) > 0:
-            gap_positions = result.uncovered_positions.ravel()
+            linearization = env.binning.linearization
+            if linearization is None:
+                gap_positions = result.uncovered_positions[:, 0]
+            else:
+                # The track is drawn in its linear coordinate, where segments
+                # are separated by the layout's gaps; place each gap there.
+                edges = linearization.grid_edges[0]
+                linear_centers = ((edges[:-1] + edges[1:]) / 2)[
+                    linearization.active_mask.ravel()
+                ]
+                gap_positions = linear_centers[result.uncovered_bins]
             for i, pos in enumerate(gap_positions):
                 ax.axvline(
                     float(pos),
