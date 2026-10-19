@@ -79,7 +79,9 @@ actually observed: lost frames are `NaN`, and the first frame of a new
 recording is marked with `break_before`, so neither adds distance. Second,
 resample each path at equal distances along the route (here every 2 cm), so
 sample *k* is the same distance from the run's start in both sessions,
-whatever the speed or frame rate.
+whatever the speed or frame rate. Sample *k* is then the same place only if
+the runs start at the same place; here the first run of each session starts
+at the same point on the track.
 
 The simulation runs the animal counterclockwise around a circular track of
 40 cm radius. The two recordings share one clock, as when files are
@@ -231,13 +233,14 @@ for name, (times, positions, recording_id) in sessions.items():
     curvature = compute_planar_curvature(
         path.times, path.positions, max_gap=None, break_before=path.break_before
     )
+    # The legacy function cannot see the join between recordings; the median
+    # hides the one large turn there, but other statistics would not
     turn_per_frame = compute_trajectory_curvature(positions, times)
     print(f"{name}:")
     print(f"  median speed at the samples: {np.median(speed_at_samples):.1f} cm/s")
-    print(
-        f"  median curvature: {np.nanmedian(curvature):.4f} /cm "
-        f"(radius {1 / np.nanmedian(curvature):.2f} cm)"
-    )
+    for label, statistic in [("median", np.nanmedian), ("mean", np.nanmean)]:
+        value = statistic(curvature)
+        print(f"  {label} curvature: {value:.4f} /cm (radius {1 / value:.2f} cm)")
     print(f"  legacy median turn per frame: {np.nanmedian(turn_per_frame):.4f} rad")
 ```
 
@@ -262,15 +265,21 @@ continuous signals such as speed or LFP amplitude; take labels and counts at
 
 **Path shape.** `compute_planar_curvature` measures how sharply the path
 bends, in 1/cm: 1/40 = 0.025 /cm on this track. On the resampled paths the
-medians are 0.0248 /cm at 30 Hz and 0.0250 /cm at 120 Hz (radii 40.39 and
-40.02 cm), so the two sessions agree within 1% although their speed and frame
-rate differ. The small residual comes from resampling: a sample that falls
-between two frames is placed on the straight line joining them, slightly
-inside the circle, and the longer steps between frames at 30 Hz put it
-further inside. The legacy `compute_trajectory_curvature` instead returns the
-turn per frame in radians (despite its name, it is not a curvature): 0.0183
-rad at 30 Hz and 0.0098 rad at 120 Hz, the speed divided by the radius and by
-the frame rate. It differs between the sessions although the route is the
+mean curvature gives a radius of 40.00 cm in both sessions, although their
+speed and frame rate differ. The medians give radii of 40.39 cm at 30 Hz and
+40.02 cm at 120 Hz, within 1% of each other. The small difference comes from
+resampling: a sample that falls between two frames is placed on the straight
+line joining them, so the resampled path is made of straight pieces that bend
+only at the original frames. The bend measured at a sample then depends on
+where the frames fall between it and its neighbors: some samples measure
+slightly less bend than the circle and others more. At 30 Hz the straight
+pieces are longer, so this scatter is larger and the median lands on a
+slightly larger radius. The mean averages the scatter out and recovers the
+track.
+
+The legacy `compute_trajectory_curvature` instead returns the turn per frame
+in radians (despite its name, it is not a curvature): 0.0183 rad at 30 Hz and
+0.0098 rad at 120 Hz, the speed divided by the radius and by the frame rate. It differs between the sessions although the route is the
 same, so do not compare it across frame rates or speeds.
 
 The resampled path is passed on with `max_gap=None` and
@@ -284,8 +293,12 @@ limit would break the path where the animal was merely slow; the run starts in
 - Pass `times` in seconds on one clock, strictly increasing. If each recording
   restarts its clock at 0, map them to one clock first or analyze them in
   separate calls.
-- Set dropped or low-confidence frames to `NaN` in `positions`; never fill them
-  with zeros or interpolate across them.
+- Set dropped or low-confidence frames to `NaN` in `positions`. Do not fill
+  them with zeros, and do not interpolate across them first: interpolated
+  frames add distance that was never observed.
+- To compare runs sample by sample, start each run at a shared landmark, for
+  example with one `epochs` window per lap or trial that begins where the lap
+  or trial begins.
 - Build `break_before` from your recording or epoch IDs:
   `break_before = np.r_[False, recording_id[1:] != recording_id[:-1]]`. A gap
   in the clock longer than `max_gap` breaks the path on its own.
@@ -324,8 +337,8 @@ print(f"Turn variance: {turn_variance:.3f}")
   product uses x and y but the dot product uses every column, so the angle is
   neither the horizontal-plane nor the 3-D angle; pass `positions[:, :2]`
 - Stationary periods (consecutive duplicate positions) are filtered out, so the
-  output is shorter than `positions` and not aligned with your frames. It also
-  ignores time gaps, dropped frames and recording breaks. For one angle per
+  output is shorter than `positions` and not aligned with your frames. It does
+  not use times, so it bridges time gaps and recording breaks. For one angle per
   frame that is `NaN` next to a dropout, gap or break, use
   `compute_planar_turn_angles(times, positions)`
 - Uses vectorized NumPy operations for efficiency
