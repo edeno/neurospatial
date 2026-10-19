@@ -31,6 +31,7 @@ OPT_IN = (
     "docs/user-guide/interoperability.md",
     "docs/user-guide/spike-field-primitives.md",
     "docs/user-guide/trajectory-and-behavioral-analysis.md",
+    "docs/user-guide/behavior-around-events.md",
     "docs/user-guide/video-annotation.md",
     "docs/user-guide/workflows.md",
     "docs/user-guide/neuroscience-metrics.md",
@@ -187,6 +188,14 @@ def collect_blocks(text: str, path: str) -> list[DocBlock]:
             )
         )
     return blocks
+
+
+# Later blocks of the guide continue from its first block; reading that block
+# from the document keeps the setup identical to what readers run.
+_BEHAVIOR_GUIDE = "docs/user-guide/behavior-around-events.md"
+SETUPS["docs_behavior_around_reward"] = collect_blocks(
+    (ROOT / _BEHAVIOR_GUIDE).read_text(encoding="utf-8"), _BEHAVIOR_GUIDE
+)[0].code
 
 
 def _fixture_namespace() -> dict[str, object]:

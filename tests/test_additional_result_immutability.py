@@ -24,6 +24,8 @@ from neurospatial.decoding.assemblies import AssemblyDetectionResult, AssemblyPa
 from neurospatial.decoding.trajectory import IsotonicFitResult, RadonDetectionResult
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding.spatial import DirectionalPlaceFields
+from neurospatial.events import ContinuousEventResult
+from neurospatial.ops import SpatialFeatureResult
 
 
 @pytest.fixture(scope="module")
@@ -168,6 +170,48 @@ CASES = [
             "include_endpoint": False,
             "max_gap": 0.5,
             "epochs": np.array([[0.0, 1.0]]),
+        },
+    ),
+    (
+        ContinuousEventResult,
+        {
+            "relative_times": np.array([0.0, 0.5]),
+            "feature_ids": np.array(["speed", "zone"]),
+            "value_kinds": ("linear", "categorical"),
+            "interpolation": ("linear", "previous"),
+            "feature_units": ("cm/s", None),
+            "event_status": np.array(["retained", "outside_recording"]),
+            "overlapping": np.zeros(2, dtype=bool),
+            "counts": np.ones((2, 2), dtype=np.int64),
+            "sums": np.array([[1.0, np.nan], [2.0, np.nan]]),
+            "sin_sums": np.full((2, 2), np.nan),
+            "cos_sums": np.full((2, 2), np.nan),
+            "category_features": np.array([1], dtype=np.intp),
+            "category_codes": np.array([0], dtype=np.int64),
+            "category_labels": np.array(["center"]),
+            "category_counts": np.ones((2, 1), dtype=np.int64),
+            "window": (0.0, 1.0),
+            "dt": 0.5,
+            "window_coverage": "complete",
+            "resultant_threshold": 1e-12,
+            "max_gap": 0.5,
+            "epochs": np.array([[0.0, 10.0]]),
+            "values": np.array([[[1.0, 0.0], [2.0, 0.0]]]),
+            "support": np.ones((1, 2, 2), dtype=bool),
+            "event_ids": np.array([10, 11]),
+        },
+    ),
+    (
+        SpatialFeatureResult,
+        {
+            "values": np.array([[[1.0]], [[np.nan]]]),
+            "support": np.array([[[True]], [[False]]]),
+            "bins": np.array([[0], [-1]], dtype=np.intp),
+            "feature_ids": np.array(["height"]),
+            "units": "cm",
+            "frame": "room",
+            "ego_points": np.array([[5.0, 0.0]]),
+            "query_positions": np.array([[[5.0, 0.0]], [[50.0, 0.0]]]),
         },
     ),
 ]

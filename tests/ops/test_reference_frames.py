@@ -60,6 +60,83 @@ def test_run_without_moving_anchors_stays_nan(two_epoch_recording):
     np.testing.assert_allclose(headings[6:], np.pi / 2, atol=0)
 
 
+@pytest.fixture
+def joined_recordings():
+    """Two 30 Hz recordings joined on one clock at 60 s.
+
+    The first runs East at 5 cm/s and stands still for its last second; the
+    second starts 40 cm further west and runs North at 5 cm/s. The position
+    jump at the join points West.
+    """
+    t_first = np.arange(0.0, 60.0, 1 / 30)
+    t_second = 60.0 + np.arange(0.0, 60.0, 1 / 30)
+    x_first = 10.0 + 5.0 * np.minimum(t_first, 59.0)
+    first = np.c_[x_first, np.full_like(t_first, 50.0)]
+    second = np.c_[
+        np.full_like(t_second, x_first[-1] - 40.0), 50.0 + 5.0 * (t_second - 60)
+    ]
+    times = np.r_[t_first, t_second]
+    positions = np.r_[first, second]
+    break_before = np.zeros(times.size, dtype=bool)
+    break_before[t_first.size] = True
+    return times, positions, break_before, t_first.size
+
+
+def _is_west(headings):
+    return np.cos(headings) < -0.5
+
+
+def test_heading_break_before_matches_separate_recordings(joined_recordings):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    times, positions, break_before, n_first = joined_recordings
+    joined = heading_from_velocity(
+        times, positions, min_speed=2.0, break_before=break_before
+    )
+    first = heading_from_velocity(times[:n_first], positions[:n_first], min_speed=2.0)
+    second = heading_from_velocity(times[n_first:], positions[n_first:], min_speed=2.0)
+    np.testing.assert_allclose(joined, np.r_[first, second], rtol=1e-12, atol=1e-12)
+    near_join = np.abs(times - 60.0) < 2.0
+    assert not _is_west(joined[near_join]).any()
+    # Slow frames at the end of the first recording keep its East heading.
+    np.testing.assert_allclose(joined[n_first - 15 : n_first], 0.0, atol=1e-12)
+    np.testing.assert_allclose(
+        joined[n_first:][near_join[n_first:]], np.pi / 2, atol=1e-9
+    )
+
+
+def test_heading_without_break_before_bridges_the_join(joined_recordings):
+    """Without a declared break the jump reads as westward running.
+
+    Touching ``epochs`` rows merge into one window, so they do not separate
+    the recordings either; ``break_before`` is what prevents the bridge.
+    """
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    times, positions, _, _ = joined_recordings
+    near_join = np.abs(times - 60.0) < 2.0
+    bridged = heading_from_velocity(times, positions, min_speed=2.0)
+    assert _is_west(bridged[near_join]).sum() > 10
+    touching = np.array([[0.0, 60.0], [60.0, 121.0]])
+    np.testing.assert_array_equal(
+        heading_from_velocity(times, positions, min_speed=2.0, epochs=touching),
+        bridged,
+    )
+
+
+@pytest.mark.parametrize(
+    "break_before",
+    [np.zeros(5, dtype=bool), np.zeros(6, dtype=int), np.zeros((6, 1), dtype=bool)],
+)
+def test_heading_rejects_bad_break_before(break_before):
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    positions = np.c_[np.arange(6.0), np.zeros(6)]
+    with pytest.raises(ValueError, match="break_before") as caught:
+        heading_from_velocity(np.arange(6) * 0.1, positions, break_before=break_before)
+    assert "Fix:" in str(caught.value)
+
+
 @pytest.mark.parametrize(
     "times",
     [

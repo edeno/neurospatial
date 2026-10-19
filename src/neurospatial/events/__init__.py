@@ -31,6 +31,10 @@ Peri-Event Analysis:
     population_peri_event_histogram : Compute population PSTH
     align_events : Align events to reference events
 
+Continuous signals:
+    align_continuous_to_events : Sample speed, heading or zone around events
+    ContinuousEventResult : Result from continuous event alignment
+
 Visualization:
     plot_peri_event_histogram : Plot PSTH results
     plot_peri_event_response : Plot a raster and PSTH for the same retained events
@@ -73,6 +77,10 @@ from neurospatial.events.alignment import (
     peri_event_histogram,
     population_peri_event_histogram,
 )
+from neurospatial.events.continuous import (
+    ContinuousEventResult,
+    align_continuous_to_events,
+)
 from neurospatial.events.detection import add_positions
 from neurospatial.events.intervals import (
     events_to_intervals,
@@ -110,6 +118,9 @@ __all__ = [
     "align_spikes_to_events",
     "peri_event_histogram",
     "population_peri_event_histogram",
+    # Continuous signals
+    "ContinuousEventResult",
+    "align_continuous_to_events",
     # Visualization
     "plot_peri_event_histogram",
     "plot_peri_event_response",

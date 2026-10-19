@@ -183,6 +183,8 @@ Peri-event spike alignment and GLM regressors.
 - `plot_peri_event_response()`: Matching raster and PSTH using the same retained
   events and half-open histogram bins
 - `align_spikes_to_events()`: Per-trial spike rasters
+- `align_continuous_to_events()`: Speed, heading or zone sampled around events
+  only where observed, with per-kind means and category counts
 - `time_to_nearest_event()`, `distance_to_reward()`: GLM regressors
 
 ### [neurospatial.ops.egocentric](neurospatial/ops/egocentric.md)
@@ -197,6 +199,18 @@ Allocentric ↔ egocentric coordinate transforms.
   Frame conversions
 - `compute_egocentric_bearing()`, `compute_egocentric_distance()`:
   Relate animal to external targets
+
+### [neurospatial.ops.feature_sampling](neurospatial/ops/feature_sampling.md)
+
+Read bin-valued feature maps (floor texture, zones, heights) along the path.
+
+**Key Functions:**
+
+- `sample_spatial_features(env, fields, positions)`: Value of the bin that
+  contains each position, NaN outside the environment
+- `sample_egocentric_features(env, fields, positions, headings, ego_points)`:
+  The same at points fixed in the animal's frame (ahead, left)
+- `SpatialFeatureResult`: Sampled values with per-sample support and bins
 
 ### [neurospatial.ops.visibility](neurospatial/ops/visibility.md)
 

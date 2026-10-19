@@ -1292,6 +1292,45 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `neurospatial.events.align_continuous_to_events(times, signals,
+  event_times, window, *, dt, ...)` samples per-frame signals such as speed,
+  heading or the occupied zone at fixed times around each event and returns a
+  `ContinuousEventResult`. A value is taken only where the signal was
+  observed: never across a gap longer than `max_gap`, a frame marked in
+  `break_before`, an `epochs` edge or an invalid sample, and never beyond the
+  recording. Each feature is declared `"linear"`, `"circular"` (radians,
+  averaged as unit vectors with a resultant length, so headings near ±π
+  average to West rather than East) or `"categorical"` (integer codes with
+  labels, counted per category; integer codes beyond ±2**53, which float64
+  cannot hold exactly, are refused). `window_coverage="complete"` (the default)
+  keeps only events whose whole window was observed for every feature;
+  `"partial"` keeps partly observed events and reports the number of events
+  behind every mean. Every input event gets a status, `"retained"` or the
+  reason it was excluded (`"outside_recording"`, `"outside_epochs"`,
+  `"incomplete_support"`, `"no_support"`), and an `overlapping` flag.
+  `retain_aligned=False` keeps only the summaries, computed in bounded
+  memory. The result exports `events_table()`, `aligned_table()`,
+  `time_course_table()` and `category_counts_table()`, plus `summary()` and
+  `plot()`; it gives no confidence intervals or significance tests. The new
+  [Behavior Around Events](https://edeno.github.io/neurospatial/user-guide/behavior-around-events/)
+  guide asks what speed, heading and distance to a wall do around reward.
+- `neurospatial.ops.sample_spatial_features(env, fields, positions)` reads
+  bin-valued maps (floor texture, zones, heights; `fields` is
+  `(n_features, n_bins)`) at the animal's positions, and
+  `sample_egocentric_features(env, fields, positions, headings, ego_points)`
+  reads them at points fixed in the animal's frame (x ahead, y left). Both
+  return a `SpatialFeatureResult` with `values`, per-sample `support` and the
+  containing `bins`. Lookup is by containment only: a position outside the
+  environment, a NaN position or heading, or a NaN map value gives NaN with
+  `support` False, and nothing is smoothed or interpolated. Environments
+  whose layout cannot tell whether a position is inside a bin (a track built
+  without `track_width`, a linearized 1-D track) raise `NotImplementedError`
+  instead of assigning the nearest bin.
+- `heading_from_velocity` takes `break_before`, like `compute_speed`: for
+  recordings joined on one clock, mark the first frame of each later
+  recording, and no velocity, smoothing or low-speed fill spans the join, so a
+  jump in position between recordings is not read as running. Touching
+  `epochs` rows merge into one window and do not separate recordings.
 - `compute_cumulative_distance(times, positions, *, max_gap, epochs,
   break_before)` returns a `CumulativeDistanceResult`: the distance at every
   frame since the start of its run of continuous observation

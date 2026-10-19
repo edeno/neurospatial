@@ -48,6 +48,8 @@ from neurospatial.ops import (
     geodesic_rbf_basis,
     map_probabilities,
     resample_field,
+    sample_egocentric_features,
+    sample_spatial_features,
     select_basis_centers,
     spatial_basis,
 )
@@ -345,6 +347,22 @@ def _polar_regions_env(env: Environment) -> Environment:
                 env, np.array([0.5, 1.5]), _TIMES, _POLAR_POSITIONS
             ),
             "place_cell_significance()",
+        ),
+        (
+            lambda env: sample_spatial_features(
+                env, np.ones(env.n_bins), _POLAR_POSITIONS
+            ),
+            "sample_spatial_features()",
+        ),
+        (
+            lambda env: sample_egocentric_features(
+                env,
+                np.ones(env.n_bins),
+                _POLAR_POSITIONS,
+                np.zeros(len(_POLAR_POSITIONS)),
+                np.array([[1.0, 0.0]]),
+            ),
+            "sample_egocentric_features()",
         ),
     ],
 )

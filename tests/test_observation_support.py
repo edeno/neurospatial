@@ -12,6 +12,7 @@ from neurospatial._observation import (
     validate_break_before,
     validate_max_gap,
     validated_observations,
+    validated_signals,
 )
 from neurospatial._validation import validate_strictly_increasing
 
@@ -195,3 +196,137 @@ def test_empty_input_raises_actionable_error(name, kwargs):
     assert why == "there is no observation to measure."
     assert fix.startswith("Fix: pass at least one sample")
     assert "epoch or trial selection" in fix
+
+
+# --- per-feature support -----------------------------------------------------
+
+_T5 = [0.0, 0.1, 0.2, 0.3, 0.4]
+
+
+def _signals(times=_T5, signals=None, *, valid=None, **kwargs):
+    kwargs.setdefault("max_gap", 0.5)
+    kwargs.setdefault("epochs", None)
+    kwargs.setdefault("break_before", None)
+    return validated_signals(
+        times,
+        signals,
+        valid=valid,
+        call="f",
+        result="the aligned values",
+        **kwargs,
+    )
+
+
+def test_signals_nan_in_one_feature_only_splits_that_feature():
+    sig = np.ones((5, 2))
+    sig[2, 1] = np.nan
+    _, _, supports = _signals(signals=sig)
+    assert len(supports) == 2
+    np.testing.assert_array_equal(supports[0].run_ids, [0, 0, 0, 0, 0])
+    np.testing.assert_array_equal(supports[1].run_ids, [0, 0, -1, 1, 1])
+    assert not supports[1].sample_valid[2]
+
+
+def test_signals_valid_one_dimensional_applies_to_every_feature():
+    valid = np.array([True, True, False, True, True])
+    _, _, supports = _signals(signals=np.ones((5, 2)), valid=valid)
+    for support in supports:
+        np.testing.assert_array_equal(support.run_ids, [0, 0, -1, 1, 1])
+
+
+def test_signals_valid_two_dimensional_applies_per_feature():
+    valid = np.ones((5, 2), dtype=bool)
+    valid[2, 0] = False
+    _, _, supports = _signals(signals=np.ones((5, 2)), valid=valid)
+    np.testing.assert_array_equal(supports[0].run_ids, [0, 0, -1, 1, 1])
+    np.testing.assert_array_equal(supports[1].run_ids, [0, 0, 0, 0, 0])
+
+
+def test_signals_finite_zero_is_valid():
+    _, _, supports = _signals(signals=np.zeros((5, 2)))
+    for support in supports:
+        assert support.sample_valid.all()
+
+
+def test_signals_break_before_splits_every_feature():
+    _, _, supports = _signals(
+        signals=np.ones((5, 2)),
+        break_before=np.array([False, False, True, False, False]),
+    )
+    for support in supports:
+        np.testing.assert_array_equal(support.run_ids, [0, 0, 1, 1, 1])
+
+
+def test_signals_one_dimensional_signal_is_one_feature():
+    t, sig, supports = _signals(signals=np.arange(5.0))
+    assert sig.shape == (5, 1)
+    assert sig.dtype == np.float64
+    assert t.shape == (5,)
+    assert len(supports) == 1
+
+
+def test_signals_shared_gate_warns_once_for_many_features():
+    times = [0.0, 0.1, 0.2, 1.0, 1.1]
+    with pytest.warns(UserWarning) as record:
+        _signals(times, np.ones((5, 3)), max_gap=0.05)
+    assert len(record) == 1
+
+
+@pytest.mark.parametrize(
+    ("times", "signals", "valid"),
+    [
+        ([0.0, 0.1, 0.1, 0.3, 0.4], np.ones((5, 2)), None),
+        (_T5, np.ones((5, 2)), np.ones((5, 2), dtype=int)),
+        (_T5, np.ones((5, 2)), np.ones((4, 2), dtype=bool)),
+        (_T5, np.ones((5, 2, 1)), None),
+        (_T5, np.ones((4, 2)), None),
+        ([], np.ones((0, 2)), None),
+        ([0.0, 0.1, np.nan, 0.3, 0.4], np.ones((5, 2)), None),
+        ([0.4, 0.3, 0.2, 0.1, 0.0], np.ones((5, 2)), None),
+        (_T5, np.ones((5, 2), dtype=complex), None),
+        (_T5, np.array([["a", "b"]] * 5), None),
+        (_T5, np.ones((5, 0)), None),
+    ],
+    ids=[
+        "repeated-time",
+        "int-valid",
+        "valid-shape",
+        "three-dimensional",
+        "length-mismatch",
+        "empty",
+        "nan-time",
+        "decreasing-time",
+        "complex",
+        "non-numeric",
+        "zero-features",
+    ],
+)
+def test_signals_errors_name_the_fix(times, signals, valid):
+    with pytest.raises(ValueError, match="Fix:"):
+        _signals(times, signals, valid=valid)
+
+
+def test_signals_without_features_say_so():
+    with pytest.raises(ValueError, match="at least one feature"):
+        _signals(signals=np.ones((5, 0)))
+
+
+def test_signals_reuse_max_gap_and_break_validation():
+    with pytest.raises(ValueError, match="max_gap"):
+        _signals(signals=np.ones((5, 2)), max_gap=-1.0)
+    with pytest.raises(ValueError, match="break_before"):
+        _signals(signals=np.ones((5, 2)), break_before=np.zeros(4, dtype=bool))
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+def test_signals_refuse_integers_float64_cannot_hold(dtype):
+    sig = np.array([[1, 2**53 + 1]] * 5, dtype=dtype)
+    with pytest.raises(ValueError, match=r"column\(s\) \[1\]") as err:
+        _signals(signals=sig)
+    assert "f()" in str(err.value)
+    assert "np.unique" in str(err.value)
+
+
+def test_signals_accept_integers_at_the_float64_limit():
+    sig = np.array([-(2**53), 2**53, 0, 1, 2], dtype=np.int64)
+    _signals(signals=sig)
