@@ -612,13 +612,16 @@ def _sample_events(
 
 
 def _event_chunks(
-    n_events: int, cells_per_event: int, max_cells: int = _MAX_CHUNK_CELLS
+    n_events: int, cells_per_event: int, max_cells: int | None = None
 ) -> Iterator[slice]:
     """Split ``range(n_events)`` into consecutive slices of bounded size.
 
     Each slice holds at most ``max_cells // cells_per_event`` events, and at
     least one event even when a single event exceeds ``max_cells``.
+    ``max_cells`` defaults to ``_MAX_CHUNK_CELLS``, read at call time.
     """
+    if max_cells is None:
+        max_cells = _MAX_CHUNK_CELLS
     per_chunk = max(1, max_cells // max(1, cells_per_event))
     for first in range(0, n_events, per_chunk):
         yield slice(first, min(first + per_chunk, n_events))

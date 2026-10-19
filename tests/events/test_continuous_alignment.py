@@ -8,8 +8,10 @@ import pickle
 import numpy as np
 import pytest
 
+import neurospatial.events._continuous as continuous_kernels
+import neurospatial.events.continuous as continuous_module
 from neurospatial.events import ContinuousEventResult, align_continuous_to_events
-from neurospatial.events._continuous import _MAX_CHUNK_CELLS, _relative_times
+from neurospatial.events._continuous import _relative_times
 
 EIGHTHS = np.arange(0, 10.0001, 0.125)
 # Two runs of dyadic samples separated by a 1 s gap: [0, 1] and [2, 3].
@@ -187,9 +189,9 @@ def _mixed_kind_inputs():
     circular = rng.normal(scale=0.2, size=times.size).cumsum()
     codes = np.repeat(rng.integers(0, 3, size=times.size // 100 + 1), 100)
     signals = np.column_stack([linear, circular, codes[: times.size].astype(float)])
-    events = rng.uniform(2.0, 58.0, size=3000)
+    events = rng.uniform(2.0, 58.0, size=50)
     kwargs = {
-        "dt": 0.002,
+        "dt": 0.05,
         "feature_ids": ["speed", "heading", "zone"],
         "value_kinds": {"heading": "circular", "zone": "categorical"},
         "category_labels": {"zone": {0: "a", 1: "b", 2: "c"}},
@@ -198,20 +200,27 @@ def _mixed_kind_inputs():
     return times, signals, events, (-1.0, 1.0), kwargs
 
 
-def test_summary_only_agrees_with_retained_events():
+def test_summary_only_agrees_with_retained_events(monkeypatch):
     times, signals, events, window, kwargs = _mixed_kind_inputs()
-    # Several chunks of many events each, with an uneven last chunk.
+    # Shrink the chunk budget to 7 events' cells and record the chunks used.
     cells = _relative_times(window, kwargs["dt"]).size * signals.shape[1]
-    per_chunk = _MAX_CHUNK_CELLS // cells
-    assert per_chunk > 1
-    assert events.size > 2 * per_chunk
-    assert events.size % per_chunk != 0
+    monkeypatch.setattr(continuous_kernels, "_MAX_CHUNK_CELLS", 7 * cells)
+    chunk_sizes = []
+
+    def recording_chunks(*args, **chunk_kwargs):
+        for chunk in continuous_kernels._event_chunks(*args, **chunk_kwargs):
+            chunk_sizes.append(chunk.stop - chunk.start)
+            yield chunk
+
+    monkeypatch.setattr(continuous_module, "_event_chunks", recording_chunks)
 
     full = align_continuous_to_events(times, signals, events, window, **kwargs)
     summary = align_continuous_to_events(
         times, signals, events, window, retain_aligned=False, **kwargs
     )
     assert full.n_events == events.size
+    # Both calls streamed 50 events as 7, ..., 7, 1.
+    assert chunk_sizes == 2 * ([7] * 7 + [1])
     assert summary.values is None
     assert summary.support is None
     np.testing.assert_array_equal(summary.event_status, full.event_status)
@@ -388,6 +397,12 @@ def test_derived_properties_are_fresh():
         ({"event_times": []}, "event_times"),
         ({"event_times": [[3.0]]}, "event_times"),
         ({"event_ids": ["a"]}, "event_ids"),
+        ({"event_ids": "ab"}, "event_ids"),
+        ({"event_ids": 5}, "event_ids"),
+        ({"dt": np.array([0.1, 0.2])}, "dt"),
+        ({"dt": True}, "dt"),
+        ({"resultant_threshold": np.array([0.1])}, "resultant_threshold"),
+        ({"resultant_threshold": False}, "resultant_threshold"),
         ({"event_times": [99.0, -50.0]}, "All 2 events were excluded"),
     ],
 )
@@ -457,26 +472,32 @@ def test_result_accepts_consistent_inputs():
 
 
 @pytest.mark.parametrize(
-    "override",
+    ("override", "match"),
     [
-        {"values": np.ones((2, 2, 1))},
-        {"support": None},
-        {"counts": np.ones((3, 1), dtype=np.int64)},
-        {"sums": np.ones((2, 2))},
-        {"event_status": np.array(["retained", "lost"])},
-        {"overlapping": np.zeros(3, dtype=bool)},
-        {"event_ids": np.array([1, 2, 3])},
-        {"value_kinds": ("linear", "linear")},
-        {"interpolation": ()},
-        {"feature_units": ("cm/s", "s")},
-        {"window_coverage": "most"},
-        {"resultant_threshold": 2.0},
-        {"category_counts": np.zeros((2, 1), dtype=np.int64)},
-        {"category_features": np.array([0], dtype=np.intp)},
+        ({"values": np.ones((2, 2, 1))}, "values and support need shape"),
+        ({"support": None}, "both given or both None"),
+        ({"counts": np.ones((3, 1), dtype=np.int64)}, ": counts needs shape"),
+        ({"sums": np.ones((2, 2))}, ": sums needs shape"),
+        ({"event_status": np.array(["retained", "lost"])}, "event_status must be in"),
+        ({"overlapping": np.zeros(3, dtype=bool)}, "overlapping needs shape"),
+        ({"event_ids": np.array([1, 2, 3])}, "event_ids needs shape"),
+        ({"value_kinds": ("linear", "linear")}, "value_kinds needs 1 entries"),
+        ({"interpolation": ()}, "interpolation needs 1 entries"),
+        ({"feature_units": ("cm/s", "s")}, "feature_units needs 1 entries"),
+        ({"window_coverage": "most"}, "window_coverage must be in"),
+        ({"resultant_threshold": 2.0}, "resultant_threshold must be finite"),
+        (
+            {"category_counts": np.zeros((2, 1), dtype=np.int64)},
+            "category_counts needs shape",
+        ),
+        (
+            {"category_features": np.array([0], dtype=np.intp)},
+            "one entry per category row",
+        ),
     ],
 )
-def test_result_rejects_inconsistent_inputs(override):
+def test_result_rejects_inconsistent_inputs(override, match):
     inputs = _result_inputs()
     inputs.update(override)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=match):
         ContinuousEventResult(**inputs)

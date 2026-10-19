@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -507,13 +508,11 @@ def align_continuous_to_events(
                 fix="pass window_coverage='complete' or window_coverage='partial'",
             )
         )
-    try:
-        threshold_ok = bool(
-            np.isfinite(resultant_threshold) and 0.0 <= resultant_threshold <= 1.0
-        )
-    except TypeError:
-        threshold_ok = False
-    if not threshold_ok:
+    if not (
+        _is_real_number(resultant_threshold)
+        and np.isfinite(resultant_threshold)
+        and 0.0 <= resultant_threshold <= 1.0
+    ):
         raise ValueError(
             _format_error(
                 f"{call}: resultant_threshold={resultant_threshold!r} is not in "
@@ -622,13 +621,14 @@ def align_continuous_to_events(
     )
 
 
+def _is_real_number(value: Any) -> bool:
+    """True for one real number; False for bools, arrays, strings and None."""
+    return isinstance(value, Real) and not isinstance(value, bool | np.bool_)
+
+
 def _positive_number(value: Any, name: str, *, call: str) -> float:
     """Return ``value`` as a float, or raise unless it is positive and finite."""
-    try:
-        ok = bool(np.isfinite(value) and value > 0)
-    except TypeError:  # None, strings and other non-numbers
-        ok = False
-    if not ok:
+    if not (_is_real_number(value) and np.isfinite(value) and value > 0):
         raise ValueError(
             _format_error(
                 f"{call}: {name} must be a positive finite number of seconds; "
@@ -676,6 +676,16 @@ def _validated_event_ids(
     """Return the event labels as an array of length ``n_events``, or None."""
     if event_ids is None:
         return None
+    if isinstance(event_ids, str | bytes) or np.ndim(event_ids) == 0:
+        raise ValueError(
+            _format_error(
+                f"{call}: event_ids must be a sequence of labels, one per event; "
+                f"got {event_ids!r}.",
+                why="A single string or number would be split or cannot label "
+                "each event.",
+                fix="pass a list or array, e.g. event_ids=['trial_1', 'trial_2']",
+            )
+        )
     ids = as_label_array(event_ids)
     if ids.shape != (n_events,):
         raise ValueError(
