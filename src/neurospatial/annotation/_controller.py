@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, NamedTuple, cast
 from neurospatial.annotation._helpers import (
     REGION_TYPE_COLORS,
     rebuild_features,
+    shapes_with_types,
     sync_colors_from_features,
 )
 from neurospatial.annotation._state import AnnotationModeState, make_unique_name
@@ -280,8 +281,8 @@ class ShapesLayerController:
                 self.shapes.data = []
                 self.shapes.features = rebuild_features([], [])
             else:
-                # Keep only non-deleted shapes and features
-                new_data = [self.shapes.data[i] for i in indices_to_keep]
+                # Keep only non-deleted shapes, with their types, and features
+                new_data = shapes_with_types(self.shapes, indices_to_keep)
                 new_region_types: list[RegionType] = [
                     cast("RegionType", str(self.shapes.features["role"].iloc[i]))
                     for i in indices_to_keep

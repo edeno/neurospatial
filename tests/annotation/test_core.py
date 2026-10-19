@@ -266,6 +266,75 @@ class TestProcessAnnotationResults:
         assert list(result.walls) == ["divider"]
         assert list(result.landmarks) == ["monitor", "port"]
 
+    def test_deleting_a_shape_keeps_the_types_of_the_others(self):
+        """A path wall after a deleted region stays a path, not a polygon."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+        from neurospatial.annotation._napari_widget import rebuild_features
+        from neurospatial.annotation._state import AnnotationModeState
+
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(name="test")
+            shapes.add(
+                np.array([[0, 0], [0, 100], [80, 100], [80, 0]]), shape_type="polygon"
+            )
+            shapes.add(
+                np.array([[10, 10], [10, 30], [30, 30], [30, 10]]), shape_type="polygon"
+            )
+            shapes.add(
+                np.array([[4, 80], [4, 84], [8, 84], [8, 80]]), shape_type="ellipse"
+            )
+            shapes.add(np.array([[0, 50], [60, 50]]), shape_type="path")
+            shapes.features = rebuild_features(
+                ["environment", "region", "landmark", "wall"],
+                ["arena", "goal", "port", "divider"],
+            )
+            ShapesLayerController(
+                shapes, AnnotationModeState(region_type="region")
+            ).delete_shapes_by_indices({1})
+            assert shapes.shape_type == ["polygon", "ellipse", "path"]
+
+            result = _process_annotation_results(
+                shapes,
+                mode="both",
+                bin_size=5.0,
+                calibration=None,
+                simplify_tolerance=None,
+                multiple_boundaries="last",
+            )
+        finally:
+            viewer.close()
+        assert result.landmarks["port"].kind == "point"
+        assert list(result.walls) == ["divider"]
+        assert result.environment.arena.wall_names == ("divider",)
+
+    def test_an_initial_boundary_moves_to_the_front_with_the_types(self):
+        """Putting the boundary first keeps every other shape's type."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._napari_widget import (
+            add_initial_boundary_to_shapes,
+            rebuild_features,
+        )
+
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(name="test")
+            shapes.add(np.array([[0, 50], [60, 50]]), shape_type="path")
+            shapes.add(
+                np.array([[4, 80], [4, 84], [8, 84], [8, 80]]), shape_type="ellipse"
+            )
+            shapes.features = rebuild_features(
+                ["wall", "landmark"], ["divider", "port"]
+            )
+            add_initial_boundary_to_shapes(
+                shapes, shp.Polygon([(0, 0), (100, 0), (100, 80), (0, 80)])
+            )
+            assert shapes.shape_type == ["polygon", "path", "ellipse"]
+            assert list(shapes.features["name"]) == ["arena", "divider", "port"]
+        finally:
+            viewer.close()
+
     def test_walls_without_an_environment_are_returned_with_a_warning(self):
         """Walls drawn in regions mode come back unattached, and say so."""
         napari = pytest.importorskip("napari")

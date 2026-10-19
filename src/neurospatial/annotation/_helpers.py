@@ -6,7 +6,8 @@ extracted to avoid circular dependencies.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, get_args
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, get_args
 
 from neurospatial.annotation._types import RegionType
 
@@ -66,6 +67,19 @@ def rebuild_features(region_types: list[RegionType], names: list[str]) -> pd.Dat
             "name": pd.Series(names, dtype=str),
         },
     )
+
+
+def shapes_with_types(
+    shapes_layer: napari.layers.Shapes, indices: Iterable[int]
+) -> list[tuple[Any, str]]:
+    """The shapes at ``indices``, each as ``(vertices, shape_type)``.
+
+    Assign the result to ``shapes_layer.data`` to remove or reorder shapes.
+    Given vertices alone, napari keeps the layer's old shape types in their
+    old order, so a deleted or moved shape would pass its type on: a path
+    wall after a deleted region would become that region's polygon.
+    """
+    return [(shapes_layer.data[i], shapes_layer.shape_type[i]) for i in indices]
 
 
 def sync_colors_from_features(shapes_layer: napari.layers.Shapes) -> None:

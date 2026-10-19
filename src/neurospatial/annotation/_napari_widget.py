@@ -22,6 +22,7 @@ from neurospatial.annotation._helpers import (
     REGION_TYPE_COLOR_CYCLE,
     REGION_TYPE_COLORS,
     rebuild_features,
+    shapes_with_types,
     sync_colors_from_features,
 )
 from neurospatial.annotation._state import AnnotationModeState
@@ -536,14 +537,13 @@ def create_annotation_widget(
                     env_indices = [
                         i for i, r in enumerate(roles) if str(r) == "environment"
                     ]
-                    # Remove from data, roles, names (in reverse order)
-                    new_data = [
-                        shapes.data[i]
-                        for i in range(len(shapes.data) - delta)
-                        if i not in env_indices
-                    ]
-                    # Also include the new shape(s)
-                    new_data.extend(shapes.data[-delta:])
+                    # Keep the earlier shapes but the old boundary, then the new
+                    # shape(s); each keeps its type
+                    n_before = len(shapes.data) - delta
+                    kept = [i for i in range(n_before) if i not in env_indices]
+                    new_data = shapes_with_types(
+                        shapes, [*kept, *range(n_before, len(shapes.data))]
+                    )
                     roles = [r for i, r in enumerate(roles) if i not in env_indices]
                     names = [n for i, n in enumerate(names) if i not in env_indices]
                     # Block data events during assignment to prevent re-triggering
@@ -565,7 +565,9 @@ def create_annotation_widget(
                         if len(shapes.data) > target_count:
                             # Block data events during deletion to prevent re-triggering
                             with shapes.events.data.blocker():
-                                shapes.data = shapes.data[:target_count]
+                                shapes.data = shapes_with_types(
+                                    shapes, range(target_count)
+                                )
                                 # Also truncate features to match data length
                                 if len(shapes.features) > target_count:
                                     truncated_roles = [
@@ -878,10 +880,9 @@ def add_initial_boundary_to_shapes(
     # Reorder data so boundary is first (environment boundary should be drawn first)
     # This ensures the widget's mode logic works correctly
     if len(existing_roles) > 0:
-        # Move the last shape (just added) to the front
-        data = list(shapes_layer.data)
-        data = [data[-1], *data[:-1]]
-        shapes_layer.data = data
+        # Move the last shape (just added) to the front, types with shapes
+        last = len(shapes_layer.data) - 1
+        shapes_layer.data = shapes_with_types(shapes_layer, [last, *range(last)])
 
     # Sync colors from features
     sync_colors_from_features(shapes_layer)
