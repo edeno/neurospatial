@@ -8,7 +8,10 @@
   returned the correlation between every pair of rate maps (rows), not the
   per-location population-vector correlation of remapping studies. The
   argument is `firing_rates`, and a map with constant rates now has a NaN
-  diagonal entry (before, 1.0), because its correlation is undefined.
+  diagonal entry (before, 1.0), because its correlation is undefined. A map
+  counts as constant when all its rates are exactly equal; equal rates such
+  as 0.1 everywhere, whose standard deviation rounds to about 1e-17, used to
+  give a meaningless correlation near 0 instead of NaN.
 
   ```python
   # before

@@ -658,9 +658,10 @@ def field_overlap(
     -------
     overlap : float
         Jaccard coefficient = |intersection| / |union|. Range [0, 1].
-        0.0 if exactly one field is empty (a field in one set only). NaN if
-        both are empty: with no field bin in either set there is nothing to
-        compare, which is not the same as no overlap.
+        0.0 if exactly one field is empty: a field in one set and none in the
+        other is a real absence of overlap. NaN if both are empty: with no
+        field bin in either set there is nothing to compare, which is not the
+        same as no overlap.
 
     Examples
     --------
@@ -755,6 +756,8 @@ def rate_map_correlations(
         The diagonal is 1.0. NaN propagates per row: a map with a NaN bin or
         with constant rates has no defined correlation, so its row, column
         and diagonal entry are NaN, and the other entries are unchanged.
+        A map is constant when all its rates are exactly equal, even if their
+        standard deviation rounds to a tiny nonzero value.
 
     Examples
     --------
@@ -792,11 +795,18 @@ def rate_map_correlations(
     field_stability : Correlation between one cell's maps in two conditions
     field_overlap : Jaccard-based overlap of place fields
     """
+    maps = np.atleast_2d(np.asarray(firing_rates, dtype=np.float64))
     # A constant map divides by zero; the NaN it produces is the documented result.
     with np.errstate(divide="ignore", invalid="ignore"):
-        correlation_matrix = np.atleast_2d(np.corrcoef(firing_rates, dtype=np.float64))
+        correlation_matrix = np.atleast_2d(np.corrcoef(maps))
 
-    # Self-correlation is 1.0 up to rounding; keep NaN for constant maps.
+    # Exact constancy: the std of equal rates can round to ~1e-17, which
+    # corrcoef would turn into a meaningless correlation instead of NaN.
+    constant = maps.max(axis=1) == maps.min(axis=1)
+    correlation_matrix[constant, :] = np.nan
+    correlation_matrix[:, constant] = np.nan
+
+    # Self-correlation is 1.0 up to rounding; keep NaN for undefined maps.
     diagonal = np.where(np.isnan(np.diag(correlation_matrix)), np.nan, 1.0)
     np.fill_diagonal(correlation_matrix, diagonal)
 

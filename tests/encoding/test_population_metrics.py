@@ -811,6 +811,22 @@ class TestRateMapCorrelations:
         assert np.isnan(corr_matrix[0, 0])
         assert corr_matrix[1, 1] == pytest.approx(1.0)
 
+    def test_rate_map_correlations_roundoff_constant_map_is_nan(self) -> None:
+        """Equal rates whose std rounds to ~1e-17 still make a constant map."""
+        assert np.full(50, 0.1).std() != 0.0  # the trap this test guards
+        rng = np.random.default_rng(42)
+        varying = rng.random((2, 50))
+        firing_rates = np.vstack([varying[0], np.full(50, 0.1), varying[1]])
+        corr_matrix = rate_map_correlations(firing_rates)
+        expected_nan = np.zeros((3, 3), dtype=bool)
+        expected_nan[1, :] = True
+        expected_nan[:, 1] = True
+        np.testing.assert_array_equal(np.isnan(corr_matrix), expected_nan)
+        keep = [0, 2]
+        np.testing.assert_array_equal(
+            corr_matrix[np.ix_(keep, keep)], rate_map_correlations(varying)
+        )
+
     def test_rate_map_correlations_nan_bin_propagates_per_row(self) -> None:
         """A NaN bin makes that map's row, column and diagonal NaN only."""
         rng = np.random.default_rng(42)
