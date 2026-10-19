@@ -945,6 +945,7 @@ class TestPopulationVectorCorrelation:
         a = self.DEMO.copy()
         a[:, 1] = 0.1
         c = self.DEMO + 1.0
+        c[:, 1] = [1.0, 4.0, 2.0]  # the partner varies, so only a is flat
         pv = population_vector_correlation(a, c)
         assert np.isnan(pv[1])
         pv_other = population_vector_correlation(c, a)
