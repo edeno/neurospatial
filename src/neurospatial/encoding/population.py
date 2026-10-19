@@ -3,6 +3,11 @@
 This module provides metrics for analyzing spatial representations across
 populations of neurons, including coverage, overlap, and correlation measures.
 
+See also: Population analysis guide,
+<https://edeno.github.io/neurospatial/user-guide/population-analysis/>
+Assembly detection, reactivation and pairwise spike-count correlations are in
+``neurospatial.decoding``.
+
 References
 ----------
 .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the hippocampal

@@ -10,6 +10,11 @@ expected by chance, representing stored neural patterns. Detecting these
 assemblies and measuring their reactivation is fundamental for studying
 memory consolidation and replay.
 
+See also: Population analysis guide,
+<https://edeno.github.io/neurospatial/user-guide/population-analysis/>
+Place-field coverage, place-cell counts and remapping measures are in
+``neurospatial.encoding``.
+
 Choosing an Analysis Method
 ---------------------------
 **Use `detect_assemblies()` when you want to:**
