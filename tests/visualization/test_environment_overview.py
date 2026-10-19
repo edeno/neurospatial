@@ -58,7 +58,12 @@ def test_connections_are_one_collection_whatever_the_bin_count():
         np.ones((10, 10), dtype=bool), grid_edges=(EDGES, EDGES), units="cm"
     )
     ax = env.plot()
-    connections = [c for c in ax.collections if isinstance(c, LineCollection)]
+    # The connections are drawn under the cells; the cell edges over them.
+    connections = [
+        c
+        for c in ax.collections
+        if isinstance(c, LineCollection) and c.get_zorder() < 0
+    ]
     assert [len(c.get_segments()) for c in connections] == [len(env.edge_pairs)]
     assert len(ax.lines) == 0  # no line artist per connection
 
@@ -101,6 +106,46 @@ def test_each_layer_can_be_hidden(apparatus):
     assert _texts(ax) == set()
     assert ax.get_legend() is None
     assert ax.get_ylim()[1] == pytest.approx(40.0)
+
+
+@pytest.mark.parametrize("n", [4, 10])
+def test_every_cell_edge_is_drawn(n):
+    # Minor ticks on major ticks are dropped by Matplotlib; the cell edges
+    # must not depend on them (with edges 0..4 every edge is a major tick).
+    edges = np.arange(n + 1.0)
+    env = Environment.from_grid_mask(
+        np.ones((n, n), dtype=bool), grid_edges=(edges, edges)
+    )
+    ax = env.plot(show_connectivity=False)
+    ax.figure.canvas.draw()
+    (lines,) = [c for c in ax.collections if isinstance(c, LineCollection)]
+    segments = np.array(lines.get_segments())
+    vertical = segments[segments[:, 0, 0] == segments[:, 1, 0]]
+    horizontal = segments[segments[:, 0, 1] == segments[:, 1, 1]]
+    np.testing.assert_array_equal(np.sort(vertical[:, 0, 0]), edges)
+    np.testing.assert_array_equal(np.sort(horizontal[:, 0, 1]), edges)
+    np.testing.assert_array_equal(vertical[:, :, 1], [[0.0, n]] * (n + 1))
+
+
+def test_a_ring_shaped_landmark_keeps_its_hole():
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0), np.arange(5.0))
+    )
+    ring = box(0.5, 0.5, 3.5, 3.5).difference(box(1.5, 1.5, 2.5, 2.5))
+    with_ring = env.with_landmarks(Landmarks([Landmark("ring", "polygon", ring)]))
+
+    def color_at(environment, x, y):
+        ax = environment.plot()
+        ax.figure.canvas.draw()
+        image = np.asarray(ax.figure.canvas.buffer_rgba())[..., :3]
+        column, row = ax.transData.transform((x, y))
+        return image[image.shape[0] - int(row), int(column)].astype(int)
+
+    # The hole shows the cells beneath, as without the landmark; the ring does not.
+    np.testing.assert_array_equal(
+        color_at(with_ring, 2.0, 2.0), color_at(env, 2.0, 2.0)
+    )
+    assert not np.array_equal(color_at(with_ring, 1.0, 2.0), color_at(env, 1.0, 2.0))
 
 
 def test_polygon_grid_outlines_its_polygon():

@@ -178,12 +178,33 @@ def plot_grid(
         shading="flat",
     )
     if frame is None:
-        # Cell edges as unlabeled minor ticks: a label per edge is unreadable
-        # beyond a few dozen bins and dominates the drawing time.
-        ax.set_xticks(grid_edges[0], minor=True)
-        ax.set_yticks(grid_edges[1], minor=True)
-        ax.tick_params(which="minor", length=0)
-        ax.grid(True, which="minor", ls="-", lw=0.5, c="gray")
+        # Every cell edge as one line collection, independent of the ticks: a
+        # label per edge is unreadable and slow, and Matplotlib drops minor
+        # ticks (and their gridlines) where they fall on major ones.
+        from matplotlib.collections import LineCollection
+
+        x_edges, y_edges = grid_edges
+        columns = np.stack(
+            [
+                np.column_stack((x_edges, np.full_like(x_edges, y_edges[0]))),
+                np.column_stack((x_edges, np.full_like(x_edges, y_edges[-1]))),
+            ],
+            axis=1,
+        )
+        rows = np.stack(
+            [
+                np.column_stack((np.full_like(y_edges, x_edges[0]), y_edges)),
+                np.column_stack((np.full_like(y_edges, x_edges[-1]), y_edges)),
+            ],
+            axis=1,
+        )
+        edges = LineCollection(
+            cast("Sequence[NDArray[np.float64]]", np.concatenate([columns, rows])),
+            colors="gray",
+            linewidths=0.5,
+            zorder=1.5,  # where gridlines draw: over the cells, under the graph
+        )
+        ax.add_collection(edges, autolim=False)
     ax.set_aspect("equal")
     ax.set_title(f"{title} (2D Grid)")
     ax.set_xlabel("Dimension 0")
