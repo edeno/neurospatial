@@ -27,6 +27,7 @@ from typing import Any, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.ops.diffusion import MRFBasis
 
 # ---------------------------------------------------------------------------
@@ -227,7 +228,7 @@ def _format_affected_units(indices: Any, unit_ids: Any) -> str:
     return f"unit {label} {idx}"
 
 
-def _warn_reml_boundary(side: str, who: str, *, stacklevel: int = 3) -> None:
+def _warn_reml_boundary(side: str, who: str) -> None:
     """Emit the one weakly-identified-lambda warning for a boundary REML optimum.
 
     ``side`` is ``"lower"`` / ``"upper"`` (or ``"lower/upper"`` when a per-unit
@@ -247,7 +248,7 @@ def _warn_reml_boundary(side: str, who: str, *, stacklevel: int = 3) -> None:
         "fitted field remains finite, but its sensitivity to lambda should be "
         "checked.",
         UserWarning,
-        stacklevel=stacklevel,
+        stacklevel=_external_stacklevel(),
     )
 
 
@@ -394,9 +395,6 @@ def _fit_mrf_gam_per_unit(
     # One aggregate nonconvergence warning naming the affected units (batch-level,
     # not one per unit). Names the caller's ``unit_ids`` when supplied, else the
     # unit-axis indices (the fit itself is unit-agnostic).
-    # These warnings originate one frame deeper than the pooled path (inside this
-    # helper, not fit_mrf_gam), so their stacklevels are the pooled path's + 1 to
-    # resolve to the same public caller frame.
     if not converged:
         failed_ids = np.flatnonzero(~per_unit_converged).tolist()
         warnings.warn(
@@ -405,7 +403,7 @@ def _fit_mrf_gam_per_unit(
             "iteration cap, or out-of-domain data); consider reducing rank or "
             "supplying a fixed penalty.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
 
     # One boundary warning naming the affected units + side(s). A boundary lambda
@@ -417,7 +415,7 @@ def _fit_mrf_gam_per_unit(
         sides = np.where((log_lams - lower) <= (upper - log_lams), "lower", "upper")
         side_desc = "/".join(sorted(set(sides.tolist())))
         _warn_reml_boundary(
-            side_desc, _format_affected_units(at_ids.tolist(), unit_ids), stacklevel=4
+            side_desc, _format_affected_units(at_ids.tolist(), unit_ids)
         )
 
     return MRFFit(
@@ -577,7 +575,7 @@ def fit_mrf_gam(
             "MRF-GAM fit: zero total occupancy (no live bins); every rate floors "
             f"to _RATE_FLOOR ({_RATE_FLOOR:.0e}).",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         return MRFFit(
             coefficients=np.zeros((r_eff, n_units)),
@@ -630,7 +628,7 @@ def fit_mrf_gam(
             "exposed (visited) bins; the fill-mode coefficients are not "
             "identifiable. Increase penalty or reduce rank.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # Construct the all-ones warm-start direction exactly from the leading
@@ -672,7 +670,7 @@ def fit_mrf_gam(
             "MRF-GAM fit: no unit has any spikes; lambda is unidentified so REML "
             "selection is skipped and every rate floors to _RATE_FLOOR.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
         applied_penalty = None if penalty is None else float(penalty)
     elif penalty is None:
@@ -709,7 +707,7 @@ def fit_mrf_gam(
             f"(max coefficient step {max_step:.3e}); consider reducing rank or "
             "increasing penalty.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=_external_stacklevel(),
         )
 
     # --- boundary diagnostic: the shared REML optimum sat on a search bound ---

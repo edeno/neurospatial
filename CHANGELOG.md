@@ -1744,6 +1744,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The `method="glm"` warnings (smoothing penalty near its search bound, fit did
+  not converge, no spikes, no occupancy) now point at your own call. Before,
+  they pointed at a line inside neurospatial.
 - `compute_boundary_vector_rates` warns when every unit in a population of
   five or more is silent for a minute or more of tracked time, as the other
   population rate functions do. Before, it gave no warning.
