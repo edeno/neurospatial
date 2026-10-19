@@ -20,6 +20,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain
+from neurospatial._observation import _MAX_EXACT_INTEGER
 from neurospatial._results import (
     as_label_array,
     read_only_copy,
@@ -261,6 +262,18 @@ def _resolve_features(
                         "not an integer.",
                         why="Codes must be integers (0 is allowed); bool is not.",
                         fix="Use integer keys such as {0: 'center', 1: 'arm'}.",
+                    )
+                )
+            if abs(int(code)) > _MAX_EXACT_INTEGER:
+                raise ValueError(
+                    _format_error(
+                        f"{call}: category code {int(code)} for feature {fid!r} "
+                        "is beyond +/-2**53.",
+                        why="Signals are compared as float64, which cannot "
+                        "represent such integers exactly, so distinct codes "
+                        "would silently merge.",
+                        fix="Re-code categories to small integers, e.g. "
+                        "_, codes = np.unique(x, return_inverse=True).",
                     )
                 )
             if not isinstance(label, str):

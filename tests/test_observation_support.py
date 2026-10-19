@@ -316,3 +316,17 @@ def test_signals_reuse_max_gap_and_break_validation():
         _signals(signals=np.ones((5, 2)), max_gap=-1.0)
     with pytest.raises(ValueError, match="break_before"):
         _signals(signals=np.ones((5, 2)), break_before=np.zeros(4, dtype=bool))
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+def test_signals_refuse_integers_float64_cannot_hold(dtype):
+    sig = np.array([[1, 2**53 + 1]] * 5, dtype=dtype)
+    with pytest.raises(ValueError, match=r"column\(s\) \[1\]") as err:
+        _signals(signals=sig)
+    assert "f()" in str(err.value)
+    assert "np.unique" in str(err.value)
+
+
+def test_signals_accept_integers_at_the_float64_limit():
+    sig = np.array([-(2**53), 2**53, 0, 1, 2], dtype=np.int64)
+    _signals(signals=sig)
