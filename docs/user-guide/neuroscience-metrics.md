@@ -272,7 +272,7 @@ $$
 
 ### Count Place-Cell Candidates
 
-Count cells exceeding a spatial information threshold:
+Count cells at or above a spatial information threshold (inclusive):
 
 ```python
 from neurospatial.encoding import count_place_cells
@@ -284,7 +284,7 @@ spatial_info = [
     spatial_information(rate_map3, occupancy),
 ]
 
-# Count candidates exceeding the selected information screen
+# Count candidates at or above the selected information screen
 n_place_cells = count_place_cells(
     spatial_info,
     threshold=0.5  # bits/spike

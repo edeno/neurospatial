@@ -10,6 +10,11 @@ expected by chance, representing stored neural patterns. Detecting these
 assemblies and measuring their reactivation is fundamental for studying
 memory consolidation and replay.
 
+See also: Population analysis guide,
+<https://edeno.github.io/neurospatial/user-guide/population-analysis/>
+Place-field coverage, place-cell counts and remapping measures are in
+``neurospatial.encoding``.
+
 Choosing an Analysis Method
 ---------------------------
 **Use `detect_assemblies()` when you want to:**
@@ -129,7 +134,8 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     ----------
     weights : NDArray[np.float64], shape (n_neurons,)
         Weight of each neuron in this assembly. Higher absolute values
-        indicate stronger participation. Sign indicates activation direction.
+        indicate stronger participation. :func:`detect_assemblies` orients
+        each pattern so its largest-magnitude weight is positive.
     member_indices : NDArray[np.int64]
         Indices of neurons whose absolute-weight z-scores exceed z_threshold.
         These are the "core" members of the assembly.
@@ -142,7 +148,8 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
     **Interpreting Weights**:
 
     - Positive weights: neurons that co-activate with the assembly
-    - Negative weights: neurons that are suppressed during assembly activation
+    - Negative weights: neurons whose activity moves opposite to the
+      positive-weight neurons
     - Near-zero weights: neurons not participating in this assembly
 
     **Member Selection**:
@@ -499,6 +506,13 @@ def detect_assemblies(
     For ICA, requested components beyond the numerical rank of the data
     have zero weights, activations, and explained variance.
 
+    **Sign convention**: ICA and PCA determine a pattern only up to its sign.
+    Each pattern is flipped so that its largest-magnitude weight is positive,
+    and its activation is flipped with it. Bins where the neurons with the
+    largest positive weights fire together then have positive activation in
+    ``result.activations`` and in :func:`assembly_activation`. NMF patterns
+    are non-negative and are unchanged.
+
     **Choosing a Method**:
 
     - **ICA**: Best for most cases. Assumes assemblies are statistically
@@ -653,6 +667,15 @@ def detect_assemblies(
         )
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}. Use 'ica', 'pca', or 'nmf'.")
+
+    # ICA and eigenvector signs are arbitrary. Orient each pattern so its
+    # largest-magnitude weight is positive, and flip its activation with it so
+    # weights @ z-scored counts == activations still holds. An assembly's
+    # events then raise its activation instead of lowering it.
+    largest = patterns[np.arange(n_comp), np.argmax(np.abs(patterns), axis=1)]
+    signs = np.where(largest < 0, -1.0, 1.0)
+    patterns = patterns * signs[:, None]
+    activations = activations * signs[:, None]
 
     # Create AssemblyPattern objects - vectorized z-score computation
     # Compute z-scores for all patterns at once: shape (n_comp, n_neurons)

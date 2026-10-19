@@ -492,6 +492,66 @@ class TestPlotPopulationCoverage:
         assert isinstance(ax, plt.Axes)
         plt.close()
 
+    @staticmethod
+    def _gap_line_positions(ax: matplotlib.axes.Axes) -> np.ndarray:
+        """Sorted x positions of the dashed vertical gap lines."""
+        return np.sort(
+            [line.get_xdata()[0] for line in ax.lines if line.get_linestyle() == "--"]
+        )
+
+    def test_1d_grid_with_gaps(self) -> None:
+        """A 1-D grid (not a track graph) draws one gap line per uncovered bin."""
+        env = Environment.from_samples(
+            np.linspace(0.0, 100.0, 101)[:, None], bin_size=10.0
+        )
+        assert env.n_dims == 1
+        assert not env.is_linearized_track
+        firing_rates = np.zeros((2, env.n_bins))
+        firing_rates[0, 2:5] = [6.0, 10.0, 6.0]
+        result = population_coverage(env, firing_rates, min_size=1)
+        assert result.uncovered_positions.shape[1] == 1
+        assert len(result.uncovered_bins) > 0
+
+        for show_field_count in (False, True):
+            ax = plot_population_coverage(
+                env, result, show_field_count=show_field_count
+            )
+            np.testing.assert_allclose(
+                self._gap_line_positions(ax),
+                np.sort(result.uncovered_positions[:, 0]),
+            )
+            plt.close()
+
+    def test_2d_track_gaps_in_linear_coordinates(self) -> None:
+        """A track embedded in 2-D marks gaps at their linearized positions."""
+        import networkx as nx
+
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0, 0.0))
+        graph.add_node(1, pos=(50.0, 0.0))
+        graph.add_node(2, pos=(50.0, 50.0))
+        graph.add_edge(0, 1, distance=50.0)
+        graph.add_edge(1, 2, distance=50.0)
+        # An L-shaped track with a 20 cm display gap between its two segments.
+        env = Environment.from_graph(
+            graph=graph,
+            edge_order=[(0, 1), (1, 2)],
+            edge_spacing=20.0,
+            bin_size=10.0,
+        )
+        assert env.is_linearized_track
+        assert env.n_dims == 2
+        firing_rates = np.zeros((2, env.n_bins))
+        firing_rates[0, 2:5] = [6.0, 10.0, 6.0]
+        result = population_coverage(env, firing_rates, min_size=1)
+
+        ax = plot_population_coverage(env, result)
+        np.testing.assert_allclose(
+            self._gap_line_positions(ax),
+            np.sort(env.to_linear(result.uncovered_positions)),
+        )
+        plt.close()
+
     def test_custom_axes(
         self, env_and_result: tuple[Environment, PopulationCoverageResult]
     ) -> None:
@@ -589,9 +649,8 @@ class TestCountPlaceCells:
         """Test default threshold of 0.5 bits/spike."""
         spatial_information = np.array([0.3, 0.5, 0.6, 0.4, 1.0])
         count = count_place_cells(spatial_information)
-        # Default threshold is 0.5, so count cells with > 0.5
-        # Values: 0.6, 1.0 are above threshold
-        assert count == 2
+        # Default threshold is 0.5, inclusive: 0.5, 0.6 and 1.0 count
+        assert count == 3
 
     def test_count_place_cells_none_qualify(self) -> None:
         """Test when no cells exceed threshold."""
@@ -606,11 +665,10 @@ class TestCountPlaceCells:
         assert count == 4
 
     def test_count_place_cells_boundary(self) -> None:
-        """Test behavior at threshold boundary."""
+        """A value exactly at the threshold counts (inclusive >=)."""
         spatial_information = np.array([0.5, 0.50001, 0.49999])
         count = count_place_cells(spatial_information, threshold=0.5)
-        # Only values strictly greater than threshold
-        assert count == 1  # Only 0.50001
+        assert count == 2  # 0.5 and 0.50001
 
     def test_count_place_cells_nan_handling(self) -> None:
         """Test handling of NaN values in spatial information."""
