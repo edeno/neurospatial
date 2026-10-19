@@ -1939,6 +1939,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   it raised `IndexError` when any bin was uncovered. On a track built from a
   2-D graph, gap marks are now at each gap's linearized position; before, they
   were drawn at its x and y coordinates.
+- Decoding with rates from another environment, `compare_spatial_rates` and
+  `read_place_field(env=...)` now compare the bins' cell shapes, not only
+  their centers and areas. Triangular meshes, hexagonal layouts and grids
+  (axis-aligned or rotated) whose cells differ with the same centers and
+  areas, such as a 10 x 10 cell and a 20 x 5 cell, used to be accepted as
+  the same bins; they now raise `IncompatibleEnvironmentError` naming "cell
+  shapes". Environments that smooth a field between the same neighbors
+  differently (different face areas in `from_bins`, or one that cannot smooth)
+  now differ in "smoothing conductances between neighboring bins".
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it

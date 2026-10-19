@@ -7,6 +7,8 @@ score is NaN with a reason, never a fabricated 0 or ±1.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from environment_helpers import renumbered
@@ -15,6 +17,7 @@ from shapely.geometry import LineString, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.arena import OpenArena
+from neurospatial.binning import FaceGeometry, KnownFaces
 from neurospatial.encoding import (
     RateComparisonResult,
     compare_spatial_rates,
@@ -285,6 +288,28 @@ def test_equal_shapes_cannot_bypass_environment_validation(
     with pytest.raises(IncompatibleEnvironmentError, match="differ in"):
         compare_spatial_rates(rates_a, make(G, on=other), topology=topology)
     assert rates_a.env.units == "cm"
+
+
+def test_different_cell_faces_between_the_same_bins_need_may_differ(env, make) -> None:
+    # Same bins, neighbors and arena; halving each face's size halves how
+    # much of a field smoothing passes between neighbors.
+    binning = renumbered(env, np.arange(env.n_bins)).binning
+    faces = binning.faces.build()
+    narrow = Environment.from_bins(
+        replace(
+            binning,
+            faces=KnownFaces(
+                FaceGeometry(faces.edges, faces.A / 2, faces.distance, faces.volumes)
+            ),
+        ),
+        units=env.units,
+        arena=env.arena,
+    )
+    rates_a, rates_b = make(F), make(G, on=narrow)
+    with pytest.raises(IncompatibleEnvironmentError, match="face sizes"):
+        compare_spatial_rates(rates_a, rates_b)
+    result = compare_spatial_rates(rates_a, rates_b, topology="may_differ")
+    assert result.analysis_settings["topology_differs"] is True
 
 
 @pytest.fixture

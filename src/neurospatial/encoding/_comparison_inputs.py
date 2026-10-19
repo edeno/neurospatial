@@ -204,12 +204,14 @@ def _bin_pairs(
     if topology_difference is not None and topology == "same":
         raise IncompatibleEnvironmentError(
             f"{_OPERATION}: rates_a and rates_b were estimated on environments "
-            f"that differ in {topology_difference}, so maps smoothed over each "
-            "environment's graph used different neighbors.",
+            f"that differ in {topology_difference}, so smoothing over each "
+            "environment passed a field between bins differently (different "
+            "neighbors, walls or face sizes).",
             fix='pass topology="may_differ" to accept this when the bins are the '
-            "same places and only connectivity or walls changed (a door opened, "
-            "or one map covers part of the arena); maps from method='binned' "
-            "with bandwidth=0 were not smoothed, so for them nothing changes",
+            "same places and only how they connect changed (a door opened, one "
+            "map covers part of the arena, or cell faces between neighbors "
+            "differ); maps from method='binned' with bandwidth=0 were not "
+            "smoothed, so for them nothing changes",
             first=env_a,
             second=env_b,
         )
