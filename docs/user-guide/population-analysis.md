@@ -125,8 +125,8 @@ plt.show()
 how many place fields include each position, zero at both ends and up to four
 overlapping fields in between. Dashed lines mark the uncovered bins, and the
 title gives the coverage fraction. A location covered by several fields is
-represented redundantly; a location covered by none cannot be decoded from
-place fields. For an open-field arena, the same call draws a map and marks
+represented redundantly; a location covered by none is decoded poorly, if at
+all. For an open-field arena, the same call draws a map and marks
 each gap with a cross; leave out `show_field_count=True` to show covered
 versus uncovered bins only.
 
@@ -192,6 +192,8 @@ print("Map correlation, cells that moved their field:", np.round(per_cell[moves]
 
 def standardize(x):
     """Z-score each location's population vector across cells."""
+    # A location where every cell has the same rate has zero spread and comes
+    # out NaN, so those bins drop out of the mean below.
     return (x - x.mean(axis=0)) / x.std(axis=0)
 
 
@@ -380,8 +382,9 @@ core members at the default cutoff even when its dimension passes. Pass
 `assembly_activation` projects counts from any period onto a pattern and
 returns one value per time bin, standardized within that period (mean 0,
 standard deviation 1). ICA determines a pattern only up to its sign, so
-`detect_assemblies` flips each pattern to make its largest weight positive;
-the bins where that assembly fires together then have positive activation.
+`detect_assemblies` orients each pattern so the neurons with the largest
+positive weights are the members; the bins where those members fire together
+then have positive activation.
 
 ```python
 for k, pattern in enumerate(assemblies.patterns):
@@ -410,7 +413,7 @@ a p < 0.05 test.
 (each unit's running mean and standard deviation) and returns the ratio of
 mean absolute activation, rest period over running. Here it is slightly
 higher after the task (1.07-1.13) than before (1.05-1.07), because the members
-burst together, but close to 1 in both rest periods, because the cells fire at
+burst together, and nearly the same in both rest periods, because the cells fire at
 the same rates in both. The ratio measures how strongly the pattern is
 expressed, not whether its cells fire together, so a change in overall rate
 between rest and running also changes it.

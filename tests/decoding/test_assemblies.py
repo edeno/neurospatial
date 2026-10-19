@@ -317,8 +317,8 @@ class TestPatternSign:
 
         Returns counts ``(n_time_bins, n_neurons)``, the member indices of each
         assembly and a ``(3, n_time_bins)`` mask of each assembly's events.
-        Without a sign convention, this seed gives negative largest weights
-        for both ICA and PCA patterns.
+        Without a sign convention, ICA and PCA patterns may have negative
+        largest weights.
         """
         rng = np.random.default_rng(1)
         n_time, n_neurons = 3000, 30
