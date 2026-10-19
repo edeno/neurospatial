@@ -71,7 +71,7 @@ print(f"Units at or above 0.5 bits/spike: {n_spatial} of {len(unit_ids)}")
 print("Information of the untuned units:", np.round(information[20:], 2))
 # Quoted numbers: atol = 0.6 * 10**-decimals
 assert n_spatial == 20
-assert 0.01 - 0.006 <= information[20:].min() and information[20:].max() <= 0.04 + 0.006
+assert 0.004 <= information[20:].min() <= information[20:].max() <= 0.046
 ```
 
 All 20 simulated place cells pass the 0.5 bits/spike screen and none of the
@@ -264,7 +264,7 @@ overlap = np.array([
 ])
 print("Field overlap, cells that kept their field:", np.round(overlap[~moves], 2))
 print("Field overlap, cells that moved their field:", np.round(overlap[moves], 2))
-assert 0.86 - 0.006 <= overlap[~moves].min() and overlap[~moves].max() <= 1.0
+assert 0.854 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
 assert (overlap[moves] == 0).all()
 ```
 
@@ -442,10 +442,10 @@ for k, pattern in enumerate(assemblies.patterns):
     reactivated.append((activation[in_event].mean(), activation[~in_event].mean(),
                         strength_pre, strength_post))
 in_events, otherwise, pre, post = np.array(reactivated).T
-assert 3.45 - 0.06 <= in_events.min() and in_events.max() <= 3.65 + 0.06
+assert 3.39 <= in_events.min() <= in_events.max() <= 3.71
 assert np.allclose(otherwise, -0.2, atol=0.06)
-assert 1.05 - 0.006 <= pre.min() and pre.max() <= 1.07 + 0.006
-assert 1.07 - 0.006 <= post.min() and post.max() <= 1.13 + 0.006
+assert 1.044 <= pre.min() <= pre.max() <= 1.076
+assert 1.064 <= post.min() <= post.max() <= 1.136
 ```
 
 In post-task rest, each pattern's activation averages about 3.5 standard
