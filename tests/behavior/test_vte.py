@@ -1356,3 +1356,20 @@ def test_session_text_without_classified_trials():
     assert "nan%" not in text
     assert text.splitlines()[0] == "VTE session: no trial could be classified"
     assert empty.summary()["n_classified"] == 0
+
+
+def test_no_variation_warning_points_at_the_call_site(t_maze_environment):
+    """The zero-spread warning names the scientist's line, not library code."""
+    from neurospatial.behavior.vte import compute_vte_session, normalize_vte_scores
+
+    with pytest.warns(UserWarning, match="No variation in head sweep") as record:
+        normalize_vte_scores(np.full(3, 2.0), np.array([10.0, 20.0, 30.0]))
+    assert [w.filename for w in record] == [__file__]
+
+    times, positions, trials = _t_maze_session([0.0, 0.0])
+    with pytest.warns(UserWarning, match="No variation") as record:
+        compute_vte_session(
+            t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS
+        )
+    assert record
+    assert {w.filename for w in record} == {__file__}

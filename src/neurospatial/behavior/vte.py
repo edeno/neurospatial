@@ -80,6 +80,7 @@ if TYPE_CHECKING:
 from neurospatial._intervals import run_sample_bounds
 from neurospatial._observation import ObservationSupport, validated_observations
 from neurospatial._results import ResultMixin
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
@@ -640,7 +641,7 @@ def _observed_z_scores(
             + "Z-scores will be 0, and VTE classification may not be meaningful. "
             "Consider adjusting window_duration or min_speed parameters.",
             category=UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
         z_scores[finite] = 0.0
     elif invert:
