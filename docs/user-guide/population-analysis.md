@@ -47,6 +47,7 @@ from neurospatial import compute_spatial_rates
 from neurospatial.encoding import (
     count_place_cells,
     field_density_map,
+    plot_population_coverage,
     population_coverage,
 )
 from neurospatial.simulation import generate_poisson_spikes, linear_track_session
@@ -66,7 +67,7 @@ rates = compute_spatial_rates(
 )
 information = rates.spatial_information()  # bits/spike, one value per unit
 n_spatial = count_place_cells(information, threshold=0.5)
-print(f"Units above 0.5 bits/spike: {n_spatial} of {len(unit_ids)}")
+print(f"Units at or above 0.5 bits/spike: {n_spatial} of {len(unit_ids)}")
 print("Information of the untuned units:", np.round(information[20:], 2))
 ```
 
@@ -84,7 +85,7 @@ screened units only:
 
 ```python
 coverage_all = population_coverage(env, rates.firing_rates)
-is_spatial = information > 0.5
+is_spatial = information >= 0.5  # the same cutoff count_place_cells uses
 coverage = population_coverage(env, rates.firing_rates[is_spatial])
 print(f"All 25 units: {coverage_all.coverage_fraction:.0%} of bins covered, "
       f"{coverage_all.n_fields} fields")
@@ -116,17 +117,18 @@ covered = density[coverage.covered_bins]
 print(f"Fields per covered bin: median {np.median(covered):.0f}, max {covered.max()}")
 
 fig, ax = plt.subplots(figsize=(8, 2.5))
-ax.step(env.bin_centers[:, 0], density, where="mid")
-ax.set(xlabel="Track position (cm)", ylabel="Place fields", title="Field density")
+plot_population_coverage(env, coverage, show_field_count=True, ax=ax)
 plt.show()
 ```
 
-The figure shows how many place fields include each position: zero at both
-ends and up to four overlapping fields in between. A location covered by
-several fields is represented redundantly; a location covered by none cannot
-be decoded from place fields.
-For an open-field arena, `plot_population_coverage(env, coverage)` draws the
-covered bins and marks each gap.
+`plot_population_coverage` draws the same count from the coverage result:
+how many place fields include each position, zero at both ends and up to four
+overlapping fields in between. Dashed lines mark the uncovered bins, and the
+title gives the coverage fraction. A location covered by several fields is
+represented redundantly; a location covered by none cannot be decoded from
+place fields. For an open-field arena, the same call draws a map and marks
+each gap with a cross; leave out `show_field_count=True` to show covered
+versus uncovered bins only.
 
 ## Does the spatial map change between conditions?
 
@@ -377,15 +379,14 @@ core members at the default cutoff even when its dimension passes. Pass
 
 `assembly_activation` projects counts from any period onto a pattern and
 returns one value per time bin, standardized within that period (mean 0,
-standard deviation 1). ICA does not fix the sign of a pattern, so first flip
-each pattern so that its largest weight is positive; otherwise an assembly
-event can appear as a large negative activation.
+standard deviation 1). ICA determines a pattern only up to its sign, so
+`detect_assemblies` flips each pattern to make its largest weight positive;
+the bins where that assembly fires together then have positive activation.
 
 ```python
 for k, pattern in enumerate(assemblies.patterns):
     assembly = assembly_of[pattern.member_indices[0]]
-    sign = np.sign(pattern.weights[np.argmax(np.abs(pattern.weights))])
-    activation = sign * assembly_activation(counts["post_rest"], pattern)
+    activation = assembly_activation(counts["post_rest"], pattern)
     # In this simulation we know when each assembly burst together.
     starts = 180.0 + replay_starts[assembly]
     centers = bin_times["post_rest"][:, None]
@@ -501,7 +502,7 @@ my_rates = compute_spatial_rates(
     unit_ids=my_unit_ids, epochs=my_periods["run"],
     bandwidth=5.0, min_occupancy=0.05, min_speed=4.0,
 )
-spatial = my_rates.spatial_information() > 0.5
+spatial = my_rates.spatial_information() >= 0.5
 my_coverage = population_coverage(my_env, my_rates.firing_rates[spatial])
 my_assemblies = detect_assemblies(my_counts["run"], rng=0)
 my_reactivation = explained_variance_reactivation(
