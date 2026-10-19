@@ -16,6 +16,7 @@ from neurospatial.behavior.navigation import (
     PathEfficiencyResult,
     SubgoalEfficiencyResult,
 )
+from neurospatial.behavior.resampling import ResampledPathResult
 from neurospatial.behavior.segmentation import Run
 from neurospatial.behavior.trajectory import CumulativeDistanceResult, MSDResult
 from neurospatial.decoding import DecodingSummary
@@ -145,6 +146,28 @@ CASES = [
             "score": 1.0,
             "offset": 0.0,
             "sinogram": np.ones((2, 2)),
+        },
+    ),
+    (
+        ResampledPathResult,
+        {
+            "times": np.array([0.0, 0.5]),
+            "positions": np.array([[0.0, 0.0], [1.0, 0.0]]),
+            "run_distance": np.array([0.0, 1.0]),
+            "cumulative_distance": np.array([0.0, 1.0]),
+            "run_ids": np.zeros(2, dtype=np.intp),
+            "source_left": np.array([0, 0], dtype=np.intp),
+            "source_right": np.array([0, 1], dtype=np.intp),
+            "weights": np.array([0.0, 0.5]),
+            "off_grid_endpoint": np.zeros(2, dtype=bool),
+            "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
+            "run_time_bounds": np.array([[0.0, 1.0]]),
+            "run_path_lengths": np.array([2.0]),
+            "n_source_samples": 2,
+            "spacing": 1.0,
+            "include_endpoint": False,
+            "max_gap": 0.5,
+            "epochs": np.array([[0.0, 1.0]]),
         },
     ),
 ]

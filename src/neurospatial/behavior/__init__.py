@@ -15,6 +15,7 @@ navigation : Path efficiency, goal-directed metrics, path progress
 decisions : Decision analysis, choice points, Voronoi boundaries
 vte : VTE (Vicarious Trial and Error) detection, head sweeping
 reward : Reward field computations
+resampling : Distance resampling
 visits : Observed region visits and entry-to-entry transitions
 """
 
@@ -61,6 +62,10 @@ from neurospatial.behavior.navigation import (
     time_to_goal,
     traveled_path_length,
     trials_to_region_arrays,
+)
+from neurospatial.behavior.resampling import (
+    ResampledPathResult,
+    resample_by_distance,
 )
 from neurospatial.behavior.reward import (
     goal_reward_field,
@@ -182,6 +187,9 @@ __all__ = [  # noqa: RUF022
     "RegionVisit",
     "detect_region_visits",
     "region_transitions",
+    # resampling module
+    "ResampledPathResult",
+    "resample_by_distance",
     # reward module
     "goal_reward_field",
     "region_reward_field",
