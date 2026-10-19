@@ -1135,15 +1135,9 @@ class TestLargeDatasetColormapRange:
 
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        with (
-            patch(
-                "neurospatial.animation.backends.napari_backend.napari.Viewer"
-            ) as mock_viewer_class,
-            patch(
-                "neurospatial.animation.rendering._frame_extremes",
-                wraps=lambda fields, stride: (np.zeros(1), np.ones(1)),
-            ) as mock_range,
-        ):
+        with patch(
+            "neurospatial.animation.backends.napari_backend.napari.Viewer"
+        ) as mock_viewer_class:
             mock_viewer = _create_mock_viewer()
             mock_viewer_class.return_value = mock_viewer
 
@@ -1153,12 +1147,9 @@ class TestLargeDatasetColormapRange:
             rng = np.random.default_rng(42)
             fields = rng.random((n_frames, n_bins))
 
-            with pytest.warns(UserWarning, match="Estimating colormap range"):
-                render_napari(env, fields, fps=10)
-
             # Every n-th frame is read for the range
-            mock_range.assert_called()
-            assert mock_range.call_args[0][1] > 1
+            with pytest.warns(UserWarning, match="sample_stride=5"):
+                render_napari(env, fields, fps=10)
 
     def test_small_dataset_no_warning(self, env):
         """Test that smaller datasets don't emit warning."""

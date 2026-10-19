@@ -762,7 +762,7 @@ env.animate_fields(
 |-----------|---------|-------------|
 | `fields` | Required | Array shape (n_frames, n_bins) or list of fields |
 | `n_samples` | 10,000 | Max frames to sample |
-| `percentile` | (1.0, 99.0) | Percentile range (excludes outliers) |
+| `percentile` | (1.0, 99.0) | Percentiles of the sampled frames' minima and maxima, as `animate_fields` uses by default |
 | `seed` | None | Random seed for reproducibility |
 
 **Why this matters**: Without explicit `vmin/vmax`, napari computes min/max over the **entire dataset**, causing "extremely long processing times" per napari docs. This function samples a representative subset instead.

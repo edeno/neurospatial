@@ -744,6 +744,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   dims the whole animation; about 1% of frames reach past each limit and show
   its color, and a bottom below a thousandth of the top is zero. Pass `vmin`
   and `vmax` to keep the old range or to compare animations on one scale.
+  `estimate_colormap_range_from_subset` uses the same rule on its sample of
+  frames (its `percentile` is now of the frames' minima and maxima, not of
+  all values, which put a sharp posterior's peak past the top in every
+  frame). The unused `rendering.compute_global_colormap_range` is removed.
 - `env.plot()` draws everything the environment holds by default: declared
   walls (labeled with their names), landmarks (labeled, with the axes widened
   to show any outside the arena) and regions. `show_regions` now defaults to

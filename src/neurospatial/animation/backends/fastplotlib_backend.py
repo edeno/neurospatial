@@ -1478,6 +1478,8 @@ class FastplotlibAnimation:
         from neurospatial.animation.rendering import (
             _validate_frame_labels,
             animation_colormap_range,
+            frame_extremes,
+            robust_limits,
             typical_peak,
         )
 
@@ -1586,11 +1588,6 @@ class FastplotlibAnimation:
             self.figure[name].toolbar = False
             self.figure[name].axes.x.visible = name == time_panels[-1]
 
-        # One color scale for every field, so they can be compared.
-        all_frames = (
-            stacks[0] if not several else [row for stack in stacks for row in stack]
-        )
-        low, high = animation_colormap_range(all_frames, vmin, vmax)
         # A video below the field shows through where its values are low: a
         # posterior over the camera's view of the animal. A bin is opaque
         # from the typical frame's peak (the median of the frames' maxima),
@@ -1598,7 +1595,17 @@ class FastplotlibAnimation:
         below = overlay_data is not None and any(
             item.z_order == "below" for item in overlay_data.videos
         )
-        opaque_from = typical_peak(all_frames) if below else None
+        # One color scale for every field, so they can be compared; each
+        # frame is read once for both the limits and the typical peak.
+        lows, highs = np.empty(0), np.empty(0)
+        if vmin is None or vmax is None or below:
+            extremes = [frame_extremes(stack) for stack in stacks]
+            lows = np.concatenate([frame_lows for frame_lows, _ in extremes])
+            highs = np.concatenate([frame_highs for _, frame_highs in extremes])
+        robust = robust_limits(lows, highs)
+        low = robust[0] if vmin is None else vmin
+        high = robust[1] if vmax is None else vmax
+        opaque_from = typical_peak(highs) if below else None
         scale = ColorScale(cmap, low, high, "lightgray", opaque_from=opaque_from)
         track_scale = scale
         if self._projection is not None:
@@ -1996,6 +2003,8 @@ def _add_series(
     """
     from fastplotlib import LinearSelector
 
+    from neurospatial.animation.rendering import tidy_range
+
     drawn = []
 
     subplot = widget.figure[name]
@@ -2046,12 +2055,11 @@ def _add_series(
     _shade_epochs(subplot, epochs, start)
     subplot.title = "  |  ".join(item.label for item in group)
     subplot.camera.maintain_aspect = False
-    low = min(item.global_vmin for item in group)
-    high = max(item.global_vmax for item in group)
-    if 0.0 < low < 1e-3 * high:
-        low = 0.0  # a speed's 0.002 cm/s floor reads as 0
-    if low == high:
-        low, high = low - 0.5, high + 0.5
+    # A speed's 0.002 cm/s floor reads as 0.
+    low, high = tidy_range(
+        min(item.global_vmin for item in group),
+        max(item.global_vmax for item in group),
+    )
     subplot.axes.y.ticks = range_ticks(low, high)
     _Room(subplot, low, high)
     for cursor in (g for g in subplot.selectors if isinstance(g, LinearSelector)):

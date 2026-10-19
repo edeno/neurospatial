@@ -6,57 +6,6 @@ import pytest
 from neurospatial import Environment
 
 
-def test_compute_global_colormap_range():
-    """Test global color scale computation."""
-    from neurospatial.animation.rendering import compute_global_colormap_range
-
-    fields = [
-        np.array([0, 1, 2]),
-        np.array([3, 4, 5]),
-        np.array([1, 2, 3]),
-    ]
-
-    vmin, vmax = compute_global_colormap_range(fields)
-    assert vmin == 0.0
-    assert vmax == 5.0
-
-    # Manual limits override
-    vmin_manual, vmax_manual = compute_global_colormap_range(fields, vmin=-1, vmax=10)
-    assert vmin_manual == -1.0
-    assert vmax_manual == 10.0
-
-
-def test_compute_global_colormap_range_degenerate():
-    """Test degenerate case (all same value)."""
-    from neurospatial.animation.rendering import compute_global_colormap_range
-
-    fields = [np.ones(10) * 5.0, np.ones(10) * 5.0]
-
-    vmin, vmax = compute_global_colormap_range(fields)
-    assert vmin == 4.5
-    assert vmax == 5.5
-
-
-def test_compute_global_colormap_range_partial_override():
-    """Test partial manual override (only vmin or vmax)."""
-    from neurospatial.animation.rendering import compute_global_colormap_range
-
-    fields = [
-        np.array([0, 1, 2]),
-        np.array([3, 4, 5]),
-    ]
-
-    # Override only vmin
-    vmin, vmax = compute_global_colormap_range(fields, vmin=-5, vmax=None)
-    assert vmin == -5.0
-    assert vmax == 5.0
-
-    # Override only vmax
-    vmin, vmax = compute_global_colormap_range(fields, vmin=None, vmax=10)
-    assert vmin == 0.0
-    assert vmax == 10.0
-
-
 def test_render_field_to_rgb():
     """Test field rendering to RGB array."""
     from neurospatial.animation.rendering import render_field_to_rgb
@@ -223,122 +172,6 @@ def test_render_field_to_image_bytes_jpeg_format():
     assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-class TestComputeGlobalColormapRangeNaN:
-    """Test NaN-robustness of compute_global_colormap_range."""
-
-    def test_arrays_with_nan_values_return_correct_range(self):
-        """Test arrays with NaN values return correct range (ignoring NaNs)."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Fields with NaN values mixed in
-        fields = [
-            np.array([np.nan, 1.0, 2.0]),
-            np.array([3.0, np.nan, 5.0]),
-            np.array([0.0, 2.0, np.nan]),
-        ]
-
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        # Should ignore NaN and compute range from valid values [0.0, 5.0]
-        assert vmin == 0.0
-        assert vmax == 5.0
-
-    def test_arrays_with_all_nan_return_safe_defaults(self):
-        """Test arrays with all NaN values return safe defaults (0.0, 1.0)."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # All-NaN fields
-        fields = [
-            np.array([np.nan, np.nan, np.nan]),
-            np.array([np.nan, np.nan]),
-        ]
-
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        # Should return safe default range
-        assert vmin == 0.0
-        assert vmax == 1.0
-
-    def test_arrays_with_inf_values_handled_correctly(self):
-        """Test arrays with non-finite values (inf) are handled correctly."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Fields with inf values
-        fields = [
-            np.array([np.inf, 1.0, 2.0]),
-            np.array([3.0, -np.inf, 5.0]),
-            np.array([0.0, 2.0, np.inf]),
-        ]
-
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        # Should ignore inf and compute range from finite values [0.0, 5.0]
-        assert vmin == 0.0
-        assert vmax == 5.0
-
-    def test_arrays_with_all_inf_return_safe_defaults(self):
-        """Test arrays with all inf values return safe defaults (0.0, 1.0)."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # All-inf fields
-        fields = [
-            np.array([np.inf, np.inf, -np.inf]),
-            np.array([np.inf, -np.inf]),
-        ]
-
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        # Should return safe default range
-        assert vmin == 0.0
-        assert vmax == 1.0
-
-    def test_mixed_nan_and_inf_values(self):
-        """Test arrays with mixed NaN and inf values."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Mixed NaN, inf, and valid values
-        fields = [
-            np.array([np.nan, np.inf, 2.0]),
-            np.array([3.0, -np.inf, np.nan]),
-            np.array([1.0, np.nan, np.inf]),
-        ]
-
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        # Should ignore NaN and inf, compute range from [1.0, 3.0]
-        assert vmin == 1.0
-        assert vmax == 3.0
-
-    def test_single_finite_value_with_nan(self):
-        """Test array with single finite value among NaNs."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Single valid value among NaN/inf
-        fields = [
-            np.array([np.nan, 5.0, np.nan]),
-            np.array([np.nan, np.nan, np.inf]),
-        ]
-
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        # Single value: should expand range around it
-        assert vmin == 4.5
-        assert vmax == 5.5
-
-    def test_empty_fields_list(self):
-        """Test empty fields list returns safe defaults."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Empty fields list
-        fields: list[np.ndarray] = []
-
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        # Should return safe default range
-        assert vmin == 0.0
-        assert vmax == 1.0
-
-
 class TestFieldToRgbForNapariZeroRange:
     """Test zero-range guard in field_to_rgb_for_napari."""
 
@@ -420,152 +253,6 @@ class TestFieldToRgbForNapariZeroRange:
 
         # Should still produce valid output
         assert rgb.dtype == np.uint8
-
-
-class TestColormapRangeStreaming:
-    """Test streaming/chunked colormap range computation for large datasets."""
-
-    @pytest.fixture
-    def rng(self):
-        """Create a seeded random number generator for reproducible tests."""
-        return np.random.default_rng(42)
-
-    def test_small_array_uses_exact_computation(self, rng):
-        """Test that small arrays use exact computation (no streaming)."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Small array below threshold
-        fields = rng.random((1000, 100))
-
-        # Should work and return exact values
-        vmin, vmax = compute_global_colormap_range(fields, max_frames_for_exact=50_000)
-
-        # Verify exact computation
-        assert vmin == pytest.approx(np.nanmin(fields))
-        assert vmax == pytest.approx(np.nanmax(fields))
-
-    def test_large_array_uses_streaming(self):
-        """Test that large arrays use streaming (chunked) computation."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Large array above threshold
-        rng = np.random.default_rng(42)
-        fields = rng.random((100_000, 100))
-
-        # Set threshold low to force streaming
-        vmin, vmax = compute_global_colormap_range(fields, max_frames_for_exact=10_000)
-
-        # Streaming should still find exact min/max
-        expected_min = np.nanmin(fields)
-        expected_max = np.nanmax(fields)
-        assert vmin == pytest.approx(expected_min)
-        assert vmax == pytest.approx(expected_max)
-
-    def test_sample_stride_reduces_computation(self):
-        """Test that sample_stride subsamples the array."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Create array with known extremes at specific positions
-        fields = np.zeros((1000, 100))
-        fields[0, 0] = -100.0  # Min at frame 0
-        fields[999, 0] = 100.0  # Max at frame 999
-        fields[500, 0] = 50.0  # Mid-point value
-
-        # With stride=2, frames 0 and 500 are sampled (but not 999)
-        vmin, vmax = compute_global_colormap_range(fields, sample_stride=2)
-
-        # Should find min from frame 0, but max may miss frame 999
-        assert vmin == pytest.approx(-100.0)
-        # vmax should be from sampled frames (50.0 from frame 500)
-        # Note: stride=2 samples 0, 2, 4, ..., 998 - so 999 is missed
-        assert vmax == pytest.approx(50.0)
-
-    def test_streaming_with_nan_values(self):
-        """Test streaming correctly handles NaN values."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        rng = np.random.default_rng(42)
-        fields = rng.random((60_000, 50))
-        # Sprinkle NaN values
-        fields[100, :] = np.nan
-        fields[30_000, 10:20] = np.nan
-
-        vmin, vmax = compute_global_colormap_range(fields, max_frames_for_exact=10_000)
-
-        # Should ignore NaN and compute range from valid values
-        finite_mask = np.isfinite(fields)
-        expected_min = fields[finite_mask].min()
-        expected_max = fields[finite_mask].max()
-        assert vmin == pytest.approx(expected_min)
-        assert vmax == pytest.approx(expected_max)
-
-    def test_streaming_with_manual_vmin_vmax(self, rng):
-        """Test that manual vmin/vmax skips computation (even for large arrays)."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Large array that would normally trigger streaming
-        fields = rng.random((100_000, 100))
-
-        # Manual limits should skip computation entirely
-        vmin, vmax = compute_global_colormap_range(
-            fields, vmin=-5.0, vmax=10.0, max_frames_for_exact=10_000
-        )
-
-        assert vmin == -5.0
-        assert vmax == 10.0
-
-    def test_default_threshold_is_50000(self, rng):
-        """Test that default max_frames_for_exact is 50_000."""
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # This test verifies the parameter has a sensible default
-        # by checking that arrays just below threshold work
-        fields = rng.random((49_999, 10))
-
-        # Should work with default threshold
-        vmin, vmax = compute_global_colormap_range(fields)
-
-        assert np.isfinite(vmin)
-        assert np.isfinite(vmax)
-
-    def test_memmap_streaming(self):
-        """Test that streaming works with memory-mapped arrays."""
-        import tempfile
-        from pathlib import Path
-
-        from neurospatial.animation.rendering import compute_global_colormap_range
-
-        # Create memmap
-        tmpdir = Path(tempfile.mkdtemp())
-        mmap_path = tmpdir / "fields.dat"
-
-        try:
-            # Create large memmap
-            fields = np.memmap(
-                str(mmap_path), dtype="float64", mode="w+", shape=(60_000, 50)
-            )
-            # Fill with known values
-            rng = np.random.default_rng(42)
-            for start in range(0, 60_000, 10_000):
-                end = min(start + 10_000, 60_000)
-                fields[start:end] = rng.random((end - start, 50))
-            fields.flush()
-
-            # Compute range with streaming
-            vmin, vmax = compute_global_colormap_range(
-                fields, max_frames_for_exact=10_000
-            )
-
-            # Should produce valid results
-            assert np.isfinite(vmin)
-            assert np.isfinite(vmax)
-            assert vmin < vmax
-
-        finally:
-            # Cleanup
-            del fields
-            mmap_path.unlink()
-            tmpdir.rmdir()
 
 
 class TestValidateFrameLabels:
@@ -717,9 +404,39 @@ def test_animation_color_limits_ignore_a_few_extreme_frames():
 
 
 def test_typical_peak_is_the_median_frame_maximum():
-    from neurospatial.animation.rendering import typical_peak
+    from neurospatial.animation.rendering import frame_extremes, typical_peak
 
     fields = np.zeros((5, 4))
     fields[:, 1] = [0.1, 0.2, 0.3, 0.4, 9.0]  # one extreme frame
     fields[2, 3] = np.nan
-    assert typical_peak(fields) == pytest.approx(0.3)
+    assert typical_peak(frame_extremes(fields)[1]) == pytest.approx(0.3)
+    assert typical_peak(np.full(3, np.nan)) == 1.0
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        # Non-finite values are ignored, frame by frame.
+        ([np.array([np.nan, 0.0, 5.0]), np.array([0.0, np.inf, 5.0])], (0.0, 5.0)),
+        ([np.array([-np.inf, 1.0, 3.0]), np.array([1.0, np.nan, 3.0])], (1.0, 3.0)),
+        # One finite value: half a unit either side.
+        ([np.array([np.nan, 5.0]), np.array([np.inf, np.nan])], (4.5, 5.5)),
+        # Nothing finite, or no frames at all.
+        ([np.array([np.nan, np.inf]), np.array([-np.inf, np.nan])], (0.0, 1.0)),
+        ([], (0.0, 1.0)),
+    ],
+)
+def test_animation_color_limits_use_finite_values_only(fields, expected):
+    from neurospatial.animation.rendering import animation_colormap_range
+
+    assert animation_colormap_range(fields, None, None) == expected
+
+
+def test_long_recordings_use_every_nth_frame_for_color_limits():
+    from neurospatial.animation.rendering import frame_extremes
+
+    fields = np.zeros((250_001, 2), dtype=np.float32)
+    fields[1, 0] = 99.0  # not a sampled frame
+    with pytest.warns(UserWarning, match="sample_stride=5"):
+        _, highs = frame_extremes(fields)
+    assert len(highs) == 50_001 and highs.max() == 0.0

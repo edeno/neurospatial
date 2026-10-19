@@ -1100,8 +1100,11 @@ def estimate_colormap_range_from_subset(
 ) -> tuple[float, float]:
     """Estimate colormap range from random subset of frames.
 
-    Essential utility for large-scale sessions where computing exact min/max
-    over all frames would be too slow or memory-intensive.
+    The same rule `animate_fields` uses by default, on a random sample of
+    frames: the bottom is a low percentile of the sampled frames' minima and
+    the top a high percentile of their maxima, so a sharp posterior's peak
+    reaches the top color rather than passing it in every frame. Useful
+    for large sessions, where reading every frame would be slow.
 
     Parameters
     ----------
@@ -1112,8 +1115,9 @@ def estimate_colormap_range_from_subset(
         Maximum number of frames to sample. If dataset has fewer frames,
         all frames are used.
     percentile : tuple of float, default=(1.0, 99.0)
-        Lower and upper percentiles for range estimation. Using percentiles
-        instead of min/max provides robustness against outliers.
+        The percentile of the frames' minima for the bottom and of their
+        maxima for the top: about this share of frames reach past each end,
+        so a few outlier frames cannot wash out the rest.
     seed : int, optional
         Random seed for reproducibility. If None, results may vary between calls.
 
@@ -1138,9 +1142,8 @@ def estimate_colormap_range_from_subset(
 
     Notes
     -----
-    For uniform random [0, 1] data with default percentiles (1, 99):
-    - Expected vmin: ~0.01
-    - Expected vmax: ~0.99
+    A bottom between zero and a thousandth of the top is zero, and a
+    constant field gets limits half a unit around it.
 
     This function is designed to complete quickly (<0.5s) even for
     datasets with 1M+ frames by sampling a subset rather than computing
@@ -1161,27 +1164,16 @@ def estimate_colormap_range_from_subset(
         # Sample without replacement
         indices = rng.choice(n_frames, size=n_samples, replace=False)
 
-    # Collect sampled values
-    if isinstance(fields, np.ndarray):
-        # For arrays, advanced indexing creates a copy (required for memmaps)
-        sampled = fields[indices]  # Shape: (n_samples, n_bins)
-        values = sampled.ravel()
-    else:
-        # For lists, gather sampled frames
-        values = np.concatenate([fields[i] for i in indices])
+    from neurospatial.animation.rendering import frame_extremes, robust_limits
 
-    # Filter NaN/inf values
-    valid_values = values[np.isfinite(values)]
-
-    if len(valid_values) == 0:
-        # Fallback for all-NaN data
-        return (0.0, 1.0)
-
-    # Compute percentiles
-    vmin = float(np.percentile(valid_values, percentile[0]))
-    vmax = float(np.percentile(valid_values, percentile[1]))
-
-    return (vmin, vmax)
+    # Sorted, so a memory-mapped array is read forward.
+    indices = np.sort(indices)
+    sampled = (
+        fields[indices]
+        if isinstance(fields, np.ndarray)
+        else [fields[i] for i in indices]
+    )
+    return robust_limits(*frame_extremes(sampled), percentile)
 
 
 def large_session_napari_config(
