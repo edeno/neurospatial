@@ -1166,6 +1166,17 @@ def test_a_2d_posterior_is_drawn_along_a_track_of_the_maze(track):
     np.testing.assert_array_equal(projected, [[0.5, np.nan, np.nan]])
 
 
+def test_see_through_fields_keep_the_displayed_peak_opaque():
+    from neurospatial.environment._fastplotlib import ColorScale
+
+    # The typical peak below the colors' floor: every shown value is opaque.
+    alpha = ColorScale("viridis", 0.2, 1.0, "lightgray", opaque_from=0.1).lut[1:, 3]
+    np.testing.assert_allclose(alpha, 1.0)
+    # Above the colors' top: the top color is still opaque, the floor clear.
+    alpha = ColorScale("viridis", 0.0, 0.5, "lightgray", opaque_from=0.8).lut[1:, 3]
+    assert alpha[0] == 0.0 and alpha[-1] == pytest.approx(1.0)
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")

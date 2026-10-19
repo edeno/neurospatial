@@ -120,9 +120,10 @@ class ColorScale:
         Color of NaN bins; None leaves them transparent.
     opaque_from : float or None, default=None
         Make low values see-through: opacity rises (as perceived) from 0 at
-        ``vmin`` to 1 at this value and above, so what is drawn below, such
-        as a video, shows where values are low. Missing bins keep
-        ``nan_color``. None: every value is opaque.
+        ``vmin`` to 1 at this value and above (at ``vmax`` at the latest;
+        at or below ``vmin``, every value is opaque), so what is drawn
+        below, such as a video, shows where values are low. Missing bins
+        keep ``nan_color``. None: every value is opaque.
     """
 
     cmap: str | Colormap
@@ -141,9 +142,14 @@ class ColorScale:
         missing = (0.0, 0.0, 0.0, 0.0) if self.nan_color is None else self.nan_color
         colors = colormap(np.linspace(0.0, 1.0, _N_COLORS))
         if self.opaque_from is not None:
-            values = np.linspace(self.vmin, self.vmax, _N_COLORS)
-            reach = (self.opaque_from - self.vmin) or 1.0
-            colors[:, 3] = perceived_alpha((values - self.vmin) / reach)
+            # Opaque from the threshold, but by the top color at the latest;
+            # a threshold at or below the floor leaves every color opaque.
+            opaque = min(self.opaque_from, self.vmax)
+            if opaque > self.vmin:
+                values = np.linspace(self.vmin, self.vmax, _N_COLORS)
+                colors[:, 3] = perceived_alpha(
+                    (values - self.vmin) / (opaque - self.vmin)
+                )
         return np.vstack([to_rgba(missing), colors]).astype(np.float32)
 
     @cached_property
