@@ -1207,10 +1207,8 @@ def heading_direction_labels(
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Minimum speed threshold below which a sample is labeled "stationary".
-        In the same spatial-units-per-second as ``positions``/``times`` (e.g.
-        cm/s if positions are in cm). The 5.0 default assumes cm/s.
+        cannot know the positions' unit. Samples slower than this are labeled
+        "stationary".
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
