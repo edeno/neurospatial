@@ -740,6 +740,8 @@ def test_epochs_are_marked_named_and_jumped_between(track, decoded):
         [corners[:4, 0].min(), corners[:4, 0].max()], [0.45, 0.65], atol=1e-6
     )
     assert corners[:, 1].min() > animation._track.upper.max()
+    # ...named at the panel's edge.
+    assert "ripple" in [label.text for label, _ in animation._track.labels]
     for panel in ("raster 0", "series 0"):
         (bands,) = [g for g in figure[panel].graphics if g.name == "ripple epochs"]
         x = bands.positions[:][:, 0]

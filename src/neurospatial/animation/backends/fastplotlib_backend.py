@@ -595,6 +595,7 @@ class _PositionTime:
         clock: NDArray[np.float64],
         window: float,
         positions: Sequence[tuple[PositionData, _Samples]],
+        epochs: Sequence[EpochData],
         start: float,
         move_to: Callable[[float], None],
     ) -> None:
@@ -636,11 +637,29 @@ class _PositionTime:
                 for name, low, high in segments
             ]
         subplot.title = self.axis
-        # A strip above the fields marks epochs without tinting them.
+        # A labeled strip above the fields for each kind of epoch marks them
+        # without tinting the fields.
         bottom, top = float(self.lower.min()), float(self.upper.max())
         span = top - bottom
-        self.strip = (top + 0.01 * span, top + 0.06 * span)
-        subplot.y_range = (bottom, self.strip[1])
+        self.strips = [
+            (top + (0.015 + 0.045 * k) * span, top + (0.045 + 0.045 * k) * span)
+            for k in range(len(epochs))
+        ]
+        self.labels += [
+            (
+                subplot.add_text(
+                    data.label,
+                    font_size=13,
+                    face_color=data.color,
+                    outline_color="black",
+                    outline_thickness=0.25,
+                    anchor="middle-right",
+                ),
+                (low + high) / 2,
+            )
+            for data, (low, high) in zip(epochs, self.strips, strict=True)
+        ]
+        subplot.y_range = (bottom, self.strips[-1][1] if self.strips else top)
 
     @property
     def window(self) -> float:
@@ -739,7 +758,7 @@ class _PositionTime:
             points = np.full((len(line.data), 2), np.nan)
             points[: len(drawn)] = drawn
             line.data = xyz(points)
-        for label, middle in self.labels:
+        for label, middle in self.labels:  # segments' and epochs' names
             label.offset = (time + half, middle, 1.0)  # at the right edge
         self.view.follow(time)
 
@@ -1508,13 +1527,15 @@ class FastplotlibAnimation:
                     self._clock,
                     window_seconds,
                     positions,
+                    epochs,
                     self._start,
                     self._move_to,
                 )
                 if several:
                     self.figure[name].title = f"{label}: {track.axis}"
                 _mark_events(self.figure[name], events, self._start)
-                _shade_epochs(self.figure[name], epochs, self._start, strip=track.strip)
+                for data, strip in zip(epochs, track.strips, strict=True):
+                    _shade_epochs(self.figure[name], [data], self._start, strip=strip)
                 self._tracks.append(track)
         self._track = self._tracks[0] if self._tracks else None
         if not with_fields:
