@@ -593,7 +593,8 @@ def test_a_raster_draws_each_spike_in_its_units_row_on_the_clock(apparatus, walk
         "unit CA1-a",
         "t = 0.5000 s",  # from the first frame, at 100 s
     ]
-    assert panel.y_range == pytest.approx((-0.5, 2.5))
+    low, high = panel.y_range
+    assert high == pytest.approx(2.5) and low < -0.5  # room below for the time axis
     (marks,) = [g for g in panel.graphics if g.name == "reward times"]
     np.testing.assert_allclose(marks.data[:], t[[20]], rtol=1e-5)
     animation.frame = 60
@@ -837,6 +838,36 @@ def test_panels_drawn_against_time_share_one_window(track, decoded):
             ), name
             assert animation.figure[name].title.text.endswith(f"{window:.3g} s window")
         _press(animation.figure, "]")
+
+
+def test_the_data_stays_above_the_time_axis(track, decoded):
+    from neurospatial.animation import SpikeRasterOverlay
+
+    times, _, fields = decoded
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            overlays=[
+                TimeSeriesOverlay(data=np.sin(times), times=times, label="lfp"),
+                SpikeRasterOverlay(
+                    [times[::3]], rates=np.arange(track.n_bins, dtype=float)[None]
+                ),
+            ],
+        )
+    animation.show()
+    animation._unit.show(animation._rasters[0], 0)
+    for _ in range(2):  # tick labels are measured as they are first drawn
+        animation.figure.canvas.draw()
+    for subplot, lowest in (
+        (animation.figure["series 0"], -1.0),
+        (animation.figure["unit"], 0.0),
+    ):
+        _, top, _, height = subplot.viewport.rect
+        axis = top + height - subplot.axes._get_label_margins()[0] - 4
+        assert subplot.map_world_to_screen((1.0, lowest, 0))[1] <= axis + 1
 
 
 def test_a_tracks_segments_are_bounded_and_named(track, decoded):

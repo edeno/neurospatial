@@ -544,6 +544,37 @@ class _TimeWindow:
         self.subplot.x_range = (time - half, time + half)
 
 
+class _ClearOfTheAxis:
+    """Keeps a panel's data above its x axis.
+
+    fastplotlib draws the x axis inside the panel, its tick labels' height
+    (plus 4 pixels) above the bottom edge, so in a short panel it runs
+    through the data. The y range is padded below by as many pixels, refit
+    whenever the panel's height or the data's range changes.
+    """
+
+    def __init__(self, subplot: Any, low: float, high: float) -> None:
+        self.subplot, self.range = subplot, (low, high)
+        self._fitted: tuple[Any, ...] | None = None
+        subplot.add_animations(self.fit)
+        self.fit()
+
+    def set(self, low: float, high: float) -> None:
+        """Keep ``low`` to ``high`` above the axis."""
+        self.range = (low, high)
+        self.fit()
+
+    def fit(self) -> None:
+        height = float(self.subplot.viewport.rect[3])
+        margin = self.subplot.axes._get_label_margins()[0] + 4
+        key = (height, margin, self.range)
+        if key == self._fitted or height <= margin:
+            return
+        self._fitted = key
+        low, high = self.range
+        self.subplot.y_range = (low - (high - low) * margin / (height - margin), high)
+
+
 class _PositionTime:
     """A track's fields over time: a column per frame, a row per bin.
 
@@ -752,6 +783,7 @@ class _UnitRates:
             if len(segments) > 1:
                 _segment_joints(subplot, segments, axis="x")
             subplot.camera.maintain_aspect = False
+            self.room = _ClearOfTheAxis(subplot, 0.0, 1.0)
         else:
             self.field = FieldGraphic(
                 subplot,
@@ -796,7 +828,7 @@ class _UnitRates:
             lower, upper = self.extents
             self.line.data = xyz(np.column_stack([(lower + upper) / 2, rates]))
             self.subplot.x_range = (float(lower.min()), float(upper.max()))
-            self.subplot.y_range = (0.0, 1.05 * top)
+            self.room.set(0.0, 1.05 * top)
         else:
             self.field.scale = ColorScale(self.cmap, 0.0, top, "lightgray")
             self.field.update(rates)
@@ -1546,6 +1578,9 @@ class FastplotlibAnimation:
             self.figure[name]: self.figure[name].title.text for name in time_panels
         }
         self._title_windows()
+        if time_panels:  # the one time axis, at the bottom, clear of the data
+            bottom_panel = self.figure[time_panels[-1]]
+            self._time_axis_room = _ClearOfTheAxis(bottom_panel, *bottom_panel.y_range)
         self.figure.renderer.add_event_handler(self._key, "key_down")
         self._add_key_hint()
         self._show(0.0, self._read(0.0))
