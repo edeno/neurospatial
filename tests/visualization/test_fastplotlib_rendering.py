@@ -1315,6 +1315,20 @@ def test_every_field_with_a_video_stands_upright(apparatus, walk, video):
     assert [p.camera.local.scale_y > 0 for p in animation._plots] == [True, True]
 
 
+def test_the_status_shows_the_sliders_time(apparatus):
+    from neurospatial.animation import EpochOverlay
+
+    animation = apparatus.animate_fields(
+        np.zeros((3, apparatus.n_bins)),
+        frame_times=np.arange(3.0),
+        backend="fastplotlib",
+        overlays=[EpochOverlay([[0.5, 0.6]], label="ripple")],
+    )
+    animation.widget.indices = {"time": 0.55}
+    _render(animation)
+    assert animation.status == "t = 0.55 s  |  ripple 1 of 1"
+
+
 def test_dry_run_reports_without_drawing(apparatus, walk, capsys):
     t, _, fields = walk
     result = apparatus.animate_fields(

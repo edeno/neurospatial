@@ -1718,10 +1718,10 @@ class FastplotlibAnimation:
             video.show(image)
         for layer in self._layers:
             layer.update(time)
+        # The slider's time, which the overlays and epochs show, not the time
+        # of the field frame held; a frame's own label names the frame.
         label = (
-            self._labels[frame]
-            if self._labels is not None
-            else f"t = {self._clock[frame]:.2f} s"
+            self._labels[frame] if self._labels is not None else f"t = {time:.2f} s"
         )
         if self._start != 0.0 and self._labels is None:
             # Every time shown counts from the first frame; its own, once.
