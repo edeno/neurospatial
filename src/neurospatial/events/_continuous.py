@@ -230,7 +230,7 @@ def _resolve_features(
                     fix="List every code the signal can take with its label.",
                 )
             )
-        for code, label in sorted(mapping.items(), key=lambda kv: int(kv[0])):
+        for code, label in mapping.items():
             if isinstance(code, bool | np.bool_) or not isinstance(
                 code, int | np.integer
             ):
@@ -250,6 +250,7 @@ def _resolve_features(
                         fix="Use string labels.",
                     )
                 )
+        for code, label in sorted(mapping.items(), key=lambda kv: int(kv[0])):
             cat_features.append(col)
             cat_codes.append(int(code))
             cat_labels.append(label)

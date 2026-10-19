@@ -144,8 +144,28 @@ def test_feature_id_errors():
 
 def test_spec_arrays_are_read_only_and_frozen():
     spec = _mixed()
+    for array in (
+        spec.feature_ids,
+        spec.category_features,
+        spec.category_codes,
+        spec.category_labels,
+    ):
+        assert array.flags.writeable is False
     with pytest.raises(AttributeError):
         spec.units = ()  # type: ignore[misc]
+
+
+@pytest.mark.parametrize("code", ["a", None])
+def test_non_integer_code_key_raises_actionable_error(code):
+    with pytest.raises(
+        ValueError, match=r"code .* for feature 'zone' is not an integer"
+    ):
+        _resolve(
+            1,
+            feature_ids=["zone"],
+            value_kinds={"zone": "categorical"},
+            category_labels={"zone": {0: "center", code: "arm"}},
+        )
 
 
 def _spec_zone(codes=(0, 1)):
