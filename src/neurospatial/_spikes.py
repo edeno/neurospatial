@@ -162,7 +162,7 @@ def as_spike_trains(
 def _looks_like_spike_group(obj: Any) -> bool:
     """Return whether ``obj`` is a spike group carrying unit ids.
 
-    Duck-typed detection of a real pynapple ``TsGroup`` (or the future
+    Duck-typed detection of a real pynapple ``TsGroup`` (or the
     ``SpikeTrains`` container): an object that is **not** one of the canonical
     array spike inputs and that exposes a non-callable ``.index`` (the unit
     ids). A plain ``list`` / ``tuple`` has an ``.index`` *method* (callable), so
@@ -182,7 +182,7 @@ def _as_spike_trains_with_ids(
 
     A companion to :func:`as_spike_trains` that additionally extracts per-unit
     identity labels from a spike group (a real pynapple
-    ``TsGroup``, or the future ``SpikeTrains`` container). Its purpose is to keep
+    ``TsGroup``, or the ``SpikeTrains`` container). Its purpose is to keep
     unit identity from being silently dropped when a group object flows into a
     batch encoding function.
 
@@ -196,7 +196,7 @@ def _as_spike_trains_with_ids(
     ``TsGroup`` is a :class:`collections.abc.Mapping` (a ``UserDict``): iterating
     it yields the **unit-id keys**, not the per-unit trains. Groups that are
     Mappings are handled via ``group[uid]`` (whose value exposes ``.t``, the
-    pynapple ``Ts`` timestamp array); the future iterate-yields-trains
+    pynapple ``Ts`` timestamp array); the iterate-yields-trains
     ``SpikeTrains`` container (and simple test doubles) is handled by iterating.
     The ``isinstance(group, Mapping)`` branch uses a stdlib ABC, which a
     ``UserDict``/``TsGroup`` satisfies — this is *not* an ``isinstance`` against a
@@ -251,7 +251,7 @@ def _as_spike_trains_with_ids(
                 for uid in unit_ids
             ]
         else:
-            # Iterate-yields-trains container (future ``SpikeTrains``, test
+            # Iterate-yields-trains container (``SpikeTrains``, test
             # doubles): iteration yields the per-unit 1-D timestamp arrays.
             trains = [np.asarray(t, dtype=np.float64) for t in spike_times]
         if getattr(spike_times, "_unit_ids_generated", False):

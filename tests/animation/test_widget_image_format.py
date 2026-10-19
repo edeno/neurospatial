@@ -9,6 +9,7 @@ This test module verifies:
 
 from __future__ import annotations
 
+import importlib.util
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -16,6 +17,8 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.animation.overlays import OverlayData, PositionData
+
+HAS_IPYWIDGETS = importlib.util.find_spec("ipywidgets") is not None
 
 # ============================================================================
 # Fixtures
@@ -311,6 +314,7 @@ class TestPersistentFigureRendererImageFormat:
 # ============================================================================
 
 
+@pytest.mark.skipif(not HAS_IPYWIDGETS, reason="ipywidgets not installed")
 class TestRenderWidgetImageFormat:
     """Tests for image_format in render_widget."""
 
