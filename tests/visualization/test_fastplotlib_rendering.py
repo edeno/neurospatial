@@ -205,7 +205,7 @@ def test_animation_moves_the_overlays_with_the_frame(apparatus, walk):
     assert animation._fields is fields  # an array is read a frame at a time
     animation.show()
     position, event_layer = animation._layers
-    ((_, _, _, event_graphic),) = event_layer.kinds
+    ((_, _, _, _, event_graphic),) = event_layer.kinds
     for frame, shown in ((10, True), (14, True), (16, False), (50, True)):
         animation.frame = frame
         _render(animation)
@@ -1313,6 +1313,24 @@ def test_every_field_with_a_video_stands_upright(apparatus, walk, video):
     )
     animation.show()
     assert [p.camera.local.scale_y > 0 for p in animation._plots] == [True, True]
+
+
+def test_an_event_shows_from_its_own_time(apparatus):
+    reward = EventOverlay(
+        event_times=np.array([0.5]), event_positions=np.array([[20.0, 20.0]])
+    )
+    animation = apparatus.animate_fields(
+        np.zeros((5, apparatus.n_bins)),
+        frame_times=np.arange(5.0),
+        backend="fastplotlib",
+        overlays=[reward],
+    )
+    (layer,) = [layer for layer in animation._layers if hasattr(layer, "kinds")]
+    ((_, _, _, _, graphic),) = layer.kinds
+    for time, shown in ((0.4, False), (0.5, True), (0.9, True)):
+        animation.widget.indices = {"time": time}
+        _render(animation)
+        assert (graphic.colors[:][:, 3] > 0).any() == shown, time
 
 
 def test_the_status_shows_the_sliders_time(apparatus):

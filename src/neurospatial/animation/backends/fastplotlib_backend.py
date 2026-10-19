@@ -318,12 +318,19 @@ def heading_segment(
 class _Events:
     """Events at their positions: all so far, only the current, or fading.
 
-    Positions are drawn once; each frame only sets the opacity of each
-    event's fill and border.
+    Each shows from its own time, in the frame that holds it (not from the
+    next frame), and fades by frames as in the other backends. Positions are
+    drawn once; each update only sets the opacity of each event's fill and
+    border.
     """
 
     def __init__(
-        self, subplot: Any, data: EventData, frame_of: Callable[[float], int]
+        self,
+        subplot: Any,
+        data: EventData,
+        frame_of: Callable[[float], int],
+        frame_clock: NDArray[np.float64],
+        start: float,
     ) -> None:
         self.data, self.frame_of = data, frame_of
         self.kinds = []
@@ -342,13 +349,18 @@ class _Events:
                 edge_width=data.border_width * data.size,  # a fraction of the size
                 alpha_mode="blend",
             )
-            frames = data.event_frame_indices[name]
-            self.kinds.append((frames, fill, border, graphic))
+            times = data.event_times[name] - start
+            # The frame that holds each event: the last one that started.
+            frames = np.maximum(
+                np.searchsorted(frame_clock, times, side="right") - 1, 0
+            )
+            self.kinds.append((times, frames, fill, border, graphic))
 
     def update(self, time: float) -> None:
         frame = self.frame_of(time)
-        for frames, fill, border, graphic in self.kinds:
+        for times, frames, fill, border, graphic in self.kinds:
             shown, alphas = _event_visibility(frames, frame, self.data.decay_frames)
+            shown &= times <= time
             opacity = perceived_alpha(alphas * self.data.opacity)
             fill[:, 3] = border[:, 3] = np.where(shown, opacity, 0)
             graphic.colors, graphic.edge_colors = fill, border
@@ -1049,6 +1061,8 @@ def _spatial_overlays(
     clock: Callable[[NDArray[np.float64] | None], _Samples],
     env: Environment,
     frame_of: Callable[[float], int],
+    frame_clock: NDArray[np.float64],
+    start: float,
 ) -> list[Any]:
     """The overlays drawn over a field."""
     layers: list[Any] = [
@@ -1068,7 +1082,10 @@ def _spatial_overlays(
         _HeadDirection(plot, item, clock(item.times), anchor, center)
         for item in overlay_data.head_directions
     ]
-    layers += [_Events(plot, item, frame_of) for item in overlay_data.events]
+    layers += [
+        _Events(plot, item, frame_of, frame_clock, start)
+        for item in overlay_data.events
+    ]
     return layers
 
 
@@ -1506,7 +1523,13 @@ class FastplotlibAnimation:
                 plot.docks["right"].size = COLORBAR_WIDTH
             if overlay_data is not None:
                 self._layers += _spatial_overlays(
-                    plot, overlay_data, clock, env, self._frame_of
+                    plot,
+                    overlay_data,
+                    clock,
+                    env,
+                    self._frame_of,
+                    self._clock,
+                    self._start,
                 )
         self._field = self._field_graphics[0] if self._field_graphics else None
         # Each field its name; the time and epochs go above the panels, which
@@ -1720,9 +1743,7 @@ class FastplotlibAnimation:
             layer.update(time)
         # The slider's time, which the overlays and epochs show, not the time
         # of the field frame held; a frame's own label names the frame.
-        label = (
-            self._labels[frame] if self._labels is not None else f"t = {time:.2f} s"
-        )
+        label = self._labels[frame] if self._labels is not None else f"t = {time:.2f} s"
         if self._start != 0.0 and self._labels is None:
             # Every time shown counts from the first frame; its own, once.
             label += f" from {self._start:.2f} s"
