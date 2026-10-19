@@ -1744,6 +1744,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- A track graph edge's length is the distance between its nodes' `pos`, for
+  the bins and for everything measured along the track. A `distance` edge
+  attribute that disagreed used to lay the bins out by one length and place
+  bin centers, cell ends and `to_linear` positions by the other (every center
+  could land on the first segment); it is now refused, naming the edge. A
+  missing `distance` is computed, so `Environment.from_graph` no longer needs
+  it.
 - `wall_fit="snap"` no longer fails for two kinds of walls: a wall that snaps
   to a single bin edge (it raised "Cannot linemerge"), and a wall reaching a
   slanted outline, whose snapped edges could leave the arena (it raised "lies
