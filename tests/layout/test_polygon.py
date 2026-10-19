@@ -85,6 +85,27 @@ def test_polygon_cells_reject_invalid_partition(polygons):
         PolygonCells(polygons)
 
 
+def test_polygon_cells_name_the_first_invalid_cell():
+    bow_tie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
+    infinite = Polygon([(10, 0), (np.inf, 0), (11, 1)])
+    with pytest.raises(ValueError, match=r"cells\[1\] is invalid"):
+        PolygonCells((box(0, 0, 1, 1), bow_tie, infinite))
+    with pytest.raises(ValueError, match=r"cells\[1\] must be nonempty, finite"):
+        PolygonCells((box(0, 0, 1, 1), infinite, bow_tie))
+
+
+def test_polygon_cells_name_the_first_overlapping_pair():
+    # Cells sharing edges and corners are a partition; a sliver of overlap,
+    # between cells whose bounding boxes touch only nearly, is not.
+    grid = tuple(box(i, j, i + 1, j + 1) for i in range(3) for j in range(3))
+    PolygonCells(grid)
+    sliver = box(2.999, 0, 4, 1)
+    with pytest.raises(
+        ValueError, match=r"cells\[6\] and cells\[9\] overlap in their interiors"
+    ):
+        PolygonCells((*grid, sliver))
+
+
 def test_clipped_locator_preserves_parent_boundary_and_nonfinite_semantics():
     base = RectilinearLocator(
         (np.array([0.0, 4.0]), np.array([0.0, 4.0])), (1, 1), None, None

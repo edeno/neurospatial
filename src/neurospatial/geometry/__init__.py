@@ -126,6 +126,7 @@ from neurospatial.geometry._lookup import (
 from neurospatial.geometry._native_faces import NativeFaces as NativeFaces
 from neurospatial.geometry._ownership import own_arena as own_arena
 from neurospatial.geometry._ownership import own_binning as own_binning
+from neurospatial.geometry._polygon import cell_polygons as cell_polygons
 from neurospatial.geometry._polygon import cells_from_locator as cells_from_locator
 from neurospatial.geometry._polygon import clip_binning as clip_binning
 from neurospatial.geometry._polygon import materialize_cells as materialize_cells

@@ -20,26 +20,26 @@ streams the frames to the browser, so a GPU server works from a laptop.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
+import shapely
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial.environment._cache import CELL_POLYGONS
 from neurospatial.environment._lookup import center_tree
-from neurospatial.geometry import HexagonShapes, PolygonCells, TriangleShapes
+from neurospatial.geometry import cell_polygons
 from neurospatial.layout import _cell_shape
 
 if TYPE_CHECKING:
     import fastplotlib
-    import shapely
     from matplotlib.colors import Colormap
 
     from neurospatial.environment import Environment
-    from neurospatial.geometry import Binning
 
 _INSTALL = 'pip install "neurospatial[fastplotlib]"'
 _N_COLORS = 255  # colormap entries; the lookup texture adds the missing color
@@ -247,8 +247,6 @@ def _triangles(polygons: Sequence[Any]) -> tuple[NDArray[np.float64], NDArray[np
     owner : ndarray of intp, shape (n_triangles,)
         The polygon each triangle belongs to.
     """
-    import shapely
-
     triangles, owner = shapely.get_parts(
         shapely.constrained_delaunay_triangles(np.asarray(polygons, dtype=object)),
         return_index=True,
@@ -258,51 +256,32 @@ def _triangles(polygons: Sequence[Any]) -> tuple[NDArray[np.float64], NDArray[np
     return corners.reshape(-1, 2), owner
 
 
-def _grid_cells(binning: Binning) -> Cells:
-    frame = binning.grid_frame
-    grid = frame.source if frame is not None else binning.rectilinear
-    assert grid is not None
-    x_edges, y_edges = grid.edges
-    i, j = np.nonzero(grid.active_mask)  # C order: the order of the bins
-    corners = _rectangles(x_edges[i], x_edges[i + 1], y_edges[j], y_edges[j + 1])
-    return _fans(corners if frame is None else frame.to_world(corners), 4)
-
-
-def _hexagon_cells(binning: Binning) -> Cells:
-    shapes = cast("HexagonShapes", binning.shapes)
-    corners = shapes.centers[:, None, :] + shapes.corner_offsets()[None]
-    return _fans(corners.reshape(-1, 2), 6)
-
-
-def _triangle_cells(binning: Binning) -> Cells:
-    shapes = cast("TriangleShapes", binning.shapes)
-    return _fans(shapes.points[shapes.triangles].reshape(-1, 2), 3)
-
-
-def _polygon_cells(binning: Binning) -> Cells:
-    corners, owner = _triangles(cast("PolygonCells", binning.shapes).polygons)
-    cells = _fans(corners, 3)
-    return Cells(cells.positions, cells.triangles, np.repeat(owner, 3))
-
-
-# The cell shapes of layout._cell_shape that have exact cells; the others are
-# drawn as points.
-_CELL_BUILDERS: dict[str, Callable[[Binning], Cells]] = {
-    "grid": _grid_cells,
-    "hexagons": _hexagon_cells,
-    "triangles": _triangle_cells,
-    "polygons": _polygon_cells,
-}
-
-
 def cell_mesh(env: Environment) -> Cells | None:
     """The bins of a 2-D environment as cells, or None to draw points.
 
-    Grids, hexagons, triangles and polygon cells have exact cells; tracks,
-    bins without cell shapes and 3-D environments are drawn as points.
+    The cells are the environment's own (:func:`geometry.cell_polygons`, the
+    description analyses read), cached with the environment. Grid, hexagon and
+    triangle cells are convex, so each is a fan of triangles from one corner;
+    clipped or mixed cells are triangulated. Tracks, bins without cell shapes
+    and 3-D environments are drawn as points.
     """
-    builder = _CELL_BUILDERS.get(_cell_shape(env._binning))
-    return builder(env._binning) if builder and env.n_dims == 2 else None
+    shape = _cell_shape(env._binning)
+    if env.n_dims != 2 or shape in ("track", "points"):
+        return None
+    polygons = env._cache.get(CELL_POLYGONS, lambda: cell_polygons(env._binning))
+    geometries = np.empty(len(polygons), dtype=object)
+    geometries[:] = polygons
+    rings, owner = shapely.get_coordinates(
+        shapely.get_exterior_ring(geometries), return_index=True
+    )
+    counts = np.bincount(owner, minlength=len(polygons))
+    if shape == "polygons" or counts.min() != counts.max():
+        corners, owner = _triangles(polygons)
+        cells = _fans(corners, 3)
+        return Cells(cells.positions, cells.triangles, np.repeat(owner, 3))
+    # A closed ring repeats its first corner; drop it.
+    corners = rings.reshape(len(polygons), counts[0], 2)[:, :-1]
+    return _fans(corners.reshape(-1, 2), int(counts[0]) - 1)
 
 
 def bin_spacing(env: Environment) -> float:

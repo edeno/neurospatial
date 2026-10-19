@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 import warnings
-from dataclasses import replace
 from pathlib import Path
 
 import matplotlib
@@ -17,7 +16,6 @@ import numpy as np
 import pytest
 from environment_helpers import native_layout
 from matplotlib.colors import to_rgba
-from matplotlib.patches import RegularPolygon
 from shapely.geometry import MultiPolygon, Polygon
 
 from neurospatial import Environment
@@ -322,15 +320,13 @@ def test_hexagon_plots_are_framed_by_the_cell_extent(built_environment):
 
 
 @pytest.mark.parametrize("built_environment", ["hex"], indirect=True)
-def test_plot_field_reads_binning_shapes(built_environment, monkeypatch):
-    """Hexagon size and orientation come from the retained component."""
+def test_plot_field_draws_the_published_cells(built_environment, monkeypatch):
+    """Hexagons come from the published cell geometry, not the layout engine."""
+    from shapely.geometry import Polygon as ShapelyPolygon
+
+    from neurospatial.geometry import cell_polygons
+
     env = built_environment
-    shapes = replace(env._binning.shapes, radius=env._binning.shapes.radius / 2)
-    monkeypatch.setattr(
-        env,
-        "_geometry",
-        replace(env._geometry, binning=replace(env._binning, shapes=shapes)),
-    )
     layout = _detached_native_layout(env, monkeypatch)
     layout.hex_radius_ = 999.0
     figure, axes = plt.subplots(figsize=(4, 3), dpi=72)
@@ -338,11 +334,8 @@ def test_plot_field_reads_binning_shapes(built_environment, monkeypatch):
         env.plot_field(np.ones(env.n_bins), ax=axes, colorbar=False)
         paths = axes.collections[0].get_paths()
         assert len(paths) == env.n_bins
-        patch = RegularPolygon(
-            shapes.centers[0], 6, radius=shapes.radius, orientation=shapes.orientation
-        )
-        expected = patch.get_path().transformed(patch.get_patch_transform()).vertices
-        np.testing.assert_array_equal(paths[0].vertices, expected)
+        for path, cell in zip(paths, cell_polygons(env._binning), strict=True):
+            assert ShapelyPolygon(path.vertices).equals(cell)
     finally:
         plt.close(figure)
 
@@ -444,17 +437,19 @@ def test_drawn_hexagons_are_the_environment_cells():
     from shapely.geometry import Polygon as ShapelyPolygon
 
     from neurospatial.geometry._polygon import materialize_cells
-    from neurospatial.layout._plotting import _hexagon_patches
 
     env = Environment.from_layout(
         create_layout(
             "Hexagonal", hexagon_width=4.0, dimension_ranges=[(0, 12), (0, 12)]
         )
     )
-    shapes = env.binning.shapes
-    cells = materialize_cells(env.binning)
-    patches = _hexagon_patches(shapes, shapes.centers)
-    assert len(patches) == env.n_bins
-    for patch, cell in zip(patches, cells, strict=True):
-        drawn = ShapelyPolygon(patch.get_verts())
-        assert drawn.symmetric_difference(cell).area < 1e-9 * cell.area
+    figure, axes = plt.subplots()
+    try:
+        env.plot_field(np.arange(env.n_bins, dtype=float), ax=axes, colorbar=False)
+        paths = axes.collections[0].get_paths()
+        cells = materialize_cells(env.binning)
+        assert len(paths) == env.n_bins
+        for path, cell in zip(paths, cells, strict=True):
+            assert ShapelyPolygon(path.vertices).equals(cell)
+    finally:
+        plt.close(figure)

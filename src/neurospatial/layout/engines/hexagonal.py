@@ -5,7 +5,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import LayoutNotBuiltError
-from neurospatial.geometry import Binning, HexagonShapes, HexLocator, component_extent
+from neurospatial.geometry import (
+    Binning,
+    HexagonShapes,
+    HexLocator,
+    cell_polygons,
+    component_extent,
+)
 from neurospatial.layout._assembly import assemble_binning
 from neurospatial.layout._labels import LayoutType
 from neurospatial.layout._plotting import plot_hexagons
@@ -250,7 +256,7 @@ class HexagonalLayout(_NeighborPairsMixin):
         **kwargs : Any
             Additional keyword arguments:
             - `show_hexagons` (bool, default=True): Whether to draw hexagon cells.
-            - `hexagon_kwargs` (dict): Kwargs for `matplotlib.patches.RegularPolygon`.
+            - `hexagon_kwargs` (dict): Kwargs for the cells' `PatchCollection`.
             - Other kwargs are passed to `_generic_graph_plot` for the graph.
 
         Returns
@@ -259,14 +265,12 @@ class HexagonalLayout(_NeighborPairsMixin):
             The axes on which the layout is plotted.
 
         """
+        built = self.hex_radius_ is not None and self.bin_centers is not None
         return plot_hexagons(
             ax,
             title=self.layout_type,
-            shapes=(
-                self.bin_shapes()
-                if self.hex_radius_ is not None and self.bin_centers is not None
-                else None
-            ),
+            centers=self.bin_centers,
+            cells=cell_polygons(self.binning()) if built else None,
             connectivity=self.connectivity,
             dimension_ranges=self.dimension_ranges,
             **kwargs,
