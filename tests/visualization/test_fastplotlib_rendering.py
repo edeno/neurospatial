@@ -91,6 +91,30 @@ def test_each_bin_shows_its_value_and_missing_bins_their_own_color():
     np.testing.assert_allclose(missing, to_rgba("lightgray")[:3], atol=2 / 255)
 
 
+def test_missing_bins_keep_their_color_whatever_the_table_length(monkeypatch):
+    # pygfx resamples an array colormap that is not 256 rows long; passed as a
+    # nearest-sampled texture, the missing row is never blended.
+    import neurospatial.environment._fastplotlib as drawing
+
+    monkeypatch.setattr(drawing, "_N_COLORS", 100)
+    env = Environment.from_grid_mask(
+        np.ones((2, 1), dtype=bool),
+        grid_edges=(np.array([0.0, 10, 20]), np.array([0.0, 10])),
+    )
+    figure = env.plot_field(
+        np.array([0.0, np.nan]), backend="fastplotlib", vmin=0.0, vmax=1.0
+    )
+    figure.show()
+    np.testing.assert_allclose(
+        _pixel(figure, figure[0, 0], 15.0, 5.0), to_rgba("lightgray")[:3], atol=2 / 255
+    )
+    np.testing.assert_allclose(
+        _pixel(figure, figure[0, 0], 5.0, 5.0),
+        colormaps["viridis"](0.0)[:3],
+        atol=2 / 255,
+    )
+
+
 def test_three_dimensional_fields_draw_points_whose_opacity_follows_value():
     env = Environment.from_samples(
         np.random.default_rng(0).uniform(0, 10, (3000, 3)), bin_size=2.0
@@ -200,6 +224,27 @@ def test_keys_and_clock_drive_playback(apparatus, walk, monkeypatch):
     animation._on_key(Key(" "))  # play, starting the clock at 100 s
     animation._advance()  # half a second later
     assert animation.frame == int(0.5 * animation.fps)
+
+
+def test_a_shown_animation_draws_without_warnings(apparatus, walk):
+    t, _, fields = walk
+    animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")
+    animation.show()
+    # Recorded, not raised: the canvas catches errors raised while drawing.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")  # fastplotlib calls _advance(figure)
+        for _ in range(3):
+            animation.figure.canvas.draw()
+    assert [str(w.message) for w in caught] == []
+
+
+def test_an_event_marker_without_a_gpu_shape_warns(apparatus, walk):
+    t, path, fields = walk
+    events = EventOverlay(event_times=t[[10]], event_positions=path[[10]], markers="p")
+    with pytest.warns(UserWarning, match="no marker 'p'"):
+        apparatus.animate_fields(
+            fields, frame_times=t, backend="fastplotlib", overlays=[events]
+        )
 
 
 def test_unsupported_overlays_are_skipped_with_a_warning(apparatus, walk):

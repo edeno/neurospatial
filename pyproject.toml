@@ -108,7 +108,7 @@ animation = [
 fastplotlib = [
     "fastplotlib>=0.7,<0.8; python_version >= '3.11'",
     "glfw>=2.7; python_version >= '3.11'",              # desktop window
-    "jupyter-rfb>=0.5.1; python_version >= '3.11'",     # Jupyter, local or remote
+    "jupyter-rfb>=0.5.1; python_version >= '3.11'",     # Jupyter, local or remote (brings anywidget, rendercanvas's notebook canvas)
     "simplejpeg>=1.7; python_version >= '3.11'",        # faster frame streaming
     "ipywidgets>=8.0,<9.0; python_version >= '3.11'",   # animation controls
 ]
