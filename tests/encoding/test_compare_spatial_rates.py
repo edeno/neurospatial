@@ -401,6 +401,28 @@ def test_renumbered_environment_has_the_same_topology_through_the_mapping(
     assert mapped.bins_a.tolist() == order.tolist()
 
 
+@pytest.mark.parametrize("copy", ["same", "with_metadata"])
+def test_partial_mapping_between_identical_environments_equals_bin_selection(
+    env, make, copy
+) -> None:
+    rng = np.random.default_rng(9)
+    rates_a = make(rng.uniform(0, 10, (2, 5)), ids=[1, 2])
+    other = env if copy == "same" else env.with_metadata(name="copy")
+    rates_b = make(rng.uniform(0, 10, (2, 5)), ids=[1, 2], on=other)
+    kept = np.array([0, 1, 3, 4])
+
+    mapped = compare_spatial_rates(
+        rates_a, rates_b, bin_mapping=np.column_stack([kept, kept])
+    )
+    selected = compare_spatial_rates(rates_a, rates_b, bins=kept)
+
+    assert mapped.analysis_settings["topology_differs"] is False
+    assert selected.analysis_settings["topology_differs"] is False
+    np.testing.assert_array_equal(mapped.correlation, selected.correlation)
+    np.testing.assert_array_equal(mapped.n_common_bins, selected.n_common_bins)
+    np.testing.assert_array_equal(mapped.bins_a, selected.bins_a)
+
+
 def test_mapping_a_whole_connected_component_has_the_same_topology(make) -> None:
     # Two 3-bin corridors with a gap; the second piece has no edges leaving it.
     two_pieces = Environment.from_grid_mask(

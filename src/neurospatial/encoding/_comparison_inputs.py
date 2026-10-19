@@ -179,8 +179,8 @@ def _bin_pairs(
 
     Without a mapping, topology is the whole connectivity graph by bin ID plus
     the arena and walls. With one, it is each mapped bin's full set of
-    neighbors, matched through the mapping (a neighbor outside the mapping is
-    a difference), plus the arena and walls.
+    neighbors, mapped neighbors matched through the mapping and unmapped ones
+    by center, plus the arena and walls.
     """
     differences = _environment_differences(env_a, env_b)
     topology_difference = differences.topology

@@ -19,6 +19,13 @@ from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 from neurospatial.environment import (
     _environment_differences,
     _mapped_topology_difference,
@@ -243,6 +250,54 @@ def test_a_subset_whose_border_bins_had_outside_neighbors_differs(
     else:
         first, second = corridor, subset
     assert _mapped_topology_difference(first, second, pairs) == _OUTSIDE
+
+
+_PARTIAL = np.array([0, 1, 3, 4])
+
+
+@pytest.mark.parametrize("copy", ["same", "with_metadata"])
+def test_a_partial_mapping_between_identical_environments_has_no_difference(
+    copy: str,
+) -> None:
+    # Bins 1 and 3 neighbor unmapped bin 2 in both environments, at the same
+    # place and distance, so every mapped bin has the same neighbors.
+    corridor = _corridor()
+    other = corridor if copy == "same" else corridor.with_metadata(name="copy")
+    pairs = np.column_stack([_PARTIAL, _PARTIAL])
+    assert _mapped_topology_difference(corridor, other, pairs) is None
+
+
+def test_an_outside_neighbor_at_another_distance_is_a_difference() -> None:
+    corridor = _corridor()
+    distances = corridor.binning.connections.pair_distances.copy()
+    changed = np.flatnonzero(np.all(np.sort(corridor.edge_pairs) == [1, 2], axis=1))
+    distances[changed] = 11.0
+    longer = renumbered(corridor, np.arange(5), distances)
+    pairs = np.column_stack([_PARTIAL, _PARTIAL])
+    assert _mapped_topology_difference(corridor, longer, pairs) == _OUTSIDE
+
+
+def _three_points_and_a_neighbor(neighbor: tuple[float, float]) -> Environment:
+    """Bins 0-1-2 in a row; bin 3 at ``neighbor`` joins bin 1, 10 units away."""
+    centers = np.array([(0.0, 0.0), (10.0, 0.0), (20.0, 0.0), neighbor])
+    return Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(centers, np.ones(4), 2),
+            BinConnections.from_arrays([[0, 1], [1, 2], [1, 3]], [10.0] * 3),
+            NearestBinLocator(centers, max_distance=1.0),
+            MissingFaces("point bins for a test"),
+        )
+    )
+
+
+def test_an_outside_neighbor_at_another_place_is_a_difference() -> None:
+    above = _three_points_and_a_neighbor((10.0, 10.0))
+    pairs = np.column_stack([np.arange(3), np.arange(3)])
+    same_place = _three_points_and_a_neighbor((10.0, 10.0))
+    below = _three_points_and_a_neighbor((10.0, -10.0))
+    assert _mapped_topology_difference(above, same_place, pairs) is None
+    assert _mapped_topology_difference(above, below, pairs) == _OUTSIDE
 
 
 def test_a_whole_connected_component_has_the_same_topology() -> None:

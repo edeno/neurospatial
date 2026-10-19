@@ -361,13 +361,15 @@ def compare_spatial_rates(
         default the environments must have the same bins. With a mapping,
         topology is compared through it: every mapped bin must have the same
         neighbors, at the same distances, in both environments, and the
-        arenas and walls must match. A mapped bin with a neighbor outside the
-        mapping, in either environment, is a topology difference: a subset of
-        the arena loses its border bins' outside neighbors, so smoothing over
-        the graph used fewer neighbors there. A renumbered copy of an
-        environment, or a mapping that covers whole connected components, has
-        the same topology; a subset or a barrier between mapped bins does
-        not, and needs ``topology="may_differ"``.
+        arenas and walls must match. A mapped neighbor must be the mapped
+        partner of a neighbor in the other environment; an unmapped neighbor
+        must have an unmapped counterpart at the same center. So identical
+        environments under a partial mapping (equivalent to ``bins=``), a
+        renumbered copy, or a mapping that covers whole connected components
+        have the same topology. A subset compared with its full arena does
+        not: the full arena's border bins have neighbors the subset lacks, so
+        smoothing over the graph used fewer neighbors there. A subset, or a
+        barrier between mapped bins, needs ``topology="may_differ"``.
     bins : array-like of int, optional
         Bin IDs of ``rates_a.env`` to restrict the comparison to, for example
         ``env.bins_in_region("center")``. With ``bin_mapping``, selected bins

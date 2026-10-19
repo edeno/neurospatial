@@ -10,6 +10,7 @@ Equal bin counts or array shapes never establish either.
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING, NamedTuple
 
 import networkx as nx
@@ -161,21 +162,25 @@ def _mapped_topology_difference(
 
         - ``"weighted connectivity"``: two paired bins are neighbors in one
           environment and not the other, or neighbors at different distances.
-        - ``"connections from mapped bins to bins outside the mapping"``: in
-          either environment a paired bin neighbors an unpaired bin, so its
-          neighbors there are not the same places as in the other.
+        - ``"connections from mapped bins to bins outside the mapping"``: a
+          paired bin has a neighbor outside the mapping, in either
+          environment, with no counterpart in the other: no unpaired
+          neighbor at the same center and the same distance.
         - ``"continuous arena or physical walls"``: the arenas or walls
           differ.
 
     Notes
     -----
     The topology is the same when every paired bin's full set of neighbors,
-    with edge distances, maps exactly onto its neighbors in the other
-    environment: a smoothing over the graph then used the same neighbors for
-    every paired bin. A renumbered copy, or a mapping that covers whole
-    connected components, keeps the topology. A subset of an environment
-    whose border bins had neighbors outside it does not. The arena and walls
-    are compared whole, as in ``_environment_differences``.
+    with edge distances, corresponds in the two environments: a paired
+    neighbor through ``bin_pairs``, an unpaired neighbor by its center
+    (compared exactly, as bin centers are in ``_environment_differences``).
+    A smoothing over the graph then used the same neighbors for every paired
+    bin. Identical environments under any partial mapping, a renumbered copy,
+    and a mapping that covers whole connected components keep the topology;
+    a subset compared with its parent does not, because the parent's border
+    bins have neighbors the subset lacks. The arena and walls are compared
+    whole, as in ``_environment_differences``.
     """
     first_bins, second_bins = bin_pairs[:, 0].tolist(), bin_pairs[:, 1].tolist()
     to_first = dict(zip(second_bins, first_bins, strict=True))
@@ -183,18 +188,30 @@ def _mapped_topology_difference(
     second_graph = nx.relabel_nodes(second.connectivity.subgraph(second_bins), to_first)
     if not _same_weighted_edges(first_graph, second_graph):
         return "weighted connectivity"
-    if _has_edge_leaving(first.connectivity, first_bins) or _has_edge_leaving(
-        second.connectivity, second_bins
-    ):
+    own_labels = {bin_id: bin_id for bin_id in first_bins}
+    if _outside_neighbors(first, own_labels) != _outside_neighbors(second, to_first):
         return "connections from mapped bins to bins outside the mapping"
     if not _same_arena(first._arena, second._arena):
         return "continuous arena or physical walls"
     return None
 
 
-def _has_edge_leaving(graph: nx.Graph, nodes: list[int]) -> bool:
-    """Whether any of ``nodes`` neighbors a node outside ``nodes``."""
-    return next(iter(nx.edge_boundary(graph, nodes)), None) is not None
+def _outside_neighbors(
+    env: Environment, labels: dict[int, int]
+) -> Counter[tuple[int, tuple[float, ...], float]]:
+    """Mapped bins' unmapped neighbors as ``(label, center, distance)`` counts.
+
+    ``labels`` maps each mapped bin of ``env`` to its ID in the shared
+    numbering, so the same neighbor of the same place counts alike in both
+    environments.
+    """
+    centers = env.bin_centers
+    return Counter(
+        (labels[inside], tuple(centers[outside].tolist()), distance)
+        for inside, outside, distance in nx.edge_boundary(
+            env.connectivity, labels, data="distance"
+        )
+    )
 
 
 def _same_weighted_edges(first: nx.Graph, second: nx.Graph) -> bool:
