@@ -656,7 +656,11 @@ class TestErrorHandling:
         positions = np.column_stack([np.arange(11.0), np.zeros(11)])
         env = Environment.from_samples(positions, bin_size=1.0)
 
-        with pytest.raises(ValueError, match="got 'manhattan'"):
+        with pytest.raises(
+            ValueError,
+            match=r"compute_path_efficiency\(\) got metric='manhattan'; it must be "
+            r".*\n.*\nFix: use metric='euclidean'",
+        ):
             compute_path_efficiency(
                 env, np.arange(11) / 10, positions, positions[-1], metric="manhattan"
             )

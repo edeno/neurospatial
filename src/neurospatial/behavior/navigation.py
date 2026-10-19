@@ -170,8 +170,11 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     traveled_length : float
-        Distance over observed intervals (sum of their step lengths), in
-        environment units. NaN when no interval was observed.
+        Distance traveled (sum of step lengths), in environment units. From
+        compute_path_efficiency(): the distance over observed intervals, NaN
+        when no interval was observed. From subgoal_efficiency(): the length of
+        the segment as one continuous polyline, 0.0 for a segment of fewer than
+        two samples.
     shortest_length : float
         Geodesic or Euclidean distance from start to goal, in environment units.
         Is ``inf`` when the goal is unreachable under the geodesic metric (the
@@ -179,15 +182,18 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     efficiency : float
         Ratio shortest_length / traveled_length. Range (0, 1].
         Value of 1.0 indicates optimal path taken.
-        NaN if the path is not completely observed, traveled_length is 0, or
-        shortest_length is ``inf`` (unreachable goal).
+        NaN if traveled_length is 0 or shortest_length is ``inf`` (unreachable
+        goal); from compute_path_efficiency() also NaN if the path is not
+        completely observed, and from subgoal_efficiency() for a segment of
+        fewer than two samples.
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
         1 - mean(|delta_theta|) / pi. Range [0, 1].
         Value of 1.0 indicates heading directly toward goal at all times.
-        NaN unless the path is completely observed; 1.0 for a complete path of
-        two samples (no turns possible).
+        From compute_path_efficiency(): NaN unless the path is completely
+        observed; 1.0 for a complete path of two samples (no turns possible).
+        From subgoal_efficiency(): 1.0 for a segment of fewer than three samples.
     start_position : NDArray[np.float64]
         Start position coordinates, shape (n_dims,).
     goal_position : NDArray[np.float64]
@@ -1354,6 +1360,32 @@ def _polyline_length(
     return float(np.sum(compute_step_lengths(positions, metric=metric, env=env)))
 
 
+def _require_path_metric(metric: str, *, call: str) -> None:
+    """Raise unless ``metric`` is a path-length metric.
+
+    Parameters
+    ----------
+    metric : str
+    call : str
+        Name of the public function, for the error message.
+    """
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(
+            _format_error(
+                f"{call}() got metric={metric!r}; it must be "
+                "'euclidean' or 'geodesic'.",
+                why=(
+                    "path length is summed either along straight lines or along "
+                    "the environment's connectivity graph."
+                ),
+                fix=(
+                    "use metric='euclidean' for straight-line distances, or "
+                    "metric='geodesic' with env= to respect barriers."
+                ),
+            )
+        )
+
+
 def _observed_path_length(
     positions: NDArray[np.float64],
     support: ObservationSupport,
@@ -1389,7 +1421,7 @@ def _observed_path_length(
         counted = support.interval_mask
     else:
         with np.errstate(invalid="ignore"):
-            steps = compute_step_lengths(positions, metric=metric, env=env)
+            steps = compute_step_lengths(positions, metric="geodesic", env=env)
         counted = support.interval_mask & ~np.isnan(steps)
     complete = bool(counted.size and counted.all())
     if not counted.any():
@@ -1470,21 +1502,7 @@ def traveled_path_length(
     """
     from neurospatial._observation import validated_observations
 
-    if metric not in ("euclidean", "geodesic"):
-        raise ValueError(
-            _format_error(
-                f"traveled_path_length() got metric={metric!r}; it must be "
-                "'euclidean' or 'geodesic'.",
-                why=(
-                    "path length is summed either along straight lines or along "
-                    "the environment's connectivity graph."
-                ),
-                fix=(
-                    "use metric='euclidean' for straight-line distances, or "
-                    "metric='geodesic' with env= to respect barriers."
-                ),
-            )
-        )
+    _require_path_metric(metric, call="traveled_path_length")
     if metric == "geodesic" and env is None:
         raise ValueError(
             "env parameter is required when metric='geodesic'. "
@@ -1823,7 +1841,9 @@ def compute_path_efficiency(
         Goal position.
     metric : {"geodesic", "euclidean"}, default="geodesic"
         Distance metric. With "geodesic", an interval with an endpoint outside
-        the environment has no geodesic length and is left out.
+        the environment has no geodesic length and is left out, and an interval
+        between disconnected bins contributes ``inf`` (so a complete path with
+        such a step has ``traveled_length=inf`` and ``efficiency=0.0``).
     reference_speed : float, optional
         Reference speed for time efficiency.
     max_gap : float or None, default=0.5
@@ -1891,6 +1911,7 @@ def compute_path_efficiency(
     """
     from neurospatial._observation import validated_observations
 
+    _require_path_metric(metric, call="compute_path_efficiency")
     times_arr, positions_arr, support = validated_observations(
         times,
         positions,
