@@ -4,6 +4,18 @@
 
 ### Breaking
 
+- `population_vector_correlation` is now `rate_map_correlations`. It always
+  returned the correlation between every pair of rate maps (rows), not the
+  per-location population-vector correlation of remapping studies. The
+  argument is `firing_rates`, and a map with constant rates now has a NaN
+  diagonal entry (before, 1.0), because its correlation is undefined.
+
+  ```python
+  # before
+  corr = population_vector_correlation(population_matrix)
+  # after
+  corr = rate_map_correlations(firing_rates)  # same (n_maps, n_maps) matrix
+  ```
 - `AnnotationResult` from `annotate_video` has four fields,
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.

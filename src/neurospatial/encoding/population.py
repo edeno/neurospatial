@@ -730,89 +730,75 @@ def field_overlap(
     return len(intersection) / len(union)
 
 
-def population_vector_correlation(
-    population_matrix: NDArray[np.float64],
+def rate_map_correlations(
+    firing_rates: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
-    Compute pairwise correlation matrix between firing rate maps.
+    Pearson correlation between every pair of rate maps.
 
-    Calculates Pearson correlation between all pairs of cells' firing rate
-    vectors. Used to assess similarity of spatial representations and detect
-    functional cell assemblies.
+    Each row of ``firing_rates`` is one rate map: a cell, or one cell in one
+    condition. The result is the map-by-map correlation matrix, computed over
+    bins. It is not the population-vector correlation of remapping studies,
+    which correlates all cells' rates at each location.
 
     Parameters
     ----------
-    population_matrix : array, shape (n_cells, n_bins)
-        Firing rate maps for each cell (rows: cells, columns: bins).
+    firing_rates : array, shape (n_maps, n_bins)
+        One rate map per row, one bin per column. A NaN bin makes every
+        correlation involving that row NaN, so pass only bins supported in all
+        maps, for example ``rates.firing_rates[:, shared]`` with
+        ``shared = a.spatial_support & b.spatial_support``.
 
     Returns
     -------
-    correlation_matrix : array, shape (n_cells, n_cells)
-        Pairwise Pearson correlation coefficients. Symmetric matrix with
-        diagonal = 1.0. Off-diagonal entries in range [-1, 1].
-        Returns NaN for pairs involving cells with zero variance.
+    correlation_matrix : array, shape (n_maps, n_maps)
+        Pearson correlations, symmetric, off-diagonal entries in [-1, 1].
+        The diagonal is 1.0. A map with constant rates has no defined
+        correlation, so its row, column and diagonal entry are NaN.
 
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding.population import population_vector_correlation
-    >>> # Three cells with different firing patterns
+    >>> from neurospatial.encoding import rate_map_correlations
     >>> rng = np.random.default_rng(42)
-    >>> population_matrix = rng.random((3, 50))
-    >>> corr_matrix = population_vector_correlation(population_matrix)
-    >>> print(corr_matrix.shape)
+    >>> firing_rates = rng.random((3, 50))
+    >>> corr = rate_map_correlations(firing_rates)
+    >>> corr.shape
     (3, 3)
-    >>> # Diagonal is self-correlation (always 1.0)
-    >>> print(np.diag(corr_matrix))
-    [1. 1. 1.]
+    >>> np.diag(corr)
+    array([1., 1., 1.])
+
+    Compare the same cells in two conditions: stack the maps, then read the
+    diagonal of the before-versus-after block.
+
+    >>> before = rng.random((4, 50))
+    >>> after = before.copy()
+    >>> after[2] = rng.random(50)  # cell 2 remaps
+    >>> corr = rate_map_correlations(np.vstack([before, after]))
+    >>> per_cell = np.diag(corr[:4, 4:])
+    >>> np.round(per_cell[[0, 1, 3]], 2)
+    array([1., 1., 1.])
+    >>> bool(abs(per_cell[2]) < 0.5)
+    True
+
+    A constant map has no defined correlation.
+
+    >>> flat = np.vstack([np.ones(50), firing_rates[0]])
+    >>> np.isnan(rate_map_correlations(flat)).tolist()
+    [[True, True], [True, False]]
 
     See Also
     --------
-    field_stability : Correlation between same cell across sessions
-    field_overlap : Jaccard-based overlap measure
-
-    Notes
-    -----
-    **Interpretation**:
-
-    - **r = 1.0**: Identical spatial firing patterns
-    - **r = 0.0**: Uncorrelated (orthogonal) representations
-    - **r = -1.0**: Anticorrelated (complementary) firing
-    - **r = NaN**: One or both cells have constant firing (zero variance)
-
-    **Use cases**:
-
-    - Identify functional cell assemblies (high positive correlation)
-    - Detect complementary coding schemes (negative correlation)
-    - Analyze remapping (correlation drop between environments)
-    - Study ensemble dynamics during learning
-
-    The matrix is symmetric by construction: `corr[i,j] = corr[j,i]`.
-
-    For cells with constant firing rates, correlation is undefined (NaN).
-    This typically indicates interneurons or cells with insufficient data.
-
-    References
-    ----------
-    .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the
-           hippocampal ensemble code for space. Science, 261(5124), 1055-1058.
-    .. [2] Harris, K. D., et al. (2003). Organization of cell assemblies in
-           the hippocampus. Nature, 424(6948), 552-556.
+    field_stability : Correlation between one cell's maps in two conditions
+    field_overlap : Jaccard-based overlap of place fields
     """
-    n_cells = population_matrix.shape[0]
+    # A constant map divides by zero; the NaN it produces is the documented result.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        correlation_matrix = np.atleast_2d(np.corrcoef(firing_rates, dtype=np.float64))
 
-    # Use numpy's corrcoef for efficiency
-    # corrcoef computes correlation between rows
-    # Explicit dtype for mypy type checking
-    correlation_matrix = np.corrcoef(population_matrix, dtype=np.float64)
-
-    # Ensure output is 2D even for single cell
-    if n_cells == 1:
-        correlation_matrix = correlation_matrix.reshape(1, 1)
-
-    # Fix diagonal: self-correlation is always 1.0 by definition
-    # (even for constant cells where numpy returns NaN)
-    np.fill_diagonal(correlation_matrix, 1.0)
+    # Self-correlation is 1.0 up to rounding; keep NaN for constant maps.
+    diagonal = np.where(np.isnan(np.diag(correlation_matrix)), np.nan, 1.0)
+    np.fill_diagonal(correlation_matrix, diagonal)
 
     return correlation_matrix
 
@@ -824,5 +810,5 @@ __all__ = [
     "field_overlap",
     "plot_population_coverage",
     "population_coverage",
-    "population_vector_correlation",
+    "rate_map_correlations",
 ]

@@ -296,23 +296,23 @@ The 0.5 bits/spike cutoff is a screening choice, not a universal significance
 threshold. Information depends on sample size, occupancy, binning and smoothing;
 see [information bias and cell verdicts](#information-bias-and-cell-verdicts).
 
-### Population Vector Correlation
+### Rate-map correlations
 
-Compute pairwise correlations between firing rate maps:
+Compute the correlation between every pair of rate maps:
 
 ```python
-from neurospatial.encoding import population_vector_correlation
+from neurospatial.encoding import rate_map_correlations
 
-# Stack rate maps into matrix (n_cells × n_bins)
-population_matrix = np.array([
+# Stack rate maps into matrix (n_maps × n_bins)
+firing_rates = np.array([
     rate_map_cell1,
     rate_map_cell2,
     rate_map_cell3,
 ])
 
 # Compute correlation matrix
-corr_matrix = population_vector_correlation(population_matrix)
-# Returns: (n_cells, n_cells) correlation matrix
+corr_matrix = rate_map_correlations(firing_rates)
+# Returns: (n_maps, n_maps) correlation matrix
 ```
 
 This describes similarity of spatial maps. Shared spatial tuning alone does

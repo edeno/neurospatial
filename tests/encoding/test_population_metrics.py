@@ -15,7 +15,7 @@ from neurospatial.encoding.population import (
     field_overlap,
     plot_population_coverage,
     population_coverage,
-    population_vector_correlation,
+    rate_map_correlations,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for testing
@@ -734,82 +734,91 @@ class TestFieldOverlap:
         assert overlap == pytest.approx(0.0)
 
 
-class TestPopulationVectorCorrelation:
-    """Test population_vector_correlation function."""
+class TestRateMapCorrelations:
+    """Test rate_map_correlations function."""
 
-    def test_population_vector_correlation_shape(self) -> None:
+    def test_rate_map_correlations_shape(self) -> None:
         """Test correlation matrix has correct shape."""
         # 3 cells, 50 bins
         rng = np.random.default_rng(42)
-        population_matrix = rng.random((3, 50))
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = rng.random((3, 50))
+        corr_matrix = rate_map_correlations(firing_rates)
         # Should be 3x3 symmetric matrix
         assert corr_matrix.shape == (3, 3)
         # Check symmetry
         np.testing.assert_allclose(corr_matrix, corr_matrix.T, rtol=1e-10)
 
-    def test_population_vector_correlation_diagonal(self) -> None:
+    def test_rate_map_correlations_diagonal(self) -> None:
         """Test diagonal elements are 1.0 (self-correlation)."""
         rng = np.random.default_rng(42)
-        population_matrix = rng.random((5, 100))
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = rng.random((5, 100))
+        corr_matrix = rate_map_correlations(firing_rates)
         # Diagonal should be all 1.0
         np.testing.assert_allclose(np.diag(corr_matrix), 1.0, rtol=1e-10)
 
-    def test_population_vector_correlation_identical_cells(self) -> None:
+    def test_rate_map_correlations_identical_cells(self) -> None:
         """Test correlation of identical firing patterns."""
         # Two identical cells
         rng = np.random.default_rng(42)
         pattern = rng.random(50)
-        population_matrix = np.vstack([pattern, pattern])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([pattern, pattern])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Off-diagonal should be 1.0 (perfect correlation)
         assert corr_matrix[0, 1] == pytest.approx(1.0, abs=1e-10)
         assert corr_matrix[1, 0] == pytest.approx(1.0, abs=1e-10)
 
-    def test_population_vector_correlation_orthogonal(self) -> None:
+    def test_rate_map_correlations_orthogonal(self) -> None:
         """Test correlation of uncorrelated cells."""
         # Create orthogonal patterns (correlation ~ 0)
         rng = np.random.default_rng(42)
         n_bins = 1000  # Large number for better approximation
         cell1 = rng.standard_normal(n_bins)
         cell2 = rng.standard_normal(n_bins)
-        population_matrix = np.vstack([cell1, cell2])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([cell1, cell2])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Should be close to 0 (not exactly due to randomness)
         assert abs(corr_matrix[0, 1]) < 0.1
 
-    def test_population_vector_correlation_anticorrelated(self) -> None:
+    def test_rate_map_correlations_anticorrelated(self) -> None:
         """Test negative correlation (anticorrelated patterns)."""
         pattern = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         # Negatively correlated pattern
         anti_pattern = -pattern
-        population_matrix = np.vstack([pattern, anti_pattern])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([pattern, anti_pattern])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Should be -1.0 (perfect anticorrelation)
         assert corr_matrix[0, 1] == pytest.approx(-1.0, abs=1e-10)
 
-    def test_population_vector_correlation_single_cell(self) -> None:
+    def test_rate_map_correlations_single_cell(self) -> None:
         """Test correlation matrix for single cell."""
         rng = np.random.default_rng(42)
-        population_matrix = rng.random((1, 50))
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = rng.random((1, 50))
+        corr_matrix = rate_map_correlations(firing_rates)
         assert corr_matrix.shape == (1, 1)
         assert corr_matrix[0, 0] == pytest.approx(1.0)
 
-    def test_population_vector_correlation_constant_cells(self) -> None:
+    def test_rate_map_correlations_constant_cells(self) -> None:
         """Test handling of cells with constant firing (zero variance)."""
         # Cell with constant firing rate (correlation undefined)
         rng = np.random.default_rng(42)
         constant_cell = np.ones(50)
         varying_cell = rng.random(50)
-        population_matrix = np.vstack([constant_cell, varying_cell])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([constant_cell, varying_cell])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Correlation with constant cell should be NaN
         assert np.isnan(corr_matrix[0, 1])
         assert np.isnan(corr_matrix[1, 0])
-        # Self-correlation of constant cell is still 1.0 by definition
-        assert corr_matrix[0, 0] == pytest.approx(1.0)
+        # A constant map has no defined self-correlation either
+        assert np.isnan(corr_matrix[0, 0])
+        assert corr_matrix[1, 1] == pytest.approx(1.0)
+
+    def test_rate_map_correlations_two_conditions(self) -> None:
+        """Stacked conditions: the off-diagonal block's diagonal is per-map r."""
+        rng = np.random.default_rng(42)
+        a = rng.random((4, 30))
+        corr_matrix = rate_map_correlations(np.vstack([a, a]))
+        assert corr_matrix.shape == (8, 8)
+        np.testing.assert_allclose(np.diag(corr_matrix[:4, 4:]), 1.0, atol=1e-10)
 
 
 class TestPopulationMetricsIntegration:

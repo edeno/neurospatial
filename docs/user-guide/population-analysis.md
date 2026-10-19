@@ -21,7 +21,7 @@ time bins and are with the decoding tools.
 | --- | --- | --- |
 | Rate maps for every unit | `compute_spatial_rates` | `neurospatial` or `neurospatial.encoding` |
 | How much of the environment is covered, and by how many place cells? | `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
-| Does the map change between conditions? | `population_vector_correlation`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
+| Does the map change between conditions? | `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
 | Spike counts in time bins | `bin_spikes_in_time` | `neurospatial.decoding` |
 | Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `reactivation_strength`, `explained_variance_reactivation` | `neurospatial.decoding` (defined in `neurospatial.decoding.assemblies`) |
 | What position does the population encode? | `decode_position`, `decode_session`, `BayesianDecoder` | `neurospatial.decoding` |
@@ -147,7 +147,7 @@ Use one environment and the same rate-map settings for both conditions, and
 select each condition with `epochs=` instead of slicing the arrays.
 
 ```python
-from neurospatial.encoding import field_overlap, population_vector_correlation
+from neurospatial.encoding import field_overlap, rate_map_correlations
 from neurospatial.simulation import PlaceCellModel
 
 session = linear_track_session(duration=240.0, n_place_cells=16, n_laps=20, seed=1)
@@ -181,8 +181,8 @@ after = maps["after"].firing_rates[:, shared]
 print(f"Bins compared: {shared.sum()} of {env.n_bins}")
 ```
 
-`population_vector_correlation` correlates every pair of rows in a
-`(n_maps, n_bins)` matrix. Stack the two conditions, and the diagonal of the
+`rate_map_correlations` returns the map-by-map correlation matrix: the
+Pearson correlation of every pair of rows in a `(n_maps, n_bins)` matrix. Stack the two conditions, and the diagonal of the
 before-versus-after block is each cell's rate-map correlation across the
 change. The classic population-vector correlation of remapping studies works
 the other way round: it correlates the vector of all cells' rates at each
@@ -190,7 +190,7 @@ location, giving one value per bin.
 
 ```python
 n_units = len(spike_times)
-map_similarity = population_vector_correlation(np.vstack([before, after]))
+map_similarity = rate_map_correlations(np.vstack([before, after]))
 per_cell = np.diag(map_similarity[:n_units, n_units:])
 print("Map correlation, cells that kept their field:", np.round(per_cell[~moves], 2))
 print("Map correlation, cells that moved their field:", np.round(per_cell[moves], 2))
