@@ -745,6 +745,7 @@ def test_epochs_are_marked_named_and_jumped_between(track, decoded):
         (bands,) = [g for g in figure[panel].graphics if g.name == "ripple epochs"]
         x = bands.positions[:][:, 0]
         np.testing.assert_allclose([x[:4].min(), x[:4].max()], [0.45, 0.65], atol=1e-6)
+    assert "N/Shift+N" in animation.key_hint
     marks = []
     for _ in range(4):
         _press(figure, "n")
@@ -775,6 +776,8 @@ def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
         )
     animation.show()
     figure = animation.figure
+    # The keys are named above the panels; N only where there is somewhere to go.
+    assert "Space play" in animation.key_hint and "N/Shift+N" not in animation.key_hint
     animation.frame = 19
     _press(figure, "ArrowRight")  # across the 3 s gap: the next frame
     assert animation.frame == 20

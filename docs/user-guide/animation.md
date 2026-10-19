@@ -484,7 +484,8 @@ An `EpochOverlay` marks intervals such as ripples on every time panel and
 names the current one in the title; see [Epoch
 Overlay](../animation_overlays.md#epoch-overlay).
 
-Keyboard shortcuts, with the figure focused (click it first):
+Keyboard shortcuts, named in a line above the panels; click the figure first
+so it receives the keys (in Jupyter, Tab cannot reach it yet):
 
 | Key | Action |
 |-----|--------|

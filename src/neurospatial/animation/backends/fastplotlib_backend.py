@@ -1489,7 +1489,23 @@ class FastplotlibAnimation:
         }
         self._title_windows()
         self.figure.renderer.add_event_handler(self._key, "key_down")
+        self._add_key_hint()
         self._show(0.0, self._read(0.0))
+
+    def _add_key_hint(self) -> None:
+        """A line above the panels naming the keyboard shortcuts."""
+        from imgui_bundle import imgui
+
+        keys = ["Space play", "Left/Right frame", "[ ] window"]
+        if len(self._marks):
+            keys.insert(2, "N/Shift+N next/previous event")
+        if self._unit is not None:
+            keys.append("Up/Down unit, Esc none")
+        self.key_hint = "Keys, after a click on the figure:  " + "  |  ".join(keys)
+
+        @self.figure.add_imgui_window(location="top", size=26, title=None)
+        def hint() -> None:
+            imgui.text(self.key_hint)
 
     def _key(self, event: Any) -> None:
         """The keyboard shortcuts listed in the class docstring."""
