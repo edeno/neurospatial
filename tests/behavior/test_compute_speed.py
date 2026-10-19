@@ -141,3 +141,40 @@ def test_lone_sample_has_no_speed():
     np.testing.assert_array_equal(
         compute_speed(np.array([0.0]), np.array([[1.0, 2.0]])), [np.nan]
     )
+
+
+def test_declared_break_equals_separate_calls():
+    """A declared break keeps two recordings on one clock from smoothing together."""
+    t_a, p_a = _running(30.0, seconds=2.0, seed=1)
+    t_b, p_b = _running(30.0, seconds=2.0, seed=3)
+    times = np.r_[t_a, t_a[-1] + 1 / 30 + t_b]
+    positions = np.r_[p_a, p_b + np.array([0.0, 30.0])]  # put back 30 cm away
+    n = len(t_a)
+    new_recording = np.arange(len(times)) == n
+    joined = compute_speed(times, positions, break_before=new_recording)
+    # Slice the same arrays: re-zeroing the second clock changes the time
+    # differences by rounding, so the comparison would no longer be exact.
+    np.testing.assert_array_equal(
+        joined,
+        np.r_[
+            compute_speed(times[:n], positions[:n]),
+            compute_speed(times[n:], positions[n:]),
+        ],
+    )
+    around_join = slice(n - 10, n + 10)
+    assert np.nanmax(compute_speed(times, positions)[around_join]) > 60
+    assert np.nanmax(joined[around_join]) < 30
+
+
+def test_repeated_timestamp_raises():
+    times = np.array([0.0, 0.1, 0.1, 0.2])
+    with pytest.raises(ValueError, match="strictly increasing"):
+        compute_speed(times, np.arange(8.0).reshape(4, 2))
+
+
+def test_malformed_break_before_raises():
+    times = np.arange(5) / 10
+    with pytest.raises(ValueError, match="Boolean array"):
+        compute_speed(
+            times, np.arange(10.0).reshape(5, 2), break_before=np.zeros(5, dtype=int)
+        )

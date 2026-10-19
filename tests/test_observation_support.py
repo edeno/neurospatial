@@ -180,6 +180,7 @@ def test_arrays_are_read_only():
     [
         ("compute_cumulative_distance", {}),
         ("traveled_path_length", {}),
+        ("compute_speed", {}),
         ("resample_by_distance", {"spacing": 1.0}),
         ("compute_planar_turn_angles", {}),
         ("compute_planar_curvature", {}),
