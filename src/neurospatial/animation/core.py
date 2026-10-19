@@ -639,6 +639,12 @@ def animate_fields(
     else:
         sample_rate_hz = 30.0  # Fallback for edge cases
 
+    # Auto-select backend, before anything that depends on the backend
+    auto_reason = None
+    if backend == "auto":
+        backend = _select_backend(n_frames, save_path)
+        auto_reason = _auto_reason(backend, n_frames, save_path)
+
     # Compute playback fps from frame_times and speed
     playback_fps, actual_speed = _compute_playback_fps(
         frame_times, speed, max_fps=max_playback_fps
@@ -649,8 +655,7 @@ def animate_fields(
     requested_fps = sample_rate_hz * speed
     was_capped_at_max = requested_fps > max_playback_fps
     was_capped_at_min = requested_fps < MIN_PLAYBACK_FPS
-    # fastplotlib steps by time and warns of its own limit; "auto" never
-    # chooses it.
+    # fastplotlib steps by time and warns of its own limit.
     if (was_capped_at_max or was_capped_at_min) and backend != "fastplotlib":
         cap_description = (
             f"Capped to {max_playback_fps} fps"
@@ -676,8 +681,7 @@ def animate_fields(
             frame_times=frame_times,
             n_frames=n_frames,
             env=env,
-            # fastplotlib shows each overlay at its own rate; "auto" never
-            # chooses it.
+            # fastplotlib shows each overlay at its own rate.
             own_samples=backend == "fastplotlib",
         )
 
@@ -688,12 +692,6 @@ def animate_fields(
             from neurospatial.animation.overlays import _validate_pickle_ability
 
             _validate_pickle_ability(overlay_data, n_workers=n_workers)
-
-    # Auto-select backend
-    auto_reason = None
-    if backend == "auto":
-        backend = _select_backend(n_frames, save_path)
-        auto_reason = _auto_reason(backend, n_frames, save_path)
 
     if overlay_data and backend != "fastplotlib":
         # Overlays only the fastplotlib backend draws: skipped, with a warning.
