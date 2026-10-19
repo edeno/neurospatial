@@ -90,7 +90,10 @@ maps = {
 
 print({label: round(seconds, 2) for label, seconds in conditions.durations.items()})
 print({label: len(conditions[label]) for label in conditions})
-print(conditions.epochs_table().head())
+table = conditions.epochs_table()
+print(table.head())
+shortened = np.isclose(table["start"], 101.0)  # the run the dropout shortened
+print(table.loc[shortened, ["label", "start", "stop", "duration"]])
 assert abs(conditions.durations["outbound"] - 99.0) < 1e-6
 assert abs(conditions.durations["inbound"] - 99.93) < 0.01
 assert len(conditions["outbound"]) == len(conditions["inbound"]) == 20
@@ -106,10 +109,12 @@ change of label ends it, so the same label after a dropout starts a new
 epoch. The table lists each epoch with its label, start, stop and duration.
 
 Here the dropout starts exactly at the beginning of an outbound run
-(t = 100 s), so it shortens that run to 101–105 s instead of splitting it.
-Each direction has 20 epochs. Outbound runs total 99.0 s instead of 100 s;
-inbound runs lose only the last 1/30 s before the dropout (99.93 s). A
-dropout in the middle of a run would split that run into two epochs.
+(t = 100 s), so it shortens that run to 101–105 s instead of splitting it;
+the last printed row shows it. Each direction has 20 epochs. Outbound runs
+total 99.0 s instead of 100 s. Inbound runs total 99.93 s: they lose the
+1/30 s from the last tracked frame into the dropout, and the last 1/30 s of
+the recording, because the final frame starts no interval. A dropout in the
+middle of a run would split that run into two epochs.
 
 The rate maps use the original `times`, `positions` and `spike_times` with
 `epochs=conditions[label]`. `compute_spatial_rates` then counts spikes and
