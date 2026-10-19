@@ -14,17 +14,11 @@ from uuid import uuid4
 import networkx as nx
 import numpy as np
 import pytest
+from environment_helpers import renumbered
 from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.binning import (
-    BinConnections,
-    Binning,
-    MissingFaces,
-    NearestBinLocator,
-    SpatialBins,
-)
 from neurospatial.environment import (
     _environment_differences,
     _mapped_topology_difference,
@@ -209,46 +203,24 @@ def _wall_at(x: float) -> LineString:
     return LineString([(x, 0), (x, 10)])
 
 
-def _renumbered(env: Environment, order, distances=None) -> Environment:
-    """``env``'s bins and connections, with new bin ``i`` = old bin ``order[i]``."""
-    binning = env.binning
-    centers = binning.bins.centers[order]
-    connections = binning.connections
-    return Environment.from_bins(
-        Binning(
-            "explicit",
-            SpatialBins.from_arrays(
-                centers, binning.bins.sizes[order], binning.bins.measure_dims[order]
-            ),
-            BinConnections.from_arrays(
-                np.argsort(order)[connections.pairs],
-                connections.pair_distances if distances is None else distances,
-            ),
-            NearestBinLocator(centers, max_distance=5.0),
-            MissingFaces("renumbered copy for a test"),
-        ),
-        arena=env.arena,
-    )
-
-
 _ORDER = np.array([3, 0, 4, 1, 2])
 _RENUMBERING = np.column_stack([_ORDER, np.arange(5)])
 
 
 def test_renumbered_bins_have_the_same_topology_through_the_mapping() -> None:
     corridor = _corridor()
-    renumbered = _renumbered(corridor, _ORDER)
-    assert _environment_differences(corridor, renumbered).topology is not None
-    assert _mapped_topology_difference(corridor, renumbered, _RENUMBERING) is None
+    copy = renumbered(corridor, _ORDER)
+    assert _environment_differences(corridor, copy).topology is not None
+    assert _mapped_topology_difference(corridor, copy, _RENUMBERING) is None
 
 
 def test_a_changed_distance_between_mapped_bins_is_a_topology_difference() -> None:
     corridor = _corridor()
     distances = corridor.binning.connections.pair_distances.copy()
     distances[0] = 11.0
-    renumbered = _renumbered(corridor, _ORDER, distances)
+    copy = renumbered(corridor, _ORDER, distances)
     assert (
-        _mapped_topology_difference(corridor, renumbered, _RENUMBERING)
+        _mapped_topology_difference(corridor, copy, _RENUMBERING)
         == "weighted connectivity"
     )
 

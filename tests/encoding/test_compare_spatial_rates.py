@@ -9,18 +9,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from environment_helpers import renumbered
 from scipy import stats
 from shapely.geometry import LineString, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.arena import OpenArena
-from neurospatial.binning import (
-    BinConnections,
-    Binning,
-    MissingFaces,
-    NearestBinLocator,
-    SpatialBins,
-)
 from neurospatial.encoding import (
     RateComparisonResult,
     compare_spatial_rates,
@@ -385,38 +379,15 @@ def test_bins_selection_restricts_a_mapping(env, make) -> None:
     assert result.analysis_settings["n_compared_bins"] == 3
 
 
-def _renumbered(env: Environment, order) -> Environment:
-    """The same bins and connections as ``env``; new bin ``i`` is ``order[i]``."""
-    binning = env.binning
-    new_id = np.argsort(order)
-    centers = binning.bins.centers[order]
-    return Environment.from_bins(
-        Binning(
-            "explicit",
-            SpatialBins.from_arrays(
-                centers, binning.bins.sizes[order], binning.bins.measure_dims[order]
-            ),
-            BinConnections.from_arrays(
-                new_id[binning.connections.pairs], binning.connections.pair_distances
-            ),
-            NearestBinLocator(centers, max_distance=5.0),
-            MissingFaces("renumbered copy for a test"),
-        ),
-        units=env.units,
-        frame=env.frame,
-        arena=env.arena,
-    )
-
-
 def test_renumbered_environment_has_the_same_topology_through_the_mapping(
     env, make
 ) -> None:
     order = np.array([3, 0, 4, 1, 2])
-    renumbered = _renumbered(env, order)
+    copy = renumbered(env, order)
     rng = np.random.default_rng(8)
     rates_a = make(rng.uniform(0, 10, (2, 5)), ids=[1, 2])
     rates_b = rng.uniform(0, 10, (2, 5))
-    rates_b_renumbered = make(rates_b[:, order], ids=[1, 2], on=renumbered)
+    rates_b_renumbered = make(rates_b[:, order], ids=[1, 2], on=copy)
     with pytest.raises(IncompatibleEnvironmentError, match="bin coordinates"):
         compare_spatial_rates(rates_a, rates_b_renumbered)
 
@@ -766,7 +737,9 @@ def test_result_owns_read_only_arrays(make) -> None:
     # A one-unit selection owns its arrays too.
     child = result[0]
     for name in _RESULT_ARRAYS:
-        assert not getattr(child, name).flags.writeable, name
+        array = getattr(child, name)
+        assert not array.flags.writeable, name
+        assert not any(np.shares_memory(array, source) for source in inputs), name
 
 
 def test_indexing_returns_one_unit_and_sel_selects_by_label(make) -> None:
