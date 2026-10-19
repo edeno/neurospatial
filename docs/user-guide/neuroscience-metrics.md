@@ -333,7 +333,7 @@ from neurospatial.encoding import population_vector_correlation
 
 rng = np.random.default_rng(0)
 before = rng.gamma(2.0, 2.0, size=(20, 50))  # (n_units, n_bins)
-after = before + rng.normal(0.0, 1.0, size=before.shape)  # small rate changes
+after = before * rng.lognormal(0.0, 0.2, size=before.shape)  # ~20% rate changes
 pv = population_vector_correlation(before, after)  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"median {np.median(pv[defined]):.2f}, "
