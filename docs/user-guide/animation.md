@@ -686,7 +686,7 @@ All backends support all layouts via the `env.plot_field()` method.
 **Solution**:
 
 ```bash
-uv add "napari[all]>=0.4.18,<0.6"
+uv add "napari[all]>=0.5,<0.10"
 ```
 
 ### "ffmpeg not found"
