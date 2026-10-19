@@ -91,16 +91,15 @@ class Landmark:
             raw = self.data
             if isinstance(raw, shapely.Point):
                 raw = raw.coords[0]
-            point = np.asarray(raw, dtype=np.float64)
+            point = np.array(raw, dtype=np.float64, copy=True)
             if point.ndim != 1 or not point.size or not np.all(np.isfinite(point)):
                 raise _error(
                     f"Landmark {self.name!r} must be one finite point, shape "
                     f"(n_dims,), got shape {point.shape}.",
                     "pass the point's coordinates, such as [50.0, 100.0]",
                 )
-            # As for Region points: immutable bytes, so no holder of the
-            # array can re-enable writes to a landmark that environments share.
-            data = np.frombuffer(point.tobytes(), dtype=np.float64)
+            point.setflags(write=False)
+            data = point
         elif self.kind in ("line", "polygon"):
             kind = LineString if self.kind == "line" else Polygon
             data = self.data if isinstance(self.data, kind) else kind(self.data)
@@ -125,18 +124,6 @@ class Landmark:
                 'use "point", "line" or "polygon"',
             )
         object.__setattr__(self, "data", data)
-
-    def __getattribute__(self, name: str) -> Any:
-        value = object.__getattribute__(self, name)
-        if name == "data" and isinstance(value, np.ndarray):
-            # NumPy types the base as an array; a validated point's is bytes.
-            base: object = value.base
-            if isinstance(base, bytes):
-                # A read-only array still has a mutable shape/dtype header.
-                # Export a new header over the immutable bytes, with no shared
-                # ndarray base. (Before validation, data is the caller's input.)
-                return np.frombuffer(base, dtype=np.float64)
-        return value
 
     def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
         # The read-only metadata proxy cannot be pickled; rebuild from plain data.
