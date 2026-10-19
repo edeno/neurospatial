@@ -8,6 +8,7 @@ remapped.
 
 from __future__ import annotations
 
+import json
 import warnings
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -37,6 +38,11 @@ from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
 from neurospatial.environment import _validate_target_bins
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    import pandas as pd
+    from matplotlib.axes import Axes
+
     from neurospatial.environment import Environment
 
 __all__ = ["RateComparisonResult", "compare_spatial_rates"]
@@ -314,6 +320,461 @@ shape (n_units, n_bins)
         difference = np.where(self.common_support, change, np.nan)
         difference.flags.writeable = False
         return difference
+
+    def __iter__(self) -> Iterator[RateComparisonResult]:
+        """Iterate over the compared units as one-unit comparisons.
+
+        Yields
+        ------
+        RateComparisonResult
+            ``self[i]`` for each unit, in ``unit_ids`` order.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding import SpatialRatesResult, compare_spatial_rates
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 40, 41)[:, None], bin_size=10.0, units="cm"
+        ... )
+        >>> def rates(maps, occupancy=(1, 1, 1, 1, 1)):
+        ...     return SpatialRatesResult(
+        ...         firing_rates=np.array(maps, dtype=float),
+        ...         occupancy=np.array(occupancy, dtype=float),
+        ...         env=env,
+        ...         method="binned",
+        ...         bandwidth=5.0,
+        ...         unit_ids=[7, 9],
+        ...     )
+        >>> result = compare_spatial_rates(
+        ...     rates([[1, 2, 3, 4, 5], [5, 1, 4, 2, 3]]),
+        ...     rates([[1, 2, 3, 5, 4], [4, 1, 5, 2, 3]], (1, 1, 1, 1, 0)),
+        ... )
+        >>> [unit.unit_ids[0].item() for unit in result]
+        [7, 9]
+        """
+        for position in range(len(self)):
+            yield self[position]
+
+    def _row_unit_labels(self) -> NDArray[Any]:
+        """Unit labels for table indexes; a missing label is ``pd.NA``."""
+        labels = np.asarray(self.unit_ids)
+        if labels.dtype != object:
+            return labels
+        import pandas as pd
+
+        return np.array(
+            [pd.NA if label is None else label for label in labels], dtype=object
+        )
+
+    def _coordinate_columns(self) -> dict[str, NDArray[np.float64]]:
+        """Center of each compared bin, one array per ``bin_center_*`` name."""
+        from neurospatial._results import _bin_center_coords
+
+        coords = _bin_center_coords(self.env, self.env.n_bins)
+        return {
+            name: np.asarray(values)[self.bins_a]
+            for name, (_, values) in coords.items()
+        }
+
+    def _common_means(self, values: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Mean of ``values`` over each unit's common bins; NaN without any."""
+        counts = self.n_common_bins
+        total = np.where(self.common_support, values, 0.0).sum(axis=1)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.where(counts > 0, total / np.maximum(counts, 1), np.nan)
+
+    def summary_table(self) -> pd.DataFrame:
+        """One row per unit: the score and what it was computed from.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Indexed by ``unit_id`` (a missing label shows as ``<NA>``) with
+            columns ``correlation``, ``n_common_bins``, ``mean_rate_a``,
+            ``mean_rate_b``, ``mean_rate_difference`` (B - A),
+            ``common_occupancy_a``, ``common_occupancy_b`` and ``status``.
+            Means are over each unit's common bins, in Hz, and NaN when the
+            unit has none. Occupancies are summed over the common bins, in
+            seconds. ``attrs`` holds ``method``, ``units`` and a copy of
+            ``analysis_settings``; CSV does not preserve them.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding import SpatialRatesResult, compare_spatial_rates
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 40, 41)[:, None], bin_size=10.0, units="cm"
+        ... )
+        >>> def rates(maps, occupancy=(1, 1, 1, 1, 1)):
+        ...     return SpatialRatesResult(
+        ...         firing_rates=np.array(maps, dtype=float),
+        ...         occupancy=np.array(occupancy, dtype=float),
+        ...         env=env,
+        ...         method="binned",
+        ...         bandwidth=5.0,
+        ...         unit_ids=[7, 9],
+        ...     )
+        >>> result = compare_spatial_rates(
+        ...     rates([[1, 2, 3, 4, 5], [5, 1, 4, 2, 3]]),
+        ...     rates([[1, 2, 3, 5, 4], [4, 1, 5, 2, 3]], (1, 1, 1, 1, 0)),
+        ... )
+        >>> table = result.summary_table()
+        >>> table.index.tolist()
+        [7, 9]
+        >>> table["n_common_bins"].tolist()
+        [4, 4]
+        >>> table["common_occupancy_a"].tolist()
+        [4.0, 4.0]
+        >>> table.attrs["method"]
+        'pearson'
+        """
+        import pandas as pd
+
+        support = self.common_support
+        table = pd.DataFrame(
+            {
+                "correlation": self.correlation,
+                "n_common_bins": self.n_common_bins,
+                "mean_rate_a": self._common_means(self.firing_rates_a_on_bins),
+                "mean_rate_b": self._common_means(self.firing_rates_b_on_bins),
+                "mean_rate_difference": self._common_means(
+                    np.where(support, self.rate_difference, 0.0)
+                ),
+                "common_occupancy_a": support @ self.occupancy_a,
+                "common_occupancy_b": support @ self.occupancy_b,
+                "status": self.status,
+            },
+            index=pd.Index(self._row_unit_labels(), name="unit_id"),
+        )
+        table.attrs["method"] = self.method
+        table.attrs["units"] = {
+            "mean_rate_a": "Hz",
+            "mean_rate_b": "Hz",
+            "mean_rate_difference": "Hz",
+            "common_occupancy_a": "s",
+            "common_occupancy_b": "s",
+            "coordinates": self.env.units,
+        }
+        table.attrs["analysis_settings"] = self.analysis_settings
+        return table
+
+    def summary(self) -> dict[str, Any]:
+        """Headline numbers of the comparison as flat scalars.
+
+        Returns
+        -------
+        dict
+            ``n_units`` compared, ``n_units_scored``, ``median_correlation``
+            over the scored units (NaN when none was scored),
+            ``n_units_only_a`` and ``n_units_only_b`` (recorded in one
+            condition only), ``n_compared_bins``, ``method`` and
+            ``topology_differs``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding import SpatialRatesResult, compare_spatial_rates
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 40, 41)[:, None], bin_size=10.0, units="cm"
+        ... )
+        >>> def rates(maps, occupancy=(1, 1, 1, 1, 1)):
+        ...     return SpatialRatesResult(
+        ...         firing_rates=np.array(maps, dtype=float),
+        ...         occupancy=np.array(occupancy, dtype=float),
+        ...         env=env,
+        ...         method="binned",
+        ...         bandwidth=5.0,
+        ...         unit_ids=[7, 9],
+        ...     )
+        >>> result = compare_spatial_rates(
+        ...     rates([[1, 2, 3, 4, 5], [5, 1, 4, 2, 3]]),
+        ...     rates([[1, 2, 3, 5, 4], [4, 1, 5, 2, 3]], (1, 1, 1, 1, 0)),
+        ... )
+        >>> summary = result.summary()
+        >>> summary["n_units"], summary["n_units_scored"], summary["n_compared_bins"]
+        (2, 2, 5)
+        >>> summary["method"], summary["topology_differs"]
+        ('pearson', False)
+        """
+        scored = self.status == "scored"
+        settings = self.analysis_settings or {}
+        return {
+            "n_units": len(self),
+            "n_units_scored": int(scored.sum()),
+            "median_correlation": float(np.median(self.correlation[scored]))
+            if scored.any()
+            else float("nan"),
+            "n_units_only_a": len(self.unit_ids_only_a),
+            "n_units_only_b": len(self.unit_ids_only_b),
+            "n_compared_bins": len(self.bins_a),
+            "method": self.method,
+            "topology_differs": bool(settings.get("topology_differs", False)),
+        }
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Dense table with one row per ``(unit, bin)`` of the compared bins.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``unit_id``, ``bin`` (bin ID in ``rates_a.env``),
+            ``bin_b`` (the same place in ``rates_b.env``), ``bin_center_*``
+            (coordinates of the bin, in the units of ``env``),
+            ``firing_rate_a``, ``firing_rate_b``, ``rate_difference`` (B - A,
+            NaN outside the unit's common support), ``occupancy_a``,
+            ``occupancy_b`` (seconds), ``occupied_a``, ``occupied_b`` and
+            ``common_support``. It is a writable copy; ``attrs`` holds
+            ``units`` and a copy of ``analysis_settings``, which CSV does not
+            preserve.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding import SpatialRatesResult, compare_spatial_rates
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 40, 41)[:, None], bin_size=10.0, units="cm"
+        ... )
+        >>> def rates(maps, occupancy=(1, 1, 1, 1, 1)):
+        ...     return SpatialRatesResult(
+        ...         firing_rates=np.array(maps, dtype=float),
+        ...         occupancy=np.array(occupancy, dtype=float),
+        ...         env=env,
+        ...         method="binned",
+        ...         bandwidth=5.0,
+        ...         unit_ids=[7, 9],
+        ...     )
+        >>> result = compare_spatial_rates(
+        ...     rates([[1, 2, 3, 4, 5], [5, 1, 4, 2, 3]]),
+        ...     rates([[1, 2, 3, 5, 4], [4, 1, 5, 2, 3]], (1, 1, 1, 1, 0)),
+        ... )
+        >>> frame = result.to_dataframe()
+        >>> len(frame)
+        10
+        >>> frame.loc[frame["unit_id"] == 9, "common_support"].tolist()
+        [True, True, True, True, False]
+        >>> int(frame["rate_difference"].isna().sum())
+        2
+        """
+        import pandas as pd
+
+        n_units, n_bins = self.common_support.shape
+        centers = self._coordinate_columns()
+        data: dict[str, Any] = {
+            "unit_id": np.repeat(self._row_unit_labels(), n_bins),
+            "bin": np.tile(self.bins_a, n_units),
+            "bin_b": np.tile(self.bins_b, n_units),
+        }
+        for name, values in centers.items():
+            data[name] = np.tile(values, n_units)
+        data["firing_rate_a"] = self.firing_rates_a_on_bins.ravel()
+        data["firing_rate_b"] = self.firing_rates_b_on_bins.ravel()
+        data["rate_difference"] = self.rate_difference.ravel()
+        data["occupancy_a"] = np.tile(self.occupancy_a, n_units)
+        data["occupancy_b"] = np.tile(self.occupancy_b, n_units)
+        data["occupied_a"] = np.tile(self.occupied_a, n_units)
+        data["occupied_b"] = np.tile(self.occupied_b, n_units)
+        data["common_support"] = self.common_support.ravel()
+        frame = pd.DataFrame(data)
+        frame.attrs["units"] = {
+            "firing_rate_a": "Hz",
+            "firing_rate_b": "Hz",
+            "rate_difference": "Hz",
+            "occupancy_a": "s",
+            "occupancy_b": "s",
+            **dict.fromkeys(centers, self.env.units or ""),
+        }
+        frame.attrs["analysis_settings"] = self.analysis_settings
+        return frame
+
+    def to_xarray(self) -> Any:
+        """Export a labeled Dataset with dimensions ``("unit_id", "bin")``.
+
+        Returns
+        -------
+        xarray.Dataset
+            The ``bin`` coordinate holds the compared bin IDs of
+            ``rates_a.env``; ``bin_b`` and ``bin_center_*`` are coordinates on
+            it. ``firing_rate_a``, ``firing_rate_b``, ``rate_difference`` and
+            ``common_support`` are ``(unit_id, bin)``; ``occupancy_a/b`` and
+            ``occupied_a/b`` are ``(bin,)``; ``correlation``,
+            ``n_common_bins`` and ``status`` are ``(unit_id,)``. ``attrs``
+            hold ``method``, ``units`` (coordinate units, when set),
+            ``analysis_settings`` (JSON text) and ``software_version``. The
+            arrays are copies.
+
+        Raises
+        ------
+        ImportError
+            If the optional xarray dependency is unavailable.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding import SpatialRatesResult, compare_spatial_rates
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 40, 41)[:, None], bin_size=10.0, units="cm"
+        ... )
+        >>> def rates(maps, occupancy=(1, 1, 1, 1, 1)):
+        ...     return SpatialRatesResult(
+        ...         firing_rates=np.array(maps, dtype=float),
+        ...         occupancy=np.array(occupancy, dtype=float),
+        ...         env=env,
+        ...         method="binned",
+        ...         bandwidth=5.0,
+        ...         unit_ids=[7, 9],
+        ...     )
+        >>> result = compare_spatial_rates(
+        ...     rates([[1, 2, 3, 4, 5], [5, 1, 4, 2, 3]]),
+        ...     rates([[1, 2, 3, 5, 4], [4, 1, 5, 2, 3]], (1, 1, 1, 1, 0)),
+        ... )
+        >>> dataset = result.to_xarray()  # doctest: +SKIP
+        >>> dataset["correlation"].sel(unit_id=9).item()  # doctest: +SKIP
+        0.9
+        """
+        try:
+            import xarray as xr
+        except ImportError as exc:
+            raise ImportError(
+                "to_xarray() requires the optional 'xarray' dependency, which "
+                "is not installed. Install it with "
+                "'pip install neurospatial[xarray]' or 'pip install xarray'."
+            ) from exc
+        from neurospatial._results import software_version, units_attr
+
+        unit_dim, bin_dim = "unit_id", "bin"
+        per_bin = {
+            name: (bin_dim, values)
+            for name, values in self._coordinate_columns().items()
+        }
+        dataset = xr.Dataset(
+            data_vars={
+                "firing_rate_a": ((unit_dim, bin_dim), self.firing_rates_a_on_bins),
+                "firing_rate_b": ((unit_dim, bin_dim), self.firing_rates_b_on_bins),
+                "rate_difference": ((unit_dim, bin_dim), self.rate_difference),
+                "common_support": ((unit_dim, bin_dim), self.common_support),
+                "occupancy_a": ((bin_dim,), self.occupancy_a),
+                "occupancy_b": ((bin_dim,), self.occupancy_b),
+                "occupied_a": ((bin_dim,), self.occupied_a),
+                "occupied_b": ((bin_dim,), self.occupied_b),
+                "correlation": ((unit_dim,), self.correlation),
+                "n_common_bins": ((unit_dim,), self.n_common_bins),
+                "status": ((unit_dim,), self.status),
+            },
+            coords={
+                unit_dim: self._row_unit_labels(),
+                bin_dim: self.bins_a,
+                "bin_b": (bin_dim, self.bins_b),
+                **per_bin,
+            },
+            attrs={
+                "method": self.method,
+                **units_attr(self.env),
+                "software_version": software_version(),
+                **(
+                    {}
+                    if self.analysis_settings is None
+                    else {
+                        "analysis_settings": json.dumps(
+                            self.analysis_settings, sort_keys=True
+                        )
+                    }
+                ),
+            },
+        )
+        # Datasets are the caller's to edit; results are read-only.
+        return dataset.copy(deep=True)
+
+    def plot(
+        self, ax: Axes | None = None, *, unit_id: Any = None, **kwargs: Any
+    ) -> Axes:
+        """Plot how well the units' maps agree, or where one unit's map changed.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on; a new figure is made when omitted.
+        unit_id : optional
+            Label of one unit. Without it, each scored unit is a point of
+            correlation against the number of common bins it was scored over;
+            units without a score (see ``status``) are not drawn, never drawn
+            as 0. With it, the unit's rate difference (B - A, Hz) is mapped
+            over the environment on a color scale symmetric about 0, with
+            bins outside the unit's common support left blank.
+        **kwargs
+            Passed to ``Axes.scatter`` (all units) or to
+            ``Environment.plot_field`` (one unit; overrides ``cmap``, ``vmin``,
+            ``vmax`` and ``colorbar_label``).
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Raises
+        ------
+        KeyError
+            If ``unit_id`` is not one of ``unit_ids``.
+
+        Examples
+        --------
+        >>> import matplotlib
+        >>> matplotlib.use("Agg")
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding import SpatialRatesResult, compare_spatial_rates
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 40, 41)[:, None], bin_size=10.0, units="cm"
+        ... )
+        >>> def rates(maps, occupancy=(1, 1, 1, 1, 1)):
+        ...     return SpatialRatesResult(
+        ...         firing_rates=np.array(maps, dtype=float),
+        ...         occupancy=np.array(occupancy, dtype=float),
+        ...         env=env,
+        ...         method="binned",
+        ...         bandwidth=5.0,
+        ...         unit_ids=[7, 9],
+        ...     )
+        >>> result = compare_spatial_rates(
+        ...     rates([[1, 2, 3, 4, 5], [5, 1, 4, 2, 3]]),
+        ...     rates([[1, 2, 3, 5, 4], [4, 1, 5, 2, 3]], (1, 1, 1, 1, 0)),
+        ... )
+        >>> ax = result.plot()
+        >>> ax.get_title()
+        '2 of 2 units scored'
+        >>> type(result.plot(unit_id=9)).__name__
+        'Axes'
+        """
+        if unit_id is not None:
+            unit = self.sel(unit_id=unit_id)
+            difference = unit.rate_difference[0]
+            values = np.full(self.env.n_bins, np.nan)
+            values[self.bins_a] = difference
+            finite = np.abs(difference[np.isfinite(difference)])
+            bound = float(finite.max()) if finite.size and finite.max() > 0 else 1.0
+            options = {
+                "cmap": "RdBu_r",
+                "vmin": -bound,
+                "vmax": bound,
+                "colorbar_label": "Rate difference, B \u2212 A (Hz)",
+                **kwargs,
+            }
+            return self.env.plot_field(values, ax=ax, **options)
+
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+        scored = self.status == "scored"
+        ax.scatter(self.n_common_bins[scored], self.correlation[scored], **kwargs)
+        ax.set_xlabel("Common bins")
+        ax.set_ylabel(f"Correlation ({self.method})")
+        ax.set_title(f"{int(scored.sum())} of {len(self)} units scored")
+        return ax
 
 
 def compare_spatial_rates(
@@ -663,8 +1124,8 @@ def _is_constant(
 
     A row is flat when ``max - min <= _CONSTANT_RELATIVE_SPREAD *
     max(|values|)`` over its common bins: the spread is rounding from
-    computing the rates, not a field. Rows without common bins count as flat; the caller reports them
-    as having too few bins first.
+    computing the rates, not a field. Rows without common bins count as flat;
+    the caller reports them as having too few bins first.
     """
     highest = np.where(common, values, -np.inf).max(axis=1, initial=-np.inf)
     lowest = np.where(common, values, np.inf).min(axis=1, initial=np.inf)
