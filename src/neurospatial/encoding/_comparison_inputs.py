@@ -178,8 +178,9 @@ def _bin_pairs(
     """Pair bins that are the same place; return pairs and topology_differs.
 
     Without a mapping, topology is the whole connectivity graph by bin ID plus
-    the arena and walls. With one, it is the connectivity among the mapped
-    bins, matched through the mapping, plus the arena and walls.
+    the arena and walls. With one, it is each mapped bin's full set of
+    neighbors, matched through the mapping (a neighbor outside the mapping is
+    a difference), plus the arena and walls.
     """
     differences = _environment_differences(env_a, env_b)
     topology_difference = differences.topology
@@ -203,11 +204,12 @@ def _bin_pairs(
     if topology_difference is not None and topology == "same":
         raise IncompatibleEnvironmentError(
             f"{_OPERATION}: rates_a and rates_b were estimated on environments "
-            f"that differ in {topology_difference}, so their maps were smoothed "
-            "over different neighbors.",
-            fix='pass topology="may_differ" if the bins are the same places and '
-            "only connectivity or walls changed, e.g. a door opened; smoothing "
-            "then used different neighbors",
+            f"that differ in {topology_difference}, so maps smoothed over each "
+            "environment's graph used different neighbors.",
+            fix='pass topology="may_differ" to accept this when the bins are the '
+            "same places and only connectivity or walls changed (a door opened, "
+            "or one map covers part of the arena); maps from method='binned' "
+            "with bandwidth=0 were not smoothed, so for them nothing changes",
             first=env_a,
             second=env_b,
         )

@@ -318,7 +318,13 @@ def test_one_to_one_subset_mapping_equals_selecting_the_same_bins(env, make) -> 
     rates_b = make(rates_b_full[:, mask], occupancy_b[mask], ids=[1, 2], on=subset)
     mapping = np.column_stack([np.flatnonzero(mask), np.arange(4)])
 
-    mapped = compare_spatial_rates(rates_a, rates_b, bin_mapping=mapping)
+    # Bins 1 and 3 neighbor bin 2 in env but not in the subset, so their
+    # smoothing used different neighbors: the caller has to accept that.
+    with pytest.raises(IncompatibleEnvironmentError, match="outside the mapping"):
+        compare_spatial_rates(rates_a, rates_b, bin_mapping=mapping)
+    mapped = compare_spatial_rates(
+        rates_a, rates_b, bin_mapping=mapping, topology="may_differ"
+    )
     identity = compare_spatial_rates(
         rates_a,
         make(rates_b_full, occupancy_b, ids=[1, 2]),
@@ -330,8 +336,7 @@ def test_one_to_one_subset_mapping_equals_selecting_the_same_bins(env, make) -> 
     np.testing.assert_array_equal(mapped.bins_a, identity.bins_a)
     assert mapped.bins_b.tolist() == [0, 1, 2, 3]
     assert mapped.analysis_settings["bin_mapping"] == "explicit"
-    # The edges among the kept bins are the parent's, so topology is the same.
-    assert mapped.analysis_settings["topology_differs"] is False
+    assert mapped.analysis_settings["topology_differs"] is True
     assert identity.analysis_settings["bin_mapping"] is None
     assert identity.analysis_settings["bins_selected"] == 4
     assert identity.analysis_settings["n_compared_bins"] == 4
@@ -342,7 +347,7 @@ def test_bins_selection_restricts_a_mapping(env, make) -> None:
     rates_b = make(np.asarray(G)[mask], OCC[mask], on=env.subset(mask=mask))
     mapping = np.column_stack([np.flatnonzero(mask), np.arange(4)])
     result = compare_spatial_rates(
-        make(F), rates_b, bin_mapping=mapping, bins=[0, 2, 3, 4]
+        make(F), rates_b, bin_mapping=mapping, bins=[0, 2, 3, 4], topology="may_differ"
     )
     assert result.bins_a.tolist() == [0, 3, 4]
     assert result.bins_b.tolist() == [0, 2, 3]
@@ -394,6 +399,27 @@ def test_renumbered_environment_has_the_same_topology_through_the_mapping(
     assert mapped.analysis_settings["topology_differs"] is False
     np.testing.assert_allclose(mapped.correlation, identity.correlation, atol=1e-12)
     assert mapped.bins_a.tolist() == order.tolist()
+
+
+def test_mapping_a_whole_connected_component_has_the_same_topology(make) -> None:
+    # Two 3-bin corridors with a gap; the second piece has no edges leaving it.
+    two_pieces = Environment.from_grid_mask(
+        np.array([True, True, True, False, True, True, True])[:, None],
+        grid_edges=(np.arange(8.0) * 10, np.arange(2.0) * 10),
+    ).with_metadata(units="cm")
+    kept = np.array([False, False, False, True, True, True])
+    piece = two_pieces.subset(mask=kept)
+    rates_a = make([9.0, 9.0, 9.0, 1.0, 2.0, 3.0], np.ones(6), on=two_pieces)
+    rates_b = make([2.0, 4.0, 6.0], np.ones(3), on=piece)
+
+    result = compare_spatial_rates(
+        rates_a,
+        rates_b,
+        bin_mapping=np.column_stack([np.flatnonzero(kept), np.arange(3)]),
+    )
+
+    assert result.analysis_settings["topology_differs"] is False
+    np.testing.assert_allclose(result.correlation, [1.0], atol=1e-12)
 
 
 @pytest.fixture

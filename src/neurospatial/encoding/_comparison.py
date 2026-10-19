@@ -357,14 +357,15 @@ def compare_spatial_rates(
         as a subset of the arena. Each bin appears at most once on each side;
         paired bins must have identical centers, sizes and dimensions. By
         default the environments must have the same bins. With a mapping,
-        topology is compared through it: two mapped bins must be neighbors at
-        the same distance in both environments or in neither, and the arenas
-        and walls must match. A renumbered copy of an environment, or a subset
-        that keeps the connections among its bins, has the same topology; a
-        barrier between two mapped bins does not. Connections from a mapped
-        bin to an unmapped one are not compared, so near the edge of the
-        mapped bins each map was smoothed over its own environment's
-        neighbors.
+        topology is compared through it: every mapped bin must have the same
+        neighbors, at the same distances, in both environments, and the
+        arenas and walls must match. A mapped bin with a neighbor outside the
+        mapping, in either environment, is a topology difference: a subset of
+        the arena loses its border bins' outside neighbors, so smoothing over
+        the graph used fewer neighbors there. A renumbered copy of an
+        environment, or a mapping that covers whole connected components, has
+        the same topology; a subset or a barrier between mapped bins does
+        not, and needs ``topology="may_differ"``.
     bins : array-like of int, optional
         Bin IDs of ``rates_a.env`` to restrict the comparison to, for example
         ``env.bins_in_region("center")``. With ``bin_mapping``, selected bins
@@ -376,8 +377,12 @@ def compare_spatial_rates(
         conditions. Smoothing then used different neighbors in each
         condition; the choice is recorded in ``analysis_settings``. Without
         ``bin_mapping``, connectivity is compared over all bins by bin ID,
-        with the neighbor distances; with it, over the mapped bins through the
-        mapping. Arenas and walls are compared whole in both cases.
+        with the neighbor distances; with it, each mapped bin's neighbors are
+        compared through the mapping (see ``bin_mapping``). Arenas and walls
+        are compared whole in both cases. Maps estimated with
+        ``method="binned", bandwidth=0.0`` are counts over occupancy with no
+        smoothing, so connectivity did not shape them and
+        ``"may_differ"`` can be passed knowingly.
     min_common_bins : int, default=3
         Fewest common bins a unit needs to be scored. At least 3: a
         correlation over 2 bins is always +1 or -1.
@@ -463,19 +468,35 @@ def compare_spatial_rates(
     True
 
     Maps estimated on part of the arena pair with the full arena's bins
-    through ``bin_mapping``. A subset keeps the connections among its bins,
-    so the topology is the same:
+    through ``bin_mapping``. The part's border bins lose their neighbors
+    outside it, so the topology differs and the default ``topology="same"``
+    refuses. Maps counted without smoothing (``method="binned",
+    bandwidth=0.0``) did not use the neighbors, so the difference can be
+    accepted knowingly:
 
     >>> keep = np.zeros(env.n_bins, dtype=bool)
     >>> keep[: env.n_bins // 2] = True
     >>> part = env.subset(mask=keep)
-    >>> rates_on_part = compute_spatial_rates(
-    ...     part, spike_times, times, positions, unit_ids=[10, 11, 12]
+    >>> full_raw, part_raw = (
+    ...     compute_spatial_rates(
+    ...         where,
+    ...         spike_times,
+    ...         times,
+    ...         positions,
+    ...         method="binned",
+    ...         bandwidth=0.0,
+    ...         unit_ids=[10, 11, 12],
+    ...     )
+    ...     for where in (env, part)
     ... )
     >>> mapping = np.column_stack([np.flatnonzero(keep), np.arange(part.n_bins)])
-    >>> on_part = compare_spatial_rates(first_half, rates_on_part, bin_mapping=mapping)
+    >>> on_part = compare_spatial_rates(
+    ...     full_raw, part_raw, bin_mapping=mapping, topology="may_differ"
+    ... )
     >>> on_part.analysis_settings["topology_differs"]
-    False
+    True
+    >>> on_part.status.tolist()
+    ['scored', 'scored', 'scored']
     """
     population = _check_pair(rates_a, rates_b)
     _check_choice("method", method, _METHODS)

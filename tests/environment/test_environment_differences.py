@@ -253,12 +253,38 @@ def test_a_changed_distance_between_mapped_bins_is_a_topology_difference() -> No
     )
 
 
-def test_a_subset_keeps_the_topology_among_its_bins() -> None:
+_OUTSIDE = "connections from mapped bins to bins outside the mapping"
+
+
+@pytest.mark.parametrize("subset_side", ["first", "second"])
+def test_a_subset_whose_border_bins_had_outside_neighbors_differs(
+    subset_side: str,
+) -> None:
+    # Bins 1 and 3 of the corridor neighbor bin 2, which the subset drops, so
+    # they were smoothed over fewer neighbors in the subset.
     corridor = _corridor()
     kept = np.array([True, True, False, True, True])
     pairs = np.column_stack([np.flatnonzero(kept), np.arange(4)])
     subset = corridor.subset(mask=kept)
-    assert _mapped_topology_difference(corridor, subset, pairs) is None
+    if subset_side == "first":
+        first, second, pairs = subset, corridor, pairs[:, ::-1]
+    else:
+        first, second = corridor, subset
+    assert _mapped_topology_difference(first, second, pairs) == _OUTSIDE
+
+
+def test_a_whole_connected_component_has_the_same_topology() -> None:
+    # Two corridors of three bins with a gap between them; the second is a
+    # separate connected component with no edges leaving it.
+    two_pieces = Environment.from_grid_mask(
+        np.array([True, True, True, False, True, True, True])[:, None],
+        grid_edges=(np.arange(8.0) * 10, np.arange(2.0) * 10),
+    )
+    assert two_pieces.n_bins == 6
+    kept = np.array([False, False, False, True, True, True])
+    piece = two_pieces.subset(mask=kept)
+    pairs = np.column_stack([np.flatnonzero(kept), np.arange(3)])
+    assert _mapped_topology_difference(two_pieces, piece, pairs) is None
 
 
 def test_a_barrier_between_mapped_bins_is_a_topology_difference() -> None:
@@ -271,12 +297,12 @@ def test_a_barrier_between_mapped_bins_is_a_topology_difference() -> None:
     )
 
 
-def test_a_wall_outside_the_mapped_bins_is_still_a_topology_difference() -> None:
-    kept = np.array([True, True, True, False, False])
-    pairs = np.column_stack([np.flatnonzero(kept), np.arange(3)])
-    subset = _corridor(_wall_at(40.0)).subset(mask=kept)
-    assert subset.connectivity.has_edge(0, 1) and subset.connectivity.has_edge(1, 2)
+def test_a_wall_that_closes_no_pair_is_still_a_topology_difference() -> None:
+    # A wall along the corridor's side crosses no line between bin centers.
+    walled = _corridor(LineString([(1, 8), (4, 8)]))
+    np.testing.assert_array_equal(walled.edge_pairs, _corridor().edge_pairs)
+    identity = np.column_stack([np.arange(5), np.arange(5)])
     assert (
-        _mapped_topology_difference(_corridor(), subset, pairs)
+        _mapped_topology_difference(_corridor(), walled, identity)
         == "continuous arena or physical walls"
     )
