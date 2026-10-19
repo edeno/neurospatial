@@ -2317,6 +2317,7 @@ def compute_directional_rates(
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -2325,7 +2326,6 @@ def compute_directional_rates(
     from neurospatial.encoding._directional_counts import (
         prepare_directional_binning,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,
@@ -3007,13 +3007,13 @@ def head_direction_cell_significance(
     """
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._directional_counts import directional_frame_bins
     from neurospatial.encoding._significance import (
         run_shuffle_test,
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,

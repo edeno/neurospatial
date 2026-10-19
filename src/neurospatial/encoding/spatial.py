@@ -3653,6 +3653,7 @@ default="diffusion_kde"
     >>> linear.analysis_settings["time_allocation"]
     'linear'
     """
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -3671,7 +3672,6 @@ default="diffusion_kde"
         require_linear_allocation,
         resolve_speed,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_times,
@@ -5758,6 +5758,7 @@ def place_cell_significance(
     from neurospatial._exceptions import _format_error
     from neurospatial._intervals import resolve_time_windows, run_time_bounds
     from neurospatial._results import resolve_unit_ids
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._significance import (
         run_shuffle_test,
         snapshot_options,
@@ -5767,7 +5768,6 @@ def place_cell_significance(
         _spatial_interval_mask,
         resolve_speed,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_times,

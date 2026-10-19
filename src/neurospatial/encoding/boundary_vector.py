@@ -757,6 +757,7 @@ def _boundary_vector_rates(
     """Validate, cast the rays once, count every unit and estimate rates."""
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._egocentric_counts import _create_egocentric_environment
     from neurospatial.encoding._provenance import rate_analysis_settings
     from neurospatial.encoding._smoothing import (
@@ -765,7 +766,6 @@ def _boundary_vector_rates(
         resolve_spatial_bandwidth,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_times,

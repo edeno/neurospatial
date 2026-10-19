@@ -12,8 +12,9 @@ The main function is `as_spike_trains()`, which accepts:
 - list/tuple of scalars (single neuron) → converted to 1D array, wrapped in list
 - list/tuple of 1D arrays (canonical format) → each element converted to array
 
-This coercion happens at the entry point of encoding functions, ensuring
-consistent internal handling regardless of how the user provides spike data.
+This coercion happens at the entry point of encoding, decoding and peri-event
+functions, ensuring consistent internal handling regardless of how the user
+provides spike data.
 """
 
 from __future__ import annotations
@@ -64,7 +65,7 @@ def as_spike_trains(
     Single neuron (1D array):
 
     >>> import numpy as np
-    >>> from neurospatial.encoding._spikes import as_spike_trains
+    >>> from neurospatial._spikes import as_spike_trains
     >>> spikes = np.array([0.1, 0.5, 1.2])
     >>> normalized = as_spike_trains(spikes)
     >>> len(normalized)
@@ -223,7 +224,7 @@ def _as_spike_trains_with_ids(
     Plain sequence input carries no ids:
 
     >>> import numpy as np
-    >>> from neurospatial.encoding._spikes import _as_spike_trains_with_ids
+    >>> from neurospatial._spikes import _as_spike_trains_with_ids
     >>> trains, ids = _as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
     >>> len(trains), ids
     (2, None)

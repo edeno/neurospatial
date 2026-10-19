@@ -663,8 +663,8 @@ warn_on_drop
         """
         from neurospatial._intervals import resolve_time_windows
         from neurospatial._results import resolve_unit_ids
+        from neurospatial._spikes import _as_spike_trains_with_ids
         from neurospatial.decoding.session import _fit_encoding_model
-        from neurospatial.encoding import _as_spike_trains_with_ids
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
@@ -721,7 +721,7 @@ warn_on_drop
         otherwise by position, which requires one train per fitted unit.
         """
         from neurospatial._results import resolve_unit_ids
-        from neurospatial.encoding import _as_spike_trains_with_ids
+        from neurospatial._spikes import _as_spike_trains_with_ids
 
         trains, input_ids = _as_spike_trains_with_ids(spike_times)
         n_models = self._check_fitted().shape[0]

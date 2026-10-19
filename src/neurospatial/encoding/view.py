@@ -1823,6 +1823,7 @@ def _compute_view_rates(
     """Body of :func:`compute_view_rates`; ``view_bins`` reuses gaze geometry."""
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1832,7 +1833,6 @@ def _compute_view_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_times,
@@ -2404,12 +2404,12 @@ def spatial_view_cell_significance(
     """
     from neurospatial._intervals import resolve_time_windows
     from neurospatial._results import resolve_unit_ids
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._significance import (
         run_shuffle_test,
         snapshot_options,
         to_shuffle_results,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_times,

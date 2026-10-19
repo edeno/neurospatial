@@ -1,4 +1,4 @@
-"""Tests for neurospatial.encoding._spikes module.
+"""Tests for neurospatial._spikes module.
 
 This module tests spike format normalization for encoding functions:
 - as_spike_trains: Converts various input formats to canonical list-of-arrays
@@ -69,7 +69,7 @@ class TestNormalizeSpikeTimesSingleNeuron:
         self, single_neuron_spikes: NDArray[np.float64]
     ) -> None:
         """1D array should return list with one element."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains(single_neuron_spikes)
         assert isinstance(result, list)
@@ -79,7 +79,7 @@ class TestNormalizeSpikeTimesSingleNeuron:
         self, single_neuron_spikes: NDArray[np.float64]
     ) -> None:
         """The element should be a 1D float64 array with same values."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains(single_neuron_spikes)
         assert isinstance(result[0], np.ndarray)
@@ -89,7 +89,7 @@ class TestNormalizeSpikeTimesSingleNeuron:
 
     def test_empty_1d_array(self) -> None:
         """Empty 1D array should return list with one empty array."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         empty = np.array([], dtype=np.float64)
         result = as_spike_trains(empty)
@@ -99,7 +99,7 @@ class TestNormalizeSpikeTimesSingleNeuron:
 
     def test_single_spike(self) -> None:
         """Single spike should work correctly."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         single = np.array([1.5])
         result = as_spike_trains(single)
@@ -108,7 +108,7 @@ class TestNormalizeSpikeTimesSingleNeuron:
 
     def test_1d_integer_array_converted_to_float(self) -> None:
         """Integer arrays should be converted to float64."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         int_spikes = np.array([1, 2, 3])
         result = as_spike_trains(int_spikes)
@@ -128,7 +128,7 @@ class TestNormalizeSpikeTimesNaNPadded:
         self, multi_neuron_2d: NDArray[np.float64]
     ) -> None:
         """2D array should return list with one element per row."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains(multi_neuron_2d)
         assert isinstance(result, list)
@@ -136,7 +136,7 @@ class TestNormalizeSpikeTimesNaNPadded:
 
     def test_2d_array_nan_removed(self, multi_neuron_2d: NDArray[np.float64]) -> None:
         """NaN values should be removed from each row."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains(multi_neuron_2d)
         # Neuron 0: 3 spikes
@@ -148,7 +148,7 @@ class TestNormalizeSpikeTimesNaNPadded:
 
     def test_2d_array_all_nan_row(self) -> None:
         """Row with all NaNs should return empty array."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         arr = np.array(
             [
@@ -165,7 +165,7 @@ class TestNormalizeSpikeTimesNaNPadded:
 
     def test_2d_array_no_nan(self) -> None:
         """2D array without NaNs should split rows correctly."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         arr = np.array(
             [
@@ -180,7 +180,7 @@ class TestNormalizeSpikeTimesNaNPadded:
 
     def test_2d_array_single_row(self) -> None:
         """2D array with single row should return list of length 1."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         arr = np.array([[0.1, 0.5, np.nan]])
         result = as_spike_trains(arr)
@@ -189,7 +189,7 @@ class TestNormalizeSpikeTimesNaNPadded:
 
     def test_2d_array_dtype_float64(self, multi_neuron_2d: NDArray[np.float64]) -> None:
         """All output arrays should be float64."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains(multi_neuron_2d)
         for arr in result:
@@ -208,7 +208,7 @@ class TestNormalizeSpikeTimesListInput:
         self, multi_neuron_list: list[NDArray[np.float64]]
     ) -> None:
         """List of 1D arrays should return equivalent list."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains(multi_neuron_list)
         assert isinstance(result, list)
@@ -218,7 +218,7 @@ class TestNormalizeSpikeTimesListInput:
 
     def test_tuple_of_arrays(self) -> None:
         """Tuple of 1D arrays should return list."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = (
             np.array([0.1, 0.5]),
@@ -232,7 +232,7 @@ class TestNormalizeSpikeTimesListInput:
 
     def test_list_of_lists(self) -> None:
         """List of Python lists should be converted to arrays."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = [
             [0.1, 0.5, 1.2],
@@ -247,7 +247,7 @@ class TestNormalizeSpikeTimesListInput:
 
     def test_list_with_empty_arrays(self) -> None:
         """List containing empty arrays should preserve them."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = [
             np.array([0.1, 0.5]),
@@ -262,7 +262,7 @@ class TestNormalizeSpikeTimesListInput:
 
     def test_list_dtype_conversion(self) -> None:
         """List elements should be converted to float64."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = [
             np.array([1, 2, 3], dtype=np.int32),
@@ -283,7 +283,7 @@ class TestNormalizeSpikeTimesErrors:
 
     def test_ragged_object_array_raises(self) -> None:
         """Ragged array (dtype=object) should raise ValueError."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         # Create a ragged array by casting
         ragged = np.array(
@@ -295,7 +295,7 @@ class TestNormalizeSpikeTimesErrors:
 
     def test_3d_array_raises(self) -> None:
         """3D array should raise ValueError."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         arr = np.ones((2, 3, 4))
         with pytest.raises(ValueError, match="shape"):
@@ -303,7 +303,7 @@ class TestNormalizeSpikeTimesErrors:
 
     def test_list_with_2d_element_raises(self) -> None:
         """List containing 2D array should raise ValueError."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = [
             np.array([0.1, 0.5]),
@@ -314,7 +314,7 @@ class TestNormalizeSpikeTimesErrors:
 
     def test_list_with_0d_element_raises(self) -> None:
         """List containing 0D array (scalar) should raise ValueError."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = [
             np.array([0.1, 0.5]),
@@ -334,14 +334,14 @@ class TestNormalizeSpikeTimesEdgeCases:
 
     def test_empty_list(self) -> None:
         """Empty list should return empty list."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains([])
         assert result == []
 
     def test_single_element_list(self) -> None:
         """List with single element should work."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = [np.array([0.1, 0.5, 1.2])]
         result = as_spike_trains(spikes)
@@ -350,7 +350,7 @@ class TestNormalizeSpikeTimesEdgeCases:
 
     def test_preserves_spike_order(self) -> None:
         """Spike times should maintain their order."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = np.array([3.0, 1.0, 2.0, 0.5])  # Unsorted
         result = as_spike_trains(spikes)
@@ -358,7 +358,7 @@ class TestNormalizeSpikeTimesEdgeCases:
 
     def test_negative_spike_times(self) -> None:
         """Negative spike times should be preserved (e.g., relative to event)."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = np.array([-1.0, -0.5, 0.0, 0.5, 1.0])
         result = as_spike_trains(spikes)
@@ -366,7 +366,7 @@ class TestNormalizeSpikeTimesEdgeCases:
 
     def test_very_large_number_of_neurons(self) -> None:
         """Should handle large number of neurons efficiently."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         n_neurons = 1000
         rng = np.random.default_rng(42)
@@ -376,7 +376,7 @@ class TestNormalizeSpikeTimesEdgeCases:
 
     def test_mixed_types_in_list(self) -> None:
         """List with mixed types (arrays and lists) should work."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         spikes = [
             np.array([0.1, 0.5]),
@@ -404,7 +404,7 @@ class TestNormalizeSpikeTimesListOfScalars:
 
     def test_list_of_floats_returns_single_neuron(self) -> None:
         """List of floats should be treated as single neuron."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains([0.1, 0.5, 1.0])
         assert len(result) == 1
@@ -412,7 +412,7 @@ class TestNormalizeSpikeTimesListOfScalars:
 
     def test_list_of_ints_returns_single_neuron(self) -> None:
         """List of ints should be treated as single neuron, converted to float64."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains([1, 2, 3])
         assert len(result) == 1
@@ -421,7 +421,7 @@ class TestNormalizeSpikeTimesListOfScalars:
 
     def test_tuple_of_floats_returns_single_neuron(self) -> None:
         """Tuple of floats should be treated as single neuron."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains((0.1, 0.5, 1.0))
         assert len(result) == 1
@@ -429,7 +429,7 @@ class TestNormalizeSpikeTimesListOfScalars:
 
     def test_single_float_in_list_returns_single_neuron(self) -> None:
         """List with single float should return one neuron with one spike."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains([0.5])
         assert len(result) == 1
@@ -437,7 +437,7 @@ class TestNormalizeSpikeTimesListOfScalars:
 
     def test_list_of_numpy_scalars_returns_single_neuron(self) -> None:
         """List of numpy scalar types should be treated as single neuron."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains([np.float64(0.1), np.float64(0.5)])
         assert len(result) == 1
@@ -445,7 +445,7 @@ class TestNormalizeSpikeTimesListOfScalars:
 
     def test_list_of_numpy_ints_returns_single_neuron(self) -> None:
         """List of numpy integer types should be treated as single neuron."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        from neurospatial._spikes import as_spike_trains
 
         result = as_spike_trains([np.int64(1), np.int64(2), np.int64(3)])
         assert len(result) == 1
@@ -457,7 +457,7 @@ class TestSpikesImports:
     """Test that expected items are importable from _spikes module."""
 
     def test_as_spike_trains_importable(self) -> None:
-        """as_spike_trains should be importable from encoding._spikes."""
-        from neurospatial.encoding._spikes import as_spike_trains
+        """as_spike_trains should be importable from _spikes."""
+        from neurospatial._spikes import as_spike_trains
 
         assert callable(as_spike_trains)

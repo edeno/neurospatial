@@ -17,7 +17,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
-from neurospatial.decoding._time_bins import _count_spikes_in_time_bins
+from neurospatial._time_bins import _count_spikes_in_time_bins
 
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
@@ -408,8 +408,9 @@ def _prepare_session_decode(
     NDArray[np.float64],
 ]:
     """Normalize spike inputs/models and tile bins inside observed runs."""
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.decoding._time_bins import validate_dt
-    from neurospatial.encoding import _as_spike_trains_with_ids, _validate_times
+    from neurospatial.encoding import _validate_times
 
     # Validate dt up front, BEFORE the grid math below builds the decode time
     # grid directly (bypassing bin_spikes_in_time's own guard). Without this,
@@ -444,7 +445,7 @@ def _prepare_session_decode(
         _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
     from neurospatial._intervals import TimeSupport, interval_valid_mask
-    from neurospatial.decoding._time_bins import _time_bins_in_windows
+    from neurospatial._time_bins import _time_bins_in_windows
 
     # Decode bins exist only where the recording was observed: the gap, epochs and
     # spike_window gates. The speed and out-of-bounds gates restrict only the
@@ -497,8 +498,8 @@ def _fit_encoding_model(
     SpatialRatesResult,
 ]:
     """Fit supported rate maps independently of the prediction time bins."""
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial._validation import validate_times_positions
-    from neurospatial.encoding import _as_spike_trains_with_ids
     from neurospatial.encoding.spatial import compute_spatial_rates
 
     times_arr, positions = validate_times_positions(times, positions, call=context)
