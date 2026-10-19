@@ -535,6 +535,13 @@ def _overlapping(
         True when the event is retained and its window shares time with
         another retained event's window. Duplicate times overlap each other;
         windows that only touch do not. Excluded events are False.
+
+    Notes
+    -----
+    Window bounds are ``event + start`` and ``event + stop`` in floating
+    point, so two windows meant to touch can round to a tiny overlap and be
+    flagged: with ``window=(-0.1, 0.1)``, events at 0.1 and 0.3 s give a stop
+    of ``0.1 + 0.1 == 0.2`` and a start of ``0.3 - 0.1 == 0.19999999999999998``.
     """
     kept = np.flatnonzero(retained)
     starts = event_times[kept] + window[0]
@@ -726,4 +733,7 @@ def _circular_means(
     np.divide(np.hypot(sin_sums, cos_sums), counts, out=lengths, where=observed)
     defined: NDArray[np.bool_] = observed & (lengths > threshold)
     means = np.where(defined, np.arctan2(sin_sums, cos_sums), np.nan)
+    # Sampled angles lie in [-pi, pi), so a half-turn's sine sum is a tiny
+    # negative number and atan2 returns -pi; report the half-turn as +pi.
+    means[means == -np.pi] = np.pi
     return means, lengths, defined

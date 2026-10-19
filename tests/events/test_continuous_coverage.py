@@ -328,6 +328,17 @@ def test_circular_means_across_pi():
     np.testing.assert_allclose(lengths, np.cos(np.deg2rad(1.0)), rtol=1e-12)
 
 
+def test_circular_mean_of_one_half_turn_is_positive_pi():
+    # A sampled heading of pi is wrapped to -pi; atan2 then returns -pi.
+    spec = _spec(["circular"])
+    s = _Summaries.empty(1, spec)
+    s.add(np.full((1, 1, 1), -np.pi), np.ones((1, 1, 1), dtype=bool))
+    assert np.arctan2(s.sin_sums, s.cos_sums)[0, 0] == -np.pi
+    means, _, defined = _circular_means(s.sin_sums, s.cos_sums, s.counts, 1e-12)
+    assert defined[0, 0]
+    assert means[0, 0] == np.pi
+
+
 def test_circular_means_opposite_headings_undefined():
     spec = _spec(["circular"])
     values = np.array([0.0, np.pi])[:, None, None]
@@ -365,15 +376,18 @@ def _parity_inputs():
     return times, signals, spec, events
 
 
-def test_chunked_summaries_match_single_pass():
+@pytest.mark.parametrize("events_per_chunk", [1, 7])
+def test_chunked_summaries_match_single_pass(events_per_chunk):
     times, signals, spec, events = _parity_inputs()
     t, sig, supports = _supports(times, signals)
     rel = _relative_times((-1.0, 1.0), 0.05)
     cells = rel.size * sig.shape[1]
 
     chunked = _Summaries.empty(rel.size, spec)
-    chunks = list(_event_chunks(events.size, cells, max_cells=cells))
-    assert len(chunks) == events.size
+    chunks = list(_event_chunks(events.size, cells, max_cells=events_per_chunk * cells))
+    assert len(chunks) == -(-events.size // events_per_chunk)
+    if events_per_chunk > 1:  # an uneven last chunk
+        assert chunks[-1].stop - chunks[-1].start < events_per_chunk
     for chunk in chunks:
         chunked.add(*_sample_events(events[chunk], rel, t, sig, supports, spec, None))
 
@@ -386,8 +400,10 @@ def test_chunked_summaries_match_single_pass():
     np.testing.assert_array_equal(chunked.counts, whole.counts)
     np.testing.assert_array_equal(chunked.category_counts, whole.category_counts)
     for name in ("sums", "sin_sums", "cos_sums"):
+        whole_sums = getattr(whole, name)
+        scale = np.nanmax(np.abs(whole_sums))
         np.testing.assert_allclose(
-            getattr(chunked, name), getattr(whole, name), rtol=1e-12
+            getattr(chunked, name), whole_sums, rtol=1e-12, atol=1e-9 * scale
         )
     assert whole.category_counts.sum() == whole.counts[:, 2].sum()
 
