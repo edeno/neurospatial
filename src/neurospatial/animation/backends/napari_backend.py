@@ -3090,38 +3090,10 @@ def render_napari(
     # At this point, fields is either:
     # - 2D array with shape (n_frames, n_bins) if fields_is_array is True
     # - list[NDArray] if fields_is_array is False (not multi-field)
-    from neurospatial.animation.rendering import compute_global_colormap_range
+    from neurospatial.animation.rendering import animation_colormap_range
 
-    # Compute global color scale
-    if vmin is None or vmax is None:
-        # Compute n_frames for large dataset detection
-        n_frames_for_range = (
-            fields.shape[0] if fields_is_array else len(fields)  # type: ignore[union-attr]
-        )
-
-        # For very large datasets, use subsampling for faster range estimation
-        sample_stride: int | None = None
-        large_dataset_threshold = 200_000
-
-        if n_frames_for_range > large_dataset_threshold:
-            # Compute sample_stride to sample ~50K frames
-            sample_stride = max(1, n_frames_for_range // 50_000)
-            warnings.warn(
-                f"Estimating colormap range from {n_frames_for_range:,} frames "
-                f"using sample_stride={sample_stride} (every {sample_stride}th frame). "
-                f"For exact range, pass explicit vmin/vmax parameters.",
-                UserWarning,
-                stacklevel=2,
-            )
-
-        vmin_computed, vmax_computed = compute_global_colormap_range(
-            fields,  # type: ignore[arg-type]
-            vmin=vmin,
-            vmax=vmax,
-            sample_stride=sample_stride,
-        )
-        vmin = vmin if vmin is not None else vmin_computed
-        vmax = vmax if vmax is not None else vmax_computed
+    # Compute global color scale, sampling the frames of a very long recording
+    vmin, vmax = animation_colormap_range(fields, vmin, vmax)  # type: ignore[arg-type]
 
     # Note: contrast_limits parameter is ignored for RGB images
     # RGB images are already in [0, 255] range and don't need normalization

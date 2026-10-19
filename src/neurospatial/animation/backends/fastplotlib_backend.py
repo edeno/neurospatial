@@ -26,15 +26,21 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.animation._parallel import (
+    _TRAIL_MAX_ALPHA,
+    _event_visibility,
+    _head_direction_color,
+)
 from neurospatial.environment._fastplotlib import (
     ColorScale,
     FieldGraphic,
-    color_limits,
     draw_colorbar,
     draw_layers,
     frame_view,
     new_figure,
-    title,
+    pair_segments,
+    plot_title,
+    xyz,
 )
 
 if TYPE_CHECKING:
@@ -63,7 +69,6 @@ _MARKERS = {
     "x": "cross",
     "*": "asterisk6",
 }
-_TRAIL_MAX_ALPHA = 0.7
 
 
 def _rgba(color: str) -> NDArray[np.float32]:
@@ -72,32 +77,20 @@ def _rgba(color: str) -> NDArray[np.float32]:
     return np.asarray(to_rgba(color), dtype=np.float32)
 
 
-def _xyz(points: NDArray[np.float64]) -> NDArray[np.float32]:
-    """(n, n_dims) points as (n, 3), with z = 0 in two dimensions."""
-    points = np.atleast_2d(points)
-    out = np.zeros((len(points), 3), dtype=np.float32)
-    out[:, : min(points.shape[1], 3)] = points[:, :3]
-    return out
-
-
 class _Position:
     """The animal's position and a fading trail of recent positions."""
 
     def __init__(self, subplot: Any, data: PositionData) -> None:
         self.data = data
-        color = _rgba(data.color)
         self.length = data.trail_length or 0
         if self.length > 1:
-            alphas = np.linspace(0.0, _TRAIL_MAX_ALPHA, self.length)
-            colors = np.tile(color, (self.length, 1))
-            colors[:, 3] = alphas
+            colors = np.tile(_rgba(data.color), (self.length, 1))
+            colors[:, 3] = np.linspace(0.0, _TRAIL_MAX_ALPHA, self.length)
             self.trail = subplot.add_line(
-                np.full((self.length, 3), np.nan, dtype=np.float32),
-                colors=colors,
-                thickness=2,
+                xyz(np.full((self.length, 2), np.nan)), colors=colors, thickness=2
             )
         self.marker = subplot.add_scatter(
-            np.full((1, 3), np.nan, dtype=np.float32),
+            xyz([np.nan, np.nan]),
             colors=data.color,
             sizes=data.size,
             edge_colors="white",
@@ -105,12 +98,12 @@ class _Position:
         )
 
     def update(self, frame: int) -> None:
-        self.marker.data = _xyz(self.data.data[frame])
+        self.marker.data = xyz(self.data.data[frame])
         if self.length > 1:
             window = np.full((self.length, self.data.data.shape[1]), np.nan)
             recent = self.data.data[max(0, frame - self.length + 1) : frame + 1]
             window[self.length - len(recent) :] = recent
-            self.trail.data = _xyz(window)
+            self.trail.data = xyz(window)
 
 
 class _Bodyparts:
@@ -121,39 +114,40 @@ class _Bodyparts:
         self.names = list(data.bodyparts)
         colors = [(data.colors or {}).get(name, "cyan") for name in self.names]
         self.points = subplot.add_scatter(
-            np.full((len(self.names), 3), np.nan, dtype=np.float32),
+            xyz(np.full((len(self.names), 2), np.nan)),
             colors=np.array([_rgba(color) for color in colors]),
             sizes=8,
             edge_colors="white",
             edge_width=0.5,
         )
+        self.edges: list[tuple[str, str]] = []
         skeleton = data.skeleton
-        self.edges = (
-            [
+        if skeleton is not None:
+            self.edges = [
                 (start, end)
                 for start, end in skeleton.edges
                 if start in data.bodyparts and end in data.bodyparts
             ]
-            if skeleton is not None
-            else []
-        )
         if self.edges:
             assert skeleton is not None
             self.lines = subplot.add_line(
-                np.full((3 * len(self.edges), 3), np.nan, dtype=np.float32),
+                self._segments(0),
                 colors=skeleton.edge_color,
                 thickness=skeleton.edge_width,
             )
 
+    def _segments(self, frame: int) -> NDArray[np.float32]:
+        parts = self.data.bodyparts
+        return pair_segments(
+            [parts[start][frame] for start, _ in self.edges],
+            [parts[end][frame] for _, end in self.edges],
+        )
+
     def update(self, frame: int) -> None:
         parts = self.data.bodyparts
-        self.points.data = _xyz(np.array([parts[name][frame] for name in self.names]))
+        self.points.data = xyz([parts[name][frame] for name in self.names])
         if self.edges:
-            n_dims = next(iter(parts.values())).shape[1]
-            segments = np.full((3 * len(self.edges), n_dims), np.nan)
-            segments[0::3] = [parts[start][frame] for start, _ in self.edges]
-            segments[1::3] = [parts[end][frame] for _, end in self.edges]
-            self.lines.data = _xyz(segments)
+            self.lines.data = self._segments(frame)
 
 
 class _HeadDirection:
@@ -168,14 +162,12 @@ class _HeadDirection:
     ) -> None:
         self.data, self.anchor, self.center = data, anchor, center
         self.line = subplot.add_line(
-            np.full((2, 3), np.nan, dtype=np.float32),
-            colors=np.tile(np.array([1, 1, 1, 1], dtype=np.float32), (2, 1)),
+            xyz(np.full((2, 2), np.nan)),
+            colors=np.ones((2, 4), dtype=np.float32),
             thickness=data.width,
         )
 
     def update(self, frame: int) -> None:
-        from neurospatial.animation._parallel import _head_direction_color
-
         origin = self.center
         if self.anchor is not None and np.all(np.isfinite(self.anchor.data[frame])):
             origin = self.anchor.data[frame][:2]
@@ -188,17 +180,19 @@ class _HeadDirection:
             direction = direction / norm if norm > 0 else direction
         direction = direction * self.data.length
         if not np.all(np.isfinite(direction)):
-            self.line.data = np.full((2, 3), np.nan, dtype=np.float32)
+            self.line.data = xyz(np.full((2, 2), np.nan))
             return
-        self.line.data = _xyz(np.array([origin, origin + direction]))
-        color = np.asarray(
-            _head_direction_color(self.data.color, direction), dtype=np.float32
-        )
-        self.line.colors = np.tile(color, (2, 1))
+        self.line.data = xyz([origin, origin + direction])
+        color = _head_direction_color(self.data.color, direction)
+        self.line.colors = np.tile(np.asarray(color, dtype=np.float32), (2, 1))
 
 
 class _Events:
-    """Events at their positions: all so far, only the current, or fading."""
+    """Events at their positions: all so far, only the current, or fading.
+
+    Positions are drawn once; each frame only sets the opacity of each
+    event's fill and border.
+    """
 
     def __init__(self, subplot: Any, data: EventData) -> None:
         self.data = data
@@ -206,36 +200,26 @@ class _Events:
         for name, positions in data.event_positions.items():
             if len(positions) == 0:
                 continue
-            color = _rgba(data.colors[name])
+            fill = np.tile(_rgba(data.colors[name]), (len(positions), 1))
+            border = np.tile(_rgba(data.border_color), (len(positions), 1))
+            fill[:, 3] = border[:, 3] = 0.0
             graphic = subplot.add_scatter(
-                np.full((len(positions), 3), np.nan, dtype=np.float32),
-                colors=np.tile(color, (len(positions), 1)),
+                xyz(positions),
+                colors=fill,
                 sizes=data.size,
                 markers=_MARKERS.get(data.markers.get(name, "o"), "circle"),
-                edge_colors=data.border_color,
+                edge_colors=border,
                 edge_width=data.border_width * data.size,  # a fraction of the size
                 alpha_mode="blend",
             )
-            self.kinds.append((name, positions, color, graphic))
+            frames = data.event_frame_indices[name]
+            self.kinds.append((frames, fill, border, graphic))
 
     def update(self, frame: int) -> None:
-        decay = self.data.decay_frames
-        for name, positions, color, graphic in self.kinds:
-            frames = self.data.event_frame_indices[name]
-            if decay is None:
-                shown = frames <= frame
-            elif decay == 0:
-                shown = frames == frame
-            else:
-                shown = (frames >= frame - decay) & (frames <= frame)
-            points = np.where(shown[:, None], positions, np.nan)
-            graphic.data = _xyz(points)
-            colors = np.tile(color, (len(positions), 1))
-            alphas = np.ones(len(positions))
-            if decay:
-                alphas = 1.0 - (frame - frames) / (decay + 1)
-            colors[:, 3] = np.where(shown, alphas * self.data.opacity, 0.0)
-            graphic.colors = colors
+        for frames, fill, border, graphic in self.kinds:
+            shown, alphas = _event_visibility(frames, frame, self.data.decay_frames)
+            fill[:, 3] = border[:, 3] = np.where(shown, alphas * self.data.opacity, 0)
+            graphic.colors, graphic.edge_colors = fill, border
 
 
 def _skip_unsupported(overlay_data: OverlayData) -> OverlayData:
@@ -268,10 +252,35 @@ class FastplotlibAnimation:
     it displays itself with a play button and a slider; elsewhere call
     :meth:`show` (in a script, then ``fastplotlib.loop.run()``).
 
+    Parameters
+    ----------
+    env : Environment
+        The bins the fields are defined on.
+    fields : sequence of ndarray of shape (n_bins,), or ndarray (n_frames, n_bins)
+        One field per frame. An array, including a memory map, is read one
+        frame at a time.
+    frame_times : ndarray of shape (n_frames,)
+        Time of each frame, in seconds; labels the frames.
+    fps : float
+        Frames per second while playing.
+    cmap, vmin, vmax
+        Colormap and its limits; limits default to the range over all frames,
+        estimated from a sample of a very long recording.
+    frame_labels : sequence of str, optional
+        A label per frame; the frame times by default.
+    title : str, optional
+        Plot title; the environment's name and units by default.
+    overlay_data : OverlayData, optional
+        Overlays aligned to the frames.
+    show_regions : bool or sequence of str, default=False
+        Draw all regions, or the named ones.
+    region_alpha : float, default=0.3
+        Opacity of region areas.
+
     Attributes
     ----------
     figure : fastplotlib.Figure
-        The figure; add graphics to ``figure[0]`` or ``figure[0, 0]``.
+        The figure; add graphics to ``figure[0, 0]``.
     n_frames : int
         Number of frames.
     fps : float
@@ -289,19 +298,28 @@ class FastplotlibAnimation:
         vmin: float | None = None,
         vmax: float | None = None,
         frame_labels: Sequence[str] | None = None,
-        title_text: str | None = None,
+        title: str | None = None,
         overlay_data: OverlayData | None = None,
         show_regions: bool | Sequence[str] = False,
         region_alpha: float = 0.3,
     ) -> None:
+        from neurospatial.animation.rendering import (
+            _validate_frame_labels,
+            animation_colormap_range,
+        )
+
         self._fields = fields
         self.n_frames = len(fields)
         self.fps = float(fps)
         self._frame_times = np.asarray(frame_times, dtype=np.float64)
-        self._labels = frame_labels
-        low, high = _limits(fields, vmin, vmax)
+        self._labels = _validate_frame_labels(
+            None if frame_labels is None else list(frame_labels),
+            self.n_frames,
+            "fastplotlib",
+        )
+        low, high = animation_colormap_range(fields, vmin, vmax)  # type: ignore[arg-type]
         scale = ColorScale(cmap, low, high, "lightgray")
-        self.figure, self._plot, scale_plot = new_figure(env, colorbar=True)
+        self.figure, self._plot = new_figure(env)
         self._field = FieldGraphic(
             self._plot, env, np.asarray(fields[0], dtype=np.float64), scale
         )
@@ -313,8 +331,8 @@ class FastplotlibAnimation:
             show_regions=show_regions,
             region_alpha=region_alpha,
         )
-        draw_colorbar(scale_plot, scale, "")
-        self._title = title_text or title(env, "")
+        draw_colorbar(self._plot, scale, "")
+        self._title = title or plot_title(env)
         self._layers: list[Any] = []
         if overlay_data is not None:
             overlay_data = _skip_unsupported(overlay_data)
@@ -335,6 +353,7 @@ class FastplotlibAnimation:
         self._playing = False
         self._clock = (0.0, 0)
         self._slider: Any = None
+        self._controls: Any = None
         self.frame = 0
 
     @property
@@ -402,6 +421,8 @@ class FastplotlibAnimation:
             In Jupyter, a widget holding the figure, a play button and a
             slider; elsewhere the figure's canvas.
         """
+        if self._controls is not None:  # shown already: the controls exist
+            return self._controls
         output = self.figure.show()
         if _in_notebook(self.figure.canvas):
             import ipywidgets
@@ -416,13 +437,18 @@ class FastplotlibAnimation:
                 min=0, max=self.n_frames - 1, value=self._frame
             )
             ipywidgets.jslink((play, "value"), (self._slider, "value"))
-            self._slider.observe(
-                lambda change: setattr(self, "frame", change["new"]), names="value"
+            self._slider.observe(self._on_slider, names="value")
+            self._controls = ipywidgets.VBox(
+                [output, ipywidgets.HBox([play, self._slider])]
             )
-            return ipywidgets.VBox([output, ipywidgets.HBox([play, self._slider])])
-        self.figure.renderer.add_event_handler(self._on_key, "key_down")
-        self.figure.add_animations(self._advance)
-        return output
+        else:
+            self.figure.renderer.add_event_handler(self._on_key, "key_down")
+            self.figure.add_animations(self._advance)
+            self._controls = output
+        return self._controls
+
+    def _on_slider(self, change: dict[str, Any]) -> None:
+        self.frame = change["new"]
 
     def _ipython_display_(self) -> None:
         from IPython.display import display
@@ -439,39 +465,12 @@ def _in_notebook(canvas: Any) -> bool:
     return isinstance(canvas, ipywidgets.DOMWidget)
 
 
-def _limits(
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
-    vmin: float | None,
-    vmax: float | None,
-) -> tuple[float, float]:
-    """Color limits over every frame, ignoring missing values."""
-    if vmin is not None and vmax is not None:
-        return color_limits(np.array([vmin, vmax]), vmin, vmax)
-    low, high = np.inf, -np.inf
-    for field in fields:
-        finite = np.asarray(field, dtype=np.float64)
-        finite = finite[np.isfinite(finite)]
-        if finite.size:
-            low, high = min(low, finite.min()), max(high, finite.max())
-    values = np.array([low, high]) if np.isfinite(low) else np.array([np.nan])
-    return color_limits(values, vmin, vmax)
-
-
 def render_fastplotlib(
     env: Environment,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     *,
-    frame_times: NDArray[np.float64],
-    fps: float,
-    overlay_data: OverlayData | None = None,
-    cmap: str | Colormap = "viridis",
-    vmin: float | None = None,
-    vmax: float | None = None,
-    frame_labels: Sequence[str] | None = None,
-    title: str | None = None,
-    show_regions: bool | Sequence[str] = False,
-    region_alpha: float = 0.3,
     dry_run: bool = False,
+    **options: Any,
 ) -> FastplotlibAnimation | None:
     """Animate ``fields`` with fastplotlib; see :class:`FastplotlibAnimation`.
 
@@ -479,28 +478,13 @@ def render_fastplotlib(
     ----------
     env : Environment
         The bins the fields are defined on.
-    fields : sequence of ndarray of shape (n_bins,), or ndarray (n_frames, n_bins)
-        One field per frame. An array, including a memory map, is read one
-        frame at a time.
-    frame_times : ndarray of shape (n_frames,)
-        Time of each frame, in seconds; labels the frames.
-    fps : float
-        Frames per second while playing.
-    overlay_data : OverlayData, optional
-        Overlays aligned to the frames.
-    cmap, vmin, vmax
-        Colormap and its limits; limits default to the range over all frames.
-    frame_labels : sequence of str, optional
-        A label per frame; the frame times by default.
-    title : str, optional
-        Plot title; the environment's name and units by default.
-    show_regions : bool or sequence of str, default=False
-        Draw all regions, or the named ones.
-    region_alpha : float, default=0.3
-        Opacity of region areas.
+    fields : sequence of ndarray, or ndarray (n_frames, n_bins)
+        One field per frame.
     dry_run : bool, default=False
         Check that fastplotlib is installed and report the size of the
         animation, without drawing.
+    **options
+        The options of :class:`FastplotlibAnimation`.
 
     Returns
     -------
@@ -518,17 +502,4 @@ def render_fastplotlib(
             "displayed. To proceed, call again with dry_run=False."
         )
         return None
-    return FastplotlibAnimation(
-        env,
-        fields,
-        frame_times=frame_times,
-        fps=fps,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        frame_labels=frame_labels,
-        title_text=title,
-        overlay_data=overlay_data,
-        show_regions=show_regions,
-        region_alpha=region_alpha,
-    )
+    return FastplotlibAnimation(env, fields, **options)

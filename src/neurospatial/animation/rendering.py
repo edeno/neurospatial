@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._timing import timing
 
 if TYPE_CHECKING:
@@ -24,6 +25,53 @@ __all__ = [
     "render_field_to_png_bytes",
     "render_field_to_rgb",
 ]
+
+
+# Above this many frames an animation's color range is estimated from a
+# sample of about 50,000 frames rather than read in full.
+_EXACT_RANGE_MAX_FRAMES = 200_000
+
+
+def animation_colormap_range(
+    fields: list[NDArray[np.float64]] | NDArray[np.float64],
+    vmin: float | None,
+    vmax: float | None,
+) -> tuple[float, float]:
+    """Color range for an animation, sampling frames of a very long one.
+
+    Parameters
+    ----------
+    fields : list of ndarray or ndarray, shape (n_frames, n_bins)
+        The frames.
+    vmin, vmax : float or None
+        Given limits; None computes them.
+
+    Returns
+    -------
+    vmin, vmax : float
+
+    Warns
+    -----
+    UserWarning
+        When the range is estimated from every n-th frame.
+    """
+    if vmin is not None and vmax is not None:
+        return vmin, vmax
+    n_frames = len(fields)
+    stride = None
+    if n_frames > _EXACT_RANGE_MAX_FRAMES and isinstance(fields, np.ndarray):
+        stride = max(1, n_frames // 50_000)
+        warnings.warn(
+            f"Estimating colormap range from {n_frames:,} frames using "
+            f"sample_stride={stride} (every {stride}th frame). For exact "
+            "range, pass explicit vmin/vmax parameters.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    low, high = compute_global_colormap_range(
+        fields, vmin=vmin, vmax=vmax, sample_stride=stride
+    )
+    return (low if vmin is None else vmin), (high if vmax is None else vmax)
 
 
 def compute_global_colormap_range(

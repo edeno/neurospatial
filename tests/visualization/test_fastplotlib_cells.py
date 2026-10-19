@@ -9,12 +9,7 @@ from matplotlib.colors import to_rgba
 from shapely.geometry import Polygon, box
 
 from neurospatial import Environment
-from neurospatial.environment._fastplotlib import (
-    ColorScale,
-    cell_mesh,
-    color_limits,
-    mesh_colors,
-)
+from neurospatial.environment._fastplotlib import ColorScale, cell_mesh
 from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D
 
@@ -86,15 +81,11 @@ def test_each_bin_is_drawn_as_its_own_cell(env):
     )  # float32 vertices
 
 
-def test_grid_cells_have_the_bins_area_and_order():
+def test_grid_cells_have_the_bins_area():
     mask = np.ones((10, 10), dtype=bool)
     mask[:3, :3] = False
     env = _grid(mask)
-    cells = cell_mesh(env)
-    np.testing.assert_allclose(_cell_areas(cells, env.n_bins), 16.0, rtol=1e-6)
-    np.testing.assert_allclose(
-        _cell_centroids(cells, env.n_bins), env.bin_centers, atol=1e-5
-    )  # float32 vertices
+    np.testing.assert_allclose(_cell_areas(cell_mesh(env), env.n_bins), 16.0, rtol=1e-6)
 
 
 def test_clipped_cells_keep_their_exact_area_holes_included():
@@ -120,28 +111,19 @@ def test_tracks_points_and_volumes_are_drawn_as_points():
 
 def test_missing_values_get_their_own_color_not_the_top_of_the_colormap():
     scale = ColorScale("viridis", 0.0, 10.0, "lightgray")
-    colors = scale.colors(
-        np.array([0.0, 10.0, np.nan, 20.0]), scale.table(), scale.missing()
-    )
+    values = np.array([0.0, 10.0, np.nan, 20.0])
+    colors = scale.rgba(values)
     np.testing.assert_allclose(colors[0], colormaps["viridis"](0.0), atol=1e-6)
     np.testing.assert_allclose(colors[1], colormaps["viridis"](1.0), atol=1e-6)
     np.testing.assert_allclose(colors[2], to_rgba("lightgray"))
     np.testing.assert_allclose(colors[3], colors[1])  # above vmax is clipped
-    transparent = ColorScale("viridis", 0.0, 1.0, None)
-    assert transparent.missing()[3] == 0.0
+    # The texture coordinate lands in the middle of the same lookup row.
+    rows = scale.texture_coordinates(values) * len(scale.lut) - 0.5
+    np.testing.assert_allclose(scale.lut[np.rint(rows).astype(int)], colors)
+    assert scale.index(values)[2] == 0
+    assert ColorScale("viridis", 0.0, 1.0, None).lut[0, 3] == 0.0  # transparent
 
 
-def test_color_limits_follow_plot_field():
-    assert color_limits(np.array([1.0, np.nan, 3.0]), None, None) == (1.0, 3.0)
-    assert color_limits(np.array([2.0, 2.0]), None, None) == (2.0, 3.0)
-    assert color_limits(np.array([np.nan]), None, None) == (0.0, 1.0)
-    assert color_limits(np.array([1.0, 3.0]), 0.0, None) == (0.0, 3.0)
-
-
-def test_mesh_colors_are_linearized_srgb():
-    rgba = np.array([[0.0, 0.04045, 0.5, 1.0]], dtype=np.float32)
-    linear = mesh_colors(rgba)
-    np.testing.assert_allclose(
-        linear[0, :3], [0.0, 0.04045 / 12.92, 0.21404], atol=1e-5
-    )
-    assert linear[0, 3] == 1.0  # opacity is not a color
+def test_equal_limits_do_not_divide_by_zero():
+    scale = ColorScale("viridis", 2.0, 2.0, "lightgray")
+    np.testing.assert_array_equal(scale.index(np.array([2.0, 3.0])), [1, 255])

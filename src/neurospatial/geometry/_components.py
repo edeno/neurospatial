@@ -24,6 +24,18 @@ class HexagonShapes(ReadOnlyState):
         centers.setflags(write=False)
         object.__setattr__(self, "centers", centers)
 
+    def corner_offsets(self) -> NDArray[np.float64]:
+        """Corners relative to a hexagon's center, counterclockwise, shape (6, 2).
+
+        The first corner points along ``orientation`` + 90 degrees, as
+        Matplotlib's ``RegularPolygon`` draws it.
+        """
+        angles = np.arange(6) * np.pi / 3 + np.pi / 2 + self.orientation
+        offsets: NDArray[np.float64] = self.radius * np.column_stack(
+            (np.cos(angles), np.sin(angles))
+        )
+        return offsets
+
     def extent(self) -> tuple[tuple[float, float], ...]:
         """Bound the hexagons, corners included, one ``(low, high)`` per axis.
 
@@ -32,8 +44,7 @@ class HexagonShapes(ReadOnlyState):
         tuple of (float, float)
             The lowest and highest coordinate of the cells on each axis.
         """
-        angles = np.arange(6) * np.pi / 3 + np.pi / 2 + self.orientation
-        offsets = self.radius * np.column_stack((np.cos(angles), np.sin(angles)))
+        offsets = self.corner_offsets()
         return axis_ranges(
             self.centers.min(axis=0) + offsets.min(axis=0),
             self.centers.max(axis=0) + offsets.max(axis=0),

@@ -125,6 +125,7 @@ from neurospatial.environment._visualization import (
     _plot,
     _plot_1d,
     _plot_field,
+    check_field,
 )
 from neurospatial.geometry import (
     Binning,
@@ -5556,11 +5557,11 @@ class Environment(Generic[_C]):
 
             _fastplotlib.refuse_matplotlib_options(
                 "plot",
-                ax=ax,
-                layout_plot_kwargs=layout_plot_kwargs,
-                regions_plot_kwargs=regions_plot_kwargs,
-                scale_bar=scale_bar,
-                **kwargs,
+                kwargs,
+                ax=ax is not None,
+                layout_plot_kwargs=layout_plot_kwargs is not None,
+                regions_plot_kwargs=regions_plot_kwargs is not None,
+                scale_bar=scale_bar is not False,
             )
             return _fastplotlib.plot_environment(
                 self,
@@ -5816,21 +5817,20 @@ class Environment(Generic[_C]):
         >>> env.plot_field(field, backend="fastplotlib").show()  # doctest: +SKIP
 
         """
+        check_field(field, self.n_bins)
         if _check_backend(backend) == "fastplotlib":
             from neurospatial.environment import _fastplotlib
 
-            field = np.asarray(field, dtype=np.float64)
-            if field.shape != (self.n_bins,):
-                raise ValueError(
-                    f"field must be 1D array with length n_bins={self.n_bins}, "
-                    f"got shape {field.shape}"
-                )
             _fastplotlib.refuse_matplotlib_options(
-                "plot_field", ax=ax, scale_bar=scale_bar, **kwargs
+                "plot_field",
+                kwargs,
+                ax=ax is not None,
+                rasterized=rasterized is not True,
+                scale_bar=scale_bar is not False,
             )
             return _fastplotlib.plot_field(
                 self,
-                field,
+                np.asarray(field, dtype=np.float64),
                 cmap=cmap,
                 vmin=vmin,
                 vmax=vmax,

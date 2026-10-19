@@ -285,6 +285,36 @@ def _plot_1d(
     return ax
 
 
+def check_field(field: NDArray[np.float64], n_bins: int) -> None:
+    """Refuse a field that is not one value per bin."""
+    if field.ndim != 1 or field.shape[0] != n_bins:
+        raise ValueError(
+            f"field must be 1D array with length n_bins={n_bins}, "
+            f"got shape {field.shape}"
+        )
+
+
+def field_color_limits(
+    field: NDArray[np.float64], vmin: float | None, vmax: float | None
+) -> tuple[float, float]:
+    """Color limits of a field: the given ones, else its finite range.
+
+    An all-missing or infinite end falls back to 0 or 1, and equal limits
+    widen by one, as every ``plot_field`` backend draws them.
+    """
+    if vmin is None:
+        vmin = np.nanmin(field)
+        if np.isnan(vmin) or np.isinf(vmin):
+            vmin = 0.0
+    if vmax is None:
+        vmax = np.nanmax(field)
+        if np.isnan(vmax) or np.isinf(vmax):
+            vmax = 1.0
+    if vmin >= vmax:
+        vmax = vmin + 1.0
+    return vmin, vmax
+
+
 def _plot_field(
     binning: Binning,
     labels: PlotLabels,
@@ -303,13 +333,8 @@ def _plot_field(
     """Draw a bin-valued field with the renderer that matches the cell shapes."""
     import matplotlib.pyplot as plt
 
-    n_bins, n_dims = binning.bins.n_bins, binning.bins.n_dims
+    n_dims = binning.bins.n_dims
     is_linearized_track = _cell_shape(binning) == "track"
-    if field.ndim != 1 or field.shape[0] != n_bins:
-        raise ValueError(
-            f"field must be 1D array with length n_bins={n_bins}, "
-            f"got shape {field.shape}"
-        )
 
     # Check dimensionality for spatial plots
     if not is_linearized_track and n_dims > 2:
@@ -329,20 +354,7 @@ def _plot_field(
     if ax is None:
         _, ax = plt.subplots(figsize=(8, 7))
 
-    # Auto vmin/vmax
-    if vmin is None:
-        vmin = np.nanmin(field)
-        if np.isnan(vmin) or np.isinf(vmin):
-            vmin = 0.0
-
-    if vmax is None:
-        vmax = np.nanmax(field)
-        if np.isnan(vmax) or np.isinf(vmax):
-            vmax = 1.0
-
-    # Ensure vmin < vmax
-    if vmin >= vmax:
-        vmax = vmin + 1.0
+    vmin, vmax = field_color_limits(field, vmin, vmax)
 
     # Choose rendering from the structure published with the bins.
     mappable = None

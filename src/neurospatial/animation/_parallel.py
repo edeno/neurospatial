@@ -137,6 +137,43 @@ def _update_field_artist(artist: Any, binning: Binning, field: Any) -> None:
         artist.set_data(data)
 
 
+def _event_visibility(
+    frame_indices: NDArray[np.int_], frame_idx: int, decay: int | None
+) -> tuple[NDArray[np.bool_], NDArray[np.float64]]:
+    """Which events show on a frame, and their opacity.
+
+    Parameters
+    ----------
+    frame_indices : ndarray of int, shape (n_events,)
+        The frame each event appears on.
+    frame_idx : int
+        The frame drawn.
+    decay : int or None
+        None shows every event so far; 0 only the events on this frame; a
+        positive count the events of the last ``decay`` frames, fading with
+        age (newest 1.0; the + 1 keeps the oldest visible).
+
+    Returns
+    -------
+    shown : ndarray of bool, shape (n_events,)
+    alphas : ndarray of float64, shape (n_events,)
+        Opacity of each event; meaningful where ``shown``.
+    """
+    if decay is None:
+        shown = frame_indices <= frame_idx
+    elif decay == 0:
+        shown = frame_indices == frame_idx
+    else:
+        shown = (frame_indices >= max(0, frame_idx - decay)) & (
+            frame_indices <= frame_idx
+        )
+    if decay:
+        alphas = 1.0 - (frame_idx - frame_indices) / (decay + 1)
+    else:
+        alphas = np.ones(len(frame_indices))
+    return shown, alphas
+
+
 def _render_event_overlay_matplotlib(
     ax: Any, event_data: Any, frame_idx: int
 ) -> list[Any]:
@@ -180,34 +217,14 @@ def _render_event_overlay_matplotlib(
         if len(positions) == 0:
             continue
 
-        # Determine visibility mask based on mode
-        decay = event_data.decay_frames
-        if decay is None:
-            # Cumulative mode: all events up to current frame
-            mask = frame_indices <= frame_idx
-        elif decay == 0:
-            # Instant mode: only show events on their exact frame
-            mask = frame_indices == frame_idx
-        else:
-            # Decay mode: show events within decay window
-            min_frame = frame_idx - decay
-            mask = (frame_indices >= max(0, min_frame)) & (frame_indices <= frame_idx)
-
+        mask, all_alphas = _event_visibility(
+            frame_indices, frame_idx, event_data.decay_frames
+        )
         active_positions = positions[mask]
-        active_frames = frame_indices[mask]
+        alphas = all_alphas[mask]
 
         if len(active_positions) == 0:
             continue
-
-        # Compute per-event alpha based on recency
-        if decay is not None and decay > 0:
-            # Alpha = 1.0 for current frame, decays to lower for oldest
-            ages = frame_idx - active_frames  # 0 = newest, decay_frames = oldest
-            # +1 prevents alpha from reaching exactly 0 for oldest events
-            alphas = 1.0 - (ages / (decay + 1))
-        else:
-            # Cumulative and instant modes: full opacity
-            alphas = np.ones(len(active_positions))
 
         # Render each event with its computed alpha
         base_rgba = to_rgba(color)

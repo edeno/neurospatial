@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import warnings
+from types import SimpleNamespace
 
 # Render into memory: no window, and the same in a terminal, on CI or over SSH.
 os.environ.setdefault("RENDERCANVAS_FORCE_OFFSCREEN", "1")
@@ -28,9 +29,10 @@ if _ADAPTER is None:
     pytest.skip("no GPU adapter for fastplotlib", allow_module_level=True)
 
 from neurospatial import Environment  # noqa: E402
-from neurospatial.animation import EventOverlay, PositionOverlay  # noqa: E402
-from neurospatial.animation.backends.fastplotlib_backend import (  # noqa: E402
+from neurospatial.animation import (  # noqa: E402
+    EventOverlay,
     FastplotlibAnimation,
+    PositionOverlay,
 )
 from neurospatial.arena import OpenArena  # noqa: E402
 from neurospatial.landmarks import Landmark, Landmarks  # noqa: E402
@@ -82,7 +84,7 @@ def test_each_bin_shows_its_value_and_missing_bins_their_own_color():
         np.array([0.0, np.nan]), backend="fastplotlib", vmin=0.0, vmax=1.0
     )
     figure.show()
-    plot = figure[0]
+    plot = figure[0, 0]
     low = _pixel(figure, plot, 5.0, 5.0)
     missing = _pixel(figure, plot, 15.0, 5.0)
     np.testing.assert_allclose(low, colormaps["viridis"](0.0)[:3], atol=2 / 255)
@@ -108,6 +110,11 @@ def test_matplotlib_options_are_refused_and_unknown_backends_named(apparatus):
     with pytest.raises(TypeError, match="ax"):
         apparatus.plot_field(
             np.zeros(apparatus.n_bins), ax=object(), backend="fastplotlib"
+        )
+    # Options at a non-default value count, even when falsy.
+    with pytest.raises(TypeError, match="alpha, rasterized"):
+        apparatus.plot_field(
+            np.zeros(apparatus.n_bins), backend="fastplotlib", rasterized=False, alpha=0
         )
     with pytest.raises(ValueError, match="Unknown backend 'plotly'"):
         apparatus.plot(backend="plotly")
@@ -139,11 +146,11 @@ def test_animation_moves_the_overlays_with_the_frame(apparatus, walk):
     assert animation._fields is fields  # an array is read a frame at a time
     animation.show()
     position, event_layer = animation._layers
+    ((_, _, _, event_graphic),) = event_layer.kinds
     for frame, shown in ((10, True), (14, True), (16, False), (50, True)):
         animation.frame = frame
         np.testing.assert_allclose(position.marker.data[0, :2], path[frame], rtol=1e-6)
-        visible = np.isfinite(event_layer.kinds[0][3].data[:][:, 0])
-        assert visible.any() == shown
+        assert (event_graphic.colors[:][:, 3] > 0).any() == shown
     assert animation._plot.title.text.endswith(f"t = {t[50]:.2f} s")
 
 
@@ -153,9 +160,8 @@ def test_keys_and_clock_drive_playback(apparatus, walk, monkeypatch):
         fields, frame_times=t, backend="fastplotlib", speed=1.0
     )
 
-    class Key:
-        def __init__(self, key):
-            self.key = key
+    def Key(key):
+        return SimpleNamespace(key=key)
 
     animation._on_key(Key("End"))
     assert animation.frame == animation.n_frames - 1
