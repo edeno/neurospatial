@@ -1621,6 +1621,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The napari backend showed the wrong events after any jump larger than
+  `decay_frames`, forward or backward: moving to frame 1 from napari's
+  starting frame 99 showed frames 0-9 instead of 0-1, and frame 10 then
+  showed 90 events instead of 6, staying wrong until the end. Napari opens at
+  the middle frame, so the first move to the start triggered it. Visibility is
+  now the run of frame-sorted events the frame calls for, found by binary
+  search and updated where it changes, so any jump shows exactly the right
+  events.
+
 - The default smoothing bandwidth for an environment with no neighbor pairs and
   no metric units used each bin's measure to the power `1 / n_dims`, so a track
   bin 2 long in 2-D coordinates counted as 1.41 long. It now uses each bin's
