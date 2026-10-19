@@ -92,6 +92,9 @@
   window_times, window_positions = extract_pre_decision_window(times, positions, entry, 1.0)
   ```
 
+  A 1-D `positions` now comes back as a column: `window_positions` has
+  shape `(n_window, 1)`, not `(n_window,)`.
+
   The decision analyses (`extract_pre_decision_window`,
   `pre_decision_speed_stats`, `pre_decision_heading_stats`,
   `compute_pre_decision_metrics`, `detect_boundary_crossings` and

@@ -988,13 +988,20 @@ def test_decision_analysis_forwards_declared_break(t_maze_environment):
     }
     result = compute_decision_analysis(env, times, positions, **kwargs)
     entry = int(np.flatnonzero(times == result.entry_time)[0])
+    # The first sample on the far side of the left/right goal boundary.
+    crossing = int(np.flatnonzero(np.diff(result.boundary.goal_labels))[0]) + 1
     break_before = np.zeros(100, dtype=bool)
-    break_before[entry - 3] = True
+    break_before[[entry - 3, crossing]] = True
     broken = compute_decision_analysis(
         env, times, positions, break_before=break_before, **kwargs
     )
     assert result.pre_decision.n_samples == 10
     assert broken.pre_decision.n_samples == 3
+    assert result.boundary.crossing_times == [
+        (times[crossing - 1] + times[crossing]) / 2
+    ]
+    assert broken.boundary.crossing_times == []
+    assert broken.boundary.crossing_directions == []
 
 
 def _repeated_clock_calls():
@@ -1066,3 +1073,11 @@ def test_empty_input_raises(t_maze_environment, name):
         _repeated_clock_calls()[name](
             t_maze_environment, np.array([]), np.empty((0, 2))
         )
+
+
+def test_heading_stats_one_dimensional_error_names_the_passed_shape():
+    from neurospatial.behavior import pre_decision_heading_stats
+
+    times = np.arange(30) / 10
+    with pytest.raises(ValueError, match=r"got shape \(30,\)"):
+        pre_decision_heading_stats(times, 10 * times, min_speed=1.0)

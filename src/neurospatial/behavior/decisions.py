@@ -597,6 +597,9 @@ def pre_decision_heading_stats(
     >>> pre_decision_heading_stats(times, np.ones((10, 2)), min_speed=1.0)
     (nan, nan, nan)
     """
+    from neurospatial.ops.egocentric import _validate_velocity_positions
+
+    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -606,6 +609,9 @@ def pre_decision_heading_stats(
         break_before=break_before,
         result="the heading statistics are NaN",
     )
+    if times.size >= 2:
+        # Check the caller's shape: the resolver reshapes 1-D positions.
+        _validate_velocity_positions(raw_positions)
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -1137,10 +1143,11 @@ def detect_boundary_crossings(
     ([], [])
     """
     position_bins = np.asarray(position_bins, dtype=np.int64)
-    if len(position_bins) != len(np.asarray(times)):
+    n_times = len(np.asarray(times))
+    if len(position_bins) != n_times:
         raise ValueError(
             f"position_bins and times must have same length; got "
-            f"{len(position_bins)} and {len(np.asarray(times))}.\n"
+            f"{len(position_bins)} and {n_times}.\n"
             "Why: each trajectory sample needs its corresponding timestamp.\n"
             "Fix: pass one timestamp per position bin on the same clock."
         )
