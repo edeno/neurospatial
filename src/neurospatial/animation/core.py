@@ -106,6 +106,18 @@ _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
             "dry_run",
         }
     ),
+    "fastplotlib": frozenset(
+        {
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "title",
+            "show_regions",
+            "region_alpha",
+            "dry_run",
+        }
+    ),
 }
 
 # animate_fields parameters every backend uses: they set the frame timing and
@@ -121,6 +133,7 @@ _BACKEND_CALLS: dict[str, str] = {
     "video": "backend='video', save_path='animation.mp4'",
     "html": "backend='html', save_path='animation.html'",
     "widget": "backend='widget'",
+    "fastplotlib": "backend='fastplotlib'",
 }
 
 
@@ -350,7 +363,9 @@ def animate_fields(
     env: Environment,
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     *,
-    backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
+    backend: Literal[
+        "auto", "napari", "video", "html", "widget", "fastplotlib"
+    ] = "auto",
     save_path: str | None = None,
     overwrite: bool | None = None,
     overlays: list[OverlayProtocol] | None = None,
@@ -399,8 +414,10 @@ def animate_fields(
             posterior_seq = [posterior_t0, posterior_t1, ...]  # N frames
             likelihood_seq = [likelihood_t0, likelihood_t1, ...]  # N frames
             fields = [posterior_seq, likelihood_seq]  # 2 sequences of N frames
-    backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
-        Animation backend to use.
+    backend : {"auto", "napari", "video", "html", "widget", "fastplotlib"}, default="auto"
+        Animation backend to use. ``"fastplotlib"`` draws on the GPU, in
+        Jupyter (also from a remote server) or a desktop window; ``"auto"``
+        never chooses it.
     save_path : str, optional
         Output path for video/HTML backends.
     overwrite : bool, default=False
@@ -667,7 +684,7 @@ def animate_fields(
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)
     # Other backends expect list semantics for per-frame iteration
-    if fields_is_array and backend != "napari":
+    if fields_is_array and backend not in ("napari", "fastplotlib"):
         # Type assertion: fields_is_array means fields is a 2D+ ndarray
         assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
         fields = [fields[i] for i in range(fields.shape[0])]
@@ -693,7 +710,8 @@ def animate_fields(
         raise ValueError(
             _format_error(
                 f"Unknown backend: {backend}",
-                fix="pass backend='napari', 'video', 'html', 'widget', or 'auto'",
+                fix="pass backend='napari', 'video', 'html', 'widget', "
+                "'fastplotlib', or 'auto'",
                 why="Why: only the advertised rendering backends are supported.",
             )
         )
@@ -796,6 +814,20 @@ def animate_fields(
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             options.pop("save_path", None),
             overlay_data=overlay_data,
+            fps=playback_fps,
+            **options,
+        )
+
+    elif backend == "fastplotlib":
+        from neurospatial.animation.backends.fastplotlib_backend import (
+            render_fastplotlib,
+        )
+
+        return render_fastplotlib(
+            env,
+            fields,
+            overlay_data=overlay_data,
+            frame_times=frame_times,
             fps=playback_fps,
             **options,
         )

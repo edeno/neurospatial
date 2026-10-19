@@ -11,6 +11,7 @@ from typing import (
     Generic,
     Literal,
     TypeVar,
+    overload,
 )
 
 import networkx as nx
@@ -124,6 +125,7 @@ from neurospatial.environment._visualization import (
     _plot,
     _plot_1d,
     _plot_field,
+    check_field,
 )
 from neurospatial.geometry import (
     Binning,
@@ -151,6 +153,7 @@ from neurospatial.regions import Region, Regions
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import fastplotlib
     import matplotlib.axes
     import pandas as pd
     import scipy.sparse
@@ -167,6 +170,20 @@ if TYPE_CHECKING:
     from neurospatial.ops.transforms import Affine2D, AffineND
 
 logger = logging.getLogger(__name__)
+
+
+def _check_backend(backend: str) -> str:
+    """Return a drawing backend name, or say which ones exist."""
+    if backend not in ("matplotlib", "fastplotlib"):
+        raise ValueError(
+            _format_error(
+                f"Unknown backend {backend!r}.",
+                fix="pass backend='matplotlib' (the default) or "
+                "backend='fastplotlib' to draw on the GPU",
+            )
+        )
+    return backend
+
 
 # Smoothing methods require mode: no one mode is right for every field.
 _MODE_CHOICE = (
@@ -5404,6 +5421,32 @@ class Environment(Generic[_C]):
             coordinates=self._geometry.coordinates,
         )
 
+    @overload
+    def plot(
+        self,
+        ax: matplotlib.axes.Axes | None = None,
+        *,
+        show_regions: bool = True,
+        show_walls: bool = True,
+        show_landmarks: bool = True,
+        layout_plot_kwargs: dict[str, Any] | None = None,
+        regions_plot_kwargs: dict[str, Any] | None = None,
+        scale_bar: bool | ScaleBarConfig = False,
+        backend: Literal["matplotlib"] = "matplotlib",
+        **kwargs: Any,
+    ) -> matplotlib.axes.Axes: ...
+
+    @overload
+    def plot(
+        self,
+        ax: None = None,
+        *,
+        show_regions: bool = True,
+        show_walls: bool = True,
+        show_landmarks: bool = True,
+        backend: Literal["fastplotlib"],
+    ) -> fastplotlib.Figure: ...
+
     @keyword_hint(
         "show_regions",
         "show_walls",
@@ -5411,6 +5454,7 @@ class Environment(Generic[_C]):
         "layout_plot_kwargs",
         "regions_plot_kwargs",
         "scale_bar",
+        "backend",
     )
     def plot(
         self,
@@ -5422,8 +5466,9 @@ class Environment(Generic[_C]):
         layout_plot_kwargs: dict[str, Any] | None = None,
         regions_plot_kwargs: dict[str, Any] | None = None,
         scale_bar: bool | ScaleBarConfig = False,
+        backend: Literal["matplotlib", "fastplotlib"] = "matplotlib",
         **kwargs: Any,
-    ) -> matplotlib.axes.Axes:
+    ) -> matplotlib.axes.Axes | fastplotlib.Figure:
         """Plot the bins with everything specified in the environment.
 
         Draws the bins and the connections between them, then the declared
@@ -5431,11 +5476,14 @@ class Environment(Generic[_C]):
         whether the environment matches the apparatus. The axes widen to
         show landmarks outside the arena, such as a distal cue.
 
+        With ``backend="fastplotlib"`` the same picture is drawn on the GPU in
+        a figure you can pan, zoom and, for a 3-D environment, rotate.
+
         Parameters
         ----------
         ax : Optional[matplotlib.axes.Axes], optional
             The Matplotlib axes to plot on. If None, a new figure and axes
-            are created. Defaults to None.
+            are created. Defaults to None. Matplotlib only.
         show_regions : bool, default=True
             Draw the regions in ``env.regions``, with a legend.
         show_walls : bool, default=True
@@ -5453,14 +5501,28 @@ class Environment(Generic[_C]):
             Whether to add a scale bar showing physical scale. If True, uses
             auto-calculated length based on environment extent. If ScaleBarConfig,
             uses the specified configuration. Default: False (no scale bar).
+        backend : {"matplotlib", "fastplotlib"}, default="matplotlib"
+            ``"fastplotlib"`` draws on the GPU (``pip install
+            "neurospatial[fastplotlib]"``, Python 3.11 or newer). Inside
+            Jupyter it renders on the machine running the kernel and streams
+            to the browser, so it works on a remote GPU server; elsewhere it
+            opens a window. Call ``.show()`` on the returned figure.
+            ``layout_plot_kwargs``, ``regions_plot_kwargs``, ``scale_bar``
+            and ``**kwargs`` are Matplotlib only.
         **kwargs : Any
             Additional keyword arguments that are passed to `layout.plot()`.
             These can be overridden by `layout_plot_kwargs`.
 
         Returns
         -------
-        matplotlib.axes.Axes
-            The axes on which the environment was plotted.
+        matplotlib.axes.Axes or fastplotlib.Figure
+            The axes on which the environment was plotted, or with
+            ``backend="fastplotlib"`` the figure.
+
+        Raises
+        ------
+        TypeError
+            If a Matplotlib-only option is passed with ``backend="fastplotlib"``.
 
         Examples
         --------
@@ -5485,7 +5547,28 @@ class Environment(Generic[_C]):
         ['goal']
         >>> plt.close("all")
 
+        On the GPU, for example from Jupyter on a remote server:
+
+        >>> env.plot(backend="fastplotlib").show()  # doctest: +SKIP
+
         """
+        if _check_backend(backend) == "fastplotlib":
+            from neurospatial.environment import _fastplotlib
+
+            _fastplotlib.refuse_matplotlib_options(
+                "plot",
+                kwargs,
+                ax=ax is not None,
+                layout_plot_kwargs=layout_plot_kwargs is not None,
+                regions_plot_kwargs=regions_plot_kwargs is not None,
+                scale_bar=scale_bar is not False,
+            )
+            return _fastplotlib.plot_environment(
+                self,
+                show_regions=show_regions,
+                show_walls=show_walls,
+                show_landmarks=show_landmarks,
+            )
         return _plot(
             self._binning,
             self.connectivity,
@@ -5554,6 +5637,39 @@ class Environment(Generic[_C]):
             self._binning, self.layout_type, ax, layout_plot_kwargs, **kwargs
         )
 
+    @overload
+    def plot_field(
+        self,
+        field: NDArray[np.float64],
+        ax: matplotlib.axes.Axes | None = None,
+        *,
+        cmap: str | Colormap = "viridis",
+        vmin: float | None = None,
+        vmax: float | None = None,
+        colorbar: bool = True,
+        colorbar_label: str = "",
+        nan_color: str | None = "lightgray",
+        rasterized: bool = True,
+        scale_bar: bool | ScaleBarConfig = False,
+        backend: Literal["matplotlib"] = "matplotlib",
+        **kwargs: Any,
+    ) -> matplotlib.axes.Axes: ...
+
+    @overload
+    def plot_field(
+        self,
+        field: NDArray[np.float64],
+        ax: None = None,
+        *,
+        cmap: str | Colormap = "viridis",
+        vmin: float | None = None,
+        vmax: float | None = None,
+        colorbar: bool = True,
+        colorbar_label: str = "",
+        nan_color: str | None = "lightgray",
+        backend: Literal["fastplotlib"],
+    ) -> fastplotlib.Figure: ...
+
     @keyword_hint(
         "cmap",
         "vmin",
@@ -5563,6 +5679,7 @@ class Environment(Generic[_C]):
         "nan_color",
         "rasterized",
         "scale_bar",
+        "backend",
     )
     def plot_field(
         self,
@@ -5577,8 +5694,9 @@ class Environment(Generic[_C]):
         nan_color: str | None = "lightgray",
         rasterized: bool = True,
         scale_bar: bool | ScaleBarConfig = False,
+        backend: Literal["matplotlib", "fastplotlib"] = "matplotlib",
         **kwargs: Any,
-    ) -> matplotlib.axes.Axes:
+    ) -> matplotlib.axes.Axes | fastplotlib.Figure:
         """Plot spatial field data over the environment.
 
         Automatically selects the appropriate visualization method based on the
@@ -5622,21 +5740,34 @@ class Environment(Generic[_C]):
             Whether to add a scale bar showing physical scale. If True, uses
             auto-calculated length based on environment extent. If ScaleBarConfig,
             uses the specified configuration. Default: False (no scale bar).
+        backend : {"matplotlib", "fastplotlib"}, default="matplotlib"
+            ``"fastplotlib"`` draws on the GPU (``pip install
+            "neurospatial[fastplotlib]"``, Python 3.11 or newer): each bin's
+            own cell, or for tracks, points and 3-D environments a point the
+            size of a bin, with walls and landmarks on top. Inside Jupyter it
+            renders on the machine running the kernel and streams to the
+            browser, so it works on a remote GPU server. Call ``.show()`` on
+            the returned figure. ``ax``, ``rasterized``, ``scale_bar`` and
+            ``**kwargs`` are Matplotlib only.
         **kwargs : Any
             Additional keyword arguments passed to underlying plot function
             (e.g., ``pcolormesh``, ``PatchCollection.set``).
 
         Returns
         -------
-        matplotlib.axes.Axes
-            The axes on which the field was plotted.
+        matplotlib.axes.Axes or fastplotlib.Figure
+            The axes on which the field was plotted, or with
+            ``backend="fastplotlib"`` the figure.
 
         Raises
         ------
         ValueError
             If ``field`` shape does not match ``(n_bins,)``.
+        TypeError
+            If a Matplotlib-only option is passed with ``backend="fastplotlib"``.
         NotImplementedError
-            If environment dimensionality is >2D (not supported for spatial plots).
+            With Matplotlib, if environment dimensionality is >2D; use
+            ``backend="fastplotlib"`` to draw a 3-D field.
         NotImplementedError
             If attempting to use ``pcolormesh`` on non-2D grid.
 
@@ -5681,7 +5812,32 @@ class Environment(Generic[_C]):
         >>> _ = env.plot_field(field, ax=ax)
         >>> fig.savefig("field.png")
 
+        On the GPU, for example from Jupyter on a remote server:
+
+        >>> env.plot_field(field, backend="fastplotlib").show()  # doctest: +SKIP
+
         """
+        check_field(field, self.n_bins)
+        if _check_backend(backend) == "fastplotlib":
+            from neurospatial.environment import _fastplotlib
+
+            _fastplotlib.refuse_matplotlib_options(
+                "plot_field",
+                kwargs,
+                ax=ax is not None,
+                rasterized=rasterized is not True,
+                scale_bar=scale_bar is not False,
+            )
+            return _fastplotlib.plot_field(
+                self,
+                np.asarray(field, dtype=np.float64),
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                colorbar=colorbar,
+                colorbar_label=colorbar_label,
+                nan_color=nan_color,
+            )
         return _plot_field(
             self._binning,
             self._plot_labels(),
@@ -5703,7 +5859,9 @@ class Environment(Generic[_C]):
         fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
         *,
         frame_times: NDArray[np.float64],
-        backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
+        backend: Literal[
+            "auto", "napari", "video", "html", "widget", "fastplotlib"
+        ] = "auto",
         save_path: str | None = None,
         overwrite: bool | None = None,
         speed: float = 1.0,
@@ -5739,13 +5897,17 @@ class Environment(Generic[_C]):
             - List of arrays: Each array shape (n_bins,) represents one frame
             - Single ndarray: Shape (n_frames, n_bins) with first dimension as time
             Each field must match the number of bins in this environment.
-        backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
+        backend : {"auto", "napari", "video", "html", "widget", "fastplotlib"}, default="auto"
             Animation backend to use:
             - "auto": Automatically selects based on context and data size
             - "napari": GPU-accelerated interactive viewer (best for large datasets)
             - "video": Export MP4/WebM with parallel rendering (best for publications)
             - "html": Standalone HTML player with instant scrubbing (best for sharing)
             - "widget": Jupyter widget with slider control (best for notebooks)
+            - "fastplotlib": GPU drawing in Jupyter, including from a remote
+              GPU server, or a desktop window; 2-D and 3-D environments.
+              ``"auto"`` never chooses it. ``pip install
+              "neurospatial[fastplotlib]"`` (Python 3.11 or newer).
         save_path : str, optional
             Output file path. If provided, file extension determines format:
             - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
@@ -5884,6 +6046,8 @@ class Environment(Generic[_C]):
             - video: Path to saved video file
             - html: Path to saved HTML file
             - widget: ipywidgets.interact instance (displays automatically in notebook)
+            - fastplotlib: FastplotlibAnimation (displays itself in Jupyter;
+              elsewhere call ``.show()``)
 
         Raises
         ------

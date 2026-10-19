@@ -6,6 +6,8 @@ Run with ``uv run mypy tests/typing/environment_protocol.py``.
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    import fastplotlib
+    import matplotlib.axes
     import numpy as np
     from numpy.typing import NDArray
     from typing_extensions import assert_type
@@ -91,3 +93,13 @@ if TYPE_CHECKING:
         assert_type(
             polar.with_metadata(name="copy"), Environment[EgocentricPolarSystem]
         )
+
+    def _check_backends(
+        env: Environment[CartesianSystem], field: NDArray[np.float64]
+    ) -> None:
+        # Matplotlib stays the default and keeps its Axes return.
+        assert_type(env.plot(), matplotlib.axes.Axes)
+        assert_type(env.plot_field(field), matplotlib.axes.Axes)
+        assert_type(env.plot(backend="fastplotlib"), fastplotlib.Figure)
+        assert_type(env.plot_field(field, backend="fastplotlib"), fastplotlib.Figure)
+        env.plot(backend="fastplotlib", scale_bar=True)  # type: ignore[call-overload]
