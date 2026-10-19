@@ -24,10 +24,13 @@
   Distance is no longer counted across a time gap longer than `max_gap`
   (0.5 s by default; pass `max_gap=None` for tracking slower than 2 Hz), a
   frame marked in `break_before`, or an interval outside `epochs`, and a `NaN`
-  row splits the path instead of making the total `NaN`. With no observed
-  travel, including a single sample, it returns `nan` instead of `0.0`; `0.0`
-  now means observed and stationary. `times` must be strictly increasing, and
-  a 1-D `positions` is one coordinate, such as a linearized track.
+  row splits the path instead of making the total `NaN`. With
+  `metric="geodesic"`, an interval with an endpoint outside the environment
+  is now left out of the total; it used to make the total `NaN`. With no
+  observed travel, including a single sample, it returns `nan` instead of
+  `0.0`; `0.0` now means observed and stationary. `times` must be strictly
+  increasing, and a 1-D `positions` is one coordinate, such as a linearized
+  track.
 
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
@@ -2741,7 +2744,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   radians per frame, not geometric curvature; use `compute_planar_curvature`
   for 1/length. `heading_from_body_orientation` states that it fills missing
   keypoints across any gap, including a recording break, and how to call it
-  on each run. Outputs are unchanged.
+  once per recording. Outputs are unchanged.
 
 - Fix renamed phase-precession imports in executable examples and move the spatial adapter test normalizer import to its owning private module and distinguish independently standardized assembly activation from reactivation strength on a shared template-normalized projection scale.
 

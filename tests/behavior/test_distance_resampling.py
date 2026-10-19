@@ -38,6 +38,9 @@ def test_plateau_departs_at_last_stationary_sample():
     assert result.run_ids.tolist() == [0] * 5
     assert not result.off_grid_endpoint.any()
     assert result.n_source_samples == 4
+    summary = result.summary()
+    assert summary["n_resampled_samples"] == 5
+    assert summary["n_source_samples"] == 4
     assert result.spacing == 0.5
     assert result.include_endpoint is False
     assert result.max_gap is None
@@ -279,7 +282,9 @@ def test_no_runs_give_empty_arrays(times, positions):
     assert result.source_left.dtype == np.intp
     assert result.off_grid_endpoint.dtype == np.bool_
     summary = result.summary()
-    assert summary["n_samples"] == 0 and summary["n_runs"] == 0
+    assert "n_samples" not in summary
+    assert summary["n_resampled_samples"] == 0 and summary["n_runs"] == 0
+    assert summary["n_source_samples"] == times.size
     assert np.isnan(summary["total_distance"])
 
 

@@ -218,10 +218,15 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
         return df
 
     def summary(self) -> dict[str, Any]:
-        """Flat dict of scalar headline metrics for this result."""
+        """Flat dict of scalar headline metrics for this result.
+
+        ``n_resampled_samples`` counts the output samples and
+        ``n_source_samples`` the input samples they were resampled from.
+        """
         lengths = self.run_path_lengths
         return {
-            "n_samples": int(self.times.size),
+            "n_resampled_samples": int(self.times.size),
+            "n_source_samples": int(self.n_source_samples),
             "n_runs": int(lengths.size),
             "spacing": float(self.spacing),
             "total_distance": float(lengths.sum()) if lengths.size else float("nan"),

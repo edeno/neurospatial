@@ -124,7 +124,10 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
         return float(self.run_path_lengths.sum())
 
     def summary(self) -> dict[str, Any]:
-        """Flat dict of scalar headline metrics for this result."""
+        """Flat dict of scalar headline metrics for this result.
+
+        ``n_samples`` counts the input samples, one per entry of ``run_ids``.
+        """
         widths = self.run_time_bounds[:, 1] - self.run_time_bounds[:, 0]
         return {
             "n_samples": int(self.run_ids.size),
