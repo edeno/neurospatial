@@ -498,7 +498,8 @@ class TestNormalizeVTEScores:
         head_sweeps = np.array([1.0, 1.0, 1.0])
         speeds = np.array([10.0, 20.0, 30.0])
 
-        _, z_speed_inverse = normalize_vte_scores(head_sweeps, speeds)
+        with pytest.warns(UserWarning, match="No variation in head sweep"):
+            _, z_speed_inverse = normalize_vte_scores(head_sweeps, speeds)
 
         # Slowest (10) should have highest z_speed_inverse
         assert z_speed_inverse[0] > z_speed_inverse[1] > z_speed_inverse[2]
@@ -1034,7 +1035,7 @@ class TestComputeVTESession:
 
         # Check consistency: vte_fraction is over the classified trials
         n_classified = sum(t.is_vte is not None for t in result.trial_results)
-        assert n_classified == len(result.trial_results) > 0
+        assert n_classified == len(result.trial_results) == 5
         assert_allclose(result.vte_fraction, result.n_vte_trials / n_classified)
 
 
@@ -1058,7 +1059,7 @@ def test_compute_vte_session_env_first(t_maze_environment):
     dt = 1.0 / 30.0
     times = np.arange(n) * dt
     x = 50.0 + 5.0 * np.sin(np.linspace(0, 8 * np.pi, n))
-    y = np.linspace(30.0, 50.0, n)
+    y = np.linspace(30.0, 56.0, n)  # into the center bin (y >= 52.5)
     positions = np.column_stack([x, y])
 
     trials = [
@@ -1071,17 +1072,19 @@ def test_compute_vte_session_env_first(t_maze_environment):
         )
     ]
 
-    # Positional (env, positions, times) call runs without error.
-    result = compute_vte_session(
-        env,
-        times,
-        positions,
-        decision_region="center",
-        trials=trials,
-        window_duration=0.5,
-        min_speed=1.0,
-    )
-    assert result is not None
+    # Positional (env, times, positions) call analyzes the trial. One trial
+    # has no spread to z-score against, which warns.
+    with pytest.warns(UserWarning, match="No variation"):
+        result = compute_vte_session(
+            env,
+            times,
+            positions,
+            decision_region="center",
+            trials=trials,
+            window_duration=0.5,
+            min_speed=1.0,
+        )
+    assert len(result.trial_results) == 1
 
 
 @pytest.fixture

@@ -49,6 +49,32 @@ def coarse_track():
     return env, times, positions
 
 
+def _vte_session(env, times, positions, **kwargs):
+    """VTE session with a straight approach and one through a turnaround.
+
+    With every interval excluded, both trials are skipped with a warning.
+    """
+    trials = [
+        Trial(0.0, 39.0, "start", "mid_area", True),
+        Trial(35.0, 79.0, "start", "mid_area", True),
+    ]
+    options = {
+        "decision_region": "mid_area",
+        "trials": trials,
+        "window_duration": 10.0,
+        "min_speed": 1.0,
+    }
+    if kwargs.get("max_gap", 0.5) is None:
+        result = compute_vte_session(env, times, positions, **options, **kwargs)
+        assert len(result.trial_results) == 2
+        return result
+    with pytest.warns(UserWarning, match=r"only 0 observed sample\(s\)") as record:
+        result = compute_vte_session(env, times, positions, **options, **kwargs)
+    assert sum("only 0 observed" in str(w.message) for w in record) == 2
+    assert result.trial_results == []
+    return result
+
+
 CALLS = {
     "detect_region_crossings": lambda env, t, p, **kw: detect_region_crossings(
         env.bin_at(p), t, env, region_name="mid_area", **kw
@@ -78,19 +104,7 @@ CALLS = {
     "compute_vte_trial": lambda env, t, p, **kw: compute_vte_trial(
         t, p, 50.0, 10.0, min_speed=1.0, **kw
     ),
-    "compute_vte_session": lambda env, t, p, **kw: compute_vte_session(
-        env,
-        t,
-        p,
-        decision_region="mid_area",
-        trials=[
-            Trial(0.0, 39.0, "start", "mid_area", True),
-            Trial(40.0, 79.0, "start", "mid_area", True),
-        ],
-        window_duration=10.0,
-        min_speed=1.0,
-        **kw,
-    ),
+    "compute_vte_session": lambda env, t, p, **kw: _vte_session(env, t, p, **kw),
     "add_positions": lambda env, t, p, **kw: add_positions(
         pd.DataFrame({"timestamp": [10.5, 50.5]}), times=t, positions=p, **kw
     ),
