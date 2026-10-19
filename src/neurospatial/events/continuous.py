@@ -514,7 +514,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             ``n_relative_times``, ``window_start``, ``window_stop`` (s),
             ``dt`` (s), ``window_coverage``, ``n_overlapping_events``,
             ``min_count`` (smallest supported-event count over cells) and
-            ``n_excluded_<reason>`` for each exclusion reason present. All
+            ``n_dropped_<reason>`` for each exclusion reason present. All
             values are Python ``int``, ``float`` or ``str``.
 
         Examples
@@ -544,7 +544,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             self.event_status[self.event_status != "retained"], return_counts=True
         )
         for reason, n in zip(reasons.tolist(), reason_counts.tolist(), strict=True):
-            out[f"n_excluded_{reason}"] = int(n)
+            out[f"n_dropped_{reason}"] = int(n)
         return out
 
     def plot(self, ax: Axes | None = None, *, feature_id: Any = None) -> Axes:
