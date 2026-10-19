@@ -17,6 +17,7 @@ transforms : Affine transforms, calibration
 alignment : Probability mapping, similarity transforms
 boundary_vectors : Distance and direction to the arena's walls
 egocentric : Heading computation, allocentric/egocentric transforms
+feature_sampling : Feature-map values at positions, by bin containment
 visibility : Viewshed, gaze, line-of-sight
 basis : GLM spatial basis functions
 """
@@ -122,6 +123,12 @@ from neurospatial.ops.egocentric import (
 )
 from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 
+# Feature maps sampled at positions
+from neurospatial.ops.feature_sampling import (
+    SpatialFeatureResult,
+    sample_spatial_features,
+)
+
 # Graph operations
 from neurospatial.ops.graph import (
     graph_convolve,
@@ -219,6 +226,9 @@ __all__ = [
     "egocentric_to_allocentric",
     "heading_from_body_orientation",
     "heading_from_velocity",
+    # Feature sampling
+    "SpatialFeatureResult",
+    "sample_spatial_features",
     # Graph
     "graph_convolve",
     "neighbor_reduce",

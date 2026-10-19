@@ -85,6 +85,16 @@ class BinningConsumer(Protocol):
     def arena(self) -> Arena: ...
 
 
+class CoordinateLabelsConsumer(Protocol):
+    """Length units and frame label of the coordinates, copied onto results."""
+
+    @property
+    def units(self) -> str | None: ...
+
+    @property
+    def frame(self) -> str | None: ...
+
+
 class DiffusionGeometryConsumer(Protocol):
     """The environment's cached conductances and cell measures."""
 
@@ -134,6 +144,12 @@ class RegionMaskConsumer(BinningConsumer, Protocol):
 
     @property
     def regions(self) -> Regions: ...
+
+
+class FeatureLookupConsumer(
+    BinningConsumer, CoordinateConsumer, CoordinateLabelsConsumer, Protocol
+):
+    """Point lookup, coordinate meaning, units and frame for sampling fields."""
 
 
 class NamedRegionConsumer(RegionMaskConsumer, BinCentersConsumer, Protocol):

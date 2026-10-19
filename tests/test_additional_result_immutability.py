@@ -25,6 +25,7 @@ from neurospatial.decoding.trajectory import IsotonicFitResult, RadonDetectionRe
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding.spatial import DirectionalPlaceFields
 from neurospatial.events import ContinuousEventResult
+from neurospatial.ops import SpatialFeatureResult
 
 
 @pytest.fixture(scope="module")
@@ -198,6 +199,19 @@ CASES = [
             "values": np.array([[[1.0, 0.0], [2.0, 0.0]]]),
             "support": np.ones((1, 2, 2), dtype=bool),
             "event_ids": np.array([10, 11]),
+        },
+    ),
+    (
+        SpatialFeatureResult,
+        {
+            "values": np.array([[[1.0]], [[np.nan]]]),
+            "support": np.array([[[True]], [[False]]]),
+            "bins": np.array([[0], [-1]], dtype=np.intp),
+            "feature_ids": np.array(["height"]),
+            "units": "cm",
+            "frame": "room",
+            "ego_points": np.array([[5.0, 0.0]]),
+            "query_positions": np.array([[[5.0, 0.0]], [[50.0, 0.0]]]),
         },
     ),
 ]
