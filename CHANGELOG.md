@@ -733,6 +733,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.plot()` draws everything the environment holds by default: declared
+  walls (labeled with their names), landmarks (labeled, with the axes widened
+  to show any outside the arena) and regions. `show_regions` now defaults to
+  True; `show_walls=False` and `show_landmarks=False` hide the new layers.
+- `env.plot()` fills active grid cells with one light color whether or not
+  some bins are inactive (it was white on a full grid and dark gray
+  otherwise), leaves inactive cells unfilled, and outlines a polygon grid's
+  polygon instead of shading over the bins.
 - The `animation` extra allows napari 0.5 through 0.9 (`napari[all]>=0.5,<0.10`);
   it was capped below 0.6. The napari tests pass on 0.9.2. The floor rises from
   0.4.18 to 0.5, whose `border_color` names the animation and annotation code
@@ -1552,6 +1560,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Add `compute_object_vector_rate(s)` for allocentric animal-to-object direction alongside the egocentric encoders. Both use the shared polar binning, smoothing and recording-window rules, and record a required `direction_frame` on singular and population results.
 
 ### Performance
+
+- `env.plot()` draws the connections between bins as one collection rather
+  than a line each, and marks grid cell edges with unlabeled minor ticks. A
+  10,201-bin grid draws in 0.15 s instead of 4.0 s, and a 114,352-bin grid in
+  1.1 s instead of 31 s.
 
 - `summary_table()` and `label_cell_types()` prepare the physical wall
   geometry once per environment instead of once per cell. For a 2,500-bin

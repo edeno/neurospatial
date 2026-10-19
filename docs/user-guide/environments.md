@@ -851,6 +851,42 @@ instead of coordinates, and record the names in the result; see
 with the bins, and `combine` prefixes their names with the component key, as
 it does for regions. A polar environment, centered on the animal, holds none.
 
+## Check the environment against the apparatus { #overview }
+
+`env.plot()` draws everything the environment holds: the bins and the
+connections between them, the declared walls (red, named), the landmarks
+(orange, named) and the regions (in the legend). Compare it with a video frame
+or a sketch of the rig before analyzing: a wall on the wrong side or a cue in
+the wrong corner shows up here, but not in a rate map. It draws a
+hundred-thousand-bin grid in about a second. `show_walls=False`,
+`show_landmarks=False` and `show_regions=False` hide each layer.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import LineString, box
+from neurospatial import Environment
+from neurospatial.arena import OpenArena
+from neurospatial.landmarks import Landmark, Landmarks
+
+edges = np.arange(0.0, 101.0, 5.0)
+divided = Environment.from_grid_mask(
+    np.ones((20, 20), dtype=bool),
+    grid_edges=(edges, edges),
+    units="cm",
+    arena=OpenArena(box(0, 0, 100, 100), walls={"divider": LineString([(50, 0), (50, 70)])}),
+)
+divided = divided.with_landmarks(
+    Landmarks(
+        [
+            Landmark("cue_card", "point", [50.0, 108.0]),
+            Landmark("monitor", "line", [(10.0, 100.0), (90.0, 100.0)]),
+        ]
+    )
+)
+ax = divided.plot()
+```
+
 ## Save the environment with the analysis
 
 `env.to_file(path)` writes JSON metadata and NPZ arrays;
