@@ -596,6 +596,22 @@ def _validated_sample_flags(valid: Any, n_samples: int) -> NDArray[np.bool_]:
     return flags
 
 
+def _label_array(labels: Any) -> NDArray[Any]:
+    """Return labels as a 1-D array; tuples stay single labels."""
+    if isinstance(labels, str | bytes) or not np.iterable(labels):
+        return np.asarray(labels)
+    if isinstance(labels, np.ndarray):
+        return labels
+    values = list(labels)
+    if any(isinstance(v, tuple) for v in values):
+        # Element-wise fill: np.asarray would broadcast tuples into a 2-D array.
+        array = np.empty(len(values), dtype=object)
+        for i, v in enumerate(values):
+            array[i] = v
+        return array
+    return as_label_array(values)
+
+
 def labels_to_epochs(
     times: Any,
     labels: Any,
@@ -626,7 +642,8 @@ def labels_to_epochs(
     labels : array-like, shape (n_samples,)
         One hashable label per sample. ``None``, ``NaN`` and ``missing_label``
         mark a sample without a label. ``0``, ``-1`` and ``""`` are ordinary
-        labels.
+        labels. A tuple such as ``("arm1", "out")`` is one label, so a combined
+        condition needs no string joining. Result keys are plain Python values.
     valid : array-like of bool, shape (n_samples,), optional
         False marks a sample that was not observed (for example lost
         tracking). Default: every sample is valid.
@@ -692,6 +709,12 @@ def labels_to_epochs(
     >>> conditions["in"]
     array([[0.5, 0.6],
            [0.8, 0.9]])
+
+    Tuples are single labels, for combined conditions:
+
+    >>> labels = [("arm1", "out")] * 3 + [("arm1", "in")] * 2
+    >>> list(labels_to_epochs(np.arange(5.0) / 10, labels))
+    [('arm1', 'out'), ('arm1', 'in')]
     """
     import pandas as pd
 
@@ -700,11 +723,7 @@ def labels_to_epochs(
     n_samples = t.size
     # as_label_array keeps mixed labels as objects: np.asarray would turn
     # [-1, "x"] into strings and ["a", nan] into the label "nan".
-    label_array = (
-        np.asarray(labels)
-        if isinstance(labels, str | bytes) or not np.iterable(labels)
-        else as_label_array(labels)
-    )
+    label_array = _label_array(labels)
     if label_array.shape != (n_samples,):
         raise ValueError(
             _format_error(
@@ -722,7 +741,11 @@ def labels_to_epochs(
 
     factorized, uniques = pd.factorize(label_array[:-1], use_na_sentinel=True)
     codes = factorized.astype(np.intp)
-    values: list[Hashable] = np.asarray(uniques).tolist()
+    # tolist() already yields Python scalars; object arrays can still hold NumPy ones.
+    values: list[Hashable] = [
+        v.item() if isinstance(v, np.generic) else v
+        for v in np.asarray(uniques).tolist()
+    ]
     if missing_label is not None:
         # The trailing True maps code -1 (already missing) to itself.
         is_missing = np.array([bool(v == missing_label) for v in values] + [True])

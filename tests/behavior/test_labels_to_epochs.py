@@ -282,3 +282,29 @@ def test_selected_windows_restrict_the_original_samples(invalid_sample_result):
     windows = invalid_sample_result["A"]
     mask = interval_valid_mask(times, max_gap=None, epochs=windows)
     np.testing.assert_array_equal(mask, invalid_sample_result.interval_labels == 0)
+
+
+def test_labels_follow_first_retained_interval():
+    valid = np.ones(5, dtype=bool)
+    valid[0] = False  # "B" starts at sample 0 but is first retained after "A"
+    r = labels_to_epochs(np.arange(5.0), list("BAABB"), valid=valid, max_gap=None)
+    assert list(r) == ["A", "B"]
+    np.testing.assert_array_equal(r.interval_labels, [-1, 0, 0, 1])
+
+
+def test_label_keys_are_plain_python_values():
+    r = labels_to_epochs(
+        np.arange(5.0), [np.int64(1), np.int64(1), "x", "x", "x"], max_gap=None
+    )
+    keys = list(r)
+    assert keys == [1, "x"]
+    assert type(keys[0]) is int
+    assert 1 in r
+
+
+def test_tuple_labels_are_combined_conditions():
+    labels = [("arm1", "out")] * 3 + [("arm1", "in")] * 2
+    r = labels_to_epochs(np.arange(5.0), labels, max_gap=None)
+    assert list(r) == [("arm1", "out"), ("arm1", "in")]
+    np.testing.assert_array_equal(r[("arm1", "out")], [[0, 3]])
+    np.testing.assert_array_equal(r[("arm1", "in")], [[3, 4]])
