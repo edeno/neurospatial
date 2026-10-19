@@ -102,13 +102,16 @@ class HeadDirectionCellModel:
     ...     env, duration=10.0, seed=42, speed_units="cm"
     ... )
     >>>
-    >>> # Compute heading from velocity
-    >>> headings = heading_from_velocity(times, positions, min_speed=1.0)
+    >>> # Heading from velocity, without a speed threshold: with min_speed > 0,
+    >>> # slow samples have no heading (NaN) and give NaN rates, which
+    >>> # generate_poisson_spikes refuses. generate_population_spikes(...,
+    >>> # headings=None) derives a heading that is also defined through stops.
+    >>> headings = heading_from_velocity(times, positions)
     >>>
     >>> # Compute HD cell firing
     >>> hd_cell = HeadDirectionCellModel(preferred_direction=0.0)
     >>> rates = hd_cell.firing_rate(headings)
-    >>> len(rates) == len(headings)
+    >>> bool(np.isfinite(rates).all())
     True
 
     See Also

@@ -82,6 +82,16 @@
   the animal never moves now warns that every heading is undefined and
   returns 0.0; it used to return 0.0 silently.
 
+  Headings computed with `min_speed > 0` contain `NaN` at slow samples, and a
+  simulated cell given them has `NaN` rates that `generate_poisson_spikes`
+  refuses: simulate firing from an unthresholded heading, or let the
+  simulator derive it. `generate_population_spikes` with a
+  `HeadDirectionCellModel` and no `headings` now holds the last direction of
+  movement through stops (samples before the first movement take the first
+  direction), and raises `ValueError` asking for `headings=` when the
+  trajectory never moves; it used to fire as if the animal faced East
+  wherever it stood exactly still.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
