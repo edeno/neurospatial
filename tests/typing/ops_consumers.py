@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         plot_basis_functions,
         regions_to_mask,
         resample_field,
+        sample_egocentric_features,
         sample_spatial_features,
         select_basis_centers,
         spatial_basis,
@@ -81,6 +82,7 @@ if TYPE_CHECKING:
         plot_basis_functions(env, np.ones((env.n_bins, 2)))
         compute_egocentric_distance(values, values, values, metric="geodesic", env=env)
         sample_spatial_features(env, values, values, feature_ids=["height"])
+        sample_egocentric_features(env, values, values, values, values)
         assert_type(compute_viewshed(env, values, 0.0), ViewshedResult)
 
     def _cartesian_only(

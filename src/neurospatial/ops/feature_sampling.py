@@ -30,14 +30,19 @@ from neurospatial.geometry import (
     require_cartesian,
     require_position_columns,
 )
+from neurospatial.ops.egocentric import egocentric_to_allocentric
 
 if TYPE_CHECKING:
     import pandas as pd
 
-    from neurospatial.geometry import Arena
+    from neurospatial.geometry import Arena, Binning
     from neurospatial.ops._protocols import FeatureLookupConsumer
 
-__all__ = ["SpatialFeatureResult", "sample_spatial_features"]
+__all__ = [
+    "SpatialFeatureResult",
+    "sample_egocentric_features",
+    "sample_spatial_features",
+]
 
 
 @dataclass(frozen=True, repr=False)
@@ -312,18 +317,16 @@ def sample_spatial_features(
     -1
     """
     call = "sample_spatial_features()"
-    require_cartesian(
-        env.coordinate_system,
+    binning, arena, field_rows, ids = _lookup_inputs(
+        env,
+        fields,
+        feature_ids,
         call,
         why="positions are the animal's allocentric positions, located in the "
         "environment's bins.",
         fix="sample feature maps on the allocentric environment the positions "
         "were tracked in",
     )
-    binning, arena = env.binning, env.arena
-    _require_known_domain(arena, call)
-    field_rows = _validated_fields(fields, binning.bins.n_bins, call)
-    ids = _validated_feature_ids(feature_ids, field_rows.shape[0], call)
     points = np.asarray(positions, dtype=np.float64)
     require_position_columns(points, binning.bins.n_dims, call=call)
     bins = locate(binning, arena, points, CallIndexes(), call=call)
@@ -336,6 +339,171 @@ def sample_spatial_features(
         units=env.units,
         frame=env.frame,
     )
+
+
+def sample_egocentric_features(
+    env: FeatureLookupConsumer,
+    fields: ArrayLike,
+    positions: ArrayLike,
+    headings: ArrayLike,
+    ego_points: ArrayLike,
+    *,
+    feature_ids: ArrayLike | None = None,
+) -> SpatialFeatureResult:
+    """Read bin-valued feature maps at points fixed in the animal's frame.
+
+    Each ``ego_points`` row is an offset in the animal's frame, such as 10 cm
+    ahead or 10 cm to the left. At every sample it is placed relative to the
+    animal's position and heading, and takes the value of the bin that
+    contains it, exactly as in `sample_spatial_features`. A point outside the
+    environment, a point whose position or heading is NaN, and a NaN in a
+    feature map are all missing: NaN with ``support`` False. A finite zero is a
+    valid value. Nothing is smoothed or interpolated.
+
+    Parameters
+    ----------
+    env : Environment
+        Two-dimensional allocentric environment the feature maps are defined
+        on. Its layout must know which positions lie inside its bins: a grid,
+        a polygon, or a track built with ``track_width``.
+    fields : array-like, shape (n_features, n_bins) or (n_bins,)
+        One value per bin for each feature, in that feature's own units. NaN
+        marks a bin whose value is unknown. A 1-D array is one feature.
+    positions : array-like, shape (n_time, 2)
+        Allocentric positions in the environment's coordinates and units.
+    headings : array-like, shape (n_time,)
+        Allocentric heading in radians (0 = East, +pi/2 = North).
+    ego_points : array-like, shape (n_points, 2)
+        Offsets in the animal's frame, in the environment's length units:
+        column 0 is ahead and column 1 is to the left (angle 0 = ahead,
+        +pi/2 = left).
+    feature_ids : array-like, shape (n_features,), optional
+        Unique label of each feature. Default ``np.arange(n_features)``.
+
+    Returns
+    -------
+    SpatialFeatureResult
+        ``values`` and ``support`` of shape ``(n_time, n_points, n_features)``,
+        ``bins`` of shape ``(n_time, n_points)`` (-1 for none),
+        ``query_positions`` of shape ``(n_time, n_points, 2)`` holding the
+        allocentric position of each point, ``ego_points``, and ``units`` and
+        ``frame`` copied from ``env``.
+
+    Raises
+    ------
+    CartesianOnlyError
+        If ``env`` is an egocentric polar environment.
+    NotImplementedError
+        If the environment's layout has no known domain, such as a track built
+        without ``track_width`` or a linearized 1-D track.
+    ValueError
+        If ``env`` is not 2-D (headings rotate offsets in the plane), if
+        ``positions`` is not ``(n_time, 2)``, ``headings`` is not
+        ``(n_time,)`` or ``ego_points`` is not ``(n_points, 2)``, or if
+        ``fields`` or ``feature_ids`` are invalid as in
+        `sample_spatial_features`.
+
+    See Also
+    --------
+    sample_spatial_features : Sample at the positions themselves.
+    egocentric_to_allocentric : The frame transform used here.
+
+    Examples
+    --------
+    A point 20 cm ahead of an animal facing East is East of it; 20 cm to its
+    left is North.
+
+    >>> import numpy as np
+    >>> from shapely.geometry import box
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import sample_egocentric_features
+    >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
+    >>> x_of_bin = env.bin_centers[:, 0]
+    >>> result = sample_egocentric_features(
+    ...     env,
+    ...     x_of_bin,
+    ...     np.array([[50.0, 50.0]]),
+    ...     np.array([0.0]),
+    ...     np.array([[20.0, 0.0], [0.0, 20.0]]),
+    ...     feature_ids=["x"],
+    ... )
+    >>> result.query_positions[0].round(1)
+    array([[70., 50.],
+           [50., 70.]])
+    >>> result.values[0, :, 0]
+    array([75., 55.])
+    """
+    call = "sample_egocentric_features()"
+    binning, arena, field_rows, ids = _lookup_inputs(
+        env,
+        fields,
+        feature_ids,
+        call,
+        why="positions and headings are the animal's allocentric pose, and the "
+        "offsets are placed relative to it.",
+        fix="sample feature maps on the allocentric environment the positions "
+        "were tracked in",
+    )
+    if binning.bins.n_dims != 2:
+        raise ValueError(
+            _format_error(
+                f"{call} needs a 2-D environment; this one has "
+                f"{binning.bins.n_dims} dimension(s).",
+                why="A heading rotates an offset within the plane, so ahead and "
+                "left are only defined in 2-D.",
+                fix="Use sample_spatial_features for 1-D or 3-D environments.",
+            )
+        )
+    points = np.asarray(positions, dtype=np.float64)
+    require_position_columns(points, 2, call=call)
+    offsets = np.asarray(ego_points, dtype=np.float64)
+    require_position_columns(offsets, 2, call=call, name="ego_points")
+    angles = np.asarray(headings, dtype=np.float64)
+    if angles.shape != (points.shape[0],):
+        raise ValueError(
+            _format_error(
+                f"{call} got headings of shape {angles.shape} for "
+                f"{points.shape[0]} positions.",
+                why="Each position needs the heading the animal had there.",
+                fix="Pass one heading in radians per row of positions.",
+            )
+        )
+    n_time, n_points = points.shape[0], offsets.shape[0]
+    query = egocentric_to_allocentric(
+        points, angles, np.broadcast_to(offsets, (n_time, n_points, 2))
+    )
+    bins = locate(
+        binning, arena, query.reshape(-1, 2), CallIndexes(), call=call
+    ).reshape(n_time, n_points)
+    values, support = _read_bins(field_rows, bins)
+    return SpatialFeatureResult(
+        values=values,
+        support=support,
+        bins=bins,
+        feature_ids=ids,
+        units=env.units,
+        frame=env.frame,
+        ego_points=offsets,
+        query_positions=query,
+    )
+
+
+def _lookup_inputs(
+    env: FeatureLookupConsumer,
+    fields: ArrayLike,
+    feature_ids: ArrayLike | None,
+    call: str,
+    *,
+    why: str,
+    fix: str,
+) -> tuple[Binning, Arena, NDArray[np.float64], NDArray[Any]]:
+    """Check the environment and feature maps shared by both sampling routes."""
+    require_cartesian(env.coordinate_system, call, why=why, fix=fix)
+    binning, arena = env.binning, env.arena
+    _require_known_domain(arena, call)
+    field_rows = _validated_fields(fields, binning.bins.n_bins, call)
+    ids = _validated_feature_ids(feature_ids, field_rows.shape[0], call)
+    return binning, arena, field_rows, ids
 
 
 def _require_known_domain(arena: Arena, call: str) -> None:

@@ -126,6 +126,7 @@ from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 # Feature maps sampled at positions
 from neurospatial.ops.feature_sampling import (
     SpatialFeatureResult,
+    sample_egocentric_features,
     sample_spatial_features,
 )
 
@@ -228,6 +229,7 @@ __all__ = [
     "heading_from_velocity",
     # Feature sampling
     "SpatialFeatureResult",
+    "sample_egocentric_features",
     "sample_spatial_features",
     # Graph
     "graph_convolve",

@@ -15,7 +15,11 @@ import pytest
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.ops import SpatialFeatureResult, sample_spatial_features
+from neurospatial.ops import (
+    SpatialFeatureResult,
+    sample_egocentric_features,
+    sample_spatial_features,
+)
 
 
 @pytest.fixture(scope="module")
@@ -369,3 +373,176 @@ def test_egocentric_result_rejects_inconsistent_points(change):
     SpatialFeatureResult(**inputs)  # consistent as given
     with pytest.raises(ValueError, match="inconsistent"):
         SpatialFeatureResult(**(inputs | change))
+
+
+# --- egocentric sampling ---------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def box_env() -> Environment:
+    return Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
+
+
+def _x_field(env: Environment) -> np.ndarray:
+    return env.bin_centers[:, 0].copy()
+
+
+def test_ahead_is_east_and_left_is_north(box_env):
+    field = _x_field(box_env)
+    ego = np.array([[20.0, 0.0], [0.0, 20.0]])
+    result = sample_egocentric_features(
+        box_env,
+        field,
+        np.array([[50.0, 50.0], [50.0, 50.0]]),
+        np.array([0.0, np.pi / 2]),
+        ego,
+    )
+    np.testing.assert_allclose(
+        result.query_positions,
+        [[[70, 50], [50, 70]], [[50, 70], [30, 50]]],
+        atol=1e-9,
+    )
+    expected_bins = box_env.bin_at(result.query_positions.reshape(-1, 2)).reshape(2, 2)
+    np.testing.assert_array_equal(result.bins, expected_bins)
+    np.testing.assert_array_equal(result.values[..., 0], field[expected_bins])
+    np.testing.assert_array_equal(result.ego_points, ego)
+    assert result.units == "cm"
+
+
+def test_shapes_with_several_points_and_features(box_env):
+    rng = np.random.default_rng(0)
+    fields = rng.normal(size=(2, box_env.n_bins))
+    result = sample_egocentric_features(
+        box_env,
+        fields,
+        rng.uniform(30, 70, size=(5, 2)),
+        rng.uniform(-np.pi, np.pi, 5),
+        rng.uniform(-10, 10, size=(3, 2)),
+        feature_ids=["a", "b"],
+    )
+    assert result.values.shape == (5, 3, 2)
+    assert result.support.shape == (5, 3, 2)
+    assert result.bins.shape == (5, 3)
+    assert result.query_positions.shape == (5, 3, 2)
+    assert list(result.feature_ids) == ["a", "b"]
+
+
+def test_matches_sampling_the_transformed_points(box_env):
+    rng = np.random.default_rng(1)
+    fields = rng.normal(size=(2, box_env.n_bins))
+    positions = rng.uniform(-10, 110, size=(40, 2))
+    headings = rng.uniform(-np.pi, np.pi, 40)
+    ego = rng.uniform(-30, 30, size=(4, 2))
+    result = sample_egocentric_features(box_env, fields, positions, headings, ego)
+    flat = sample_spatial_features(
+        box_env, fields, result.query_positions.reshape(-1, 2)
+    )
+    np.testing.assert_array_equal(result.values.reshape(-1, 2), flat.values)
+    np.testing.assert_array_equal(result.support.reshape(-1, 2), flat.support)
+    np.testing.assert_array_equal(result.bins.reshape(-1), flat.bins)
+
+
+@pytest.mark.parametrize("bad", ["heading", "position"])
+def test_nan_heading_or_position_is_missing_for_every_point(box_env, bad):
+    positions = np.full((4, 2), 50.0)
+    headings = np.zeros(4)
+    if bad == "heading":
+        headings[2] = np.nan
+    else:
+        positions[2] = np.nan
+    result = sample_egocentric_features(
+        box_env,
+        np.ones(box_env.n_bins),
+        positions,
+        headings,
+        np.array([[0.0, 0.0], [10.0, 0.0]]),
+    )
+    assert not result.support[2].any()
+    assert (result.bins[2] == -1).all()
+    assert np.isnan(result.values[2]).all()
+    assert result.support[[0, 1, 3]].all()
+
+
+def test_outside_point_is_missing_and_zero_field_is_supported(box_env):
+    field = np.zeros(box_env.n_bins)
+    result = sample_egocentric_features(
+        box_env,
+        field,
+        np.array([[95.0, 50.0]]),
+        np.array([0.0]),
+        np.array([[2.0, 0.0], [20.0, 0.0]]),  # inside, beyond the east wall
+    )
+    assert result.support[0, 0, 0] and result.values[0, 0, 0] == 0.0
+    assert not result.support[0, 1, 0]
+    assert result.bins[0, 1] == -1
+    assert np.isnan(result.values[0, 1, 0])
+
+
+def test_samples_table_has_one_row_per_sample_point_and_feature(box_env):
+    result = sample_egocentric_features(
+        box_env,
+        np.ones((2, box_env.n_bins)),
+        np.full((5, 2), 50.0),
+        np.zeros(5),
+        np.array([[10.0, 0.0], [0.0, 10.0], [-10.0, 0.0]]),
+        feature_ids=["a", "b"],
+    )
+    table = result.samples_table()
+    assert len(table) == 5 * 3 * 2
+    assert {"sample_index", "point_index", "feature_id"} <= set(table.columns)
+
+
+def test_three_dimensional_environment_is_refused():
+    rng = np.random.default_rng(0)
+    env = Environment.from_samples(rng.uniform(0, 10, size=(500, 3)), bin_size=2.0)
+    with pytest.raises(ValueError, match="2-D") as info:
+        sample_egocentric_features(
+            env,
+            np.ones(env.n_bins),
+            np.full((2, 2), 5.0),
+            np.zeros(2),
+            np.array([[1.0, 0.0]]),
+        )
+    assert "sample_spatial_features" in str(info.value)
+
+
+@pytest.mark.parametrize(
+    ("ego_points", "headings"),
+    [
+        (np.array([1.0, 0.0, 0.0]), np.zeros(2)),
+        (np.zeros((2, 3)), np.zeros(2)),
+        (np.zeros((2, 2)), np.zeros(3)),
+    ],
+)
+def test_bad_shapes_raise_value_error(box_env, ego_points, headings):
+    with pytest.raises(ValueError, match="sample_egocentric_features"):
+        sample_egocentric_features(
+            box_env,
+            np.ones(box_env.n_bins),
+            np.full((2, 2), 50.0),
+            headings,
+            ego_points,
+        )
+
+
+def test_positions_must_be_two_columns(box_env):
+    with pytest.raises(ValueError, match="positions"):
+        sample_egocentric_features(
+            box_env,
+            np.ones(box_env.n_bins),
+            np.full((2, 3), 50.0),
+            np.zeros(2),
+            np.array([[1.0, 0.0]]),
+        )
+
+
+def test_track_without_width_refuses():
+    env = _track(None)
+    with pytest.raises(NotImplementedError):
+        sample_egocentric_features(
+            env,
+            np.ones(env.n_bins),
+            np.zeros((1, 2)),
+            np.zeros(1),
+            np.array([[1.0, 0.0]]),
+        )
