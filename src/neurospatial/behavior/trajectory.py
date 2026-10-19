@@ -248,7 +248,7 @@ def compute_turn_angles(
 
     .. math::
 
-        \\theta_i = \\text{atan2}(v_{i+1} \\times v_i, v_{i+1} \\cdot v_i)
+        \\theta_i = \\text{atan2}(v_i \\times v_{i+1}, v_i \\cdot v_{i+1})
 
     where :math:`v_i` is the movement vector from position i-1 to position i.
 
