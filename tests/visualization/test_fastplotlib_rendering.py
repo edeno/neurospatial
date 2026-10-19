@@ -104,6 +104,28 @@ def test_three_dimensional_fields_draw_points_whose_opacity_follows_value():
     assert alpha[np.argmax(field)] > 0.99 > 0.1 > alpha[np.argmin(field)]
 
 
+def test_three_dimensional_landmarks_and_regions_are_drawn():
+    from neurospatial.regions import Regions
+
+    env = Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 10, (3000, 3)), bin_size=2.0
+    )
+    regions = Regions()
+    regions.add("nest", point=[2.0, 2.0, 2.0])
+    env = env.with_regions(regions).with_landmarks(
+        Landmarks([Landmark("feeder", "point", [8.0, 8.0, 9.0])])
+    )
+    figure = env.plot(backend="fastplotlib")
+    texts = [g.text for g in figure[0, 0].graphics if hasattr(g, "text")]
+    assert {"nest", "feeder"} <= set(texts)
+    points = [
+        g.data[:].tolist()
+        for g in figure[0, 0].graphics
+        if type(g).__name__ == "ScatterGraphic" and len(g.data[:]) == 1
+    ]
+    assert [8.0, 8.0, 9.0] in [p[0] for p in points]  # z kept
+
+
 def test_matplotlib_options_are_refused_and_unknown_backends_named(apparatus):
     with pytest.raises(TypeError, match="Matplotlib-only options: scale_bar"):
         apparatus.plot(backend="fastplotlib", scale_bar=True)

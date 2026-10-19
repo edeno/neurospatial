@@ -323,6 +323,19 @@ def add_bins(subplot: Any, env: Environment, cells: Cells | None, **style: Any) 
 # --- graphics -------------------------------------------------------------------
 
 
+def volume_opacity(
+    scale: ColorScale, values: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Opacity of each bin of a 3-D field: high values opaque, low ones faint.
+
+    A missing bin is faint, or invisible when ``nan_color`` is None, so bins
+    asked to be skipped take no part in the volume's blending.
+    """
+    scaled = scale.scaled(values)
+    missing = 0.0 if scale.nan_color is None else 0.05
+    return np.where(np.isfinite(scaled), 0.03 + 0.97 * scaled, missing)
+
+
 class FieldGraphic:
     """One value per bin, drawn as colored cells or points; ``update`` recolors.
 
@@ -374,8 +387,7 @@ class FieldGraphic:
     def _colors(self, values: NDArray[np.float64]) -> NDArray[np.float32]:
         colors = self.scale.rgba(values)
         if self._volume:
-            scaled = self.scale.scaled(values)
-            colors[:, 3] = np.where(np.isfinite(scaled), 0.03 + 0.97 * scaled, 0.05)
+            colors[:, 3] = volume_opacity(self.scale, values)
         return colors
 
     def update(self, values: NDArray[np.float64]) -> None:
@@ -483,9 +495,12 @@ def draw_layers(
     show_regions: bool | Sequence[str],
     region_alpha: float = 0.3,
 ) -> None:
-    """Walls, landmarks and regions over the bins; 3-D environments have none."""
-    if env.n_dims != 2:
-        return
+    """Walls, landmarks and regions over the bins.
+
+    Each is drawn in the environment's own dimensions: a 3-D environment's
+    point landmarks and point regions sit in the volume. (Walls, lines and
+    polygons exist only in two dimensions.)
+    """
     if show_regions:
         names = None if show_regions is True else list(show_regions)
         draw_regions(subplot, env, names, region_alpha)
