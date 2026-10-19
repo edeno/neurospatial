@@ -9,10 +9,10 @@ Each route explains the analysis choices and how to interpret the figures.
 | --- | --- | --- |
 | Analyze my recorded spikes and tracking | [Load NWB data](interoperability.md#nwb-interop) | Position units, clocks, unit labels and recording windows |
 | Find where a neuron fires | [First place field](../getting-started/quickstart.md#your-first-place-field) | Occupancy, smoothing scale and missing spatial coverage |
-| Compare conditions or trials | [Compare analysis windows](workflows.md#compare-conditions-with-explicit-windows) | Shared geometry, identical analysis settings and observed duration |
+| Compare conditions or trials | [Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs) | One environment, identical analysis settings, matched unit IDs and observed time in each condition |
 | Classify candidate spatial cells | [Cell classification](neuroscience-metrics.md) | Threshold screens versus shuffle evidence |
 | Summarize a population: coverage, remapping, assemblies and reactivation | [Population analysis](population-analysis.md) | Which units passed a spatial screen, bins visited in every condition and one unit selection across periods |
-| Evaluate decoding on new data | [Held-out decoding](workflows.md#evaluate-decoding-on-held-out-data) | Separate training/test periods and locations visited during training |
+| Evaluate decoding on new data | [Held-out decoding](workflows.md#decode-held-out-laps) | Separate training/test periods and locations visited during training |
 | Segment laps and quantify movement | [Trajectory and behavioral analysis](trajectory-and-behavioral-analysis.md) | Tracking gaps and invalid positions |
 | Measure speed, heading or position-based features around events | [Behavior around events](behavior-around-events.md) | Tracking dropouts inside event windows and angle features declared circular |
 | Measure firing around cues | [Raster and PSTH example](../examples/07_peri_event_analysis.ipynb) | Which cues have fully recorded before/after windows |

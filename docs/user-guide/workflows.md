@@ -2,86 +2,373 @@
 
 This page demonstrates end-to-end analysis workflows that integrate multiple neurospatial features.
 
-## Compare conditions with explicit windows
+## Place fields on outbound and inbound runs
 
-Use one environment and the same estimator settings for both conditions. Keep
-the original tracking arrays and pass each condition's windows to the analysis;
-this prevents excluded time from reconnecting after slicing. The example uses
-two halves of a simulated recording as stand-ins for experimental conditions.
+Does a place cell fire at the same place when the animal runs out along a
+linear track as when it runs back? To answer this, you build one rate map from
+the outbound runs and one from the inbound runs, then compare them cell by
+cell. The comparison means something only when the two maps describe the same
+cells, the same places, and time when the animal was actually tracked. This
+section goes from per-frame direction labels to rate maps for each direction,
+a cell-by-cell comparison, and a decoder tested on laps it never saw.
+
+### The recording
+
+The example simulates a recording so that the right answers are known; the
+last subsection shows what to replace with your own data. The animal runs 20
+laps on a 100 cm track, 5 s out and 5 s back, tracked at 30 Hz. The tracker
+loses the animal for 1 s at t = 100 s. Six cells have Gaussian place fields
+(6 cm wide, 20 Hz peak, 0.5 Hz baseline):
+
+- `c1` fires at 30 cm in both directions.
+- `c2` fires at 70 cm on outbound runs and at 40 cm on inbound runs.
+- `c3` fires at 50 cm on outbound runs and is silent on inbound runs.
+- `c4`, `c5` and `c6` fire at 15, 55 and 85 cm in both directions.
+
+The block builds the recording, turns the direction labels into time windows
+with `labels_to_epochs`, and estimates one rate map per direction. The later
+blocks in this section continue from it.
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial import compute_spatial_rates
+from neurospatial import Environment
+from neurospatial.behavior import labels_to_epochs
+from neurospatial.encoding import compute_spatial_rates
+from neurospatial.simulation import generate_poisson_spikes
+
+# 200 s at 30 Hz: 20 laps, each 5 s out (5 -> 95 cm) and 5 s back.
+rng = np.random.default_rng(1)
+dt = 1 / 30
+times = np.arange(0, 200, dt)
+phase = (times % 10) / 10
+x_true = 5 + 90 * (1 - np.abs(2 * phase - 1)) + rng.normal(0, 0.3, times.size)
+positions = x_true[:, None].copy()
+positions[3000:3030] = np.nan  # the tracker lost the animal for 1 s at t = 100 s
+outbound = phase < 0.5
+direction = np.where(outbound, "outbound", "inbound")  # one label per frame
+
+
+def place_field(center):
+    """Firing rate (Hz) of a 6 cm wide, 20 Hz field at each true position."""
+    return 0.5 + 20 * np.exp(-0.5 * ((x_true - center) / 6) ** 2)
+
+
+unit_ids = ["c1", "c2", "c3", "c4", "c5", "c6"]
+true_rates = [
+    place_field(30),
+    np.where(outbound, place_field(70), place_field(40)),
+    np.where(outbound, place_field(50), 0.0),
+    place_field(15),
+    place_field(55),
+    place_field(85),
+]
+# Spikes come from the true position, so they continue through the dropout.
+# Seed the spikes differently from the trajectory.
+spike_times = [
+    generate_poisson_spikes(rate, times, seed=10 + i)
+    for i, rate in enumerate(true_rates)
+]
+env = Environment.from_samples(
+    np.linspace(0, 100, 201)[:, None], bin_size=5.0, units="cm"
+)
+
+# Direction labels -> half-open [start, stop) windows for each direction,
+# using only frames where the animal was tracked.
+valid = np.isfinite(positions).all(axis=1)
+conditions = labels_to_epochs(times, direction, valid=valid, max_gap=0.5)
+
+# One rate map per direction: the original arrays, restricted by epochs=.
+maps = {
+    label: compute_spatial_rates(
+        env, spike_times, times, positions,
+        unit_ids=unit_ids, epochs=conditions[label],
+        bandwidth=5.0, min_occupancy=0.5,
+    )
+    for label in conditions
+}
+
+print({label: round(seconds, 2) for label, seconds in conditions.durations.items()})
+print({label: len(conditions[label]) for label in conditions})
+print(conditions.epochs_table().head())
+assert abs(conditions.durations["outbound"] - 99.0) < 1e-6
+assert abs(conditions.durations["inbound"] - 99.93) < 0.01
+assert len(conditions["outbound"]) == len(conditions["inbound"]) == 20
+assert [101.0, 105.0] in np.round(conditions["outbound"], 6).tolist()
+```
+
+`labels_to_epochs` turns one label per frame into time windows for each
+label. The time between two frames, `[times[k], times[k + 1])`, gets the label
+of the frame at its start. It is kept only when both frames were tracked
+(`valid`) and they are no more than `max_gap` (0.5 s) apart. Kept stretches
+with the same label join into one epoch; a tracking loss, a long gap or a
+change of label ends it, so the same label after a dropout starts a new
+epoch. The table lists each epoch with its label, start, stop and duration.
+
+Here the dropout starts exactly at the beginning of an outbound run
+(t = 100 s), so it shortens that run to 101–105 s instead of splitting it.
+Each direction has 20 epochs. Outbound runs total 99.0 s instead of 100 s;
+inbound runs lose only the last 1/30 s before the dropout (99.93 s). A
+dropout in the middle of a run would split that run into two epochs.
+
+The rate maps use the original `times`, `positions` and `spike_times` with
+`epochs=conditions[label]`. `compute_spatial_rates` then counts spikes and
+dwell time over exactly the same windows: a spike counts only if it falls in a
+window where the animal was tracked in that direction. Slicing the arrays to
+outbound frames yourself would leave the spikes to be filtered separately,
+and would put the last outbound frame of one lap next to the first outbound
+frame of the next, so whether the 5 s between them counts as dwell time would
+depend on `max_gap`, not on the labels. Use the same environment, estimator
+settings and `max_gap` for both directions; only the windows change.
+
+### Check the behavior first
+
+A difference between two maps can come from the cells or from how the animal
+behaved: less time in a condition, places it did not visit, or a different
+running speed. Check these before comparing the maps.
+
+<!-- docs-test: run setup=workflows_outbound_inbound -->
+```python
+from neurospatial.behavior import compute_speed, in_epochs
+
+speed = compute_speed(times, positions)  # cm/s; NaN where tracking was lost
+coverage = {}
+for label in conditions:
+    inside = in_epochs(times, conditions[label], closed="left")
+    coverage[label] = {
+        "duration_s": round(conditions.durations[label], 2),
+        "occupied_bins": int(maps[label].spatial_support.sum()),
+        "mean_speed_cm_s": round(float(np.nanmean(speed[inside])), 1),
+    }
+print(coverage)
+print("bins in the environment:", env.n_bins)
+assert coverage["outbound"]["occupied_bins"] == coverage["inbound"]["occupied_bins"] == 19
+assert abs(coverage["outbound"]["mean_speed_cm_s"] - 17.4) < 0.2
+assert abs(coverage["inbound"]["mean_speed_cm_s"] - 17.4) < 0.2
+```
+
+Both directions have about 99 s of tracked time, the same 19 of 21 bins
+occupied for at least 0.5 s (the two end bins lie beyond the 5–95 cm the
+animal ran), and the same mean speed of 17.4 cm/s. Sampling does not explain
+the differences below. In a real recording, a direction with much less time,
+fewer visited bins or a different speed needs that caveat in the
+interpretation.
+
+### Compare the maps cell by cell
+
+`compare_spatial_rates` pairs cells by `unit_id`, never by row order, and
+correlates each cell's two maps over the bins occupied for at least
+`min_occupancy` in both directions where both rates are finite. It refuses
+maps estimated on different environments.
+
+<!-- docs-test: run setup=workflows_outbound_inbound -->
+```python
+import matplotlib.pyplot as plt
+import pandas as pd
+from neurospatial.encoding import compare_spatial_rates
+
+comparison = compare_spatial_rates(maps["outbound"], maps["inbound"])
+table = comparison.summary_table()
+with pd.option_context("display.width", 120, "display.precision", 3):
+    print(table[["correlation", "n_common_bins", "mean_rate_a", "mean_rate_b", "status"]])
+assert (table["n_common_bins"] == 19).all()
+assert abs(table.loc["c1", "correlation"] - 0.996) < 0.005
+assert abs(table.loc["c2", "correlation"] - (-0.383)) < 0.01
+assert np.isnan(table.loc["c3", "correlation"])
+assert table.loc["c3", "status"] == "constant_rates_b"
+assert table.loc["c3", "mean_rate_b"] == 0.0
+assert (table.loc[["c4", "c5", "c6"], "correlation"] > 0.95).all()
+
+c2_peaks = {label: maps[label].sel(unit_id="c2").peak_location() for label in maps}
+print("c2 peak (cm):", {label: float(peak[0]) for label, peak in c2_peaks.items()})
+assert c2_peaks["outbound"][0] == 70.0 and c2_peaks["inbound"][0] == 40.0
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 3.5))
+for ax, label in zip(axes[:2], ["outbound", "inbound"]):
+    maps[label].sel(unit_id="c2").plot(ax=ax)
+    ax.set_title(f"c2, {label} runs")
+comparison.plot(unit_id="c2", ax=axes[2])
+axes[2].set_title("c2, inbound minus outbound")
+plt.tight_layout()
+plt.show()
+```
+
+Condition A is the first argument (outbound) and B the second (inbound);
+`mean_rate_a` and `mean_rate_b` are each map's mean rate in Hz over the
+common bins. Read the table one cell at a time:
+
+- `c1` (r = 0.996) fires at the same place in both directions. `c4`, `c5`
+  and `c6` are the same.
+- `c2` (r = −0.383) has a field in both directions, but in a different place:
+  its field moved with running direction. Its peak is at 70 cm on outbound
+  runs and at 40 cm on inbound runs, as the figure shows; the difference map is
+  positive where the inbound field is and negative where the outbound field
+  was.
+- `c3` has no correlation (NaN) with status `constant_rates_b`: it was silent
+  on inbound runs, so its inbound map is flat and a correlation is undefined.
+  NaN here means "cannot be measured", not "no similarity". Its mean inbound
+  rate of 0 Hz says what changed.
+
+All 19 occupied bins entered every cell's score. These are descriptive
+numbers, not significance tests. To decide whether a correlation is lower
+than chance, you need a null distribution, for example from shuffling
+whole runs between directions, and a comparison of two halves of the same
+direction to know how stable maps are without any change.
+
+### Decode held-out laps
+
+A decoder trained on outbound runs should place the animal correctly on other
+outbound runs. On inbound runs it should do worse if some cells change their
+fields with direction. Number the laps from 0, train on the even-numbered
+laps and test on the odd-numbered laps, so that training and test data never come from the same lap.
+`labels_to_epochs` with `epochs=` splits each direction's windows into the
+two folds.
+
+<!-- docs-test: run setup=workflows_outbound_inbound -->
+```python
+from neurospatial.decoding import BayesianDecoder
+
+lap = (times // 10).astype(int)
+fold = np.where(lap % 2 == 0, "train", "test")
+out_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["outbound"])
+in_folds = labels_to_epochs(times, fold, valid=valid, epochs=conditions["inbound"])
+
+decoder = BayesianDecoder(env, dt=0.25, bandwidth=5.0).fit(
+    spike_times, times, positions, unit_ids=unit_ids, epochs=out_folds["train"],
+)
+within = decoder.predict(spike_times, times, epochs=out_folds["test"])
+transfer = decoder.predict(spike_times, times, epochs=in_folds["test"])
+within_error = within.error_against(times, positions)  # cm, one per time bin
+transfer_error = transfer.error_against(times, positions)
+assert np.isfinite(within_error).all() and np.isfinite(transfer_error).all()
+for name, error in [("Held-out outbound laps", within_error),
+                    ("Inbound laps (transfer)", transfer_error)]:
+    print(f"{name}: median error {np.median(error):.1f} cm, "
+          f"errors over 10 cm in {100 * np.mean(error > 10):.1f}% of time bins")
+print("Training coverage:", int(decoder.spatial_support.sum()), "of", env.n_bins, "bins")
+assert within.times.min() >= out_folds["test"][0, 0]
+assert abs(np.median(within_error) - 5.0) < 0.5
+assert abs(np.median(transfer_error) - 5.0) < 0.5
+assert abs(100 * np.mean(within_error > 10) - 4.5) < 1.0
+assert abs(100 * np.mean(transfer_error > 10) - 37.4) < 2.0
+assert int(decoder.spatial_support.sum()) == 19
+```
+
+On held-out outbound laps the median error is 5.0 cm, one bin, and errors
+larger than 10 cm (two bins) occur in 4.5% of time bins. On inbound laps the median
+is also 5.0 cm, because the four cells that keep their fields still place the
+animal correctly most of the time. The large errors tell the difference: they
+occur in 37.4% of inbound time bins. Where `c2` and `c3` fire differently on
+the way back, the outbound model is the wrong model for them. A median alone
+would hide this, so report the spread of errors, not only their center.
+
+The held-out outbound error says how well the decoder generalizes within a
+condition; the inbound error says how much the condition changes the code.
+Report error only on held-out laps; error on the training laps is
+optimistic. The decoder learned 19 of 21 bins and can only place the animal
+there.
+
+Whole laps keep training and test data apart; splitting frame by frame would
+put neighboring, nearly identical frames in both. The direction labels here
+come from the animal's movement at that moment, so the same labels would be
+available during the recording. Labels chosen by what happens later, such as
+which arm the animal will enter next, describe the data well but use future
+behavior.
+
+### A comparison neurospatial refuses
+
+Two maps with the same number of bins are not necessarily maps of the same
+places. Here the second map is estimated on the same bins, but with the
+environment's units declared as meters instead of centimeters:
+
+<!-- docs-test: raises IncompatibleEnvironmentError -->
+```python
+from neurospatial.encoding import compare_spatial_rates, compute_spatial_rates
 from neurospatial.simulation import linear_track_session
 
 session = linear_track_session(duration=30, n_place_cells=3, seed=3)
-midpoint = float(session.times[len(session.times) // 2])
-conditions = {
-    "first": (float(session.times[0]), midpoint),
-    "second": (midpoint, float(session.times[-1])),
-}
-maps = {
-    name: compute_spatial_rates(
-        session.env, session.spike_times, session.times, session.positions,
-        unit_ids=session.unit_ids, epochs=window, bandwidth=5.0,
-        min_occupancy=0.05,
-    )
-    for name, window in conditions.items()
-}
-# Compare only bins with observed support in both conditions.
-shared = maps["first"].spatial_support & maps["second"].spatial_support
-assert shared.any()
-rate_change = (
-    maps["second"].firing_rates[:, shared]
-    - maps["first"].firing_rates[:, shared]
+env_in_meters = session.env.with_metadata(units="m")
+rates_cm = compute_spatial_rates(
+    session.env, session.spike_times, session.times, session.positions,
+    unit_ids=session.unit_ids,
 )
-print("Units:", session.unit_ids)
-print("Mean rate change over shared bins (Hz):", rate_change.mean(axis=1))
-print("Observed time by condition (s):",
-      {name: result.occupancy.sum() for name, result in maps.items()})
+rates_m = compute_spatial_rates(
+    env_in_meters, session.spike_times, session.times, session.positions,
+    unit_ids=session.unit_ids,
+)
+compare_spatial_rates(rates_cm, rates_m)  # raises IncompatibleEnvironmentError
 ```
 
-This is a descriptive comparison. Unequal sampling, trial structure and repeated
-measurements matter when choosing a statistical test; a rate difference alone
-is not evidence of a condition effect. Preserve the condition windows and
-`analysis_settings` when exporting maps.
+The error says what differs and how to fix it:
 
-## Evaluate decoding on held-out data
+```text
+IncompatibleEnvironmentError: compare_spatial_rates(): rates_a and rates_b were
+estimated on environments that differ in units or coordinate frames, so bin j of
+one map is not the same place as bin j of the other. Equal numbers of bins do not
+make them the same places.
+Fix: estimate both conditions on the same environment, or pass a one-to-one
+bin_mapping between them
+```
 
-Fit on training trials or time blocks, select settings on validation data, and
-evaluate once on a separate test block. `decode_session` fits and decodes the
-same recording; use `BayesianDecoder` for this separation.
+Units, coordinate frame, bin positions and sizes, and the connections between
+bins must all match. Estimate every condition on one environment. If the maps
+already exist on different bins, re-estimate them from the spikes and tracking
+on one environment: a rate cannot be averaged onto coarser bins, because the
+merged rate depends on how long the animal spent in each fine bin.
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial.decoding import BayesianDecoder
-from neurospatial.encoding import SpikeTrains
-from neurospatial.simulation import linear_track_session
 
-session = linear_track_session(duration=30, n_place_cells=5, seed=4)
-spikes = SpikeTrains(session.spike_times, unit_ids=session.unit_ids)
-split = float(session.times[len(session.times) // 2])
-training = (float(session.times[0]), split)
-testing = (split, float(session.times[-1]))
-decoder = BayesianDecoder(session.env, dt=0.1, bandwidth=5.0).fit(
-    spikes, session.times, session.positions, epochs=training,
-)
-prediction = decoder.predict(spikes, session.times, epochs=testing)
-errors = prediction.error_against(session.times, session.positions)
-assert prediction.times.min() >= split
-assert np.all(prediction.posterior[:, ~decoder.spatial_support] == 0)
-print("Held-out median error:", np.nanmedian(errors), session.env.units)
-print("Training coverage:", int(decoder.spatial_support.sum()),
-      "of", session.env.n_bins, "bins")
+# Two fine bins: 0 Hz over 100 s of occupancy and 100 Hz over 1 s.
+spikes = 0.0 * 100 + 100.0 * 1  # 100 spikes
+merged_rate = spikes / (100 + 1)  # one coarse bin: spikes / time
+mean_of_rates = np.mean([0.0, 100.0])
+print(f"From counts: {merged_rate:.2f} Hz; mean of the two rates: {mean_of_rates:.0f} Hz")
+assert abs(merged_rate - 0.99) < 0.005 and mean_of_rates == 50.0
 ```
 
-Locations without supported training observations have zero posterior
-probability. Report coverage alongside error: a decoder cannot learn an
-unobserved location. Spatial uncertainty and held-out error answer different
-questions. Choose independent trials/blocks appropriate to the experiment;
-the split here demonstrates the API, not a universal evaluation design.
+The coarse bin's rate is 0.99 Hz; averaging the two rates would report 50 Hz.
+If only a door or barrier changed between conditions and the bins are the
+same, pass `topology="may_differ"`; the result records that choice in
+`analysis_settings`.
+
+### Use your own recording
+
+<!-- docs-test: skip uses the reader's own arrays -->
+```python
+conditions = labels_to_epochs(times, labels, valid=valid, max_gap=0.5)
+maps = {
+    label: compute_spatial_rates(
+        env, spike_times, times, positions, unit_ids=unit_ids,
+        epochs=conditions[label], bandwidth=5.0, min_occupancy=0.5,
+    )
+    for label in conditions
+}
+comparison = compare_spatial_rates(maps["outbound"], maps["inbound"])
+comparison.summary_table()
+```
+
+- Replace `times` (seconds), `positions` (`(n_frames, n_dims)`, with NaN
+  where tracking was lost), `spike_times` (one array of spike times in
+  seconds per unit) and `unit_ids` with your arrays. Take unit IDs from spike
+  sorting; they must name the same cells in every condition.
+- Labels come from your task: a trial table converted to one label per frame,
+  `laps_to_direction_labels` on detected laps,
+  `goal_pair_direction_labels` on segmented trials, or door-state intervals.
+  Samples labeled `None` or `NaN` are left out; pass `missing_label="other"`
+  for the `"other"` that the direction-label functions give to frames outside
+  any lap or trial.
+- Build `valid` from your tracking quality, for example
+  `np.isfinite(positions).all(axis=1)` plus your likelihood threshold.
+- When you join several recordings on one clock, pass `break_before`, True at
+  the first frame of each later recording, so no epoch spans the join.
+- Use the same `max_gap`, environment and estimator settings for every
+  condition. `compare_spatial_rates` warns when the estimator settings differ.
+- Pass `spike_window=` to `compute_spatial_rates` when spike sorting and
+  tracking cover different times.
+- For a door or barrier change on the same bins, pass
+  `topology="may_differ"` to `compare_spatial_rates`.
 
 ## Workflow 1: Place Field Analysis
 
@@ -594,6 +881,7 @@ import matplotlib.pyplot as plt
 from shapely.geometry import box
 
 from neurospatial import Environment, compute_spatial_rate
+from neurospatial.encoding import compare_spatial_rates
 from neurospatial.ops import resample_field
 from neurospatial.simulation import (
     PlaceCellModel,
@@ -626,11 +914,15 @@ options = dict(method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5)
 day1 = compute_spatial_rate(env, spikes1, times1, positions1, **options)
 day2 = compute_spatial_rate(env, spikes2, times2, positions2, **options)
 
-# Compare only bins with at least 0.5 s of occupancy on both days; the others
-# are NaN, which means "not measured", not 0 Hz.
-both = np.isfinite(day1.firing_rate) & np.isfinite(day2.firing_rate)
-stability = np.corrcoef(day1.firing_rate[both], day2.firing_rate[both])[0, 1]
-print(f"Day-to-day map correlation: {stability:.2f} over {both.sum()} bins")
+# Correlate the maps over bins with at least 0.5 s of occupancy on both days;
+# the others are NaN, which means "not measured", not 0 Hz.
+day_to_day = compare_spatial_rates(day1, day2, min_common_bins=3)
+stability = float(day_to_day.correlation[0])
+print(
+    f"Day-to-day map correlation: {stability:.2f} "
+    f"over {day_to_day.n_common_bins[0]} bins"
+)
+assert stability > 0.9
 
 # A day-2 map someone already computed on bins built from that day's samples:
 # move it onto the shared bins before comparing.
@@ -665,9 +957,11 @@ plt.show()
 The two days' maps put the field in the same place, and the correlation over
 bins visited on both days is close to 1. Gray bins had less than 0.5 s of
 occupancy on that day and carry no rate. A cell that remapped would give a
-low or negative correlation. Resampling the day-2 map from its own bins gives
-nearly the same answer; the small difference comes from bins whose centers are
-not exactly aligned.
+low or negative correlation. `compare_spatial_rates` refuses two maps on
+different bins, so the resampled map is compared by hand over the bins finite
+in both maps. Resampling the day-2 map from its own bins gives nearly the same
+answer; the small difference comes from bins whose centers are not exactly
+aligned.
 
 ## Workflow 5: Track Linearization
 

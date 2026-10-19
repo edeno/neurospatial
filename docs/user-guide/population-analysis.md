@@ -494,7 +494,7 @@ from `bin_spikes_in_time`, in the same unit order.
 
 - [One-call decoding with `decode_session`](workflows.md#workflow-2-bayesian-decoding-one-call)
   fits the maps and decodes the same recording.
-- [Held-out decoding](workflows.md#evaluate-decoding-on-held-out-data) with
+- [Held-out decoding](workflows.md#decode-held-out-laps) with
   `BayesianDecoder` fits on training time and scores separate test time;
   report this error, not the in-sample one.
 - [Shared units for decoding and population statistics](workflows.md#workflow-6-shared-units-for-decoding-and-population-statistics)
