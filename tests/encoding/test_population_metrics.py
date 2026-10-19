@@ -725,13 +725,11 @@ class TestFieldOverlap:
         assert overlap == pytest.approx(0.0)
 
     def test_field_overlap_both_empty(self) -> None:
-        """Test overlap when both fields are empty."""
+        """No field bins in either set: nothing to compare, so NaN, not 0."""
         field1 = np.array([], dtype=np.int64)
         field2 = np.array([], dtype=np.int64)
         overlap = field_overlap(field1, field2)
-        # By convention, Jaccard(∅, ∅) = 0 (though sometimes defined as 1)
-        # We use 0 to avoid division by zero issues
-        assert overlap == pytest.approx(0.0)
+        assert np.isnan(overlap)
 
 
 class TestRateMapCorrelations:

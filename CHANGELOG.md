@@ -16,6 +16,16 @@
   # after
   corr = rate_map_correlations(firing_rates)  # same (n_maps, n_maps) matrix
   ```
+- `field_overlap` returns NaN, not 0.0, when neither field has a bin: with
+  no field in either condition there is nothing to compare, which is not the
+  same as fields that do not overlap. One empty field still gives 0.0.
+
+  ```python
+  # before
+  field_overlap(np.array([], dtype=int), np.array([], dtype=int))  # 0.0
+  # after
+  field_overlap(np.array([], dtype=int), np.array([], dtype=int))  # nan
+  ```
 - `AnnotationResult` from `annotate_video` has four fields,
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.

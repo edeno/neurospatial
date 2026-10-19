@@ -261,12 +261,10 @@ def field_bins(fields):
 def shared_field_overlap(a, b, shared):
     """Jaccard overlap of two cells' fields, counting only bins in `shared`.
 
-    NaN when the cell has no field bin on shared bins in either condition.
+    `field_overlap` returns NaN when neither condition has a field bin left.
     """
     bins_a = np.intersect1d(field_bins(a), np.flatnonzero(shared))
     bins_b = np.intersect1d(field_bins(b), np.flatnonzero(shared))
-    if len(bins_a) == 0 and len(bins_b) == 0:
-        return np.nan
     return field_overlap(bins_a, bins_b)
 
 

@@ -658,7 +658,9 @@ def field_overlap(
     -------
     overlap : float
         Jaccard coefficient = |intersection| / |union|. Range [0, 1].
-        Returns 0.0 if either field is empty.
+        0.0 if exactly one field is empty (a field in one set only). NaN if
+        both are empty: with no field bin in either set there is nothing to
+        compare, which is not the same as no overlap.
 
     Examples
     --------
@@ -678,6 +680,13 @@ def field_overlap(
     >>> # Intersection: {2, 3}, Union: {0,1,2,3,4,5}
     >>> print(f"{overlap:.2f}")  # 2/6 = 0.33
     0.33
+
+    >>> # No field in either set: undefined, not zero overlap
+    >>> empty = np.array([], dtype=np.int64)
+    >>> field_overlap(field1, empty)
+    0.0
+    >>> field_overlap(empty, empty)
+    nan
 
     See Also
     --------
@@ -711,23 +720,13 @@ def field_overlap(
            the environment on the spatial firing of hippocampal complex-spike
            cells. Journal of Neuroscience, 7(7), 1951-1968.
     """
-    # Handle empty fields
-    if len(field_bins_i) == 0 or len(field_bins_j) == 0:
-        return 0.0
-
-    # Convert to sets for efficient set operations
     set_i = set(field_bins_i.tolist())
     set_j = set(field_bins_j.tolist())
-
-    # Compute Jaccard coefficient
-    intersection = set_i & set_j
     union = set_i | set_j
-
-    if len(union) == 0:
-        # Both fields empty (edge case already handled above, but be defensive)
-        return 0.0
-
-    return len(intersection) / len(union)
+    if not union:
+        # No field bin in either set: nothing to compare.
+        return np.nan
+    return len(set_i & set_j) / len(union)
 
 
 def rate_map_correlations(

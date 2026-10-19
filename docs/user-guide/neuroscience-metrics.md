@@ -269,6 +269,7 @@ $$
 - **0**: No overlap (fields completely disjoint)
 - **1**: Perfect overlap (identical fields)
 - **~0.5**: Moderate overlap (typical for neighboring place cells)
+- **NaN**: Neither set has a field bin, so there is nothing to compare
 
 ### Count Place-Cell Candidates
 
