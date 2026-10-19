@@ -189,6 +189,24 @@ def test_constant_map_is_nan_with_a_reason(
     assert result.status.tolist() == [status]
 
 
+@pytest.mark.parametrize("method", ["pearson", "spearman"])
+def test_map_flat_up_to_rounding_is_constant(make, method) -> None:
+    # 1 + 1e-15 differs from 1 only by floating-point rounding (about 5 ulps);
+    # correlating that noise with a real field would report r = 0.71.
+    flat = [1.0, 1.0, 1.0, 1.0, 1.0 + 1e-15]
+    assert flat[-1] != flat[0]
+    result = compare_spatial_rates(make(F), make(flat), method=method)
+    assert np.isnan(result.correlation[0])
+    assert result.status.tolist() == ["constant_rates_b"]
+
+
+def test_small_real_variation_is_still_scored(make) -> None:
+    # A field a millionth of a hertz deep is far above rounding noise.
+    result = compare_spatial_rates(make(F), make(1.0 + 1e-6 * np.asarray(F)))
+    assert result.status.tolist() == ["scored"]
+    np.testing.assert_allclose(result.correlation, [1.0], atol=1e-6)
+
+
 def test_constant_check_uses_only_common_bins(make) -> None:
     # B varies only in the bin A did not visit, so over common support it is flat.
     rates_b = make([3, 3, 3, 3, 9])
