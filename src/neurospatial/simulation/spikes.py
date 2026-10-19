@@ -499,7 +499,9 @@ def _held_movement_heading(
     Raises
     ------
     ValueError
-        If the trajectory never moves, so no direction is ever defined.
+        If no movement direction is ever defined: the trajectory never moves,
+        or every interval between samples is longer than the default
+        ``max_gap`` (0.5 s).
     """
     from neurospatial._exceptions import _format_error
     from neurospatial.ops.egocentric import heading_from_velocity
@@ -508,13 +510,18 @@ def _held_movement_heading(
         warnings.filterwarnings(
             "ignore", message="Every observed sample's speed", category=UserWarning
         )
+        warnings.filterwarnings(
+            "ignore", message="Interval filtering excluded ALL", category=UserWarning
+        )
         heading = heading_from_velocity(times, positions, allow_all_nan=True)
     defined = np.isfinite(heading)
     if not defined.any():
         raise ValueError(
             _format_error(
-                "Cannot derive head direction for HeadDirectionCellModel: the "
-                "trajectory never moves, so it has no movement direction.",
+                "Cannot derive head direction for HeadDirectionCellModel: no "
+                "movement direction is defined, because the trajectory never "
+                "moves or no interval between samples is short enough to use "
+                "(intervals longer than max_gap=0.5 s are not used).",
                 why="without headings=, the simulated heading is the direction "
                 "of the velocity.",
                 fix="pass headings= with one angle in radians per sample, "

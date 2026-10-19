@@ -498,6 +498,19 @@ class TestGeneratePopulationSpikes:
             )
         assert "headings=" in str(caught.value)
 
+    def test_head_direction_model_coarse_sampling_needs_headings(self):
+        """A moving path sampled coarser than max_gap has no usable interval."""
+        model = HeadDirectionCellModel(preferred_direction=0.0)
+        times = np.arange(20, dtype=float)  # 1 Hz
+        positions = np.column_stack([times * 10.0, np.zeros(20)])
+
+        with pytest.raises(ValueError, match="max_gap") as caught:
+            generate_population_spikes(
+                [model], times, positions, seed=42, show_progress=False
+            )
+        assert "never moves" in str(caught.value)
+        assert "headings=" in str(caught.value)
+
     def test_head_direction_model_uses_explicit_headings(self):
         """Explicit headings should be passed to HeadDirectionCellModel."""
         model = HeadDirectionCellModel(
