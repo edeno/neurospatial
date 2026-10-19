@@ -53,6 +53,29 @@
   was observed; a single sample used to give `angular_efficiency = 1.0`.
   `times` must be strictly increasing, and empty input raises.
 
+- `heading_from_velocity` no longer invents a heading where the animal is
+  not moving. Movement heading is the direction of the velocity vector, so
+  it is not observed below `min_speed` or at zero speed (where it used to
+  return 0, East). Those samples are now `NaN`; they used to be filled by
+  circular interpolation between the headings around them, which could give
+  a direction the animal never faced, such as North while it stood at a
+  port between arriving heading East and leaving heading West.
+
+  ```python
+  # before: slow samples filled by circular interpolation; a NaN row raised
+  heading = heading_from_velocity(times, positions, min_speed=2.0)
+  observed = compute_speed(times, positions) >= 2.0  # mask needed to undo the fill
+  # after: NaN where the animal is slower than min_speed, still, or not tracked
+  heading = heading_from_velocity(times, positions, min_speed=2.0)
+  ```
+
+  A `NaN` row (a lost frame) is now a missing sample with `NaN` heading, and
+  no velocity is computed across it; it used to raise. A single sample gives
+  `[nan]` instead of raising, and empty input or a repeated timestamp raises.
+  A perfectly still recording now raises unless `allow_all_nan=True`; it
+  used to return 0 (East) everywhere. For a heading while the animal is
+  still, use `heading_from_body_orientation` with pose keypoints.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
@@ -1328,7 +1351,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   instead of assigning the nearest bin.
 - `heading_from_velocity` takes `break_before`, like `compute_speed`: for
   recordings joined on one clock, mark the first frame of each later
-  recording, and no velocity, smoothing or low-speed fill spans the join, so a
+  recording, and no velocity or smoothing spans the join, so a
   jump in position between recordings is not read as running. Touching
   `epochs` rows merge into one window and do not separate recordings.
 - `compute_cumulative_distance(times, positions, *, max_gap, epochs,
