@@ -979,8 +979,10 @@ def read_place_field(
         ``path_between``, ...) work on the restored env. When given, ``env=``
         is first checked against the stored ``firing_rates`` bin count and then
         against that persisted environment: it must have the same bins
-        (coordinates, order, measures), coordinate system, units, frame,
-        connectivity and walls. The result then holds this ``env`` object.
+        (coordinates, order, measures and cell shapes, including polygon
+        cells and which bin owns each boundary), coordinate system, units,
+        frame, connectivity, smoothing conductances between neighboring bins,
+        arena and walls. The result then holds this ``env`` object.
         There is no connectivity-less fabrication from bin centers.
 
     Returns
