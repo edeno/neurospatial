@@ -377,13 +377,16 @@ def compare_spatial_rates(
         both counts, ``bins_selected`` and ``n_compared_bins``.
     topology : {"same", "may_differ"}, default="same"
         ``"may_differ"`` accepts environments whose bins are the same places
-        but whose connectivity or walls differ, as when a door opens between
-        conditions. Smoothing then used different neighbors in each
-        condition; the choice is recorded in ``analysis_settings``. Without
-        ``bin_mapping``, connectivity is compared over all bins by bin ID,
-        with the neighbor distances; with it, each mapped bin's neighbors are
-        compared through the mapping (see ``bin_mapping``). Arenas and walls
-        are compared whole in both cases. Maps estimated with
+        but whose connectivity, walls or cell faces differ, as when a door
+        opens between conditions. Smoothing then passed a field between bins
+        differently in each condition; the choice is recorded in
+        ``analysis_settings``. Without ``bin_mapping``, connectivity is
+        compared over all bins by bin ID, with the neighbor distances; with
+        it, each mapped bin's neighbors are compared through the mapping (see
+        ``bin_mapping``). Arenas and walls are compared whole in both cases.
+        Smoothing conductances (the size of the face between two neighboring
+        bins over their distance) are compared too, since they set how much
+        of a field smoothing passes between neighbors. Maps estimated with
         ``method="binned", bandwidth=0.0`` are counts over occupancy with no
         smoothing, so connectivity did not shape them and
         ``"may_differ"`` can be passed knowingly.
