@@ -170,21 +170,45 @@ class _HeadDirection:
     def update(self, frame: int) -> None:
         origin = self.center
         if self.anchor is not None and np.all(np.isfinite(self.anchor.data[frame])):
-            origin = self.anchor.data[frame][:2]
-        heading = self.data.data[frame]
-        if self.data.data.ndim == 1:
-            direction = np.array([np.cos(heading), np.sin(heading)])
-        else:
-            direction = np.asarray(heading[:2], dtype=np.float64)
-            norm = np.linalg.norm(direction)
-            direction = direction / norm if norm > 0 else direction
-        direction = direction * self.data.length
-        if not np.all(np.isfinite(direction)):
-            self.line.data = xyz(np.full((2, 2), np.nan))
-            return
-        self.line.data = xyz([origin, origin + direction])
-        color = _head_direction_color(self.data.color, direction)
-        self.line.colors = np.tile(np.asarray(color, dtype=np.float32), (2, 1))
+            origin = self.anchor.data[frame]
+        segment = heading_segment(origin, self.data.data[frame], self.data.length)
+        self.line.data = xyz(segment)
+        if np.all(np.isfinite(segment)):
+            direction = segment[1] - segment[0]
+            color = _head_direction_color(self.data.color, direction)
+            self.line.colors = np.tile(np.asarray(color, dtype=np.float32), (2, 1))
+
+
+def heading_segment(
+    origin: NDArray[np.float64], heading: NDArray[np.float64] | float, length: float
+) -> NDArray[np.float64]:
+    """The heading line, shape (2, n_dims): from ``origin``, ``length`` long.
+
+    Parameters
+    ----------
+    origin : ndarray of float64, shape (n_dims,)
+        Where the line starts: the animal, or the environment's center.
+    heading : float or ndarray of float64, shape (n_dims,)
+        An angle in radians, in the x-y plane, or a direction vector with all
+        of its coordinates (a 3-D heading keeps its z).
+    length : float
+        Line length, in the environment's units.
+
+    Returns
+    -------
+    ndarray of float64, shape (2, n_dims)
+        NaN for a missing heading.
+    """
+    origin = np.asarray(origin, dtype=np.float64)
+    direction = np.zeros(len(origin))
+    if np.ndim(heading) == 0:
+        direction[:2] = np.cos(heading), np.sin(heading)
+    else:
+        vector = np.asarray(heading, dtype=np.float64)[: len(origin)]
+        norm = np.linalg.norm(vector)
+        direction[: len(vector)] = vector / norm if norm > 0 else vector
+    segment = np.array([origin, origin + direction * length])
+    return segment if np.all(np.isfinite(segment)) else np.full_like(segment, np.nan)
 
 
 class _Events:
@@ -342,7 +366,7 @@ class FastplotlibAnimation:
                 _Bodyparts(self._plot, item) for item in overlay_data.bodypart_sets
             ]
             anchor = positions[0] if len(positions) == 1 else None
-            center = env.bin_centers.mean(axis=0)[:2]
+            center = env.bin_centers.mean(axis=0)
             self._layers += [
                 _HeadDirection(self._plot, item, anchor, center)
                 for item in overlay_data.head_directions

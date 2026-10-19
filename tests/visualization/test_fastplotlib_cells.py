@@ -9,7 +9,8 @@ from matplotlib.colors import to_rgba
 from shapely.geometry import Polygon, box
 
 from neurospatial import Environment
-from neurospatial.environment._fastplotlib import ColorScale, cell_mesh
+from neurospatial.animation.backends.fastplotlib_backend import heading_segment
+from neurospatial.environment._fastplotlib import ColorScale, cell_mesh, volume_opacity
 from neurospatial.layout import create_layout
 from neurospatial.ops.transforms import Affine2D
 
@@ -155,3 +156,29 @@ def test_missing_values_get_their_own_color_not_the_top_of_the_colormap():
 def test_equal_limits_do_not_divide_by_zero():
     scale = ColorScale("viridis", 2.0, 2.0, "lightgray")
     np.testing.assert_array_equal(scale.index(np.array([2.0, 3.0])), [1, 255])
+
+
+def test_volume_opacity_follows_the_value_and_skips_missing_bins_on_request():
+    values = np.array([0.0, 1.0, np.nan])
+    shown = volume_opacity(ColorScale("viridis", 0.0, 1.0, "lightgray"), values)
+    np.testing.assert_allclose(shown, [0.03, 1.0, 0.05])
+    skipped = volume_opacity(ColorScale("viridis", 0.0, 1.0, None), values)
+    assert skipped[2] == 0.0  # nan_color=None: missing bins do not blend
+
+
+@pytest.mark.parametrize(
+    ("origin", "heading", "end"),
+    [
+        ([1.0, 2.0, 3.0], [0.0, 0.0, 1.0], [1.0, 2.0, 5.0]),  # straight up, in 3-D
+        ([1.0, 2.0, 3.0], [0.0, 3.0, 4.0], [1.0, 3.2, 4.6]),  # normalized
+        ([1.0, 2.0], np.pi / 2, [1.0, 4.0]),  # an angle, in the plane
+        ([1.0, 2.0, 3.0], 0.0, [3.0, 2.0, 3.0]),  # an angle in a volume: level
+    ],
+)
+def test_a_heading_line_keeps_every_coordinate(origin, heading, end):
+    segment = heading_segment(np.array(origin), heading, 2.0)
+    np.testing.assert_allclose(segment, [origin, end], atol=1e-12)
+
+
+def test_a_missing_heading_draws_nothing():
+    assert np.isnan(heading_segment(np.zeros(3), np.full(3, np.nan), 2.0)).all()
