@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from neurospatial.annotation._helpers import REGION_TYPE_CATEGORIES
 from neurospatial.annotation._types import RegionType
 
 
@@ -16,7 +17,7 @@ class AnnotationModeState:
     """Pure state object tracking annotation mode and shape counts.
 
     Encapsulates:
-    - Current annotation region type (environment/hole/region)
+    - Current annotation region type (environment/hole/region/wall/landmark)
     - Per-type shape counts for auto-naming
     - Default name generation logic
 
@@ -36,6 +37,10 @@ class AnnotationModeState:
         Number of hole shapes created.
     region_count : int
         Number of region shapes created.
+    wall_count : int
+        Number of wall shapes created.
+    landmark_count : int
+        Number of landmark shapes created.
 
     Examples
     --------
@@ -54,18 +59,17 @@ class AnnotationModeState:
     environment_count: int = field(default=0)
     hole_count: int = field(default=0)
     region_count: int = field(default=0)
+    wall_count: int = field(default=0)
+    landmark_count: int = field(default=0)
 
     def cycle_region_type(self) -> None:
         """Cycle to the next annotation region type.
 
-        Transition order: environment → hole → region → environment
+        Transition order: environment → hole → region → wall → landmark →
+        environment
         """
-        if self.region_type == "environment":
-            self.region_type = "hole"
-        elif self.region_type == "hole":
-            self.region_type = "region"
-        else:
-            self.region_type = "environment"
+        order = REGION_TYPE_CATEGORIES
+        self.region_type = order[(order.index(self.region_type) + 1) % len(order)]
 
     def default_name(self) -> str:
         """Get the default name for the current region type.
@@ -75,8 +79,7 @@ class AnnotationModeState:
         str
             Default name based on current region type:
             - "arena" for environment
-            - "" for hole (auto-named on creation)
-            - "" for region (user should provide name)
+            - "" for every other type (auto-named on creation)
 
         """
         if self.region_type == "environment":
@@ -97,17 +100,18 @@ class AnnotationModeState:
         Returns
         -------
         str
-            Auto-generated unique name like "hole_1", "region_2", etc.
+            Auto-generated unique name like "hole_1", "wall_2", etc.
 
         """
         if self.region_type == "environment":
             base = "arena"
-        elif self.region_type == "hole":
-            base = f"hole_{self.hole_count + 1}"
         else:
-            base = f"region_{self.region_count + 1}"
+            base = f"{self.region_type}_{self._count(self.region_type) + 1}"
 
         return make_unique_name(base, existing_names)
+
+    def _count(self, region_type: RegionType) -> int:
+        return int(getattr(self, f"{region_type}_count"))
 
     def record_shape_added(self, region_type: RegionType) -> None:
         """Update counts after a shape is added.
@@ -118,12 +122,8 @@ class AnnotationModeState:
             The region type of the shape that was added.
 
         """
-        if region_type == "environment":
-            self.environment_count += 1
-        elif region_type == "hole":
-            self.hole_count += 1
-        else:
-            self.region_count += 1
+        name = f"{region_type}_count"
+        setattr(self, name, getattr(self, name) + 1)
 
     def sync_counts_from_region_types(self, region_types: list[RegionType]) -> None:
         """Synchronize counts from an existing list of region types.
@@ -136,9 +136,8 @@ class AnnotationModeState:
             List of region types for existing shapes.
 
         """
-        self.environment_count = sum(1 for r in region_types if r == "environment")
-        self.hole_count = sum(1 for r in region_types if r == "hole")
-        self.region_count = sum(1 for r in region_types if r == "region")
+        for kind in REGION_TYPE_CATEGORIES:
+            setattr(self, f"{kind}_count", sum(1 for r in region_types if r == kind))
 
     def status_text(self) -> str:
         """Generate annotation status text for display.
@@ -146,12 +145,14 @@ class AnnotationModeState:
         Returns
         -------
         str
-            Human-readable status like "Annotations: 1 environment, 0 holes, 2 regions"
+            Human-readable status like
+            "Annotations: 1 environment, 0 holes, 2 regions, 1 walls, 0 landmarks"
 
         """
         return (
             f"Annotations: {self.environment_count} environment, "
-            f"{self.hole_count} holes, {self.region_count} regions"
+            f"{self.hole_count} holes, {self.region_count} regions, "
+            f"{self.wall_count} walls, {self.landmark_count} landmarks"
         )
 
     @property
