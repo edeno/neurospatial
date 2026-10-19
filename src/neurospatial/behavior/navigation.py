@@ -179,6 +179,8 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         Geodesic or Euclidean distance from start to goal, in environment units.
         Is ``inf`` when the goal is unreachable under the geodesic metric (the
         goal lies on a disconnected component); it is not clamped to ``0.0``.
+        From subgoal_efficiency(): 0.0 for a segment of fewer than two samples
+        (no start-to-goal distance is measured).
     efficiency : float
         Ratio shortest_length / traveled_length. Range (0, 1].
         Value of 1.0 indicates optimal path taken.

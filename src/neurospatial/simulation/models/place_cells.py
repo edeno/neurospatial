@@ -59,7 +59,7 @@ class PlaceCellModel:
         Common patterns:
 
         - Direction-selective: ``lambda pos, t: np.gradient(pos[:, 0]) > 0``
-        - Speed-gated: ``lambda pos, t: compute_speed(pos, t) > threshold``
+        - Speed-gated: ``lambda pos, t: compute_speed(t, pos) > threshold``
         - Region-specific: ``lambda pos, t: (pos[:, 0] > x_min) & (pos[:, 0] < x_max)``
         - Trial-type: ``lambda pos, t: trial_labels[t] == "correct"``
     seed : int | None, optional
