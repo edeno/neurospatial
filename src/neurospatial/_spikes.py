@@ -12,17 +12,20 @@ The main function is `as_spike_trains()`, which accepts:
 - list/tuple of scalars (single neuron) → converted to 1D array, wrapped in list
 - list/tuple of 1D arrays (canonical format) → each element converted to array
 
-This coercion happens at the entry point of encoding functions, ensuring
-consistent internal handling regardless of how the user provides spike data.
+This coercion happens at the entry point of encoding, decoding and peri-event
+functions, ensuring consistent internal handling regardless of how the user
+provides spike data.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial._results import resolve_unit_ids
 
 
 def as_spike_trains(
@@ -64,7 +67,7 @@ def as_spike_trains(
     Single neuron (1D array):
 
     >>> import numpy as np
-    >>> from neurospatial.encoding._spikes import as_spike_trains
+    >>> from neurospatial._spikes import as_spike_trains
     >>> spikes = np.array([0.1, 0.5, 1.2])
     >>> normalized = as_spike_trains(spikes)
     >>> len(normalized)
@@ -223,7 +226,7 @@ def _as_spike_trains_with_ids(
     Plain sequence input carries no ids:
 
     >>> import numpy as np
-    >>> from neurospatial.encoding._spikes import _as_spike_trains_with_ids
+    >>> from neurospatial._spikes import _as_spike_trains_with_ids
     >>> trains, ids = _as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
     >>> len(trains), ids
     (2, None)
@@ -256,3 +259,55 @@ def _as_spike_trains_with_ids(
             return trains, None
         return trains, unit_ids
     return as_spike_trains(spike_times), None
+
+
+def as_labelled_spike_trains(
+    spike_times: Any,
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    *,
+    context: str,
+) -> tuple[list[NDArray[np.float64]], NDArray[Any], bool]:
+    """Coerce population spike input and resolve one label per train.
+
+    Parameters
+    ----------
+    spike_times : array, sequence of arrays, or spike group
+        Any input :func:`_as_spike_trains_with_ids` accepts.
+    unit_ids : array-like or None
+        Caller-supplied labels, one per train. A spike group that carries its
+        own labels must agree with them.
+    context : str
+        Name of the calling function, used in error messages.
+
+    Returns
+    -------
+    trains : list of ndarray, each shape (n_spikes,)
+    unit_ids : ndarray, shape (n_units,)
+        ``unit_ids``, else the labels a spike group carries, else ``arange``.
+    labels_supplied : bool
+        Whether the labels came from the caller (``unit_ids`` or a spike
+        group's own labels) rather than the ``arange`` default.
+
+    Raises
+    ------
+    ValueError
+        If the labels do not match the number of trains, are duplicated, or
+        disagree with the labels a spike group carries.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial._spikes import as_labelled_spike_trains
+    >>> trains = [np.array([0.1, 0.5]), np.array([0.2])]
+    >>> _, ids, supplied = as_labelled_spike_trains(trains, None, context="demo")
+    >>> ids.tolist(), supplied
+    ([0, 1], False)
+    >>> _, ids, supplied = as_labelled_spike_trains(trains, ["a", "b"], context="demo")
+    >>> ids.tolist(), supplied
+    (['a', 'b'], True)
+    """
+    trains, input_ids = _as_spike_trains_with_ids(spike_times)
+    resolved = resolve_unit_ids(
+        unit_ids, len(trains), context=context, input_ids=input_ids
+    )
+    return trains, resolved, unit_ids is not None or input_ids is not None

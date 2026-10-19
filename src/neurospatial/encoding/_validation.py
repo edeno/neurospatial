@@ -23,6 +23,8 @@ directly.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -40,6 +42,7 @@ __all__ = [
     "_validate_times",
     "validate_classifier_trajectory",
     "validate_spike_times",
+    "validate_spike_trains",
     "validate_trajectory",
 ]
 
@@ -215,6 +218,27 @@ def validate_spike_times(
                 )
             )
     _raise_input_problems(context, problems)
+
+
+def validate_spike_trains(
+    spike_trains: Sequence[NDArray[np.float64]], *, context: str
+) -> None:
+    """Validate each train, naming the failing unit as ``context (neuron i)``.
+
+    Parameters
+    ----------
+    spike_trains : sequence of ndarray, each shape (n_spikes,)
+        One spike-time array per unit, in seconds.
+    context : str
+        Name of the calling function, used in the error message.
+
+    Raises
+    ------
+    ValueError
+        From :func:`validate_spike_times` for the first invalid train.
+    """
+    for i, spike_times in enumerate(spike_trains):
+        validate_spike_times(spike_times, context=f"{context} (neuron {i})")
 
 
 def validate_trajectory(

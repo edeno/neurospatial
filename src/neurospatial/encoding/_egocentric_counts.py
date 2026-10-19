@@ -1024,7 +1024,7 @@ def bin_egocentric_spike_trains(
     bin_egocentric_spike_train : Single-neuron version
     compute_egocentric_occupancy : Compute occupancy only
     """
-    from neurospatial.encoding._spikes import as_spike_trains
+    from neurospatial._spikes import as_spike_trains
 
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)

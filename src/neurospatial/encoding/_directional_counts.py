@@ -462,7 +462,7 @@ def bin_directional_spike_trains(
     compute_directional_occupancy : Compute occupancy only
     as_spike_trains : Coerce input to canonical per-neuron spike trains
     """
-    from neurospatial.encoding._spikes import as_spike_trains
+    from neurospatial._spikes import as_spike_trains
 
     spike_times_list = as_spike_trains(spike_times)
     prepared, bin_centers = prepare_directional_binning(

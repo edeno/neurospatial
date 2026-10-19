@@ -1355,7 +1355,7 @@ def bin_spike_trains(
     compute_occupancy : Compute occupancy only
     as_spike_trains : Coerce input to canonical per-neuron spike trains
     """
-    from neurospatial.encoding._spikes import as_spike_trains
+    from neurospatial._spikes import as_spike_trains
 
     _validate_time_allocation(time_allocation)
     # Normalize spike times to canonical list-of-arrays format
