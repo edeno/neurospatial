@@ -183,6 +183,8 @@ Peri-event spike alignment and GLM regressors.
 - `plot_peri_event_response()`: Matching raster and PSTH using the same retained
   events and half-open histogram bins
 - `align_spikes_to_events()`: Per-trial spike rasters
+- `align_continuous_to_events()`: Speed, heading or zone sampled around events
+  only where observed, with per-kind means and category counts
 - `time_to_nearest_event()`, `distance_to_reward()`: GLM regressors
 
 ### [neurospatial.ops.egocentric](neurospatial/ops/egocentric.md)
