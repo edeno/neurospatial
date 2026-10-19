@@ -1880,9 +1880,8 @@ def _object_vector_rate(
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
     from neurospatial.encoding._backend import (
-        SUPPORTED_BACKENDS,
-        get_backend_name,
         is_jax_available,
+        validate_and_resolve_backend,
     )
     from neurospatial.encoding._egocentric_counts import (
         prepare_egocentric_binning,
@@ -1913,16 +1912,9 @@ def _object_vector_rate(
             ),
         )
 
-    # Validate backend
-    if backend not in SUPPORTED_BACKENDS:
-        raise ValueError(
-            f"Unknown backend: {backend!r}. "
-            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
-        )
-
-    # Resolve backend (handles "auto" → "numpy" or "jax")
-    # This raises ImportError if backend="jax" and JAX is unavailable
-    resolved_backend = get_backend_name(backend)
+    # Raises ValueError for unknown names and ImportError if jax is unavailable;
+    # "auto" resolves to "numpy" or "jax".
+    resolved_backend = validate_and_resolve_backend(backend)
 
     _validate_object_vector_metric(env, metric, context=context)
 
@@ -2597,11 +2589,10 @@ def _object_vector_rates(
     """
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    from neurospatial._spikes import _as_spike_trains_with_ids
+    from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._backend import (
-        SUPPORTED_BACKENDS,
-        get_backend_name,
         is_jax_available,
+        validate_and_resolve_backend,
     )
     from neurospatial.encoding._egocentric_counts import (
         prepare_egocentric_binning,
@@ -2613,7 +2604,7 @@ def _object_vector_rates(
     )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
 
@@ -2630,36 +2621,21 @@ def _object_vector_rates(
             ),
         )
 
-    # Validate backend
-    if backend not in SUPPORTED_BACKENDS:
-        raise ValueError(
-            f"Unknown backend: {backend!r}. "
-            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
-        )
-
-    # Resolve backend (handles "auto" → "numpy" or "jax")
-    # This raises ImportError if backend="jax" and JAX is unavailable
-    resolved_backend = get_backend_name(backend)
+    # Raises ValueError for unknown names and ImportError if jax is unavailable;
+    # "auto" resolves to "numpy" or "jax".
+    resolved_backend = validate_and_resolve_backend(backend)
 
     _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
 
     _validate_object_vector_metric(env, metric, context=context)
 
-    # Normalize spike times to canonical list-of-arrays format, surfacing the
-    # unit labels a spike group (e.g. a pynapple TsGroup) carries.
-    spike_times_list, extracted_unit_ids = _as_spike_trains_with_ids(spike_times)
-    n_neurons = len(spike_times_list)
-
-    # Resolve and validate per-unit identity labels (defaults to arange). A
-    # labelled input keeps its own labels; a differing unit_ids= raises.
-    from neurospatial._results import resolve_unit_ids
-
-    resolved_unit_ids = resolve_unit_ids(
-        unit_ids,
-        n_neurons,
-        context=context,
-        input_ids=extracted_unit_ids,
+    # Normalize spike times to canonical list-of-arrays format and resolve the
+    # per-unit identity labels (defaults to arange). A labelled input keeps its
+    # own labels; a differing unit_ids= raises.
+    spike_times_list, resolved_unit_ids, _ = as_labelled_spike_trains(
+        spike_times, unit_ids, context=context
     )
+    n_neurons = len(spike_times_list)
 
     # Convert inputs to arrays (1D required for times/headings)
     times = np.asarray(times, dtype=np.float64)
@@ -2677,8 +2653,7 @@ def _object_vector_rates(
     object_positions, object_names = resolve_object_positions(
         object_positions, env=env, positions=positions, metric=metric
     )
-    for i, st in enumerate(spike_times_list):
-        validate_spike_times(st, context=f"{context} (neuron {i})")
+    validate_spike_trains(spike_times_list, context=context)
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
     _warn_if_population_silent(

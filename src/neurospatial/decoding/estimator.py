@@ -662,18 +662,13 @@ warn_on_drop
         ... )
         """
         from neurospatial._intervals import resolve_time_windows
-        from neurospatial._results import resolve_unit_ids
-        from neurospatial._spikes import _as_spike_trains_with_ids
+        from neurospatial._spikes import as_labelled_spike_trains
         from neurospatial.decoding.session import _fit_encoding_model
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
-        trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
-        resolved_ids = resolve_unit_ids(
-            unit_ids,
-            len(trains),
-            input_ids=extracted_ids,
-            context="BayesianDecoder.fit",
+        trains, resolved_ids, labels_supplied = as_labelled_spike_trains(
+            spike_times, unit_ids, context="BayesianDecoder.fit"
         )
 
         resolved_epochs, resolved_spike_window = resolve_time_windows(
@@ -704,7 +699,7 @@ warn_on_drop
             _fit=_FittedState(
                 firing_rates,
                 resolved_ids,
-                unit_ids_generated=unit_ids is None and extracted_ids is None,
+                unit_ids_generated=not labels_supplied,
                 spatial_support=rates_result.spatial_support,
                 spike_window=resolved_spike_window,
                 analysis_settings=rates_result.analysis_settings,

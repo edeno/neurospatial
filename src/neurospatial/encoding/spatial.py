@@ -3057,9 +3057,8 @@ default="diffusion_kde"
     'linear'
     """
     from neurospatial.encoding._backend import (
-        SUPPORTED_BACKENDS,
-        get_backend_name,
         is_jax_available,
+        validate_and_resolve_backend,
     )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
@@ -3091,16 +3090,9 @@ default="diffusion_kde"
     else:
         require_linear_allocation(env)
 
-    # Validate backend
-    if backend not in SUPPORTED_BACKENDS:
-        raise ValueError(
-            f"Unknown backend: {backend!r}. "
-            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
-        )
-
-    # Resolve backend (handles "auto" → "numpy" or "jax")
-    # This raises ImportError if backend="jax" and JAX is unavailable
-    resolved_backend = get_backend_name(backend)
+    # Raises ValueError for unknown names and ImportError if jax is unavailable;
+    # "auto" resolves to "numpy" or "jax".
+    resolved_backend = validate_and_resolve_backend(backend)
 
     # Method-specific validation (mutual exclusivity + value domains), in the
     # contract order, then resolve the ratio defaults. For glm the ratio params
@@ -3653,11 +3645,10 @@ default="diffusion_kde"
     >>> linear.analysis_settings["time_allocation"]
     'linear'
     """
-    from neurospatial._spikes import _as_spike_trains_with_ids
+    from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._backend import (
-        SUPPORTED_BACKENDS,
-        get_backend_name,
         is_jax_available,
+        validate_and_resolve_backend,
     )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
@@ -3674,7 +3665,7 @@ default="diffusion_kde"
     )
     from neurospatial.encoding._validation import (
         _validate_env_argument,
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
 
@@ -3689,16 +3680,9 @@ default="diffusion_kde"
     else:
         require_linear_allocation(env)
 
-    # Validate backend
-    if backend not in SUPPORTED_BACKENDS:
-        raise ValueError(
-            f"Unknown backend: {backend!r}. "
-            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
-        )
-
-    # Resolve backend (handles "auto" → "numpy" or "jax")
-    # This raises ImportError if backend="jax" and JAX is unavailable
-    resolved_backend = get_backend_name(backend)
+    # Raises ValueError for unknown names and ImportError if jax is unavailable;
+    # "auto" resolves to "numpy" or "jax".
+    resolved_backend = validate_and_resolve_backend(backend)
 
     # Validate dtype: only single/double precision rate maps are supported.
     # Wrap the parse so an unparseable dtype string (e.g. "bogus") raises this
@@ -3746,26 +3730,14 @@ default="diffusion_kde"
     if method != "glm":
         _validate_smoothing_parameters(method, bandwidth)
 
-    # Normalize spike times to canonical list-of-arrays format, surfacing any
-    # unit ids the spikes object carries (a spike group, e.g. a
-    # pynapple-TsGroup-like). Plain-array/sequence inputs return `None` ids, so
-    # the trains are byte-for-byte identical to `as_spike_trains(spike_times)`.
-    spike_times_list, extracted_unit_ids = _as_spike_trains_with_ids(spike_times)
+    # Normalize spike times to canonical list-of-arrays format and resolve the
+    # per-unit identity labels (defaults to arange). A labelled input keeps its
+    # own labels; a differing unit_ids= raises.
+    spike_times_list, resolved_unit_ids, labels_supplied = as_labelled_spike_trains(
+        spike_times, unit_ids, context="compute_spatial_rates"
+    )
     n_neurons = len(spike_times_list)
-
-    # Resolve and validate per-unit identity labels (defaults to arange). A
-    # labelled input keeps its own labels; a differing unit_ids= raises.
-    from neurospatial._results import resolve_unit_ids
-
-    resolved_unit_ids = resolve_unit_ids(
-        unit_ids,
-        n_neurons,
-        context="compute_spatial_rates",
-        input_ids=extracted_unit_ids,
-    )
-    result_unit_ids = (
-        None if unit_ids is None and extracted_unit_ids is None else resolved_unit_ids
-    )
+    result_unit_ids = resolved_unit_ids if labels_supplied else None
 
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)
@@ -3774,8 +3746,7 @@ default="diffusion_kde"
     validate_trajectory(
         times, positions=positions, context="compute_spatial_rates", n_dims=env.n_dims
     )
-    for i, st in enumerate(spike_times_list):
-        validate_spike_times(st, context=f"compute_spatial_rates (neuron {i})")
+    validate_spike_trains(spike_times_list, context="compute_spatial_rates")
 
     # Resolve the shared speed gate ONCE here (raises on speed-without-min_speed,
     # mirroring env.occupancy). Resolving once also lets us warn a single time
