@@ -9,9 +9,11 @@
   per-location population-vector correlation of remapping studies. The
   argument is `firing_rates`, and a map with constant rates now has a NaN
   diagonal entry (before, 1.0), because its correlation is undefined. A map
-  counts as constant when all its rates are exactly equal; equal rates such
-  as 0.1 everywhere, whose standard deviation rounds to about 1e-17, used to
-  give a meaningless correlation near 0 instead of NaN.
+  with a NaN bin likewise gets a NaN row, column and diagonal entry (its
+  diagonal used to be forced to 1.0), and input with no bins returns all
+  NaN. A map counts as constant when all its rates are exactly equal; equal
+  rates such as 0.1 everywhere, whose standard deviation rounds to about
+  1e-17, used to give a meaningless correlation near 0 instead of NaN.
 
   ```python
   # before
@@ -239,6 +241,7 @@
   observed = compute_speed(times, positions) >= 2.0  # mask needed to undo the fill
   # after: NaN where the animal is slower than min_speed, still, or not tracked
   heading = heading_from_velocity(times, positions, min_speed=2.0)
+  observed = np.isfinite(heading)  # no separate compute_speed mask needed
   ```
 
   A `NaN` row (a lost frame) is now a missing sample with `NaN` heading, and
@@ -248,8 +251,7 @@
   used to return 0 (East) everywhere. For a heading while the animal is
   still, use `heading_from_body_orientation` with pose keypoints. For the
   same reason `head_sweep_from_positions(..., min_speed=0)` on a window where
-  the animal never moves now warns that every heading is undefined and
-  returns 0.0; it used to return 0.0 silently.
+  the animal never moves returns `nan`, not 0.0: no heading was observed.
 
   Headings computed with `min_speed > 0` contain `NaN` at slow samples, and a
   simulated cell given them has `NaN` rates that `generate_poisson_spikes`
