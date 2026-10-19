@@ -425,9 +425,9 @@ def perceived_alpha(alpha: ArrayLike) -> NDArray[np.float64]:
     ``alpha`` blended in sRGB, as Matplotlib and napari do.
 
     Exact over black for a pure power-law gamma, close elsewhere; without it
-    an opacity of 0.25 looks like about 0.54.
+    an opacity of 0.25 looks like about 0.54. Opacities are clipped to [0, 1].
     """
-    return np.power(np.asarray(alpha, dtype=np.float64), 2.2)
+    return np.power(np.clip(np.asarray(alpha, dtype=np.float64), 0.0, 1.0), 2.2)
 
 
 def _label(subplot: Any, text: str, at: ArrayLike, color: str) -> None:
