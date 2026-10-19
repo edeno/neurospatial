@@ -1219,6 +1219,19 @@ def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
     )
 
 
+def test_every_field_with_a_video_stands_upright(apparatus, walk, video):
+    t, _, fields = walk
+    frames, calibration = video
+    animation = apparatus.animate_fields(
+        [list(fields), list(fields)],
+        frame_times=t,
+        backend="fastplotlib",
+        overlays=[VideoOverlay(source=frames, times=t, calibration=calibration)],
+    )
+    animation.show()
+    assert [p.camera.local.scale_y > 0 for p in animation._plots] == [True, True]
+
+
 def test_dry_run_reports_without_drawing(apparatus, walk, capsys):
     t, _, fields = walk
     result = apparatus.animate_fields(

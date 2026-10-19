@@ -1655,8 +1655,10 @@ class FastplotlibAnimation:
         """
         if self._canvas is None:
             self._canvas = self.widget.show(autoscale=False, **kwargs)
-            # fastplotlib turns y downward for images; environments keep y up.
-            self._plot.camera.local.scale_y = abs(self._plot.camera.local.scale_y)
+            # fastplotlib turns y downward in every subplot with an image (a
+            # video under each field); environments keep y up.
+            for plot in self._plots:
+                plot.camera.local.scale_y = abs(plot.camera.local.scale_y)
         return self._canvas
 
     def _ipython_display_(self) -> None:
