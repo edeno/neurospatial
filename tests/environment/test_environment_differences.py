@@ -76,6 +76,23 @@ def test_different_units_or_frame_change_bin_meaning(label: str) -> None:
     assert differences.topology is None
 
 
+def test_polar_and_cartesian_bins_differ_in_coordinate_system() -> None:
+    polar = Environment.from_polar_egocentric(
+        distance_range=(0.0, 20.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 2,
+    )
+    assert _environment_differences(polar, _grid()).bins == "coordinate systems"
+
+
+def test_bins_with_equal_centers_and_different_areas_differ_in_measures() -> None:
+    small = _clipped_cell(box(0.25, 0.25, 0.75, 0.75))
+    large = _clipped_cell(box(0.1, 0.1, 0.9, 0.9))
+    np.testing.assert_array_equal(small.bin_centers, large.bin_centers)
+    assert _environment_differences(small, large) == ("bin measures", None)
+
+
 def test_different_connectivity_is_topology_not_bins() -> None:
     differences = _environment_differences(_grid(), _grid(diagonals=False))
     assert differences.bins is None

@@ -6,10 +6,10 @@ Use ``from neurospatial import Environment`` or this package's equivalent export
 ``BinSequenceWithRuns`` is the result of ``Environment.bin_sequence_with_runs``."""
 
 from neurospatial.environment._comparison import (
-    EnvironmentDifferences as _EnvironmentDifferences,
+    _environment_differences as _environment_differences,
 )
 from neurospatial.environment._comparison import (
-    _environment_differences as _environment_differences,
+    _EnvironmentDifferences as _EnvironmentDifferences,
 )
 from neurospatial.environment._factories import _from_samples as _from_samples
 from neurospatial.environment._publication import _build_record as _build_record

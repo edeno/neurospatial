@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry import Arena, Binning, SpatialBins
 
 
-class EnvironmentDifferences(NamedTuple):
+class _EnvironmentDifferences(NamedTuple):
     """The first difference in bin meaning and in topology, or None for each.
 
     Attributes
@@ -48,7 +48,7 @@ class EnvironmentDifferences(NamedTuple):
 
 def _environment_differences(
     first: Environment, second: Environment
-) -> EnvironmentDifferences:
+) -> _EnvironmentDifferences:
     """Compare two environments' bin meaning and topology.
 
     Parameters
@@ -58,7 +58,7 @@ def _environment_differences(
 
     Returns
     -------
-    EnvironmentDifferences
+    _EnvironmentDifferences
         ``(None, None)`` when the bins mean the same places in the same
         coordinates and the space is connected the same way.
 
@@ -70,7 +70,7 @@ def _environment_differences(
     labels.
     """
     if first is second:
-        return EnvironmentDifferences(None, None)
+        return _EnvironmentDifferences(None, None)
     if first.coordinate_system != second.coordinate_system:
         labels = "coordinate systems"
     elif first.units != second.units or first.frame != second.frame:
@@ -78,8 +78,8 @@ def _environment_differences(
     else:
         labels = None
     if first._geometry is second._geometry:
-        return EnvironmentDifferences(labels, None)
-    return EnvironmentDifferences(
+        return _EnvironmentDifferences(labels, None)
+    return _EnvironmentDifferences(
         labels or _bin_difference(first, second), _topology_difference(first, second)
     )
 
