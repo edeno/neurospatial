@@ -666,7 +666,13 @@ def animate_fields(
         # frame_times is guaranteed to be set by _build_frame_times above
         assert frame_times is not None, "frame_times should be built before conversion"
         overlay_data = _convert_overlays_to_data(
-            overlays=overlays, frame_times=frame_times, n_frames=n_frames, env=env
+            overlays=overlays,
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=env,
+            # fastplotlib shows each overlay at its own rate; "auto" never
+            # chooses it.
+            own_samples=backend == "fastplotlib",
         )
 
         # Validate pickle-ability for parallel rendering (applies to video backend)

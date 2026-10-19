@@ -408,6 +408,15 @@ until the next frame's. The slider counts seconds from the first frame, so
 session timestamps such as 1.7e9 s keep their precision; the title shows each
 frame's own time. Hovering over a bin shows its position and value.
 
+Position, pose, head direction, object vectors and video each move at their
+own sampling rate when given their own `times`, so a field shown once a
+second (a rate map per lap, say) does not freeze 30 Hz tracking or the camera
+between frames. Each sample is shown from its time until the next, or for one
+typical interval at a gap, and nothing is drawn before an overlay's first
+sample or after its last. A trail spans the time of its last `trail_length`
+animation frames. Overlays without `times` follow the field's frames, as in
+the other backends.
+
 Time series are drawn beside the field on the same clock, each over its
 `window_seconds` around the current time, with every sample in the window
 drawn (up to 100,000), so a ripple-band LFP keeps its shape. Event times from

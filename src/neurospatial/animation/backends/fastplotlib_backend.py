@@ -96,12 +96,68 @@ def _rgba(color: str) -> NDArray[np.float32]:
     return np.asarray(to_rgba(color), dtype=np.float32)
 
 
-class _Position:
-    """The animal's position and a fading trail of recent positions."""
+class _Samples:
+    """Which row of an overlay the slider's time shows.
 
-    def __init__(self, subplot: Any, data: PositionData) -> None:
-        self.data = data
-        self.length = data.trail_length or 0
+    Rows aligned to the animation's frames follow the field. Rows with times
+    of their own are each shown from their time until the next, or for one
+    typical interval at a gap, and none before the first.
+    """
+
+    def __init__(
+        self,
+        times: NDArray[np.float64] | None,
+        start: float,
+        frame_of: Callable[[float], int],
+        frame_interval: float,
+    ) -> None:
+        self.frame_of, self.frame_interval = frame_of, frame_interval
+        self.times = None if times is None else times - start
+        if self.times is not None:
+            intervals = np.diff(self.times)
+            typical = float(np.median(intervals)) if len(intervals) else np.inf
+            self.ends = self.times + np.minimum(
+                np.diff(self.times, append=np.inf), typical
+            )
+
+    def at(self, time: float) -> int:
+        """The row shown at ``time`` on the clock; -1 for none."""
+        if self.times is None:
+            return self.frame_of(time)
+        row = int(np.searchsorted(self.times, time, side="right")) - 1
+        return row if row >= 0 and time < self.ends[row] else -1
+
+    def recent(self, row: int, n_frames: int) -> slice:
+        """The rows of the last ``n_frames`` animation frames, up to ``row``."""
+        if self.times is None:
+            return slice(max(0, row - n_frames + 1), row + 1)
+        since = self.times[row] - n_frames * self.frame_interval
+        return slice(int(np.searchsorted(self.times, since, side="right")), row + 1)
+
+    def most_recent(self, n_frames: int) -> int:
+        """The most rows ``recent`` returns."""
+        if self.times is None:
+            return n_frames
+        span = n_frames * self.frame_interval
+        reach = np.searchsorted(self.times, self.times - span, side="right")
+        return int(np.max(np.arange(len(self.times)) + 1 - reach, initial=1))
+
+
+def _row(values: NDArray[np.float64], row: int) -> NDArray[np.float64]:
+    """Row ``row`` of ``values``, or NaN for -1 (nothing shown)."""
+    return values[row] if row >= 0 else np.full(values.shape[1:], np.nan)
+
+
+class _Position:
+    """The animal's position and a fading trail of recent positions.
+
+    The trail spans the last ``trail_length`` animation frames.
+    """
+
+    def __init__(self, subplot: Any, data: PositionData, clock: _Samples) -> None:
+        self.data, self.clock = data, clock
+        self.frames = data.trail_length or 0
+        self.length = clock.most_recent(self.frames) if self.frames > 1 else 0
         if self.length > 1:
             colors = np.tile(_rgba(data.color), (self.length, 1))
             colors[:, 3] = np.linspace(0.0, _TRAIL_MAX_ALPHA, self.length)
@@ -116,20 +172,22 @@ class _Position:
             edge_width=1,
         )
 
-    def update(self, frame: int) -> None:
-        self.marker.data = xyz(self.data.data[frame])
+    def update(self, time: float) -> None:
+        row = self.clock.at(time)
+        self.marker.data = xyz(_row(self.data.data, row))
         if self.length > 1:
             window = np.full((self.length, self.data.data.shape[1]), np.nan)
-            recent = self.data.data[max(0, frame - self.length + 1) : frame + 1]
-            window[self.length - len(recent) :] = recent
+            if row >= 0:
+                recent = self.data.data[self.clock.recent(row, self.frames)]
+                window[self.length - len(recent) :] = recent
             self.trail.data = xyz(window)
 
 
 class _Bodyparts:
     """Body parts as points, joined by the skeleton's edges."""
 
-    def __init__(self, subplot: Any, data: BodypartData) -> None:
-        self.data = data
+    def __init__(self, subplot: Any, data: BodypartData, clock: _Samples) -> None:
+        self.data, self.clock = data, clock
         self.names = list(data.bodyparts)
         colors = [(data.colors or {}).get(name, "cyan") for name in self.names]
         self.points = subplot.add_scatter(
@@ -150,23 +208,24 @@ class _Bodyparts:
         if self.edges:
             assert skeleton is not None
             self.lines = subplot.add_line(
-                self._segments(0),
+                self._segments(-1),
                 colors=skeleton.edge_color,
                 thickness=skeleton.edge_width,
             )
 
-    def _segments(self, frame: int) -> NDArray[np.float32]:
+    def _segments(self, row: int) -> NDArray[np.float32]:
         parts = self.data.bodyparts
         return pair_segments(
-            [parts[start][frame] for start, _ in self.edges],
-            [parts[end][frame] for _, end in self.edges],
+            [_row(parts[start], row) for start, _ in self.edges],
+            [_row(parts[end], row) for _, end in self.edges],
         )
 
-    def update(self, frame: int) -> None:
+    def update(self, time: float) -> None:
+        row = self.clock.at(time)
         parts = self.data.bodyparts
-        self.points.data = xyz([parts[name][frame] for name in self.names])
+        self.points.data = xyz([_row(parts[name], row) for name in self.names])
         if self.edges:
-            self.lines.data = self._segments(frame)
+            self.lines.data = self._segments(row)
 
 
 class _HeadDirection:
@@ -176,21 +235,25 @@ class _HeadDirection:
         self,
         subplot: Any,
         data: HeadDirectionData,
-        anchor: PositionData | None,
+        clock: _Samples,
+        anchor: _Position | None,
         center: NDArray[np.float64],
     ) -> None:
-        self.data, self.anchor, self.center = data, anchor, center
+        self.data, self.clock, self.anchor, self.center = data, clock, anchor, center
         self.line = subplot.add_line(
             xyz(np.full((2, 2), np.nan)),
             colors="w",
             thickness=data.width,
         )
 
-    def update(self, frame: int) -> None:
+    def update(self, time: float) -> None:
         origin = self.center
-        if self.anchor is not None and np.all(np.isfinite(self.anchor.data[frame])):
-            origin = self.anchor.data[frame]
-        segment = heading_segment(origin, self.data.data[frame], self.data.length)
+        if self.anchor is not None:
+            animal = _row(self.anchor.data.data, self.anchor.clock.at(time))
+            if np.all(np.isfinite(animal)):
+                origin = animal
+        heading = _row(self.data.data, self.clock.at(time))
+        segment = heading_segment(origin, heading, self.data.length)
         self.line.data = xyz(segment)
         if np.all(np.isfinite(segment)):
             direction = segment[1] - segment[0]
@@ -237,8 +300,10 @@ class _Events:
     event's fill and border.
     """
 
-    def __init__(self, subplot: Any, data: EventData) -> None:
-        self.data = data
+    def __init__(
+        self, subplot: Any, data: EventData, frame_of: Callable[[float], int]
+    ) -> None:
+        self.data, self.frame_of = data, frame_of
         self.kinds = []
         for name, positions in data.event_positions.items():
             if len(positions) == 0:
@@ -258,7 +323,8 @@ class _Events:
             frames = data.event_frame_indices[name]
             self.kinds.append((frames, fill, border, graphic))
 
-    def update(self, frame: int) -> None:
+    def update(self, time: float) -> None:
+        frame = self.frame_of(time)
         for frames, fill, border, graphic in self.kinds:
             shown, alphas = _event_visibility(frames, frame, self.data.decay_frames)
             fill[:, 3] = border[:, 3] = np.where(shown, alphas * self.data.opacity, 0)
@@ -272,8 +338,8 @@ class _ObjectVectors:
     opaque ones.
     """
 
-    def __init__(self, subplot: Any, data: ObjectVectorData) -> None:
-        self.data = data
+    def __init__(self, subplot: Any, data: ObjectVectorData, clock: _Samples) -> None:
+        self.data, self.clock = data, clock
         self.color = _rgba(data.color)
         rates = data.firing_rates
         self.top_rate = (
@@ -296,13 +362,14 @@ class _ObjectVectors:
                 edge_width=1,
             )
 
-    def update(self, frame: int) -> None:
-        animal = self.data.animal_positions[frame]
+    def update(self, time: float) -> None:
+        row = self.clock.at(time)
+        animal = _row(self.data.animal_positions, row)
         objects = self.data.object_positions
         self.lines.data = pair_segments(np.broadcast_to(animal, objects.shape), objects)
-        if self.data.firing_rates is not None:
+        if self.data.firing_rates is not None and row >= 0:
             color = self.color.copy()
-            color[3] *= 0.1 + 0.9 * self.data.firing_rates[frame] / self.top_rate
+            color[3] *= 0.1 + 0.9 * self.data.firing_rates[row] / self.top_rate
             self.lines.colors = color
 
 
@@ -313,8 +380,10 @@ class _Video:
     the moving overlays are drawn above both.
     """
 
-    def __init__(self, subplot: Any, data: VideoData, depth: float) -> None:
-        self.data = data
+    def __init__(
+        self, subplot: Any, data: VideoData, clock: _Samples, depth: float
+    ) -> None:
+        self.data, self.clock = data, clock
         if isinstance(data.reader, np.ndarray):
             height, width = data.reader.shape[1:3]
         else:
@@ -432,7 +501,7 @@ class _PositionTime:
     A column starts at its frame's time and lasts until the next frame, as
     the field panel holds it, or one typical frame interval at a gap, which
     stays empty. Rows span each bin along the track. Positions are drawn as
-    lines along the track.
+    lines along the track, every sample of their own.
     """
 
     def __init__(
@@ -443,7 +512,7 @@ class _PositionTime:
         scale: ColorScale,
         clock: NDArray[np.float64],
         window: float,
-        positions: Sequence[PositionData],
+        positions: Sequence[_Position],
         start: float,
         move_to: Callable[[float], None],
     ) -> None:
@@ -471,11 +540,15 @@ class _PositionTime:
         self.axis = "position along track" + (
             f" ({labels.units})" if labels.units else ""
         )
-        self.tracks = [track_position(env, item.data) for item in positions]
+        self.tracks = [
+            (track_position(env, item.data.data), item.clock) for item in positions
+        ]
         self.lines = [
             subplot.add_line(
-                np.full((self.n_columns, 3), np.nan, dtype=np.float32),
-                colors=item.color,
+                np.full(
+                    (self._most_in_window(item.clock), 3), np.nan, dtype=np.float32
+                ),
+                colors=item.data.color,
                 thickness=2,
             )
             for item in positions
@@ -484,6 +557,14 @@ class _PositionTime:
         self.view = _TimeWindow(subplot, window, move_to)
         subplot.title = self.axis
         subplot.y_range = (float(self.lower.min()), float(self.upper.max()))
+
+    def _most_in_window(self, clock: _Samples) -> int:
+        """The most samples of ``clock`` a window holds."""
+        if clock.times is None:
+            return self.n_columns
+        times = clock.times
+        reach = np.searchsorted(times, times + self.window, side="right")
+        return int(np.max(reach - np.arange(len(times)), initial=1))
 
     def frames_at(self, time: float) -> slice:
         """The frames whose columns show in the window around ``time``."""
@@ -512,9 +593,18 @@ class _PositionTime:
             self.scale.texture_coordinates(rows.ravel()), 4
         )
         self.mesh.mapcoords = mapcoords
-        for line, track in zip(self.lines, self.tracks, strict=True):
-            points = np.full((self.n_columns, 2), np.nan)
-            points[:n_frames] = np.column_stack([self.clock[frames], track[frames]])
+        half = self.window / 2
+        for line, (track, clock) in zip(self.lines, self.tracks, strict=True):
+            if clock.times is None:
+                shown, times = frames, self.clock[frames]
+            else:
+                shown = np.arange(
+                    np.searchsorted(clock.times, time - half, side="left"),
+                    np.searchsorted(clock.times, time + half, side="right"),
+                )
+                times = clock.times[shown]
+            points = np.full((len(line.data), 2), np.nan)
+            points[: len(shown)] = np.column_stack([times, track[shown]])
             line.data = xyz(points)
         self.view.follow(time)
 
@@ -895,6 +985,10 @@ class FastplotlibAnimation:
         scale = ColorScale(cmap, low, high, "lightgray")
         first = np.asarray(fields[0], dtype=np.float64)
         self._field = FieldGraphic(self._plot, env, first, scale)
+
+        def clock(times: NDArray[np.float64] | None) -> _Samples:
+            return _Samples(times, self._start, self._frame_of, typical)
+
         self._videos: list[_Video] = []
         if overlay_data is not None and overlay_data.videos:
             # Depth orders the field, the videos and everything else (at 0).
@@ -904,6 +998,7 @@ class FastplotlibAnimation:
                 _Video(
                     self._plot,
                     item,
+                    clock(item.times),
                     (-0.5 if item.z_order == "above" else -2.5) - i / 100,
                 )
                 for i, item in enumerate(overlay_data.videos)
@@ -920,22 +1015,31 @@ class FastplotlibAnimation:
         self._title = title or plot_title(env)
         events = overlay_data.events if overlay_data else []
         self._layers: list[Any] = []
+        positions: list[_Position] = []
         if overlay_data is not None:
-            positions = overlay_data.positions
             self._layers += [
-                _ObjectVectors(self._plot, item) for item in overlay_data.object_vectors
+                _ObjectVectors(self._plot, item, clock(item.times))
+                for item in overlay_data.object_vectors
             ]
-            self._layers += [_Position(self._plot, item) for item in positions]
+            positions = [
+                _Position(self._plot, item, clock(item.times))
+                for item in overlay_data.positions
+            ]
+            self._layers += positions
             self._layers += [
-                _Bodyparts(self._plot, item) for item in overlay_data.bodypart_sets
+                _Bodyparts(self._plot, item, clock(item.times))
+                for item in overlay_data.bodypart_sets
             ]
             anchor = positions[0] if len(positions) == 1 else None
             center = env.bin_centers.mean(axis=0)
             self._layers += [
-                _HeadDirection(self._plot, item, anchor, center)
+                _HeadDirection(self._plot, item, clock(item.times), anchor, center)
                 for item in overlay_data.head_directions
             ]
-            self._layers += [_Events(self._plot, item) for item in overlay_data.events]
+            self._layers += [
+                _Events(self._plot, item, self._frame_of)
+                for item in overlay_data.events
+            ]
         self._track: _PositionTime | None = None
         if extents_along_track is not None:
             self._track = _PositionTime(
@@ -945,7 +1049,7 @@ class FastplotlibAnimation:
                 scale,
                 self._clock,
                 window_seconds,
-                overlay_data.positions if overlay_data else [],
+                positions,
                 self._start,
                 self._move_to,
             )
@@ -993,7 +1097,7 @@ class FastplotlibAnimation:
         """
         frame = self._frame_of(time)
         values = np.asarray(self._fields[frame], dtype=np.float64)
-        images = [video.data.get_frame(frame) for video in self._videos]
+        images = [video.data.get_frame(video.clock.at(time)) for video in self._videos]
         if self._track is None:
             return _Frame(frame, values, images, 0, np.empty((0, len(values))))
         window = self._track.frames_at(time)
@@ -1012,7 +1116,7 @@ class FastplotlibAnimation:
         for video, image in zip(self._videos, images, strict=True):
             video.show(image)
         for layer in self._layers:
-            layer.update(frame)
+            layer.update(time)
         label = (
             self._labels[frame]
             if self._labels is not None

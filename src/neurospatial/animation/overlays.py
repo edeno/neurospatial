@@ -27,6 +27,7 @@ Performance Considerations
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
@@ -2726,6 +2727,10 @@ class PositionData:
         Marker size in points.
     trail_length : int or None
         Trail length in frames, or None for no trail.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2747,6 +2752,7 @@ class PositionData:
     color: str
     size: float
     trail_length: int | None
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -2766,6 +2772,10 @@ class BodypartData:
     colors : dict of str to str or None
         Per-part colors as matplotlib color strings. Takes precedence over
         skeleton.node_colors if both are provided.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2785,6 +2795,7 @@ class BodypartData:
     bodyparts: dict[str, NDArray[np.float64]]
     skeleton: Skeleton | None
     colors: dict[str, str] | None
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -2806,6 +2817,10 @@ class HeadDirectionData:
         Length of direction line in environment coordinate units.
     width : float
         Line width in pixels.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2827,6 +2842,7 @@ class HeadDirectionData:
     color: str
     length: float
     width: float = 3.0
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -2930,6 +2946,10 @@ class VideoData:
         Opacity of the video layer (0.0-1.0).
     z_order : {"below", "above"}
         Rendering order relative to the spatial field layer.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2966,6 +2986,7 @@ class VideoData:
     env_bounds: tuple[float, float, float, float]
     alpha: float
     z_order: Literal["below", "above"]
+    times: NDArray[np.float64] | None = None
 
     def get_frame(self, anim_frame_idx: int) -> NDArray[np.uint8] | None:
         """Get the video frame for a given animation frame index.
@@ -3246,6 +3267,10 @@ class ObjectVectorData:
         Marker style for objects.
     object_size : float
         Size of object markers in points.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -3279,6 +3304,7 @@ class ObjectVectorData:
     show_objects: bool
     object_marker: str
     object_size: float
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -4322,12 +4348,25 @@ def _interp_nearest(
 # =============================================================================
 
 
+# Overlays with samples of their own, which a backend can show at their own
+# rate.
+_OWN_SAMPLE_TYPES = (
+    PositionData,
+    BodypartData,
+    HeadDirectionData,
+    VideoData,
+    ObjectVectorData,
+)
+
+
 def _convert_overlays_to_data(
     overlays: list[OverlayProtocol],
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
     show_regions: bool | list[str] = False,
+    *,
+    own_samples: bool = False,
 ) -> OverlayData:
     """Convert overlay configurations to aligned internal data representation.
 
@@ -4355,6 +4394,12 @@ def _convert_overlays_to_data(
         from env.regions are included. If a list, only those region names
         are included. If False, no regions are included. Normalized to
         dict[int, list[str]] format where key 0 means "all frames".
+    own_samples : bool, default=False
+        Keep the samples of each position, pose, heading, object-vector and
+        video overlay that has ``times``, with those times in the data's
+        ``times``, instead of aligning them to ``frame_times``; for a backend
+        that shows each overlay at its own sampling rate. Every overlay is
+        still checked against ``frame_times``.
 
     Returns
     -------
@@ -4453,6 +4498,20 @@ def _convert_overlays_to_data(
 
         # Delegate to overlay's convert_to_data method
         internal_data = overlay.convert_to_data(frame_times, n_frames, env)
+        own_times = overlay.times
+        if (
+            own_samples
+            and own_times is not None
+            and isinstance(internal_data, _OWN_SAMPLE_TYPES)
+        ):
+            own_times = np.asarray(own_times, dtype=np.float64)
+            with warnings.catch_warnings():
+                # Checked against the frames above; its own times match.
+                warnings.simplefilter("ignore")
+                own = overlay.convert_to_data(own_times, len(own_times), env)
+            assert isinstance(own, _OWN_SAMPLE_TYPES)
+            own.times = own_times
+            internal_data = own
 
         # Dispatch to appropriate list based on return type
         if isinstance(internal_data, PositionData):

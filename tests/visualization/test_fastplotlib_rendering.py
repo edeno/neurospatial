@@ -742,6 +742,70 @@ def test_video_follows_the_slider_and_stands_upright_without_calibration(
     )
 
 
+def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
+    # One rate map a second; tracking and video at 30 Hz.
+    frame_times = np.arange(5.0)
+    times = np.arange(0.5, 4.0, 1 / 30)  # tracking starts at 0.5 s
+    path = np.c_[5 + 30 * times / 4, np.full(len(times), 20.0)]
+    frames = np.zeros((len(times), 20, 40, 3), dtype=np.uint8)
+    frames[:, 0, :, 1] = (np.arange(len(times)) % 256)[:, None]  # its own green
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # no calibration; partial overlap
+        animation = apparatus.animate_fields(
+            np.zeros((5, apparatus.n_bins)),
+            frame_times=frame_times,
+            backend="fastplotlib",
+            overlays=[
+                PositionOverlay(positions=path, times=times, trail_length=2),
+                VideoOverlay(source=frames, times=times),
+            ],
+        )
+    position = animation._layers[0]
+    (video,) = animation._videos
+    for time in (0.2, 1.0, 1.51, 2.99):
+        animation.widget.indices = {"time": time}
+        _render(animation)
+        sample = int(np.searchsorted(times, time, side="right")) - 1
+        assert animation.frame == int(time)  # the field holds its frame
+        if sample < 0:  # before tracking starts: nothing
+            assert np.isnan(position.marker.data[0, 0])
+            assert not video.image.visible
+            continue
+        np.testing.assert_allclose(position.marker.data[0, :2], path[sample], rtol=1e-6)
+        assert video.image.data[0, 0, 1] == sample % 256
+        # The trail covers the last two frames' time: 2 s of samples, to
+        # within one sample at its edge.
+        trail = position.trail.data[:][:, 0]
+        trail = trail[np.isfinite(trail)]
+        assert abs(len(trail) - min(sample + 1, 60)) <= 1
+    animation.widget.indices = {"time": 4.5}  # tracking ended at 4 s
+    _render(animation)
+    assert np.isnan(position.marker.data[0, 0])
+
+    # On a track, the position line has every sample in the window.
+    times = np.arange(0.0, 4.0, 1 / 30)
+    on_track = track.linear_to_nd(np.linspace(0.0, 70.0, len(times)))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            np.zeros((5, track.n_bins)),
+            frame_times=frame_times,
+            backend="fastplotlib",
+            window_seconds=1.0,
+            overlays=[PositionOverlay(positions=on_track, times=times)],
+        )
+    animation.widget.indices = {"time": 2.0}
+    _render(animation)
+    (line,) = animation._track.lines
+    drawn = line.data[:][:, :2]
+    drawn = drawn[np.isfinite(drawn[:, 0])]
+    inside = np.abs(times - 2.0) <= 0.5
+    np.testing.assert_allclose(drawn[:, 0], times[inside], atol=1e-5)
+    np.testing.assert_allclose(
+        drawn[:, 1], track.to_linear(on_track)[inside], atol=1e-3
+    )
+
+
 def test_dry_run_reports_without_drawing(apparatus, walk, capsys):
     t, _, fields = walk
     result = apparatus.animate_fields(
