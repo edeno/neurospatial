@@ -748,6 +748,28 @@ def test_a_label_refusal_names_both_environments_labels(env, make, mapped) -> No
         )
 
 
+@pytest.mark.parametrize("mapped", [False, True])
+def test_polygon_cells_compare_with_bins_without_cells_by_center(make, mapped) -> None:
+    # The copy records no cells, so the bins are compared by center and
+    # measure only; they agree, and so do the connections and faces.
+    clipped = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0),) * 2
+    ).clip(box(0, 0, 3.5, 3.5))
+    copy = renumbered(clipped, np.arange(clipped.n_bins))
+    assert copy.binning.shapes is None
+    rates = np.random.default_rng(3).uniform(0, 10, clipped.n_bins)
+    identity = np.column_stack([np.arange(clipped.n_bins)] * 2)
+
+    result = compare_spatial_rates(
+        make(rates, np.ones(clipped.n_bins), on=clipped),
+        make(rates, np.ones(clipped.n_bins), on=copy),
+        bin_mapping=identity if mapped else None,
+    )
+
+    assert result.analysis_settings["topology_differs"] is False
+    np.testing.assert_allclose(result.correlation, [1.0])
+
+
 def test_a_subset_of_polygon_cells_maps_onto_its_parent(make) -> None:
     # A subset keeps its parent's cells and boundary ownership for the bins
     # it keeps, so only the connections to the dropped bins differ.

@@ -33,6 +33,7 @@ from neurospatial.binning import (
 )
 from neurospatial.environment import (
     _environment_differences,
+    _mapped_bin_difference,
     _mapped_topology_difference,
 )
 from neurospatial.layout import create_layout
@@ -315,6 +316,57 @@ def test_a_rotated_grid_cell_differs_from_an_axis_aligned_one() -> None:
     np.testing.assert_array_equal(square.bin_centers, diamond.bin_centers)
     np.testing.assert_array_equal(square.bin_sizes, diamond.bin_sizes)
     assert _environment_differences(square, diamond).bins == "cell shapes"
+
+
+def _clipped_grid() -> Environment:
+    return Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0),) * 2
+    ).clip(box(0, 0, 3.5, 3.5))
+
+
+def _without_cells(env: Environment, *, size_scale: float = 1.0) -> Environment:
+    """``env``'s bins and connections as explicit bins that record no cells."""
+    binning = renumbered(env, np.arange(env.n_bins)).binning
+    bins = binning.bins
+    return Environment.from_bins(
+        replace(
+            binning,
+            bins=SpatialBins.from_arrays(
+                bins.centers, bins.sizes * size_scale, bins.measure_dims
+            ),
+            faces=MissingFaces("explicit bins without cells"),
+        ),
+        units=env.units,
+        frame=env.frame,
+        arena=env.arena,
+    )
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(_clipped_grid, id="polygon cells"),
+        pytest.param(_grid, id="grid"),
+        pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+    ],
+)
+def test_bins_without_cells_are_compared_by_center_and_measure(build) -> None:
+    # Only one environment records cells, so there are no cells to compare;
+    # the verdict comes from the bin centers and measures.
+    with_cells = build()
+    same = _without_cells(with_cells)
+    larger = _without_cells(with_cells, size_scale=2.0)
+    assert same.binning.shapes is None
+    identity = np.column_stack([np.arange(with_cells.n_bins)] * 2)
+    for first, second in ((with_cells, same), (same, with_cells)):
+        assert _environment_differences(first, second).bins is None
+        assert _mapped_bin_difference(first, second, identity) is None
+    assert _environment_differences(with_cells, larger).bins == "bin measures"
+    assert _mapped_bin_difference(with_cells, larger, identity) == "bin measures"
+    reversed_order = np.column_stack([identity[:, 0], identity[::-1, 1]])
+    assert _mapped_bin_difference(with_cells, same, reversed_order) == (
+        "bin coordinates"
+    )
 
 
 _FACES = "smoothing conductances between neighboring bins"

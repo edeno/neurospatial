@@ -1938,6 +1938,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   differ. Before, it named only the connectivity or arena difference.
   `read_place_field(env=...)` reports differences the same way (see
   Breaking).
+- Decoding with rates from an environment with polygon cells (one cut with
+  `clip`) on an environment that records no cells, such as explicit bins from
+  `from_bins`, compares the bins by center and measure. Before, it raised
+  `ValueError` ("The locator does not publish exact planar cell geometry").
+  `read_place_field(env=...)` and `compare_spatial_rates` follow the same
+  rule.
 - `detect_assemblies` orients each ICA and PCA pattern so its largest-magnitude
   weight is positive, and flips its activation with it. Before, the sign was
   arbitrary, so an assembly's members could have negative weights and

@@ -82,9 +82,9 @@ def _environment_differences(
     Equal centers and measures do not make equal cells: a 10 x 10 square and
     a 20 x 5 rectangle share a center and an area. Cells are compared
     whenever both environments record them (polygon cells, triangles,
-    hexagons, or grid boxes, axis-aligned or in an affine frame). Bins
-    without recorded cells, such as explicit point bins or track bins, are
-    compared by center and measure only.
+    hexagons, or grid boxes, axis-aligned or in an affine frame). When
+    either environment records no cells, such as explicit point bins or
+    track bins, the bins are compared by center and measure only.
 
     Smoothing passes a field between neighbors through conductances (face
     area over distance), which the connectivity graph does not hold: two
@@ -162,6 +162,8 @@ def _paired_cell_difference(
         )
     ):
         return "bin measures"
+    if not (_records_cells(first) and _records_cells(second)):
+        return None
     if isinstance(first.shapes, PolygonCells) or isinstance(
         second.shapes, PolygonCells
     ):
@@ -172,6 +174,15 @@ def _paired_cell_difference(
     if not np.array_equal(first_corners[rows_first], second_corners[rows_second]):
         return "cell shapes"
     return None
+
+
+def _records_cells(binning: Binning) -> bool:
+    """Whether the binning records each bin's cell, not only its center."""
+    return (
+        isinstance(binning.shapes, PolygonCells | TriangleShapes | HexagonShapes)
+        or binning.rectilinear is not None
+        or binning.grid_frame is not None
+    )
 
 
 def _cell_corners(binning: Binning) -> NDArray[np.float64] | None:
