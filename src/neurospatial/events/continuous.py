@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from numbers import Real
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -37,6 +37,10 @@ from neurospatial.events._continuous import (
     _window_status,
 )
 from neurospatial.events.alignment import _validate_window
+
+if TYPE_CHECKING:
+    import pandas as pd
+    from matplotlib.axes import Axes
 
 __all__ = ["ContinuousEventResult", "align_continuous_to_events"]
 
@@ -294,6 +298,257 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         status[self.counts == 0] = "no_support"
         status[:, kinds == "categorical"] = "not_numeric"
         return status
+
+    # ------------------------------------------------------------ exports
+
+    def _table_attrs(self) -> dict[str, Any]:
+        """Alignment settings stored in ``df.attrs`` of every table."""
+        return {
+            "window": (float(self.window[0]), float(self.window[1])),
+            "dt": float(self.dt),
+            "window_coverage": self.window_coverage,
+            "max_gap": self.max_gap,
+            "resultant_threshold": float(self.resultant_threshold),
+            "feature_units": dict(
+                zip(self.feature_ids.tolist(), self.feature_units, strict=True)
+            ),
+        }
+
+    def _frame(self, data: dict[str, Any]) -> pd.DataFrame:
+        """Build a table from fresh column copies and attach ``attrs``."""
+        import pandas as pd
+
+        df = pd.DataFrame({name: np.array(col) for name, col in data.items()})
+        df.attrs.update(self._table_attrs())
+        return df
+
+    def events_table(self) -> pd.DataFrame:
+        """One row per input event with its coverage decision.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``event_index`` (input row), ``event_id`` (only when
+            ``event_ids`` was given), ``status`` (``"retained"`` or the
+            exclusion reason) and ``overlapping``. ``df.attrs`` holds
+            ``window``, ``dt``, ``window_coverage``, ``max_gap``,
+            ``resultant_threshold`` and ``feature_units``.
+        """
+        data: dict[str, Any] = {"event_index": np.arange(self.event_status.size)}
+        if self.event_ids is not None:
+            data["event_id"] = self.event_ids
+        data["status"] = self.event_status
+        data["overlapping"] = self.overlapping
+        return self._frame(data)
+
+    def aligned_table(self) -> pd.DataFrame:
+        """One row per retained event, relative time and feature.
+
+        Rows are ordered by ``event_index``, then ``relative_time``, then
+        feature, so ``n_events * n_times * n_features`` rows.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``event_index``, ``event_id`` (only when ``event_ids`` was
+            given), ``relative_time``, ``feature_id``, ``value`` (NaN where
+            unsupported; categorical codes as floats) and ``supported``.
+            ``df.attrs`` as in ``events_table``.
+
+        Raises
+        ------
+        ValueError
+            If the alignment ran with ``retain_aligned=False``.
+        """
+        if self.values is None or self.support is None:
+            raise ValueError(
+                _format_error(
+                    "aligned_table needs the sampled values, but this result "
+                    "kept only summary statistics (retain_aligned=False)",
+                    why="the per-event values were not stored",
+                    fix="rerun align_continuous_to_events with retain_aligned=True",
+                )
+            )
+        n_events, n_times, n_features = self.values.shape
+        indices = self.event_indices
+        data: dict[str, Any] = {"event_index": np.repeat(indices, n_times * n_features)}
+        if self.event_ids is not None:
+            data["event_id"] = np.repeat(self.event_ids[indices], n_times * n_features)
+        data["relative_time"] = np.tile(
+            np.repeat(self.relative_times, n_features), n_events
+        )
+        data["feature_id"] = np.tile(self.feature_ids, n_events * n_times)
+        data["value"] = self.values.reshape(-1)
+        data["supported"] = self.support.reshape(-1)
+        return self._frame(data)
+
+    def time_course_table(self) -> pd.DataFrame:
+        """One row per relative time and feature with the retained-event summary.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``relative_time``, ``feature_id``, ``value_kind``,
+            ``count`` (retained events with support), ``mean`` (NaN for
+            categorical features and undefined means), ``resultant_length``
+            (circular features only) and ``status`` (``mean_status``). Rows
+            are ordered by relative time, then feature. ``df.attrs`` as in
+            ``events_table``.
+        """
+        n_times, n_features = self.counts.shape
+        return self._frame(
+            {
+                "relative_time": np.repeat(self.relative_times, n_features),
+                "feature_id": np.tile(self.feature_ids, n_times),
+                "value_kind": np.tile(np.asarray(self.value_kinds), n_times),
+                "count": self.counts.reshape(-1),
+                "mean": self.means.reshape(-1),
+                "resultant_length": self.resultant_lengths.reshape(-1),
+                "status": self.mean_status.reshape(-1),
+            }
+        )
+
+    def category_counts_table(self) -> pd.DataFrame:
+        """One row per relative time, categorical feature and category.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``relative_time``, ``feature_id``, ``category_code``,
+            ``category_label``, ``count`` and ``proportion`` (``count``
+            divided by the feature's supported events at that time; NaN when
+            there are none). Empty when no feature is categorical. Rows are
+            ordered by relative time, then feature, then code. ``df.attrs``
+            as in ``events_table``.
+        """
+        n_times = self.relative_times.size
+        n_categories = self.category_codes.size
+        rows = self.category_counts.reshape(-1)
+        totals = self.counts[:, self.category_features].reshape(-1)
+        proportion = np.full(rows.shape, np.nan)
+        np.divide(rows, totals, out=proportion, where=totals > 0)
+        return self._frame(
+            {
+                "relative_time": np.repeat(self.relative_times, n_categories),
+                "feature_id": np.tile(
+                    self.feature_ids[self.category_features], n_times
+                ),
+                "category_code": np.tile(self.category_codes, n_times),
+                "category_label": np.tile(self.category_labels, n_times),
+                "count": rows,
+                "proportion": proportion,
+            }
+        )
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar description of the alignment and its coverage decisions.
+
+        Returns
+        -------
+        dict
+            ``n_events``, ``n_events_excluded``, ``n_features``,
+            ``n_relative_times``, ``window_start``, ``window_stop`` (s),
+            ``dt`` (s), ``window_coverage``, ``n_overlapping_events``,
+            ``min_count`` (smallest supported-event count over cells) and
+            ``n_excluded_<reason>`` for each exclusion reason present. All
+            values are Python ``int``, ``float`` or ``str``.
+        """
+        out: dict[str, Any] = {
+            "n_events": self.n_events,
+            "n_events_excluded": self.n_events_excluded,
+            "n_features": int(self.feature_ids.size),
+            "n_relative_times": int(self.relative_times.size),
+            "window_start": float(self.window[0]),
+            "window_stop": float(self.window[1]),
+            "dt": float(self.dt),
+            "window_coverage": str(self.window_coverage),
+            "n_overlapping_events": int(np.count_nonzero(self.overlapping)),
+            "min_count": int(self.counts.min()),
+        }
+        reasons, reason_counts = np.unique(
+            self.event_status[self.event_status != "retained"], return_counts=True
+        )
+        for reason, n in zip(reasons.tolist(), reason_counts.tolist(), strict=True):
+            out[f"n_excluded_{reason}"] = int(n)
+        return out
+
+    def plot(self, ax: Axes | None = None, *, feature_id: Any = None) -> Axes:
+        """Plot one feature's summary against time from the event.
+
+        Linear features show ``means`` as a line (NaN leaves gaps). Circular
+        features show ``means`` as markers on ``[-pi, pi]``, so no line crosses
+        the wrap. Categorical features show one ``proportion`` line per
+        category.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on. A new figure is created when omitted.
+        feature_id : optional
+            Feature to plot. Required when the result has several features.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes drawn on.
+
+        Raises
+        ------
+        ValueError
+            If ``feature_id`` is missing for several features or unknown.
+        """
+        import matplotlib.pyplot as plt
+
+        ids = self.feature_ids.tolist()
+        if feature_id is None:
+            if len(ids) != 1:
+                raise ValueError(
+                    _format_error(
+                        "plot needs feature_id because the result has "
+                        f"{len(ids)} features",
+                        why="one axes shows one feature",
+                        fix=f"pass feature_id= one of {ids!r}",
+                    )
+                )
+            column = 0
+        elif feature_id in ids:
+            column = ids.index(feature_id)
+        else:
+            raise ValueError(
+                _format_error(
+                    f"feature_id={feature_id!r} is not a feature of this result",
+                    why=f"the feature ids are {ids!r}",
+                    fix="pass one of them",
+                )
+            )
+        if ax is None:
+            _, ax = plt.subplots()
+
+        kind = self.value_kinds[column]
+        unit = self.feature_units[column]
+        t = self.relative_times
+        if kind == "linear":
+            ax.plot(t, self.means[:, column])
+            ax.set_ylabel(unit if unit is not None else "value")
+        elif kind == "circular":
+            ax.plot(t, self.means[:, column], linestyle="none", marker="o")
+            ax.set_ylim(-np.pi, np.pi)
+            ax.set_ylabel("radians")
+        else:
+            rows = np.flatnonzero(self.category_features == column)
+            totals = self.counts[:, column]
+            for row in rows:
+                share = np.full(t.shape, np.nan)
+                np.divide(
+                    self.category_counts[:, row], totals, out=share, where=totals > 0
+                )
+                ax.plot(t, share, label=str(self.category_labels[row]))
+            ax.set_ylim(0.0, 1.0)
+            ax.set_ylabel("proportion of events")
+            ax.legend()
+        ax.axvline(0.0, color="0.4", linestyle="--", linewidth=1.0)
+        ax.set_xlabel("Time from event (s)")
+        return ax
 
 
 def align_continuous_to_events(
