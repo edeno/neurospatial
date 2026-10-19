@@ -132,6 +132,7 @@ class OverlayProtocol(Protocol):
         | EventData
         | TimeSeriesData
         | SpikeRasterData
+        | EpochData
         | ObjectVectorData
     ):
         """Convert overlay to internal data representation.
@@ -147,7 +148,7 @@ class OverlayProtocol(Protocol):
 
         Returns
         -------
-        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | SpikeRasterData | ObjectVectorData
+        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | SpikeRasterData | EpochData | ObjectVectorData
             Internal data container aligned to frame times.
 
         Notes
@@ -2085,6 +2086,94 @@ class SpikeRasterOverlay:
 
 
 @dataclass
+class EpochOverlay:
+    """Intervals of time, such as ripples or run bouts, on every time panel.
+
+    Each epoch is shaded on the panels drawn against time (a track's fields
+    over time, spike rasters and time series), the field's title names the
+    epoch the current time is in, and N and Shift+N jump to the start of the
+    next and previous epoch. Drawn by ``backend="fastplotlib"``; the other
+    backends skip it with a warning.
+
+    Parameters
+    ----------
+    epochs : (start, stop), array-like of shape (n_epochs, 2), or IntervalSet
+        Start and stop of each epoch, in seconds, on the clock of
+        ``frame_times``. Overlapping or touching epochs are merged.
+    label : str, default="epoch"
+        What an epoch is, such as ``"ripple"``, for the title.
+    color : str, default="gold"
+        Shading color.
+    alpha : float, default=0.25
+        Shading opacity, from 0 to 1.
+
+    Raises
+    ------
+    ValueError
+        If an epoch is not finite or does not stop after it starts, or
+        ``alpha`` is outside [0, 1].
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.animation import EpochOverlay
+    >>> ripples = EpochOverlay([[1.0, 1.1], [3.2, 3.35]], label="ripple")
+    >>> ripples.label
+    'ripple'
+    """
+
+    epochs: Any
+    _: KW_ONLY
+    label: str = "epoch"
+    color: str = "gold"
+    alpha: float = 0.25
+    # Protocol attributes: epochs keep their own times.
+    times: NDArray[np.float64] | None = field(default=None, init=False, repr=False)
+    interp: Literal["linear", "nearest"] = field(
+        default="nearest", init=False, repr=False
+    )
+    _intervals: NDArray[np.float64] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Check the epochs and the opacity."""
+        from neurospatial._intervals import as_intervals
+
+        intervals = as_intervals(self.epochs, name="epochs")
+        assert intervals is not None  # epochs is required
+        if not 0.0 <= self.alpha <= 1.0:
+            raise ValueError(f"alpha must be between 0 and 1, got {self.alpha}.")
+        self._intervals = intervals
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> EpochData:
+        """The epochs, sorted and merged.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps; unused, epochs keep their own times.
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            The environment; unused.
+
+        Returns
+        -------
+        EpochData
+        """
+        return EpochData(
+            intervals=self._intervals,
+            label=self.label,
+            color=self.color,
+            alpha=self.alpha,
+        )
+
+
+@dataclass
 class ObjectVectorOverlay:
     """Vector overlay showing lines from animal to objects for object-vector cell analysis.
 
@@ -3240,6 +3329,30 @@ class SpikeRasterData:
 
 
 @dataclass
+class EpochData:
+    """Internal container for epochs: intervals of time.
+
+    Created by the conversion pipeline from an EpochOverlay.
+
+    Attributes
+    ----------
+    intervals : ndarray of float64, shape (n_epochs, 2)
+        Start and stop of each epoch, in seconds, sorted and merged.
+    label : str
+        What an epoch is.
+    color : str
+        Shading color.
+    alpha : float
+        Shading opacity.
+    """
+
+    intervals: NDArray[np.float64]
+    label: str
+    color: str
+    alpha: float
+
+
+@dataclass
 class ObjectVectorData:
     """Internal container for object-vector overlay data aligned to animation frames.
 
@@ -3332,6 +3445,8 @@ class OverlayData:
         List of time series overlays. Default is empty list.
     spike_rasters : list[SpikeRasterData], optional
         List of spike rasters. Default is empty list.
+    epochs : list[EpochData], optional
+        List of epoch overlays. Default is empty list.
     object_vectors : list[ObjectVectorData], optional
         List of object-vector overlays. Default is empty list.
     regions : dict[int, list[str]] | None, optional
@@ -3359,6 +3474,8 @@ class OverlayData:
         List of time series overlays.
     spike_rasters : list[SpikeRasterData]
         List of spike rasters.
+    epochs : list[EpochData]
+        List of epoch overlays.
     object_vectors : list[ObjectVectorData]
         List of object-vector overlays.
     regions : dict[int, list[str]] | None
@@ -3392,6 +3509,7 @@ class OverlayData:
     events: list[EventData] = field(default_factory=list)
     timeseries: list[TimeSeriesData] = field(default_factory=list)
     spike_rasters: list[SpikeRasterData] = field(default_factory=list)
+    epochs: list[EpochData] = field(default_factory=list)
     object_vectors: list[ObjectVectorData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
     frame_times: NDArray[np.float64] | None = None
@@ -4484,6 +4602,7 @@ def _convert_overlays_to_data(
     event_data_list: list[EventData] = []
     timeseries_data_list: list[TimeSeriesData] = []
     spike_raster_data_list: list[SpikeRasterData] = []
+    epoch_data_list: list[EpochData] = []
     object_vector_data_list: list[ObjectVectorData] = []
 
     # Process each overlay using protocol dispatch
@@ -4528,13 +4647,15 @@ def _convert_overlays_to_data(
             timeseries_data_list.append(internal_data)
         elif isinstance(internal_data, SpikeRasterData):
             spike_raster_data_list.append(internal_data)
+        elif isinstance(internal_data, EpochData):
+            epoch_data_list.append(internal_data)
         elif isinstance(internal_data, ObjectVectorData):
             object_vector_data_list.append(internal_data)
         else:
             raise TypeError(
                 f"convert_to_data() must return PositionData, BodypartData, "
                 f"HeadDirectionData, VideoData, EventData, TimeSeriesData, "
-                f"SpikeRasterData or ObjectVectorData, got "
+                f"SpikeRasterData, EpochData or ObjectVectorData, got "
                 f"{type(internal_data).__name__}."
             )
 
@@ -4553,6 +4674,7 @@ def _convert_overlays_to_data(
         events=event_data_list,
         timeseries=timeseries_data_list,
         spike_rasters=spike_raster_data_list,
+        epochs=epoch_data_list,
         object_vectors=object_vector_data_list,
         regions=normalized_regions,
         frame_times=frame_times,

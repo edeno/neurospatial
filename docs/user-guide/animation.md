@@ -457,6 +457,13 @@ sequence reads as a diagonal under the posterior. With `rates=`, clicking a
 unit's row shows its rate map under the field. See [Spike Raster
 Overlay](../animation_overlays.md#spike-raster-overlay).
 
+An `EpochOverlay` marks intervals such as ripples on every time panel and
+names the current one in the title; see [Epoch
+Overlay](../animation_overlays.md#epoch-overlay).
+
+With the figure focused (click it first), N and Shift+N jump to the start
+of the next and previous epoch or event.
+
 Play and the step buttons move by a fixed time, short enough to reach every
 frame when frames are evenly spaced (camera jitter included). For frames with
 long gaps or very uneven spacing, such as decoded replay bins from separate

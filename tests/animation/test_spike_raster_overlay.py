@@ -61,7 +61,9 @@ def test_spikes_must_be_finite_and_there_must_be_a_unit():
 
 def test_other_backends_skip_the_raster_with_a_warning(env):
     fields = np.zeros((3, env.n_bins))
-    with pytest.warns(UserWarning, match="html backend does not draw SpikeRaster"):
+    with pytest.warns(
+        UserWarning, match="html backend does not draw SpikeRasterOverlay"
+    ):
         env.animate_fields(
             fields,
             frame_times=np.arange(3.0),
@@ -79,3 +81,31 @@ def test_rate_maps_follow_the_rows_and_must_cover_the_bins(env):
     wrong = SpikeRasterOverlay(SPIKES, rates=rates[:, :-1])
     with pytest.raises(ValueError, match="one rate map per unit"):
         _convert_overlays_to_data([wrong], np.arange(3.0), 3, env)
+
+
+def test_epochs_are_sorted_merged_and_checked():
+    from neurospatial.animation import EpochOverlay
+    from neurospatial.animation.overlays import EpochData
+
+    data = EpochOverlay([[3.0, 4.0], [1.0, 2.0], [1.5, 2.5]]).convert_to_data(
+        np.arange(3.0), 3, None
+    )
+    assert isinstance(data, EpochData)
+    np.testing.assert_array_equal(data.intervals, [[1.0, 2.5], [3.0, 4.0]])
+    with pytest.raises(ValueError, match="epochs"):
+        EpochOverlay([[2.0, 1.0]])
+    with pytest.raises(ValueError, match="alpha must be between 0 and 1"):
+        EpochOverlay([[0.0, 1.0]], alpha=2.0)
+
+
+def test_other_backends_skip_epochs_with_a_warning(env):
+    from neurospatial.animation import EpochOverlay
+
+    with pytest.warns(UserWarning, match="does not draw EpochOverlay"):
+        env.animate_fields(
+            np.zeros((3, env.n_bins)),
+            frame_times=np.arange(3.0),
+            backend="html",
+            dry_run=True,
+            overlays=[EpochOverlay([[0.5, 1.5]])],
+        )

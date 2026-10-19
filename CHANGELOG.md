@@ -1260,7 +1260,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   map under the field. Other backends skip it with a warning. Position,
   pose, head-direction, object-vector and video overlays with their own
   `times` move at their own sampling rate, so slow fields (a rate map per
-  lap) do not freeze the animal or the camera between frames. Frame times
+  lap) do not freeze the animal or the camera between frames.
+  `EpochOverlay` marks intervals such as ripples on every time panel and
+  names the current one in the title; N and Shift+N jump between epochs and
+  events. Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an

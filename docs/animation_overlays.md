@@ -274,6 +274,32 @@ each cell of a sequence has its field.
 Only `backend="fastplotlib"` draws rasters; the other backends skip them with
 a warning.
 
+### Epoch Overlay
+
+Marks intervals of time, such as sharp-wave ripples, replay events or run
+bouts, on every panel drawn against time: shaded behind spike rasters and time
+series, and as lines at their starts and stops over a track's position-by-time
+panel, where shading would tint the posterior's colors. The field's title
+names the epoch the current time is in ("ripple 3 of 120"), and N and Shift+N
+jump to the start of the next and previous epoch (or event).
+
+```python
+from neurospatial.animation import EpochOverlay
+
+ripples = EpochOverlay(ripple_times, label="ripple")  # (n_ripples, 2) seconds
+env.animate_fields(
+    result.posterior,
+    frame_times=result.times,
+    backend="fastplotlib",
+    overlays=[ripples, SpikeRasterOverlay(spike_times, order=order)],
+)
+```
+
+`epochs` takes a `(start, stop)` pair, an `(n, 2)` array or a pynapple
+`IntervalSet`; overlapping or touching epochs are merged. Only
+`backend="fastplotlib"` draws epochs; the other backends skip them with a
+warning.
+
 ## Multi-Animal Support
 
 Track multiple animals by passing **multiple overlays of the same type**:
@@ -409,7 +435,7 @@ Not all backends support all overlay types.
 | **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Spike rasters are drawn only by the fastplotlib backend.
+Spike rasters and epochs are drawn only by the fastplotlib backend.
 
 **HTML backend limitations:**
 

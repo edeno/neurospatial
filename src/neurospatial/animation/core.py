@@ -689,15 +689,25 @@ def animate_fields(
         backend = _select_backend(n_frames, save_path)
         auto_reason = _auto_reason(backend, n_frames, save_path)
 
-    if overlay_data and overlay_data.spike_rasters and backend != "fastplotlib":
-        warnings.warn(
-            f"The {backend} backend does not draw SpikeRasterOverlay, so the "
-            "raster is skipped; the other overlays are drawn. Use "
-            "backend='fastplotlib' to show it beside the field.",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-        overlay_data = replace(overlay_data, spike_rasters=[])
+    if overlay_data and backend != "fastplotlib":
+        # Overlays only the fastplotlib backend draws: skipped, with a warning.
+        skipped = [
+            name
+            for name, items in (
+                ("SpikeRasterOverlay", overlay_data.spike_rasters),
+                ("EpochOverlay", overlay_data.epochs),
+            )
+            if items
+        ]
+        if skipped:
+            warnings.warn(
+                f"The {backend} backend does not draw {' or '.join(skipped)}, "
+                "so it is skipped; the other overlays are drawn. Use "
+                "backend='fastplotlib' to show it.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+            overlay_data = replace(overlay_data, spike_rasters=[], epochs=[])
 
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)

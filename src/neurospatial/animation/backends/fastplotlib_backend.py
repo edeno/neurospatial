@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 
     from neurospatial.animation.overlays import (
         BodypartData,
+        EpochData,
         EventData,
         HeadDirectionData,
         ObjectVectorData,
@@ -857,6 +858,11 @@ class FastplotlibAnimation:
     so session timestamps (such as 1.7e9 s) keep their precision on the GPU;
     the title shows each frame's own time.
 
+    Keyboard, with the figure focused (click it first):
+
+    - N and Shift+N: the start of the next or previous epoch
+      (``EpochOverlay``) or event (``EventOverlay``).
+
     Parameters
     ----------
     env : Environment
@@ -1014,6 +1020,13 @@ class FastplotlibAnimation:
         draw_colorbar(self._plot, scale, "")
         self._title = title or plot_title(env)
         events = overlay_data.events if overlay_data else []
+        epochs = overlay_data.epochs if overlay_data else []
+        self._epochs = epochs
+        # Where N and Shift+N jump: epoch starts and event times, on the clock.
+        marks = [item.intervals[:, 0] for item in epochs] + [
+            times for item in events for times in item.event_times.values()
+        ]
+        self._marks = np.unique(np.concatenate([[], *marks])) - self._start
         self._layers: list[Any] = []
         positions: list[_Position] = []
         if overlay_data is not None:
@@ -1054,6 +1067,7 @@ class FastplotlibAnimation:
                 self._move_to,
             )
             _mark_events(self.figure["track"], events, self._start)
+            _shade_epochs(self.figure["track"], epochs, self._start, lines=True)
         unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
         self._rasters = [
             _Raster(self.figure[f"raster {i}"], item, self._start, self._move_to, unit)
@@ -1061,6 +1075,7 @@ class FastplotlibAnimation:
         ]
         for i in range(len(rasters)):
             _mark_events(self.figure[f"raster {i}"], events, self._start)
+            _shade_epochs(self.figure[f"raster {i}"], epochs, self._start, lines=False)
         frames = _frames_graphic(
             self.widget[self._plot],
             self.widget.indices,
@@ -1073,14 +1088,33 @@ class FastplotlibAnimation:
         # fastplotlib has no public way to add a custom NDGraphic yet.
         self.widget[self._plot]._nd_graphics.append(frames)
         for i, group in enumerate(groups):
-            _add_series(self.widget, f"series {i}", group, events, self._start)
+            _add_series(self.widget, f"series {i}", group, events, epochs, self._start)
         self.widget.indices = {"time": 0.0}  # adding a series can move the time
         # Only the field is fitted: fitting a series subplot's camera moves
         # the time, which follows the center of its view.
         self._plot.auto_scale()
         frame_view(self._plot, env)
         self._canvas: Any = None
+        self.figure.renderer.add_event_handler(self._key, "key_down")
         self._show(0.0, self._read(0.0))
+
+    def _key(self, event: Any) -> None:
+        """The keyboard shortcuts listed in the class docstring."""
+        key = event.key
+        if key.lower() == "n":
+            self._jump(-1 if "Shift" in event.modifiers or key == "N" else 1)
+
+    def _jump(self, direction: int) -> None:
+        """Move to the next (1) or previous (-1) epoch start or event."""
+        now = self.widget.indices["time"]
+        if direction > 0:
+            later = self._marks[self._marks > now + 1e-9]
+            target = later[0] if len(later) else None
+        else:
+            earlier = self._marks[self._marks < now - 1e-9]
+            target = earlier[-1] if len(earlier) else None
+        if target is not None:
+            self._move_to(float(target))
 
     def _move_to(self, time: float) -> None:
         """Move the slider, and so every panel, to ``time`` on the clock."""
@@ -1122,7 +1156,17 @@ class FastplotlibAnimation:
             if self._labels is not None
             else f"t = {self._frame_times[frame]:.2f} s"
         )
-        self._plot.title = f"{self._title}  |  {label}"
+        parts = [self._title, label, *self._epochs_at(self._start + time)]
+        self._plot.title = "  |  ".join(parts)
+
+    def _epochs_at(self, time: float) -> list[str]:
+        """Each epoch ``time`` (absolute) is in, as "ripple 3 of 120"."""
+        names = []
+        for data in self._epochs:
+            index = int(np.searchsorted(data.intervals[:, 0], time, side="right")) - 1
+            if index >= 0 and time < data.intervals[index, 1]:
+                names.append(f"{data.label} {index + 1} of {len(data.intervals)}")
+        return names
 
     @property
     def frame(self) -> int:
@@ -1169,12 +1213,13 @@ def _add_series(
     name: str,
     group: list[TimeSeriesData],
     events: Sequence[EventData],
+    epochs: Sequence[EpochData],
     start: float,
 ) -> None:
     """Draw a group of time series in one subplot, on the widget's clock.
 
     Times are shifted by ``start``, the first frame's time. Event times are
-    marked as vertical lines in the events' colors.
+    marked as vertical lines in the events' colors, and epochs shaded.
     """
     from fastplotlib import LinearSelector
 
@@ -1221,6 +1266,7 @@ def _add_series(
             name=item.label,
         )
     _mark_events(subplot, events, start)
+    _shade_epochs(subplot, epochs, start, lines=False)
     subplot.title = "  |  ".join(item.label for item in group)
     subplot.camera.maintain_aspect = False
     low = min(item.global_vmin for item in group)
@@ -1245,6 +1291,40 @@ def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> Non
                     thickness=1.0,
                     name=f"{event} times",
                 )
+
+
+def _shade_epochs(
+    subplot: Any, epochs: Sequence[EpochData], start: float, *, lines: bool
+) -> None:
+    """Epochs on the clock: shaded behind the data, or, over a heatmap that
+    shading would tint, as lines at their starts and stops."""
+    for data in epochs:
+        starts, stops = data.intervals[:, 0] - start, data.intervals[:, 1] - start
+        if lines:
+            subplot.add_inf_line(
+                np.concatenate([starts, stops]),
+                axis="x",
+                colors=data.color,
+                thickness=1.5,
+                name=f"{data.label} bounds",
+            )
+            continue
+        # Far past any data, so a band spans the panel at any zoom.
+        corners = _rectangles(
+            starts, stops, np.full(len(starts), -1e6), np.full(len(starts), 1e6)
+        )
+        bands = _fans(corners, 4)
+        positions = bands.positions.copy()
+        positions[:, 2] = -1.0  # behind the data
+        subplot.add_mesh(
+            positions,
+            bands.triangles,
+            mode="basic",
+            colors=data.color,
+            alpha=data.alpha,
+            alpha_mode="blend",
+            name=f"{data.label} epochs",
+        )
 
 
 def render_fastplotlib(

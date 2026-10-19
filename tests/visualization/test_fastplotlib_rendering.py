@@ -662,6 +662,65 @@ def test_clicking_a_units_row_shows_its_rate_map(apparatus, walk, track, decoded
     )
 
 
+def _press(figure, key, modifiers=()):
+    """Press ``key`` with the figure focused."""
+    import time
+
+    figure.canvas.submit_event(
+        {
+            "event_type": "key_down",
+            "key": key,
+            "modifiers": modifiers,
+            "time_stamp": time.perf_counter(),
+        }
+    )
+    figure.canvas._process_events()  # what the event loop would do
+
+
+def test_epochs_are_marked_named_and_jumped_between(track, decoded):
+    from neurospatial.animation import EpochOverlay, SpikeRasterOverlay
+
+    times, _, fields = decoded  # 10 Hz in [0, 1.9] and [5, 6.9]
+    ripples = EpochOverlay([[0.45, 0.65], [5.2, 5.4]], label="ripple", color="cyan")
+    reward = EventOverlay(
+        event_times=np.array([1.2]), event_positions=np.array([[5.0, 0.0]])
+    )
+    series = TimeSeriesOverlay(data=np.sin(times), times=times, label="lfp")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the gap between runs
+        animation = track.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            overlays=[
+                ripples,
+                reward,
+                series,
+                SpikeRasterOverlay([times[::3]], window_seconds=1.0),
+            ],
+        )
+    animation.show()
+    figure = animation.figure
+    (bounds,) = [g for g in figure["track"].graphics if g.name == "ripple bounds"]
+    np.testing.assert_allclose(np.sort(bounds.data[:]), [0.45, 0.65, 5.2, 5.4])
+    for panel in ("raster 0", "series 0"):
+        (bands,) = [g for g in figure[panel].graphics if g.name == "ripple epochs"]
+        x = bands.positions[:][:, 0]
+        np.testing.assert_allclose([x[:4].min(), x[:4].max()], [0.45, 0.65], atol=1e-6)
+    marks = []
+    for _ in range(4):
+        _press(figure, "n")
+        marks.append(animation.widget.indices["time"])
+        _render(animation)
+        if marks[-1] == pytest.approx(0.45):
+            assert figure["field"].title.text.endswith("ripple 1 of 2")
+    np.testing.assert_allclose(marks, [0.45, 1.2, 5.2, 5.2])  # stays at the last
+    _press(figure, "N", ("Shift",))
+    assert animation.widget.indices["time"] == pytest.approx(1.2)
+    _render(animation)
+    assert "ripple" not in figure["field"].title.text
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")
