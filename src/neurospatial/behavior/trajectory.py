@@ -141,12 +141,13 @@ class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
 
 
 def compute_speed(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
     *,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Running speed at each tracking sample, robust to tracking jitter.
 
@@ -158,33 +159,50 @@ def compute_speed(
     keep nearly all of its rest. Every ``min_speed`` gate in the package
     (rate maps, decoding, ``segment_by_velocity``, decision and goal
     metrics) uses this speed, so passing ``speed=compute_speed(...)``
-    explicitly gives the same result as leaving it out.
+    explicitly gives the same result as leaving it out. Those gates have no
+    ``break_before``; when you declare breaks, pass this speed explicitly with
+    ``speed=``.
+
+    Speed is never smoothed across a declared break, a missing sample, a gap
+    longer than ``max_gap`` or the edge of an ``epochs`` window.
 
     Parameters
     ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Strictly increasing timestamps in seconds.
-    positions : NDArray[np.float64], shape (n_samples, n_dims) or (n_samples,)
-        Positions in environment units (e.g. cm).
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples,) or (n_samples, n_dims)
+        Positions in environment units (e.g. cm). A 1-D array is one
+        coordinate (for example a linearized track). Rows with a non-finite
+        coordinate are missing.
     smooth_window : float, default=0.1
         Standard deviation, in seconds, of the Gaussian smoothing applied to
         each velocity component (the default of spyglass's position
         pipeline). 0 gives the unsmoothed centered-difference speed.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
-        Each run between longer gaps is smoothed separately. ``None``
-        disables the gap check.
+        Each run is smoothed separately. ``None`` disables the gap check.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows
         (seconds, same clock as ``times``). ``None`` (default) means
         unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     speed : NDArray[np.float64], shape (n_samples,)
-        Speed in position units per second (e.g. cm/s). NaN at samples with
-        missing positions and at samples in no run of at least two samples
-        (isolated by gaps or outside ``epochs``).
+        Speed in position units per second (e.g. cm/s). NaN at missing
+        samples and at samples in no run (isolated by a gap, a declared break,
+        a missing neighbour or ``epochs``).
+
+    Raises
+    ------
+    ValueError
+        If ``times`` and ``positions`` are empty, swapped or misaligned; if
+        ``times`` repeats or is not increasing; if ``max_gap`` or
+        ``break_before`` is invalid; or if ``smooth_window`` is negative.
 
     See Also
     --------
@@ -203,16 +221,32 @@ def compute_speed(
     True
     >>> bool(np.median(compute_speed(times, still, smooth_window=0.0)) > 10.0)
     True
+
+    The jump to where the animal was put back reads as 98 cm/s unless the
+    break is declared.
+
+    >>> times = np.arange(6) / 4  # seconds
+    >>> x = np.array([0.0, 1.0, 2.0, 50.0, 51.0, 52.0])  # cm; new recording at sample 3
+    >>> compute_speed(times, x, smooth_window=0.0).tolist()
+    [4.0, 4.0, 98.0, 98.0, 4.0, 4.0]
+    >>> new_recording = np.array([False, False, False, True, False, False])
+    >>> compute_speed(times, x, smooth_window=0.0, break_before=new_recording).tolist()
+    [4.0, 4.0, 4.0, 4.0, 4.0, 4.0]
     """
-    from neurospatial._intervals import observed_interval_mask
-    from neurospatial._validation import validate_times_positions
     from neurospatial._velocity import smoothed_speed
 
-    times, positions = validate_times_positions(times, positions, call="compute_speed")
-    if len(times) < 2:
-        return np.full(len(times), np.nan)
-    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
-    return smoothed_speed(times, positions, mask, smooth_window=smooth_window)
+    times_arr, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call="compute_speed",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="every speed is NaN",
+    )
+    return smoothed_speed(
+        times_arr, positions_arr, support.interval_mask, smooth_window=smooth_window
+    )
 
 
 def compute_turn_angles(
