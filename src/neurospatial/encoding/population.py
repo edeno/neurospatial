@@ -3,6 +3,11 @@
 This module provides metrics for analyzing spatial representations across
 populations of neurons, including coverage, overlap, and correlation measures.
 
+See also: Population analysis guide,
+<https://edeno.github.io/neurospatial/user-guide/population-analysis/>
+Assembly detection, reactivation and pairwise spike-count correlations are in
+``neurospatial.decoding``.
+
 References
 ----------
 .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the hippocampal
@@ -413,7 +418,9 @@ def plot_population_coverage(
 
     Notes
     -----
-    For 1D environments, uses `env.plot_1d()` with vertical lines for gaps.
+    For 1-D environments (``env.n_dims == 1``) and linearized tracks, plots the
+    coverage as a line along the track and marks each gap with a vertical
+    line at its position (the linearized position on a track).
 
     Examples
     --------
@@ -434,8 +441,8 @@ def plot_population_coverage(
     if ax is None:
         _, ax = plt.subplots()
 
-    # Handle 1D environments
-    if env.is_linearized_track:
+    # 1-D environments: a native 1-D grid or a track drawn in its linear coordinate
+    if env.n_dims == 1 or env.is_linearized_track:
         if show_field_count:
             field_to_plot = result.field_count.astype(float)
             env.plot_field(field_to_plot, ax=ax)
@@ -447,7 +454,17 @@ def plot_population_coverage(
 
         # Highlight gaps as vertical lines with legend
         if highlight_gaps and len(result.uncovered_bins) > 0:
-            gap_positions = result.uncovered_positions.ravel()
+            linearization = env.binning.linearization
+            if linearization is None:
+                gap_positions = result.uncovered_positions[:, 0]
+            else:
+                # The track is drawn in its linear coordinate, where segments
+                # are separated by the layout's gaps; place each gap there.
+                edges = linearization.grid_edges[0]
+                linear_centers = ((edges[:-1] + edges[1:]) / 2)[
+                    linearization.active_mask.ravel()
+                ]
+                gap_positions = linear_centers[result.uncovered_bins]
             for i, pos in enumerate(gap_positions):
                 ax.axvline(
                     float(pos),
@@ -559,10 +576,10 @@ def field_density_map(
 
 
 def count_place_cells(
-    spatial_information: NDArray[np.float64], threshold: float = 0.5
+    spatial_information: NDArray[np.float64], *, threshold: float = 0.5
 ) -> int:
     """
-    Count cells exceeding spatial information threshold.
+    Count cells at or above a spatial information threshold.
 
     Determines number of spatially selective cells in a population based on
     Skaggs spatial information criterion. Standard method for identifying
@@ -574,13 +591,14 @@ def count_place_cells(
         Spatial information (bits/spike) for each cell.
         Typically computed using `spatial_information()`.
     threshold : float, default=0.5
-        Minimum spatial information (bits/spike) to classify as place cell.
-        Default of 0.5 bits/spike is standard in literature (Skaggs et al., 1996).
+        Minimum spatial information (bits/spike) to count a cell. The cutoff
+        is inclusive: a cell exactly at the threshold counts. Default of 0.5
+        bits/spike is standard in literature (Skaggs et al., 1996).
 
     Returns
     -------
     count : int
-        Number of cells with spatial information > threshold.
+        Number of cells with spatial information >= threshold.
 
     Examples
     --------
@@ -589,7 +607,7 @@ def count_place_cells(
     >>> # Population with mix of place cells and non-selective cells
     >>> spatial_info = np.array([0.2, 0.8, 1.5, 0.3, 1.2, 0.1])
     >>> n_place_cells = count_place_cells(spatial_info, threshold=0.5)
-    >>> print(n_place_cells)  # 3 cells exceed 0.5 bits/spike
+    >>> print(n_place_cells)  # 3 cells reach 0.5 bits/spike
     3
 
     See Also
@@ -600,7 +618,7 @@ def count_place_cells(
     -----
     **Classification criteria**:
 
-    - **Place cells**: Spatial information > 0.5 bits/spike
+    - **Place cells**: Spatial information >= 0.5 bits/spike
     - **Interneurons**: Mean firing rate > 10 Hz (handled separately)
     - **Non-selective**: Low spatial information or uniform firing
 
@@ -616,8 +634,8 @@ def count_place_cells(
     valid_mask = ~np.isnan(spatial_information)
     valid_info = spatial_information[valid_mask]
 
-    # Count cells strictly exceeding threshold
-    return int(np.sum(valid_info > threshold))
+    # Inclusive cutoff, as in the cell-type threshold screens
+    return int(np.sum(valid_info >= threshold))
 
 
 def field_overlap(
@@ -682,6 +700,10 @@ def field_overlap(
 
     The Jaccard index is preferred over correlation for sparse binary fields
     because it's invariant to the number of non-field bins.
+
+    When comparing conditions, restrict both field bin sets to bins observed
+    in both conditions first; a bin one condition never visited cannot show
+    whether a field is there.
 
     References
     ----------

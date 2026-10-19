@@ -11,6 +11,7 @@ Each route explains the analysis choices and how to interpret the figures.
 | Find where a neuron fires | [First place field](../getting-started/quickstart.md#your-first-place-field) | Occupancy, smoothing scale and missing spatial coverage |
 | Compare conditions or trials | [Compare analysis windows](workflows.md#compare-conditions-with-explicit-windows) | Shared geometry, identical analysis settings and observed duration |
 | Classify candidate spatial cells | [Cell classification](neuroscience-metrics.md) | Threshold screens versus shuffle evidence |
+| Summarize a population: coverage, remapping, assemblies and reactivation | [Population analysis](population-analysis.md) | Which units passed a spatial screen, bins visited in every condition and one unit selection across periods |
 | Evaluate decoding on new data | [Held-out decoding](workflows.md#evaluate-decoding-on-held-out-data) | Separate training/test periods and locations visited during training |
 | Segment laps and quantify movement | [Trajectory and behavioral analysis](trajectory-and-behavioral-analysis.md) | Tracking gaps and invalid positions |
 | Measure speed, heading or position-based features around events | [Behavior around events](behavior-around-events.md) | Tracking dropouts inside event windows and angle features declared circular |
@@ -26,6 +27,7 @@ Each route explains the analysis choices and how to interpret the figures.
 - **[Composite Environments](composite-environments.md)**: Merging multiple environments
 - **[Alignment & Transforms](alignment.md)**: Transforming spatial representations
 - **[Spatial Analysis](spatial-analysis.md)**: Trajectory analysis, movement patterns, and field operations
+- **[Population Analysis](population-analysis.md)**: Coverage, remapping, cell assemblies, reactivation and decoding across many units
 - **[Performance & Caching](performance.md)**: Memory management, optimization, and benchmarks
 - **[Complete Workflows](workflows.md)**: End-to-end analysis examples
 - **[Interoperability](interoperability.md)**: Recording holders, SpikeTrains, BayesianDecoder, and pynapple / NWB adapters

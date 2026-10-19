@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RUN_ALL = {
     "README.md": False,
     "docs/getting-started/quickstart.md": False,
+    "docs/user-guide/population-analysis.md": False,
 }
 OPT_IN = (
     "docs/getting-started/core-concepts.md",

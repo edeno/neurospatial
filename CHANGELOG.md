@@ -13,6 +13,11 @@
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.
   `RegionType` adds `"wall"` and `"landmark"`.
+- `count_place_cells` counts a cell at exactly `threshold` and takes `threshold`
+  by keyword, matching the inclusive `>=` cutoff of `classify()` and the other
+  threshold screens. Before, a cell had to exceed the threshold, and
+  `threshold` could be passed positionally: `count_place_cells(info, 0.5)`
+  becomes `count_place_cells(info, threshold=0.5)`.
 
 - `traveled_path_length` takes `times` first and counts only observed
   travel: `traveled_path_length(times, positions, *, metric="euclidean",
@@ -1859,6 +1864,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `detect_assemblies` orients each ICA and PCA pattern so its largest-magnitude
+  weight is positive, and flips its activation with it. Before, the sign was
+  arbitrary, so an assembly's members could have negative weights and
+  `assembly_activation` could drop below zero during that assembly's events.
+  Code that flipped patterns by hand now receives them already oriented.
+- `plot_population_coverage` draws 1-D environments, such as the one from
+  `linear_track_session`, as a line with a vertical mark at each gap. Before,
+  it raised `IndexError` when any bin was uncovered. On a track built from a
+  2-D graph, gap marks are now at each gap's linearized position; before, they
+  were drawn at its x and y coordinates.
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it
@@ -2808,6 +2823,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Documentation
 
+- Add a [population analysis guide](https://edeno.github.io/neurospatial/user-guide/population-analysis/) organized by scientific question: place-field coverage and place-cell screens, remapping between conditions, cell assemblies and their reactivation during rest, and pointers to decoding. It maps each question to its module, since coverage and remapping tools live in `neurospatial.encoding` while assembly and reactivation tools live in `neurospatial.decoding`. Its examples run as tests on simulated recordings with planted answers.
 - `compute_turn_angles` and `compute_trajectory_curvature` describe what
   they compute for positions with more than two columns: the cross product
   uses x and y but the dot product uses every column, so the angle is neither
