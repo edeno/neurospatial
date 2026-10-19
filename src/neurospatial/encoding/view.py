@@ -1174,6 +1174,166 @@ class ViewRatesResult(SpatialResultMixin, UnitSelectionMixin):
 # =============================================================================
 
 
+def _check_view_env(env: Environment, *, context: str) -> None:
+    """Check that the environment supports allocentric view rates.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment passed to the view entry point.
+    context : str
+        Public function name used in error messages.
+
+    Raises
+    ------
+    TypeError
+        If ``env`` is not an environment.
+    ValueError
+        If the environment does not support allocentric views.
+    """
+    from neurospatial.encoding._validation import _validate_env_argument
+    from neurospatial.encoding._view_counts import require_allocentric_view
+
+    _validate_env_argument(
+        env,
+        context=context,
+        arguments="spike_times, times, positions, headings",
+    )
+    require_allocentric_view(env, f"{context}()")
+
+
+def _validate_gaze_model(gaze_model: str) -> None:
+    """Raise ``ValueError`` unless ``gaze_model`` is a supported gaze model."""
+    valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
+    if gaze_model not in valid_gaze_models:
+        raise ValueError(
+            f"Invalid gaze_model: '{gaze_model}'. "
+            f"Must be one of {sorted(valid_gaze_models)}"
+        )
+
+
+def _as_gaze_offsets(
+    gaze_offsets: ArrayLike | None, n_samples: int
+) -> NDArray[np.float64] | None:
+    """Convert ``gaze_offsets`` to an array matching the trajectory length.
+
+    Parameters
+    ----------
+    gaze_offsets : array-like of shape (n_time,) or None
+        Per-sample gaze offsets, or None.
+    n_samples : int
+        Number of trajectory samples.
+
+    Returns
+    -------
+    ndarray of shape (n_time,) or None
+        Offsets as float64, or None when none were given.
+
+    Raises
+    ------
+    ValueError
+        If the offsets do not have one value per trajectory sample.
+    """
+    if gaze_offsets is None:
+        return None
+    offsets = np.asarray(gaze_offsets, dtype=np.float64)
+    if len(offsets) != n_samples:
+        raise ValueError(
+            f"gaze_offsets length ({len(offsets)}) must match "
+            f"times length ({n_samples})"
+        )
+    return offsets
+
+
+def _count_views(
+    env: Environment,
+    spike_trains: Sequence[NDArray[np.float64]],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"],
+    view_distance: float,
+    gaze_offsets: NDArray[np.float64] | None,
+    max_gap: float | None,
+    epochs: Any,
+    spike_window: Any,
+    method: str,
+    bandwidth: float | None,
+    min_occupancy: float,
+    backend: str,
+    boundary_source: Literal["physical", "analysis"],
+    view_bins: NDArray[np.intp] | None = None,
+    n_jobs: int = 1,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]:
+    """Bin gaze locations, count spikes and build provenance for view rates.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment that defines the viewed bins.
+    spike_trains : sequence of ndarray of shape (n_spikes_i,)
+        Validated spike times, one array per unit.
+    times : ndarray of shape (n_time,)
+        Trajectory timestamps in seconds.
+    positions : ndarray of shape (n_time, n_dims)
+        Trajectory positions.
+    headings : ndarray of shape (n_time,)
+        Allocentric heading in radians.
+    gaze_model, view_distance, gaze_offsets, boundary_source
+        Validated gaze settings.
+    max_gap : float or None
+        Maximum timestamp gap, in seconds, bridged within a tracked run.
+    epochs, spike_window
+        Resolved time windows.
+    method, bandwidth, min_occupancy, backend
+        Resolved smoothing settings recorded in the provenance.
+    view_bins : ndarray of shape (n_time,), optional
+        Precomputed viewed bins for these exact samples and gaze settings.
+    n_jobs : int, default=1
+        Parallel jobs for spike counting.
+
+    Returns
+    -------
+    spike_counts : ndarray of shape (n_units, n_bins)
+        Spike counts per viewed bin.
+    occupancy : ndarray of shape (n_bins,)
+        Seconds spent viewing each bin.
+    analysis_settings : dict
+        Provenance settings for the result.
+    """
+    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._view_counts import prepare_view_binning
+
+    prepared = prepare_view_binning(
+        env,
+        times,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        view_bins=view_bins,
+        boundary_source=boundary_source,
+    )
+    spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+    settings = rate_analysis_settings(
+        prepared.support,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+        gaze_model=gaze_model,
+        view_distance=float(view_distance) if gaze_model == "fixed_distance" else None,
+        gaze_offsets_source="provided" if gaze_offsets is not None else None,
+        boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
+    )
+    return spike_counts, occupancy, settings
+
+
 def compute_view_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -1388,33 +1548,17 @@ def compute_view_rate(
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
-        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_counts import (
-        prepare_view_binning,
-        require_allocentric_view,
-    )
 
-    _validate_env_argument(
-        env,
-        context="compute_view_rate",
-        arguments="spike_times, times, positions, headings",
-    )
-    require_allocentric_view(env, "compute_view_rate()")
+    _check_view_env(env, context="compute_view_rate")
 
     # Raises ValueError for unknown names and ImportError if jax is unavailable;
     # "auto" resolves to "numpy" or "jax".
     resolved_backend = validate_and_resolve_backend(backend)
 
-    # Validate gaze_model
-    valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
-    if gaze_model not in valid_gaze_models:
-        raise ValueError(
-            f"Invalid gaze_model: '{gaze_model}'. "
-            f"Must be one of {sorted(valid_gaze_models)}"
-        )
+    _validate_gaze_model(gaze_model)
 
     from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
 
@@ -1437,19 +1581,11 @@ def compute_view_rate(
     validate_spike_times(spike_times, context="compute_view_rate")
     n_samples = len(times)
 
-    # Validate gaze_offsets if provided
-    if gaze_offsets is not None:
-        gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
-        if len(gaze_offsets) != n_samples:
-            raise ValueError(
-                f"gaze_offsets length ({len(gaze_offsets)}) must match "
-                f"times length ({n_samples})"
-            )
+    gaze_offsets = _as_gaze_offsets(gaze_offsets, n_samples)
 
-    # Reuse the batch binning path for the single-neuron API so viewed
-    # coordinates are computed once and shared by spike counts and occupancy.
-    prepared = prepare_view_binning(
+    spike_counts_batch, occupancy, settings = _count_views(
         env,
+        [spike_times],
         times,
         positions,
         headings,
@@ -1459,23 +1595,12 @@ def compute_view_rate(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-        boundary_source=boundary_source,
-    )
-    spike_counts_batch, occupancy = prepared.count([spike_times])
-    from neurospatial.encoding._provenance import rate_analysis_settings
-
-    settings = rate_analysis_settings(
-        prepared.support,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
-        gaze_model=gaze_model,
-        view_distance=float(view_distance) if gaze_model == "fixed_distance" else None,
-        gaze_offsets_source="provided" if gaze_offsets is not None else None,
-        boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
+        boundary_source=boundary_source,
     )
-
     spike_counts = spike_counts_batch[0]
 
     # Apply smoothing to compute firing rate
@@ -1825,21 +1950,11 @@ def _compute_view_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._validation import (
-        _validate_env_argument,
         validate_spike_trains,
         validate_trajectory,
     )
-    from neurospatial.encoding._view_counts import (
-        prepare_view_binning,
-        require_allocentric_view,
-    )
 
-    _validate_env_argument(
-        env,
-        context="compute_view_rates",
-        arguments="spike_times, times, positions, headings",
-    )
-    require_allocentric_view(env, "compute_view_rates()")
+    _check_view_env(env, context="compute_view_rates")
 
     # Raises ValueError for unknown names and ImportError if jax is unavailable;
     # "auto" resolves to "numpy" or "jax".
@@ -1850,13 +1965,7 @@ def _compute_view_rates(
     bandwidth = resolve_spatial_bandwidth(env, bandwidth)
     _validate_smoothing_parameters(method, bandwidth)
 
-    # Validate gaze_model
-    valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
-    if gaze_model not in valid_gaze_models:
-        raise ValueError(
-            f"Invalid gaze_model: '{gaze_model}'. "
-            f"Must be one of {sorted(valid_gaze_models)}"
-        )
+    _validate_gaze_model(gaze_model)
 
     # Normalize spike times to canonical list-of-arrays format and resolve the
     # per-unit identity labels (defaults to arange). A labelled input keeps its
@@ -1881,14 +1990,7 @@ def _compute_view_rates(
     validate_spike_trains(spike_times_list, context="compute_view_rates")
     n_samples = len(times)
 
-    # Validate gaze_offsets if provided
-    if gaze_offsets is not None:
-        gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
-        if len(gaze_offsets) != n_samples:
-            raise ValueError(
-                f"gaze_offsets length ({len(gaze_offsets)}) must match "
-                f"times length ({n_samples})"
-            )
+    gaze_offsets = _as_gaze_offsets(gaze_offsets, n_samples)
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
     _warn_if_population_silent(
@@ -1899,9 +2001,9 @@ def _compute_view_rates(
         spike_window=resolved_spike_window,
     )
 
-    # Bin spike trains by viewed location and compute view occupancy
-    prepared = prepare_view_binning(
+    spike_counts, occupancy, settings = _count_views(
         env,
+        spike_times_list,
         times,
         positions,
         headings,
@@ -1911,23 +2013,13 @@ def _compute_view_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-        view_bins=view_bins,
-        boundary_source=boundary_source,
-    )
-
-    spike_counts, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
-    from neurospatial.encoding._provenance import rate_analysis_settings
-
-    settings = rate_analysis_settings(
-        prepared.support,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
-        gaze_model=gaze_model,
-        view_distance=float(view_distance) if gaze_model == "fixed_distance" else None,
-        gaze_offsets_source="provided" if gaze_offsets is not None else None,
-        boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
+        boundary_source=boundary_source,
+        view_bins=view_bins,
+        n_jobs=n_jobs,
     )
 
     # Apply batch smoothing to compute firing rates
