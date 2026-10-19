@@ -71,6 +71,35 @@ def test_snapping_keeps_each_segment_named_after_its_wall():
             assert wall.equals(SHELF)
 
 
+def test_a_wall_snapped_to_a_single_bin_edge_is_kept():
+    # Dividing one bin, the wall snaps to exactly one edge.
+    arena = OpenArena(box(0, 0, 4, 4), walls={"stub": LineString([(1.8, 0), (1.8, 1)])})
+    with pytest.warns(UserWarning, match="moved the walls onto bin edges"):
+        env = _grid(arena)
+    assert env.arena.wall_names == ("stub",)
+    assert env.arena.walls[0].equals(LineString([(2, 0), (2, 1)]))
+
+
+def test_snapped_walls_stay_inside_a_slanted_arena():
+    # Cells whose centers are inside a slanted outline can have edges outside
+    # it; a wall snapped onto those edges keeps only its part in the arena.
+    from shapely.geometry import Polygon
+
+    from neurospatial.geometry._arena_fit import clip_wall
+
+    angle = 0.0445
+    c, s = np.cos(angle), np.sin(angle)
+    corners = np.array([(0, 0), (10, 0), (10, 10), (0, 10)]) @ [[c, s], [-s, c]]
+    outline = Polygon(corners)
+    (wall,) = clip_wall(LineString([(-4.769, 9.436), (8.827, 8.0)]), outline)
+    arena = OpenArena(outline, walls={"w": wall})
+    with pytest.warns(UserWarning, match="moved the walls onto bin edges"):
+        env = Environment.from_polygon(outline, bin_size=1.0, arena=arena)
+    assert set(env.arena.wall_names) == {"w"}
+    assert all(outline.covers(segment) for segment in env.arena.walls)
+    assert set(env.get_blocked_edges()["wall"]) == {"w"}
+
+
 def test_a_wall_through_a_saved_binning_is_named_in_the_error():
     source = _grid(None).binning
     source = replace(source, faces=KnownFaces(source.faces.build()))

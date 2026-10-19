@@ -260,6 +260,12 @@ def fit_walls(
             )
         )
     snapped = _snapped_walls(binning, cells, arena.walls, arena.wall_names)
+    # A bin whose center is inside a slanted outline can have an edge outside
+    # it; keep each snapped wall to the arena, which refuses walls beyond it.
+    snapped = [
+        tuple(inside for part in parts for inside in clip_wall(part, arena.polygon))
+        for parts in snapped
+    ]
     moves = [
         wall.hausdorff_distance(MultiLineString(parts))
         for wall, parts in zip(arena.walls, snapped, strict=True)
@@ -288,6 +294,43 @@ def fit_walls(
             for _ in parts
         ),
     )
+
+
+def wall_inside(piece: LineString, polygon: Polygon) -> LineString | None:
+    """``piece``, shortened at its ends if needed so that ``polygon`` covers it.
+
+    A wall clipped at a slanted edge ends at a computed intersection point that
+    can fall a rounding error outside the polygon, which ``OpenArena`` then
+    refuses. Pull the ends in along the wall, by at most a millionth of the
+    polygon's size, until the arena's own containment test accepts the piece;
+    None if it never does (a piece lying along a slanted edge).
+    """
+    if polygon.covers(piece):
+        return piece
+    x0, y0, x1, y1 = polygon.bounds
+    scale = max(x1 - x0, y1 - y0)
+    for step in scale * np.array([1e-12, 1e-10, 1e-8, 1e-6]):
+        if piece.length <= 2 * step:
+            break
+        shorter = shapely.ops.substring(piece, step, piece.length - step)
+        if isinstance(shorter, LineString) and polygon.covers(shorter):
+            return shorter
+    return None
+
+
+def clip_wall(wall: LineString, polygon: Polygon) -> list[LineString]:
+    """The pieces of ``wall`` inside ``polygon``, each accepted by ``OpenArena``.
+
+    A wall already inside is returned as it is.
+    """
+    if polygon.covers(wall):
+        return [wall]
+    return [
+        inside
+        for piece in shapely.get_parts(wall.intersection(polygon))
+        if isinstance(piece, LineString) and piece.length > 0
+        if (inside := wall_inside(piece, polygon)) is not None
+    ]
 
 
 def _wall_sides(wall: LineString, points: NDArray[np.float64]) -> NDArray[np.bool_]:
@@ -353,7 +396,9 @@ def _snapped_walls(
                     fix="use wall_fit='split', or a smaller bin_size",
                 )
             )
-        merged = linemerge(unary_union(edges))
+        # linemerge refuses a single line: a wall on one bin edge is one.
+        union = unary_union(edges)
+        merged = union if isinstance(union, LineString) else linemerge(union)
         snapped.append(
             (merged,) if isinstance(merged, LineString) else tuple(merged.geoms)
         )

@@ -19,7 +19,8 @@ from typing import TYPE_CHECKING, NamedTuple, cast
 from neurospatial.annotation._helpers import (
     REGION_TYPE_COLORS,
     rebuild_features,
-    sync_face_colors_from_features,
+    shapes_with_types,
+    sync_colors_from_features,
 )
 from neurospatial.annotation._state import AnnotationModeState, make_unique_name
 from neurospatial.annotation._types import RegionType
@@ -99,11 +100,17 @@ class ShapesLayerController:
         - feature_defaults["role"] to current region type
         - feature_defaults["name"] to default name for region type
         - current_face_color to region type color
+        - the drawing tool: a path for walls, a polygon for areas; landmarks
+          keep the tool in use, since their shape sets their kind
         """
         region_type = self.state.region_type
         self.shapes.feature_defaults["role"] = region_type
         self.shapes.feature_defaults["name"] = self.state.default_name()
         self.shapes.current_face_color = REGION_TYPE_COLORS.get(region_type, "yellow")
+        if region_type == "wall":
+            self.shapes.mode = "add_path"
+        elif region_type != "landmark":
+            self.shapes.mode = "add_polygon"
 
     def get_existing_names(self) -> list[str]:
         """Get list of existing shape names.
@@ -233,7 +240,7 @@ class ShapesLayerController:
 
         # Apply updated features
         self.shapes.features = rebuild_features(region_types, names)
-        sync_face_colors_from_features(self.shapes)
+        sync_colors_from_features(self.shapes)
 
         # Update layer defaults to match assigned name
         self.shapes.feature_defaults["name"] = assigned_name
@@ -274,8 +281,8 @@ class ShapesLayerController:
                 self.shapes.data = []
                 self.shapes.features = rebuild_features([], [])
             else:
-                # Keep only non-deleted shapes and features
-                new_data = [self.shapes.data[i] for i in indices_to_keep]
+                # Keep only non-deleted shapes, with their types, and features
+                new_data = shapes_with_types(self.shapes, indices_to_keep)
                 new_region_types: list[RegionType] = [
                     cast("RegionType", str(self.shapes.features["role"].iloc[i]))
                     for i in indices_to_keep
@@ -286,7 +293,7 @@ class ShapesLayerController:
 
                 self.shapes.data = new_data
                 self.shapes.features = rebuild_features(new_region_types, new_names)
-                sync_face_colors_from_features(self.shapes)
+                sync_colors_from_features(self.shapes)
 
         self.shapes.selected_data = set()
         self.shapes.mode = old_mode

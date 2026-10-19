@@ -9,7 +9,10 @@ from typing import Literal
 # - "environment": Primary boundary polygon defining the spatial environment
 # - "hole": Excluded areas within environment boundary (subtracted)
 # - "region": Named regions of interest (ROIs)
-RegionType = Literal["environment", "hole", "region"]
+# - "wall": A named physical wall, drawn as a path, that blocks movement
+# - "landmark": A named cue, monitor or object; an ellipse marks a point, a
+#   path a line and a polygon or rectangle an area
+RegionType = Literal["environment", "hole", "region", "wall", "landmark"]
 
 # Strategy for handling multiple environment boundaries
 # - "last": Use the last drawn boundary (default, current behavior)

@@ -9,7 +9,9 @@ The video annotation workflow allows you to:
 1. **Draw environment boundaries** from video frames (e.g., arena walls)
 2. **Define holes/obstacles** within the environment (excluded areas)
 3. **Create named regions** for behavioral analysis (e.g., reward zones, nest areas)
-4. **Apply calibration** to convert pixel coordinates to real-world units (cm)
+4. **Draw named walls** that block movement, such as a divider or a barrier
+5. **Place named landmarks**: reward ports, cue cards, monitors and objects
+6. **Apply calibration** to convert pixel coordinates to real-world units (cm)
 
 This is particularly useful when you have tracking data and want to define the spatial structure from the same video used for tracking.
 
@@ -22,8 +24,11 @@ from neurospatial.annotation import annotate_video
 result = annotate_video("experiment.mp4", bin_size=2.0)
 
 # Access results
-env = result.environment  # Discretized Environment
+env = result.environment  # Discretized Environment, holding all of the below
 regions = result.regions   # Named Regions
+walls = result.walls       # Named walls, {name: LineString}
+landmarks = result.landmarks  # Named Landmarks
+env.plot()                 # Check the result against the video frame
 ```
 
 ## Complete Workflow
@@ -59,7 +64,21 @@ When the napari viewer opens:
    - Enter a name for each region before drawing
    - Draw polygons for reward zones, nest areas, etc.
 
-4. **Press `Escape` or click "Save and Close"** to return results
+4. **Press `M` again for wall mode** (magenta path):
+   - The tool switches to paths: click along the wall, press `Enter` to finish
+   - Name each wall, such as `divider`; analyses that report blocked
+     connections name the wall that closes them
+   - A wall is clipped to the boundary, so it may start on or just past the
+     boundary's edge
+
+5. **Press `M` again for landmark mode** (orange):
+   - Name the landmark, then choose the napari tool by what it is: an
+     **ellipse** around a reward port or cue marks a point at its center, a
+     **path** along a monitor or a card marks a line, and a **polygon** or
+     **rectangle** around an object marks its area
+   - Landmarks may lie outside the boundary, as a cue on the room wall does
+
+6. **Press `Escape` or click "Save and Close"** to return results
 
 ### Step 3: Use the Results
 
@@ -72,6 +91,9 @@ print(f"Environment has {env.n_bins} bins")
 for name, region in result.regions.items():
     print(f"Region '{name}': {region.kind}")
 
+# Walls and landmarks are already part of the environment
+print(env.arena.wall_names, list(env.landmarks))
+
 # Use with tracking data
 bin_indices = env.bin_sequence(times, positions)
 ```
@@ -80,7 +102,7 @@ bin_indices = env.bin_sequence(times, positions)
 
 | Key | Action |
 |-----|--------|
-| `M` | Cycle annotation mode (environment → hole → region) |
+| `M` | Cycle annotation mode (environment → hole → region → wall → landmark) |
 | `3` | Move shape mode |
 | `4` | Edit vertices mode |
 | `Delete` | Remove selected shape |
@@ -258,6 +280,8 @@ Shapes are assigned region types that determine their purpose:
 | `environment` | Cyan | Primary boundary defining spatial extent |
 | `hole` | Red | Excluded areas within the boundary |
 | `region` | Yellow | Named regions of interest |
+| `wall` | Magenta | Named physical walls, drawn as paths |
+| `landmark` | Orange | Named cues, monitors and objects: ellipse = point, path = line, polygon = area |
 
 Access the region type in your code:
 
