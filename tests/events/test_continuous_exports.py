@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import sys
 
 import numpy as np
@@ -53,11 +54,15 @@ def test_row_counts_keys_and_no_unit_id():
     assert len(aligned) == 3 * 4 * 2
     assert not aligned.duplicated(keys).any()
     # Nesting order: event, then time, then feature.
-    expected = aligned.sort_values(keys, kind="stable")
-    np.testing.assert_array_equal(
-        aligned["event_index"].to_numpy(), expected["event_index"].to_numpy()
+    expected = list(
+        itertools.product([0, 1, 2], result.relative_times.tolist(), ["a", "b"])
     )
-    assert len(result.time_course_table()) == 8
+    assert list(aligned[keys].itertuples(index=False, name=None)) == expected
+    course = result.time_course_table()
+    assert len(course) == 8
+    assert list(
+        course[["relative_time", "feature_id"]].itertuples(index=False, name=None)
+    ) == list(itertools.product(result.relative_times.tolist(), ["a", "b"]))
     for table in (
         aligned,
         result.time_course_table(),
@@ -84,6 +89,10 @@ def test_aligned_table_round_trips_values_and_support():
         value.to_numpy().reshape(result.values.shape), result.values
     )
     assert np.isnan(result.values).any()
+    # Feature "a" is the ramp t, feature "b" is 2t (NaN at the sample t=3).
+    ramp = np.array([2.0, 3.0, 5.0])[:, None] + result.relative_times[None, :]
+    np.testing.assert_allclose(result.values[:, :, 0], ramp)
+    np.testing.assert_allclose(value["a"].to_numpy().reshape(3, 4), ramp)
     supported = aligned.pivot(
         index=["event_index", "relative_time"],
         columns="feature_id",
@@ -168,24 +177,37 @@ def test_category_table_proportions():
     np.testing.assert_allclose(sums.to_numpy(), 1.0)
 
 
-def test_category_proportion_nan_without_support():
-    # Cat signal is missing everywhere around the second event.
+def _missing_at_zero_result():
+    """Two events whose categorical signal is missing exactly at relative 0."""
     codes = np.zeros_like(TIMES)
-    codes[(TIMES > 4.0) & (TIMES < 6.0)] = np.nan
-    result = align_continuous_to_events(
+    codes[np.isclose(TIMES, 3.0) | np.isclose(TIMES, 5.0)] = np.nan
+    return align_continuous_to_events(
         TIMES,
         codes,
-        [2.0, 5.0],
-        (-0.25, 0.25),
+        [3.0, 5.0],
+        (-0.5, 0.5),
         dt=0.25,
         value_kinds={0: "categorical"},
-        category_labels={0: {0: "a"}},
+        category_labels={0: {0: "a", 1: "b"}},
         interpolation={0: "previous"},
         window_coverage="partial",
     )
+
+
+def test_category_proportion_nan_without_support(agg):
+    result = _missing_at_zero_result()
+    zero_cell = np.isclose(result.relative_times, 0.0)
+    np.testing.assert_array_equal(result.counts[:, 0] == 0, zero_cell)
     table = result.category_counts_table()
-    np.testing.assert_array_equal(table["count"], result.category_counts.reshape(-1))
-    assert (table["proportion"].dropna() == 1.0).all()
+    assert len(table) == 4 * 2
+    no_support = np.isclose(table["relative_time"].to_numpy(), 0.0)
+    np.testing.assert_array_equal(np.isnan(table["proportion"].to_numpy()), no_support)
+    np.testing.assert_array_equal(table["count"].to_numpy()[no_support], 0)
+    np.testing.assert_array_equal(table["proportion"].to_numpy()[~no_support][::2], 1.0)
+    # The plot shows the same gap.
+    ax = result.plot()
+    y = ax.lines[0].get_ydata()
+    np.testing.assert_array_equal(np.isnan(y), zero_cell)
 
 
 def test_category_table_empty_without_categorical_features():
@@ -321,10 +343,14 @@ def test_plot_returns_axes_for_every_kind(agg):
     assert isinstance(ax, Axes)
     assert ax.get_xlabel() == "Time from event (s)"
     assert len(ax.lines) >= 2  # mean line + dashed zero line
+    np.testing.assert_array_equal(ax.lines[0].get_ydata(), result.means[:, 0])
     ax = result.plot(feature_id="circ")
     assert isinstance(ax, Axes)
     assert ax.get_ylabel() == "radians"
     assert ax.get_ylim() == pytest.approx((-np.pi, np.pi))
+    assert ax.lines[0].get_linestyle() == "None"
+    assert ax.lines[0].get_marker() == "o"
+    np.testing.assert_array_equal(ax.lines[0].get_ydata(), result.means[:, 1])
     ax = result.plot(feature_id="cat")
     assert isinstance(ax, Axes)
     legend = ax.get_legend()

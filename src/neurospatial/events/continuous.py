@@ -322,6 +322,13 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         df.attrs.update(self._table_attrs())
         return df
 
+    def _category_proportions(self) -> NDArray[np.float64]:
+        """Category counts over the feature's supported events, NaN at zero."""
+        totals = self.counts[:, self.category_features]
+        proportion = np.full(self.category_counts.shape, np.nan)
+        np.divide(self.category_counts, totals, out=proportion, where=totals > 0)
+        return proportion
+
     def events_table(self) -> pd.DataFrame:
         """One row per input event with its coverage decision.
 
@@ -333,6 +340,19 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             exclusion reason) and ``overlapping``. ``df.attrs`` holds
             ``window``, ``dt``, ``window_coverage``, ``max_gap``,
             ``resultant_threshold`` and ``feature_units``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events import align_continuous_to_events
+        >>> times = np.arange(0, 10.0001, 0.125)
+        >>> result = align_continuous_to_events(
+        ...     times, times, [2.0, 5.0], (-0.5, 0.5), dt=0.25, event_ids=["a", "b"]
+        ... )
+        >>> result.events_table()[["event_index", "event_id", "status"]]
+           event_index event_id    status
+        0            0        a  retained
+        1            1        b  retained
         """
         data: dict[str, Any] = {"event_index": np.arange(self.event_status.size)}
         if self.event_ids is not None:
@@ -359,6 +379,24 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         ------
         ValueError
             If the alignment ran with ``retain_aligned=False``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events import align_continuous_to_events
+        >>> times = np.arange(0, 10.0001, 0.125)
+        >>> result = align_continuous_to_events(
+        ...     times, times, [2.0, 5.0], (-0.5, 0.5), dt=0.25, event_ids=["a", "b"]
+        ... )
+        >>> table = result.aligned_table()
+        >>> len(table)
+        8
+        >>> table[["event_id", "relative_time", "value"]].head(4)
+          event_id  relative_time  value
+        0        a          -0.50   1.50
+        1        a          -0.25   1.75
+        2        a           0.00   2.00
+        3        a           0.25   2.25
         """
         if self.values is None or self.support is None:
             raise ValueError(
@@ -394,6 +432,21 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             (circular features only) and ``status`` (``mean_status``). Rows
             are ordered by relative time, then feature. ``df.attrs`` as in
             ``events_table``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events import align_continuous_to_events
+        >>> times = np.arange(0, 10.0001, 0.125)
+        >>> result = align_continuous_to_events(
+        ...     times, times, [2.0, 5.0], (-0.5, 0.5), dt=0.25, event_ids=["a", "b"]
+        ... )
+        >>> result.time_course_table()[["relative_time", "count", "mean"]]
+           relative_time  count  mean
+        0          -0.50      2  3.00
+        1          -0.25      2  3.25
+        2           0.00      2  3.50
+        3           0.25      2  3.75
         """
         n_times, n_features = self.counts.shape
         return self._frame(
@@ -420,13 +473,22 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             there are none). Empty when no feature is categorical. Rows are
             ordered by relative time, then feature, then code. ``df.attrs``
             as in ``events_table``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events import align_continuous_to_events
+        >>> times = np.arange(0, 10.0001, 0.125)
+        >>> result = align_continuous_to_events(
+        ...     times, times, [2.0, 5.0], (-0.5, 0.5), dt=0.25, event_ids=["a", "b"]
+        ... )
+        >>> result.category_counts_table().empty
+        True
         """
         n_times = self.relative_times.size
         n_categories = self.category_codes.size
         rows = self.category_counts.reshape(-1)
-        totals = self.counts[:, self.category_features].reshape(-1)
-        proportion = np.full(rows.shape, np.nan)
-        np.divide(rows, totals, out=proportion, where=totals > 0)
+        proportion = self._category_proportions().reshape(-1)
         return self._frame(
             {
                 "relative_time": np.repeat(self.relative_times, n_categories),
@@ -452,6 +514,17 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             ``min_count`` (smallest supported-event count over cells) and
             ``n_excluded_<reason>`` for each exclusion reason present. All
             values are Python ``int``, ``float`` or ``str``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events import align_continuous_to_events
+        >>> times = np.arange(0, 10.0001, 0.125)
+        >>> result = align_continuous_to_events(
+        ...     times, times, [2.0, 5.0], (-0.5, 0.5), dt=0.25, event_ids=["a", "b"]
+        ... )
+        >>> result.summary()["n_events"], result.summary()["min_count"]
+        (2, 2)
         """
         out: dict[str, Any] = {
             "n_events": self.n_events,
@@ -496,6 +569,20 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         ------
         ValueError
             If ``feature_id`` is missing for several features or unknown.
+
+        Examples
+        --------
+        >>> import matplotlib
+        >>> matplotlib.use("Agg")
+        >>> import numpy as np
+        >>> from neurospatial.events import align_continuous_to_events
+        >>> times = np.arange(0, 10.0001, 0.125)
+        >>> result = align_continuous_to_events(
+        ...     times, times, [2.0, 5.0], (-0.5, 0.5), dt=0.25
+        ... )
+        >>> ax = result.plot()
+        >>> ax.get_xlabel()
+        'Time from event (s)'
         """
         import matplotlib.pyplot as plt
 
@@ -536,13 +623,9 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             ax.set_ylabel("radians")
         else:
             rows = np.flatnonzero(self.category_features == column)
-            totals = self.counts[:, column]
+            proportions = self._category_proportions()
             for row in rows:
-                share = np.full(t.shape, np.nan)
-                np.divide(
-                    self.category_counts[:, row], totals, out=share, where=totals > 0
-                )
-                ax.plot(t, share, label=str(self.category_labels[row]))
+                ax.plot(t, proportions[:, row], label=str(self.category_labels[row]))
             ax.set_ylim(0.0, 1.0)
             ax.set_ylabel("proportion of events")
             ax.legend()

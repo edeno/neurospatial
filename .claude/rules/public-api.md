@@ -43,7 +43,9 @@ Each terminal verb means the same thing on every result class:
   `backend="fastplotlib"`, which returns the fastplotlib figure; typing
   overloads keep the `Axes` return for the default.
 
-Non-neural results such as `ResampledPathResult` and `ContinuousEventResult` export domain tables named for their rows (`samples_table()`, `aligned_table()`) and do not implement `to_dataframe()`.
+Non-neural results such as `ResampledPathResult` and `ContinuousEventResult`
+export domain tables named for their rows (`samples_table()`,
+`aligned_table()`) and do not implement `to_dataframe()`.
 
 Results keep no raw input arrays or recompute closures. Rate and peri-event
 results inherit `ReadOnlyArraysMixin` and call `self._own_arrays()` last in
