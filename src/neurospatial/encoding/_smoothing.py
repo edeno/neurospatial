@@ -641,7 +641,7 @@ def _validate_spatial_method_params(
     """
     if method not in _SPATIAL_METHODS:
         raise ValueError(
-            f"method must be one of {set(_SPATIAL_METHODS)}, got {method!r}"
+            f"method must be one of {list(_SPATIAL_METHODS)}, got {method!r}"
         )
 
     if method == "glm":
@@ -673,7 +673,7 @@ def _validate_spatial_method_params(
 
 def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
     """Validate smoothing method and bandwidth without requiring count arrays."""
-    valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}
+    valid_methods = ["diffusion_kde", "gaussian_kde", "binned"]
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
 

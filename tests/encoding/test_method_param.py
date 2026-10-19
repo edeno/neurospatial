@@ -294,3 +294,53 @@ def test_method_absent_from_non_method_result_projection(ovc_session):
     result = compute_egocentric_rate(env, st, t, pos, hd, obj)
     assert "method" not in result.summary()
     assert "method" not in result.to_dataframe().columns
+
+
+# --- Invalid-method error text is stable -------------------------------------
+_INVALID_METHOD_SCRIPT = """
+import numpy as np
+from neurospatial import Environment
+from neurospatial.encoding import compute_spatial_rates
+from neurospatial.encoding.view import compute_view_rates
+
+rng = np.random.default_rng(0)
+t = np.linspace(0, 10, 200)
+pos = rng.uniform(0, 10, (200, 2))
+env = Environment.from_samples(pos, bin_size=5.0)
+for call in (
+    lambda: compute_spatial_rates(env, [], t, pos, method="invalid"),
+    lambda: compute_view_rates(env, [], t, pos, np.zeros(200), method="invalid"),
+):
+    try:
+        call()
+    except ValueError as err:
+        print(err)
+"""
+
+
+def test_invalid_method_message_lists_options_in_declared_order():
+    import os
+    import subprocess
+    import sys
+
+    outputs = []
+    for seed in ("1", "2", "3"):
+        env = {**os.environ, "PYTHONHASHSEED": seed}
+        done = subprocess.run(
+            [sys.executable, "-c", _INVALID_METHOD_SCRIPT],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        outputs.append(done.stdout)
+    assert len(set(outputs)) == 1
+    spatial, view = outputs[0].strip().splitlines()
+    assert spatial == (
+        "method must be one of ['diffusion_kde', 'gaussian_kde', 'binned', 'glm'], "
+        "got 'invalid'"
+    )
+    assert view == (
+        "method must be one of ['diffusion_kde', 'gaussian_kde', 'binned'], "
+        "got 'invalid'"
+    )

@@ -289,7 +289,7 @@ def _check_gam_result_invariant(
     if method not in _SPATIAL_METHODS:
         raise ValueError(
             f"{kind} has method={method!r}, which is not a known estimator; "
-            f"expected one of {set(_SPATIAL_METHODS)}."
+            f"expected one of {list(_SPATIAL_METHODS)}."
         )
 
     is_glm = method == "glm"
