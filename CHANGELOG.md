@@ -28,22 +28,22 @@
   ```
 
 - `read_place_field(nwbfile, env=env)` checks `env` against the environment
-  saved with the rates and raises `IncompatibleEnvironmentError` naming what
-  differs, such as units or coordinate frame, bin coordinates or order, bin
-  measures, connectivity, or the arena and its walls. Before, it checked
-  only the number of bins, so a same-size environment in other units or with
-  bins in other places silently relabeled the maps. Omit `env=` to use the
-  saved environment. A file whose rates have no saved environment cannot
-  verify `env=` and raises `ValueError`; rewrite it with
-  `write_spatial_rates`.
-- `compute_directional_place_fields` leaves out frames labeled `None` or
-  `NaN`, as it does frames labeled `"other"`. Before, such labels raised
-  `TypeError`.
+  saved with the rates, as the decoder checks rates from another environment
+  (see Fixed), and raises `IncompatibleEnvironmentError` naming what differs:
+  units or coordinate frame, bin coordinates or order, bin measures, cell
+  shapes (including polygon cells and which bin owns each boundary),
+  connectivity, smoothing conductances between neighboring bins, or the arena
+  and its walls. Before, it checked only the number of bins, so a same-size
+  environment in other units or with bins in other places silently relabeled
+  the maps. Omit `env=` to use the saved environment. A file whose rates have
+  no saved environment cannot verify `env=` and raises `ValueError`; rewrite
+  it with `write_spatial_rates`.
 
 - `AnnotationResult` from `annotate_video` has four fields,
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.
   `RegionType` adds `"wall"` and `"landmark"`.
+
 - `count_place_cells` counts a cell at exactly `threshold` and takes `threshold`
   by keyword, matching the inclusive `>=` cutoff of `classify()` and the other
   threshold screens. Before, a cell had to exceed the threshold, and
@@ -818,6 +818,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `compute_directional_place_fields` leaves out frames labeled `None` or
+  `NaN`, as it does frames labeled `"other"`. Before, such labels raised
+  `TypeError`.
 - `animate_fields` color limits default to robust ones in every backend: the
   1st percentile of the frames' minima and the 99th of their maxima, instead
   of the minimum and maximum over all frames. One extreme frame no longer
@@ -1933,6 +1936,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also
   differ. Before, it named only the connectivity or arena difference.
+  `read_place_field(env=...)` reports differences the same way (see
+  Breaking).
 - `detect_assemblies` orients each ICA and PCA pattern so its largest-magnitude
   weight is positive, and flips its activation with it. Before, the sign was
   arbitrary, so an assembly's members could have negative weights and
@@ -1943,15 +1948,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   it raised `IndexError` when any bin was uncovered. On a track built from a
   2-D graph, gap marks are now at each gap's linearized position; before, they
   were drawn at its x and y coordinates.
-- Decoding with rates from another environment, `compare_spatial_rates` and
-  `read_place_field(env=...)` now compare the bins' cell shapes, not only
-  their centers and areas. Triangular meshes, hexagonal layouts and grids
-  (axis-aligned or rotated) whose cells differ with the same centers and
-  areas, such as a 10 x 10 cell and a 20 x 5 cell, used to be accepted as
-  the same bins; they now raise `IncompatibleEnvironmentError` naming "cell
+- Decoding with rates from another environment now compares the bins' cell
+  shapes, not only their centers and areas. Triangular meshes, hexagonal
+  layouts and grids (axis-aligned or rotated) whose cells differ with the
+  same centers and areas, such as a 10 x 10 cell and a 20 x 5 cell, used to
+  be accepted as the same bins; they now raise `IncompatibleEnvironmentError` naming "cell
   shapes". Environments that smooth a field between the same neighbors
   differently (different face areas in `from_bins`, or one that cannot smooth)
   now differ in "smoothing conductances between neighboring bins".
+  `read_place_field(env=...)` makes the same check (see Breaking), and
   `compare_spatial_rates` applies the same bin checks to each pair of a
   `bin_mapping`: paired bins must also have the same cell shape and, for
   polygon cells, the same polygon and the same bin owning each boundary, so
