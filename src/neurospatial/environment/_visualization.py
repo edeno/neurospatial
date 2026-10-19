@@ -206,7 +206,7 @@ def _draw_walls(ax: matplotlib.axes.Axes, arena: Arena) -> None:
 
 def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
     """Draw each landmark by its kind, labeled, and widen the axes to show it."""
-    from matplotlib.patches import Polygon as PolygonPatch
+    from neurospatial.layout._plotting import _polygon_patches
 
     color = "darkorange"
     for landmark in landmarks.values():
@@ -216,15 +216,11 @@ def _draw_landmarks(ax: matplotlib.axes.Axes, landmarks: Landmarks) -> None:
         elif data.geom_type == "LineString":
             ax.plot(*np.asarray(data.coords).T, color=color, linewidth=4, zorder=5)
         else:
-            ax.add_patch(
-                PolygonPatch(
-                    np.asarray(data.exterior.coords),
-                    facecolor=color,
-                    edgecolor=color,
-                    alpha=0.4,
-                    zorder=5,
-                )
-            )
+            # A compound path keeps interior rings open: a ring-shaped object
+            # is drawn with its hole, as the spatial calculations see it.
+            (patch,) = _polygon_patches([data])
+            patch.set(facecolor=color, edgecolor=color, alpha=0.4, zorder=5)
+            ax.add_patch(patch)
         ax.annotate(
             landmark.name,
             tuple(landmark.position[:2]),

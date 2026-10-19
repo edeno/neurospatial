@@ -127,6 +127,27 @@ def test_every_cell_edge_is_drawn(n):
     np.testing.assert_array_equal(vertical[:, :, 1], [[0.0, n]] * (n + 1))
 
 
+def test_a_ring_shaped_landmark_keeps_its_hole():
+    env = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0), np.arange(5.0))
+    )
+    ring = box(0.5, 0.5, 3.5, 3.5).difference(box(1.5, 1.5, 2.5, 2.5))
+    with_ring = env.with_landmarks(Landmarks([Landmark("ring", "polygon", ring)]))
+
+    def color_at(environment, x, y):
+        ax = environment.plot()
+        ax.figure.canvas.draw()
+        image = np.asarray(ax.figure.canvas.buffer_rgba())[..., :3]
+        column, row = ax.transData.transform((x, y))
+        return image[image.shape[0] - int(row), int(column)].astype(int)
+
+    # The hole shows the cells beneath, as without the landmark; the ring does not.
+    np.testing.assert_array_equal(
+        color_at(with_ring, 2.0, 2.0), color_at(env, 2.0, 2.0)
+    )
+    assert not np.array_equal(color_at(with_ring, 1.0, 2.0), color_at(env, 1.0, 2.0))
+
+
 def test_polygon_grid_outlines_its_polygon():
     env = Environment.from_polygon(
         Polygon([(0, 0), (40, 0), (40, 30), (20, 40), (0, 30)]), bin_size=4.0

@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.patches import RegularPolygon
+    from shapely import Polygon
 
     from neurospatial.geometry import (
         FramedGrid,
@@ -51,14 +52,14 @@ def _draw_connections(ax: Axes, connectivity: nx.Graph, **style: Any) -> None:
     ax.add_collection(lines, autolim=False)
 
 
-def _polygon_patches(shapes: PolygonCells) -> list[Any]:
+def _polygon_patches(polygons: Sequence[Polygon]) -> list[Any]:
     """Build compound paths whose interior rings remain unfilled."""
     from matplotlib.patches import PathPatch
     from matplotlib.path import Path
     from shapely.geometry.polygon import orient
 
     patches = []
-    for cell in shapes.polygons:
+    for cell in polygons:
         polygon = orient(cell, sign=1.0)
         paths = []
         for ring in (polygon.exterior, *polygon.interiors):
@@ -92,7 +93,7 @@ def plot_polygon_cells(
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     collection = PatchCollection(
-        _polygon_patches(shapes), cmap=cmap, alpha=alpha, **kwargs
+        _polygon_patches(shapes.polygons), cmap=cmap, alpha=alpha, **kwargs
     )
     collection.set_array(np.ones(len(shapes.polygons)))
     ax.add_collection(collection)
