@@ -319,6 +319,33 @@ corr_matrix = rate_map_correlations(firing_rates)
 This describes similarity of spatial maps. Shared spatial tuning alone does
 not establish coordinated temporal activity or membership in a cell assembly.
 
+### Population-vector correlation
+
+To ask whether the population code at each location changed between two
+conditions, correlate the vector of all cells' rates at each location. Rows
+must be the same units in the same order in both maps:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial.encoding import population_vector_correlation
+
+rng = np.random.default_rng(0)
+before = rng.gamma(2.0, 2.0, size=(20, 50))  # (n_units, n_bins)
+after = before + rng.normal(0.0, 1.0, size=before.shape)  # small rate changes
+pv = population_vector_correlation(before, after)  # (n_bins,)
+defined = np.isfinite(pv)
+print(f"median {np.median(pv[defined]):.2f}, "
+      f"{(~defined).sum()} of {pv.size} locations undefined")
+```
+
+A location is NaN, not 0, where either map has a NaN rate, where it is outside
+`spatial_support` (pass `rates_1.spatial_support & rates_2.spatial_support`
+for zero-filled maps), or where every cell has the same rate. See
+[Does the spatial map change between conditions?](population-analysis.md#does-the-spatial-map-change-between-conditions)
+for a worked remapping example.
+
 ## Boundary Cell Metrics
 
 ### Border Score

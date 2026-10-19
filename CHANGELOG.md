@@ -16,6 +16,10 @@
   # after
   corr = rate_map_correlations(firing_rates)  # same (n_maps, n_maps) matrix
   ```
+
+  `population_vector_correlation` now returns one correlation per location
+  between two conditions; the old matrix is `rate_map_correlations`. A call
+  with one argument raises a `TypeError`.
 - `field_overlap` returns NaN, not 0.0, when neither field has a bin: with
   no field in either condition there is nothing to compare, which is not the
   same as fields that do not overlap. One empty field still gives 0.0.
@@ -1314,6 +1318,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `neurospatial.encoding.population_vector_correlation(firing_rates_1,
+  firing_rates_2, *, spatial_support=None)` returns the population-vector
+  correlation at each location between two conditions, the remapping measure
+  of Leutgeb et al. (2005): one value per bin, the Pearson correlation across
+  cells of the rates at that bin. A location is NaN, never 0, when a rate is
+  NaN in either map, the bin is outside `spatial_support` (pass it for
+  zero-filled maps), or every cell has exactly the same rate there. Summarize
+  with the median over defined locations and report how many were undefined.
+
+  ```python
+  pv = population_vector_correlation(before.firing_rates, after.firing_rates)
+  defined = np.isfinite(pv)
+  print(np.median(pv[defined]), (~defined).sum())
+  ```
 - `neurospatial.events.align_continuous_to_events(times, signals,
   event_times, window, *, dt, ...)` samples per-frame signals such as speed,
   heading or the occupied zone at fixed times around each event and returns a

@@ -111,6 +111,7 @@ from neurospatial.encoding.population import (
     field_overlap,
     plot_population_coverage,
     population_coverage,
+    population_vector_correlation,
     rate_map_correlations,
 )
 
@@ -234,4 +235,5 @@ __all__ = [  # noqa: RUF022 - organized by category
     "count_place_cells",
     "field_overlap",
     "rate_map_correlations",
+    "population_vector_correlation",
 ]

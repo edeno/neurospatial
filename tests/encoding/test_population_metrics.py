@@ -15,6 +15,7 @@ from neurospatial.encoding.population import (
     field_overlap,
     plot_population_coverage,
     population_coverage,
+    population_vector_correlation,
     rate_map_correlations,
 )
 
@@ -831,6 +832,128 @@ class TestRateMapCorrelations:
         corr_matrix = rate_map_correlations(np.vstack([a, a]))
         assert corr_matrix.shape == (8, 8)
         np.testing.assert_allclose(np.diag(corr_matrix[:4, 4:]), 1.0, atol=1e-10)
+
+
+class TestPopulationVectorCorrelation:
+    """Per-location population-vector correlation between two conditions."""
+
+    DEMO = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
+
+    @pytest.fixture
+    def random_maps(self) -> tuple[np.ndarray, np.ndarray]:
+        rng = np.random.default_rng(7)
+        return rng.random((12, 40)), rng.random((12, 40))
+
+    def test_identical_maps_are_one_and_flat_location_is_nan(self) -> None:
+        pv = population_vector_correlation(self.DEMO, self.DEMO)
+        assert pv.shape == (3,)
+        assert pv.dtype == np.float64
+        np.testing.assert_allclose(pv[[0, 2]], 1.0, rtol=1e-12)
+        assert np.isnan(pv[1])
+
+    def test_negated_map_is_minus_one(self) -> None:
+        pv = population_vector_correlation(self.DEMO, -self.DEMO)
+        np.testing.assert_allclose(pv[[0, 2]], -1.0, rtol=1e-12)
+        assert np.isnan(pv[1])
+
+    def test_matches_corrcoef_at_every_location(self, random_maps) -> None:
+        a, c = random_maps
+        pv = population_vector_correlation(a, c)
+        expected = [np.corrcoef(a[:, b], c[:, b])[0, 1] for b in range(a.shape[1])]
+        np.testing.assert_allclose(pv, expected, rtol=1e-12)
+
+    def test_uncorrelated_maps_are_near_zero(self) -> None:
+        rng = np.random.default_rng(3)
+        a = rng.random((500, 50))
+        c = rng.random((500, 50))
+        pv = population_vector_correlation(a, c)
+        assert np.all(np.isfinite(pv))
+        assert abs(np.median(pv)) < 0.05
+        assert np.all(np.abs(pv) < 0.2)
+
+    def test_scale_invariant(self, random_maps) -> None:
+        a, c = random_maps
+        np.testing.assert_allclose(
+            population_vector_correlation(a, 3.0 * c),
+            population_vector_correlation(a, c),
+            rtol=1e-12,
+        )
+
+    def test_shared_unit_permutation_leaves_result_unchanged(self, random_maps) -> None:
+        a, c = random_maps
+        order = np.random.default_rng(1).permutation(a.shape[0])
+        np.testing.assert_allclose(
+            population_vector_correlation(a[order], c[order]),
+            population_vector_correlation(a, c),
+            rtol=1e-12,
+        )
+
+    def test_unit_identity_matters(self) -> None:
+        """Shuffling units in one map only breaks a perfect correlation."""
+        a = np.random.default_rng(2).random((12, 40))
+        order = np.roll(np.arange(12), 1)
+        pv = population_vector_correlation(a, a[order])
+        assert np.all(pv < 0.99)
+
+    def test_nan_rate_makes_location_nan(self, random_maps) -> None:
+        a, c = random_maps
+        c = c.copy()
+        c[3, 5] = np.nan  # one unit unsupported at one location
+        a = a.copy()
+        a[:, 9] = np.nan  # a whole unvisited location
+        pv = population_vector_correlation(a, c)
+        assert np.isnan(pv[5]) and np.isnan(pv[9])
+        assert np.isfinite(np.delete(pv, [5, 9])).all()
+
+    def test_location_outside_spatial_support_is_nan(self, random_maps) -> None:
+        a, c = random_maps
+        support = np.ones(a.shape[1], dtype=bool)
+        support[[0, 17]] = False
+        pv = population_vector_correlation(a, c, spatial_support=support)
+        unrestricted = population_vector_correlation(a, c)
+        assert np.isnan(pv[[0, 17]]).all()
+        np.testing.assert_array_equal(pv[support], unrestricted[support])
+
+    def test_zero_filled_unsupported_location_is_nan_not_zero(self) -> None:
+        """Zero-filled maps with spatial_support: an unvisited bin is NaN."""
+        a = self.DEMO.copy()
+        a[:, 0] = 0.0
+        support = np.array([False, True, True])
+        pv = population_vector_correlation(a, a, spatial_support=support)
+        assert np.isnan(pv[0])
+        assert pv[2] == pytest.approx(1.0)
+
+    def test_roundoff_flat_location_is_nan(self) -> None:
+        """Equal rates whose std rounds to ~1e-17 still count as flat."""
+        assert np.full(3, 0.1).std() != 0.0  # the trap this test guards
+        a = self.DEMO.copy()
+        a[:, 1] = 0.1
+        c = self.DEMO + 1.0
+        pv = population_vector_correlation(a, c)
+        assert np.isnan(pv[1])
+        pv_other = population_vector_correlation(c, a)
+        assert np.isnan(pv_other[1])
+
+    def test_shape_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="same shape"):
+            population_vector_correlation(np.ones((3, 4)), np.ones((3, 5)))
+
+    def test_one_dimensional_input_raises(self) -> None:
+        with pytest.raises(ValueError, match="2-D"):
+            population_vector_correlation(np.ones(4), np.ones(4))
+
+    def test_one_unit_raises(self) -> None:
+        with pytest.raises(ValueError, match="at least two units"):
+            population_vector_correlation(np.ones((1, 4)), np.ones((1, 4)))
+
+    @pytest.mark.parametrize(
+        "support",
+        [np.ones(4, dtype=bool), np.ones(3)],
+        ids=["wrong-shape", "not-bool"],
+    )
+    def test_bad_spatial_support_raises(self, support) -> None:
+        with pytest.raises(ValueError, match="spatial_support"):
+            population_vector_correlation(self.DEMO, self.DEMO, spatial_support=support)
 
 
 class TestPopulationMetricsIntegration:
