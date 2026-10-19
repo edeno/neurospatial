@@ -30,6 +30,7 @@ from neurospatial.animation._parallel import (
     _head_direction_color,
 )
 from neurospatial.environment._fastplotlib import (
+    COLORBAR_WIDTH,
     ColorScale,
     FieldGraphic,
     _fans,
@@ -536,7 +537,7 @@ class _PositionTime:
         scale: ColorScale,
         clock: NDArray[np.float64],
         window: float,
-        positions: Sequence[_Position],
+        positions: Sequence[tuple[PositionData, _Samples]],
         start: float,
         move_to: Callable[[float], None],
     ) -> None:
@@ -550,7 +551,7 @@ class _PositionTime:
         )
         self.positions = positions
         self.tracks = [
-            (track_position(env, item.data.data), item.clock) for item in positions
+            (track_position(env, data.data), samples) for data, samples in positions
         ]
         self.first, self.rows = 0, np.empty((0, len(self.lower)))
         self.mesh: Any = None
@@ -609,13 +610,11 @@ class _PositionTime:
         self.mesh.tooltip_format = self.describe
         self.lines = [
             self.subplot.add_line(
-                np.full(
-                    (self._most_in_window(item.clock), 3), np.nan, dtype=np.float32
-                ),
-                colors=item.data.color,
+                np.full((self._most_in_window(samples), 3), np.nan, dtype=np.float32),
+                colors=data.color,
                 thickness=2,
             )
-            for item in self.positions
+            for data, samples in self.positions
         ]
 
     def _most_in_window(self, clock: _Samples) -> int:
@@ -857,6 +856,8 @@ def _arrange(
     Side by side for up to three, or as ``layout`` says: "horizontal",
     "vertical" or "grid".
     """
+    if n == 0:
+        return []
     layout = layout or ("horizontal" if n <= 3 else "grid")
     if layout == "horizontal":
         rows, columns = 1, n
@@ -887,8 +888,8 @@ def _spatial_overlays(
     clock: Callable[[NDArray[np.float64] | None], _Samples],
     env: Environment,
     frame_of: Callable[[float], int],
-) -> tuple[list[Any], list[_Position]]:
-    """The overlays drawn over a field, and its position layers."""
+) -> list[Any]:
+    """The overlays drawn over a field."""
     layers: list[Any] = [
         _ObjectVectors(plot, item, clock(item.times))
         for item in overlay_data.object_vectors
@@ -907,7 +908,29 @@ def _spatial_overlays(
         for item in overlay_data.head_directions
     ]
     layers += [_Events(plot, item, frame_of) for item in overlay_data.events]
-    return layers, positions
+    return layers
+
+
+def _warn_undrawn_on_a_line(overlay_data: OverlayData) -> None:
+    """Warn of overlays a 1-D environment, which has no field panel, omits."""
+    omitted = [
+        name
+        for name, items in (
+            ("body parts", overlay_data.bodypart_sets),
+            ("head directions", overlay_data.head_directions),
+            ("object vectors", overlay_data.object_vectors),
+            ("videos", overlay_data.videos),
+        )
+        if items
+    ]
+    if omitted:
+        warnings.warn(
+            f"A 1-D environment is drawn as position against time, without "
+            f"a field panel, so its {', '.join(omitted)} are not drawn; "
+            "positions are drawn as lines and events as marks in time.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
 
 
 def playback_step(frame_times: NDArray[np.float64]) -> float:
@@ -1070,6 +1093,8 @@ class FastplotlibAnimation:
     layer_names : sequence of str, optional
         A name for each of several fields; "Field 1", "Field 2", ... by
         default.
+    colorbar_label : str, optional
+        What the colors measure, such as "probability" or "rate (Hz)".
 
     Attributes
     ----------
@@ -1111,6 +1136,7 @@ class FastplotlibAnimation:
         window_seconds: float = 2.0,
         layout: str | None = None,
         layer_names: Sequence[str] | None = None,
+        colorbar_label: str = "",
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -1141,8 +1167,15 @@ class FastplotlibAnimation:
         step = playback_step(self._frame_times)
         extents_along_track = track_extents(env)
         several = len(stacks) > 1
+        # On a 1-D environment the track panel shows all a field panel would,
+        # at a size to read: no field panel.
+        with_fields = not (env.n_dims == 1 and extents_along_track is not None)
         field_names = (
-            [f"field {i}" for i in range(len(stacks))] if several else ["field"]
+            []
+            if not with_fields
+            else [f"field {i}" for i in range(len(stacks))]
+            if several
+            else ["field"]
         )
         track_names = (
             []
@@ -1155,24 +1188,36 @@ class FastplotlibAnimation:
         # field over time on a track, the rasters, then the time series; the
         # fields narrow when the right holds more than time series.
         rasters = overlay_data.spike_rasters if overlay_data else []
-        panels = [(name, 2.0) for name in track_names]
+        # Heights: a track's fields over time most, then rasters, then series.
+        panels = [(name, 3.0) for name in track_names]
         panels += [(f"raster {i}", 2.0) for i in range(len(rasters))]
         panels += [(f"series {i}", 1.0) for i in range(len(groups))]
-        split = (0.4 if len(panels) > len(groups) else 0.6) if panels else 1.0
-        # A raster with rate maps adds the chosen unit's map under the fields.
+        time_panels = [name for name, _ in panels]
+        # A raster with rate maps adds the chosen unit's map, under the
+        # fields or, without them, at the bottom of the right.
         with_rates = any(item.rates is not None for item in rasters)
-        bottom = 0.65 if with_rates else 1.0
+        if with_rates and not with_fields:
+            panels.append(("unit", 1.5))
+        if not with_fields:
+            split = 0.0
+        else:
+            split = (0.4 if len(time_panels) > len(groups) else 0.6) if panels else 1.0
+        bottom = 0.65 if with_rates and with_fields else 1.0
         extents = dict(
-            zip(field_names, _arrange(len(stacks), layout, split, bottom), strict=True)
+            zip(
+                field_names,
+                _arrange(len(field_names), layout, split, bottom),
+                strict=True,
+            )
         )
-        if with_rates:
+        if with_rates and with_fields:
             extents["unit"] = (0.0, split, bottom, 1.0)
         total, top = sum(weight for _, weight in panels), 0.0
         for name, weight in panels:
             extents[name] = (split, 1.0, top / total, (top + weight) / total)
             top += weight
         camera, controller = camera_options(env)
-        n_spatial = len(stacks) + with_rates
+        n_spatial = len(field_names) + (with_rates and with_fields)
         # The slider stops at the last frame.
         self.widget = fastplotlib.NDWidget(
             ranges={"time": (0.0, self._clock[-1] + step, step)},
@@ -1189,7 +1234,13 @@ class FastplotlibAnimation:
         self.widget.ui_sliders._frame_time["time"] = 1 / steps_per_second
         self.figure = self.widget.figure
         self._plots = [self.figure[name] for name in field_names]
-        self._plot = self._plots[0]
+        # The status (time, epoch) heads the first field, or the first track.
+        self._plot = self.figure[(field_names or track_names)[0]]
+        for name in time_panels:
+            # One time axis, at the bottom, and no toolbar: the panels read as
+            # one plot against time.
+            self.figure[name].toolbar = False
+            self.figure[name].axes.x.visible = name == time_panels[-1]
 
         # One color scale for every field, so they can be compared.
         all_frames = (
@@ -1197,11 +1248,15 @@ class FastplotlibAnimation:
         )
         low, high = animation_colormap_range(all_frames, vmin, vmax)
         scale = ColorScale(cmap, low, high, "lightgray")
+        # Computed limits leave about 1% of frames beyond each, a zero bottom
+        # none below it.
+        beyond = (vmin is None and low != 0.0, vmax is None)
 
         def clock(times: NDArray[np.float64] | None) -> _Samples:
             return _Samples(times, self._start, self._frame_of, typical)
 
-        self._title = title or plot_title(env)
+        # An unnamed environment is not titled by its layout's class name.
+        self._title = title or (plot_title(env) if env._plot_labels().name else "")
         self._names = names
         events = overlay_data.events if overlay_data else []
         epochs = overlay_data.epochs if overlay_data else []
@@ -1214,8 +1269,14 @@ class FastplotlibAnimation:
         self._field_graphics: list[FieldGraphic] = []
         self._videos: list[_Video] = []
         self._layers: list[Any] = []
-        positions: list[_Position] = []
-        for i, (plot, stack) in enumerate(zip(self._plots, stacks, strict=True)):
+        positions = [
+            (item, clock(item.times))
+            for item in (overlay_data.positions if overlay_data else [])
+        ]
+        if not with_fields and overlay_data is not None:
+            _warn_undrawn_on_a_line(overlay_data)
+        # No field panels on a 1-D environment.
+        for i, (plot, stack) in enumerate(zip(self._plots, stacks, strict=False)):
             plot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
             field = FieldGraphic(plot, env, np.asarray(stack[0], dtype=float), scale)
             self._field_graphics.append(field)
@@ -1241,14 +1302,14 @@ class FastplotlibAnimation:
                 region_alpha=region_alpha,
             )
             if i == 0:
-                draw_colorbar(plot, scale, "")
+                draw_colorbar(plot, scale, colorbar_label, beyond=beyond)
+            else:  # the same room, so the fields are drawn the same size
+                plot.docks["right"].size = COLORBAR_WIDTH
             if overlay_data is not None:
-                layers, panel_positions = _spatial_overlays(
+                self._layers += _spatial_overlays(
                     plot, overlay_data, clock, env, self._frame_of
                 )
-                self._layers += layers
-                positions = positions or panel_positions
-        self._field = self._field_graphics[0]
+        self._field = self._field_graphics[0] if self._field_graphics else None
         self._tracks: list[_PositionTime] = []
         if extents_along_track is not None:
             for name, label in zip(track_names, names, strict=True):
@@ -1269,6 +1330,12 @@ class FastplotlibAnimation:
                 _shade_epochs(self.figure[name], epochs, self._start, lines=True)
                 self._tracks.append(track)
         self._track = self._tracks[0] if self._tracks else None
+        if not with_fields:
+            # The colorbar goes on the first track; every time panel keeps
+            # the same room on the right, so their time axes line up.
+            draw_colorbar(self._plot, scale, colorbar_label, beyond=beyond)
+            for name in time_panels[1:]:
+                self.figure[name].docks["right"].size = COLORBAR_WIDTH
         unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
         self._rasters = [
             _Raster(
@@ -1291,7 +1358,8 @@ class FastplotlibAnimation:
             self._frame_of,
             self._read,
             self._show,
-            self._field.graphic,
+            # What the right-click menu shows the settings of.
+            self._field.graphic if self._field else self._tracks[0].view.cursor,
         )
         # fastplotlib has no public way to add a custom NDGraphic yet.
         self.widget[self._plot]._nd_graphics.append(frames)
@@ -1318,9 +1386,9 @@ class FastplotlibAnimation:
         self._step = step
         self.window_seconds = window_seconds
         # The panels drawn against time, each titled with the window it shows.
-        self._time_titles = [
-            (self.figure[name], self.figure[name].title.text) for name, _ in panels
-        ]
+        self._time_titles = {
+            self.figure[name]: self.figure[name].title.text for name in time_panels
+        }
         self._title_windows()
         self.figure.renderer.add_event_handler(self._key, "key_down")
         self._show(0.0, self._read(0.0))
@@ -1372,8 +1440,11 @@ class FastplotlibAnimation:
 
     def _title_windows(self) -> None:
         """Name the shared window in the title of each panel drawn against time."""
-        for subplot, title in self._time_titles:
-            subplot.title = f"{title}  \u00b7  {self.window_seconds:.3g} s window"
+        for subplot, title in self._time_titles.items():
+            subplot.title = self._windowed(title)
+
+    def _windowed(self, title: str) -> str:
+        return f"{title}  \u00b7  {self.window_seconds:.3g} s window"
 
     def _move_to(self, time: float) -> None:
         """Move the slider, and so every panel, to ``time`` on the clock."""
@@ -1406,7 +1477,8 @@ class FastplotlibAnimation:
             track.show(time, data.first, rows)
         for raster in self._rasters:
             raster.view.follow(time)
-        for field, values in zip(self._field_graphics, data.values, strict=True):
+        # No field graphics on a 1-D environment.
+        for field, values in zip(self._field_graphics, data.values, strict=False):
             field.update(values)
         for video, image in zip(self._videos, images, strict=True):
             video.show(image)
@@ -1423,7 +1495,9 @@ class FastplotlibAnimation:
             parts[0] = self._names[0]
             for plot, name in zip(self._plots[1:], self._names[1:], strict=True):
                 plot.title = name
-        self._plot.title = "  |  ".join(parts)
+        if self._plot in self._time_titles:  # a track heads the status
+            parts.append(self._windowed(self._time_titles[self._plot]))
+        self._plot.title = "  |  ".join(part for part in parts if part)
 
     def _epochs_at(self, time: float) -> list[str]:
         """Each epoch ``time`` (absolute) is in, as "ripple 3 of 120"."""

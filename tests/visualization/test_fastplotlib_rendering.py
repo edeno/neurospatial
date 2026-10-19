@@ -886,6 +886,69 @@ def test_several_fields_are_shown_side_by_side_on_one_scale(
             )
 
 
+def test_a_1d_environment_is_drawn_as_position_against_time():
+    from neurospatial.animation import BodypartOverlay, SpikeRasterOverlay
+
+    env = Environment.from_samples(np.linspace(0, 100, 200)[:, None], bin_size=5.0)
+    times = np.arange(40) * 0.1
+    fields = np.random.default_rng(0).random((40, env.n_bins))
+    with pytest.warns(UserWarning, match="body parts are not drawn"):
+        animation = env.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            overlays=[
+                BodypartOverlay(
+                    data={"nose": np.full((40, 1), 50.0)}, times=times, skeleton=None
+                ),
+                TimeSeriesOverlay(data=np.sin(times), times=times, label="lfp"),
+                SpikeRasterOverlay([times[::4]], rates=np.ones((1, env.n_bins))),
+            ],
+        )
+    names = [subplot.name for subplot in animation.figure]
+    assert names == ["track", "raster 0", "series 0", "unit"]  # no field panel
+    assert animation._field is None
+    track = animation.figure["track"]
+    assert track.title.text.startswith("t = 0.00 s")  # the status heads it
+    assert track.docks["right"].size > 0  # the colorbar
+    # One time axis, at the bottom, and no toolbars on the time panels.
+    time_panels = [animation.figure[name] for name in names[:3]]
+    assert [p.axes.x.visible for p in time_panels] == [False, False, True]
+    assert not any(p.toolbar for p in time_panels)
+    assert len({p.docks["right"].size for p in time_panels}) == 1  # aligned
+    animation.frame = 20
+    _render(animation)
+    assert (
+        animation._track.first
+        <= 20
+        < animation._track.first + len(animation._track.rows)
+    )
+
+
+def test_side_by_side_fields_are_drawn_the_same_size(apparatus, walk):
+    t, _, fields = walk
+    animation = apparatus.animate_fields(
+        [list(fields), list(fields)], frame_times=t, backend="fastplotlib"
+    )
+    first, second = animation._plots
+    assert first.docks["right"].size == second.docks["right"].size > 0
+    # Computed limits clip about 1% of frames at the top: a triangle says so.
+    triangles = [
+        g
+        for g in first.docks["right"].graphics
+        if type(g).__name__ == "MeshGraphic" and len(g.positions) == 3
+    ]
+    assert len(triangles) == 1  # the bottom is 0: nothing below it
+    explicit = apparatus.animate_fields(
+        fields, frame_times=t, backend="fastplotlib", vmin=0.0, vmax=1.0
+    )
+    assert not [
+        g
+        for g in explicit._plot.docks["right"].graphics
+        if type(g).__name__ == "MeshGraphic" and len(g.positions) == 3
+    ]
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")

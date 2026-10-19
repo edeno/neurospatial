@@ -119,6 +119,7 @@ _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
             "window_seconds",
             "layout",
             "layer_names",
+            "colorbar_label",
             "dry_run",
         }
     ),

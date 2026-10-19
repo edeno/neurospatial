@@ -737,8 +737,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   1st percentile of the frames' minima and the 99th of their maxima, instead
   of the minimum and maximum over all frames. One extreme frame no longer
   dims the whole animation; about 1% of frames reach past each limit and show
-  its color. Pass `vmin` and `vmax` to keep the old range or to compare
-  animations on one scale.
+  its color, and a bottom below a thousandth of the top is zero. Pass `vmin`
+  and `vmax` to keep the old range or to compare animations on one scale.
 - `env.plot()` draws everything the environment holds by default: declared
   walls (labeled with their names), landmarks (labeled, with the axes widened
   to show any outside the arena) and regions. `show_regions` now defaults to
@@ -1267,7 +1267,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   one frame, N and Shift+N jump between epochs and events, and `[` and `]`
   halve or double the shared time window: every panel drawn against time
   shows the animation's `window_seconds`, so they line up. Several fields can be shown side by side
-  on one color scale (`layout=`, `layer_names=`), as with napari. Frame times
+  on one color scale (`layout=`, `layer_names=`), as with napari. The panels
+  drawn against time share one time axis, at the bottom; a 1-D environment
+  is drawn as position against time without a field panel; the colorbar
+  marks clipped ends and the missing-value color (`colorbar_label=` names
+  it). Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an

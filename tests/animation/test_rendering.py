@@ -709,5 +709,8 @@ def test_animation_color_limits_ignore_a_few_extreme_frames():
     assert np.percentile(peaks, 95) < high < 0.31
     assert np.mean(np.nanmax(fields, axis=1) > high) <= 0.01 + 1 / 200
     assert animation_colormap_range(fields, -1.0, None)[0] == -1.0
+    # A posterior's floor, 1e-56, is zero; a floor near the top is kept.
+    assert animation_colormap_range(fields + 1e-56, None, None)[0] == 0.0
+    assert animation_colormap_range(fields + 0.1, None, None)[0] == pytest.approx(0.1)
     assert animation_colormap_range(np.full((3, 4), np.nan), None, None) == (0.0, 1.0)
     assert animation_colormap_range([np.full(4, 2.0)] * 3, None, None) == (1.5, 2.5)

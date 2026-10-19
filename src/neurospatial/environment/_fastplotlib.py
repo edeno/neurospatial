@@ -538,10 +538,24 @@ def draw_layers(
         draw_landmarks(subplot, env)
 
 
-def draw_colorbar(subplot: Any, scale: ColorScale, label: str) -> None:
-    """A vertical color scale, with its limits and label, docked to the right."""
+COLORBAR_WIDTH = 90  # pixels of the right dock
+
+
+def draw_colorbar(
+    subplot: Any,
+    scale: ColorScale,
+    label: str,
+    *,
+    beyond: tuple[bool, bool] = (False, False),
+) -> None:
+    """A vertical color scale, with its limits and label, docked to the right.
+
+    ``beyond`` says whether values pass the bottom and the top limit; each
+    end they pass gets a triangle in its color, as Matplotlib's ``extend``.
+    Below the bar, a swatch shows the missing-value color.
+    """
     dock = subplot.docks["right"]
-    dock.size = 90
+    dock.size = COLORBAR_WIDTH
     bar = _fans(_rectangles(*np.array([[0.0], [1.0], [0.0], [1.0]])), 4)
     # The bar runs through the colormap's rows, from the first to the last.
     bottom, top = 1.5 / len(scale.lut), (len(scale.lut) - 0.5) / len(scale.lut)
@@ -553,16 +567,34 @@ def draw_colorbar(subplot: Any, scale: ColorScale, label: str) -> None:
         cmap=scale.texture,
         clim=(0.0, 1.0),
     )
+    for passed, tip, base, color in (
+        (beyond[0], -0.08, 0.0, 0),
+        (beyond[1], 1.08, 1.0, -1),
+    ):
+        if passed:
+            dock.add_mesh(
+                np.array([[0.0, base, 0], [1.0, base, 0], [0.5, tip, 0]], np.float32),
+                np.array([[0, 1, 2]], np.uint32),
+                mode="basic",
+                colors=scale.lut[color],
+            )
     # Limits above and below the bar, where a long number has the bar's width.
-    texts = [(f"{scale.vmax:.3g}", 1.02, "bottom-center")]
-    texts += [(f"{scale.vmin:.3g}", -0.02, "top-center")]
-    texts += [(label, 1.12, "bottom-center")] if label else []
+    texts = [(f"{scale.vmax:.3g}", 1.1 if beyond[1] else 1.02, "bottom-center")]
+    texts += [(f"{scale.vmin:.3g}", -0.1 if beyond[0] else -0.02, "top-center")]
+    texts += [(label, 1.24, "bottom-center")] if label else []
+    if scale.nan_color is not None:
+        swatch = _fans(_rectangles(*np.array([[0.0], [1.0], [-0.27], [-0.2]])), 4)
+        dock.add_mesh(
+            swatch.positions, swatch.triangles, mode="basic", colors=scale.nan_color
+        )
+        texts.append(("missing", -0.28, "top-center"))
     for text, height, anchor in texts:
         dock.add_text(
             text, font_size=12, face_color="w", offset=(0.5, height, 0.0), anchor=anchor
         )
     dock.camera.maintain_aspect = False
-    dock.camera.show_rect(-0.4, 1.4, -0.12, 1.22)
+    top = 1.42 if label else 1.3
+    dock.camera.show_rect(-0.4, 1.4, -0.48 if scale.nan_color else -0.2, top)
 
 
 # --- figures --------------------------------------------------------------------

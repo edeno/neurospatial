@@ -6049,6 +6049,8 @@ class Environment(Generic[_C]):
               panel, centered on the current time
             - ``layout`` and ``layer_names`` : as for napari, for several
               fields side by side
+            - ``colorbar_label`` : str, optional
+              What the colors measure, such as "probability"
 
         Returns
         -------

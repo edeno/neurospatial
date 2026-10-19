@@ -48,7 +48,8 @@ def animation_colormap_range(
     The top of the colormap is the 99th percentile of the frames' maxima
     and the bottom the 1st percentile of their minima: about 1% of frames
     reach past each end and are drawn in its color, and a single outlier
-    frame cannot wash out the rest. A percentile of all bin values would
+    frame cannot wash out the rest. A bottom between zero and a thousandth
+    of the top is zero. A percentile of all bin values would
     not do, because a sharp posterior fills few bins: its peak would pass
     the top in every frame. Very long recordings use every n-th frame.
 
@@ -90,6 +91,8 @@ def animation_colormap_range(
     else:
         low = float(np.percentile(lows[finite], _ROBUST_PERCENTILES[0]))
         high = float(np.percentile(highs[finite], _ROBUST_PERCENTILES[1]))
+        if 0.0 <= low < 1e-3 * high:
+            low = 0.0  # a posterior's 1e-56, or a rate map's near-zero floor
         if low == high:
             low, high = low - 0.5, high + 0.5
     return (low if vmin is None else vmin), (high if vmax is None else vmax)

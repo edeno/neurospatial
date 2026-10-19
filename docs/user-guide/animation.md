@@ -429,7 +429,8 @@ one time. `[` and `]` halve or double it for all of them. A
 `TimeSeriesOverlay`'s own `window_seconds` is used by the other backends.
 
 On a track (`Environment.linear_track`, `from_graph`, or any 1-D environment)
-the fields are also drawn against time: position along the track on the y axis,
+the fields are also drawn against time (a 1-D environment has no other
+panel for them: the track panel takes the field panel's place): position along the track on the y axis,
 time on the x axis, over `window_seconds` (default 2 s) around the current time.
 This is the usual way to read a decoded posterior on a linear track:
 
@@ -538,7 +539,11 @@ about 1% of frames reach past the top and show its color, so a single noisy
 frame cannot dim the rest. They are percentiles of each frame's extremes, not
 of all values: a sharp posterior covers few bins, and a percentile of all
 values would put the top below its peak in every frame. Pass `vmin` and `vmax`
-to compare animations on one scale.
+to compare animations on one scale. A bottom between zero and a thousandth of
+the top, such as a posterior's 1e-56, is zero. In the fastplotlib backend a
+triangle at an end of the colorbar shows that values pass it, a swatch below
+shows the missing-value color, and `colorbar_label=` names what the colors
+measure.
 
 Some parameters apply only to some backends:
 
