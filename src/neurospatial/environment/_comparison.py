@@ -29,6 +29,8 @@ from neurospatial.geometry import (
 )
 
 if TYPE_CHECKING:
+    from scipy import sparse
+
     from neurospatial.environment.core import Environment
     from neurospatial.geometry import Arena, Binning, RectilinearGrid, SpatialBins
 
@@ -45,7 +47,8 @@ class _EnvironmentDifferences(NamedTuple):
         ``"bin-boundary ownership"`` or ``"cell shapes"``.
     topology : str or None
         First difference in how the space is connected:
-        ``"weighted connectivity"`` or ``"continuous arena or physical walls"``.
+        ``"weighted connectivity"``, ``"continuous arena or physical walls"``
+        or ``"smoothing conductances between neighboring bins"``.
     """
 
     bins: str | None
@@ -81,6 +84,12 @@ def _environment_differences(
     hexagons, or grid boxes, axis-aligned or in an affine frame). Bins
     without recorded cells, such as explicit point bins or track bins, are
     compared by center and measure only.
+
+    Smoothing passes a field between neighbors through conductances (face
+    area over distance), which the connectivity graph does not hold: two
+    environments with the same bins, neighbors, distances and arena can
+    smooth differently. Their conductances are compared too, and an
+    environment that cannot smooth differs from one that can.
     """
     if first is second:
         return _EnvironmentDifferences(None, None)
@@ -206,7 +215,28 @@ def _topology_difference(first: Environment, second: Environment) -> str | None:
         return "weighted connectivity"
     if not _same_arena(first._arena, second._arena):
         return "continuous arena or physical walls"
+    if not _same_conductances(_conductances(first), _conductances(second)):
+        return "smoothing conductances between neighboring bins"
     return None
+
+
+def _conductances(env: Environment) -> sparse.csr_matrix | None:
+    """Smoothing conductances between bins, or None when ``env`` cannot smooth."""
+    try:
+        return env._diffusion_geometry.W
+    except NotImplementedError:
+        return None
+
+
+def _same_conductances(
+    first: sparse.csr_matrix | None, second: sparse.csr_matrix | None
+) -> bool:
+    """Whether both conductance matrices are missing or exactly equal."""
+    if first is None or second is None:
+        return first is None and second is None
+    if first.shape != second.shape:
+        return False
+    return bool((first != second).nnz == 0)
 
 
 def _mapped_topology_difference(

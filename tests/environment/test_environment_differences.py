@@ -8,6 +8,7 @@ answers are reported separately.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from uuid import uuid4
 
@@ -286,6 +287,50 @@ def test_a_rotated_grid_cell_differs_from_an_axis_aligned_one() -> None:
     np.testing.assert_array_equal(square.bin_centers, diamond.bin_centers)
     np.testing.assert_array_equal(square.bin_sizes, diamond.bin_sizes)
     assert _environment_differences(square, diamond).bins == "cell shapes"
+
+
+_FACES = "smoothing conductances between neighboring bins"
+
+
+def _three_bins_in_a_row(second_face_area: float) -> Environment:
+    """Bins 10 units apart whose second face has the given area."""
+    centers = np.array([(0.0, 0.0), (10.0, 0.0), (20.0, 0.0)])
+    sizes = np.full(3, 100.0)
+    pairs = np.array([[0, 1], [1, 2]])
+    return Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(centers, sizes, 2),
+            BinConnections.from_arrays(pairs, [10.0, 10.0]),
+            NearestBinLocator(centers, max_distance=5.0),
+            KnownFaces(
+                FaceGeometry(pairs, [10.0, second_face_area], [10.0, 10.0], sizes)
+            ),
+        ),
+        arena=OpenArena(box(-5, -5, 25, 5)),
+    )
+
+
+def test_different_faces_between_the_same_bins_are_a_topology_difference() -> None:
+    # Same bins, neighbors, distances and arena; a narrower second face
+    # passes less of a field between bins 1 and 2 when smoothing.
+    wide, narrow = _three_bins_in_a_row(10.0), _three_bins_in_a_row(2.0)
+    field = np.array([0.0, 1.0, 0.0])
+    smoothed = [
+        env.diffuse(field, bandwidth=5.0, mode="average") for env in (wide, narrow)
+    ]
+    assert not np.allclose(*smoothed)
+    assert _environment_differences(wide, narrow) == (None, _FACES)
+
+
+def test_faces_present_in_only_one_environment_are_a_topology_difference() -> None:
+    wide = _three_bins_in_a_row(10.0)
+    without = Environment.from_bins(
+        replace(wide.binning, faces=MissingFaces("no cell faces for a test")),
+        arena=wide.arena,
+    )
+    assert _environment_differences(wide, without) == (None, _FACES)
+    assert _environment_differences(without, without.with_metadata()) == (None, None)
 
 
 def _rotated_grid() -> Environment:
