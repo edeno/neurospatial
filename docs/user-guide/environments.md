@@ -860,6 +860,9 @@ or a sketch of the rig before analyzing: a wall on the wrong side or a cue in
 the wrong corner shows up here, but not in a rate map. It draws a
 hundred-thousand-bin grid in about a second. `show_walls=False`,
 `show_landmarks=False` and `show_regions=False` hide each layer.
+`env.plot(backend="fastplotlib")` draws the same picture on the GPU, where you
+can pan, zoom and rotate a 3-D environment, in Jupyter or from a remote GPU
+server; see [the fastplotlib backend](animation.md#fastplotlib-backend-gpu-local-or-remote).
 
 <!-- docs-test: run -->
 ```python

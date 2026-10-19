@@ -72,6 +72,7 @@ Choose the right backend for your workflow:
 | **Video** | Presentations, publications, archival | Unlimited | `ffmpeg` (system) | .mp4, .webm, .avi |
 | **HTML** | Sharing standalone files, web embedding | 500 | None | .html |
 | **Widget** | Jupyter notebooks, interactive analysis | ~1000** | `ipywidgets` | Interactive widget |
+| **Fastplotlib** | Fast scrubbing in Jupyter, also on a remote GPU server; 3-D environments | Unlimited | `neurospatial[fastplotlib]`, a GPU | Interactive figure |
 
 \* Limited only by disk space (lazy loading with LRU cache)
 \** Pre-renders first 500 frames, rest on-demand
@@ -84,6 +85,10 @@ Choose the right backend for your workflow:
 | **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Fastplotlib** | ✓ | ✓ | ✓ | ✗ | ✓ |
+
+Fastplotlib also draws event overlays, walls and landmarks; it skips video,
+time-series and object-vector overlays with a warning.
 
 See [Animation Overlays](../animation_overlays.md) for detailed overlay documentation including VideoOverlay calibration.
 
@@ -370,6 +375,43 @@ uv add ipywidgets
 jupyter labextension install @jupyter-widgets/jupyterlab-manager
 ```
 
+## Fastplotlib Backend (GPU, local or remote)
+
+Draws each frame on the GPU when it is shown, so a long recording starts at
+once and scrubbing stays fast: a frame of a 2,600-bin arena with position,
+pose, heading and event overlays updates in about 5 ms. It draws each bin's
+own cell (grids, hexagons, triangles, clipped polygons) and 3-D environments
+as points whose opacity follows the value, so the high values show through the
+volume. `backend="auto"` never chooses it.
+
+```bash
+pip install "neurospatial[fastplotlib]"   # Python 3.11 or newer
+```
+
+```python
+animation = env.animate_fields(
+    fields,
+    frame_times=frame_times,
+    backend="fastplotlib",
+    overlays=[PositionOverlay(positions=positions, times=times, trail_length=30)],
+)
+animation  # in Jupyter: the figure, a play button and a slider
+```
+
+In Jupyter the frames are rendered on the machine running the kernel and
+streamed to the browser as images, so the GPU does not have to be on your
+laptop; see [Remote Server Workflow](#remote-server-workflow). Outside Jupyter,
+`animation.show()` opens a window (in a script, follow it with
+`fastplotlib.loop.run()`): space plays and pauses, the arrow keys step one
+frame, Home and End jump to the ends. `animation.frame = 120` shows a frame
+from code, and `animation.figure` is the fastplotlib figure, for adding your
+own graphics.
+
+`env.plot(backend="fastplotlib")` and `env.plot_field(field,
+backend="fastplotlib")` draw a single picture the same way, including 3-D
+environments, which Matplotlib cannot draw; call `.show()` on the returned
+figure.
+
 ## Common Parameters
 
 Every backend uses these parameters:
@@ -616,6 +658,23 @@ env.animate_fields(
 ## Remote Server Workflow
 
 When working on a remote server without display:
+
+### Option 0: Jupyter on the GPU server, with fastplotlib
+
+Run Jupyter on the server, reach it through an SSH tunnel, and use
+`backend="fastplotlib"`. The figure renders on the server's GPU and streams to
+your browser, with the play button and slider working as on a local machine.
+
+```bash
+# On the server
+jupyter lab --no-browser --port 8888
+# On your laptop, then open http://localhost:8888
+ssh -N -L 8888:localhost:8888 user@server
+```
+
+VS Code's remote Jupyter works the same way. To save a picture without a
+browser, set `RENDERCANVAS_FORCE_OFFSCREEN=1` before importing fastplotlib and
+read `figure.canvas.draw()` as an RGBA array.
 
 ### Option 1: HTML Export
 

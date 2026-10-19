@@ -5859,7 +5859,9 @@ class Environment(Generic[_C]):
         fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
         *,
         frame_times: NDArray[np.float64],
-        backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
+        backend: Literal[
+            "auto", "napari", "video", "html", "widget", "fastplotlib"
+        ] = "auto",
         save_path: str | None = None,
         overwrite: bool | None = None,
         speed: float = 1.0,
@@ -5895,13 +5897,17 @@ class Environment(Generic[_C]):
             - List of arrays: Each array shape (n_bins,) represents one frame
             - Single ndarray: Shape (n_frames, n_bins) with first dimension as time
             Each field must match the number of bins in this environment.
-        backend : {"auto", "napari", "video", "html", "widget"}, default="auto"
+        backend : {"auto", "napari", "video", "html", "widget", "fastplotlib"}, default="auto"
             Animation backend to use:
             - "auto": Automatically selects based on context and data size
             - "napari": GPU-accelerated interactive viewer (best for large datasets)
             - "video": Export MP4/WebM with parallel rendering (best for publications)
             - "html": Standalone HTML player with instant scrubbing (best for sharing)
             - "widget": Jupyter widget with slider control (best for notebooks)
+            - "fastplotlib": GPU drawing in Jupyter, including from a remote
+              GPU server, or a desktop window; 2-D and 3-D environments.
+              ``"auto"`` never chooses it. ``pip install
+              "neurospatial[fastplotlib]"`` (Python 3.11 or newer).
         save_path : str, optional
             Output file path. If provided, file extension determines format:
             - .mp4, .webm, .avi, .mov: video export (requires ffmpeg)
@@ -6040,6 +6046,8 @@ class Environment(Generic[_C]):
             - video: Path to saved video file
             - html: Path to saved HTML file
             - widget: ipywidgets.interact instance (displays automatically in notebook)
+            - fastplotlib: FastplotlibAnimation (displays itself in Jupyter;
+              elsewhere call ``.show()``)
 
         Raises
         ------

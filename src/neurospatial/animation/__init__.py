@@ -9,6 +9,8 @@ Available backends:
 - Video (MP4): Parallel video export (publications, presentations)
 - HTML: Standalone interactive files (sharing, remote viewing)
 - Jupyter Widget: Notebook integration (quick exploration)
+- Fastplotlib: GPU drawing in Jupyter (also from a remote GPU server) or a
+  desktop window, for 2-D and 3-D environments
 
 Public API
 ----------
@@ -16,6 +18,8 @@ PositionOverlay, BodypartOverlay, HeadDirectionOverlay, ObjectVectorOverlay : cl
     Sample-aligned spatial overlays.
 EventOverlay, TimeSeriesOverlay, VideoOverlay : class
     Discrete events, scalar signals and calibrated video overlays.
+FastplotlibAnimation : class
+    The interactive animation ``animate_fields(backend="fastplotlib")`` returns.
 ScaleBarConfig : class
     Scale-bar settings shared by renderers.
 Skeleton : class
@@ -27,6 +31,7 @@ subsample_frames, estimate_colormap_range_from_subset, large_session_napari_conf
 """
 
 from neurospatial.animation._video_io import _VideoReader as _VideoReader
+from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
 from neurospatial.animation.calibration import calibrate_video
 from neurospatial.animation.config import ScaleBarConfig
 from neurospatial.animation.core import (
@@ -58,6 +63,7 @@ __all__: list[str] = [
     "SIMPLE_SKELETON",
     "BodypartOverlay",
     "EventOverlay",
+    "FastplotlibAnimation",
     "HeadDirectionOverlay",
     "ObjectVectorOverlay",
     "PositionOverlay",

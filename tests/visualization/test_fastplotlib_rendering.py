@@ -1,4 +1,4 @@
-"""plot and plot_field with backend="fastplotlib", rendered off-screen.
+"""plot, plot_field and animate_fields with backend="fastplotlib", rendered off-screen.
 
 Skipped without fastplotlib (``pip install "neurospatial[fastplotlib]"``) or a
 GPU adapter.
@@ -7,6 +7,7 @@ GPU adapter.
 from __future__ import annotations
 
 import os
+import warnings
 
 # Render into memory: no window, and the same in a terminal, on CI or over SSH.
 os.environ.setdefault("RENDERCANVAS_FORCE_OFFSCREEN", "1")
@@ -27,6 +28,10 @@ if _ADAPTER is None:
     pytest.skip("no GPU adapter for fastplotlib", allow_module_level=True)
 
 from neurospatial import Environment  # noqa: E402
+from neurospatial.animation import EventOverlay, PositionOverlay  # noqa: E402
+from neurospatial.animation.backends.fastplotlib_backend import (  # noqa: E402
+    FastplotlibAnimation,
+)
 from neurospatial.arena import OpenArena  # noqa: E402
 from neurospatial.landmarks import Landmark, Landmarks  # noqa: E402
 
@@ -106,3 +111,87 @@ def test_matplotlib_options_are_refused_and_unknown_backends_named(apparatus):
         )
     with pytest.raises(ValueError, match="Unknown backend 'plotly'"):
         apparatus.plot(backend="plotly")
+
+
+@pytest.fixture
+def walk(apparatus):
+    n = 120
+    t = np.arange(n) / 30.0
+    path = np.c_[20 + 10 * np.cos(t), 20 + 10 * np.sin(t)]
+    fields = np.exp(
+        -np.sum((apparatus.bin_centers[None] - path[:, None]) ** 2, axis=2) / 30
+    )
+    return t, path, fields
+
+
+def test_animation_moves_the_overlays_with_the_frame(apparatus, walk):
+    t, path, fields = walk
+    events = EventOverlay(
+        event_times=t[[10, 50]], event_positions=path[[10, 50]], decay_frames=5
+    )
+    animation = apparatus.animate_fields(
+        fields,
+        frame_times=t,
+        backend="fastplotlib",
+        overlays=[PositionOverlay(positions=path, times=t, trail_length=10), events],
+    )
+    assert isinstance(animation, FastplotlibAnimation)
+    assert animation._fields is fields  # an array is read a frame at a time
+    animation.show()
+    position, event_layer = animation._layers
+    for frame, shown in ((10, True), (14, True), (16, False), (50, True)):
+        animation.frame = frame
+        np.testing.assert_allclose(position.marker.data[0, :2], path[frame], rtol=1e-6)
+        visible = np.isfinite(event_layer.kinds[0][3].data[:][:, 0])
+        assert visible.any() == shown
+    assert animation._plot.title.text.endswith(f"t = {t[50]:.2f} s")
+
+
+def test_keys_and_clock_drive_playback(apparatus, walk, monkeypatch):
+    t, _, fields = walk
+    animation = apparatus.animate_fields(
+        fields, frame_times=t, backend="fastplotlib", speed=1.0
+    )
+
+    class Key:
+        def __init__(self, key):
+            self.key = key
+
+    animation._on_key(Key("End"))
+    assert animation.frame == animation.n_frames - 1
+    animation._on_key(Key("ArrowLeft"))
+    assert animation.frame == animation.n_frames - 2
+    animation._on_key(Key("Home"))
+    assert animation.frame == 0
+
+    clock = iter([100.0, 100.5])
+    monkeypatch.setattr(
+        "neurospatial.animation.backends.fastplotlib_backend.time.perf_counter",
+        lambda: next(clock),
+    )
+    animation._on_key(Key(" "))  # play, starting the clock at 100 s
+    animation._advance()  # half a second later
+    assert animation.frame == int(0.5 * animation.fps)
+
+
+def test_unsupported_overlays_are_skipped_with_a_warning(apparatus, walk):
+    from neurospatial.animation import TimeSeriesOverlay
+
+    t, _, fields = walk
+    series = TimeSeriesOverlay(data=np.sin(t), times=t, label="speed")
+    with pytest.warns(UserWarning, match="does not draw time-series overlays"):
+        apparatus.animate_fields(
+            fields, frame_times=t, backend="fastplotlib", overlays=[series]
+        )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")
+
+
+def test_dry_run_reports_without_drawing(apparatus, walk, capsys):
+    t, _, fields = walk
+    result = apparatus.animate_fields(
+        fields, frame_times=t, backend="fastplotlib", dry_run=True
+    )
+    assert result is None
+    assert f"{len(t):,} frames of {apparatus.n_bins:,} bins" in capsys.readouterr().err

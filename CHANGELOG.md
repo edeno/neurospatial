@@ -1226,16 +1226,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
-- `backend="fastplotlib"` for `env.plot` and `env.plot_field` draws on the
-  GPU (`pip install "neurospatial[fastplotlib]"`, Python 3.11 or newer). Each
-  bin is drawn as its own cell (grid, hexagon, triangle or clipped polygon)
-  or, for tracks and 3-D environments, a point the size of a bin; 3-D fields
-  fade low values so the high ones show through the volume. Missing bins keep
-  their own color rather than the colormap's top color. Inside Jupyter the
-  figure renders on the machine running the kernel and streams to the
-  browser, so it works on a remote GPU server. Matplotlib stays the default
-  and returns an `Axes`; with `backend="fastplotlib"` the methods return the
-  fastplotlib figure, and Matplotlib-only options raise a `TypeError`.
+- `backend="fastplotlib"` for `env.plot`, `env.plot_field` and
+  `env.animate_fields` draws on the GPU (`pip install
+  "neurospatial[fastplotlib]"`, Python 3.11 or newer). Each bin is drawn as
+  its own cell (grid, hexagon, triangle or clipped polygon) or, for tracks
+  and 3-D environments, a point the size of a bin; 3-D fields fade low values
+  so the high ones show through the volume. Missing bins keep their own color
+  rather than the colormap's top color. Inside Jupyter the figure renders on
+  the machine running the kernel and streams to the browser, so it works on a
+  remote GPU server through an SSH tunnel. Animations draw position, pose,
+  head direction, events, regions, walls and landmarks, update a frame in
+  about 5 ms, and have a play button and slider in Jupyter or keyboard
+  controls in a window; `animate_fields` returns a `FastplotlibAnimation`.
+  `plot` and `plot_field` keep Matplotlib as the default and return an
+  `Axes` for it; with `backend="fastplotlib"` they return the fastplotlib
+  figure, and Matplotlib-only options raise a `TypeError`.
 
 - Landmarks: named cues, monitors, objects and reward ports, stored with the
   environment. `env.with_landmarks(Landmarks([Landmark("monitor", "line",
