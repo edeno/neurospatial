@@ -113,6 +113,7 @@ def test_polygon_grid_outlines_its_polygon():
     assert outline.get_edgecolor()[:3] == (0.0, 0.0, 0.0)
 
 
+@pytest.mark.slow
 @pytest.mark.wallclock
 def test_a_hundred_thousand_bins_draw_in_seconds():
     env = Environment.from_samples(
