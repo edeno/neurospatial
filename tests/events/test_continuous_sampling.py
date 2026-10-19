@@ -22,6 +22,7 @@ def _sample(
     queries,
     *,
     interpolation="linear",
+    kind="linear",
     max_gap=0.5,
     epochs=None,
     break_before=None,
@@ -29,9 +30,11 @@ def _sample(
     """Resolve support for one feature, then sample it at ``queries``."""
     times = np.asarray(times, dtype=float)
     with warnings.catch_warnings():
-        # Sparse clocks trip the shared "times may not be in seconds" warning,
-        # which is not what these tests check.
-        warnings.simplefilter("ignore", UserWarning)
+        # Sparse clocks trip the shared "times are probably not in seconds"
+        # warning, which is not what these tests check.
+        warnings.filterwarnings(
+            "ignore", message=r".*probably not in seconds", category=UserWarning
+        )
         t, sig, (support,) = validated_signals(
             times,
             np.asarray(values, dtype=float),
@@ -48,6 +51,7 @@ def _sample(
         support,
         np.asarray(queries, dtype=float),
         interpolation=interpolation,
+        kind=kind,
         epochs=as_intervals(epochs, name="epochs"),
     )
 
@@ -105,6 +109,7 @@ def test_circular_takes_shorter_arc_across_pi():
         np.deg2rad([179.0, -179.0]),
         [0.5],
         interpolation="circular",
+        kind="circular",
         max_gap=None,
     )
     assert support.all()
@@ -113,17 +118,40 @@ def test_circular_takes_shorter_arc_across_pi():
 
 def test_circular_exact_half_turn_goes_negative():
     values, _ = _sample(
-        [0.0, 1.0], [0.0, np.pi], [0.5], interpolation="circular", max_gap=None
+        [0.0, 1.0],
+        [0.0, np.pi],
+        [0.5],
+        interpolation="circular",
+        kind="circular",
+        max_gap=None,
     )
     assert values[0] == pytest.approx(-np.pi / 2, abs=1e-12)
 
 
 def test_circular_exact_sample_is_wrapped():
     values, support = _sample(
-        [0.0, 1.0], [3 * np.pi / 2, 0.0], [0.0], interpolation="circular"
+        [0.0, 1.0],
+        [3 * np.pi / 2, 0.0],
+        [0.0],
+        interpolation="circular",
+        kind="circular",
     )
     assert support.all()
     assert values[0] == pytest.approx(-np.pi / 2, abs=1e-12)
+
+
+def test_circular_previous_is_wrapped():
+    # Holding the previous sample must still report a wrapped angle.
+    values, support = _sample(
+        [0.0, 1.0],
+        [3 * np.pi / 2, 3 * np.pi / 2],
+        [0.0, 0.5],
+        interpolation="previous",
+        kind="circular",
+        max_gap=None,
+    )
+    assert support.all()
+    np.testing.assert_allclose(values, [-np.pi / 2, -np.pi / 2], rtol=0, atol=1e-12)
 
 
 def test_never_bridges_a_gap():
@@ -205,6 +233,17 @@ def test_epoch_stop_instant_is_unsupported():
     values, support = _sample(QUARTERS, QUARTERS, [1.0, 0.75, 0.8], epochs=[[0, 1.0]])
     np.testing.assert_array_equal(support, [False, True, True])
     assert np.isnan(values[0])
+
+
+def test_epoch_edge_between_samples():
+    # The epoch [0.1, 1.6) cuts the intervals [0, 0.25) and [1.5, 1.75), so
+    # neither is usable; the sample at 1.5 is still observed inside the epoch.
+    values, support = _sample(
+        QUARTERS, QUARTERS, [0.2, 1.55, 1.5, 0.3], epochs=[[0.1, 1.6]]
+    )
+    np.testing.assert_array_equal(support, [False, False, True, True])
+    assert np.isnan(values[:2]).all()
+    np.testing.assert_allclose(values[2:], [1.5, 0.3], atol=1e-12)
 
 
 def test_exact_sample_outside_epochs_is_unsupported():

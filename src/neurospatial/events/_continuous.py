@@ -364,6 +364,7 @@ def _sample_feature(
     queries: NDArray[np.float64],
     *,
     interpolation: str,
+    kind: str,
     epochs: NDArray[np.float64] | None,
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
     """Sample one feature at arbitrary times, only where it was observed.
@@ -387,9 +388,11 @@ def _sample_feature(
         Absolute query times in seconds.
     interpolation : {"linear", "circular", "previous"}
         ``"linear"``: straight line between the bracketing samples.
-        ``"circular"``: shorter arc in radians, result in ``[-pi, pi)``; an
-        exact half-turn goes the negative way. ``"previous"``: the value of
-        the preceding sample.
+        ``"circular"``: shorter arc in radians; an exact half-turn goes the
+        negative way. ``"previous"``: the value of the preceding sample.
+    kind : {"linear", "circular", "categorical"}
+        The feature's value kind. Every sampled value of a circular feature is
+        wrapped to ``[-pi, pi)``, whatever the interpolation.
     epochs : ndarray of float64, shape (n_epochs, 2), or None
         Sorted, merged ``[start, stop)`` rows (from ``as_intervals``), the same
         epochs used to resolve ``support``. They gate exact-time queries,
@@ -419,10 +422,7 @@ def _sample_feature(
         between &= support.interval_mask[np.clip(k, 0, n_samples - 2)]
 
     sampled = np.full(q.shape, np.nan)
-    point_values = values[k[at_sample]]
-    sampled[at_sample] = (
-        _wrap(point_values) if interpolation == "circular" else point_values
-    )
+    sampled[at_sample] = values[k[at_sample]]
 
     left = k[between]
     x0 = values[left]
@@ -432,11 +432,13 @@ def _sample_feature(
         weight = (q[between] - times[left]) / (times[left + 1] - times[left])
         step = values[left + 1] - x0
         if interpolation == "circular":
-            sampled[between] = _wrap(x0 + weight * _wrap(step))
+            sampled[between] = x0 + weight * _wrap(step)
         elif interpolation == "linear":
             sampled[between] = x0 + weight * step
         else:
             raise ValueError(f"unknown interpolation {interpolation!r}")
 
     supported: NDArray[np.bool_] = at_sample | between
+    if kind == "circular":
+        sampled[supported] = _wrap(sampled[supported])
     return sampled, supported
