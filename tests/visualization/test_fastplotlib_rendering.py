@@ -770,6 +770,25 @@ def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
     assert animation._track.window == pytest.approx(0.5)
 
 
+def test_a_tracks_segments_are_bounded_and_named(track, decoded):
+    times, _, fields = decoded
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            fields[:20], frame_times=times[:20], backend="fastplotlib"
+        )
+    panel = animation.figure["track"]
+    (bounds,) = [g for g in panel.graphics if type(g).__name__ == "InfLineGraphic"]
+    # Segment 0-1 stops at 30 cm, then 10 cm of spacing to 1-2.
+    np.testing.assert_allclose(np.sort(bounds.data[:]), [30.0, 40.0])
+    names = [(label.text, middle) for label, middle in animation._track.labels]
+    assert names == [("0\u20131", 15.0), ("1\u20132", 55.0)]
+    animation.frame = 10
+    _render(animation)
+    (label, _), _ = animation._track.labels
+    assert label.offset[0] == pytest.approx(times[10] - 1.0)  # the window's left
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")

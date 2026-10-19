@@ -456,6 +456,29 @@ def track_extents(
     return None
 
 
+def track_segments(env: Environment) -> list[tuple[str, float, float]]:
+    """Each segment of a linearized track: its name, start and stop along it.
+
+    A segment is named by its nodes, such as ``"center–left"``. Empty off a
+    linearized track.
+    """
+    linearization = env._binning.linearization
+    if linearization is None:
+        return []
+    graph, spacing = linearization.graph, linearization.edge_spacing
+    segments = []
+    start = float(linearization.grid_edges[0][0])
+    for k, (u, v) in enumerate(linearization.edge_order):
+        ends = np.array([graph.nodes[u]["pos"], graph.nodes[v]["pos"]])
+        length = float(
+            graph.edges[u, v].get("distance", np.linalg.norm(ends[1] - ends[0]))
+        )
+        segments.append((f"{u}\u2013{v}", start, start + length))
+        gap = spacing if isinstance(spacing, float) else spacing[k : k + 1]
+        start += length + float(np.sum(gap))
+    return segments
+
+
 def track_position(
     env: Environment, positions: NDArray[np.float64]
 ) -> NDArray[np.float64]:
@@ -534,6 +557,26 @@ class _PositionTime:
         self.lines: list[Any] = []
         self.view = _TimeWindow(subplot, window, move_to)
         self.set_window(window)
+        # Segment boundaries, and each segment's name at the window's left.
+        segments = track_segments(env) if env.is_linearized_track else []
+        self.labels = []
+        if len(segments) > 1:
+            bounds = np.unique([end for _, *ends in segments for end in ends])
+            subplot.add_inf_line(
+                bounds[1:-1], axis="y", colors=_SEGMENT_COLOR, thickness=1.0
+            )
+            self.labels = [
+                (
+                    subplot.add_text(
+                        name,
+                        font_size=12,
+                        face_color=_SEGMENT_COLOR,
+                        anchor="middle-left",
+                    ),
+                    (low + high) / 2,
+                )
+                for name, low, high in segments
+            ]
         subplot.title = self.axis
         subplot.y_range = (float(self.lower.min()), float(self.upper.max()))
 
@@ -625,6 +668,8 @@ class _PositionTime:
             points = np.full((len(line.data), 2), np.nan)
             points[: len(shown)] = np.column_stack([times, track[shown]])
             line.data = xyz(points)
+        for label, middle in self.labels:
+            label.offset = (time - half, middle, 1.0)
         self.view.follow(time)
 
     def describe(self, pick_info: dict[str, Any]) -> str:
@@ -643,6 +688,7 @@ class _PositionTime:
 
 
 _SELECTED_COLOR = "orange"
+_SEGMENT_COLOR = "lightgray"
 
 
 class _UnitRates:
@@ -662,6 +708,12 @@ class _UnitRates:
                 colors=_SELECTED_COLOR,
                 thickness=2,
             )
+            segments = track_segments(env) if env.is_linearized_track else []
+            if len(segments) > 1:
+                bounds = np.unique([end for _, *ends in segments for end in ends])
+                subplot.add_inf_line(
+                    bounds[1:-1], axis="x", colors=_SEGMENT_COLOR, thickness=1.0
+                )
             subplot.camera.maintain_aspect = False
         else:
             self.field = FieldGraphic(

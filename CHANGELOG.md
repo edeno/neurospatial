@@ -1254,7 +1254,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`linear_track`, `from_graph` or a 1-D environment) the fields are also
   drawn as position along the track against time, over `window_seconds`
   around the current time, with position overlays as lines: the usual view of
-  a decoded posterior. `SpikeRasterOverlay` draws many units' spikes as a
+  a decoded posterior; on a maze, lines mark where segments meet and each
+  is named by its nodes. `SpikeRasterOverlay` draws many units' spikes as a
   raster beside the field on the same clock, rows in a chosen order (by
   place-field peak, say); with `rates=`, clicking a unit's row shows its rate
   map under the field. Other backends skip it with a warning. Position,

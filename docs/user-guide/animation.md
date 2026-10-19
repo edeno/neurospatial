@@ -447,7 +447,9 @@ its frame's time and lasts until the next frame, as the field panel holds it,
 so the cursor always sits in the column the field panel shows; across a
 recording gap the column ends after one typical frame interval and the gap
 stays empty. On a track built from several segments, the spacing between them
-(`edge_spacing`) stays empty too. Hovering over a cell shows its time,
+(`edge_spacing`) stays empty too, lines mark where segments meet, and each
+segment is named by its nodes ("center–left") at the left of the panel, so a
+W-track or T-maze posterior can be read by arm. Hovering over a cell shows its time,
 position and value; drag the cursor to move every panel.
 
 A `SpikeRasterOverlay` draws each unit's spikes as a row of ticks beside the
