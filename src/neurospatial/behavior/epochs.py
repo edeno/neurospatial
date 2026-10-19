@@ -468,11 +468,39 @@ class LabelEpochsResult(
         return read_only_copy(rows)
 
     def __iter__(self) -> Iterator[Hashable]:
-        """Iterate over labels in the order of their first retained interval."""
+        """Iterate over labels in the order of their first retained interval.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.behavior import labels_to_epochs
+        >>> times = np.arange(5) * 0.25
+        >>> conditions = labels_to_epochs(times, ["b", "b", "a", "a", "b"])
+        >>> for label in conditions:
+        ...     print(label, conditions[label].tolist())
+        b [[0.0, 0.5]]
+        a [[0.5, 1.0]]
+        """
         return iter(self.labels)
 
     def __len__(self) -> int:
-        """Number of labels with at least one epoch."""
+        """Number of labels with at least one epoch.
+
+        A label whose intervals were all left out is not counted; it is in
+        ``unsupported_labels``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.behavior import labels_to_epochs
+        >>> times = np.arange(5) * 0.25
+        >>> valid = np.array([True, True, True, False, True])
+        >>> conditions = labels_to_epochs(times, ["a", "a", "b", "c", "c"], valid=valid)
+        >>> len(conditions)
+        1
+        >>> conditions.unsupported_labels
+        ('b', 'c')
+        """
         return len(self.labels)
 
     def __eq__(self, other: object) -> bool:
