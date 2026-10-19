@@ -13,6 +13,10 @@ from ._flagship import FLAGSHIP, NWB_FLAGSHIP, resolve
 _ALLOWED_SKIP = re.compile(r"backend\s*=\s*[\"'](napari|video|fastplotlib)[\"']")
 
 
+# Flagship objects whose examples need an optional dependency.
+_REQUIRES = {"neurospatial.Environment.animate_fields": "ipywidgets"}
+
+
 def _run_examples(dotted: str) -> None:
     obj = resolve(dotted)
     module = sys.modules[obj.__name__ if inspect.ismodule(obj) else obj.__module__]
@@ -44,6 +48,8 @@ def _run_examples(dotted: str) -> None:
 
 @pytest.mark.parametrize("dotted", FLAGSHIP)
 def test_flagship_docstring_examples_run(dotted, monkeypatch, tmp_path):
+    if dotted in _REQUIRES:
+        pytest.importorskip(_REQUIRES[dotted])
     monkeypatch.chdir(tmp_path)
     _run_examples(dotted)
 

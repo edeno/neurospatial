@@ -120,3 +120,23 @@ def test_population_silence_during_rest(continuous_recording):
             min_speed=1,
             warn_on_drop=False,
         )
+
+
+def test_boundary_vector_population_silence_warns_at_caller(continuous_recording):
+    from neurospatial.encoding import compute_boundary_vector_rates
+
+    r = continuous_recording
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        compute_boundary_vector_rates(
+            r.env,
+            [np.array([])] * 5,
+            r.times,
+            r.positions,
+            direction_frame="allocentric",
+            boundary_source="analysis",
+        )
+    silence = [w for w in caught if str(w.message).startswith("All ")]
+    assert len(silence) == 1
+    assert "All 5 units are silent" in str(silence[0].message)
+    assert silence[0].filename == __file__
