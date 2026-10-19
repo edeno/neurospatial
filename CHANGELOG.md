@@ -145,8 +145,9 @@
   repeated timestamps and empty input raise. Recordings without missing rows
   give the same values as before wherever something was observed.
 
-  `head_sweep_from_positions`, `compute_vte_trial`, `compute_vte_session` and
-  `pre_decision_heading_stats` raise on `positions` with fewer than two
+  `head_sweep_from_positions`, `compute_vte_trial`, `compute_vte_session`,
+  `pre_decision_heading_stats`, `compute_pre_decision_metrics` and
+  `compute_decision_analysis` raise on `positions` with fewer than two
   columns, whatever the number of samples, because a heading needs both x
   and y. A 1-D input of one sample used to return `0.0` (head sweep and
   trial speeds) or `nan` (heading statistics), and a 1-D session whose

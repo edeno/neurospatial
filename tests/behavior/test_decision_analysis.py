@@ -1084,3 +1084,35 @@ def test_heading_stats_one_dimensional_positions_raise(n_samples):
     match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
     with pytest.raises(ValueError, match=match):
         pre_decision_heading_stats(times, 10 * times, min_speed=1.0)
+
+
+@pytest.mark.parametrize("n_samples", [1, 30])
+@pytest.mark.parametrize(
+    "name", ["compute_pre_decision_metrics", "compute_decision_analysis"]
+)
+def test_decision_functions_one_dimensional_positions_raise(
+    t_maze_environment, name, n_samples
+):
+    """A heading needs x and y, so 1-D positions raise, naming the passed shape."""
+    from neurospatial.behavior import (
+        compute_decision_analysis,
+        compute_pre_decision_metrics,
+    )
+
+    times = np.arange(n_samples) / 10
+    calls = {
+        "compute_pre_decision_metrics": lambda p: compute_pre_decision_metrics(
+            times, p, 2.0, 1.0, min_speed=1.0
+        ),
+        "compute_decision_analysis": lambda p: compute_decision_analysis(
+            t_maze_environment,
+            times,
+            p,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            min_speed=1.0,
+        ),
+    }
+    match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
+    with pytest.raises(ValueError, match=match):
+        calls[name](10 * times)

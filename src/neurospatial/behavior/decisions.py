@@ -839,6 +839,9 @@ def compute_pre_decision_metrics(
     >>> round(metrics.heading_circular_variance, 6)
     0.0
     """
+    from neurospatial.ops.egocentric import _validate_velocity_positions
+
+    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -848,6 +851,7 @@ def compute_pre_decision_metrics(
         break_before=break_before,
         result="the pre-decision metrics are NaN",
     )
+    _validate_velocity_positions(raw_positions)
     return _pre_decision_metrics(
         times,
         positions,
@@ -1337,6 +1341,9 @@ def compute_decision_analysis(
         "speeds and regions in the same Cartesian coordinates.",
         fix="use the allocentric environment the positions were recorded in",
     )
+    from neurospatial.ops.egocentric import _validate_velocity_positions
+
+    raw_positions = positions
     times, positions, support = validated_observations(
         times,
         positions,
@@ -1346,6 +1353,7 @@ def compute_decision_analysis(
         break_before=break_before,
         result="the pre-decision metrics are NaN and no boundary crossing was observed",
     )
+    _validate_velocity_positions(raw_positions)
 
     # Validate regions exist
     _require_region_mask(
