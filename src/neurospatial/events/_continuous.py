@@ -2,20 +2,24 @@
 
 Per-feature metadata (value kind, interpolation, units, category labels) is
 validated once into a frozen :class:`_FeatureSpec`, and category codes in the
-data are checked against it.
+data are checked against it. :func:`_sample_feature` samples one feature at
+arbitrary times without crossing an unusable interval or leaving a run.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import as_label_array, read_only_copy
+
+if TYPE_CHECKING:
+    from neurospatial._observation import ObservationSupport
 
 _VALUE_KINDS = ("linear", "circular", "categorical")
 _ALLOWED_INTERPOLATION = {
@@ -319,3 +323,120 @@ def _check_category_codes(
                 "NaN (or False in valid).",
             )
         )
+
+
+def _relative_times(window: tuple[float, float], dt: float) -> NDArray[np.float64]:
+    """Return the query offsets ``start + dt * j`` that fall before ``stop``.
+
+    Parameters
+    ----------
+    window : tuple of float
+        ``(start, stop)`` in seconds relative to each event, ``start < stop``.
+    dt : float
+        Query spacing in seconds, ``> 0``.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_times,)
+        ``start + dt * j`` for every integer ``j >= 0`` with
+        ``start + dt * j < stop - 1e-9 * dt``; the tolerance keeps a rounding
+        error from adding a query at ``stop``.
+    """
+    start, stop = window
+    n_candidates = int(np.ceil((stop - start) / dt)) + 1
+    offsets = start + dt * np.arange(n_candidates, dtype=np.float64)
+    kept: NDArray[np.float64] = offsets[offsets < stop - 1e-9 * dt]
+    return kept
+
+
+def _wrap(angles: ArrayLike) -> NDArray[np.float64]:
+    """Wrap angles in radians to ``[-pi, pi)``; a half-turn maps to ``-pi``."""
+    wrapped = np.mod(np.asarray(angles, dtype=np.float64) + np.pi, 2 * np.pi) - np.pi
+    # np.mod rounds a tiny negative remainder up to 2*pi, which would give +pi.
+    out: NDArray[np.float64] = np.where(wrapped >= np.pi, -np.pi, wrapped)
+    return out
+
+
+def _sample_feature(
+    times: NDArray[np.float64],
+    values: NDArray[np.float64],
+    support: ObservationSupport,
+    queries: NDArray[np.float64],
+    *,
+    interpolation: str,
+    epochs: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Sample one feature at arbitrary times, only where it was observed.
+
+    A query exactly at a sample time is a point observation: it is supported
+    when that sample is valid and, if ``epochs`` is given, the instant lies in
+    one half-open epoch row. Any other query is supported only inside a usable
+    interval ``[t_k, t_{k+1})`` of ``support``, so a value is never
+    interpolated across a gap, invalid sample, declared break or epoch edge,
+    and never extrapolated before the first or after the last sample.
+
+    Parameters
+    ----------
+    times : ndarray of float64, shape (n_samples,)
+        Sample times in seconds, strictly increasing.
+    values : ndarray of float64, shape (n_samples,)
+        One feature's values on ``times``.
+    support : ObservationSupport
+        This feature's resolved support on ``times``.
+    queries : ndarray of float64, any shape
+        Absolute query times in seconds.
+    interpolation : {"linear", "circular", "previous"}
+        ``"linear"``: straight line between the bracketing samples.
+        ``"circular"``: shorter arc in radians, result in ``[-pi, pi)``; an
+        exact half-turn goes the negative way. ``"previous"``: the value of
+        the preceding sample.
+    epochs : ndarray of float64, shape (n_epochs, 2), or None
+        Sorted, merged ``[start, stop)`` rows (from ``as_intervals``), the same
+        epochs used to resolve ``support``. They gate exact-time queries,
+        which use no interval.
+
+    Returns
+    -------
+    sampled : ndarray of float64, same shape as ``queries``
+        Sampled values; NaN where unsupported.
+    supported : ndarray of bool, same shape as ``queries``
+        True where the value is an observation or lies inside a usable
+        interval.
+    """
+    q = np.asarray(queries, dtype=np.float64)
+    n_samples = times.size
+    k = np.searchsorted(times, q, side="right") - 1
+    k_safe = np.clip(k, 0, n_samples - 1)
+    exact = (k >= 0) & (times[k_safe] == q)
+
+    at_sample = exact & support.sample_valid[k_safe]
+    if epochs is not None:
+        row = np.searchsorted(epochs[:, 0], q, side="right") - 1
+        at_sample &= (row >= 0) & (q < epochs[np.maximum(row, 0), 1])
+
+    between = ~exact & (k >= 0) & (k < n_samples - 1)
+    if n_samples > 1:
+        between &= support.interval_mask[np.clip(k, 0, n_samples - 2)]
+
+    sampled = np.full(q.shape, np.nan)
+    point_values = values[k[at_sample]]
+    sampled[at_sample] = (
+        _wrap(point_values) if interpolation == "circular" else point_values
+    )
+
+    left = k[between]
+    x0 = values[left]
+    if interpolation == "previous":
+        sampled[between] = x0
+    else:
+        weight = (q[between] - times[left]) / (times[left + 1] - times[left])
+        step = values[left + 1] - x0
+        if interpolation == "circular":
+            sampled[between] = _wrap(x0 + weight * _wrap(step))
+        elif interpolation == "linear":
+            sampled[between] = x0 + weight * step
+        else:
+            raise ValueError(f"unknown interpolation {interpolation!r}")
+
+    supported: NDArray[np.bool_] = at_sample | between
+    return sampled, supported
