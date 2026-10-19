@@ -291,23 +291,24 @@ def test_egocentric_rates_to_xarray_polar_coords():
     )
 
 
-def test_spatial_rates_occupancy_length_mismatch_raises(rates_result):
+def test_rates_occupancy_length_mismatch_raises():
     """A present occupancy whose length != n_bins raises ValueError.
 
     Guards against silently dropping the occupancy data var and emitting a
-    structurally-incomplete Dataset.
+    structurally-incomplete Dataset. Spatial results refuse such occupancy at
+    construction, so a directional result (no environment) exercises the
+    export guard.
     """
     pytest.importorskip("xarray")
 
-    rates = np.asarray(rates_result.firing_rates)
-    n_bins = rates.shape[1]
-    bad = SpatialRatesResult(
-        firing_rates=rates,
+    n_bins = 60
+    bad = DirectionalRatesResult(
+        firing_rates=np.ones((3, n_bins)),
         # occupancy present but one element too short
         occupancy=np.ones(n_bins - 1),
-        env=rates_result.env,
-        method="binned",
-        bandwidth=5.0,
+        bin_centers=np.linspace(0, 2 * np.pi, n_bins, endpoint=False),
+        bin_size=np.pi / 30,
+        bandwidth=None,
     )
     with pytest.raises(ValueError, match="occupancy length does not match"):
         bad.to_xarray()

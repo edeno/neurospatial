@@ -539,7 +539,7 @@ def write_spatial_rates(
     ``write_environment`` never collide.
 
     The write is **atomic**: all name collisions (the table, ``f"{name}_occupancy"``
-    and ``f"{name}_environment"``) and all shape validation are resolved *before*
+    and ``f"{name}_environment"``) and all validation are resolved *before*
     the first object is added, so a duplicate without ``overwrite`` raises before
     any mutation and ``overwrite=True`` cleans every companion. If a later add
     still fails, the already-added objects are rolled back and a ``ValueError`` is
@@ -566,9 +566,7 @@ def write_spatial_rates(
     ------
     ValueError
         If a container named ``name`` (or one of its companions) exists and
-        ``overwrite=False``; if ``firing_rates.shape`` is not
-        ``(len(unit_ids), env.n_bins)``; if ``occupancy.shape`` is not
-        ``(env.n_bins,)``; if a ``unit_table`` column is named ``unit_id`` or
+        ``overwrite=False``; if a ``unit_table`` column is named ``unit_id`` or
         ``firing_rate`` (reserved -- plus ``deviance`` / ``coefficients`` for a
         glm result, whose GAM columns share the table); or if a companion add
         fails after a partial write (the partial objects are rolled back first).
@@ -622,17 +620,9 @@ def write_spatial_rates(
     occupancy_name = f"{name}_occupancy"
     env_name = f"{name}_environment"
 
-    # --- Preflight (BEFORE any mutation): shape + reserved-name validation ----
-    if firing_rates.shape != (n_units, env.n_bins):
-        raise ValueError(
-            f"firing_rates shape {firing_rates.shape} does not match "
-            f"(len(unit_ids), env.n_bins) = ({n_units}, {env.n_bins})."
-        )
-    if occupancy.shape != (env.n_bins,):
-        raise ValueError(
-            f"occupancy shape {occupancy.shape} does not match "
-            f"(env.n_bins,) = ({env.n_bins},)."
-        )
+    # --- Preflight (BEFORE any mutation): reserved-name validation ----------
+    # Shapes need no check here: SpatialRatesResult refuses firing_rates or
+    # occupancy that do not match its env's bins when it is constructed.
 
     # L3: `unit_id` / `firing_rate` are reserved for the table's own columns; a
     # unit_table column with either name would collide inside the DynamicTable.
@@ -926,6 +916,40 @@ def write_spatial_rates(
     )
 
 
+def _verify_saved_environment(
+    nwbfile: NWBFile, env: Environment, *, name: str, env_name: str
+) -> None:
+    """Refuse an explicit ``env=`` that differs from the rates' saved environment."""
+    from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
+    from neurospatial.environment import _environment_differences
+    from neurospatial.io.nwb._environment import read_environment
+
+    if env_name not in nwbfile.scratch:
+        raise ValueError(
+            _format_error(
+                f"read_place_field: cannot verify env= against spatial rates "
+                f"'{name}': the file stores no environment for them "
+                f"('{env_name}' is missing).",
+                why="equal bin counts do not show that env= has the bins, units, "
+                "frame and connectivity the rates were estimated on",
+                fix="rewrite them with write_spatial_rates, which saves the "
+                "environment with the rates",
+            )
+        )
+    saved = read_environment(nwbfile, name=env_name)
+    bins, topology = _environment_differences(saved, env)
+    mismatch = bins or topology
+    if mismatch is not None:
+        raise IncompatibleEnvironmentError(
+            f"read_place_field: env= differs from the environment saved with "
+            f"spatial rates '{name}' in {mismatch}.",
+            fix="omit env= to use the environment saved with these rates, or "
+            "pass that same environment",
+            first=saved,
+            second=env,
+        )
+
+
 def read_place_field(
     nwbfile: NWBFile,
     *,
@@ -948,15 +972,16 @@ def read_place_field(
     name : str, default "spatial_rates"
         Name of the spatial-rates DynamicTable in ``analysis/``.
     env : Environment, optional
-        Environment to attach to the result. Obtained from EXACTLY two sources,
-        in order: (a) this ``env=`` argument when given (used as-is); else (b)
-        the environment :func:`write_spatial_rates` persisted under
-        ``f"{name}_environment"`` -- which round-trips with its connectivity
+        Environment to attach to the result. When omitted, the result gets the
+        environment :func:`write_spatial_rates` persisted under
+        ``f"{name}_environment"``, which round-trips with its connectivity
         edges and geometry **intact**, so graph operations (``neighbors``,
-        ``path_between``, ...) work on the restored env. There is no
-        connectivity-less fabrication from bin centers. Whichever env is
-        obtained, its ``n_bins`` must equal the stored ``firing_rates`` bin
-        count; a mismatched or stale ``env=`` raises ``ValueError``.
+        ``path_between``, ...) work on the restored env. When given, ``env=``
+        is first checked against the stored ``firing_rates`` bin count and then
+        against that persisted environment: it must have the same bins
+        (coordinates, order, measures), coordinate system, units, frame,
+        connectivity and walls. The result then holds this ``env`` object.
+        There is no connectivity-less fabrication from bin centers.
 
     Returns
     -------
@@ -971,9 +996,13 @@ def read_place_field(
     ValueError
         If ``name`` points at a table not written by ``write_spatial_rates``; if
         the companion occupancy length does not match the table's recorded
-        ``n_bins``; if ``env=`` is omitted and no persisted environment is in the
-        file; or if the obtained environment's ``n_bins`` does not match the
-        stored ``firing_rates`` (a mismatched or stale ``env=``).
+        ``n_bins``; if no persisted environment is in the file (whether or not
+        ``env=`` is given, since an explicit ``env=`` cannot be verified
+        without it); or if the obtained environment's ``n_bins`` does not match
+        the stored ``firing_rates`` (a mismatched or stale ``env=``).
+    IncompatibleEnvironmentError
+        If ``env=`` has the right bin count but differs from the persisted
+        environment in bins, units, frame or topology.
     ImportError
         If pynwb is not installed.
 
@@ -1080,27 +1109,25 @@ def read_place_field(
             f"the file may be corrupt or the wrong companion was written."
         )
 
-    # FIX 1: obtain the environment from EXACTLY two sources, in order --
-    # (a) the explicit env= arg, else (b) the environment this writer persisted
-    # under f"{name}_environment" (full connectivity + geometry). No
-    # connectivity-less fabrication from bin centers.
+    # The rates' environment is the one write_spatial_rates persisted under
+    # f"{name}_environment" (full connectivity + geometry). An explicit env= is
+    # attached only after it is verified against that saved environment, so a
+    # same-size env with other units, frame, bins or topology cannot relabel
+    # the maps. No connectivity-less fabrication from bin centers.
+    from neurospatial.io.nwb._environment import read_environment
+
+    env_name = f"{name}_environment"
+    verify_env = env is not None
     if env is None:
-        env_name = f"{name}_environment"
-        if env_name in nwbfile.scratch:
-            from neurospatial.io.nwb._environment import read_environment
-
-            env = read_environment(nwbfile, name=env_name)
-        else:
+        if env_name not in nwbfile.scratch:
             raise ValueError(
-                f"Spatial rates '{name}' has no attached environment: env= was "
-                f"not provided and no persisted environment '{env_name}' is in "
-                f"the file. Pass env= explicitly, or (re)write with "
-                f"write_spatial_rates, which now persists the environment "
-                f"automatically."
+                f"Spatial rates '{name}' has no attached environment: no "
+                f"persisted environment '{env_name}' is in the file. Rewrite the "
+                f"rates with write_spatial_rates, which saves their environment."
             )
+        env = read_environment(nwbfile, name=env_name)
 
-    # FIX 1 geometry guard (kills the silent mismatched/stale-env failure): the
-    # obtained env must match the stored rates' bin count.
+    # The obtained env must match the stored rates' bin count.
     n_bins = int(firing_rates.shape[1])
     if env.n_bins != n_bins:
         raise ValueError(
@@ -1109,6 +1136,8 @@ def read_place_field(
             f"usually means a mismatched or stale env= was passed; pass the "
             f"Environment used to compute these rates."
         )
+    if verify_env:
+        _verify_saved_environment(nwbfile, env, name=name, env_name=env_name)
 
     # GAM (method="glm") diagnostics: reconstruct from the JSON blob + the
     # per-unit columns, preserving shapes. Absent (ratio methods) -> all None,

@@ -513,6 +513,54 @@ def _check_gam_result_invariant(
             )
 
 
+def _check_rates_match_env(
+    kind: str,
+    rates: ArrayLike,
+    occupancy: ArrayLike,
+    env: Environment,
+    *,
+    rates_ndim: int,
+) -> None:
+    """Refuse firing rates or occupancy whose bins are not ``env``'s bins.
+
+    ``rates`` is ``(n_bins,)`` when ``rates_ndim=1`` (single unit) and
+    ``(n_units, n_bins)`` when ``rates_ndim=2`` (population); ``occupancy``
+    is ``(n_bins,)``.
+    """
+    n_bins = env.n_bins
+    rates_shape, occupancy_shape = np.shape(rates), np.shape(occupancy)
+    why = (
+        "each rate and occupancy value belongs to one bin of the environment "
+        "the rates were estimated on"
+    )
+    fix = (
+        "pass the Environment used to compute these rates, or recompute them "
+        "on this environment"
+    )
+    if len(rates_shape) != rates_ndim:
+        expected = "(n_bins,)" if rates_ndim == 1 else "(n_units, n_bins)"
+        raise ValueError(
+            _format_error(
+                f"{kind}: firing rates have shape {rates_shape}, not {expected} "
+                f"over the env's {n_bins} bins.",
+                why=why,
+                fix=fix,
+            )
+        )
+    if rates_shape[-1] != n_bins or occupancy_shape != (n_bins,):
+        occupancy_bins = (
+            occupancy_shape[0] if len(occupancy_shape) == 1 else occupancy_shape
+        )
+        raise ValueError(
+            _format_error(
+                f"{kind}: firing rates have {rates_shape[-1]} bins and occupancy "
+                f"{occupancy_bins}, but env has {n_bins}.",
+                why=why,
+                fix=fix,
+            )
+        )
+
+
 def _index_per_unit(value: Any, idx: int) -> Any:
     """Slice a possibly-per-unit GAM field to a single unit (for indexing).
 
@@ -653,8 +701,10 @@ class SpatialRateResult(SpatialResultMixin):
     occupancy : ArrayLike
         Time spent in each bin in seconds. Shape is (n_bins,).
     env : Environment
-        The spatial environment used for the computation. Provides bin
-        centers, connectivity, and plotting methods.
+        The immutable environment these rates were estimated on. It is their
+        spatial context: bin coordinates and order, bin measures, units, frame
+        and connectivity. Environments never change; ``with_metadata`` returns
+        a new one, so relabelling later cannot change this result.
     method : str
         Estimator used: "diffusion_kde", "gaussian_kde", "binned", or "glm".
     bandwidth : float or None
@@ -882,6 +932,13 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
                 "pooled": self.pooled,
             },
             n_units=None,
+        )
+        _check_rates_match_env(
+            "SpatialRateResult",
+            self.firing_rate,
+            self.occupancy,
+            self.env,
+            rates_ndim=1,
         )
         self._own_arrays()
 
@@ -1505,7 +1562,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         Time spent in each bin in seconds. Shape is (n_bins,). Shared
         across all neurons.
     env : Environment
-        The spatial environment used for the computation.
+        The immutable environment these rates were estimated on. It is their
+        spatial context: bin coordinates and order, bin measures, units, frame
+        and connectivity. Environments never change; ``with_metadata`` returns
+        a new one, so relabelling later cannot change this result.
     method : str
         Estimator used: "diffusion_kde", "gaussian_kde", "binned", or "glm".
     bandwidth : float or None
@@ -1741,6 +1801,13 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
                 "pooled": self.pooled,
             },
             n_units=n_units,
+        )
+        _check_rates_match_env(
+            "SpatialRatesResult",
+            self.firing_rates,
+            self.occupancy,
+            self.env,
+            rates_ndim=2,
         )
 
         object.__setattr__(

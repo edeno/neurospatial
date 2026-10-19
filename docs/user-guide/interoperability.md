@@ -542,7 +542,7 @@ with NWBHDF5IO("session.nwb", "r+") as io:
     write_spatial_rates(nwbfile, rates, name="ca1_place_fields")
     io.write(nwbfile)
 
-# Read back (env restored from the file; pass env= to override).
+# Read back (env restored from the file; an env= you pass must equal it).
 with NWBHDF5IO("session.nwb", "r") as io:
     nwbfile = io.read()
     restored = read_place_field(nwbfile, name="ca1_place_fields")
