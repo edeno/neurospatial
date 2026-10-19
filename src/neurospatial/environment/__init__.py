@@ -12,6 +12,9 @@ from neurospatial.environment._comparison import (
     _EnvironmentDifferences as _EnvironmentDifferences,
 )
 from neurospatial.environment._comparison import (
+    _mapped_bin_difference as _mapped_bin_difference,
+)
+from neurospatial.environment._comparison import (
     _mapped_topology_difference as _mapped_topology_difference,
 )
 from neurospatial.environment._factories import _from_samples as _from_samples

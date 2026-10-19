@@ -3,7 +3,8 @@
 Before any score is computed, the two results must be spatial rate maps of the
 same kind, their units must pair by label, and their bins must pair by place:
 either the same bins, or an explicit one-to-one ``bin_mapping`` between bins
-with identical coordinates and measures.
+that are the same cells (coordinates, measures, cell shapes and boundary
+ownership).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
 from neurospatial.environment import (
     _environment_differences,
     _EnvironmentDifferences,
+    _mapped_bin_difference,
     _mapped_topology_difference,
 )
 
@@ -276,7 +278,7 @@ def _validate_bin_mapping(
             f"{env_b.units!r}, {env_b.frame!r})"
         )
     else:
-        reason = _mapped_bin_difference(mapping, env_a, env_b)
+        reason = _mapped_bin_difference(env_a, env_b, mapping)
     if reason is not None:
         raise IncompatibleEnvironmentError(
             f"{_OPERATION}: bin_mapping pairs bins that differ in {reason}, so "
@@ -317,19 +319,3 @@ def _refuse_repeats(mapping: NDArray[np.integer]) -> None:
                 "on one common environment",
             )
         )
-
-
-def _mapped_bin_difference(
-    mapping: NDArray[np.integer], env_a: Environment, env_b: Environment
-) -> str | None:
-    """First difference between paired bins' centers, then measures."""
-    rows_a, rows_b = mapping[:, 0], mapping[:, 1]
-    if not np.array_equal(env_a.bin_centers[rows_a], env_b.bin_centers[rows_b]):
-        return "bin coordinates"
-    bins_a, bins_b = env_a.binning.bins, env_b.binning.bins
-    if not (
-        np.array_equal(bins_a.sizes[rows_a], bins_b.sizes[rows_b])
-        and np.array_equal(bins_a.measure_dims[rows_a], bins_b.measure_dims[rows_b])
-    ):
-        return "bin measures"
-    return None

@@ -7,13 +7,14 @@ score is NaN with a reason, never a fabricated 0 or ±1.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 import numpy as np
 import pytest
 from environment_helpers import renumbered
 from scipy import stats
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.arena import OpenArena
@@ -24,6 +25,7 @@ from neurospatial.encoding import (
     compute_spatial_rates,
 )
 from neurospatial.encoding.spatial import SpatialRatesResult
+from neurospatial.environment import _environment_differences
 
 F = [1.0, 2.0, 3.0, 4.0, 5.0]
 G = [5.0, 1.0, 4.0, 2.0, 3.0]
@@ -541,6 +543,161 @@ def test_mapping_requires_the_same_units(env, make) -> None:
             make(G, on=env.with_metadata(units="mm")),
             bin_mapping=np.column_stack([np.arange(5), np.arange(5)]),
         )
+
+
+_ROOM = OpenArena(box(-20, -20, 30, 30))
+
+
+def _two_by_two(*, offset: float = 0.0) -> Environment:
+    return Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), grid_edges=(offset + np.arange(3.0) * 10,) * 2
+    )
+
+
+def _polar_and_cartesian() -> tuple[Environment, Environment]:
+    polar = Environment.from_polar_egocentric(
+        distance_range=(0.0, 20.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 2,
+    )
+    grid = Environment.from_grid_mask(
+        np.ones((2, 4), dtype=bool), grid_edges=(np.arange(3.0), np.arange(5.0))
+    )
+    return polar, grid
+
+
+def _clipped_cell(clip) -> Environment:
+    parent = Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool),
+        grid_edges=(np.arange(2.0),) * 2,
+        arena=OpenArena(box(0, 0, 1, 1)),
+    )
+    return parent.clip(clip)
+
+
+def _clipped_strip(x_edges: list[float]) -> Environment:
+    """Cells [0, 1] x [0, 1] and [1, 2] x [0, 1], cut from a grid on ``x_edges``."""
+    parent = Environment.from_grid_mask(
+        np.ones((len(x_edges) - 1, 1), dtype=bool),
+        grid_edges=(np.asarray(x_edges), np.array([0.0, 1.0])),
+        arena=_ROOM,
+    )
+    return parent.clip(box(0, 0, 2, 1))
+
+
+def _one_cell(x_edges: list[float], y_edges: list[float]) -> Environment:
+    return Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool),
+        grid_edges=(np.array(x_edges), np.array(y_edges)),
+        arena=_ROOM,
+    )
+
+
+_DIAMOND = [(0.5, 0), (1, 0.5), (0.5, 1), (0, 0.5)]
+
+# Every bin difference _environment_differences reports, as (environments,
+# reason without a mapping, reason through a mapping): a mapping pairs bins
+# explicitly, so it cannot differ in their order.
+_BIN_DIFFERENCES = [
+    pytest.param(
+        _polar_and_cartesian,
+        "coordinate systems",
+        "coordinate systems",
+        id="coordinate systems",
+    ),
+    pytest.param(
+        lambda: (
+            _two_by_two().with_metadata(units="cm"),
+            _two_by_two().with_metadata(units="m"),
+        ),
+        "units or coordinate frames",
+        "units or coordinate frames",
+        id="units",
+    ),
+    pytest.param(
+        lambda: (_two_by_two(), _two_by_two(offset=1000.0)),
+        "bin coordinates or ordering",
+        "bin coordinates",
+        id="bin coordinates",
+    ),
+    pytest.param(
+        lambda: (
+            _clipped_cell(box(0.25, 0.25, 0.75, 0.75)),
+            _clipped_cell(box(0.1, 0.1, 0.9, 0.9)),
+        ),
+        "bin measures",
+        "bin measures",
+        id="bin measures",
+    ),
+    pytest.param(
+        lambda: (
+            _clipped_cell(box(0, 0.25, 1, 0.75)),
+            _clipped_cell(Polygon(_DIAMOND)),
+        ),
+        "polygon cell geometry",
+        "polygon cell geometry",
+        id="polygon cell geometry",
+    ),
+    pytest.param(
+        lambda: (_clipped_strip([0.0, 1.0, 2.0]), _clipped_strip([-1.0, 0, 1, 2])),
+        "bin-boundary ownership",
+        "bin-boundary ownership",
+        id="bin-boundary ownership",
+    ),
+    pytest.param(
+        lambda: (_one_cell([0, 10], [0, 10]), _one_cell([-5, 15], [2.5, 7.5])),
+        "cell shapes",
+        "cell shapes",
+        id="cell shapes",
+    ),
+]
+
+
+@pytest.mark.parametrize(("pair", "reason", "mapped_reason"), _BIN_DIFFERENCES)
+def test_an_identity_mapping_is_refused_like_no_mapping(
+    make, pair, reason, mapped_reason
+) -> None:
+    env_a, env_b = pair()
+    assert env_a.n_bins == env_b.n_bins
+    assert _environment_differences(env_a, env_b).bins == reason
+    rates_a, rates_b = (
+        make(np.arange(1.0, env.n_bins + 1), np.ones(env.n_bins), on=env)
+        for env in (env_a, env_b)
+    )
+    identity = np.column_stack([np.arange(env_a.n_bins)] * 2)
+
+    with pytest.raises(
+        IncompatibleEnvironmentError, match=f"differ in {re.escape(reason)}"
+    ):
+        compare_spatial_rates(rates_a, rates_b, topology="may_differ")
+    with pytest.raises(
+        IncompatibleEnvironmentError, match=f"differ in {re.escape(mapped_reason)}"
+    ):
+        compare_spatial_rates(
+            rates_a, rates_b, bin_mapping=identity, topology="may_differ"
+        )
+
+
+def test_a_subset_of_polygon_cells_maps_onto_its_parent(make) -> None:
+    # A subset keeps its parent's cells and boundary ownership for the bins
+    # it keeps, so only the connections to the dropped bins differ.
+    parent = Environment.from_grid_mask(
+        np.ones((4, 4), dtype=bool), grid_edges=(np.arange(5.0),) * 2
+    ).clip(box(0, 0, 3.5, 3.5))
+    kept = np.arange(parent.n_bins) < parent.n_bins - 3
+    part = parent.subset(mask=kept)
+    mapping = np.column_stack([np.flatnonzero(kept), np.arange(part.n_bins)])
+    rates = np.random.default_rng(2).uniform(0, 10, parent.n_bins)
+    rates_a = make(rates, np.ones(parent.n_bins), on=parent)
+    rates_b = make(rates[kept], np.ones(part.n_bins), on=part)
+
+    result = compare_spatial_rates(
+        rates_a, rates_b, bin_mapping=mapping, topology="may_differ"
+    )
+
+    assert result.analysis_settings["topology_differs"] is True
+    np.testing.assert_allclose(result.correlation, [1.0])
 
 
 @pytest.mark.parametrize(

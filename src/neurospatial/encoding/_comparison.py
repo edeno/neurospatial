@@ -817,8 +817,13 @@ def compare_spatial_rates(
     bin_mapping : array-like of int, shape (n_pairs, 2), optional
         Rows of ``(bin in rates_a.env, bin in rates_b.env)`` pairing bins that
         are the same place, for maps estimated on different environments such
-        as a subset of the arena. Each bin appears at most once on each side;
-        paired bins must have identical centers, sizes and dimensions. By
+        as a subset of the arena. Each bin appears at most once on each side.
+        Paired bins must be the same cells, checked as for unmapped
+        environments: identical centers, sizes and measured dimensions; the
+        same cell shape where both environments record cells (grid boxes,
+        triangles, hexagons or polygon cells); and, for polygon cells, the
+        same bin owning each boundary. Both environments must share their
+        coordinate system, units and frame, which no mapping can bridge. By
         default the environments must have the same bins. With a mapping,
         topology is compared through it: every mapped bin must have the same
         neighbors, at the same distances, in both environments, and the

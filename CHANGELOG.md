@@ -1948,6 +1948,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   shapes". Environments that smooth a field between the same neighbors
   differently (different face areas in `from_bins`, or one that cannot smooth)
   now differ in "smoothing conductances between neighboring bins".
+  `compare_spatial_rates` applies the same bin checks to each pair of a
+  `bin_mapping`: paired bins must also have the same cell shape and, for
+  polygon cells, the same polygon and the same bin owning each boundary, so
+  an identity mapping is refused exactly where no mapping is. A subset of
+  polygon cells still pairs with its parent.
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it
