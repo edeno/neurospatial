@@ -1358,3 +1358,68 @@ def test_module_docstring_does_not_claim_diffusion_sparse() -> None:
     assert "allow_large" not in doc
     assert "MemoryError" not in doc
     assert "_KERNEL_HARD_LIMIT_BINS" not in doc
+
+
+# =============================================================================
+# Oversized-bandwidth warning attribution
+# =============================================================================
+
+
+def _oversized_bandwidth_calls():
+    from neurospatial.encoding import (
+        compute_object_vector_rate,
+        compute_object_vector_rates,
+        compute_spatial_rate,
+        compute_spatial_rates,
+        compute_view_rate,
+        compute_view_rates,
+    )
+
+    rng = np.random.default_rng(0)
+    times = np.arange(0, 20, 0.05)
+    positions = rng.uniform(0, 20, (len(times), 2))
+    headings = rng.uniform(-np.pi, np.pi, len(times))
+    env = Environment.from_samples(positions, bin_size=4.0)
+    spikes = np.sort(np.random.default_rng(1).uniform(0.1, 19, 30))
+    objects = np.array([[10.0, 10.0]])
+    ov = {"method": "diffusion_kde", "bandwidth": 1000.0}
+    return {
+        "spatial": lambda: compute_spatial_rate(
+            env, spikes, times, positions, bandwidth=100.0
+        ),
+        "spatial-population": lambda: compute_spatial_rates(
+            env, [spikes], times, positions, bandwidth=100.0
+        ),
+        "view": lambda: compute_view_rate(
+            env, spikes, times, positions, headings, bandwidth=100.0
+        ),
+        "view-population": lambda: compute_view_rates(
+            env, [spikes], times, positions, headings, bandwidth=100.0
+        ),
+        "object-vector": lambda: compute_object_vector_rate(
+            env, spikes, times, positions, objects, **ov
+        ),
+        "object-vector-population": lambda: compute_object_vector_rates(
+            env, [spikes], times, positions, objects, **ov
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "spatial",
+        "spatial-population",
+        "view",
+        "view-population",
+        "object-vector",
+        "object-vector-population",
+    ],
+)
+def test_oversized_bandwidth_warning_points_at_caller(case):
+    call = _oversized_bandwidth_calls()[case]
+    with pytest.warns(UserWarning, match="spans the environment") as record:
+        call()
+    caught = [w for w in record if "spans the environment" in str(w.message)]
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
