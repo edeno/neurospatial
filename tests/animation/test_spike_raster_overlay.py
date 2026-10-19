@@ -44,7 +44,6 @@ def test_labels_default_to_the_units_positions():
         ({"order": [0, 0, 1]}, "each of the 3 units once"),
         ({"order": [0, 1]}, "each of the 3 units once"),
         ({"unit_ids": [7, 7, 8]}, "repeat|duplicate"),
-        ({"window_seconds": 0.0}, "window_seconds must be positive"),
     ],
 )
 def test_a_raster_that_cannot_be_drawn_is_refused(options, message):

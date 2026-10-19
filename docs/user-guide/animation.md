@@ -417,11 +417,16 @@ sample or after its last. A trail spans the time of its last `trail_length`
 animation frames. Overlays without `times` follow the field's frames, as in
 the other backends.
 
-Time series are drawn beside the field on the same clock, each over its
-`window_seconds` around the current time, with every sample in the window
-drawn (up to 100,000), so a ripple-band LFP keeps its shape. Event times from
-an `EventOverlay` are marked on every series panel in the events' colors.
-Drag the cursor in a series to move every panel.
+Time series are drawn beside the field on the same clock, with every sample
+in the window drawn (up to 100,000), so a ripple-band LFP keeps its shape.
+Event times from an `EventOverlay` are marked on every series panel in the
+events' colors. Drag the cursor in a series to move every panel.
+
+Every panel drawn against time (a track's fields, spike rasters, time series)
+shows the same `window_seconds` (default 2 s) around the current time, named
+in its title, so a spike, a posterior column and an LFP peak at one x are at
+one time. `[` and `]` halve or double it for all of them. A
+`TimeSeriesOverlay`'s own `window_seconds` is used by the other backends.
 
 On a track (`Environment.linear_track`, `from_graph`, or any 1-D environment)
 the fields are also drawn against time: position along the track on the y axis,

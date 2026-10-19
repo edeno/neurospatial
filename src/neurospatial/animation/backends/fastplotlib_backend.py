@@ -763,6 +763,7 @@ class _Raster:
         subplot: Any,
         data: SpikeRasterData,
         start: float,
+        window: float,
         move_to: Callable[[float], None],
         rates: _UnitRates | None,
     ) -> None:
@@ -784,7 +785,7 @@ class _Raster:
         if rates is not None and data.rates is not None:
             # The whole row answers a click, not only its thin ticks.
             subplot.renderer.add_event_handler(self.clicked, "click")
-        self.view = _TimeWindow(subplot, data.window_seconds, move_to)
+        self.view = _TimeWindow(subplot, window, move_to)
         subplot.title = f"spikes, {len(counts)} units"
         subplot.y_range = (-0.5, len(counts) - 0.5)
 
@@ -1270,7 +1271,14 @@ class FastplotlibAnimation:
         self._track = self._tracks[0] if self._tracks else None
         unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
         self._rasters = [
-            _Raster(self.figure[f"raster {i}"], item, self._start, self._move_to, unit)
+            _Raster(
+                self.figure[f"raster {i}"],
+                item,
+                self._start,
+                window_seconds,
+                self._move_to,
+                unit,
+            )
             for i, item in enumerate(rasters)
         ]
         for i in range(len(rasters)):
@@ -1291,7 +1299,13 @@ class FastplotlibAnimation:
             drawn
             for i, group in enumerate(groups)
             for drawn in _add_series(
-                self.widget, f"series {i}", group, events, epochs, self._start
+                self.widget,
+                f"series {i}",
+                group,
+                events,
+                epochs,
+                self._start,
+                window_seconds,
             )
         ]
         self.widget.indices = {"time": 0.0}  # adding a series can move the time
@@ -1302,6 +1316,12 @@ class FastplotlibAnimation:
             frame_view(plot, env)
         self._canvas: Any = None
         self._step = step
+        self.window_seconds = window_seconds
+        # The panels drawn against time, each titled with the window it shows.
+        self._time_titles = [
+            (self.figure[name], self.figure[name].title.text) for name, _ in panels
+        ]
+        self._title_windows()
         self.figure.renderer.add_event_handler(self._key, "key_down")
         self._show(0.0, self._read(0.0))
 
@@ -1331,24 +1351,29 @@ class FastplotlibAnimation:
             self._move_to(float(target))
 
     def _scale_windows(self, factor: float) -> None:
-        """Widen or narrow the window of every panel drawn against time."""
+        """Widen or narrow the window every panel drawn against time shares."""
         longest = float(self._clock[-1]) + self._step
-
-        def scaled(window: float) -> float:
-            return float(np.clip(window * factor, self._step, max(longest, self._step)))
-
+        window = float(
+            np.clip(self.window_seconds * factor, self._step, max(longest, self._step))
+        )
+        self.window_seconds = window
+        self._title_windows()
         for track in self._tracks:
-            track.set_window(scaled(track.window))
+            track.set_window(window)
         for raster in self._rasters:
-            raster.view.window = scaled(raster.view.window)
+            raster.view.window = window
         for series, rate in self._series:
-            window = scaled(series.display_window)
             series.display_window = window
             series.max_display_datapoints = min(
                 int(np.ceil(window * rate)) + 2, _MAX_SERIES_POINTS
             )
         now = self.widget.indices["time"]
         self._show(now, self._read(now))
+
+    def _title_windows(self) -> None:
+        """Name the shared window in the title of each panel drawn against time."""
+        for subplot, title in self._time_titles:
+            subplot.title = f"{title}  \u00b7  {self.window_seconds:.3g} s window"
 
     def _move_to(self, time: float) -> None:
         """Move the slider, and so every panel, to ``time`` on the clock."""
@@ -1456,11 +1481,15 @@ def _add_series(
     events: Sequence[EventData],
     epochs: Sequence[EpochData],
     start: float,
+    window: float,
 ) -> list[tuple[Any, float]]:
     """Draw a group of time series in one subplot, on the widget's clock.
 
-    Times are shifted by ``start``, the first frame's time. Event times are
-    marked as vertical lines in the events' colors, and epochs shaded.
+    Each shows ``window`` seconds, the window every time panel shares, and
+    follows the slider; the series' own ``window_seconds`` is for the other
+    backends. Times are shifted by ``start``, the first frame's time. Event
+    times are marked as vertical lines in the events' colors, and epochs
+    shaded.
 
     Returns
     -------
@@ -1476,7 +1505,7 @@ def _add_series(
     for item in group:
         times = item.times - start
         finite = np.isfinite(item.data)
-        half = item.window_seconds / 2
+        half = window / 2
         if not finite.any() or not (
             times[finite][0] - half <= end and times[finite][-1] + half >= 0.0
         ):
@@ -1503,12 +1532,13 @@ def _add_series(
             ("series", "time", "xy"),
             ("series", "time", "xy"),
             slider_maps={"time": times},
-            display_window=item.window_seconds,
+            display_window=window,
             # Every sample in the window, so fast signals keep their shape.
             max_display_datapoints=min(
-                int(np.ceil(item.window_seconds * rate)) + 2, _MAX_SERIES_POINTS
+                int(np.ceil(window * rate)) + 2, _MAX_SERIES_POINTS
             ),
-            x_range_mode="auto",
+            # The view follows the slider; panning it does not move the time.
+            x_range_mode="fixed",
             colors=color,
             thickness=item.linewidth,
             name=item.label,

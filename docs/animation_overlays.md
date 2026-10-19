@@ -240,8 +240,8 @@ env.animate_fields(
 
 ### Spike Raster Overlay
 
-Draws the spikes of many units beside the field, one row per unit, over
-`window_seconds` around the current time, so replay or theta sequences can be
+Draws the spikes of many units beside the field, one row per unit, over the
+animation's `window_seconds` around the current time, so replay or theta sequences can be
 read against a decoded posterior. Sort the rows by place-field peak to see a
 sequence as a diagonal:
 
@@ -257,11 +257,8 @@ env.animate_fields(
     result.posterior,
     frame_times=result.times,
     backend="fastplotlib",
-    overlays=[
-        SpikeRasterOverlay(
-            spike_times, order=order, rates=rates.firing_rates, window_seconds=1.0
-        )
-    ],
+    window_seconds=1.0,  # every panel drawn against time
+    overlays=[SpikeRasterOverlay(spike_times, order=order, rates=rates.firing_rates)],
 )
 ```
 

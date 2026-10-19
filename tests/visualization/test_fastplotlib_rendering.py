@@ -349,6 +349,11 @@ def cells_vertex_bin(env):
     return cell_mesh(env).vertex_bin
 
 
+def _name(subplot):
+    """A time panel's title without the window it shows."""
+    return subplot.title.text.split("  \u00b7  ")[0]
+
+
 def test_time_series_are_drawn_beside_the_field_on_its_clock(apparatus, walk):
     t, path, fields = walk
     series_times = np.arange(0.0, 4.0, 0.0005)  # 2 kHz, not the frames' 30 Hz
@@ -377,13 +382,15 @@ def test_time_series_are_drawn_beside_the_field_on_its_clock(apparatus, walk):
             fields,
             frame_times=t,
             backend="fastplotlib",
+            window_seconds=1.0,  # every time panel's
             overlays=[speed, accel, rewards],
         )
     animation.show()
     animation.figure.canvas.draw()
     assert animation.frame == 0  # fitting the series' view does not move the time
-    panels = {s.title.text: s for s in animation.figure if s.name != "field"}
+    panels = {_name(s): s for s in animation.figure if s.name != "field"}
     assert set(panels) == {"speed", "accel"}
+    assert panels["speed"].title.text.endswith("1 s window")
     animation.frame = 50
     _render(animation)
     subplot = panels["speed"]
@@ -447,7 +454,7 @@ def test_a_series_without_values_at_the_start_is_drawn_from_its_first_value(
         )
     assert any("'empty' has no values" in str(w.message) for w in caught)
     assert animation.frame == 0
-    titles = {s.title.text for s in animation.figure if s.name != "field"}
+    titles = {_name(s) for s in animation.figure if s.name != "field"}
     assert "speed" in titles
 
 
@@ -559,13 +566,16 @@ def test_a_raster_draws_each_spike_in_its_units_row_on_the_clock(apparatus, walk
         spikes,
         order=[1, 2, 0],
         unit_ids=["CA1-a", "CA1-b", "CA1-c"],
-        window_seconds=1.0,
     )
     rewards = EventOverlay(
         event_times={"reward": session[[20]]}, event_positions={"reward": path[[20]]}
     )
     animation = apparatus.animate_fields(
-        fields, frame_times=session, backend="fastplotlib", overlays=[raster, rewards]
+        fields,
+        frame_times=session,
+        backend="fastplotlib",
+        window_seconds=1.0,
+        overlays=[raster, rewards],
     )
     panel = animation.figure["raster 0"]
     (layer,) = animation._rasters
@@ -696,7 +706,7 @@ def test_epochs_are_marked_named_and_jumped_between(track, decoded):
                 ripples,
                 reward,
                 series,
-                SpikeRasterOverlay([times[::3]], window_seconds=1.0),
+                SpikeRasterOverlay([times[::3]]),
             ],
         )
     animation.show()
@@ -751,7 +761,7 @@ def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
     _press(figure, "]")
     assert animation._track.window == pytest.approx(2.0)
     ((lfp, _),) = animation._series
-    assert lfp.display_window == pytest.approx(4.0)  # each its own window, doubled
+    assert lfp.display_window == pytest.approx(2.0)  # one window, shared
     # The wider window draws frames a second away.
     _render(animation)
     far = times[21] + 0.05  # 0.85 s back, past a 1 s window; bin 3 holds it
@@ -768,6 +778,36 @@ def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
     _press(figure, "[")
     _press(figure, "[")
     assert animation._track.window == pytest.approx(0.5)
+
+
+def test_panels_drawn_against_time_share_one_window(track, decoded):
+    from neurospatial.animation import SpikeRasterOverlay
+
+    times, _, fields = decoded
+    series = TimeSeriesOverlay(  # its own 2 s window is for other backends
+        data=np.sin(times), times=times, label="lfp", window_seconds=2.0
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            window_seconds=1.5,
+            overlays=[series, SpikeRasterOverlay([times[::2]])],
+        )
+    animation.show()
+    names = ["track", "raster 0", "series 0"]
+    for window in (1.5, 3.0):
+        animation.frame = 30
+        _render(animation)
+        for name in names:
+            low, high = animation.figure[name].x_range
+            assert (low, high) == pytest.approx(
+                (times[30] - window / 2, times[30] + window / 2), abs=1e-4
+            ), name
+            assert animation.figure[name].title.text.endswith(f"{window:.3g} s window")
+        _press(animation.figure, "]")
 
 
 def test_a_tracks_segments_are_bounded_and_named(track, decoded):

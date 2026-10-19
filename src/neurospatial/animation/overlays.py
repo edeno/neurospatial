@@ -1515,7 +1515,9 @@ class TimeSeriesOverlay:
         Line color (matplotlib color string). Default is "white".
     window_seconds : float, optional
         Total time window to display, centered on current frame.
-        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0.
+        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0. The
+        fastplotlib backend shows every panel drawn against time over the
+        animation's own ``window_seconds`` instead, so they line up.
     linewidth : float, optional
         Line width in points. Default is 1.0.
     alpha : float, optional
@@ -1922,8 +1924,9 @@ class TimeSeriesOverlay:
 class SpikeRasterOverlay:
     """Spikes of many units as a raster beside the field, on the same clock.
 
-    Each unit is a row of ticks at its spike times, and the panel shows
-    ``window_seconds`` around the current time, so replay or theta sequences
+    Each unit is a row of ticks at its spike times, and the panel shows the
+    animation's ``window_seconds`` around the current time, lined up with the
+    other panels drawn against time, so replay or theta sequences
     can be read against a decoded posterior or the animal's position.
     Hovering over a spike names its unit; with ``rates``, clicking a unit's
     row shows its rate map under the field and highlights its spikes. Drawn
@@ -1949,8 +1952,6 @@ class SpikeRasterOverlay:
         environment's bins and in the order of ``spike_times``, such as
         ``compute_spatial_rates(...).firing_rates``. NaN marks bins without
         an estimate.
-    window_seconds : float, default=2.0
-        Seconds shown, centered on the current time.
     color : str, default="white"
         Tick color.
     linewidth : float, default=1.5
@@ -1960,8 +1961,8 @@ class SpikeRasterOverlay:
     ------
     ValueError
         If there are no units, ``order`` is not a permutation of the units,
-        ``unit_ids`` has the wrong length or repeats a label, a spike time is
-        not finite, or ``window_seconds`` is not positive.
+        ``unit_ids`` has the wrong length or repeats a label, or a spike time
+        is not finite.
 
     Examples
     --------
@@ -1969,8 +1970,8 @@ class SpikeRasterOverlay:
     >>> from neurospatial.animation import SpikeRasterOverlay
     >>> spike_times = [np.array([0.1, 0.5]), np.array([0.3])]
     >>> raster = SpikeRasterOverlay(spike_times, order=[1, 0])
-    >>> raster.window_seconds
-    2.0
+    >>> raster.color
+    'white'
     """
 
     spike_times: Any
@@ -1978,7 +1979,6 @@ class SpikeRasterOverlay:
     order: ArrayLike | None = None
     unit_ids: ArrayLike | None = None
     rates: NDArray[np.float64] | None = None
-    window_seconds: float = 2.0
     color: str = "white"
     linewidth: float = 1.5
     # Protocol attributes: spikes are drawn at their own times.
@@ -2027,10 +2027,6 @@ class SpikeRasterOverlay:
                     "Why: a spike is drawn at its time. Fix: drop them, e.g. "
                     "train[np.isfinite(train)]."
                 )
-        if not self.window_seconds > 0:
-            raise ValueError(
-                f"window_seconds must be positive, got {self.window_seconds}."
-            )
         self._order = order
         self._rows = [trains[i] for i in order], ids[order]
 
@@ -2079,7 +2075,6 @@ class SpikeRasterOverlay:
             spike_times=spike_times,
             unit_ids=unit_ids,
             rates=rates,
-            window_seconds=self.window_seconds,
             color=self.color,
             linewidth=self.linewidth,
         )
@@ -3312,8 +3307,6 @@ class SpikeRasterData:
         Each row's unit label.
     rates : ndarray of float64, shape (n_units, n_bins), or None
         Each row's rate map, in spikes per second.
-    window_seconds : float
-        Seconds shown, centered on the current time.
     color : str
         Tick color.
     linewidth : float
@@ -3323,7 +3316,6 @@ class SpikeRasterData:
     spike_times: list[NDArray[np.float64]]
     unit_ids: NDArray[Any]
     rates: NDArray[np.float64] | None
-    window_seconds: float
     color: str
     linewidth: float
 

@@ -1265,7 +1265,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `EpochOverlay` marks intervals such as ripples on every time panel and
   names the current one in the title. Keyboard: Space plays, the arrows step
   one frame, N and Shift+N jump between epochs and events, and `[` and `]`
-  halve or double the time windows. Several fields can be shown side by side
+  halve or double the shared time window: every panel drawn against time
+  shows the animation's `window_seconds`, so they line up. Several fields can be shown side by side
   on one color scale (`layout=`, `layer_names=`), as with napari. Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
