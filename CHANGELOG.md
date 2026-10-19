@@ -1573,6 +1573,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- Reading an environment's cell polygons, which clipping, re-binning, border
+  scores, decoded-probability remapping and arena fitting all do, builds and
+  validates the cells in vectorized calls, and skips the overlap test for
+  neighbors whose bounding boxes meet only along an edge or corner. A
+  90,000-bin grid's cells take 0.13 s instead of 3.2 s and 72,000 hexagons'
+  0.83 s instead of 2.9 s; `border_score` on a 40,000-bin arena takes 0.67 s
+  instead of 2.1 s. The polygons are bit-identical and the validation
+  errors unchanged.
+- One description of each bin's cell (`geometry.cell_polygons`) now serves
+  the analyses, the Matplotlib hexagon drawing (which built its own
+  hexagons from center, radius and orientation) and the fastplotlib backend,
+  so the cells drawn are the cells analyzed.
+
 - `env.plot()` draws the connections between bins as one collection rather
   than a line each, and marks grid cell edges with unlabeled minor ticks. A
   10,201-bin grid draws in 0.15 s instead of 4.0 s, and a 114,352-bin grid in

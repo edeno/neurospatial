@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
     from scipy import sparse
     from scipy.spatial import cKDTree
+    from shapely import Polygon
 
     from neurospatial.geometry import DiffusionGeometry, FaceGeometry
     from neurospatial.ops import KernelMode, _DiffusionEigenbasis, _MRFEigenbasis
@@ -246,6 +247,7 @@ _MISSING = object()
 _LOOKUP_INDEX = object()
 
 KDTREE: CacheKey[cKDTree] = CacheKey("kdtree")
+CELL_POLYGONS: CacheKey[tuple[Polygon, ...]] = CacheKey("cell_polygons")
 # The KD-tree over the bin centers' Cartesian embedding, for polar nearest_bin.
 EMBEDDED_KDTREE: CacheKey[tuple[NDArray[Any], cKDTree]] = CacheKey("embedded_kdtree")
 FACE_GEOMETRY: CacheKey[FaceGeometry] = CacheKey("face_geometry")

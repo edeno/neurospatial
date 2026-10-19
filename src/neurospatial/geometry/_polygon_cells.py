@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,6 +37,32 @@ def _error(what: str, fix: str) -> ValueError:
             fix=fix,
         )
     )
+
+
+def _validate_polygons(polygons: Sequence[Polygon]) -> None:
+    """``_validate_polygon`` for every polygon, screened in vectorized calls.
+
+    The first polygon that fails is checked again one at a time, so the error
+    is the one ``_validate_polygon`` gives.
+    """
+    geometries = _geometry_array(polygons)
+    coordinates, owner = shapely.get_coordinates(geometries, return_index=True)
+    nonfinite = np.bincount(
+        owner,
+        weights=~np.all(np.isfinite(coordinates), axis=1),
+        minlength=len(geometries),
+    )
+    area = shapely.area(geometries)
+    bad = (
+        shapely.is_empty(geometries)
+        | shapely.has_z(geometries)
+        | (nonfinite > 0)
+        | ~shapely.is_valid(geometries)
+        | ~np.isfinite(area)
+        | (area <= 0)
+    )
+    for index in np.flatnonzero(bad)[:1]:
+        _validate_polygon(polygons[index], f"cells[{index}]")
 
 
 def _validate_polygon(geometry: Any, name: str) -> None:
@@ -74,7 +101,7 @@ class PolygonCells:
                     f"cells[{index}] must be a connected Polygon.",
                     "split disconnected positive-area pieces into separate bins",
                 )
-            _validate_polygon(polygon, f"cells[{index}]")
+        _validate_polygons(polygons)
         _check_disjoint(polygons)
         object.__setattr__(self, "polygons", polygons)
 
@@ -208,15 +235,38 @@ def clip_mapping_of(locator: Locator) -> ClipMapping | None:
     return None
 
 
+def _geometry_array(polygons: Sequence[Polygon]) -> NDArray[np.object_]:
+    geometries = np.empty(len(polygons), dtype=object)
+    geometries[:] = polygons
+    return geometries
+
+
 def _check_disjoint(polygons: tuple[Polygon, ...]) -> None:
-    tree = STRtree(polygons)
-    for index, polygon in enumerate(polygons):
-        for other in tree.query(polygon):
-            if other > index and polygon.intersection(polygons[other]).area > 0:
-                raise _error(
-                    f"cells[{index}] and cells[{other}] overlap in their interiors.",
-                    "provide a nonoverlapping cell partition",
-                )
+    """Refuse cells whose interiors overlap, naming the first such pair.
+
+    Every candidate pair from the spatial index is intersected in one
+    vectorized call; a pair overlaps when its intersection has positive area.
+    Two cells meet only inside the overlap of their bounding boxes, so a pair
+    whose boxes overlap in no area (cells sharing a grid edge or corner)
+    cannot overlap and is not intersected.
+    """
+    geometries = _geometry_array(polygons)
+    first, second = STRtree(geometries).query(geometries)
+    bounds = shapely.bounds(geometries)
+    low = np.maximum(bounds[first, :2], bounds[second, :2])
+    high = np.minimum(bounds[first, 2:], bounds[second, 2:])
+    candidate = (second > first) & np.all(high > low, axis=1)
+    first, second = first[candidate], second[candidate]
+    overlap = np.flatnonzero(
+        shapely.area(shapely.intersection(geometries[first], geometries[second])) > 0
+    )
+    if overlap.size:
+        pair = overlap[np.argmin(first[overlap])]
+        raise _error(
+            f"cells[{first[pair]}] and cells[{second[pair]}] overlap in their "
+            "interiors.",
+            "provide a nonoverlapping cell partition",
+        )
 
 
 def transform_polygon_cells(

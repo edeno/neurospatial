@@ -25,11 +25,11 @@ from neurospatial.geometry import (
     HexagonShapes,
     PolygonCells,
     TriangleShapes,
+    cell_polygons,
     require_grid_context,
 )
 from neurospatial.layout._plotting import (
     _grid_mesh,
-    _hexagon_patches,
     _polygon_patches,
     plot_grid,
     plot_hexagons,
@@ -135,7 +135,8 @@ def _hexagon_cells(
     return plot_hexagons(
         ax,
         title=title,
-        shapes=binning.shapes,
+        centers=binning.shapes.centers,
+        cells=cell_polygons(binning),
         connectivity=connectivity,
         dimension_ranges=binning.dimension_ranges,
         **kwargs,
@@ -284,7 +285,10 @@ def _polygon_field(
     cmap_obj = plt.get_cmap(style.cmap).copy()
     cmap_obj.set_bad(style.nan_color or "none")
     collection = PatchCollection(
-        _polygon_patches(shapes), cmap=cmap_obj, rasterized=style.rasterized, **kwargs
+        _polygon_patches(shapes.polygons),
+        cmap=cmap_obj,
+        rasterized=style.rasterized,
+        **kwargs,
     )
     collection.set_array(np.ma.masked_invalid(field))
     collection.set_clim(style.vmin, style.vmax)
@@ -303,8 +307,7 @@ def _hexagon_field(
     """Plot field on hexagonal layout using PatchCollection."""
     from matplotlib.collections import PatchCollection
 
-    shapes = binning.shapes
-    assert isinstance(shapes, HexagonShapes)
+    cells = cell_polygons(binning)
 
     # Note: Unlike grid layouts which use colormap's built-in NaN handling,
     # PatchCollection requires manual filtering of NaN values to avoid creating
@@ -320,7 +323,7 @@ def _hexagon_field(
 
     # Create collection
     collection = PatchCollection(
-        _hexagon_patches(shapes, shapes.centers[drawn]),
+        _polygon_patches([cells[index] for index in np.flatnonzero(drawn)]),
         cmap=style.cmap,
         rasterized=style.rasterized,
         **kwargs,

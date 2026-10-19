@@ -10,7 +10,7 @@ import numpy as np
 import shapely
 import shapely.ops
 from numpy.typing import NDArray
-from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import linemerge, unary_union
 
 from neurospatial.geometry._binning import (
@@ -78,65 +78,94 @@ def cells_from_locator(locator: Locator) -> tuple[Polygon, ...]:
         if mapping is None:
             mapping = np.full(mask.size, -1, dtype=np.intp)
             mapping[mask.ravel()] = np.arange(np.count_nonzero(mask))
-        cells: dict[int, Polygon] = {}
-        for flat in np.flatnonzero(mapping >= 0):
-            i, j = np.unravel_index(flat, locator.shape)
-            cells[int(mapping[flat])] = box(
-                locator.edges[0][i],
-                locator.edges[1][j],
-                locator.edges[0][i + 1],
-                locator.edges[1][j + 1],
-            )
-        return tuple(cells[index] for index in range(len(cells)))
+        flat = np.flatnonzero(mapping >= 0)
+        i, j = np.unravel_index(flat[np.argsort(mapping[flat])], locator.shape)
+        return _boxes(locator.edges, i, j)
     if isinstance(locator, MeshLocator):
         order = np.flatnonzero(locator.simplex_to_active >= 0)
         order = order[np.argsort(locator.simplex_to_active[order])]
-        return tuple(
-            Polygon(locator.points[locator.simplices[index]]) for index in order
-        )
+        return tuple(shapely.polygons(locator.points[locator.simplices[order]]))
     if not isinstance(locator, HexLocator):
         raise _error(
             "The locator does not publish exact planar cell geometry.",
             "retain a native grid, hexagonal, mesh or clipped locator and supported wrappers",
         )
+    # Corners on the lattice of half-widths and half-radii: integer keys, so
+    # neighboring cells share exactly the same corner coordinates.
     width = np.sqrt(3.0) * locator.radius
-    offsets = ((0, 2), (1, 1), (1, -1), (0, -2), (-1, -1), (-1, 1))
-    vertices: dict[tuple[int, int], tuple[float, float]] = {}
-    polygons: dict[int, Polygon] = {}
-    for flat in np.flatnonzero(locator.flat_to_active >= 0):
-        row, column = divmod(int(flat), locator.centers_shape[1])
-        keys = [(2 * column + row % 2 + dx, 3 * row + dy) for dx, dy in offsets]
-        for x, y in keys:
-            vertices.setdefault(
-                (x, y),
-                (
-                    locator.offset_x + x * width / 2,
-                    locator.offset_y + y * locator.radius / 2,
-                ),
-            )
-        polygons[int(locator.flat_to_active[flat])] = Polygon(
-            [vertices[key] for key in keys]
-        )
-    return tuple(polygons[index] for index in range(len(polygons)))
+    offsets = np.array([(0, 2), (1, 1), (1, -1), (0, -2), (-1, -1), (-1, 1)])
+    flat = np.flatnonzero(locator.flat_to_active >= 0)
+    flat = flat[np.argsort(locator.flat_to_active[flat])]
+    row, column = np.divmod(flat, locator.centers_shape[1])
+    x = (2 * column + row % 2)[:, None] + offsets[:, 0]
+    y = (3 * row)[:, None] + offsets[:, 1]
+    corners = np.stack(
+        [locator.offset_x + x * width / 2, locator.offset_y + y * locator.radius / 2],
+        axis=-1,
+    )
+    return tuple(shapely.polygons(corners))
+
+
+def _boxes(
+    edges: Sequence[NDArray[np.float64]], i: NDArray[np.intp], j: NDArray[np.intp]
+) -> tuple[Polygon, ...]:
+    """Grid cells ``(i, j)`` as boxes, in the order given."""
+    return tuple(
+        shapely.box(edges[0][i], edges[1][j], edges[0][i + 1], edges[1][j + 1])
+    )
 
 
 def materialize_cells(binning: Binning) -> tuple[Polygon, ...]:
-    """Read exact Cartesian 2-D cells from published data, without any builder."""
+    """Read exact Cartesian 2-D cells from published data, without any builder.
+
+    The cells of :func:`cell_polygons`, checked to be valid, nonoverlapping
+    and area-measured.
+    """
     if binning.bins.n_dims != 2 or not binning.bins.has_measure_dim(2):
         raise _error(
             "Polygon clipping requires planar area-measured cells.",
             "use a Cartesian 2-D grid, hexagonal layout or triangular mesh",
         )
+    return PolygonCells(cell_polygons(binning)).polygons
+
+
+def cell_polygons(binning: Binning) -> tuple[Polygon, ...]:
+    """Every bin's cell as a polygon, in bin order, from the published data.
+
+    The one description of a planar binning's cells: analyses read it through
+    :func:`materialize_cells`, which validates it, and the plots draw it.
+    Unlike ``materialize_cells`` it also reads cells whose coordinates are
+    not area-measured, such as a polar (distance, angle) grid.
+
+    Parameters
+    ----------
+    binning : Binning
+        Two-dimensional bins with cell geometry.
+
+    Returns
+    -------
+    tuple of shapely.Polygon, length n_bins
+
+    Raises
+    ------
+    ValueError
+        If the bins are not two-dimensional or carry no cell geometry.
+    """
+    if binning.bins.n_dims != 2:
+        raise _error(
+            "Cell polygons require two-dimensional bins.",
+            "use a planar grid, hexagonal layout, triangular mesh or clipped cells",
+        )
     shapes = binning.shapes
     if isinstance(shapes, PolygonCells):
         polygons = shapes.polygons
     elif isinstance(shapes, TriangleShapes):
-        polygons = tuple(
-            Polygon(vertices) for vertices in shapes.points[shapes.triangles]
-        )
+        polygons = tuple(shapely.polygons(shapes.points[shapes.triangles]))
     elif isinstance(shapes, HexagonShapes):
         polygons = cells_from_locator(binning.locator)
-        centers = np.array([polygon.centroid.coords[0] for polygon in polygons])
+        centers = shapely.get_coordinates(
+            shapely.centroid(np.asarray(polygons, dtype=object))
+        )
         local = min(float(shapes.radius), float(np.min(binning.bins.sizes)) ** 0.5)
         allowance = (
             64
@@ -153,20 +182,12 @@ def materialize_cells(binning: Binning) -> tuple[Polygon, ...]:
             )
     elif binning.rectilinear is not None and len(binning.rectilinear.shape) == 2:
         grid = binning.rectilinear
-        polygons = tuple(
-            box(
-                grid.edges[0][i],
-                grid.edges[1][j],
-                grid.edges[0][i + 1],
-                grid.edges[1][j + 1],
-            )
-            for i, j in np.argwhere(grid.active_mask)
-        )
+        polygons = _boxes(grid.edges, *np.nonzero(grid.active_mask))
     else:
         polygons = cells_from_locator(binning.locator)
     if len(polygons) != binning.bins.n_bins:
         raise ValueError("cell geometry count does not match bins.n_bins.")
-    return PolygonCells(polygons).polygons
+    return polygons
 
 
 def _parts(geometry: shapely.Geometry) -> list[Polygon]:

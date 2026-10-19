@@ -11,11 +11,10 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
-    from matplotlib.patches import RegularPolygon
+    from shapely import Polygon
 
     from neurospatial.geometry import (
         FramedGrid,
-        HexagonShapes,
         Outline,
         PolygonCells,
         RectilinearGrid,
@@ -51,14 +50,14 @@ def _draw_connections(ax: Axes, connectivity: nx.Graph, **style: Any) -> None:
     ax.add_collection(lines, autolim=False)
 
 
-def _polygon_patches(shapes: PolygonCells) -> list[Any]:
+def _polygon_patches(polygons: Sequence[Polygon]) -> list[Any]:
     """Build compound paths whose interior rings remain unfilled."""
     from matplotlib.patches import PathPatch
     from matplotlib.path import Path
     from shapely.geometry.polygon import orient
 
     patches = []
-    for cell in shapes.polygons:
+    for cell in polygons:
         polygon = orient(cell, sign=1.0)
         paths = []
         for ring in (polygon.exterior, *polygon.interiors):
@@ -92,7 +91,7 @@ def plot_polygon_cells(
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     collection = PatchCollection(
-        _polygon_patches(shapes), cmap=cmap, alpha=alpha, **kwargs
+        _polygon_patches(shapes.polygons), cmap=cmap, alpha=alpha, **kwargs
     )
     collection.set_array(np.ones(len(shapes.polygons)))
     ax.add_collection(collection)
@@ -249,51 +248,28 @@ def plot_polygon_grid(
     return ax
 
 
-def _hexagon_patches(
-    shapes: HexagonShapes, centers: NDArray[np.float64]
-) -> list[RegularPolygon]:
-    """Build one hexagon patch per center, with the cells' radius and orientation.
-
-    Parameters
-    ----------
-    shapes : HexagonShapes
-        Hexagonal cells supplying the radius and orientation.
-    centers : ndarray of float64, shape (n_patches, 2)
-        Centers of the hexagons to draw.
-
-    Returns
-    -------
-    list of matplotlib.patches.RegularPolygon
-    """
-    from matplotlib.patches import RegularPolygon
-
-    return [
-        RegularPolygon(
-            (x, y),
-            numVertices=6,
-            radius=shapes.radius,
-            orientation=shapes.orientation,
-        )
-        for x, y in centers
-    ]
-
-
 def plot_hexagons(
     ax: Axes | None = None,
     *,
     title: str,
-    shapes: HexagonShapes | None,
+    centers: NDArray[np.float64] | None,
+    cells: Sequence[Polygon] | None,
     connectivity: nx.Graph | None,
     dimension_ranges: Sequence[tuple[float, float]] | None,
     **kwargs: Any,
 ) -> Axes:
-    """Draw hexagonal cells and the graph of active bin centers."""
+    """Draw hexagonal cells and the graph of active bin centers.
+
+    ``cells`` are the bins' own polygons (``geometry.cell_polygons``), so the
+    drawing shows the cells the analyses use.
+    """
     from matplotlib.collections import PatchCollection
 
     from neurospatial.layout.helpers.utils import _generic_graph_plot
 
     ax = _generic_graph_plot(ax=ax, graph=connectivity, name=title, **kwargs)
-    if kwargs.get("show_hexagons", True) and shapes is not None and len(shapes.centers):
+    if kwargs.get("show_hexagons", True) and cells is not None and len(cells):
+        assert centers is not None
         hex_kws = kwargs.get(
             "hexagon_kwargs",
             {
@@ -303,16 +279,11 @@ def plot_hexagons(
                 "linewidth": 0.5,
             },
         )
-        ax.scatter(
-            shapes.centers[:, 0], shapes.centers[:, 1], s=1, label="hexagonal grid"
-        )
-        collection = PatchCollection(
-            _hexagon_patches(shapes, shapes.centers), **hex_kws
-        )
-        ax.add_collection(collection)
+        ax.scatter(centers[:, 0], centers[:, 1], s=1, label="hexagonal grid")
+        ax.add_collection(PatchCollection(_polygon_patches(cells), **hex_kws))
         ax.plot(
-            shapes.centers[:, 0],
-            shapes.centers[:, 1],
+            centers[:, 0],
+            centers[:, 1],
             marker="o",
             markersize=1,
             color="blue",

@@ -801,11 +801,12 @@ def test_translated_plot_paths_follow_cell_geometry(built_environment):
             for child_path, parent_path in zip(
                 actual.get_paths(), expected.get_paths(), strict=True
             ):
-                np.testing.assert_allclose(
-                    child_path.vertices,
-                    parent_path.vertices + offset,
-                    rtol=1e-12,
-                    atol=1e-12,
+                # Cells drawn from transformed cell geometry keep their shape;
+                # a cell may list its corners from a different starting one.
+                moved = Polygon(parent_path.vertices + offset)
+                drawn = Polygon(child_path.vertices)
+                assert drawn.symmetric_difference(moved).area <= 1e-12 * max(
+                    moved.area, 1.0
                 )
             np.testing.assert_array_equal(
                 actual.get_facecolors(), expected.get_facecolors()

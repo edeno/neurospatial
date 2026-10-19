@@ -100,6 +100,34 @@ def test_clipped_cells_keep_their_exact_area_holes_included():
     )
 
 
+def test_drawn_cells_are_the_analysis_cells():
+    from neurospatial.geometry import materialize_cells
+
+    hexes = Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 40, (4000, 2)),
+        bin_size=4.0,
+        layout="hexagonal",
+    )
+    np.testing.assert_allclose(
+        _cell_areas(cell_mesh(hexes), hexes.n_bins),
+        [cell.area for cell in materialize_cells(hexes._binning)],
+        rtol=1e-5,  # float32 vertices
+    )
+
+
+def test_polar_grids_have_cells_in_distance_and_angle():
+    polar = Environment.from_polar_egocentric(
+        distance_range=(0, 40),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10,
+        angle_bin_size=np.pi / 4,
+    )
+    cells = cell_mesh(polar)
+    np.testing.assert_allclose(
+        _cell_areas(cells, polar.n_bins), 10 * np.pi / 4, rtol=1e-5
+    )
+
+
 def test_tracks_points_and_volumes_are_drawn_as_points():
     track = Environment.linear_track(endpoints=[[0, 0], [100, 0]], bin_size=5.0)
     volume = Environment.from_samples(
