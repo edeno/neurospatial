@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Sequence
+from dataclasses import fields as dataclass_fields
+from dataclasses import replace
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -30,6 +32,7 @@ from neurospatial.animation._parallel import (
     _event_visibility,
     _head_direction_color,
 )
+from neurospatial.animation.overlays import _OWN_SAMPLE_TYPES
 from neurospatial.environment._fastplotlib import (
     COLORBAR_WIDTH,
     ColorScale,
@@ -47,6 +50,7 @@ from neurospatial.environment._fastplotlib import (
     plot_title,
     xyz,
 )
+from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
@@ -118,6 +122,26 @@ def held_until(times: NDArray[np.float64], typical: float) -> NDArray[np.float64
     return times + held
 
 
+def _typical_interval(times: NDArray[np.float64], default: float) -> float:
+    """The median interval between ``times``; ``default`` for fewer than two."""
+    return float(np.median(np.diff(times))) if len(times) > 1 else default
+
+
+def _most_within(times: NDArray[np.float64], span: float) -> int:
+    """The most of the sorted ``times`` within ``span`` seconds of the first
+    of them; at least 1."""
+    reach = np.searchsorted(times, times + span, side="right")
+    return int(np.max(reach - np.arange(len(times)), initial=1))
+
+
+def _held_frames(
+    clock: NDArray[np.float64], times: NDArray[np.float64]
+) -> NDArray[np.intp]:
+    """The frame shown at each of ``times``: the last one that started (the
+    first, before any)."""
+    return np.maximum(np.searchsorted(clock, times, side="right") - 1, 0)
+
+
 class _Samples:
     """Which row of an overlay the slider's time shows.
 
@@ -130,16 +154,13 @@ class _Samples:
     def __init__(
         self,
         times: NDArray[np.float64] | None,
-        start: float,
         frame_of: Callable[[float], int],
         frame_interval: float,
     ) -> None:
         self.frame_of, self.frame_interval = frame_of, frame_interval
-        self.times = None if times is None else times - start
-        if self.times is not None:
-            intervals = np.diff(self.times)
-            typical = float(np.median(intervals)) if len(intervals) else np.inf
-            self.ends = held_until(self.times, typical)
+        self.times = times
+        if times is not None:
+            self.ends = held_until(times, _typical_interval(times, np.inf))
 
     def at(self, time: float) -> int:
         """The row shown at ``time`` on the clock; -1 for none."""
@@ -159,9 +180,7 @@ class _Samples:
         """The most rows ``recent`` returns."""
         if self.times is None:
             return n_frames
-        span = n_frames * self.frame_interval
-        reach = np.searchsorted(self.times, self.times - span, side="right")
-        return int(np.max(np.arange(len(self.times)) + 1 - reach, initial=1))
+        return _most_within(self.times, n_frames * self.frame_interval)
 
 
 def _row(values: NDArray[np.float64], row: int) -> NDArray[np.float64]:
@@ -331,7 +350,6 @@ class _Events:
         data: EventData,
         frame_of: Callable[[float], int],
         frame_clock: NDArray[np.float64],
-        start: float,
     ) -> None:
         self.data, self.frame_of = data, frame_of
         self.kinds = []
@@ -350,11 +368,8 @@ class _Events:
                 edge_width=data.border_width * data.size,  # a fraction of the size
                 alpha_mode="blend",
             )
-            times = data.event_times[name] - start
-            # The frame that holds each event: the last one that started.
-            frames = np.maximum(
-                np.searchsorted(frame_clock, times, side="right") - 1, 0
-            )
+            times = data.event_times[name]
+            frames = _held_frames(frame_clock, times)
             self.kinds.append((times, frames, fill, border, graphic))
 
     def update(self, time: float) -> None:
@@ -494,23 +509,22 @@ def track_extents(
 def track_segments(env: Environment) -> list[tuple[str, float, float]]:
     """Each segment of a linearized track: its name, start and stop along it.
 
-    A segment is named by its nodes, such as ``"center–left"``. Empty off a
-    linearized track.
+    A segment is named by its nodes, such as ``"center–left"``, and spans
+    its bins. Empty off a linearized track.
     """
+    from neurospatial.geometry._graph import _track_cell_segments
+
     linearization = env._binning.linearization
-    if linearization is None:
+    cells = None if linearization is None else _track_cell_segments(linearization)
+    if linearization is None or cells is None:
         return []
-    graph, spacing = linearization.graph, linearization.edge_spacing
+    edges = np.asarray(linearization.grid_edges[0], dtype=np.float64)
     segments = []
-    start = float(linearization.grid_edges[0][0])
-    for k, (u, v) in enumerate(linearization.edge_order):
-        ends = np.array([graph.nodes[u]["pos"], graph.nodes[v]["pos"]])
-        length = float(
-            graph.edges[u, v].get("distance", np.linalg.norm(ends[1] - ends[0]))
+    for u, v in linearization.edge_order:
+        own = np.flatnonzero(cells == linearization.graph.edges[u, v]["edge_id"])
+        segments.append(
+            (f"{u}\u2013{v}", float(edges[own[0]]), float(edges[own[-1] + 1]))
         )
-        segments.append((f"{u}\u2013{v}", start, start + length))
-        gap = spacing if isinstance(spacing, float) else spacing[k : k + 1]
-        start += length + float(np.sum(gap))
     return segments
 
 
@@ -608,10 +622,10 @@ class _PositionTime:
 
     A column starts at its frame's time and lasts until the next frame, as
     the field panel holds it, or one typical frame interval across a gap
-    (see ``held_until``), which stays empty. Rows span each bin along the track. Positions are drawn as
-    lines along the track, every sample of their own, broken where the
-    samples change segment of a maze or leave a gap in time, so no line
-    crosses space or time that was not seen.
+    (see ``held_until``), which stays empty. Rows span each bin along the
+    track. Positions are drawn as lines along the track, every sample of
+    their own, broken where the samples change segment of a maze or leave a
+    gap in time, so no line crosses space or time that was not seen.
     """
 
     def __init__(
@@ -624,20 +638,20 @@ class _PositionTime:
         window: float,
         positions: Sequence[tuple[PositionData, _Samples]],
         epochs: Sequence[EpochData],
-        start: float,
         move_to: Callable[[float], None],
     ) -> None:
-        self.subplot, self.scale, self.clock, self.start = subplot, scale, clock, start
+        self.subplot, self.scale, self.clock = subplot, scale, clock
         self.lower, self.upper = extents
-        self.typical = float(np.median(np.diff(clock))) if len(clock) > 1 else 1.0
+        self.typical = _typical_interval(clock, 1.0)
         self.ends = held_until(clock, self.typical)
         labels = env._plot_labels()
         self.axis = "position along track" + (
             f" ({labels.units})" if labels.units else ""
         )
-        self.positions = positions
-        self.tracks = [
-            (track_position(env, data.data), samples) for data, samples in positions
+        # Each position's color, distance along the track, and samples.
+        self.positions = [
+            (data.color, track_position(env, data.data), samples)
+            for data, samples in positions
         ]
         self.first, self.rows = 0, np.empty((0, len(self.lower)))
         self.mesh: Any = None
@@ -651,17 +665,7 @@ class _PositionTime:
         if len(segments) > 1:
             _segment_joints(subplot, segments, axis="y")
             self.labels = [
-                (
-                    subplot.add_text(
-                        name,
-                        font_size=13,
-                        face_color=_SEGMENT_COLOR,
-                        outline_color="black",
-                        outline_thickness=0.25,
-                        anchor="middle-right",
-                    ),
-                    (low + high) / 2,
-                )
+                (_edge_label(subplot, name, _SEGMENT_COLOR), (low + high) / 2)
                 for name, low, high in segments
             ]
         subplot.title = self.axis
@@ -674,17 +678,7 @@ class _PositionTime:
             for k in range(len(epochs))
         ]
         self.labels += [
-            (
-                subplot.add_text(
-                    data.label,
-                    font_size=13,
-                    face_color=data.color,
-                    outline_color="black",
-                    outline_thickness=0.25,
-                    anchor="middle-right",
-                ),
-                (low + high) / 2,
-            )
+            (_edge_label(subplot, data.label, data.color), (low + high) / 2)
             for data, (low, high) in zip(epochs, self.strips, strict=True)
         ]
         subplot.y_range = (bottom, self.strips[-1][1] if self.strips else top)
@@ -702,13 +696,17 @@ class _PositionTime:
                 self.subplot.delete_graphic(graphic)
         # Columns a window can hold: frames starting less than one hold
         # (at most _GAP times the typical interval) before it, up to its end.
-        reach = np.searchsorted(
-            self.clock, self.clock + window + _GAP * self.typical, side="right"
-        )
-        self.n_columns = int(np.max(reach - np.arange(len(self.clock))))
-        quads = _fans(np.zeros((4 * self.n_columns * len(self.lower), 2)), 4)
+        self.n_columns = _most_within(self.clock, window + _GAP * self.typical)
+        # Each cell's corners, counterclockwise from its start at its bin's
+        # lower edge: the bins are fixed, and each frame moves the times.
+        n_bins = len(self.lower)
+        self.corners = np.zeros((self.n_columns, n_bins, 4, 3), dtype=np.float32)
+        self.corners[:, :, [0, 1], 1] = self.lower[None, :, None]
+        self.corners[:, :, [2, 3], 1] = self.upper[None, :, None]
+        self.drawn: tuple[int, int] | None = None  # the frames in the mesh
+        quads = _fans(np.zeros((4 * self.n_columns * n_bins, 2)), 4)
         self.mesh = self.subplot.add_mesh(
-            quads.positions,
+            self.corners.reshape(-1, 3),
             quads.triangles,
             mode="basic",
             mapcoords=np.zeros(len(quads.positions), dtype=np.float32),
@@ -718,23 +716,25 @@ class _PositionTime:
         self.mesh.tooltip_format = self.describe
         self.lines = [
             self.subplot.add_line(
-                # Room for a break between every two samples.
+                # Room for a break between every two samples a window holds.
                 np.full(
-                    (2 * self._most_in_window(samples), 3), np.nan, dtype=np.float32
+                    (
+                        2
+                        * (
+                            self.n_columns
+                            if samples.times is None
+                            else _most_within(samples.times, window)
+                        ),
+                        3,
+                    ),
+                    np.nan,
+                    dtype=np.float32,
                 ),
-                colors=data.color,
+                colors=color,
                 thickness=2,
             )
-            for data, samples in self.positions
+            for color, _, samples in self.positions
         ]
-
-    def _most_in_window(self, clock: _Samples) -> int:
-        """The most samples of ``clock`` a window holds."""
-        if clock.times is None:
-            return self.n_columns
-        times = clock.times
-        reach = np.searchsorted(times, times + self.window, side="right")
-        return int(np.max(reach - np.arange(len(times)), initial=1))
 
     def frames_at(self, time: float) -> slice:
         """The frames whose columns show in the window around ``time``."""
@@ -749,24 +749,23 @@ class _PositionTime:
         # Rows read for a wider window before it narrowed: keep those inside.
         rows = rows[: self.n_columns]
         self.first, self.rows = first, rows
-        n_frames, n_bins = rows.shape
+        n_frames = len(rows)
         frames = np.arange(first, first + n_frames)
-        corners = _rectangles(
-            np.repeat(self.clock[frames], n_bins),
-            np.repeat(self.ends[frames], n_bins),
-            np.tile(self.lower, n_frames),
-            np.tile(self.upper, n_frames),
-        )
-        positions = np.zeros((len(self.mesh.positions), 3), dtype=np.float32)
-        positions[: len(corners), :2] = corners  # unused columns have no area
-        self.mesh.positions = positions
-        mapcoords = np.zeros(len(positions), dtype=np.float32)
-        mapcoords[: len(corners)] = np.repeat(
-            self.scale.texture_coordinates(rows.ravel()), 4
-        )
-        self.mesh.mapcoords = mapcoords
+        if self.drawn != (first, n_frames):  # the same frames draw the same
+            self.drawn = (first, n_frames)
+            # Each column's start and end; unused columns have no width.
+            x = np.zeros((self.n_columns, 1, 2), dtype=np.float32)
+            x[:n_frames, 0] = np.column_stack([self.clock[frames], self.ends[frames]])
+            self.corners[:, :, [0, 3], 0] = x[..., :1]
+            self.corners[:, :, [1, 2], 0] = x[..., 1:]
+            self.mesh.positions = self.corners.reshape(-1, 3)
+            mapcoords = np.zeros(len(self.mesh.positions), dtype=np.float32)
+            mapcoords[: 4 * rows.size] = np.repeat(
+                self.scale.texture_coordinates(rows.ravel()), 4
+            )
+            self.mesh.mapcoords = mapcoords
         half = self.window / 2
-        for line, (track, clock) in zip(self.lines, self.tracks, strict=True):
+        for line, (_, track, clock) in zip(self.lines, self.positions, strict=True):
             if clock.times is None:
                 shown, times, ends = frames, self.clock[frames], self.ends[frames]
             else:
@@ -898,20 +897,19 @@ class _Raster:
         self,
         subplot: Any,
         data: SpikeRasterData,
-        start: float,
         window: float,
         move_to: Callable[[float], None],
         rates: _UnitRates | None,
     ) -> None:
-        self.data, self.start, self.rates = data, start, rates
+        self.data, self.rates = data, rates
         self.selected: int = -1
         counts = [len(train) for train in data.spike_times]
         self.row = np.repeat(np.arange(len(counts)), counts)
         self.times = np.concatenate(data.spike_times)
-        x = self.times - start
         # Three vertices a spike: its segment's ends and a gap.
         segments = pair_segments(
-            np.column_stack([x, self.row - 0.4]), np.column_stack([x, self.row + 0.4])
+            np.column_stack([self.times, self.row - 0.4]),
+            np.column_stack([self.times, self.row + 0.4]),
         )
         if not len(segments):
             segments = np.full((1, 3), np.nan, dtype=np.float32)
@@ -948,7 +946,7 @@ class _Raster:
         """The tooltip for the spike under the pointer."""
         spike = int(pick_info["vertex_index"]) // 3
         unit = self.data.unit_ids[self.row[spike]]
-        return f"unit {unit}\nt = {self.times[spike] - self.start:.4f} s"
+        return f"unit {unit}\nt = {self.times[spike]:.4f} s"
 
     def describe_row(self, pick_info: dict[str, Any]) -> str:
         """The tooltip for a row, away from its spikes."""
@@ -988,6 +986,18 @@ class _Raster:
         self.bands.colors = self._band_colors()
 
 
+def _edge_label(subplot: Any, text: str, color: str) -> Any:
+    """An outlined label, placed by its right edge's middle."""
+    return subplot.add_text(
+        text,
+        font_size=13,
+        face_color=color,
+        outline_color="black",
+        outline_thickness=0.25,
+        anchor="middle-right",
+    )
+
+
 def _segment_joints(
     subplot: Any, segments: Sequence[tuple[str, float, float]], axis: str
 ) -> None:
@@ -1021,6 +1031,13 @@ def _checked_track(env: Environment, track: Environment) -> Environment:
             + (" and is a track itself" if env.is_linearized_track else "")
             + ". Fix: animate a 2-D environment, or leave track out."
         )
+    require_cartesian(
+        env.coordinate_system,
+        "animate_fields(track=...)",
+        why="each bin's probability goes to the track bin nearest its center, "
+        "a distance in Cartesian coordinates",
+        fix="animate an allocentric 2-D environment, or leave track out",
+    )
     return track
 
 
@@ -1091,6 +1108,11 @@ def _field_stacks(
     return stacks, list(names)
 
 
+def _panel_names(kind: str, n: int) -> list[str]:
+    """Names of the ``n`` panels of a kind: "field", or "field 0", "field 1"."""
+    return [f"{kind} {i}" for i in range(n)] if n > 1 else [kind]
+
+
 def _arrange(
     n: int, layout: str | None, right: float, bottom: float
 ) -> list[tuple[float, float, float, float]]:
@@ -1132,7 +1154,6 @@ def _spatial_overlays(
     env: Environment,
     frame_of: Callable[[float], int],
     frame_clock: NDArray[np.float64],
-    start: float,
 ) -> list[Any]:
     """The overlays drawn over a field."""
     layers: list[Any] = [
@@ -1153,8 +1174,7 @@ def _spatial_overlays(
         for item in overlay_data.head_directions
     ]
     layers += [
-        _Events(plot, item, frame_of, frame_clock, start)
-        for item in overlay_data.events
+        _Events(plot, item, frame_of, frame_clock) for item in overlay_data.events
     ]
     return layers
 
@@ -1232,19 +1252,54 @@ def _finest_interval(overlay_data: OverlayData | None) -> float:
     samples, in seconds; infinite without one."""
     if overlay_data is None:
         return np.inf
+    lists = (
+        getattr(overlay_data, field.name) for field in dataclass_fields(overlay_data)
+    )
     own = [
         item.times
-        for items in (
-            overlay_data.positions,
-            overlay_data.bodypart_sets,
-            overlay_data.head_directions,
-            overlay_data.object_vectors,
-            overlay_data.videos,
-        )
+        for items in lists
+        if isinstance(items, list)
         for item in items
-        if item.times is not None and len(item.times) > 1
+        if isinstance(item, _OWN_SAMPLE_TYPES) and item.times is not None
     ]
-    return min((float(np.median(np.diff(times))) for times in own), default=np.inf)
+    return min((_typical_interval(times, np.inf) for times in own), default=np.inf)
+
+
+def _on_clock(overlay_data: OverlayData, start: float) -> OverlayData:
+    """The overlays with every time counted from ``start``, the first frame's."""
+
+    def own(items: list[Any]) -> list[Any]:
+        return [
+            item if item.times is None else replace(item, times=item.times - start)
+            for item in items
+        ]
+
+    return replace(
+        overlay_data,
+        positions=own(overlay_data.positions),
+        bodypart_sets=own(overlay_data.bodypart_sets),
+        head_directions=own(overlay_data.head_directions),
+        videos=own(overlay_data.videos),
+        object_vectors=own(overlay_data.object_vectors),
+        timeseries=own(overlay_data.timeseries),
+        events=[
+            replace(
+                item,
+                event_times={
+                    name: times - start for name, times in item.event_times.items()
+                },
+            )
+            for item in overlay_data.events
+        ],
+        spike_rasters=[
+            replace(item, spike_times=[train - start for train in item.spike_times])
+            for item in overlay_data.spike_rasters
+        ],
+        epochs=[
+            replace(item, intervals=item.intervals - start)
+            for item in overlay_data.epochs
+        ],
+    )
 
 
 def playback_step(frame_times: NDArray[np.float64]) -> float:
@@ -1485,13 +1540,15 @@ class FastplotlibAnimation:
 
         fastplotlib = import_fastplotlib()
         stacks, names = _field_stacks(fields, layer_names)
-        self._fields = stacks[0]  # the first field; all are in _stacks
         self._stacks = stacks
         self.n_frames = len(stacks[0])
-        self._frame_times = np.asarray(frame_times, dtype=np.float64)
-        # The widget's clock: seconds from the first frame.
-        self._start = float(self._frame_times[0])
-        self._clock = self._frame_times - self._start
+        frame_times = np.asarray(frame_times, dtype=np.float64)
+        # The widget's clock: seconds from the first frame. Every overlay is
+        # put on it once, so nothing drawn handles session timestamps.
+        self._start = float(frame_times[0])
+        self._clock = frame_times - self._start
+        if overlay_data is not None:
+            overlay_data = _on_clock(overlay_data, self._start)
         self._labels = _validate_frame_labels(
             None if frame_labels is None else list(frame_labels),
             self.n_frames,
@@ -1504,12 +1561,12 @@ class FastplotlibAnimation:
             )
         groups = _group_timeseries(overlay_data.timeseries if overlay_data else [])
         step, steps_per_second = _playback(
-            playback_step(self._frame_times),
+            playback_step(frame_times),
             _finest_interval(overlay_data),
             speed,
             min(max_playback_fps, _MAX_STEPS),
         )
-        typical = float(np.median(np.diff(self._clock))) if self.n_frames > 1 else step
+        typical = _typical_interval(self._clock, step)
         # A 2-D field, such as a decoded posterior, can be drawn along a track
         # of the same maze too: each 2-D bin's value goes to the nearest track
         # bin, as non_local_detector's "projected 1D" view.
@@ -1520,19 +1577,11 @@ class FastplotlibAnimation:
         # On a 1-D environment the track panel shows all a field panel would,
         # at a size to read: no field panel.
         with_fields = not (env.n_dims == 1 and extents_along_track is not None)
-        field_names = (
-            []
-            if not with_fields
-            else [f"field {i}" for i in range(len(stacks))]
-            if several
-            else ["field"]
-        )
+        field_names = _panel_names("field", len(stacks)) if with_fields else []
         track_names = (
-            []
-            if extents_along_track is None
-            else [f"track {i}" for i in range(len(stacks))]
-            if several
-            else ["track"]
+            _panel_names("track", len(stacks))
+            if extents_along_track is not None
+            else []
         )
         # Panels on the clock fill the right, stacked top to bottom: each
         # field over time on a track, the rasters, then the time series; the
@@ -1546,13 +1595,14 @@ class FastplotlibAnimation:
         # A raster with rate maps adds the chosen unit's map, under the
         # fields or, without them, at the bottom of the right.
         with_rates = any(item.rates is not None for item in rasters)
+        rates_under_fields = with_rates and with_fields
         if with_rates and not with_fields:
             panels.append(("unit", 1.5))
         if not with_fields:
             split = 0.0
         else:
             split = (0.4 if len(time_panels) > len(groups) else 0.6) if panels else 1.0
-        bottom = 0.65 if with_rates and with_fields else 1.0
+        bottom = 0.65 if rates_under_fields else 1.0
         extents = dict(
             zip(
                 field_names,
@@ -1560,14 +1610,14 @@ class FastplotlibAnimation:
                 strict=True,
             )
         )
-        if with_rates and with_fields:
+        if rates_under_fields:
             extents["unit"] = (0.0, split, bottom, 1.0)
         total, top = sum(weight for _, weight in panels), 0.0
         for name, weight in panels:
             extents[name] = (split, 1.0, top / total, (top + weight) / total)
             top += weight
         camera, controller = camera_options(env)
-        n_spatial = len(field_names) + (with_rates and with_fields)
+        n_spatial = len(field_names) + rates_under_fields
         # The slider stops at the last frame.
         self.widget = fastplotlib.NDWidget(
             ranges={"time": (0.0, self._clock[-1] + step, step)},
@@ -1580,7 +1630,8 @@ class FastplotlibAnimation:
         self.widget.ui_sliders._frame_time["time"] = 1 / steps_per_second
         self.figure = self.widget.figure
         self._plots = [self.figure[name] for name in field_names]
-        # The status (time, epoch) heads the first field, or the first track.
+        # The panel that holds the frames' NDGraphic, and without field
+        # panels the colorbar: the first field, or the first track.
         self._plot = self.figure[(field_names or track_names)[0]]
         for name in time_panels:
             # One time axis, at the bottom, and no toolbar: the panels read as
@@ -1629,11 +1680,10 @@ class FastplotlibAnimation:
         beyond = (vmin is None and low != 0.0, vmax is None)
 
         def clock(times: NDArray[np.float64] | None) -> _Samples:
-            return _Samples(times, self._start, self._frame_of, typical)
+            return _Samples(times, self._frame_of, typical)
 
         # An unnamed environment is not titled by its layout's class name.
         self._title = title or (plot_title(env) if env._plot_labels().name else "")
-        self._names = names
         events = overlay_data.events if overlay_data else []
         epochs = overlay_data.epochs if overlay_data else []
         self._epochs = epochs
@@ -1641,7 +1691,7 @@ class FastplotlibAnimation:
         marks = [item.intervals[:, 0] for item in epochs] + [
             times for item in events for times in item.event_times.values()
         ]
-        self._marks = np.unique(np.concatenate([[], *marks])) - self._start
+        self._marks = np.unique(np.concatenate([[], *marks]))
         self._field_graphics: list[FieldGraphic] = []
         self._videos: list[_Video] = []
         self._layers: list[Any] = []
@@ -1683,15 +1733,8 @@ class FastplotlibAnimation:
                 plot.docks["right"].size = COLORBAR_WIDTH
             if overlay_data is not None:
                 self._layers += _spatial_overlays(
-                    plot,
-                    overlay_data,
-                    clock,
-                    env,
-                    self._frame_of,
-                    self._clock,
-                    self._start,
+                    plot, overlay_data, clock, env, self._frame_of, self._clock
                 )
-        self._field = self._field_graphics[0] if self._field_graphics else None
         # Each field its name; the time and epochs go above the panels, which
         # a field's title is too narrow for.
         for plot, name in zip(
@@ -1711,72 +1754,60 @@ class FastplotlibAnimation:
                     window_seconds,
                     positions,
                     epochs,
-                    self._start,
                     self._move_to,
                 )
                 if several:
                     self.figure[name].title = f"{label}: {panel.axis}"
-                _mark_events(self.figure[name], events, self._start)
-                for data, strip in zip(epochs, panel.strips, strict=True):
-                    _shade_epochs(self.figure[name], [data], self._start, strip=strip)
                 self._tracks.append(panel)
-        self._track = self._tracks[0] if self._tracks else None
-        if self._projection is not None and self._tracks:
+        if self._projection is not None:
             # Summed along the track, a posterior is on its own scale.
             for name in track_names:
                 draw_colorbar(
                     self.figure[name], track_scale, colorbar_label, beyond=(False, True)
                 )
-            for name in time_panels:
-                self.figure[name].docks["right"].size = COLORBAR_WIDTH
-        if not with_fields:
-            # The colorbar goes on the first track; every time panel keeps
-            # the same room on the right, so their time axes line up.
+        elif not with_fields:  # the colorbar goes on the first track
             draw_colorbar(self._plot, scale, colorbar_label, beyond=beyond)
-            for name in time_panels[1:]:
+        if self._projection is not None or not with_fields:
+            # Every time panel keeps a colorbar's room, so their axes line up.
+            for name in time_panels:
                 self.figure[name].docks["right"].size = COLORBAR_WIDTH
         unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
         self._unit = unit
         self._rasters = [
             _Raster(
-                self.figure[f"raster {i}"],
-                item,
-                self._start,
-                window_seconds,
-                self._move_to,
-                unit,
+                self.figure[f"raster {i}"], item, window_seconds, self._move_to, unit
             )
             for i, item in enumerate(rasters)
         ]
-        for i in range(len(rasters)):
-            _mark_events(self.figure[f"raster {i}"], events, self._start)
-            _shade_epochs(self.figure[f"raster {i}"], epochs, self._start)
         frames = _frames_graphic(
             self.widget[self._plot],
             self.widget.indices,
-            self._fields,
+            stacks[0],
             self._frame_of,
             self._read,
             self._show,
             # What the right-click menu shows the settings of.
-            self._field.graphic if self._field else self._tracks[0].view.cursor,
+            self._field_graphics[0].graphic
+            if self._field_graphics
+            else self._tracks[0].view.cursor,
         )
         # fastplotlib has no public way to add a custom NDGraphic yet.
         self.widget[self._plot]._nd_graphics.append(frames)
         self._series = [
             drawn
             for i, group in enumerate(groups)
-            for drawn in _add_series(
-                self.widget,
-                f"series {i}",
-                group,
-                events,
-                epochs,
-                self._start,
-                window_seconds,
-            )
+            for drawn in _add_series(self.widget, f"series {i}", group, window_seconds)
         ]
         self.widget.indices = {"time": 0.0}  # adding a series can move the time
+        # Events marked, and epochs shaded, in every panel drawn against time;
+        # over a track's fields, which shading would tint, as labeled strips.
+        strips = {
+            name: panel.strips
+            for name, panel in zip(track_names, self._tracks, strict=True)
+        }
+        for name in time_panels:
+            _mark_events(self.figure[name], events)
+            _shade_epochs(self.figure[name], epochs, strips=strips.get(name))
         # Only the fields are fitted: fitting a series subplot's camera moves
         # the time, which follows the center of its view.
         for plot in self._plots:
@@ -1784,6 +1815,7 @@ class FastplotlibAnimation:
             frame_view(plot, env)
         self._canvas: Any = None
         self._step = step
+        self._last_window: tuple[slice, list[NDArray[np.float64]]] = (slice(0, 0), [])
         self.window_seconds = window_seconds
         # The panels drawn against time, each titled with the window it shows.
         self._time_titles = {
@@ -1793,7 +1825,7 @@ class FastplotlibAnimation:
         if time_panels and not groups:  # a series keeps its own room
             # The one time axis, at the bottom, clear of the data.
             bottom_panel = self.figure[time_panels[-1]]
-            self._time_axis_room = _Room(bottom_panel, *bottom_panel.y_range)
+            _Room(bottom_panel, *bottom_panel.y_range)
         self.figure.renderer.add_event_handler(self._key, "key_down")
         self._add_key_hint()
         self._show(0.0, self._read(0.0))
@@ -1892,16 +1924,37 @@ class FastplotlibAnimation:
         frame = self._frame_of(time)
         values = [np.asarray(stack[frame], dtype=np.float64) for stack in self._stacks]
         images = [video.data.get_frame(video.clock.at(time)) for video in self._videos]
-        if self._track is None:
+        if not self._tracks:
             return _Frame(frame, values, images, 0, [])
-        window = self._track.frames_at(time)
-        rows = [
-            self._along_track(
-                np.asarray(stack[window], dtype=np.float64).reshape(-1, len(field))
+        window = self._tracks[0].frames_at(time)
+        return _Frame(frame, values, images, window.start, self._window_rows(window))
+
+    def _window_rows(self, window: slice) -> list[NDArray[np.float64]]:
+        """Each field along the track over ``window``'s frames.
+
+        The rows of the last window read are reused where the two overlap,
+        so a step reads and projects only the frames that came into view.
+        """
+        last, last_rows = self._last_window
+        keep = range(max(window.start, last.start), min(window.stop, last.stop))
+        if not keep:  # nothing to reuse: read it all
+            keep = range(window.stop, window.stop)
+        parts = (slice(window.start, keep.start), slice(keep.stop, window.stop))
+        rows = []
+        for k, stack in enumerate(self._stacks):
+            head, tail = (
+                self._along_track(np.asarray(stack[part], dtype=np.float64))
+                for part in parts
             )
-            for stack, field in zip(self._stacks, values, strict=True)
-        ]
-        return _Frame(frame, values, images, window.start, rows)
+            kept = (
+                (last_rows[k][keep.start - last.start : keep.stop - last.start],)
+                if keep
+                else ()
+            )
+            rows.append(np.concatenate([head, *kept, tail]))
+        # One assignment, so a read on the worker thread never sees half.
+        self._last_window = (window, rows)
+        return rows
 
     def _show(self, time: float, data: _Frame) -> None:
         frame, images = data.frame, data.images
@@ -1923,13 +1976,13 @@ class FastplotlibAnimation:
             # Every time shown counts from the first frame; its own, once.
             label += f" from {self._start:.2f} s"
         # Without a field panel to carry it, the title heads the status.
-        parts = [label, *self._epochs_at(self._start + time)]
+        parts = [label, *self._epochs_at(time)]
         if not self._plots:
             parts.insert(0, self._title)
         self.status = "  |  ".join(part for part in parts if part)
 
     def _epochs_at(self, time: float) -> list[str]:
-        """Each epoch ``time`` (absolute) is in, as "ripple 3 of 120"."""
+        """Each epoch ``time`` (on the clock) is in, as "ripple 3 of 120"."""
         names = []
         for data in self._epochs:
             index = int(np.searchsorted(data.intervals[:, 0], time, side="right")) - 1
@@ -1980,21 +2033,13 @@ _MAX_SERIES_POINTS = 100_000
 
 
 def _add_series(
-    widget: Any,
-    name: str,
-    group: list[TimeSeriesData],
-    events: Sequence[EventData],
-    epochs: Sequence[EpochData],
-    start: float,
-    window: float,
+    widget: Any, name: str, group: list[TimeSeriesData], window: float
 ) -> list[tuple[Any, float]]:
     """Draw a group of time series in one subplot, on the widget's clock.
 
     Each shows ``window`` seconds, the window every time panel shares, and
     follows the slider; the series' own ``window_seconds`` is for the other
-    backends. Times are shifted by ``start``, the first frame's time. Event
-    times are marked as vertical lines in the events' colors, and epochs
-    shaded.
+    backends.
 
     Returns
     -------
@@ -2010,7 +2055,7 @@ def _add_series(
     subplot = widget.figure[name]
     end = widget.ranges["time"].stop
     for item in group:
-        times = item.times - start
+        times = item.times
         finite = np.isfinite(item.data)
         half = window / 2
         if not finite.any() or not (
@@ -2051,8 +2096,6 @@ def _add_series(
             name=item.label,
         )
         drawn.append((series, float(rate)))
-    _mark_events(subplot, events, start)
-    _shade_epochs(subplot, epochs, start)
     subplot.title = "  |  ".join(item.label for item in group)
     subplot.camera.maintain_aspect = False
     # A speed's 0.002 cm/s floor reads as 0.
@@ -2069,13 +2112,13 @@ def _add_series(
     return drawn
 
 
-def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> None:
+def _mark_events(subplot: Any, events: Sequence[EventData]) -> None:
     """Event times as vertical lines in the events' colors, on the clock."""
     for data in events:
         for event, event_times in data.event_times.items():
             if len(event_times):
                 subplot.add_inf_line(
-                    event_times - start,
+                    event_times,
                     axis="x",
                     colors=data.colors[event],
                     thickness=1.0,
@@ -2086,14 +2129,15 @@ def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> Non
 def _shade_epochs(
     subplot: Any,
     epochs: Sequence[EpochData],
-    start: float,
     *,
-    strip: tuple[float, float] | None = None,
+    strips: Sequence[tuple[float, float]] | None = None,
 ) -> None:
     """Epochs on the clock, shaded behind the data; over a heatmap, which
-    shading would tint, as a solid strip between the heights ``strip``."""
-    for data in epochs:
-        starts, stops = data.intervals[:, 0] - start, data.intervals[:, 1] - start
+    shading would tint, each kind as a solid strip between its heights in
+    ``strips``."""
+    for k, data in enumerate(epochs):
+        starts, stops = data.intervals[:, 0], data.intervals[:, 1]
+        strip = strips[k] if strips is not None else None
         # Far past any data, so a band spans the panel at any zoom.
         low, high = strip or (-1e6, 1e6)
         corners = _rectangles(
@@ -2141,7 +2185,6 @@ def render_fastplotlib(
     """
     if dry_run:
         from neurospatial.animation._utils import _emit_status
-        from neurospatial.environment._fastplotlib import import_fastplotlib
 
         import_fastplotlib()
         _emit_status(

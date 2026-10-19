@@ -202,7 +202,7 @@ def test_animation_moves_the_overlays_with_the_frame(apparatus, walk):
         overlays=[PositionOverlay(positions=path, times=t, trail_length=10), events],
     )
     assert isinstance(animation, FastplotlibAnimation)
-    assert animation._fields is fields  # an array is read a frame at a time
+    assert animation._stacks[0] is fields  # an array is read a frame at a time
     animation.show()
     position, event_layer = animation._layers
     ((_, _, _, _, event_graphic),) = event_layer.kinds
@@ -290,12 +290,12 @@ def test_the_field_recolors_and_is_read_one_frame_at_a_time(apparatus, walk):
     counted = fields.view(CountingFrames)
     animation = apparatus.animate_fields(counted, frame_times=t, backend="fastplotlib")
     reads.clear()
-    before = animation._field.graphic.mapcoords[:].copy()
+    before = animation._field_graphics[0].graphic.mapcoords[:].copy()
     animation.frame = 60
     _render(animation)
     assert reads == [60]
-    assert not np.array_equal(animation._field.graphic.mapcoords[:], before)
-    np.testing.assert_array_equal(animation._field.values, fields[60])
+    assert not np.array_equal(animation._field_graphics[0].graphic.mapcoords[:], before)
+    np.testing.assert_array_equal(animation._field_graphics[0].values, fields[60])
 
 
 def test_the_right_click_settings_pause_the_field(apparatus, walk):
@@ -307,7 +307,9 @@ def test_the_right_click_settings_pause_the_field(apparatus, walk):
         overlays=[PositionOverlay(positions=path, times=t)],
     )
     (frames,) = animation.widget[animation._plot].nd_graphics
-    assert frames.graphic is animation._field.graphic  # the menu draws its settings
+    assert (
+        frames.graphic is animation._field_graphics[0].graphic
+    )  # the menu draws its settings
     frames.pause = True
     animation.frame = 40
     for graphic in animation.widget.ndgraphics:
@@ -539,13 +541,15 @@ def test_a_track_shows_its_fields_against_position_and_time(track, decoded):
     np.testing.assert_allclose(
         _pixel(animation.figure, panel, middle, 35.0), 0.0, atol=0.05
     )
-    (line,) = animation._track.lines
-    column = 15 - animation._track.first
+    (line,) = animation._tracks[0].lines
+    column = 15 - animation._tracks[0].first
     points = line.data[:][:, :2]
     (at,) = np.flatnonzero(np.isclose(points[:, 0], times[15]))
     np.testing.assert_allclose(points[at], [times[15], 45.0], rtol=1e-6)
     face = 2 * (column * track.n_bins + 3)
-    assert animation._track.mesh.tooltip_format({"face_index": face}).splitlines() == [
+    assert animation._tracks[0].mesh.tooltip_format(
+        {"face_index": face}
+    ).splitlines() == [
         f"t = {times[15]:.3f} s",
         "bin 3, position along track (cm): 45",
         "value: 1",
@@ -559,7 +563,7 @@ def test_a_track_shows_its_fields_against_position_and_time(track, decoded):
     np.testing.assert_allclose(
         _pixel(animation.figure, panel, times[19] + 0.3, 15.0), 0.0, atol=0.05
     )
-    animation._track.view.cursor.selection = times[12]  # dragging the cursor
+    animation._tracks[0].view.cursor.selection = times[12]  # dragging the cursor
     assert animation.widget.indices["time"] == pytest.approx(times[12])
 
 
@@ -744,9 +748,9 @@ def test_epochs_are_marked_named_and_jumped_between(track, decoded):
     np.testing.assert_allclose(
         [corners[:4, 0].min(), corners[:4, 0].max()], [0.45, 0.65], atol=1e-6
     )
-    assert corners[:, 1].min() > animation._track.upper.max()
+    assert corners[:, 1].min() > animation._tracks[0].upper.max()
     # ...named at the panel's edge.
-    assert "ripple" in [label.text for label, _ in animation._track.labels]
+    assert "ripple" in [label.text for label, _ in animation._tracks[0].labels]
     for panel in ("raster 0", "series 0"):
         (bands,) = [g for g in figure[panel].graphics if g.name == "ripple epochs"]
         x = bands.positions[:][:, 0]
@@ -796,7 +800,7 @@ def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
 
     animation.frame = 30  # 6.0 s, bin 0 holds the field
     _press(figure, "]")
-    assert animation._track.window == pytest.approx(2.0)
+    assert animation._tracks[0].window == pytest.approx(2.0)
     ((lfp, _),) = animation._series
     assert lfp.display_window == pytest.approx(2.0)  # one window, shared
     # The wider window draws frames a second away.
@@ -814,7 +818,7 @@ def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
     )
     _press(figure, "[")
     _press(figure, "[")
-    assert animation._track.window == pytest.approx(0.5)
+    assert animation._tracks[0].window == pytest.approx(0.5)
 
 
 def test_panels_drawn_against_time_share_one_window(track, decoded):
@@ -888,11 +892,11 @@ def test_a_tracks_segments_are_bounded_and_named(track, decoded):
     # 10 cm of spacing separates the segments already: no line between them.
     lines = [g for g in panel.graphics if type(g).__name__ == "InfLineGraphic"]
     assert [g.data[:].tolist() for g in lines] == [[0.0]]  # the cursor's edge
-    names = [(label.text, middle) for label, middle in animation._track.labels]
+    names = [(label.text, middle) for label, middle in animation._tracks[0].labels]
     assert names == [("0\u20131", 15.0), ("1\u20132", 55.0)]
     animation.frame = 10
     _render(animation)
-    (label, _), _ = animation._track.labels
+    (label, _), _ = animation._tracks[0].labels
     assert label.offset[0] == pytest.approx(times[10] + 1.0)  # the window's right
 
     # Segments that meet get a line, with a dark edge.
@@ -989,7 +993,7 @@ def test_a_1d_environment_is_drawn_as_position_against_time():
         )
     names = [subplot.name for subplot in animation.figure]
     assert names == ["track", "raster 0", "series 0", "unit"]  # no field panel
-    assert animation._field is None
+    assert not animation._field_graphics
     track = animation.figure["track"]
     assert animation.status.startswith("t = 0.00 s")
     assert track.title.text.startswith("position along track")
@@ -1002,9 +1006,9 @@ def test_a_1d_environment_is_drawn_as_position_against_time():
     animation.frame = 20
     _render(animation)
     assert (
-        animation._track.first
+        animation._tracks[0].first
         <= 20
-        < animation._track.first + len(animation._track.rows)
+        < animation._tracks[0].first + len(animation._tracks[0].rows)
     )
 
 
@@ -1050,7 +1054,7 @@ def test_track_lines_break_between_segments_and_across_gaps(track):
         )
     animation.widget.indices = {"time": 1.5}
     _render(animation)
-    (line,) = animation._track.lines
+    (line,) = animation._tracks[0].lines
     y = line.data[:][:, 1]
     runs = np.split(y, np.flatnonzero(np.isnan(y)))
     drawn = [run[np.isfinite(run)] for run in runs if np.isfinite(run).any()]
@@ -1072,7 +1076,7 @@ def test_track_lines_break_between_segments_and_across_gaps(track):
         )
     animation.widget.indices = {"time": 1.0}
     _render(animation)
-    (line,) = animation._track.lines
+    (line,) = animation._tracks[0].lines
     y = line.data[:][:, 1]
     first_gap = np.flatnonzero(np.isnan(y))[0]
     assert first_gap == 10  # after the last sample on segment 0-1
@@ -1133,12 +1137,12 @@ def test_a_2d_posterior_is_drawn_along_a_track_of_the_maze(track):
         track=track,
         overlays=[PositionOverlay(positions=along[:20], times=times)],
     )
-    assert animation._plots and animation._track is not None  # both views
+    assert animation._plots and animation._tracks  # both views
     _render(animation)
-    rows = animation._track.rows
+    rows = animation._tracks[0].rows
     _, nearest = track.bin_center_tree().query(plane.bin_centers[hot])
     for frame in range(len(times)):
-        row = rows[frame - animation._track.first]
+        row = rows[frame - animation._tracks[0].first]
         assert row[nearest[frame]] == 1.0  # the mass moves to the nearest bin
         assert np.nansum(row) == pytest.approx(1.0)  # and is kept
     assert animation.figure["track"].docks["right"].size > 0  # its own colorbar
@@ -1195,6 +1199,34 @@ def test_side_by_side_posteriors_share_the_tracks_color_limits(track):
         tops.append(animation._tracks[0].scale.vmax)
     assert tops[0] == pytest.approx(tops[1])  # the order does not matter
     assert tops[0] == pytest.approx(1.0)  # the sharp posterior is on the scale
+
+
+def test_a_tracks_window_reuses_rows_read_for_the_last_one(track):
+    from neurospatial.animation.backends.fastplotlib_backend import _project
+
+    rng = np.random.default_rng(1)
+    along = track.linear_to_nd(rng.uniform(0, 70, 3000))
+    plane = Environment.from_samples(
+        along + rng.normal(0, 1, along.shape), bin_size=10.0
+    )
+    fields = rng.random((300, plane.n_bins))
+    animation = plane.animate_fields(
+        fields,
+        frame_times=np.arange(300) * 0.01,
+        backend="fastplotlib",
+        track=track,
+        window_seconds=0.5,
+    )
+    # Forward, back, a jump and a wider window: as read afresh each time.
+    for time in (0.3, 0.32, 0.6, 0.31, 2.9, 0.0, "]", 1.0, 1.4):
+        if time == "]":
+            animation._scale_windows(2.0)
+            continue
+        window = animation._tracks[0].frames_at(time)
+        np.testing.assert_array_equal(
+            animation._read(time).rows[0],
+            _project(fields[window], animation._projection),
+        )
 
 
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
@@ -1335,7 +1367,7 @@ def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
         )
     animation.widget.indices = {"time": 2.0}
     _render(animation)
-    (line,) = animation._track.lines
+    (line,) = animation._tracks[0].lines
     drawn = line.data[:][:, :2]
     drawn = drawn[np.isfinite(drawn[:, 0])]
     inside = np.abs(times - 2.0) <= 0.5
