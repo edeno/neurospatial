@@ -1087,8 +1087,11 @@ class TestEgocentricRateConvention:
         positions, times = simulate_trajectory_ou(
             env, duration=1500.0, speed_units="cm", seed=7
         )
+        # The cell fires on the movement direction at every sample; the
+        # analysis sees a heading only where the animal moves at >= 2 cm/s.
+        movement = heading_from_velocity(times, positions)
         headings = heading_from_velocity(times, positions, min_speed=2.0)
-        return env, positions, times, headings
+        return env, positions, times, movement, headings
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
@@ -1103,7 +1106,7 @@ class TestEgocentricRateConvention:
             ObjectVectorCellModel,
         )
 
-        env, positions, times, headings = trajectory
+        env, positions, times, movement, headings = trajectory
         object_positions = np.array([[20.0, 20.0]])  # object at arena center
         model = ObjectVectorCellModel(
             direction_frame="egocentric",
@@ -1117,7 +1120,7 @@ class TestEgocentricRateConvention:
             baseline_rate=0.1,
             metric="euclidean",
         )
-        rates = model.firing_rate(positions, headings=headings)
+        rates = model.firing_rate(positions, headings=movement)
         # Independent seed from the trajectory RNG so spike-acceptance uniforms
         # are not correlated with the simulated state.
         spike_times = generate_poisson_spikes(rates, times, seed=99)
@@ -1176,6 +1179,9 @@ class TestEgocentricRateNaNHandling:
         positions, times = simulate_trajectory_ou(
             env, duration=400.0, speed_units="cm", seed=42
         )
+        # The cell fires on the movement direction at every sample; the
+        # analysis sees a heading only where the animal moves at >= 2 cm/s.
+        movement = heading_from_velocity(times, positions)
         headings = heading_from_velocity(times, positions, min_speed=2.0)
         object_positions = np.array([[20.0, 20.0]])
         model = ObjectVectorCellModel(
@@ -1191,7 +1197,7 @@ class TestEgocentricRateNaNHandling:
             metric="euclidean",
         )
         spike_times = generate_poisson_spikes(
-            model.firing_rate(positions, headings=headings), times, seed=7
+            model.firing_rate(positions, headings=movement), times, seed=7
         )
         return env, spike_times, times, positions, headings, object_positions
 

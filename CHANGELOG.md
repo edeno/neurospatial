@@ -148,6 +148,45 @@
   single sample returns an empty result. Recordings without breaks give the
   same values as before.
 
+- `heading_from_velocity` no longer invents a heading where it has no
+  velocity direction. Movement heading is the direction of the velocity
+  vector, so it is not observed below `min_speed`, or where speed is exactly
+  zero (where it used to return 0, East). Those samples are now `NaN`; they
+  used to be filled by circular interpolation between the headings around
+  them, which could give a direction the animal never faced, such as North
+  while it stood at a port between arriving heading East and leaving heading
+  West. The velocity is smoothed, so at the default `min_speed=0` most of a
+  short stop still has a heading: set `min_speed` (for example 2 cm/s) to
+  mark stops.
+
+  ```python
+  # before: slow samples filled by circular interpolation; a NaN row raised
+  heading = heading_from_velocity(times, positions, min_speed=2.0)
+  observed = compute_speed(times, positions) >= 2.0  # mask needed to undo the fill
+  # after: NaN where the animal is slower than min_speed, still, or not tracked
+  heading = heading_from_velocity(times, positions, min_speed=2.0)
+  ```
+
+  A `NaN` row (a lost frame) is now a missing sample with `NaN` heading, and
+  no velocity is computed across it; it used to raise. A single sample gives
+  `[nan]` instead of raising, and empty input or a repeated timestamp raises.
+  A perfectly still recording now raises unless `allow_all_nan=True`; it
+  used to return 0 (East) everywhere. For a heading while the animal is
+  still, use `heading_from_body_orientation` with pose keypoints. For the
+  same reason `head_sweep_from_positions(..., min_speed=0)` on a window where
+  the animal never moves now warns that every heading is undefined and
+  returns 0.0; it used to return 0.0 silently.
+
+  Headings computed with `min_speed > 0` contain `NaN` at slow samples, and a
+  simulated cell given them has `NaN` rates that `generate_poisson_spikes`
+  refuses: simulate firing from an unthresholded heading, or let the
+  simulator derive it. `generate_population_spikes` with a
+  `HeadDirectionCellModel` and no `headings` now holds the last direction of
+  movement through stops (samples before the first movement take the first
+  direction), and raises `ValueError` asking for `headings=` when the
+  trajectory never moves; it used to fire as if the animal faced East
+  wherever it stood exactly still.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
@@ -1437,7 +1476,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   instead of assigning the nearest bin.
 - `heading_from_velocity` takes `break_before`, like `compute_speed`: for
   recordings joined on one clock, mark the first frame of each later
-  recording, and no velocity, smoothing or low-speed fill spans the join, so a
+  recording, and no velocity or smoothing spans the join, so a
   jump in position between recordings is not read as running. Touching
   `epochs` rows merge into one window and do not separate recordings.
 - `compute_cumulative_distance(times, positions, *, max_gap, epochs,

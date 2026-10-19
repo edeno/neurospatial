@@ -34,7 +34,7 @@ def test_heading_from_velocity_isolated_sample_nan(two_epoch_recording):
     assert np.isfinite(headings[[0, 1, 2, 4, 5, 6]]).all()
 
 
-def test_heading_interpolation_stays_in_run(two_epoch_recording):
+def test_slow_samples_have_no_heading_in_either_run(two_epoch_recording):
     from neurospatial.ops.egocentric import heading_from_velocity
 
     r = two_epoch_recording
@@ -42,8 +42,12 @@ def test_heading_interpolation_stays_in_run(two_epoch_recording):
     positions = np.c_[
         np.r_[0, 1, 2, 2, 2, 2, np.full(6, 20)], np.r_[np.zeros(6), np.arange(6)]
     ]
-    headings = heading_from_velocity(times, positions, min_speed=5.0)
-    np.testing.assert_allclose(headings[:6], 0.0, atol=0)
+    # Smoothed speed in the first run falls from 32.7 to 13.7 cm/s as the
+    # animal stops; samples 4-5 are below 20 cm/s. The second run moves North
+    # at 50 cm/s throughout.
+    headings = heading_from_velocity(times, positions, min_speed=20.0)
+    np.testing.assert_allclose(headings[:4], 0.0, atol=0)
+    assert np.isnan(headings[4:6]).all()
     np.testing.assert_allclose(headings[6:], np.pi / 2, atol=0)
 
 
@@ -95,11 +99,13 @@ def test_heading_break_before_matches_separate_recordings(joined_recordings):
     )
     first = heading_from_velocity(times[:n_first], positions[:n_first], min_speed=2.0)
     second = heading_from_velocity(times[n_first:], positions[n_first:], min_speed=2.0)
-    np.testing.assert_allclose(joined, np.r_[first, second], rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(
+        joined, np.r_[first, second], rtol=1e-12, atol=1e-12, equal_nan=True
+    )
     near_join = np.abs(times - 60.0) < 2.0
     assert not _is_west(joined[near_join]).any()
-    # Slow frames at the end of the first recording keep its East heading.
-    np.testing.assert_allclose(joined[n_first - 15 : n_first], 0.0, atol=1e-12)
+    # The first recording stands still for its last second: no heading there.
+    assert np.isnan(joined[n_first - 15 : n_first]).all()
     np.testing.assert_allclose(
         joined[n_first:][near_join[n_first:]], np.pi / 2, atol=1e-9
     )
@@ -138,19 +144,20 @@ def test_heading_rejects_bad_break_before(break_before):
 
 
 @pytest.mark.parametrize(
-    "times",
+    ("times", "labels_why"),
     [
-        np.array(0.1),
-        np.zeros((3, 1)),
-        np.array([0.0, 0.1]),
-        np.array([0.0, 0.0, 0.1]),
-        np.array([0.2, 0.1, 0.0]),
-        np.array([0.0, np.nan, 0.2]),
-        np.array([0.0, np.inf, 0.2]),
-        np.array(["zero", "one", "two"]),
+        (np.array(0.1), True),
+        (np.zeros((3, 1)), True),
+        (np.array([0.0, 0.1]), True),
+        # The shared repeated-timestamp message states why without a label.
+        (np.array([0.0, 0.0, 0.1]), False),
+        (np.array([0.2, 0.1, 0.0]), True),
+        (np.array([0.0, np.nan, 0.2]), True),
+        (np.array([0.0, np.inf, 0.2]), True),
+        (np.array(["zero", "one", "two"]), True),
     ],
 )
-def test_heading_from_velocity_rejects_bad_times(times):
+def test_heading_from_velocity_rejects_bad_times(times, labels_why):
     from neurospatial.ops.egocentric import heading_from_velocity
 
     positions = np.c_[[0.0, 1.0, 2.0], np.zeros(3)]
@@ -158,7 +165,7 @@ def test_heading_from_velocity_rejects_bad_times(times):
         heading_from_velocity(times, positions)
     message = str(caught.value)
     assert "times" in message
-    assert "Why:" in message
+    assert ("Why:" in message) is labels_why
     assert "Fix:" in message
 
 
@@ -770,8 +777,8 @@ class TestHeadingFromVelocity:
         # All headings should be π/2 (North)
         assert_allclose(headings[10:-10], np.pi / 2, atol=0.1)
 
-    def test_stationary_periods_interpolated(self):
-        """Stationary periods produce smoothly interpolated headings."""
+    def test_stationary_periods_have_no_heading(self):
+        """Samples slower than min_speed get NaN; moving samples keep East."""
         from neurospatial.ops.egocentric import heading_from_velocity
 
         # Moving, then stationary, then moving again
@@ -792,15 +799,12 @@ class TestHeadingFromVelocity:
             smooth_window=0.2,
         )
 
-        # Stationary period should have smoothly interpolated headings
-        # (not NaN or sudden jumps)
-        assert not np.any(np.isnan(headings))
-
-        # Check no discontinuities (large jumps)
-        diff = np.abs(np.diff(headings))
-        # Wrap around for circular comparison
-        diff = np.minimum(diff, 2 * np.pi - diff)
-        assert np.all(diff < 0.5)  # No large jumps
+        # The smoothed speed is below 0.5 at samples 34-66 (exactly 0 at 23 of
+        # them); those have no heading, and every other sample is East.
+        slow = np.zeros(n, dtype=bool)
+        slow[34:67] = True
+        assert np.isnan(headings[slow]).all()
+        assert_allclose(headings[~slow], 0.0, atol=1e-12)
 
     def test_all_speeds_low_raises_by_default(self):
         """Every sample below min_speed raises (fail loud), not silent all-NaN.
@@ -832,16 +836,45 @@ class TestHeadingFromVelocity:
             )
         assert np.all(np.isnan(headings))
 
-    def test_n_time_less_than_2_raises(self):
-        """n_time < 2 raises ValueError."""
+    def test_still_recording_fix_does_not_suggest_lowering_zero_min_speed(self):
+        """At min_speed=0 the only remedies are allow_all_nan or a pose heading."""
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        positions = np.zeros((10, 2))
+        times = np.arange(10) * 0.1
+        with pytest.raises(ValueError, match="or zero") as caught:
+            heading_from_velocity(times, positions)
+        fix = str(caught.value).split("Fix:")[1]
+        assert "lower min_speed" not in fix
+        assert "allow_all_nan=True" in fix
+        assert "heading_from_body_orientation" in fix
+
+        with pytest.raises(ValueError) as caught:
+            heading_from_velocity(times, positions, min_speed=2.0)
+        assert "lower min_speed" in str(caught.value).split("Fix:")[1]
+
+    def test_single_sample_has_no_heading(self):
+        """One sample has a position but no movement, so its heading is NaN."""
         from neurospatial.ops.egocentric import heading_from_velocity
 
         positions = np.array([[0.0, 0.0]])  # Only 1 point
 
-        with pytest.raises(ValueError, match="at least 2"):
-            heading_from_velocity(
-                positions=positions, times=np.arange(len(positions)) * 0.1
-            )
+        headings = heading_from_velocity(positions=positions, times=np.array([0.0]))
+        assert headings.shape == (1,)
+        assert np.isnan(headings).all()
+
+    def test_empty_input_raises(self):
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        with pytest.raises(ValueError, match="no samples"):
+            heading_from_velocity(np.array([]), np.empty((0, 2)))
+
+    def test_repeated_timestamp_raises(self):
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        positions = np.c_[np.arange(4.0), np.zeros(4)]
+        with pytest.raises(ValueError, match="strictly increasing"):
+            heading_from_velocity(np.array([0.0, 0.1, 0.1, 0.2]), positions)
 
     def test_smoothing_reduces_noise(self):
         """Larger smoothing sigma reduces heading noise."""
@@ -999,11 +1032,10 @@ class TestHeadingFromVelocityWestward:
         assert np.allclose(headings, np.pi, atol=1e-6)
 
     def test_heading_at_pi_boundary_with_brief_stop(self):
-        """A brief stop during westward motion keeps the heading at +pi.
+        """Westward samples around a brief stop are +pi; the stop has no heading.
 
-        Low-speed samples are circularly interpolated from neighbors; with
-        westward motion on both sides the interpolated heading must stay near
-        +pi rather than flipping to -pi.
+        Unsmoothed, the three samples in the middle of the stop have zero
+        velocity. They are NaN, and no moving sample flips to -pi.
         """
         from neurospatial.ops.egocentric import heading_from_velocity
 
@@ -1013,10 +1045,16 @@ class TestHeadingFromVelocityWestward:
         positions = np.column_stack([x, y])
 
         headings = heading_from_velocity(
-            positions=positions, times=np.arange(len(positions)) * 0.1, min_speed=5.0
+            positions=positions,
+            times=np.arange(len(positions)) * 0.1,
+            min_speed=5.0,
+            smooth_window=0.0,
         )
 
-        assert np.allclose(headings, np.pi, atol=1e-6)
+        stopped = np.zeros(len(x), dtype=bool)
+        stopped[4:7] = True
+        assert np.isnan(headings[stopped]).all()
+        assert np.allclose(headings[~stopped], np.pi, atol=1e-6)
         # Explicitly: no sample collapsed to -pi.
         assert not np.any(np.isclose(headings, -np.pi, atol=1e-6))
 
@@ -1078,21 +1116,17 @@ class TestHeadingFromVelocityGuards:
                 positions=positions, times=np.arange(len(positions)) * -0.1
             )
 
-    def test_heading_from_velocity_rejects_nonfinite_positions(self):
-        """positions containing NaN or Inf raise ValueError via validate_finite."""
+    @pytest.mark.parametrize("missing", [np.nan, np.inf, -np.inf])
+    def test_heading_from_velocity_nonfinite_rows_have_no_heading(self, missing):
+        """A row with a non-finite coordinate is missing: NaN there, East elsewhere."""
         from neurospatial.ops.egocentric import heading_from_velocity
 
-        with_nan = np.array([[0.0, 0.0], [np.nan, 0.0], [2.0, 0.0]])
-        with pytest.raises(ValueError):
-            heading_from_velocity(
-                positions=with_nan, times=np.arange(len(with_nan)) * 0.1
-            )
-
-        with_inf = np.array([[0.0, 0.0], [np.inf, 0.0], [2.0, 0.0]])
-        with pytest.raises(ValueError):
-            heading_from_velocity(
-                positions=with_inf, times=np.arange(len(with_inf)) * 0.1
-            )
+        positions = np.c_[np.arange(6.0), np.zeros(6)]
+        positions[2, 0] = missing
+        headings = heading_from_velocity(
+            np.arange(6) * 0.1, positions, smooth_window=0.0
+        )
+        np.testing.assert_array_equal(headings, [0.0, 0.0, np.nan, 0.0, 0.0, 0.0])
 
     def test_heading_from_velocity_descending_times_would_flip(self):
         """The timestamp guard blocks descending times that would rotate headings by pi.
@@ -1203,18 +1237,70 @@ def test_antipodal_turn_has_no_jump_to_zero():
     np.testing.assert_allclose(filled[1:-1], [np.pi / 4, 0.0, -np.pi / 4], atol=1e-12)
 
 
-def test_heading_from_velocity_turn_is_gradual():
+def test_heading_from_velocity_stop_has_no_heading():
+    from neurospatial.behavior import compute_speed
     from neurospatial.ops.egocentric import heading_from_velocity
 
-    # East, a 0.3 s stop, then West: the stop's headings are interpolated
-    # along the shorter arc instead of reversing in one step.
+    # East, a 0.3 s stop, then West: the stop's direction is not observed, so
+    # it gets no heading instead of one interpolated between East and West.
     positions = np.column_stack([[0.0, 1.0, 1.0, 1.0, 1.0, 0.0, -1.0], np.zeros(7)])
-    heading = heading_from_velocity(
-        np.arange(len(positions)) * 0.1, positions, min_speed=2.0
+    times = np.arange(len(positions)) * 0.1
+    speed = compute_speed(times, positions)
+    np.testing.assert_allclose(
+        speed, [8.204, 4.977, 1.480, 1.480, 4.977, 8.204, 9.684], atol=6e-4
     )
-    steps = np.diff(heading)
-    assert np.all(steps >= 0)
-    assert np.max(steps) < np.pi / 2
+    heading = heading_from_velocity(times, positions, min_speed=2.0)
+    np.testing.assert_allclose(
+        heading, [0.0, 0.0, np.nan, np.nan, np.pi, np.pi, np.pi], atol=1e-12
+    )
+
+
+def test_heading_from_velocity_zero_speed_has_no_heading():
+    """arctan2(0, 0) = 0 (East) is not a direction; zero speed gives NaN."""
+    from neurospatial.behavior import compute_speed
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    positions = np.c_[[0.0, 1.0, 1.0, 1.0, 2.0], np.zeros(5)]
+    times = np.arange(5) * 0.1
+    np.testing.assert_allclose(
+        compute_speed(times, positions, smooth_window=0.0), [10, 5, 0, 5, 10]
+    )
+    heading = heading_from_velocity(times, positions, smooth_window=0.0)
+    np.testing.assert_array_equal(heading, [0.0, 0.0, np.nan, 0.0, 0.0])
+
+
+def test_heading_from_velocity_nan_row_is_missing_not_bridged():
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    times = np.arange(8) * 0.1
+    positions = np.c_[np.arange(8.0), np.zeros(8)]
+    positions[3] = np.nan
+    heading = heading_from_velocity(times, positions, smooth_window=0.0)
+    np.testing.assert_array_equal(heading, [0, 0, 0, np.nan, 0, 0, 0, 0])
+
+    # With rows 3 and 5 missing, sample 4 touches no observed interval.
+    positions[5] = np.nan
+    heading = heading_from_velocity(times, positions, smooth_window=0.0)
+    np.testing.assert_array_equal(heading, [0, 0, 0, np.nan, np.nan, np.nan, 0, 0])
+
+
+def test_heading_from_velocity_nan_rows_match_separate_runs():
+    """Missing rows split the path into runs analyzed as separate recordings."""
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    times = np.arange(200) / 50  # s, 50 Hz
+    x = 10.0 * np.minimum(times, 2.0)  # cm: East for 2 s ...
+    y = 10.0 * np.maximum(times - 2.0, 0.0)  # ... then North
+    positions = np.c_[x, y]
+    missing = np.arange(98, 103)
+    positions[missing] = np.nan
+    joined = heading_from_velocity(times, positions)
+    before, after = slice(0, 98), slice(103, 200)
+    expected = np.full(200, np.nan)
+    expected[before] = heading_from_velocity(times[before], positions[before])
+    expected[after] = heading_from_velocity(times[after], positions[after])
+    np.testing.assert_array_equal(joined, expected)
+    assert np.isfinite(joined[before]).all() and np.isfinite(joined[after]).all()
 
 
 def test_nan_anchor_not_propagated():
