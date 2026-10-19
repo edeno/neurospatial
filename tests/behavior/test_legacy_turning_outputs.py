@@ -16,6 +16,8 @@ _TOL = {"rtol": 0, "atol": 1e-15}
 
 _THREE_D = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [1.0, 1.0, 2.0]])
 _WITH_DUPLICATE = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 0.0], [2.0, 0.0], [2.0, 1.0]])
+_THREE_D_TIMES = np.arange(len(_THREE_D)) * 0.1
+_WITH_DUPLICATE_TIMES = np.arange(len(_WITH_DUPLICATE)) * 0.1
 
 
 def test_three_dimensional_turn_mixes_xy_cross_with_full_dot_product():
@@ -24,7 +26,9 @@ def test_three_dimensional_turn_mixes_xy_cross_with_full_dot_product():
 
 def test_three_dimensional_curvature_mixes_xy_cross_with_full_dot_product():
     np.testing.assert_allclose(
-        compute_trajectory_curvature(_THREE_D), [0.0, np.pi / 4, 0.0], **_TOL
+        compute_trajectory_curvature(_THREE_D_TIMES, _THREE_D, smooth_window=None),
+        [0.0, np.pi / 4, 0.0],
+        **_TOL,
     )
 
 
@@ -42,7 +46,9 @@ def test_turn_angles_drop_duplicate_positions():
 
 def test_curvature_without_smoothing_places_angle_at_retained_middle_sample():
     np.testing.assert_allclose(
-        compute_trajectory_curvature(_WITH_DUPLICATE, smooth_window=None),
+        compute_trajectory_curvature(
+            _WITH_DUPLICATE_TIMES, _WITH_DUPLICATE, smooth_window=None
+        ),
         [0.0, 0.0, 0.0, np.pi / 2, 0.0],
         **_TOL,
     )

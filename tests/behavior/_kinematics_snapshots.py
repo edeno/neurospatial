@@ -109,10 +109,10 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             r.env, r.times, r.positions, goal, goal_radius=5
         ),
         "compute_trajectory_curvature": compute_trajectory_curvature(
-            r.positions, times=r.times
+            r.times, r.positions
         ),
         "compute_trajectory_curvature_no_times": compute_trajectory_curvature(
-            r.positions
+            r.times, r.positions, smooth_window=None
         ),
         "compute_home_range": compute_home_range(home_bins, times=home_times),
         "compute_home_range_no_times": compute_home_range(home_bins),

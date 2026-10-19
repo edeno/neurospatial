@@ -939,7 +939,9 @@ def test_compute_trajectory_curvature_2d_straight():
     positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (20,), "Output length should match input (n_samples)"
@@ -963,7 +965,9 @@ def test_compute_trajectory_curvature_2d_left_turn():
     )
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (3,), "Output length should match input"
@@ -989,7 +993,9 @@ def test_compute_trajectory_curvature_2d_right_turn():
     )
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (3,), "Output length should match input"
@@ -1014,7 +1020,9 @@ def test_compute_trajectory_curvature_3d():
     )
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions_3d)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions_3d)) * 0.1, positions_3d, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (3,), "Output length should match input"
@@ -1036,8 +1044,8 @@ def test_compute_trajectory_curvature_smoothing():
     times = np.linspace(0, 10, 100)  # 10 seconds total
 
     # Compute curvature with and without smoothing
-    curvature_raw = compute_trajectory_curvature(positions, times, smooth_window=None)
-    curvature_smooth = compute_trajectory_curvature(positions, times, smooth_window=0.5)
+    curvature_raw = compute_trajectory_curvature(times, positions, smooth_window=None)
+    curvature_smooth = compute_trajectory_curvature(times, positions, smooth_window=0.5)
 
     # Assertions
     assert curvature_raw.shape == curvature_smooth.shape == (100,)
@@ -1057,7 +1065,9 @@ def test_compute_trajectory_curvature_output_length():
         positions = rng.standard_normal((n_samples, 2)) * 10
 
         # Compute curvature
-        curvature = compute_trajectory_curvature(positions)
+        curvature = compute_trajectory_curvature(
+            np.arange(len(positions)) * 0.1, positions, smooth_window=None
+        )
 
         # Assertion: output length should match input
         assert curvature.shape == (n_samples,), (
@@ -1082,7 +1092,9 @@ def test_compute_trajectory_curvature_multiple_turns():
     )
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (5,), "Output length should match input"
@@ -1110,7 +1122,9 @@ def test_compute_trajectory_curvature_circular_arc():
     positions = np.column_stack([x, y])
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (20,), "Output length should match input"
@@ -1148,7 +1162,9 @@ def test_compute_trajectory_curvature_s_curve():
     )
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (6,), "Output length should match input"
@@ -1186,7 +1202,9 @@ def test_compute_trajectory_curvature_zigzag():
     )
 
     # Compute curvature
-    curvature = compute_trajectory_curvature(positions)
+    curvature = compute_trajectory_curvature(
+        np.arange(len(positions)) * 0.1, positions, smooth_window=None
+    )
 
     # Assertions
     assert curvature.shape == (6,), "Output length should match input"
@@ -1731,7 +1749,7 @@ def test_compute_trajectory_curvature_edge_case_few_positions():
     positions = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])  # All same
     times = np.array([0.0, 1.0, 2.0])
 
-    curvature = compute_trajectory_curvature(positions, times, max_gap=None)
+    curvature = compute_trajectory_curvature(times, positions, max_gap=None)
 
     # Should return zeros (no curvature possible)
     assert curvature.shape == (3,)

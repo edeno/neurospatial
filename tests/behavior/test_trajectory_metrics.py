@@ -517,12 +517,11 @@ class TestMeanSquareDisplacement:
 class TestCurvatureSampleAlignment:
     """Stationary observations preserve the time and index of each turn."""
 
-    @pytest.mark.parametrize("timed", [False, True])
-    def test_stationary_start_preserves_turn_index(self, timed):
+    def test_stationary_start_preserves_turn_index(self):
         positions = np.array([[0.0, 0.0]] * 6 + [[1.0, 0.0], [1.0, 1.0]])
-        times = np.arange(8) * 0.1 if timed else None
+        times = np.arange(8) * 0.1
 
-        curvature = compute_trajectory_curvature(positions, times, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
 
         expected = np.zeros(8)
         expected[6] = np.pi / 2
@@ -542,7 +541,7 @@ class TestCurvatureSampleAlignment:
         )
         times = np.arange(len(positions)) * 0.1
 
-        curvature = compute_trajectory_curvature(positions, times, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
 
         expected = np.zeros(len(positions))
         expected[[1, 4]] = [np.pi / 2, -np.pi / 2]
@@ -556,15 +555,73 @@ class TestCurvatureSampleAlignment:
         times = np.r_[np.arange(8) * 0.1, 10.0 + np.arange(len(second)) * 0.1]
 
         curvature = compute_trajectory_curvature(
-            np.vstack([first, second]), times, smooth_window=0.1
+            times, np.vstack([first, second]), smooth_window=0.1
         )
 
         assert_allclose(curvature[:8], 0.0)
         assert np.argmax(curvature) == 8 + 6
         expected_second = compute_trajectory_curvature(
-            second, times[8:], smooth_window=0.1
+            times[8:], second, smooth_window=0.1
         )
         assert_allclose(curvature[8:], expected_second)
+
+
+class TestCurvatureObservationSupport:
+    """Turns are computed only within observed runs on a strictly increasing clock."""
+
+    def test_missing_row_splits_the_run(self):
+        times = np.arange(7) * 0.1
+        positions = np.array(
+            [
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [2.0, 0.0],
+                [2.0, 1.0],
+                [np.nan, np.nan],
+                [3.0, 1.0],
+                [3.0, 2.0],
+            ]
+        )
+
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
+
+        assert_allclose(
+            curvature, [0, 0, np.pi / 2, 0, np.nan, 0, 0], rtol=0, atol=1e-15
+        )
+
+    def test_missing_row_does_not_spread_through_smoothing(self):
+        times = np.arange(20) * 0.1
+        positions = np.column_stack([np.arange(20.0), np.sin(np.arange(20.0))])
+        positions[10] = np.nan
+
+        curvature = compute_trajectory_curvature(times, positions)
+
+        assert np.isnan(curvature[10])
+        assert np.isfinite(np.delete(curvature, 10)).all()
+        assert_allclose(
+            np.delete(curvature, 10),
+            np.r_[
+                compute_trajectory_curvature(times[:10], positions[:10]),
+                compute_trajectory_curvature(times[11:], positions[11:]),
+            ],
+            rtol=1e-12,
+            atol=0,
+        )
+
+    def test_repeated_timestamp_raises(self):
+        times = np.array([0.0, 0.1, 0.1, 0.2])
+        with pytest.raises(ValueError, match="strictly increasing"):
+            compute_trajectory_curvature(times, np.arange(8.0).reshape(4, 2))
+
+    def test_empty_input_raises(self):
+        with pytest.raises(ValueError, match="got no samples"):
+            compute_trajectory_curvature(np.zeros(0), np.zeros((0, 2)))
+
+    def test_one_sample_has_no_turn(self):
+        curvature = compute_trajectory_curvature(
+            np.array([0.0]), np.array([[1.0, 2.0]])
+        )
+        np.testing.assert_array_equal(curvature, [np.nan])
 
 
 class TestTrajectoryMetricsIntegration:

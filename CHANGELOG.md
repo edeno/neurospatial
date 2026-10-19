@@ -53,6 +53,26 @@
   was observed; a single sample used to give `angular_efficiency = 1.0`.
   `times` must be strictly increasing, and empty input raises.
 
+- `compute_trajectory_curvature` takes `times` first, and `times` is required:
+  `compute_trajectory_curvature(times, positions, *, smooth_window=0.2,
+  max_gap=0.5, epochs=None, break_before=None)`.
+
+  ```python
+  # before
+  compute_trajectory_curvature(positions)              # no times: no smoothing
+  compute_trajectory_curvature(positions, times)
+  # after
+  compute_trajectory_curvature(times, positions, smooth_window=None)
+  compute_trajectory_curvature(times, positions, break_before=new_recording)
+  ```
+
+  A `NaN` row splits the path instead of turning nearby values `NaN`: the
+  missing sample is `NaN`, and the turns on each side are computed and
+  smoothed as two separate runs. Before, one lost frame in a 20-sample run
+  made 19 of the 20 values `NaN`. `break_before` keeps joined recordings
+  from being turned or smoothed across the join, and repeated timestamps
+  raise. Recordings without gaps give the same values as before.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).

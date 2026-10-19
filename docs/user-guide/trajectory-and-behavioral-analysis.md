@@ -244,9 +244,9 @@ for name, (times, positions, recording_id) in sessions.items():
     curvature = compute_planar_curvature(
         path.times, path.positions, max_gap=None, break_before=path.break_before
     )
-    # The legacy function cannot see the join between recordings; the median
-    # hides the one large turn there, but other statistics would not
-    turn_per_frame = compute_trajectory_curvature(positions, times)
+    turn_per_frame = compute_trajectory_curvature(
+        times, positions, break_before=new_recording
+    )
     print(f"{name}:")
     print(f"  median speed at the samples: {np.median(speed_at_samples):.1f} cm/s")
     for label, statistic in [("median", np.nanmedian), ("mean", np.nanmean)]:
@@ -304,9 +304,13 @@ slightly larger radius. The mean averages the scatter out and recovers the
 track.
 
 The legacy `compute_trajectory_curvature` instead returns the turn per frame
-in radians (despite its name, it is not a curvature): 0.0183 rad at 30 Hz and
-0.0098 rad at 120 Hz, the speed divided by the radius and by the frame rate. It differs between the sessions although the route is the
-same, so do not compare it across frame rates or speeds.
+in radians (despite its name, it is not a curvature). It takes the same
+`break_before`, and the dropout splits the path, so no turn is computed or
+smoothed across the join or the lost frames. The turn per frame still depends
+on the frame rate and the running speed: 0.0183 rad at 30 Hz and 0.0098 rad at
+120 Hz, the speed divided by the radius and by the frame rate. It differs
+between the sessions although the route is the same, so do not compare it
+across frame rates or speeds.
 
 The resampled path is passed on with `max_gap=None` and
 `break_before=path.break_before`. Resampled samples are not evenly spaced in
