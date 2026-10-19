@@ -733,6 +733,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- The `animation` extra allows napari 0.5 through 0.9 (`napari[all]>=0.5,<0.10`);
+  it was capped below 0.6. The napari tests pass on 0.9.2. The floor rises from
+  0.4.18 to 0.5, whose `border_color` names the animation and annotation code
+  already uses.
+
 - Speed is one definition everywhere: the velocity vector smoothed with a
   0.1 s Gaussian (spyglass's default, as in non_local_detector's
   `get_velocity`), then its magnitude. New `neurospatial.behavior.compute_speed`
