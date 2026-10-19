@@ -159,7 +159,10 @@ Behavioral analysis built on trajectory + environment.
 
 **Key Modules:**
 
-- `behavior.trajectory`: Step lengths, MSD, curvature, home range
+- `behavior.trajectory`: Step lengths, cumulative distance, MSD, curvature,
+  planar turning angles, planar curvature, movement angular velocity,
+  home range
+- `behavior.resampling`: Distance resampling of observed runs
 - `behavior.navigation`: Path efficiency, goal-directed metrics,
   graph turn sequences
 - `behavior.segmentation`: Laps, trials, region crossings,

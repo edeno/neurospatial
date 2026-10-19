@@ -78,7 +78,9 @@ def test_head_sweep_sums_runs(two_epoch_recording):
     assert actual == pytest.approx(expected, rel=1e-12, abs=0)
 
 
-def test_path_efficiency_nan_across_pause(two_epoch_recording):
+def test_path_efficiency_counts_observed_travel_across_pause(two_epoch_recording):
+    from neurospatial.behavior.navigation import traveled_path_length
+
     r = two_epoch_recording
     result = compute_path_efficiency(
         r.env,
@@ -88,14 +90,20 @@ def test_path_efficiency_nan_across_pause(two_epoch_recording):
         metric="euclidean",
         reference_speed=10,
     )
-    assert np.isnan(result.traveled_length)
+    first = compute_path_efficiency(
+        r.env, r.times[:5000], r.positions[:5000], r.positions[4999], metric="euclidean"
+    )
+    second = compute_path_efficiency(
+        r.env, r.times[5000:], r.positions[5000:], r.positions[-1], metric="euclidean"
+    )
+    assert result.traveled_length == traveled_path_length(r.times, r.positions)
+    assert result.traveled_length == pytest.approx(
+        first.traveled_length + second.traveled_length, rel=1e-12
+    )
     assert np.isnan(result.efficiency)
     assert np.isnan(result.angular_efficiency)
     assert np.isfinite(result.shortest_length)
     assert np.isfinite(result.time_efficiency)
-    first = compute_path_efficiency(
-        r.env, r.times[:5000], r.positions[:5000], r.positions[4999], metric="euclidean"
-    )
     assert np.isfinite(first.traveled_length)
     assert np.isfinite(first.efficiency)
 

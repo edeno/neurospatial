@@ -16,8 +16,9 @@ from neurospatial.behavior.navigation import (
     PathEfficiencyResult,
     SubgoalEfficiencyResult,
 )
+from neurospatial.behavior.resampling import ResampledPathResult
 from neurospatial.behavior.segmentation import Run
-from neurospatial.behavior.trajectory import MSDResult
+from neurospatial.behavior.trajectory import CumulativeDistanceResult, MSDResult
 from neurospatial.decoding import DecodingSummary
 from neurospatial.decoding.assemblies import AssemblyDetectionResult, AssemblyPattern
 from neurospatial.decoding.trajectory import IsotonicFitResult, RadonDetectionResult
@@ -34,6 +35,21 @@ def env():
 
 
 CASES = [
+    (
+        CumulativeDistanceResult,
+        {
+            "step_lengths": np.ones(1),
+            "run_distance": np.array([0.0, 1.0]),
+            "cumulative_distance": np.array([0.0, 1.0]),
+            "run_ids": np.zeros(2, dtype=np.intp),
+            "sample_valid": np.ones(2, dtype=bool),
+            "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
+            "run_time_bounds": np.array([[0.0, 0.1]]),
+            "run_path_lengths": np.ones(1),
+            "max_gap": 0.5,
+            "epochs": np.array([[0.0, 1.0]]),
+        },
+    ),
     (
         DecodingSummary,
         {
@@ -132,6 +148,28 @@ CASES = [
             "sinogram": np.ones((2, 2)),
         },
     ),
+    (
+        ResampledPathResult,
+        {
+            "times": np.array([0.0, 0.5]),
+            "positions": np.array([[0.0, 0.0], [1.0, 0.0]]),
+            "run_distance": np.array([0.0, 1.0]),
+            "cumulative_distance": np.array([0.0, 1.0]),
+            "run_ids": np.zeros(2, dtype=np.intp),
+            "source_left": np.array([0, 0], dtype=np.intp),
+            "source_right": np.array([0, 1], dtype=np.intp),
+            "weights": np.array([0.0, 0.5]),
+            "off_grid_endpoint": np.zeros(2, dtype=bool),
+            "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
+            "run_time_bounds": np.array([[0.0, 1.0]]),
+            "run_path_lengths": np.array([2.0]),
+            "n_source_samples": 2,
+            "spacing": 1.0,
+            "include_endpoint": False,
+            "max_gap": 0.5,
+            "epochs": np.array([[0.0, 1.0]]),
+        },
+    ),
 ]
 
 
@@ -203,8 +241,9 @@ def test_directional_maps_are_owned_and_read_only(env, how):
 
 def test_summary_xarray_export_is_editable_and_independent(env):
     pytest.importorskip("xarray")
+    inputs = next(inputs for cls, inputs in CASES if cls is DecodingSummary)
     result = DecodingSummary(
-        env=env, **copy.deepcopy(CASES[0][1]), spike_window=np.array([[0.0, 2.0]])
+        env=env, **copy.deepcopy(inputs), spike_window=np.array([[0.0, 2.0]])
     )
     dataset = result.to_xarray()
     for name in dataset.variables:

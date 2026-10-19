@@ -113,14 +113,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _positive_dt
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
+    from neurospatial._observation import ObservationSupport
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
@@ -168,24 +170,33 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     traveled_length : float
-        Total path length traveled (sum of step lengths), in environment units.
-        NaN when an interval is unobserved in compute_path_efficiency().
+        Distance traveled (sum of step lengths), in environment units. From
+        compute_path_efficiency(): the distance over observed intervals, NaN
+        when no interval was observed. From subgoal_efficiency(): the length of
+        the segment as one continuous polyline, 0.0 for a segment of fewer than
+        two samples.
     shortest_length : float
         Geodesic or Euclidean distance from start to goal, in environment units.
         Is ``inf`` when the goal is unreachable under the geodesic metric (the
         goal lies on a disconnected component); it is not clamped to ``0.0``.
+        From subgoal_efficiency(): 0.0 for a segment of fewer than two samples
+        (no start-to-goal distance is measured).
     efficiency : float
-        Ratio shortest_length / traveled_length. Range (0, 1].
-        Value of 1.0 indicates optimal path taken.
-        Returns NaN if traveled_length is 0, path has < 2 points, or
-        shortest_length is ``inf`` (unreachable goal), or an interval is unobserved.
+        Ratio shortest_length / traveled_length. Is ``(0, 1]`` when the path
+        ends at the goal, and can exceed 1 when it does not. Is 0.0 when a
+        geodesic step is infinite. Value of 1.0 indicates optimal path taken.
+        NaN if traveled_length is 0 or shortest_length is ``inf`` (unreachable
+        goal); from compute_path_efficiency() also NaN if the path is not
+        completely observed, and from subgoal_efficiency() for a segment of
+        fewer than two samples.
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
         1 - mean(|delta_theta|) / pi. Range [0, 1].
         Value of 1.0 indicates heading directly toward goal at all times.
-        Returns 1.0 for paths with < 3 positions (no turns possible).
-        NaN when an interval is unobserved in compute_path_efficiency().
+        From compute_path_efficiency(): NaN unless the path is completely
+        observed; 1.0 for a complete path of two samples (no turns possible).
+        From subgoal_efficiency(): 1.0 for a segment of fewer than three samples.
     start_position : NDArray[np.float64]
         Start position coordinates, shape (n_dims,).
     goal_position : NDArray[np.float64]
@@ -1326,65 +1337,175 @@ def heading_direction_labels(
 # =============================================================================
 
 
-def traveled_path_length(
-    positions: NDArray[np.float64],
+def _polyline_length(
+    positions: Any,
     *,
-    metric: Literal["euclidean", "geodesic"] = "euclidean",
-    env: Environment | None = None,
+    metric: Literal["euclidean", "geodesic"],
+    env: Environment | None,
 ) -> float:
-    """Compute total distance traveled along trajectory.
+    """Length of one continuous polyline, with no time support.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates in allocentric frame.
-    metric : {"euclidean", "geodesic"}, default="euclidean"
-        Distance metric. Use "geodesic" for environments with barriers.
+    positions : array-like, shape (n_samples, n_dims)
+        Positions of a path already known to be continuously observed.
+    metric : {"euclidean", "geodesic"}
     env : Environment, optional
-        Required when metric="geodesic".
-
-    Returns
-    -------
-    float
-        Total path length in environment units. Returns 0.0 for single-point
-        trajectories.
-
-    Raises
-    ------
-    ValueError
-        If metric="geodesic" but env is None.
-
-    Examples
-    --------
-    >>> length = traveled_path_length(positions)  # doctest: +SKIP
-    >>> print(f"Animal traveled {length:.1f} cm")  # doctest: +SKIP
+        Required when ``metric="geodesic"``.
     """
     from neurospatial.behavior.trajectory import compute_step_lengths
 
-    # Coerce array-likes (e.g. Python lists) before any .ndim access.
-    try:
-        positions = np.asarray(positions, dtype=float)
-    except (TypeError, ValueError) as e:
-        actual_type = type(positions).__name__
-        raise TypeError(
-            f"positions must be a numeric array-like object (e.g., numpy array, "
-            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
-        ) from e
-
+    positions = np.asarray(positions, dtype=float)
     if positions.ndim != 2:
         raise ValueError(
             f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
         )
+    return float(np.sum(compute_step_lengths(positions, metric=metric, env=env)))
 
-    if len(positions) == 0:
+
+def _require_path_metric(metric: str, *, call: str) -> None:
+    """Raise unless ``metric`` is a path-length metric.
+
+    Parameters
+    ----------
+    metric : str
+    call : str
+        Name of the public function, for the error message.
+    """
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            "Cannot compute path length: positions array is empty. "
-            "Provide at least 2 positions to compute path length."
+            _format_error(
+                f"{call}() got metric={metric!r}; it must be "
+                "'euclidean' or 'geodesic'.",
+                why=(
+                    "path length is summed either along straight lines or along "
+                    "the environment's connectivity graph."
+                ),
+                fix=(
+                    "use metric='euclidean' for straight-line distances, or "
+                    "metric='geodesic' with env= to respect barriers."
+                ),
+            )
         )
 
-    if len(positions) < 2:
-        return 0.0
 
+def _observed_path_length(
+    positions: NDArray[np.float64],
+    support: ObservationSupport,
+    *,
+    metric: Literal["euclidean", "geodesic"],
+    env: Environment | None,
+) -> tuple[float, bool]:
+    """Path length over usable intervals, and whether every interval counted.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_samples, n_dims)
+    support : ObservationSupport
+        Resolved from the same samples.
+    metric : {"euclidean", "geodesic"}
+    env : Environment or None
+        Required for ``metric="geodesic"``.
+
+    Returns
+    -------
+    length : float
+        Sum of the counted interval lengths; ``nan`` when none counted.
+    complete : bool
+        True when there is at least one interval and every interval counted.
+    """
+    from neurospatial.behavior.trajectory import (
+        _observed_cumulative,
+        compute_step_lengths,
+    )
+
+    if metric == "euclidean":
+        steps, _ = _observed_cumulative(positions, support)
+        counted = support.interval_mask
+    else:
+        with np.errstate(invalid="ignore"):
+            steps = compute_step_lengths(positions, metric="geodesic", env=env)
+        counted = support.interval_mask & ~np.isnan(steps)
+    complete = bool(counted.size and counted.all())
+    if not counted.any():
+        return float("nan"), complete
+    return float(steps[counted].sum()), complete
+
+
+def traveled_path_length(
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    env: Environment | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+) -> float:
+    """Compute the distance traveled over observed intervals.
+
+    Distance is added only over usable intervals: both samples have finite
+    coordinates, the time between them is at most ``max_gap``, they fall inside
+    one of ``epochs`` and no break is declared between them. Distance between
+    recordings is never counted, and a missing sample splits the path instead
+    of turning the total into NaN. A break must be declared by a time gap above
+    ``max_gap``, by ``break_before`` or by ``epochs``; an undeclared jump on a
+    continuous clock is counted as movement.
+
+    Parameters
+    ----------
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Position coordinates in allocentric frame. A 1-D array is one
+        coordinate (for example a linearized track). Rows with a non-finite
+        coordinate are missing.
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric. Use "geodesic" for environments with barriers.
+    env : Environment, optional
+        Required when metric="geodesic". An interval with an endpoint outside
+        the environment has no geodesic length and is left out; an interval
+        between disconnected bins contributes ``inf``.
+    max_gap : float or None, default=0.5
+        Longest interval, in seconds, that counts as continuous observation.
+        ``None`` keeps every interval.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. An interval must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
+
+    Returns
+    -------
+    float
+        Total path length in the units of ``positions``. ``nan`` when no
+        interval was observed (including a single sample); ``0.0`` only for
+        observed stationary travel.
+
+    Raises
+    ------
+    ValueError
+        If ``metric`` is not recognized, if metric="geodesic" but env is None,
+        or if the inputs are empty or malformed.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import traveled_path_length
+    >>> times = np.array([0.0, 0.1, 0.2, 0.3])
+    >>> positions = np.array([[0.0, 0.0], [1.0, 0.0], [50.0, 0.0], [51.0, 0.0]])
+    >>> traveled_path_length(
+    ...     times, positions, break_before=np.array([False, False, True, False])
+    ... )
+    2.0
+    >>> traveled_path_length(np.array([0.0, 0.1, 100.0, 100.1]), positions)
+    2.0
+    """
+    from neurospatial._observation import validated_observations
+
+    _require_path_metric(metric, call="traveled_path_length")
     if metric == "geodesic" and env is None:
         raise ValueError(
             "env parameter is required when metric='geodesic'. "
@@ -1392,8 +1513,17 @@ def traveled_path_length(
             "for straight-line distances."
         )
 
-    step_lengths = compute_step_lengths(positions, metric=metric, env=env)
-    return float(np.sum(step_lengths))
+    _, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call="traveled_path_length",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no distance was observed",
+    )
+    length, _ = _observed_path_length(positions_arr, support, metric=metric, env=env)
+    return length
 
 
 def shortest_path_length(
@@ -1624,7 +1754,7 @@ def subgoal_efficiency(
         if len(segment_positions) >= 2:
             start_pos = segment_positions[0]
 
-            traveled = traveled_path_length(segment_positions, metric=metric, env=env)
+            traveled = _polyline_length(segment_positions, metric=metric, env=env)
             shortest = shortest_path_length(env, start_pos, subgoal, metric=metric)
 
             if traveled > 0 and np.isfinite(shortest):
@@ -1688,14 +1818,15 @@ def subgoal_efficiency(
 
 def compute_path_efficiency(
     env: Environment,
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
+    goal: ArrayLike,
     *,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
     reference_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> PathEfficiencyResult:
     """Compute comprehensive path efficiency metrics.
 
@@ -1703,84 +1834,124 @@ def compute_path_efficiency(
     ----------
     env : Environment
         Spatial environment.
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
-    goal : NDArray[np.float64], shape (n_dims,)
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
+        Position coordinates in allocentric frame. A 1-D array is one
+        coordinate (for example a linearized track). Rows with a non-finite
+        coordinate are missing.
+    goal : ArrayLike, shape (n_dims,)
         Goal position.
     metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric.
+        Distance metric. With "geodesic", an interval with an endpoint outside
+        the environment has no geodesic length and is left out, and an interval
+        between disconnected bins contributes ``inf`` (so a complete path with
+        such a step has ``traveled_length=inf`` and ``efficiency=0.0``).
     reference_speed : float, optional
         Reference speed for time efficiency.
     max_gap : float or None, default=0.5
-        Longest sampling interval (seconds) treated as continuous recording.
-        Longer intervals (dropped frames, pauses between sessions) are excluded
-        from the analysis. ``None`` disables the gap check.
-    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
-        Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
+        Longest interval, in seconds, that counts as continuous observation.
+        ``None`` keeps every interval.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. An interval must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     PathEfficiencyResult
-        All path efficiency metrics combined. An unobserved interval makes
-        traveled_length, efficiency and angular_efficiency NaN. When the goal is unreachable
-        under ``metric="geodesic"`` (it lies on a disconnected component),
+        All path efficiency metrics combined, measured from the first sample
+        ``positions[0]`` to ``goal``. When the goal is unreachable under
+        ``metric="geodesic"`` (it lies on a disconnected component),
         ``shortest_length`` is ``inf`` and the derived ``efficiency`` and
         ``time_efficiency`` fields are ``nan`` (not ``0.0``).
 
+    Raises
+    ------
+    ValueError
+        If ``metric`` is not recognized, or if the inputs are empty or
+        malformed (for example ``times`` not strictly increasing, or
+        ``break_before`` not a Boolean array with one entry per sample).
+        With ``metric="geodesic"``, also if ``positions[0]`` or ``goal`` is
+        NaN or outside the environment (raised by ``distance_between``). With
+        ``metric="euclidean"`` a NaN first row gives ``shortest_length=nan``.
+
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
-
-    A path containing any unobserved interval is unknowable: traveled
-    length, path efficiency and angular efficiency are NaN. Shortest
-    length and wall-clock time efficiency retain their existing meanings.
+    ``traveled_length`` is the distance over usable intervals, as returned by
+    ``traveled_path_length`` with the same arguments: a lost frame, a gap
+    longer than ``max_gap``, a declared break or an interval outside ``epochs``
+    is left out, and it is ``nan`` when nothing was observed (including a
+    single sample). ``efficiency`` and ``angular_efficiency`` compare the whole
+    route with the shortest one, so they are ``nan`` unless every interval from
+    the first to the last sample was observed; with a missing stretch the
+    observed length underestimates the route and the ratio would be biased
+    upward. ``shortest_length`` and the wall-clock ``time_efficiency`` keep
+    their meanings. When one low-confidence frame makes a trial's efficiency
+    ``nan``, report its ``traveled_length`` instead, or restrict the analysis
+    to completely observed trials.
 
     Examples
     --------
-    >>> result = compute_path_efficiency(env, times, positions, goal)  # doctest: +SKIP
-    >>> print(result)  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import compute_path_efficiency
+    >>> positions = np.column_stack([np.arange(11.0), np.zeros(11)])  # cm
+    >>> times = np.arange(11) / 10  # seconds
+    >>> env = Environment.from_samples(positions, bin_size=1.0)
+    >>> goal = positions[-1]
+    >>> result = compute_path_efficiency(
+    ...     env, times, positions, goal, metric="euclidean"
+    ... )
+    >>> result.traveled_length, result.efficiency
+    (10.0, 1.0)
+    >>> positions[5] = np.nan  # one lost frame
+    >>> result = compute_path_efficiency(
+    ...     env, times, positions, goal, metric="euclidean"
+    ... )
+    >>> result.traveled_length  # the observed travel
+    8.0
+    >>> bool(np.isnan(result.efficiency))  # the route is incomplete
+    True
     """
-    from neurospatial._validation import validate_times_positions
+    from neurospatial._observation import validated_observations
 
-    times, positions = validate_times_positions(
-        times, positions, call="compute_path_efficiency"
+    _require_path_metric(metric, call="compute_path_efficiency")
+    times_arr, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call="compute_path_efficiency",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no path was observed",
     )
-
-    from neurospatial._intervals import observed_interval_mask
-
-    complete_path = observed_interval_mask(times, max_gap=max_gap, epochs=epochs).all()
     goal = np.asarray(goal)
 
-    if not complete_path:
-        traveled = np.nan
-    elif len(positions) >= 2:
-        traveled = traveled_path_length(positions, metric=metric, env=env)
-    else:
-        traveled = 0.0
+    traveled, complete = _observed_path_length(
+        positions_arr, support, metric=metric, env=env
+    )
+    shortest = shortest_path_length(env, positions_arr[0], goal, metric=metric)
 
-    if len(positions) >= 1:
-        start = positions[0]
-        shortest = shortest_path_length(env, start, goal, metric=metric)
-    else:
-        shortest = np.nan
-
-    eff = shortest / traveled if traveled > 0 and np.isfinite(shortest) else np.nan
+    eff = (
+        shortest / traveled
+        if complete and traveled > 0 and np.isfinite(shortest)
+        else np.nan
+    )
 
     time_eff = None
-    if reference_speed is not None and len(positions) >= 2:
+    if reference_speed is not None and len(positions_arr) >= 2:
         time_eff = time_efficiency(
-            times,
-            positions,
+            times_arr,
+            positions_arr,
             reference_speed=reference_speed,
             optimal_distance=shortest,
         )
 
-    ang_eff = angular_efficiency(positions, goal) if complete_path else np.nan
+    ang_eff = angular_efficiency(positions_arr, goal) if complete else np.nan
 
     return PathEfficiencyResult(
         traveled_length=traveled,
@@ -1788,7 +1959,7 @@ def compute_path_efficiency(
         efficiency=eff,  # already nan when shortest is non-finite
         time_efficiency=time_eff,
         angular_efficiency=ang_eff,
-        start_position=positions[0] if len(positions) > 0 else np.array([]),
+        start_position=positions_arr[0],
         goal_position=goal,
         metric=metric,
     )

@@ -10,83 +10,208 @@ from neurospatial import Environment
 class TestTraveledPathLength:
     """Test traveled_path_length function."""
 
+    TWO_RECORDINGS = np.vstack([[[0.0, 0.0], [1.0, 0.0]], [[50.0, 0.0], [51.0, 0.0]]])
+
     def test_straight_line_euclidean(self):
-        """Test that straight line path gives expected total length."""
+        """Straight line path gives the expected total length."""
         from neurospatial.behavior.navigation import traveled_path_length
 
-        # Create straight line trajectory from 0 to 100 in x
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+        times = np.arange(21) * 0.1
 
-        length = traveled_path_length(positions, metric="euclidean")
+        length = traveled_path_length(times, positions, metric="euclidean")
 
-        # Total length should be 100 (20 steps of 5 each)
-        assert_allclose(length, 100.0, rtol=0.01)
-
-    def test_single_position_returns_zero(self):
-        """Test that single position returns 0 path length."""
-        from neurospatial.behavior.navigation import traveled_path_length
-
-        positions = np.array([[50.0, 50.0]])
-
-        length = traveled_path_length(positions, metric="euclidean")
-
-        assert length == 0.0
+        assert_allclose(length, 100.0, rtol=1e-12)
 
     def test_two_positions(self):
-        """Test path length with exactly 2 positions."""
+        """Path length with exactly 2 positions (3-4-5 triangle)."""
         from neurospatial.behavior.navigation import traveled_path_length
 
-        positions = np.array([[0.0, 0.0], [30.0, 40.0]])  # 3-4-5 triangle
+        positions = np.array([[0.0, 0.0], [30.0, 40.0]])
 
-        length = traveled_path_length(positions, metric="euclidean")
+        length = traveled_path_length(np.array([0.0, 0.1]), positions)
 
-        assert_allclose(length, 50.0, rtol=0.01)
+        assert_allclose(length, 50.0, rtol=1e-12)
 
     def test_python_list_input_normalized(self):
-        """Python-list positions are coerced; no AttributeError at the boundary."""
+        """Python-list inputs are coerced; no AttributeError at the boundary."""
         from neurospatial.behavior.navigation import traveled_path_length
 
-        # 3-4-5 triangle as a plain list-of-lists (not an ndarray).
-        length = traveled_path_length([[0.0, 0.0], [30.0, 40.0]], metric="euclidean")
+        length = traveled_path_length([0.0, 0.1], [[0.0, 0.0], [30.0, 40.0]])
 
-        assert_allclose(length, 50.0, rtol=0.01)
+        assert_allclose(length, 50.0, rtol=1e-12)
 
-    def test_malformed_list_input_raises_domain_error(self):
-        """A 1D list raises a domain error, never AttributeError."""
+    @pytest.mark.parametrize(
+        "positions",
+        [[[0.0, 1.0], [2.0], [3.0, 4.0]], [["a", "b"], ["c", "d"], ["e", "f"]]],
+        ids=["ragged", "strings"],
+    )
+    def test_malformed_input_raises_domain_error(self, positions):
+        """Ragged or non-numeric positions get the validator's what/why/fix."""
         from neurospatial.behavior.navigation import traveled_path_length
 
-        with pytest.raises((ValueError, TypeError)):
-            traveled_path_length([0.0, 1.0, 2.0], metric="euclidean")
+        with pytest.raises(
+            ValueError,
+            match=r"(?s)Invalid times/positions passed to traveled_path_length\(\):"
+            r"\n- positions must contain numeric values convertible to float64.*"
+            r"\nWhy: .*\nFix: pass times as a sorted 1-D array",
+        ):
+            traveled_path_length([0.0, 0.1, 0.2], positions)
+
+    def test_one_dimensional_positions_are_one_coordinate(self):
+        """A 1-D array is one coordinate (for example a linearized track)."""
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        length = traveled_path_length([0.0, 0.1, 0.2], [0.0, 1.0, 3.0])
+
+        assert_allclose(length, 3.0)
 
     def test_geodesic_requires_env(self):
-        """Test that geodesic metric raises without env."""
+        """Geodesic metric raises without env."""
         from neurospatial.behavior.navigation import traveled_path_length
 
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
 
         with pytest.raises(ValueError, match="env parameter is required"):
-            traveled_path_length(positions, metric="geodesic")
+            traveled_path_length(np.arange(21) * 0.1, positions, metric="geodesic")
 
-    def test_geodesic_with_env(self):
-        """Test geodesic path length with environment."""
+    def test_unknown_metric_raises(self):
         from neurospatial.behavior.navigation import traveled_path_length
 
-        # Create grid environment
+        with pytest.raises(
+            ValueError,
+            match=r"got metric='manhattan'; it must be .*\n.*\nFix: use metric='euclidean'",
+        ):
+            traveled_path_length(
+                np.array([0.0, 0.1]), np.zeros((2, 2)), metric="manhattan"
+            )
+
+    @staticmethod
+    def _grid_env():
         x = np.linspace(0, 40, 100)
-        y = np.linspace(0, 40, 100)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
+        xx, yy = np.meshgrid(x, x)
+        return Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
+        )
 
-        # Create trajectory on bin centers
-        position_bins = np.arange(5)
-        positions = env.bin_centers[position_bins]
+    def test_geodesic_with_env(self):
+        """Geodesic path length on bin centers is positive and finite."""
+        from neurospatial.behavior.navigation import traveled_path_length
 
-        length = traveled_path_length(positions, metric="geodesic", env=env)
+        env = self._grid_env()
+        positions = env.bin_centers[np.arange(5)]
 
-        # Should be positive and finite
+        length = traveled_path_length(
+            np.arange(5) * 0.1, positions, metric="geodesic", env=env
+        )
+
         assert length > 0
         assert np.isfinite(length)
+
+    def test_geodesic_excludes_interval_outside_environment(self):
+        """A sample outside the environment drops its intervals, not the total."""
+        from neurospatial.behavior.navigation import traveled_path_length
+        from neurospatial.behavior.trajectory import compute_step_lengths
+
+        env = self._grid_env()
+        positions = env.bin_centers[np.arange(6)].copy()
+        positions[2] = [500.0, 500.0]
+        times = np.arange(6) * 0.1
+
+        steps = compute_step_lengths(positions, metric="geodesic", env=env)
+        assert np.isnan(steps[1]) and np.isnan(steps[2])
+        expected = steps[[0, 3, 4]].sum()
+
+        length = traveled_path_length(times, positions, metric="geodesic", env=env)
+
+        assert np.isfinite(length)
+        assert_allclose(length, expected, rtol=1e-12)
+
+    def test_gap_between_recordings_is_not_counted(self):
+        """The jump between two recordings (time gap) adds no distance."""
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        times = np.array([0.0, 0.1, 100.0, 100.1])
+
+        assert traveled_path_length(times, self.TWO_RECORDINGS) == 2.0
+
+    def test_declared_break_is_not_counted(self):
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        times = np.array([0.0, 0.1, 0.2, 0.3])
+        breaks = np.array([False, False, True, False])
+
+        length = traveled_path_length(times, self.TWO_RECORDINGS, break_before=breaks)
+
+        assert length == 2.0
+
+    def test_undeclared_jump_on_continuous_clock_is_movement(self):
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        times = np.array([0.0, 0.1, 0.2, 0.3])
+
+        assert traveled_path_length(times, self.TWO_RECORDINGS) == 51.0
+
+    def test_nan_row_breaks_path_instead_of_poisoning(self):
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        positions = np.array(
+            [[0.0, 0.0], [1.0, 0.0], [np.nan, np.nan], [2.0, 0.0], [3.0, 0.0]]
+        )
+
+        length = traveled_path_length(np.arange(5) * 0.1, positions)
+
+        assert length == 2.0
+
+    def test_epochs_exclude_middle_interval(self):
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        positions = np.array([[0.0, 0.0], [1.0, 0.0], [5.0, 0.0], [6.0, 0.0]])
+        times = np.array([0.0, 0.1, 0.2, 0.3])
+
+        length = traveled_path_length(
+            times, positions, epochs=[(0.0, 0.15), (0.18, 0.35)]
+        )
+
+        assert length == 2.0
+
+    def test_no_usable_interval_is_nan(self):
+        """Single sample and all-missing positions give NaN, not 0.0."""
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        assert np.isnan(traveled_path_length(np.array([0.0]), np.array([[1.0, 2.0]])))
+        assert np.isnan(
+            traveled_path_length(np.arange(3) * 0.1, np.full((3, 2), np.nan))
+        )
+
+    def test_stationary_observed_travel_is_zero(self):
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        length = traveled_path_length(np.arange(4) * 0.1, np.ones((4, 2)))
+
+        assert length == 0.0
+
+    def test_matches_step_length_sum_on_continuous_recording(
+        self, continuous_recording
+    ):
+        """Gap-free recording: identical to the plain sum of step lengths."""
+        from neurospatial.behavior.navigation import traveled_path_length
+        from neurospatial.behavior.trajectory import compute_step_lengths
+
+        rec = continuous_recording
+
+        assert_allclose(
+            traveled_path_length(rec.times, rec.positions),
+            np.sum(compute_step_lengths(rec.positions)),
+            rtol=1e-12,
+        )
+        assert_allclose(
+            traveled_path_length(
+                rec.times, rec.positions, metric="geodesic", env=rec.env
+            ),
+            np.sum(compute_step_lengths(rec.positions, metric="geodesic", env=rec.env)),
+            rtol=1e-12,
+        )
 
 
 class TestShortestPathLength:
@@ -226,6 +351,183 @@ class TestPathEfficiency:
         assert np.isnan(eff)
 
 
+class TestPathEfficiencyObservedSupport:
+    """Traveled length and efficiency under lost frames, declared breaks, single samples and invalid input."""
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_gap_free_lengths_equal_step_length_sum(self, continuous_recording, metric):
+        from neurospatial.behavior.navigation import (
+            angular_efficiency,
+            compute_path_efficiency,
+        )
+        from neurospatial.behavior.trajectory import compute_step_lengths
+
+        r = continuous_recording
+        goal = r.positions[-1]
+        result = compute_path_efficiency(
+            r.env, r.times, r.positions, goal, metric=metric
+        )
+        assert result.traveled_length == float(
+            np.sum(compute_step_lengths(r.positions, metric=metric, env=r.env))
+        )
+        assert result.efficiency == result.shortest_length / result.traveled_length
+        assert result.angular_efficiency == angular_efficiency(r.positions, goal)
+
+    POSITIONS = np.column_stack([np.arange(11.0), np.zeros(11)])  # cm
+    TIMES = np.arange(11) / 10  # seconds
+
+    @classmethod
+    def _straight_run(cls):
+        positions = cls.POSITIONS.copy()
+        env = Environment.from_samples(positions, bin_size=1.0)
+        return env, cls.TIMES.copy(), positions, positions[-1].copy()
+
+    def test_lost_frame_no_longer_poisons_traveled_length(self):
+        """One lost frame leaves the observed travel measured, the ratios NaN."""
+        from neurospatial.behavior.navigation import (
+            compute_path_efficiency,
+            traveled_path_length,
+        )
+
+        env, times, positions, goal = self._straight_run()
+        positions[5] = np.nan
+
+        result = compute_path_efficiency(
+            env, times, positions, goal, metric="euclidean"
+        )
+
+        assert result.traveled_length == 8.0
+        assert result.traveled_length == traveled_path_length(times, positions)
+        # 10 / 8 = 1.25 would claim a path shorter than the shortest one.
+        assert np.isnan(result.efficiency)
+        assert np.isnan(result.angular_efficiency)
+        assert result.shortest_length == 10.0
+
+    def test_declared_break_equals_separate_calls(self):
+        """A declared break measures the same travel as two separate calls."""
+        from neurospatial.behavior.navigation import (
+            compute_path_efficiency,
+            traveled_path_length,
+        )
+
+        env, times, positions, goal = self._straight_run()
+        break_before = np.arange(11) == 5
+
+        result = compute_path_efficiency(
+            env, times, positions, goal, metric="euclidean", break_before=break_before
+        )
+        first = compute_path_efficiency(
+            env, times[:5], positions[:5], goal, metric="euclidean"
+        )
+        second = compute_path_efficiency(
+            env, times[5:], positions[5:], goal, metric="euclidean"
+        )
+
+        assert (first.traveled_length, second.traveled_length) == (4.0, 5.0)
+        assert result.traveled_length == 9.0
+        assert result.traveled_length == (
+            first.traveled_length + second.traveled_length
+        )
+        assert result.traveled_length == traveled_path_length(
+            times, positions, break_before=break_before
+        )
+        assert np.isnan(result.efficiency)
+        assert np.isnan(result.angular_efficiency)
+
+    def test_single_sample_has_no_observed_path(self):
+        """One sample is no observed path: NaN, not a stationary or direct one."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        env, times, positions, goal = self._straight_run()
+
+        result = compute_path_efficiency(
+            env,
+            times[:1],
+            positions[:1],
+            goal,
+            metric="euclidean",
+            reference_speed=10.0,
+        )
+
+        assert np.isnan(result.traveled_length)
+        assert np.isnan(result.efficiency)
+        assert np.isnan(result.angular_efficiency)
+        assert result.time_efficiency is None
+
+    def test_complete_path_keeps_its_ratios(self):
+        """A completely observed straight run is perfectly efficient."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        env, times, positions, goal = self._straight_run()
+
+        result = compute_path_efficiency(
+            env, times, positions, goal, metric="euclidean"
+        )
+
+        assert (
+            result.traveled_length,
+            result.efficiency,
+            result.angular_efficiency,
+        ) == (10.0, 1.0, 1.0)
+
+    def test_geodesic_step_outside_environment_is_left_out(self):
+        """A geodesic step leaving the environment is unobserved travel."""
+        from neurospatial.behavior.navigation import (
+            compute_path_efficiency,
+            traveled_path_length,
+        )
+
+        env = TestTraveledPathLength._grid_env()
+        positions = env.bin_centers[np.arange(6)].copy()
+        positions[2] = [500.0, 500.0]
+        times = np.arange(6) * 0.1
+        goal = positions[-1]
+
+        result = compute_path_efficiency(env, times, positions, goal, metric="geodesic")
+
+        assert np.isfinite(result.traveled_length)
+        assert result.traveled_length == traveled_path_length(
+            times, positions, metric="geodesic", env=env
+        )
+        assert np.isnan(result.efficiency)
+        assert np.isnan(result.angular_efficiency)
+
+    def test_repeated_timestamp_and_empty_input_raise(self):
+        """The clock must be strictly increasing and hold at least one sample."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        env, _, _, goal = self._straight_run()
+        with pytest.raises(ValueError, match="strictly increasing"):
+            compute_path_efficiency(
+                env,
+                np.array([0.0, 0.1, 0.1, 0.2]),
+                self.POSITIONS[:4],
+                goal,
+                metric="euclidean",
+            )
+        with pytest.raises(
+            ValueError, match=r"compute_path_efficiency\(\) got no samples"
+        ):
+            compute_path_efficiency(
+                env, np.array([]), np.zeros((0, 2)), goal, metric="euclidean"
+            )
+
+    def test_malformed_break_before_raises(self):
+        """break_before must be a Boolean array, one entry per sample."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        env, times, positions, goal = self._straight_run()
+        with pytest.raises(ValueError, match="Boolean array"):
+            compute_path_efficiency(
+                env,
+                times,
+                positions,
+                goal,
+                metric="euclidean",
+                break_before=np.zeros(11, dtype=int),
+            )
+
+
 class TestAngularEfficiency:
     """Test angular_efficiency function."""
 
@@ -347,11 +649,31 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="same length"):
             compute_path_efficiency(env, times, positions, goal)
 
+    def test_unknown_metric_raises(self):
+        """An unrecognized metric raises instead of falling back to geodesic."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        positions = np.column_stack([np.arange(11.0), np.zeros(11)])
+        env = Environment.from_samples(positions, bin_size=1.0)
+
+        with pytest.raises(
+            ValueError,
+            match=r"compute_path_efficiency\(\) got metric='manhattan'; it must be "
+            r".*\n.*\nFix: use metric='euclidean'",
+        ):
+            compute_path_efficiency(
+                env, np.arange(11) / 10, positions, positions[-1], metric="manhattan"
+            )
+
     def test_empty_trajectory_error(self):
         """Test helpful error for empty trajectory."""
         from neurospatial.behavior.navigation import traveled_path_length
 
         positions = np.array([]).reshape(0, 2)
 
-        with pytest.raises(ValueError, match="positions array is empty"):
-            traveled_path_length(positions)
+        with pytest.raises(
+            ValueError,
+            match=r"traveled_path_length\(\) got no samples: times and positions "
+            r"are empty",
+        ):
+            traveled_path_length(np.array([]), positions)

@@ -71,7 +71,7 @@ Full GLM Workflow
 >>> X_spatial = basis[:, bin_indices].T  # (n_times, n_basis)  # doctest: +SKIP
 >>>
 >>> # 3. Combine with other features (optional)
->>> speed = compute_speed(positions, times)  # doctest: +SKIP
+>>> speed = compute_speed(times, positions)  # doctest: +SKIP
 >>> X = np.column_stack([X_spatial, speed[:, None]])  # doctest: +SKIP
 >>>
 >>> # 4. Fit GLM (example with statsmodels)

@@ -14,6 +14,45 @@
   `threshold` could be passed positionally: `count_place_cells(info, 0.5)`
   becomes `count_place_cells(info, threshold=0.5)`.
 
+- `traveled_path_length` takes `times` first and counts only observed
+  travel: `traveled_path_length(times, positions, *, metric="euclidean",
+  env=None, max_gap=0.5, epochs=None, break_before=None)`.
+
+  ```python
+  # before
+  traveled_path_length(positions)
+  # after
+  traveled_path_length(times, positions)
+  traveled_path_length(times, positions, break_before=new_recording)  # joined recordings
+  ```
+
+  Distance is no longer counted across a time gap longer than `max_gap`
+  (0.5 s by default; pass `max_gap=None` for tracking slower than 2 Hz), a
+  frame marked in `break_before`, or an interval outside `epochs`, and a `NaN`
+  row splits the path instead of making the total `NaN`. With
+  `metric="geodesic"`, an interval with an endpoint outside the environment
+  is now left out of the total; it used to make the total `NaN`. With no
+  observed travel, including a single sample, it returns `nan` instead of
+  `0.0`; `0.0` now means observed and stationary. `times` must be strictly
+  increasing, and a 1-D `positions` is one coordinate, such as a linearized
+  track.
+
+- `compute_path_efficiency` follows the same observation rule as
+  `traveled_path_length`, and takes `break_before` for joined recordings.
+
+  ```python
+  # before (v0.6.0): distance summed across pauses and joins; a lost frame made it NaN
+  result = compute_path_efficiency(env, positions, times, goal)
+  # after
+  result = compute_path_efficiency(env, times, positions, goal, break_before=new_recording)
+  ```
+
+  `traveled_length` counts only usable intervals (as `traveled_path_length`
+  does) and is `nan` with no observed travel; a single sample used to give
+  `0.0`. `efficiency` and `angular_efficiency` are `nan` unless the whole path
+  was observed; a single sample used to give `angular_efficiency = 1.0`.
+  `times` must be strictly increasing, and empty input raises.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
@@ -769,7 +808,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Speed is one definition everywhere: the velocity vector smoothed with a
   0.1 s Gaussian (spyglass's default, as in non_local_detector's
   `get_velocity`), then its magnitude. New `neurospatial.behavior.compute_speed`
-  returns it. Every `min_speed` gate uses it: rate maps and their significance
+  returns it. It takes `break_before` to declare recording joins on one clock,
+  never smooths across a declared break, a lost frame, a gap longer than
+  `max_gap` or an `epochs` edge, and needs strictly increasing, non-empty
+  `times`. Every `min_speed` gate uses it: rate maps and their significance
   tests, `decode_session`, `segment_by_velocity`, `heading_from_velocity`,
   `heading_direction_labels`, and the decision, VTE and goal metrics. Before,
   speed came from differencing raw positions, so tracking jitter read as
@@ -1249,6 +1291,35 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   are reported.
 
 ### Added
+
+- `compute_cumulative_distance(times, positions, *, max_gap, epochs,
+  break_before)` returns a `CumulativeDistanceResult`: the distance at every
+  frame since the start of its run of continuous observation
+  (`run_distance`) and since the first frame (`cumulative_distance`, which
+  adds across runs but never across a break), each run's length and time
+  bounds, and `total_distance`, which is `NaN` when nothing was observed.
+  Lost frames (`NaN` rows), time gaps longer than `max_gap`, intervals
+  outside `epochs` and frames marked in `break_before` (for example the first
+  frame of each joined recording) end a run.
+- `resample_by_distance(times, positions, *, spacing, include_endpoint,
+  max_gap, epochs, break_before)` places samples every `spacing` along each
+  run, so routes from sessions with different running speeds and frame rates
+  can be compared sample by sample. The `ResampledPathResult` keeps each
+  sample's time on the original clock and the two original frames around it
+  (`source_left`, `source_right`, `weights`); `interpolate_signal(values)`
+  carries a continuous per-frame signal such as speed onto the samples,
+  `samples_table()` gives one row per sample, and `break_before` marks run
+  starts for passing the resampled path on with `max_gap=None`. The trajectory
+  guide compares two sessions filmed at 30 and 120 Hz.
+- `compute_planar_turn_angles`, `compute_planar_curvature` and
+  `compute_movement_angular_velocity`, each `(times, positions, *, max_gap,
+  epochs, break_before)`, return one value per frame in the x-y plane,
+  positive for left (counterclockwise) turns and `NaN` next to a lost frame,
+  time gap or break and where the animal did not move. The turn angle is in
+  radians per frame; the curvature is in inverse position units (1/r on a
+  circle of radius r) and does not depend on frame rate for a path of
+  constant curvature; the angular velocity of the movement direction is in
+  rad/s and is not head angular velocity.
 
 - `backend="fastplotlib"` for `env.plot`, `env.plot_field` and
   `env.animate_fields` draws on the GPU (`pip install
@@ -1759,6 +1830,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   it raised `IndexError` when any bin was uncovered. On a track built from a
   2-D graph, gap marks are now at each gap's linearized position; before, they
   were drawn at its x and y coordinates.
+- `traveled_path_length` no longer counts the jump between joined
+  recordings or turns the total into `NaN` at a lost frame. Two recordings,
+  `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it
+  the jump from one to the other; with the second recording's first frame
+  marked in `break_before`, or a time gap longer than `max_gap` between them,
+  they measure 2.0 cm. One `NaN` row made the whole total `NaN`; now it only
+  splits the path.
 - The `method="glm"` warnings (smoothing penalty near its search bound, fit did
   not converge, no spikes, no occupancy) now point at your own call. Before,
   they pointed at a line inside neurospatial.
@@ -2702,6 +2780,18 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 ### Documentation
 
 - Add a [population analysis guide](https://edeno.github.io/neurospatial/user-guide/population-analysis/) organized by scientific question: place-field coverage and place-cell screens, remapping between conditions, cell assemblies and their reactivation during rest, and pointers to decoding. It maps each question to its module, since coverage and remapping tools live in `neurospatial.encoding` while assembly and reactivation tools live in `neurospatial.decoding`. Its examples run as tests on simulated recordings with planted answers.
+- `compute_turn_angles` and `compute_trajectory_curvature` describe what
+  they compute for positions with more than two columns: the cross product
+  uses x and y but the dot product uses every column, so the angle is neither
+  the horizontal-plane nor the 3-D angle; pass `positions[:, :2]`.
+  `compute_turn_angles` states that it drops repeated positions first, so its
+  output is shorter than the input and not aligned with the frames, and its
+  formula now has the sign the code uses (positive is a left turn).
+  `compute_trajectory_curvature` states that it returns turning angles in
+  radians per frame, not geometric curvature; use `compute_planar_curvature`
+  for 1/length. `heading_from_body_orientation` states that it fills missing
+  keypoints across any gap, including a recording break, and how to call it
+  once per recording. Outputs are unchanged.
 
 - Fix renamed phase-precession imports in executable examples and move the spatial adapter test normalizer import to its owning private module and distinguish independently standardized assembly activation from reactivation strength on a shared template-normalized projection scale.
 
@@ -2783,9 +2873,6 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   headings, and the two-epoch dwell totals 200 seconds instead of charging the
   pause to a bin. Entirely excluded speed windows return NaN without reduction
   warnings. Samples outside runs have NaN curvature and stationary labels.
-  `compute_path_efficiency` reports NaN traveled length, efficiency and angular
-  efficiency when any interval is unobserved. Shortest length and wall-clock
-  time efficiency/time-to-goal retain their existing meanings.
 - **Breaking:** `heading_from_velocity(times, positions)` replaces scalar `dt`, validates
   finite, strictly increasing aligned timestamps, and computes velocity,
   smoothing and circular interpolation separately per observed run. The
