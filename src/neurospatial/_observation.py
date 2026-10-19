@@ -34,6 +34,11 @@ class ObservationSupport(ReadOnlyArraysMixin):
     ----------
     sample_valid : ndarray of bool, shape (n_samples,)
         True where every coordinate is finite.
+    interval_gates : ndarray of bool, shape (max(n_samples - 1, 0),)
+        True for intervals that pass ``max_gap``, ``epochs`` and
+        ``break_before``, whatever the validity of their samples. Use it to
+        tell a declared boundary (False) from a missing observation:
+        ``interval_mask == interval_gates & sample_valid[:-1] & sample_valid[1:]``.
     interval_mask : ndarray of bool, shape (max(n_samples - 1, 0),)
         True for usable intervals.
     run_ids : ndarray of intp, shape (n_samples,)
@@ -46,6 +51,7 @@ class ObservationSupport(ReadOnlyArraysMixin):
     """
 
     sample_valid: NDArray[np.bool_]
+    interval_gates: NDArray[np.bool_]
     interval_mask: NDArray[np.bool_]
     run_ids: NDArray[np.intp]
     run_sample_bounds: NDArray[np.intp]
@@ -131,6 +137,7 @@ def _support_from_gates(
         run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
     return ObservationSupport(
         sample_valid=sample_valid,
+        interval_gates=gates,
         interval_mask=interval_mask,
         run_ids=run_ids,
         run_sample_bounds=bounds,

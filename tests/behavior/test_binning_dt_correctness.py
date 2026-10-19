@@ -516,20 +516,13 @@ class TestDtGuards:
         with pytest.raises(ValueError, match="increasing"):
             mean_square_displacement(times, positions, metric="euclidean")
 
-    def test_mean_square_displacement_tolerates_single_duplicate(self):
+    def test_mean_square_displacement_repeated_timestamp_raises(self):
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
         times = np.linspace(0.0, 10.0, 21)
-        # One duplicated timestamp; median step stays positive.
         times[5] = times[4]
 
-        result = mean_square_displacement(
-            times, positions, metric="euclidean", max_tau=5.0
-        )
-
-        assert len(result.lags) > 0
-        assert np.all(np.isfinite(result.msd))
-        # MSD increases with lag for ballistic-like motion.
-        assert result.msd[-1] > result.msd[0]
+        with pytest.raises(ValueError, match="strictly increasing"):
+            mean_square_displacement(times, positions, metric="euclidean", max_tau=5.0)
 
 
 # =============================================================================

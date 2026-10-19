@@ -89,8 +89,6 @@ def test_old_order_raises(name, recording):
         kwargs.update(reference_speed=20.0, optimal_distance=50.0)
     if name == "resample_by_distance":
         kwargs["spacing"] = 1.0
-    if name == "compute_trajectory_curvature":
-        args = (times, positions)
     with pytest.raises(ValueError, match="did you pass"):
         function(*args, **kwargs)
 

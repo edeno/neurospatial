@@ -517,12 +517,11 @@ class TestMeanSquareDisplacement:
 class TestCurvatureSampleAlignment:
     """Stationary observations preserve the time and index of each turn."""
 
-    @pytest.mark.parametrize("timed", [False, True])
-    def test_stationary_start_preserves_turn_index(self, timed):
+    def test_stationary_start_preserves_turn_index(self):
         positions = np.array([[0.0, 0.0]] * 6 + [[1.0, 0.0], [1.0, 1.0]])
-        times = np.arange(8) * 0.1 if timed else None
+        times = np.arange(8) * 0.1
 
-        curvature = compute_trajectory_curvature(positions, times, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
 
         expected = np.zeros(8)
         expected[6] = np.pi / 2
@@ -542,7 +541,7 @@ class TestCurvatureSampleAlignment:
         )
         times = np.arange(len(positions)) * 0.1
 
-        curvature = compute_trajectory_curvature(positions, times, smooth_window=None)
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
 
         expected = np.zeros(len(positions))
         expected[[1, 4]] = [np.pi / 2, -np.pi / 2]
@@ -556,15 +555,73 @@ class TestCurvatureSampleAlignment:
         times = np.r_[np.arange(8) * 0.1, 10.0 + np.arange(len(second)) * 0.1]
 
         curvature = compute_trajectory_curvature(
-            np.vstack([first, second]), times, smooth_window=0.1
+            times, np.vstack([first, second]), smooth_window=0.1
         )
 
         assert_allclose(curvature[:8], 0.0)
         assert np.argmax(curvature) == 8 + 6
         expected_second = compute_trajectory_curvature(
-            second, times[8:], smooth_window=0.1
+            times[8:], second, smooth_window=0.1
         )
         assert_allclose(curvature[8:], expected_second)
+
+
+class TestCurvatureObservationSupport:
+    """Turns are computed only within observed runs on a strictly increasing clock."""
+
+    def test_missing_row_splits_the_run(self):
+        times = np.arange(7) * 0.1
+        positions = np.array(
+            [
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [2.0, 0.0],
+                [2.0, 1.0],
+                [np.nan, np.nan],
+                [3.0, 1.0],
+                [3.0, 2.0],
+            ]
+        )
+
+        curvature = compute_trajectory_curvature(times, positions, smooth_window=None)
+
+        assert_allclose(
+            curvature, [0, 0, np.pi / 2, 0, np.nan, 0, 0], rtol=0, atol=1e-15
+        )
+
+    def test_missing_row_does_not_spread_through_smoothing(self):
+        times = np.arange(20) * 0.1
+        positions = np.column_stack([np.arange(20.0), np.sin(np.arange(20.0))])
+        positions[10] = np.nan
+
+        curvature = compute_trajectory_curvature(times, positions)
+
+        assert np.isnan(curvature[10])
+        assert np.isfinite(np.delete(curvature, 10)).all()
+        assert_allclose(
+            np.delete(curvature, 10),
+            np.r_[
+                compute_trajectory_curvature(times[:10], positions[:10]),
+                compute_trajectory_curvature(times[11:], positions[11:]),
+            ],
+            rtol=1e-12,
+            atol=0,
+        )
+
+    def test_repeated_timestamp_raises(self):
+        times = np.array([0.0, 0.1, 0.1, 0.2])
+        with pytest.raises(ValueError, match="strictly increasing"):
+            compute_trajectory_curvature(times, np.arange(8.0).reshape(4, 2))
+
+    def test_empty_input_raises(self):
+        with pytest.raises(ValueError, match="got no samples"):
+            compute_trajectory_curvature(np.zeros(0), np.zeros((0, 2)))
+
+    def test_one_sample_has_no_turn(self):
+        curvature = compute_trajectory_curvature(
+            np.array([0.0]), np.array([[1.0, 2.0]])
+        )
+        np.testing.assert_array_equal(curvature, [np.nan])
 
 
 class TestTrajectoryMetricsIntegration:
@@ -787,14 +844,108 @@ class TestArrayLikeNormalization:
         except (ValueError, TypeError):
             pass  # Domain error is fine
 
-    def test_msd_1d_list_raises_domain_error(self):
-        """mean_square_displacement raises ValueError/TypeError (not AttributeError) for 1-D input."""
-        times_list = [0.0, 0.1, 0.2]
-        with pytest.raises((ValueError, TypeError)):
-            mean_square_displacement(times_list, [0.0, 1.0, 2.0])  # 1D flat list
+    def test_msd_1d_positions_are_one_coordinate(self):
+        """1-D positions give the same MSD as the (n, 1) column."""
+        times = np.arange(20) * 0.1
+        x = np.cumsum(np.random.default_rng(1).standard_normal(20))
+        flat = mean_square_displacement(times, x, max_tau=1.0)
+        column = mean_square_displacement(times, x[:, None], max_tau=1.0)
+        np.testing.assert_array_equal(flat.lags, column.lags)
+        np.testing.assert_array_equal(flat.msd, column.msd)
+
+    def test_msd_empty_raises(self):
+        with pytest.raises(ValueError, match="no samples"):
+            mean_square_displacement(np.empty(0), np.empty((0, 2)))
+
+    def test_msd_one_sample_is_empty_result(self):
+        result = mean_square_displacement(np.array([0.0]), np.array([[1.0, 2.0]]))
+        assert result.lags.shape == (0,)
+        assert result.msd.shape == (0,)
 
     def test_msd_non_numeric_raises_domain_error(self):
         """mean_square_displacement raises TypeError (not AttributeError) for non-numeric input."""
         times_list = [0.0, 0.1, 0.2]
         with pytest.raises((TypeError, ValueError)):
             mean_square_displacement(times_list, [["a", "b"], ["c", "d"], ["e", "f"]])
+
+
+class TestMeanSquareDisplacementBreaks:
+    """No displacement pair spans a declared break or an epochs edge."""
+
+    @staticmethod
+    def _two_recordings():
+        times = np.arange(10.0)
+        x = np.array([0, 1, 2, 3, 4, 100, 101, 102, 103, 104], dtype=float)
+        return times, np.c_[x, np.zeros(10)]
+
+    def test_break_before_excludes_pairs_across_the_join(self):
+        times, positions = self._two_recordings()
+        break_before = np.zeros(10, dtype=bool)
+        break_before[5] = True
+        result = mean_square_displacement(
+            times, positions, max_tau=3.0, break_before=break_before
+        )
+        np.testing.assert_array_equal(result.lags, [1.0, 2.0, 3.0])
+        np.testing.assert_array_equal(result.msd, [1.0, 4.0, 9.0])
+
+    def test_without_break_pairs_span_the_join(self):
+        times, positions = self._two_recordings()
+        result = mean_square_displacement(times, positions, max_tau=3.0)
+        np.testing.assert_allclose(
+            result.msd, [9224 / 9, 18842 / 8, 28848 / 7], rtol=1e-12
+        )
+
+    def test_epochs_exclude_pairs_across_the_edge(self):
+        times, positions = self._two_recordings()
+        result = mean_square_displacement(
+            times, positions, max_tau=3.0, epochs=[(0.0, 4.5), (5.0, 10.0)]
+        )
+        np.testing.assert_array_equal(result.msd, [1.0, 4.0, 9.0])
+
+    def test_touching_epochs_merge(self):
+        times, positions = self._two_recordings()
+        merged = mean_square_displacement(
+            times, positions, max_tau=3.0, epochs=[(0.0, 5.0), (5.0, 10.0)]
+        )
+        plain = mean_square_displacement(times, positions, max_tau=3.0)
+        np.testing.assert_array_equal(merged.msd, plain.msd)
+
+    def test_nan_row_pairs_still_excluded(self):
+        times = np.arange(10.0)
+        positions = np.c_[np.arange(10.0), np.zeros(10)]
+        positions[5] = np.nan
+        result = mean_square_displacement(times, positions, max_tau=3.0)
+        np.testing.assert_array_equal(result.msd, [1.0, 4.0, 9.0])
+
+    def test_lag_with_no_pair_inside_a_segment_is_nan(self):
+        times, positions = self._two_recordings()
+        break_before = np.zeros(10, dtype=bool)
+        break_before[5] = True
+        result = mean_square_displacement(
+            times, positions[:, :1], max_tau=5.0, break_before=break_before
+        )
+        # Each recording spans four seconds, so lag 5 has no pair inside one.
+        np.testing.assert_array_equal(result.msd[:4], [1.0, 4.0, 9.0, 16.0])
+        assert np.isnan(result.msd[4])
+
+    def test_geodesic_pairs_do_not_span_the_break(self):
+        times, positions = self._two_recordings()
+        line = np.c_[np.linspace(0.0, 104.0, 400), np.zeros(400)]
+        env = Environment.from_samples(line, bin_size=1.0)
+        break_before = np.zeros(10, dtype=bool)
+        break_before[5] = True
+        joined = mean_square_displacement(
+            times, positions, metric="geodesic", env=env, max_tau=3.0
+        )
+        split = mean_square_displacement(
+            times,
+            positions,
+            metric="geodesic",
+            env=env,
+            max_tau=3.0,
+            break_before=break_before,
+        )
+        # Pairs across the join are ~100 units apart; within a recording the
+        # displacement is at most 3 bin-widths.
+        assert np.all(joined.msd > 100.0)
+        np.testing.assert_allclose(split.msd, [1.0, 4.0, 9.0], atol=1.5)

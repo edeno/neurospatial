@@ -79,6 +79,46 @@
   The rate at the first frame of a new recording is `nan`. Empty input now
   raises instead of returning an empty array; a single sample gives `[nan]`.
 
+- `compute_trajectory_curvature` takes `times` first, and `times` is required:
+  `compute_trajectory_curvature(times, positions, *, smooth_window=0.2,
+  max_gap=0.5, epochs=None, break_before=None)`.
+
+  ```python
+  # before
+  compute_trajectory_curvature(positions)              # no times: no smoothing
+  compute_trajectory_curvature(positions, times)
+  # after
+  compute_trajectory_curvature(times, positions, smooth_window=None)
+  compute_trajectory_curvature(times, positions, break_before=new_recording)
+  ```
+
+  A `NaN` row splits the path instead of turning nearby values `NaN`: the
+  missing sample is `NaN`, and the turns on each side are computed and
+  smoothed as two separate runs. Before, one lost frame in a 20-sample run
+  made 19 of the 20 values `NaN`. `break_before` keeps joined recordings
+  from being turned or smoothed across the join, and repeated timestamps
+  raise. Recordings without gaps give the same values as before.
+
+- `mean_square_displacement` follows the same observation rule and takes
+  `epochs` and `break_before`:
+  `mean_square_displacement(times, positions, *, metric="euclidean", env=None,
+  max_tau=None, epochs=None, break_before=None)`.
+
+  ```python
+  # before: displacement pairs spanned the join between recordings
+  msd = mean_square_displacement(times, positions, max_tau=10.0)
+  # after
+  msd = mean_square_displacement(times, positions, max_tau=10.0, break_before=new_recording)
+  ```
+
+  No displacement pair spans a declared break or an interval outside
+  `epochs`. There is no `max_gap`: MSD compares two observed positions a lag
+  apart and does not integrate along the path, so samples missing between them
+  do not change it. Repeated timestamps and empty input raise (a repeated
+  timestamp used to be accepted), and a 1-D `positions` is one coordinate. A
+  single sample returns an empty result. Recordings without breaks give the
+  same values as before.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).

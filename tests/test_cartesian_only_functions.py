@@ -291,6 +291,12 @@ def _polar_regions_env(env: Environment) -> Environment:
             "mean_square_displacement(metric='geodesic')",
         ),
         (
+            lambda env: mean_square_displacement(
+                _TIMES[:1], _POLAR_POSITIONS[:1], metric="geodesic", env=env
+            ),
+            "mean_square_displacement(metric='geodesic')",
+        ),
+        (
             lambda env: decoding_error(env, _POLAR_POSITIONS, _POLAR_POSITIONS),
             "decoding_error(metric='geodesic')",
         ),
