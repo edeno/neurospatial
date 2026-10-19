@@ -1644,6 +1644,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `wall_fit="snap"` no longer fails for two kinds of walls: a wall that snaps
+  to a single bin edge (it raised "Cannot linemerge"), and a wall reaching a
+  slanted outline, whose snapped edges could leave the arena (it raised "lies
+  outside the arena domain"). Snapped walls are now kept to the arena;
+  environments that built before are unchanged.
+
 - The default smoothing bandwidth for an environment with no neighbor pairs and
   no metric units used each bin's measure to the power `1 / n_dims`, so a track
   bin 2 long in 2-D coordinates counted as 1.41 long. It now uses each bin's
