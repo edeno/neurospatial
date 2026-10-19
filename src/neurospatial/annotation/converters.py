@@ -431,20 +431,19 @@ def env_from_boundary_region(
 def _clipped_walls(
     walls: Mapping[str, shp.LineString], polygon: Polygon
 ) -> tuple[list[shp.LineString], list[str]]:
-    """Each wall's pieces inside ``polygon``, with the wall's name for each piece."""
+    """Each wall's pieces inside ``polygon``, with the wall's name for each piece.
+
+    Every piece passes the arena's containment test (see
+    :func:`geometry._arena_fit.clip_wall`).
+    """
     import warnings
 
-    import shapely
+    from neurospatial.geometry._arena_fit import clip_wall
 
     segments: list[shp.LineString] = []
     wall_names: list[str] = []
     for name, wall in walls.items():
-        inside = wall.intersection(polygon)
-        pieces = [
-            piece
-            for piece in shapely.get_parts(inside)
-            if isinstance(piece, shp.LineString) and piece.length > 0
-        ]
+        pieces = clip_wall(wall, polygon)
         kept = sum(piece.length for piece in pieces)
         if kept < 0.99 * wall.length:
             warnings.warn(

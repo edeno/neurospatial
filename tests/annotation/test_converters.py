@@ -1,5 +1,7 @@
 """Tests for annotation converters."""
 
+import warnings
+
 import numpy as np
 import pytest
 import shapely.geometry as shp
@@ -889,6 +891,35 @@ class TestEnvFromBoundaryWithWalls:
         assert set(blocked["wall"]) == {"divider"}
         left = env.bin_centers[:, 0] < 50
         assert all(left[blocked["source"]] != left[blocked["target"]])
+
+    def test_a_wall_clipped_at_a_slanted_edge_is_kept(self):
+        # The intersection with a slanted edge can round to just outside the
+        # polygon; the clipped wall must still pass the arena's containment.
+        boundary = Region(
+            name="arena",
+            kind="polygon",
+            data=shp.Polygon([(0, 0), (10, 1), (10, 10), (1, 10)]),
+        )
+        with pytest.warns(UserWarning, match="extends past the environment boundary"):
+            env = env_from_boundary_region(
+                boundary, bin_size=1.0, walls={"w": shp.LineString([(-1, 3), (12, 3)])}
+            )
+        assert env.arena.wall_names == ("w",)
+        assert set(env.get_blocked_edges()["wall"]) == {"w"}
+
+    def test_clipping_never_stops_the_environment_being_built(self):
+        rng = np.random.default_rng(0)
+        for _ in range(200):
+            angle = rng.uniform(0, np.pi / 2)
+            c, s = np.cos(angle), np.sin(angle)
+            square = np.array([(0, 0), (10, 0), (10, 10), (0, 10)]) @ [[c, s], [-s, c]]
+            boundary = Region(name="arena", kind="polygon", data=shp.Polygon(square))
+            start, end = rng.uniform(-8, 18, size=(2, 2))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                env_from_boundary_region(
+                    boundary, bin_size=1.0, walls={"w": shp.LineString([start, end])}
+                )
 
     def test_a_wall_entirely_outside_is_skipped(self):
         outside = shp.LineString([(120, 0), (120, 50)])
