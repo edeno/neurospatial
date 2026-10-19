@@ -188,6 +188,12 @@ def _hexagons() -> Environment:
     )
 
 
+# Comparing builds the mesh's faces, which warn when many triangles are skewed;
+# whether this square-grid Delaunay mesh is skewed depends on the platform.
+_MESH_WARNING = "ignore:Triangular mesh is non-K-orthogonal:UserWarning"
+
+
+@pytest.mark.filterwarnings(_MESH_WARNING)
 def test_independently_built_meshes_agree() -> None:
     first, second = _mesh(), _mesh()
     assert first._geometry is not second._geometry
@@ -378,22 +384,27 @@ def _rotated_grid() -> Environment:
     )
 
 
-_ROUND_TRIP_LAYOUTS = {
-    "samples": lambda: Environment.from_samples(_samples(), bin_size=3.0),
-    "polygon": lambda: Environment.from_polygon(Point(15, 15).buffer(15), bin_size=2.0),
-    "track": _t_maze,
-    "mesh": _mesh,
-    "hexagons": _hexagons,
-    "rotated grid": _rotated_grid,
-}
+_ROUND_TRIP_LAYOUTS = [
+    pytest.param(
+        lambda: Environment.from_samples(_samples(), bin_size=3.0), id="samples"
+    ),
+    pytest.param(
+        lambda: Environment.from_polygon(Point(15, 15).buffer(15), bin_size=2.0),
+        id="polygon",
+    ),
+    pytest.param(_t_maze, id="track"),
+    pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+    pytest.param(_hexagons, id="hexagons"),
+    pytest.param(_rotated_grid, id="rotated grid"),
+]
 
 
-@pytest.mark.parametrize("layout", list(_ROUND_TRIP_LAYOUTS))
-def test_nwb_restored_environment_equals_its_original(layout: str, tmp_path) -> None:
+@pytest.mark.parametrize("build", _ROUND_TRIP_LAYOUTS)
+def test_nwb_restored_environment_equals_its_original(build, tmp_path) -> None:
     pynwb = pytest.importorskip("pynwb")
     from neurospatial.io.nwb import read_environment, write_environment
 
-    env = _ROUND_TRIP_LAYOUTS[layout]().with_metadata(units="cm", frame="room")
+    env = build().with_metadata(units="cm", frame="room")
 
     nwbfile = pynwb.NWBFile(
         session_description="environment comparison round trip",
@@ -401,7 +412,7 @@ def test_nwb_restored_environment_equals_its_original(layout: str, tmp_path) -> 
         session_start_time=datetime.now().astimezone(),
     )
     write_environment(nwbfile, env)
-    path = tmp_path / f"{layout}.nwb"
+    path = tmp_path / "environment.nwb"
     with pynwb.NWBHDF5IO(str(path), "w") as io:
         io.write(nwbfile)
     with pynwb.NWBHDF5IO(str(path), "r") as io:
