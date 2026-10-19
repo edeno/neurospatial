@@ -1366,7 +1366,9 @@ def test_module_docstring_does_not_claim_diffusion_sparse() -> None:
 
 
 def _oversized_bandwidth_calls():
+    from neurospatial.decoding import BayesianDecoder, decode_session
     from neurospatial.encoding import (
+        compute_egocentric_rates,
         compute_object_vector_rate,
         compute_object_vector_rates,
         compute_spatial_rate,
@@ -1384,6 +1386,15 @@ def _oversized_bandwidth_calls():
     objects = np.array([[10.0, 10.0]])
     ov = {"method": "diffusion_kde", "bandwidth": 1000.0}
     return {
+        "egocentric-population": lambda: compute_egocentric_rates(
+            env, [spikes], times, positions, headings, objects, **ov
+        ),
+        "decode-session": lambda: decode_session(
+            env, [spikes], times, positions, bandwidth=100.0
+        ),
+        "bayesian-decoder-fit": lambda: BayesianDecoder(env, bandwidth=100.0).fit(
+            [spikes], times, positions
+        ),
         "spatial": lambda: compute_spatial_rate(
             env, spikes, times, positions, bandwidth=100.0
         ),
@@ -1414,6 +1425,9 @@ def _oversized_bandwidth_calls():
         "view-population",
         "object-vector",
         "object-vector-population",
+        "egocentric-population",
+        "decode-session",
+        "bayesian-decoder-fit",
     ],
 )
 def test_oversized_bandwidth_warning_points_at_caller(case):
