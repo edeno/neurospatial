@@ -10,8 +10,17 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from scipy import stats
+from shapely.geometry import LineString, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
+from neurospatial.arena import OpenArena
+from neurospatial.binning import (
+    BinConnections,
+    Binning,
+    MissingFaces,
+    NearestBinLocator,
+    SpatialBins,
+)
 from neurospatial.encoding import (
     RateComparisonResult,
     compare_spatial_rates,
@@ -304,9 +313,7 @@ def test_one_to_one_subset_mapping_equals_selecting_the_same_bins(env, make) -> 
     rates_b = make(rates_b_full[:, mask], occupancy_b[mask], ids=[1, 2], on=subset)
     mapping = np.column_stack([np.flatnonzero(mask), np.arange(4)])
 
-    mapped = compare_spatial_rates(
-        rates_a, rates_b, bin_mapping=mapping, topology="may_differ"
-    )
+    mapped = compare_spatial_rates(rates_a, rates_b, bin_mapping=mapping)
     identity = compare_spatial_rates(
         rates_a,
         make(rates_b_full, occupancy_b, ids=[1, 2]),
@@ -318,6 +325,8 @@ def test_one_to_one_subset_mapping_equals_selecting_the_same_bins(env, make) -> 
     np.testing.assert_array_equal(mapped.bins_a, identity.bins_a)
     assert mapped.bins_b.tolist() == [0, 1, 2, 3]
     assert mapped.analysis_settings["bin_mapping"] == "explicit"
+    # The edges among the kept bins are the parent's, so topology is the same.
+    assert mapped.analysis_settings["topology_differs"] is False
     assert identity.analysis_settings["bin_mapping"] is None
     assert identity.analysis_settings["bins_selected"] == 4
     assert identity.analysis_settings["n_compared_bins"] == 4
@@ -328,10 +337,95 @@ def test_bins_selection_restricts_a_mapping(env, make) -> None:
     rates_b = make(np.asarray(G)[mask], OCC[mask], on=env.subset(mask=mask))
     mapping = np.column_stack([np.flatnonzero(mask), np.arange(4)])
     result = compare_spatial_rates(
-        make(F), rates_b, bin_mapping=mapping, bins=[0, 2, 3, 4], topology="may_differ"
+        make(F), rates_b, bin_mapping=mapping, bins=[0, 2, 3, 4]
     )
     assert result.bins_a.tolist() == [0, 3, 4]
     assert result.bins_b.tolist() == [0, 2, 3]
+
+
+def _renumbered(env: Environment, order) -> Environment:
+    """The same bins and connections as ``env``; new bin ``i`` is ``order[i]``."""
+    binning = env.binning
+    new_id = np.argsort(order)
+    centers = binning.bins.centers[order]
+    return Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(
+                centers, binning.bins.sizes[order], binning.bins.measure_dims[order]
+            ),
+            BinConnections.from_arrays(
+                new_id[binning.connections.pairs], binning.connections.pair_distances
+            ),
+            NearestBinLocator(centers, max_distance=5.0),
+            MissingFaces("renumbered copy for a test"),
+        ),
+        units=env.units,
+        frame=env.frame,
+        arena=env.arena,
+    )
+
+
+def test_renumbered_environment_has_the_same_topology_through_the_mapping(
+    env, make
+) -> None:
+    order = np.array([3, 0, 4, 1, 2])
+    renumbered = _renumbered(env, order)
+    rng = np.random.default_rng(8)
+    rates_a = make(rng.uniform(0, 10, (2, 5)), ids=[1, 2])
+    rates_b = rng.uniform(0, 10, (2, 5))
+    rates_b_renumbered = make(rates_b[:, order], ids=[1, 2], on=renumbered)
+    with pytest.raises(IncompatibleEnvironmentError, match="bin coordinates"):
+        compare_spatial_rates(rates_a, rates_b_renumbered)
+
+    mapped = compare_spatial_rates(
+        rates_a, rates_b_renumbered, bin_mapping=np.column_stack([order, np.arange(5)])
+    )
+
+    identity = compare_spatial_rates(rates_a, make(rates_b, ids=[1, 2]))
+    assert mapped.analysis_settings["topology_differs"] is False
+    np.testing.assert_allclose(mapped.correlation, identity.correlation, atol=1e-12)
+    assert mapped.bins_a.tolist() == order.tolist()
+
+
+@pytest.fixture
+def corridor_pair():
+    """A 5-bin corridor, and a subset of it with a barrier inside the subset."""
+
+    def corridor(walls=()) -> Environment:
+        return Environment.from_grid_mask(
+            np.ones((5, 1), dtype=bool),
+            grid_edges=(np.arange(6.0) * 10, np.arange(2.0) * 10),
+            arena=OpenArena(box(0, 0, 50, 10), walls=walls),
+        ).with_metadata(units="cm")
+
+    open_corridor = corridor()
+    barrier = corridor(walls=(LineString([(20, 0), (20, 10)]),))
+    kept = np.array([True, True, True, False, False])
+    subset = barrier.subset(mask=kept)
+    # Bins 1 and 2 are neighbors in the open corridor; the barrier separates them.
+    assert open_corridor.connectivity.has_edge(1, 2)
+    assert not subset.connectivity.has_edge(1, 2)
+    return open_corridor, subset, np.column_stack([np.flatnonzero(kept), np.arange(3)])
+
+
+def test_barrier_inside_a_mapped_subset_is_a_topology_difference(
+    make, corridor_pair
+) -> None:
+    open_corridor, subset, mapping = corridor_pair
+    rates_a = make([1.0, 2.0, 4.0, 3.0, 5.0], on=open_corridor)
+    rates_b = make([2.0, 1.0, 5.0], OCC[:3], on=subset)
+
+    with pytest.raises(IncompatibleEnvironmentError, match="weighted connectivity"):
+        compare_spatial_rates(rates_a, rates_b, bin_mapping=mapping)
+    result = compare_spatial_rates(
+        rates_a, rates_b, bin_mapping=mapping, topology="may_differ"
+    )
+
+    assert result.analysis_settings["topology_differs"] is True
+    np.testing.assert_allclose(
+        result.correlation, [stats.pearsonr([1, 2, 4], [2, 1, 5]).statistic]
+    )
 
 
 def test_merging_bins_is_refused_because_rates_cannot_be_averaged(env, make) -> None:

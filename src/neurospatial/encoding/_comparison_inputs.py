@@ -18,6 +18,7 @@ from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
 from neurospatial.environment import (
     _environment_differences,
     _EnvironmentDifferences,
+    _mapped_topology_difference,
 )
 
 if TYPE_CHECKING:
@@ -174,8 +175,14 @@ def _bin_pairs(
     bin_mapping: ArrayLike | None,
     topology: str,
 ) -> tuple[NDArray[np.intp], bool]:
-    """Pair bins that are the same place; return pairs and topology_differs."""
+    """Pair bins that are the same place; return pairs and topology_differs.
+
+    Without a mapping, topology is the whole connectivity graph by bin ID plus
+    the arena and walls. With one, it is the connectivity among the mapped
+    bins, matched through the mapping, plus the arena and walls.
+    """
     differences = _environment_differences(env_a, env_b)
+    topology_difference = differences.topology
     if bin_mapping is None:
         if differences.bins is not None:
             raise IncompatibleEnvironmentError(
@@ -192,10 +199,11 @@ def _bin_pairs(
         pairs = np.column_stack([identity, identity])
     else:
         pairs = _validate_bin_mapping(bin_mapping, env_a, env_b, differences)
-    if differences.topology is not None and topology == "same":
+        topology_difference = _mapped_topology_difference(env_a, env_b, pairs)
+    if topology_difference is not None and topology == "same":
         raise IncompatibleEnvironmentError(
             f"{_OPERATION}: rates_a and rates_b were estimated on environments "
-            f"that differ in {differences.topology}, so their maps were smoothed "
+            f"that differ in {topology_difference}, so their maps were smoothed "
             "over different neighbors.",
             fix='pass topology="may_differ" if the bins are the same places and '
             "only connectivity or walls changed, e.g. a door opened; smoothing "
@@ -203,7 +211,7 @@ def _bin_pairs(
             first=env_a,
             second=env_b,
         )
-    return pairs, differences.topology is not None
+    return pairs, topology_difference is not None
 
 
 def _validate_bin_mapping(

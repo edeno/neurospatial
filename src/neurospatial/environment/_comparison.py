@@ -12,7 +12,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple
 
+import networkx as nx
 import numpy as np
+from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 from neurospatial.geometry import (
@@ -132,16 +134,61 @@ def _polygon_cell_difference(first: Binning, second: Binning) -> str | None:
 
 def _topology_difference(first: Environment, second: Environment) -> str | None:
     """Return the first difference in connectivity, arena or walls."""
-    first_graph, second_graph = first.connectivity, second.connectivity
-    if first_graph.number_of_edges() != second_graph.number_of_edges() or any(
-        not second_graph.has_edge(u, v)
-        or data["distance"] != second_graph.edges[u, v]["distance"]
-        for u, v, data in first_graph.edges(data=True)
-    ):
+    if not _same_weighted_edges(first.connectivity, second.connectivity):
         return "weighted connectivity"
     if not _same_arena(first._arena, second._arena):
         return "continuous arena or physical walls"
     return None
+
+
+def _mapped_topology_difference(
+    first: Environment, second: Environment, bin_pairs: NDArray[np.integer]
+) -> str | None:
+    """Compare topology through a one-to-one pairing of bins.
+
+    Parameters
+    ----------
+    first, second : Environment
+        The environments to compare.
+    bin_pairs : ndarray of int, shape (n_pairs, 2)
+        Rows of ``(bin of first, bin of second)`` that are the same place;
+        each bin appears at most once in its column.
+
+    Returns
+    -------
+    str or None
+        ``"weighted connectivity"`` when the paired bins are connected
+        differently: a pair of them are neighbors in one environment and not
+        the other, or neighbors at a different distance. Otherwise
+        ``"continuous arena or physical walls"`` when the arenas or walls
+        differ, else None.
+
+    Notes
+    -----
+    Only connections among paired bins are compared, after renumbering
+    ``second``'s bins to ``first``'s. Bins renumbered, or a subset that keeps
+    the connections among its bins, therefore have the same topology. A
+    connection from a paired bin to an unpaired bin is not compared. The
+    arena and walls are compared whole, as in ``_environment_differences``.
+    """
+    to_first = dict(
+        zip(bin_pairs[:, 1].tolist(), bin_pairs[:, 0].tolist(), strict=True)
+    )
+    first_graph = first.connectivity.subgraph(bin_pairs[:, 0].tolist())
+    second_graph = nx.relabel_nodes(second.connectivity.subgraph(to_first), to_first)
+    if not _same_weighted_edges(first_graph, second_graph):
+        return "weighted connectivity"
+    if not _same_arena(first._arena, second._arena):
+        return "continuous arena or physical walls"
+    return None
+
+
+def _same_weighted_edges(first: nx.Graph, second: nx.Graph) -> bool:
+    """Whether two graphs have the same edges with the same distances."""
+    return first.number_of_edges() == second.number_of_edges() and all(
+        second.has_edge(u, v) and data["distance"] == second.edges[u, v]["distance"]
+        for u, v, data in first.edges(data=True)
+    )
 
 
 def _same_arena(first: Arena, second: Arena) -> bool:

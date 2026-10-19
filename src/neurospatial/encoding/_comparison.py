@@ -356,7 +356,15 @@ def compare_spatial_rates(
         are the same place, for maps estimated on different environments such
         as a subset of the arena. Each bin appears at most once on each side;
         paired bins must have identical centers, sizes and dimensions. By
-        default the environments must have the same bins.
+        default the environments must have the same bins. With a mapping,
+        topology is compared through it: two mapped bins must be neighbors at
+        the same distance in both environments or in neither, and the arenas
+        and walls must match. A renumbered copy of an environment, or a subset
+        that keeps the connections among its bins, has the same topology; a
+        barrier between two mapped bins does not. Connections from a mapped
+        bin to an unmapped one are not compared, so near the edge of the
+        mapped bins each map was smoothed over its own environment's
+        neighbors.
     bins : array-like of int, optional
         Bin IDs of ``rates_a.env`` to restrict the comparison to, for example
         ``env.bins_in_region("center")``.
@@ -364,7 +372,10 @@ def compare_spatial_rates(
         ``"may_differ"`` accepts environments whose bins are the same places
         but whose connectivity or walls differ, as when a door opens between
         conditions. Smoothing then used different neighbors in each
-        condition; the choice is recorded in ``analysis_settings``.
+        condition; the choice is recorded in ``analysis_settings``. Without
+        ``bin_mapping``, connectivity is compared over all bins by bin ID,
+        with the neighbor distances; with it, over the mapped bins through the
+        mapping. Arenas and walls are compared whole in both cases.
     min_common_bins : int, default=3
         Fewest common bins a unit needs to be scored. At least 3: a
         correlation over 2 bins is always +1 or -1.
@@ -448,6 +459,21 @@ def compare_spatial_rates(
     ['scored', 'scored', 'scored']
     >>> bool(np.all(np.abs(result.correlation) <= 1))
     True
+
+    Maps estimated on part of the arena pair with the full arena's bins
+    through ``bin_mapping``. A subset keeps the connections among its bins,
+    so the topology is the same:
+
+    >>> keep = np.zeros(env.n_bins, dtype=bool)
+    >>> keep[: env.n_bins // 2] = True
+    >>> part = env.subset(mask=keep)
+    >>> rates_on_part = compute_spatial_rates(
+    ...     part, spike_times, times, positions, unit_ids=[10, 11, 12]
+    ... )
+    >>> mapping = np.column_stack([np.flatnonzero(keep), np.arange(part.n_bins)])
+    >>> on_part = compare_spatial_rates(first_half, rates_on_part, bin_mapping=mapping)
+    >>> on_part.analysis_settings["topology_differs"]
+    False
     """
     population = _check_pair(rates_a, rates_b)
     _check_choice("method", method, _METHODS)
