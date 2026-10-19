@@ -765,6 +765,7 @@ def _boundary_vector_rates(
         resolve_spatial_bandwidth,
         smooth_rate_maps_batch,
     )
+    from neurospatial.encoding._spatial_counts import _warn_if_population_silent
     from neurospatial.encoding._validation import (
         _validate_env_argument,
         validate_spike_trains,
@@ -789,6 +790,13 @@ def _boundary_vector_rates(
         times, positions=positions, headings=headings, context=context, n_dims=2
     )
     validate_spike_trains(spike_trains, context=context)
+    _warn_if_population_silent(
+        spike_trains,
+        times,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
+    )
 
     frame_bins, observed = _boundary_frame_bins(
         env,
