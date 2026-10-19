@@ -1278,3 +1278,52 @@ def test_glm_nwb_write_roundtrips(open_field_env: Environment) -> None:
         np.asarray(back.coefficients), np.asarray(glm.coefficients)
     )
     np.testing.assert_allclose(np.asarray(back.deviance), np.asarray(glm.deviance))
+
+
+def _flat_rate_session(env: Environment) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Visit every bin equally often with the same spike count in each bin.
+
+    The rate is exactly flat, so REML finds nothing to smooth against and drives
+    the penalty to its upper search bound. Spikes sit on sample times (the
+    position at a spike time is then exactly a bin center), and the final sample
+    closes the last interval so every bin has the same occupancy.
+    """
+    n_repeats = 40
+    centers = np.asarray(env.bin_centers, dtype=np.float64)
+    positions = np.tile(centers, (n_repeats, 1))
+    positions = np.vstack([positions, positions[:1]])
+    times = np.arange(positions.shape[0]) * 0.05
+    sweep = np.arange(times.size) // env.n_bins
+    spikes = times[(sweep % 10 == 0) & (np.arange(times.size) < times.size - 1)]
+    return times, positions, spikes
+
+
+@pytest.mark.parametrize("pooled", [True, False], ids=["pooled", "per_unit"])
+def test_reml_bound_warning_points_at_caller(
+    open_field_env: Environment, pooled: bool
+) -> None:
+    """The REML search-bound warning points at the caller's line, not inside
+    neurospatial."""
+    env = open_field_env
+    times, positions, spikes = _flat_rate_session(env)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        compute_spatial_rates(
+            env, [spikes, spikes], times, positions, method="glm", pooled=pooled
+        )
+    bound = [w for w in caught if "search bound" in str(w.message)]
+    assert len(bound) == 1
+    assert bound[0].filename == __file__
+
+
+def test_reml_bound_warning_points_at_caller_single_unit(
+    open_field_env: Environment,
+) -> None:
+    env = open_field_env
+    times, positions, spikes = _flat_rate_session(env)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        compute_spatial_rate(env, spikes, times, positions, method="glm")
+    bound = [w for w in caught if "search bound" in str(w.message)]
+    assert len(bound) == 1
+    assert bound[0].filename == __file__

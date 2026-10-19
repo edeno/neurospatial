@@ -1744,6 +1744,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The `method="glm"` warnings (smoothing penalty near its search bound, fit did
+  not converge, no spikes, no occupancy) now point at your own call. Before,
+  they pointed at a line inside neurospatial.
+- `compute_boundary_vector_rates` warns when every unit in a population of
+  five or more is silent for a minute or more of tracked time, as the other
+  population rate functions do. Before, it gave no warning.
+- The error for an unknown `method` lists the valid estimators in a fixed
+  order. Before, it printed a Python set, so the order changed from run to run.
 - The warning about a bandwidth that spans the environment now points at your
   own call for population view rates, object-vector rates, egocentric rates,
   `decode_session` and `BayesianDecoder.fit`. Before, for these it pointed at
