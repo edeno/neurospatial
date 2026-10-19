@@ -757,7 +757,8 @@ def rate_map_correlations(
         with constant rates has no defined correlation, so its row, column
         and diagonal entry are NaN, and the other entries are unchanged.
         A map is constant when all its rates are exactly equal, even if their
-        standard deviation rounds to a tiny nonzero value.
+        standard deviation rounds to a tiny nonzero value. With no bins, every
+        entry is NaN.
 
     Examples
     --------
@@ -792,10 +793,15 @@ def rate_map_correlations(
 
     See Also
     --------
+    population_vector_correlation : Correlation across cells at each location
     field_stability : Correlation between one cell's maps in two conditions
     field_overlap : Jaccard-based overlap of place fields
     """
     maps = np.atleast_2d(np.asarray(firing_rates, dtype=np.float64))
+    if maps.shape[1] == 0:
+        # No bins, for example no bin supported in both conditions.
+        return np.full((maps.shape[0], maps.shape[0]), np.nan)
+
     # A constant map divides by zero; the NaN it produces is the documented result.
     with np.errstate(divide="ignore", invalid="ignore"):
         correlation_matrix = np.atleast_2d(np.corrcoef(maps))

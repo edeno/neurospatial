@@ -841,6 +841,12 @@ class TestRateMapCorrelations:
             corr_matrix[0, 2], np.corrcoef(firing_rates[0], firing_rates[2])[0, 1]
         )
 
+    def test_rate_map_correlations_no_bins_is_all_nan(self) -> None:
+        """No shared bins: nothing to correlate, so every entry is NaN."""
+        corr_matrix = rate_map_correlations(np.ones((3, 0)))
+        assert corr_matrix.shape == (3, 3)
+        assert np.isnan(corr_matrix).all()
+
     def test_rate_map_correlations_two_conditions(self) -> None:
         """Stacked conditions: the off-diagonal block's diagonal is per-map r."""
         rng = np.random.default_rng(42)
