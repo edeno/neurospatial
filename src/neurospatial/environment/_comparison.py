@@ -265,6 +265,9 @@ def _mapped_topology_difference(
           neighbor at the same center and the same distance.
         - ``"continuous arena or physical walls"``: the arenas or walls
           differ.
+        - ``"smoothing conductances between neighboring bins"``: a paired bin
+          exchanges a field with a neighbor through a different conductance
+          (face area over distance), or only one environment can smooth.
 
     Notes
     -----
@@ -273,7 +276,9 @@ def _mapped_topology_difference(
     neighbor through ``bin_pairs``, an unpaired neighbor by its center
     (compared exactly, as bin centers are in ``_environment_differences``).
     A smoothing over the graph then used the same neighbors for every paired
-    bin. Identical environments under any partial mapping, a renumbered copy,
+    bin, and its conductance to each neighbor must match too, so smoothing
+    passed a field between them alike. Identical environments under any
+    partial mapping, a renumbered copy,
     and a mapping that covers whole connected components keep the topology;
     a subset compared with its parent does not, because the parent's border
     bins have neighbors the subset lacks. The arena and walls are compared
@@ -285,30 +290,57 @@ def _mapped_topology_difference(
     second_graph = nx.relabel_nodes(second.connectivity.subgraph(second_bins), to_first)
     if not _same_weighted_edges(first_graph, second_graph):
         return "weighted connectivity"
+    first_weights, second_weights = _conductances(first), _conductances(second)
     own_labels = {bin_id: bin_id for bin_id in first_bins}
-    if _outside_neighbors(first, own_labels) != _outside_neighbors(second, to_first):
+    first_outside = _outside_neighbors(first, own_labels, first_weights)
+    second_outside = _outside_neighbors(second, to_first, second_weights)
+    if Counter(neighbor[:3] for neighbor in first_outside) != Counter(
+        neighbor[:3] for neighbor in second_outside
+    ):
         return "connections from mapped bins to bins outside the mapping"
     if not _same_arena(first._arena, second._arena):
         return "continuous arena or physical walls"
+    if not _same_conductances(
+        _paired_conductances(first_weights, first_bins),
+        _paired_conductances(second_weights, second_bins),
+    ) or Counter(first_outside) != Counter(second_outside):
+        return "smoothing conductances between neighboring bins"
     return None
 
 
+def _paired_conductances(
+    weights: sparse.csr_matrix | None, bins: list[int]
+) -> sparse.csr_matrix | None:
+    """Conductances among ``bins``, rows and columns in the order given."""
+    return None if weights is None else weights[bins][:, bins]
+
+
 def _outside_neighbors(
-    env: Environment, labels: dict[int, int]
-) -> Counter[tuple[int, tuple[float, ...], float]]:
-    """Mapped bins' unmapped neighbors as ``(label, center, distance)`` counts.
+    env: Environment, labels: dict[int, int], weights: sparse.csr_matrix | None
+) -> list[tuple[int, tuple[float, ...], float, float | None]]:
+    """Mapped bins' unmapped neighbors as ``(label, center, distance, conductance)``.
 
     ``labels`` maps each mapped bin of ``env`` to its ID in the shared
     numbering, so the same neighbor of the same place counts alike in both
-    environments.
+    environments. ``conductance`` is the smoothing conductance between the
+    two bins, or None when ``env`` cannot smooth (``weights`` is None).
     """
-    centers = env.bin_centers
-    return Counter(
-        (labels[inside], tuple(centers[outside].tolist()), distance)
-        for inside, outside, distance in nx.edge_boundary(
-            env.connectivity, labels, data="distance"
-        )
+    edges = list(nx.edge_boundary(env.connectivity, labels, data="distance"))
+    if not edges:
+        return []
+    inside, outside, distances = zip(*edges, strict=True)
+    conductances: list[float | None] = (
+        [None] * len(edges)
+        if weights is None
+        else np.asarray(weights[list(inside), list(outside)]).ravel().tolist()
     )
+    centers = env.bin_centers[list(outside)].tolist()
+    return [
+        (labels[u], tuple(center), distance, conductance)
+        for u, center, distance, conductance in zip(
+            inside, centers, distances, conductances, strict=True
+        )
+    ]
 
 
 def _same_weighted_edges(first: nx.Graph, second: nx.Graph) -> bool:

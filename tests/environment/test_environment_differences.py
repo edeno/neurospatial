@@ -333,6 +333,44 @@ def test_faces_present_in_only_one_environment_are_a_topology_difference() -> No
     assert _environment_differences(without, without.with_metadata()) == (None, None)
 
 
+_IDENTITY_3 = np.column_stack([np.arange(3), np.arange(3)])
+
+
+def test_different_faces_differ_through_an_identity_mapping() -> None:
+    # A bin_mapping must not hide what comparing without one reports.
+    wide, narrow = _three_bins_in_a_row(10.0), _three_bins_in_a_row(2.0)
+    assert _mapped_topology_difference(wide, narrow, _IDENTITY_3) == _FACES
+
+
+def test_a_different_face_to_an_unmapped_neighbor_is_a_difference() -> None:
+    # Bin 1 smooths with unmapped bin 2 through a wider face in one of them.
+    wide, narrow = _three_bins_in_a_row(10.0), _three_bins_in_a_row(2.0)
+    pairs = np.column_stack([np.arange(2), np.arange(2)])
+    assert _mapped_topology_difference(wide, narrow, pairs) == _FACES
+
+
+@pytest.mark.parametrize("bins", [[0, 1], [1, 2], [0, 2]])
+def test_a_partial_mapping_between_the_same_faces_has_no_difference(
+    bins: list[int],
+) -> None:
+    pairs = np.column_stack([bins, bins])
+    assert (
+        _mapped_topology_difference(
+            _three_bins_in_a_row(2.0), _three_bins_in_a_row(2.0), pairs
+        )
+        is None
+    )
+
+
+def test_faces_present_in_only_one_environment_differ_through_a_mapping() -> None:
+    wide = _three_bins_in_a_row(10.0)
+    without = Environment.from_bins(
+        replace(wide.binning, faces=MissingFaces("no cell faces for a test")),
+        arena=wide.arena,
+    )
+    assert _mapped_topology_difference(wide, without, _IDENTITY_3) == _FACES
+
+
 def _rotated_grid() -> Environment:
     c, s = np.cos(np.pi / 6), np.sin(np.pi / 6)
     return Environment.from_samples(_samples(), bin_size=3.0).apply_transform(
