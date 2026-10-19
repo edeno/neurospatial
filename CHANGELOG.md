@@ -8,6 +8,11 @@
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.
   `RegionType` adds `"wall"` and `"landmark"`.
+- `count_place_cells` counts a cell at exactly `threshold` and takes `threshold`
+  by keyword, matching the inclusive `>=` cutoff of `classify()` and the other
+  threshold screens. Before, a cell had to exceed the threshold, and
+  `threshold` could be passed positionally: `count_place_cells(info, 0.5)`
+  becomes `count_place_cells(info, threshold=0.5)`.
 
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
@@ -1744,14 +1749,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
-- `count_place_cells` counts a cell whose spatial information equals
-  `threshold`, matching the inclusive `>=` cutoff of `classify()` and the other
-  threshold screens. Before, it required information strictly above the
-  threshold.
 - `detect_assemblies` orients each ICA and PCA pattern so its largest-magnitude
   weight is positive, and flips its activation with it. Before, the sign was
   arbitrary, so an assembly's members could have negative weights and
   `assembly_activation` could drop below zero during that assembly's events.
+  Code that flipped patterns by hand now receives them already oriented.
 - `plot_population_coverage` draws 1-D environments, such as the one from
   `linear_track_session`, as a line with a vertical mark at each gap. Before,
   it raised `IndexError` when any bin was uncovered. On a track built from a

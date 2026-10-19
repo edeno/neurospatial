@@ -576,7 +576,7 @@ def field_density_map(
 
 
 def count_place_cells(
-    spatial_information: NDArray[np.float64], threshold: float = 0.5
+    spatial_information: NDArray[np.float64], *, threshold: float = 0.5
 ) -> int:
     """
     Count cells at or above a spatial information threshold.
