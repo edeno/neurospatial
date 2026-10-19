@@ -178,6 +178,7 @@ nav:
       - Signal Processing Primitives: user-guide/signal-processing-primitives.md
       - Differential Operators: user-guide/differential-operators.md
       - Neuroscience Metrics: user-guide/neuroscience-metrics.md
+      - Population Analysis: user-guide/population-analysis.md
       - Trajectory & Behavioral Analysis: user-guide/trajectory-and-behavioral-analysis.md
       - RL Primitives: user-guide/rl-primitives.md
   - Visualization:

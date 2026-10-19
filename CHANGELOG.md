@@ -2686,6 +2686,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Documentation
 
+- Add a [population analysis guide](https://edeno.github.io/neurospatial/user-guide/population-analysis/) organized by scientific question: place-field coverage and place-cell screens, remapping between conditions, cell assemblies and their reactivation during rest, and pointers to decoding. It maps each question to its module, since coverage and remapping tools live in `neurospatial.encoding` while assembly and reactivation tools live in `neurospatial.decoding`. Its examples run as tests on simulated recordings with planted answers.
+
 - Fix renamed phase-precession imports in executable examples and move the spatial adapter test normalizer import to its owning private module and distinguish independently standardized assembly activation from reactivation strength on a shared template-normalized projection scale.
 
 - Update root/domain imports and hard-break migration guidance, and make population covariance APIs discoverable from the API index. Add an executable simulation → encoding recipe with separate decoding and population-statistics branches, one shared unit selection and explicit baseline-controlled EV/REV interpretation.
