@@ -1296,7 +1296,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   recording. Each feature is declared `"linear"`, `"circular"` (radians,
   averaged as unit vectors with a resultant length, so headings near ±π
   average to West rather than East) or `"categorical"` (integer codes with
-  labels, counted per category). `window_coverage="complete"` (the default)
+  labels, counted per category; integer codes beyond ±2**53, which float64
+  cannot hold exactly, are refused). `window_coverage="complete"` (the default)
   keeps only events whose whole window was observed for every feature;
   `"partial"` keeps partly observed events and reports the number of events
   behind every mean. Every input event gets a status, `"retained"` or the

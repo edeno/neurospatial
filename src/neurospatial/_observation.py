@@ -342,6 +342,34 @@ def _validated_signal_times(times: ArrayLike, *, call: str) -> NDArray[np.float6
     return t
 
 
+_MAX_EXACT_INTEGER = 2**53
+
+
+def _require_exact_integers(raw: NDArray[Any], *, call: str) -> None:
+    """Refuse integer arrays whose values float64 cannot hold exactly."""
+    if raw.dtype.kind not in "iu" or raw.size == 0:
+        return
+    # Compare in Python ints so uint64 and int64 extremes cannot wrap.
+    low, high = int(raw.min()), int(raw.max())
+    if low >= -_MAX_EXACT_INTEGER and high <= _MAX_EXACT_INTEGER:
+        return
+    values = raw.reshape(raw.shape[0], -1) if raw.ndim else raw.reshape(1, 1)
+    bad = np.flatnonzero(
+        ((values < -_MAX_EXACT_INTEGER) | (values > _MAX_EXACT_INTEGER)).any(axis=0)
+    )
+    where = f"column(s) {bad.tolist()}" if raw.ndim == 2 else "the signal"
+    raise ValueError(
+        _format_error(
+            f"{call}() got integer values beyond +/-2**53 in {where} "
+            f"(range {low} to {high}).",
+            why="float64 cannot represent such integers exactly, so distinct "
+            "codes or counts would silently merge.",
+            fix="re-code categories to small integers, e.g. "
+            "_, codes = np.unique(x, return_inverse=True).",
+        )
+    )
+
+
 def _validated_signal_array(
     signals: ArrayLike, n_samples: int, *, call: str
 ) -> NDArray[np.float64]:
@@ -359,6 +387,7 @@ def _validated_signal_array(
                 fix=fix,
             )
         )
+    _require_exact_integers(raw, call=call)
     sig = raw.astype(np.float64)
     if sig.ndim not in (1, 2) or sig.shape[0] != n_samples:
         raise ValueError(

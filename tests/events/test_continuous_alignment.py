@@ -501,3 +501,80 @@ def test_result_rejects_inconsistent_inputs(override, match):
     inputs.update(override)
     with pytest.raises(ValueError, match=match):
         ContinuousEventResult(**inputs)
+
+
+def _two_code_alignment(codes, **overrides):
+    codes = list(codes)
+    times = np.arange(8.0) * 0.25
+    signal = np.where(times < 1.0, codes[0], codes[1])
+    return align_continuous_to_events(
+        times,
+        np.asarray(signal),
+        [0.5, 1.5],
+        (-0.25, 0.25),
+        dt=0.25,
+        value_kinds={0: "categorical"},
+        category_labels={0: {int(c): f"c{i}" for i, c in enumerate(codes)}},
+        **overrides,
+    )
+
+
+def test_category_counts_sum_to_supported_events_per_cell():
+    result = _two_code_alignment([3, 7])
+    np.testing.assert_array_equal(
+        result.category_counts.sum(axis=1), result.counts[:, 0]
+    )
+    np.testing.assert_array_equal(result.counts[:, 0], 2)
+    np.testing.assert_array_equal(result.category_counts, [[1, 1]] * 2)
+
+
+def test_integer_codes_at_the_float64_limit_are_accepted():
+    for edge in (2**53, -(2**53)):
+        result = _two_code_alignment([edge, 5])
+        np.testing.assert_array_equal(
+            result.category_counts.sum(axis=1), result.counts[:, 0]
+        )
+
+
+@pytest.mark.parametrize(
+    "codes",
+    [
+        [2**53, 2**53 + 1],
+        [-(2**53) - 1, 0],
+        [0, 2**62],
+    ],
+)
+def test_integer_codes_beyond_float64_are_refused(codes):
+    with pytest.raises(ValueError, match=r"2\*\*53") as err:
+        _two_code_alignment(codes)
+    assert "align_continuous_to_events" in str(err.value)
+    assert "np.unique" in str(err.value)
+
+
+def test_unsigned_codes_beyond_float64_are_refused():
+    times = np.arange(8.0) * 0.25
+    signal = np.full(8, 2**63, dtype=np.uint64)
+    with pytest.raises(ValueError, match=r"2\*\*53"):
+        align_continuous_to_events(
+            times,
+            signal,
+            [0.5],
+            (-0.25, 0.25),
+            dt=0.25,
+            value_kinds={0: "categorical"},
+            category_labels={0: {0: "a"}},
+        )
+
+
+def test_category_label_keys_beyond_float64_are_refused():
+    times = np.arange(8.0) * 0.25
+    with pytest.raises(ValueError, match=r"2\*\*53"):
+        align_continuous_to_events(
+            times,
+            np.zeros(8),
+            [0.5],
+            (-0.25, 0.25),
+            dt=0.25,
+            value_kinds={0: "categorical"},
+            category_labels={0: {0: "a", 2**53 + 1: "b"}},
+        )
