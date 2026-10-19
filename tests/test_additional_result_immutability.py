@@ -11,6 +11,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.behavior.decisions import DecisionBoundaryMetrics
+from neurospatial.behavior.epochs import LabelEpochsResult
 from neurospatial.behavior.navigation import (
     GoalDirectedMetrics,
     PathEfficiencyResult,
@@ -170,6 +171,23 @@ CASES = [
             "include_endpoint": False,
             "max_gap": 0.5,
             "epochs": np.array([[0.0, 1.0]]),
+        },
+    ),
+    (
+        LabelEpochsResult,
+        {
+            "labels": ("A", "B"),
+            "epoch_bounds": np.array([[0.0, 2.0], [2.0, 3.0]]),
+            "epoch_labels": np.array([0, 1], dtype=np.intp),
+            "epoch_intervals": np.array([[0, 1], [2, 2]], dtype=np.intp),
+            "interval_labels": np.array([0, 0, 1], dtype=np.intp),
+            "interval_supported": np.ones(3, dtype=bool),
+            "unsupported_labels": (),
+            "n_samples": 4,
+            "max_gap": 0.5,
+            "epochs": np.array([[0.0, 10.0]]),
+            "missing_label": None,
+            "n_declared_breaks": 0,
         },
     ),
     (

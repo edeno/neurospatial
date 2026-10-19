@@ -163,10 +163,96 @@ def resolve_observation_support(
         What an all-excluded selection leaves, for the shared warning.
     """
     sample_valid: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
+    return resolve_sample_support(
+        times,
+        sample_valid,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result=result,
+    )
+
+
+def resolve_sample_support(
+    times: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    *,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: NDArray[np.bool_] | None,
+    result: str,
+) -> ObservationSupport:
+    """Resolve usable intervals and runs from a per-sample validity vector.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Seconds; already validated and strictly increasing.
+    sample_valid : ndarray of bool, shape (n_samples,)
+        True for samples that were observed.
+    max_gap, epochs
+        The shared interval gates (``observed_interval_mask``).
+    break_before : ndarray of bool, shape (n_samples,) or None
+        Declared recording breaks; entry 0 is ignored.
+    result : str
+        What an all-excluded selection leaves, for the shared warning.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> support = resolve_sample_support(
+    ...     np.arange(5) * 0.1,
+    ...     np.array([True, True, False, True, True]),
+    ...     max_gap=0.5,
+    ...     epochs=None,
+    ...     break_before=None,
+    ...     result="the result is empty",
+    ... )
+    >>> support.interval_mask
+    array([ True, False, False,  True])
+    """
     gates = _interval_gates(
         times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
     )
     return _support_from_gates(times, sample_valid, gates)
+
+
+def label_runs(
+    codes: NDArray[np.intp], interval_mask: NDArray[np.bool_]
+) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.intp]]:
+    """Epochs of consecutive retained intervals sharing a label code.
+
+    An epoch ends at an interval the support resolver rejected, at a missing
+    label, or where the label code changes; nothing joins across those.
+
+    Parameters
+    ----------
+    codes : ndarray of intp, shape (n_intervals,)
+        Label code of each interval (the label at its start sample); -1 marks a
+        missing label.
+    interval_mask : ndarray of bool, shape (n_intervals,)
+        Intervals the support resolver accepted.
+
+    Returns
+    -------
+    first_interval, last_interval, code : ndarray of intp, shape (n_epochs,)
+        Inclusive first and last interval of each epoch and its label code,
+        in time order.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> codes = np.array([0, 0, 1, 0, 0], dtype=np.intp)
+    >>> mask = np.array([True, True, True, False, True])
+    >>> label_runs(codes, mask)
+    (array([0, 2, 4]), array([1, 2, 4]), array([0, 1, 0]))
+    """
+    kept = np.flatnonzero(interval_mask & (codes >= 0))
+    new = np.ones(kept.size, dtype=bool)
+    new[1:] = (kept[1:] != kept[:-1] + 1) | (codes[kept[1:]] != codes[kept[:-1]])
+    first = kept[new]
+    last = kept[np.r_[new[1:], True]] if kept.size else kept
+    return first, last, codes[first]
 
 
 def validated_observations(
