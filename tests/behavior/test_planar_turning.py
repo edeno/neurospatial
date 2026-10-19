@@ -172,6 +172,31 @@ def test_exact_reversal_turns_pi_and_has_no_curvature(positions):
     assert np.isnan(compute_planar_curvature(times, positions)).all()
 
 
+@pytest.mark.parametrize(
+    "positions",
+    [
+        [[0.0, 0.0], [2.0, 0.0], [1.0, 0.0]],
+        [[0.0, 0.0], [1.0, 0.0], [-2.0, 0.0]],
+        [[0.0, 0.0], [2.0, 2.0], [1.0, 1.0]],
+        [[0.0, 0.0], [0.0, -3.0], [0.0, -1.0]],
+    ],
+)
+def test_unequal_length_reversal_turns_pi_and_has_no_curvature(positions):
+    times = [0.0, 0.1, 0.2]
+    assert compute_planar_turn_angles(times, positions)[1] == np.pi
+    assert np.isnan(compute_planar_curvature(times, positions)[1])
+
+
+@pytest.mark.parametrize(
+    "positions",
+    [[[0.0, 0.0], [1.0, 0.0], [3.0, 0.0]], [[0.0, 0.0], [2.0, 2.0], [3.0, 3.0]]],
+)
+def test_unequal_forward_straight_segment_has_zero_curvature(positions):
+    times = [0.0, 0.1, 0.2]
+    assert compute_planar_turn_angles(times, positions)[1] == 0.0
+    assert compute_planar_curvature(times, positions)[1] == 0.0
+
+
 def test_right_turn_is_negative():
     times = [0.0, 0.1, 0.2]
     positions = [[0.0, 0.0], [1.0, 0.0], [1.0, -1.0]]

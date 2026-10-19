@@ -7,7 +7,7 @@ from neurospatial.decoding import bin_spikes_in_time
 
 
 def helpers():
-    from neurospatial.decoding._time_bins import (
+    from neurospatial._time_bins import (
         _count_spikes_in_time_bins,
         _time_bins_in_windows,
     )

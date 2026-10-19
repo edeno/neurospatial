@@ -1995,7 +1995,7 @@ class SpikeRasterOverlay:
     def __post_init__(self) -> None:
         """Check the spikes, the order and the labels."""
         from neurospatial._results import resolve_unit_ids
-        from neurospatial.encoding._spikes import _as_spike_trains_with_ids
+        from neurospatial._spikes import _as_spike_trains_with_ids
 
         trains, carried = _as_spike_trains_with_ids(self.spike_times)
         if not trains:

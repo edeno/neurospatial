@@ -23,11 +23,11 @@ import pandas as pd
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding import SpikeTrains, compute_spatial_rates
-from neurospatial.encoding._spikes import (
+from neurospatial._spikes import (
     _as_spike_trains_with_ids,
     _looks_like_spike_group,
 )
+from neurospatial.encoding import SpikeTrains, compute_spatial_rates
 
 
 @pytest.fixture
