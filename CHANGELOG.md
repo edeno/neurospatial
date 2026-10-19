@@ -32,12 +32,12 @@
   increasing, and a 1-D `positions` is one coordinate, such as a linearized
   track.
 
-- **Breaking:** `compute_path_efficiency` follows the same observation rule as
+- `compute_path_efficiency` follows the same observation rule as
   `traveled_path_length`, and takes `break_before` for joined recordings.
 
   ```python
-  # before (v0.6.0): distance summed across pauses, lost frames and joins
-  result = compute_path_efficiency(env, times, positions, goal)
+  # before (v0.6.0): distance summed across pauses and joins; a lost frame made it NaN
+  result = compute_path_efficiency(env, positions, times, goal)
   # after
   result = compute_path_efficiency(env, times, positions, goal, break_before=new_recording)
   ```
@@ -2845,8 +2845,6 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   headings, and the two-epoch dwell totals 200 seconds instead of charging the
   pause to a bin. Entirely excluded speed windows return NaN without reduction
   warnings. Samples outside runs have NaN curvature and stationary labels.
-  Shortest length and wall-clock
-  time efficiency/time-to-goal retain their existing meanings.
 - **Breaking:** `heading_from_velocity(times, positions)` replaces scalar `dt`, validates
   finite, strictly increasing aligned timestamps, and computes velocity,
   smoothing and circular interpolation separately per observed run. The

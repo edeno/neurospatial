@@ -178,3 +178,9 @@ def test_malformed_break_before_raises():
         compute_speed(
             times, np.arange(10.0).reshape(5, 2), break_before=np.zeros(5, dtype=int)
         )
+
+
+def test_negative_smooth_window_raises():
+    times = np.arange(5) / 10
+    with pytest.raises(ValueError, match="smooth_window must be a finite number"):
+        compute_speed(times, np.arange(10.0).reshape(5, 2), smooth_window=-0.1)

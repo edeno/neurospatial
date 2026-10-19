@@ -297,9 +297,10 @@ limit would break the path where the animal was merely slow; the run starts in
   or trial begins.
 - Build `break_before` from your recording or epoch IDs:
   `break_before = np.r_[False, recording_id[1:] != recording_id[:-1]]`. Pass
-  the same array to `compute_speed`, `traveled_path_length` and
-  `compute_path_efficiency`. A gap
-  in the clock longer than `max_gap` breaks the path on its own.
+  the same array to every function that takes `break_before`, such as
+  `compute_speed`, `traveled_path_length`, `compute_path_efficiency`,
+  `compute_cumulative_distance`, `resample_by_distance` and the planar turning
+  functions. A gap in the clock longer than `max_gap` breaks the path on its own.
 - Choose `spacing` in the units of your positions (cm here), at the distance
   scale of your question.
 - When feeding a resampled path into another time-and-position function, pass

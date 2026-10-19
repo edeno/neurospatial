@@ -182,8 +182,9 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         From subgoal_efficiency(): 0.0 for a segment of fewer than two samples
         (no start-to-goal distance is measured).
     efficiency : float
-        Ratio shortest_length / traveled_length. Range (0, 1].
-        Value of 1.0 indicates optimal path taken.
+        Ratio shortest_length / traveled_length. Is ``(0, 1]`` when the path
+        ends at the goal, and can exceed 1 when it does not. Is 0.0 when a
+        geodesic step is infinite. Value of 1.0 indicates optimal path taken.
         NaN if traveled_length is 0 or shortest_length is ``inf`` (unreachable
         goal); from compute_path_efficiency() also NaN if the path is not
         completely observed, and from subgoal_efficiency() for a segment of
@@ -1874,6 +1875,9 @@ def compute_path_efficiency(
         If ``metric`` is not recognized, or if the inputs are empty or
         malformed (for example ``times`` not strictly increasing, or
         ``break_before`` not a Boolean array with one entry per sample).
+        With ``metric="geodesic"``, also if ``positions[0]`` or ``goal`` is
+        NaN or outside the environment (raised by ``distance_between``). With
+        ``metric="euclidean"`` a NaN first row gives ``shortest_length=nan``.
 
     Notes
     -----
@@ -1886,7 +1890,9 @@ def compute_path_efficiency(
     the first to the last sample was observed; with a missing stretch the
     observed length underestimates the route and the ratio would be biased
     upward. ``shortest_length`` and the wall-clock ``time_efficiency`` keep
-    their meanings.
+    their meanings. When one low-confidence frame makes a trial's efficiency
+    ``nan``, report its ``traveled_length`` instead, or restrict the analysis
+    to completely observed trials.
 
     Examples
     --------
