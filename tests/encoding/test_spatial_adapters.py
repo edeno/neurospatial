@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial._spikes import _as_spike_trains_with_ids, as_spike_trains
 from neurospatial.encoding import compute_spatial_rates
-from neurospatial.encoding._spikes import _as_spike_trains_with_ids, as_spike_trains
 
 
 class _FakeTsGroup:

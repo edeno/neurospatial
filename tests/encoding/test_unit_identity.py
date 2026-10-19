@@ -497,8 +497,8 @@ def test_spike_trains_records_generated_labels():
 def test_mixed_type_labels_keep_their_types():
     """[1, "u"] must not become ["1", "u"]; an int label stays an int."""
     from neurospatial._results import resolve_unit_ids
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding import SpikeTrains
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
 
     resolved = resolve_unit_ids([1, "u"], 2)
     assert resolved.tolist() == [1, "u"]

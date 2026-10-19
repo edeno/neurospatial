@@ -19,7 +19,8 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain, resolve_time_windows
-from neurospatial.decoding import (
+from neurospatial._spikes import _as_spike_trains_with_ids
+from neurospatial._time_bins import (
     _count_spikes_in_time_bins,
     _time_bin_rounding,
     _time_bins_in_windows,
@@ -587,8 +588,6 @@ def population_peri_event_histogram(
     """
     # Extract trains by unit label from a spike group (iterating a TsGroup
     # yields its keys, not its trains).
-    from neurospatial.encoding import _as_spike_trains_with_ids
-
     trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
 
     # Validate spike_trains

@@ -124,7 +124,7 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
             "Choose an explicit bandwidth in the same units as positions; "
             "check env.units and the scale of your recording.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
     return float(bandwidth)
 

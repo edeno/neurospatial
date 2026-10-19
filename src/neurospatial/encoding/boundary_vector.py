@@ -756,7 +756,7 @@ def _boundary_vector_rates(
 ) -> BoundaryVectorRatesResult:
     """Validate, cast the rays once, count every unit and estimate rates."""
     from neurospatial._intervals import resolve_time_windows
-    from neurospatial._results import resolve_unit_ids
+    from neurospatial._spikes import as_labelled_spike_trains
     from neurospatial.encoding._egocentric_counts import _create_egocentric_environment
     from neurospatial.encoding._provenance import rate_analysis_settings
     from neurospatial.encoding._smoothing import (
@@ -765,10 +765,9 @@ def _boundary_vector_rates(
         resolve_spatial_bandwidth,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import _as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         _validate_env_argument,
-        validate_spike_times,
+        validate_spike_trains,
         validate_trajectory,
     )
     from neurospatial.encoding.egocentric import _raw_polar_rate
@@ -780,9 +779,8 @@ def _boundary_vector_rates(
     _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
 
-    spike_trains, extracted_ids = _as_spike_trains_with_ids(spike_times)
-    resolved_unit_ids = resolve_unit_ids(
-        unit_ids, len(spike_trains), context=context, input_ids=extracted_ids
+    spike_trains, resolved_unit_ids, _ = as_labelled_spike_trains(
+        spike_times, unit_ids, context=context
     )
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
@@ -790,8 +788,7 @@ def _boundary_vector_rates(
     validate_trajectory(
         times, positions=positions, headings=headings, context=context, n_dims=2
     )
-    for i, spikes in enumerate(spike_trains):
-        validate_spike_times(spikes, context=f"{context} (neuron {i})")
+    validate_spike_trains(spike_trains, context=context)
 
     frame_bins, observed = _boundary_frame_bins(
         env,

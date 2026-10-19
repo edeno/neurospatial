@@ -1744,6 +1744,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The warning about a bandwidth that spans the environment now points at your
+  own call for population view rates, object-vector rates, egocentric rates,
+  `decode_session` and `BayesianDecoder.fit`. Before, for these it pointed at
+  a line inside neurospatial.
 - A track graph edge's length is the distance between its nodes' `pos`, for
   the bins and for everything measured along the track. A `distance` edge
   attribute that disagreed used to lay the bins out by one length and place
