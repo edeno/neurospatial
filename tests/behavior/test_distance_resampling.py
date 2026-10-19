@@ -8,6 +8,7 @@ import pytest
 from neurospatial.behavior import (
     ResampledPathResult,
     compute_cumulative_distance,
+    compute_speed,
     resample_by_distance,
 )
 
@@ -333,3 +334,103 @@ def test_epochs_are_stored_normalized():
     np.testing.assert_array_equal(result.epochs, [[0.0, 1.05]])
     np.testing.assert_allclose(result.run_time_bounds, [[0.0, 1.0]])
     np.testing.assert_allclose(result.run_distance, np.arange(11.0))
+
+
+def test_interpolate_signal_recovers_times_and_positions(continuous_recording):
+    times = continuous_recording.times
+    positions = continuous_recording.positions
+    result = resample_by_distance(times, positions, spacing=5.0)
+    np.testing.assert_allclose(
+        result.interpolate_signal(times), result.times, rtol=1e-12
+    )
+    np.testing.assert_allclose(
+        result.interpolate_signal(positions), result.positions, rtol=1e-12
+    )
+
+
+def test_interpolate_signal_carries_speed(continuous_recording):
+    times = continuous_recording.times
+    positions = continuous_recording.positions
+    speed = compute_speed(times, positions)
+    result = resample_by_distance(times, positions, spacing=5.0)
+    out = result.interpolate_signal(speed)
+    assert out.shape == (result.times.size,)
+    both_finite = np.isfinite(speed[result.source_left]) & np.isfinite(
+        speed[result.source_right]
+    )
+    assert both_finite.any()
+    assert np.isfinite(out[both_finite]).all()
+
+
+def test_interpolate_signal_rejects_labels_and_wrong_length():
+    times = np.arange(5) * 0.1
+    result = resample_by_distance(times, _xline(np.arange(5.0), times), spacing=1.0)
+    for labels in (np.arange(5), np.ones(5, dtype=bool), np.array(list("abcde"))):
+        with pytest.raises(TypeError, match="source_left"):
+            result.interpolate_signal(labels)
+    with pytest.raises(ValueError, match=r"4.*5|5.*4"):
+        result.interpolate_signal(np.zeros(4))
+
+
+def test_interpolate_signal_keeps_missing_missing():
+    times = np.arange(5) * 0.1
+    result = resample_by_distance(times, _xline([0, 1, 2, 3, 4], times), spacing=0.5)
+    values = np.array([0.0, 1.0, np.nan, 3.0, 4.0])
+    out = result.interpolate_signal(values)
+    touches_nan = (result.source_left == 2) | (result.source_right == 2)
+    assert touches_nan.any()
+    assert np.isnan(out[touches_nan]).all()
+    assert np.isfinite(out[~touches_nan]).all()
+
+
+def test_break_before_marks_first_sample_of_each_run(two_epoch_recording):
+    times = two_epoch_recording.times
+    positions = two_epoch_recording.positions
+    result = resample_by_distance(times, positions, spacing=2.0)
+    assert result.run_path_lengths.size == 2
+    expected = np.zeros(result.times.size, dtype=bool)
+    expected[np.searchsorted(result.run_ids, [0, 1])] = True
+    np.testing.assert_array_equal(result.break_before, expected)
+    assert result.break_before.dtype == bool
+
+
+def test_break_before_empty_result():
+    times = np.arange(3) * 0.1
+    result = resample_by_distance(times, np.full((3, 2), np.nan), spacing=1.0)
+    assert result.break_before.shape == (0,)
+
+
+@pytest.mark.parametrize(
+    ("n_dims", "names"),
+    [
+        (2, ["x", "y"]),
+        (3, ["x", "y", "z"]),
+        (4, ["position_0", "position_1", "position_2", "position_3"]),
+    ],
+)
+def test_samples_table_columns_and_values(n_dims, names):
+    times = np.arange(20) * 0.1
+    positions = np.outer(np.arange(20.0), np.ones(n_dims))
+    result = resample_by_distance(
+        times, positions, spacing=2.0, include_endpoint=True, max_gap=None
+    )
+    df = result.samples_table()
+    assert list(df.columns) == [
+        "run_id",
+        "time",
+        "run_distance",
+        "cumulative_distance",
+        *names,
+        "source_left",
+        "source_right",
+        "weight",
+        "off_grid_endpoint",
+    ]
+    assert len(df) == result.times.size
+    assert "unit_id" not in df.columns
+    np.testing.assert_array_equal(df["run_id"], result.run_ids)
+    np.testing.assert_array_equal(df["time"], result.times)
+    np.testing.assert_array_equal(df["weight"], result.weights)
+    np.testing.assert_array_equal(df["off_grid_endpoint"], result.off_grid_endpoint)
+    np.testing.assert_array_equal(df[names].to_numpy(), result.positions)
+    assert df.attrs == {"spacing": 2.0, "include_endpoint": True, "max_gap": None}

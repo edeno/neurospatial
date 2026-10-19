@@ -9,7 +9,7 @@ can be recovered on the original clock.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -19,6 +19,9 @@ from neurospatial._intervals import as_intervals
 from neurospatial._observation import validated_observations
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior.trajectory import _observed_cumulative
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 __all__ = ["ResampledPathResult", "resample_by_distance"]
 
@@ -98,6 +101,121 @@ class ResampledPathResult(ReadOnlyArraysMixin, ResultMixin):
     def __post_init__(self) -> None:
         """Own read-only copies of the arrays."""
         self._own_arrays()
+
+    @property
+    def break_before(self) -> NDArray[np.bool_]:
+        """Run starts, shape ``(n_out,)``.
+
+        True at the first sample of each run. Pass it with ``max_gap=None`` to
+        time-and-position functions such as ``compute_planar_curvature`` so
+        that a resampled path is not bridged across its breaks.
+        """
+        starts = np.ones(self.run_ids.shape, dtype=bool)
+        starts[1:] = self.run_ids[1:] != self.run_ids[:-1]
+        return starts
+
+    def interpolate_signal(self, values: ArrayLike) -> NDArray[np.float64]:
+        """Carry a continuous source signal onto the resampled samples.
+
+        Computes ``(1 - weights) * values[source_left] + weights *
+        values[source_right]``. Samples that fall exactly on an original sample
+        return that sample's value. A NaN in a bracketing source value gives
+        NaN: missing stays missing.
+
+        Use this for linear quantities only (speed, original time, position,
+        LFP amplitude). For angles, interpolate ``np.cos(angle)`` and
+        ``np.sin(angle)`` separately and recombine with ``np.arctan2``. Labels
+        and counts are not interpolated; index them with ``source_left``.
+
+        Parameters
+        ----------
+        values : array-like, shape (n_source_samples, ...)
+            Floating-point signal on the original samples (the ``times`` and
+            ``positions`` passed to ``resample_by_distance``).
+
+        Returns
+        -------
+        NDArray[np.float64], shape (n_out, ...)
+            The signal at each resampled sample.
+
+        Raises
+        ------
+        ValueError
+            If the first axis of ``values`` is not ``n_source_samples`` long.
+        TypeError
+            If ``values`` is not floating point.
+        """
+        arr = np.asarray(values)
+        if arr.ndim == 0 or arr.shape[0] != self.n_source_samples:
+            n = "a scalar" if arr.ndim == 0 else f"{arr.shape[0]} rows"
+            raise ValueError(
+                _format_error(
+                    "values do not match the resampled path's source samples",
+                    why=(
+                        f"values has {n} but the path was resampled from "
+                        f"{self.n_source_samples} samples"
+                    ),
+                    fix="pass one value per original sample, with the first axis "
+                    f"of length {self.n_source_samples}",
+                )
+            )
+        if not np.issubdtype(arr.dtype, np.floating):
+            raise TypeError(
+                _format_error(
+                    f"cannot interpolate values of dtype {arr.dtype}",
+                    why="only floating-point signals have a meaningful value "
+                    "between two samples",
+                    fix="labels and counts are not interpolated; take "
+                    "values[result.source_left] for the label at or before "
+                    "each sample",
+                )
+            )
+        w = self.weights.reshape((-1,) + (1,) * (arr.ndim - 1))
+        result: NDArray[np.float64] = (1 - w) * arr[self.source_left] + w * arr[
+            self.source_right
+        ]
+        return result
+
+    def samples_table(self) -> pd.DataFrame:
+        """One row per resampled sample.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``run_id``, ``time``, ``run_distance``,
+            ``cumulative_distance``, the coordinates (``x``, ``y``, ``z`` for
+            up to three dimensions, otherwise ``position_0``, ``position_1``,
+            ...), ``source_left``, ``source_right``, ``weight`` and
+            ``off_grid_endpoint``. ``df.attrs`` holds ``spacing``,
+            ``include_endpoint`` and ``max_gap``.
+        """
+        import pandas as pd
+
+        n_dims = self.positions.shape[1]
+        names = (
+            ["x", "y", "z"][:n_dims]
+            if n_dims <= 3
+            else [f"position_{i}" for i in range(n_dims)]
+        )
+        data: dict[str, Any] = {
+            "run_id": self.run_ids,
+            "time": self.times,
+            "run_distance": self.run_distance,
+            "cumulative_distance": self.cumulative_distance,
+        }
+        for i, name in enumerate(names):
+            data[name] = self.positions[:, i]
+        data["source_left"] = self.source_left
+        data["source_right"] = self.source_right
+        data["weight"] = self.weights
+        data["off_grid_endpoint"] = self.off_grid_endpoint
+        df = pd.DataFrame(data)
+        df.attrs.update(
+            spacing=self.spacing,
+            include_endpoint=self.include_endpoint,
+            max_gap=self.max_gap,
+        )
+        return df
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
