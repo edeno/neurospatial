@@ -753,8 +753,9 @@ def rate_map_correlations(
     -------
     correlation_matrix : array, shape (n_maps, n_maps)
         Pearson correlations, symmetric, off-diagonal entries in [-1, 1].
-        The diagonal is 1.0. A map with constant rates has no defined
-        correlation, so its row, column and diagonal entry are NaN.
+        The diagonal is 1.0. NaN propagates per row: a map with a NaN bin or
+        with constant rates has no defined correlation, so its row, column
+        and diagonal entry are NaN, and the other entries are unchanged.
 
     Examples
     --------

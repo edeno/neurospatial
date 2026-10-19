@@ -182,11 +182,12 @@ print(f"Bins compared: {shared.sum()} of {env.n_bins}")
 ```
 
 `rate_map_correlations` returns the map-by-map correlation matrix: the
-Pearson correlation of every pair of rows in a `(n_maps, n_bins)` matrix. Stack the two conditions, and the diagonal of the
-before-versus-after block is each cell's rate-map correlation across the
-change. The classic population-vector correlation of remapping studies works
-the other way round: it correlates the vector of all cells' rates at each
-location, giving one value per bin.
+Pearson correlation of every pair of rows in a `(n_maps, n_bins)` matrix.
+Stack the two conditions, and the diagonal of the before-versus-after block
+is each cell's rate-map correlation across the change. The classic
+population-vector correlation of remapping studies works the other way round:
+it correlates the vector of all cells' rates at each location, giving one
+value per bin.
 
 ```python
 n_units = len(spike_times)

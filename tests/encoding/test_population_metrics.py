@@ -812,6 +812,20 @@ class TestRateMapCorrelations:
         assert np.isnan(corr_matrix[0, 0])
         assert corr_matrix[1, 1] == pytest.approx(1.0)
 
+    def test_rate_map_correlations_nan_bin_propagates_per_row(self) -> None:
+        """A NaN bin makes that map's row, column and diagonal NaN only."""
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((3, 30))
+        firing_rates[1, 4] = np.nan
+        corr_matrix = rate_map_correlations(firing_rates)
+        expected_nan = np.zeros((3, 3), dtype=bool)
+        expected_nan[1, :] = True
+        expected_nan[:, 1] = True
+        np.testing.assert_array_equal(np.isnan(corr_matrix), expected_nan)
+        np.testing.assert_allclose(
+            corr_matrix[0, 2], np.corrcoef(firing_rates[0], firing_rates[2])[0, 1]
+        )
+
     def test_rate_map_correlations_two_conditions(self) -> None:
         """Stacked conditions: the off-diagonal block's diagonal is per-map r."""
         rng = np.random.default_rng(42)
