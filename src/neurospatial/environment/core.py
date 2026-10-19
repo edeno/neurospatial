@@ -6051,6 +6051,9 @@ class Environment(Generic[_C]):
               fields side by side
             - ``colorbar_label`` : str, optional
               What the colors measure, such as "probability"
+            - ``track`` : Environment, optional
+              A linearized track of the same maze, to draw a 2-D posterior
+              against position along it and time
 
         Returns
         -------

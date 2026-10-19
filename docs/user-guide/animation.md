@@ -483,6 +483,26 @@ segment is named by its nodes ("center–left") at the right of the panel, so a
 W-track or T-maze posterior can be read by arm. Hovering over a cell shows its time,
 position and value; drag the cursor to move every panel.
 
+A 2-D decode can be read the same way: pass a linearized track of the same
+maze as `track=`, and the 2-D posterior is also drawn against position along
+it and time, with the positions as lines, as non_local_detector's "projected
+1D" view does. Each 2-D bin's probability is added to the track bin nearest its
+center (as `map_probabilities` does), so pass probabilities, and build the
+track with bins no finer than the 2-D ones (a warning says so otherwise); a
+track bin no 2-D bin maps to is missing. The panel has its own color scale,
+since probability summed along the track is larger than per 2-D bin:
+
+```python
+maze = Environment.from_graph(graph, edge_order=edge_order, bin_size=4.0)
+env_2d.animate_fields(
+    result.posterior,  # decoded on env_2d, 4 cm bins
+    frame_times=result.times,
+    backend="fastplotlib",
+    track=maze,
+    overlays=[VideoOverlay(video, calibration=calibration, times=video_times, z_order="below")],
+)
+```
+
 A `SpikeRasterOverlay` draws each unit's spikes as a row of ticks beside the
 field on the same clock; pass `order=np.argsort(env.to_linear(rates.peak_locations()))`
 to sort the rows by place-field peak along the track, so a replay or theta

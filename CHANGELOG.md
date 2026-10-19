@@ -1288,7 +1288,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   visible on any colormap color, labels are outlined, and regions are
   drawn sky blue, apart from orange landmarks in color-blind vision. A video
   drawn below the field (`z_order="below"`) shows through where the field's
-  values are low, so a 2-D decoded posterior sits over the camera's view. The
+  values are low, so a 2-D decoded posterior sits over the camera's view,
+  and `track=` (a linearized track of the same maze) also draws a 2-D
+  posterior against position along the maze and time. The
   decoding recipe draws true position magenta and decoded position green,
   only where the posterior is not nearly flat.
   Frame times

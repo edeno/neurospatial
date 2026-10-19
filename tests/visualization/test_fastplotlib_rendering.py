@@ -1113,6 +1113,59 @@ def test_opacity_looks_as_in_matplotlib_and_the_cursor_shows_on_bright_bins(
     assert (np.abs(around - yellow).sum(axis=1) > 0.5).sum() >= 3
 
 
+def test_a_2d_posterior_is_drawn_along_a_track_of_the_maze(track):
+    # A 2-D grid around the L-shaped track; each frame's probability is all
+    # in one 2-D bin.
+    rng = np.random.default_rng(0)
+    along = track.linear_to_nd(rng.uniform(0, 70, 3000))
+    plane = Environment.from_samples(
+        along + rng.normal(0, 1, along.shape), bin_size=5.0
+    )
+    times = np.arange(20) * 0.1
+    hot = rng.integers(0, plane.n_bins, len(times))
+    fields = np.zeros((len(times), plane.n_bins))
+    fields[np.arange(len(times)), hot] = 1.0
+    animation = plane.animate_fields(
+        fields,
+        frame_times=times,
+        backend="fastplotlib",
+        window_seconds=4.0,
+        track=track,
+        overlays=[PositionOverlay(positions=along[:20], times=times)],
+    )
+    assert animation._plots and animation._track is not None  # both views
+    _render(animation)
+    rows = animation._track.rows
+    _, nearest = track.bin_center_tree().query(plane.bin_centers[hot])
+    for frame in range(len(times)):
+        row = rows[frame - animation._track.first]
+        assert row[nearest[frame]] == 1.0  # the mass moves to the nearest bin
+        assert np.nansum(row) == pytest.approx(1.0)  # and is kept
+    assert animation.figure["track"].docks["right"].size > 0  # its own colorbar
+
+    with pytest.raises(ValueError, match="linearized track"):
+        plane.animate_fields(
+            fields, frame_times=times, backend="fastplotlib", track=plane
+        )
+    # A track finer than the 2-D bins leaves bins without probability.
+    fine = Environment.linear_track(
+        node_positions=[[0.0, 0.0], [30.0, 0.0], [30.0, 30.0]], bin_size=1.0
+    )
+    with pytest.warns(UserWarning, match="bin_size of at least the 2-D bins'"):
+        plane.animate_fields(
+            fields, frame_times=times, backend="fastplotlib", track=fine
+        )
+
+    # A track bin no 2-D bin maps to, or only missing ones, is missing.
+    from scipy.sparse import csr_matrix
+
+    from neurospatial.animation.backends.fastplotlib_backend import _project
+
+    to_track = csr_matrix(([1.0, 1.0, 1.0], ([0, 1, 2], [0, 0, 1])), shape=(3, 3))
+    projected = _project(np.array([[0.2, 0.3, np.nan]]), to_track)
+    np.testing.assert_array_equal(projected, [[0.5, np.nan, np.nan]])
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")

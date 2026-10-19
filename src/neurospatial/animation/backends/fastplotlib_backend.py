@@ -36,6 +36,7 @@ from neurospatial.environment._fastplotlib import (
     FieldGraphic,
     _fans,
     _rectangles,
+    bin_spacing,
     camera_options,
     draw_colorbar,
     draw_layers,
@@ -1005,6 +1006,59 @@ def _segment_joints(
         subplot.add_inf_line(joints, axis=axis, colors=_SEGMENT_COLOR, thickness=1.0)
 
 
+def _checked_track(env: Environment, track: Environment) -> Environment:
+    """``track``, if a 2-D environment's fields can be drawn along it."""
+    if not track.is_linearized_track:
+        raise ValueError(
+            "track must be a linearized track (Environment.from_graph or "
+            "linear_track): its bins give position along the maze. Why: the "
+            "2-D fields are drawn against position along it."
+        )
+    if env.is_linearized_track or env.n_dims != 2 or track.n_dims != 2:
+        raise ValueError(
+            "track= draws a 2-D environment's fields along a track of the same "
+            f"maze; the environment has {env.n_dims} dimensions"
+            + (" and is a track itself" if env.is_linearized_track else "")
+            + ". Fix: animate a 2-D environment, or leave track out."
+        )
+    return track
+
+
+def _projection(env: Environment, track: Environment) -> Any:
+    """Sparse matrix, shape (env.n_bins, track.n_bins), sending each of
+    ``env``'s bins to the track bin nearest its center.
+
+    Warns when many track bins receive no 2-D bin, as when the track's bins
+    are finer than the 2-D ones: those bins are drawn as missing.
+    """
+    from scipy.sparse import csr_matrix
+
+    _, nearest = track.bin_center_tree().query(env.bin_centers)
+    empty = 1.0 - len(np.unique(nearest)) / track.n_bins
+    if empty > 0.1:
+        warnings.warn(
+            f"{empty:.0%} of the track's bins are nearest to no 2-D bin, so "
+            "they are drawn as missing along the track. Why: each 2-D bin's "
+            "probability goes to one track bin. Fix: build the track with a "
+            f"bin_size of at least the 2-D bins' ({bin_spacing(env):.3g}).",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    ones = np.ones(env.n_bins)
+    return csr_matrix(
+        (ones, (np.arange(env.n_bins), nearest)), shape=(env.n_bins, track.n_bins)
+    )
+
+
+def _project(rows: NDArray[np.float64], projection: Any) -> NDArray[np.float64]:
+    """Each row summed into the track bins; NaN where no finite value maps."""
+    finite = np.isfinite(rows)
+    total = np.asarray(np.where(finite, rows, 0.0) @ projection)
+    seen = np.asarray(finite.astype(np.float64) @ projection)
+    result: NDArray[np.float64] = np.where(seen > 0, total, np.nan)
+    return result
+
+
 def _field_stacks(
     fields: Sequence[Any] | NDArray[np.float64], names: Sequence[str] | None
 ) -> tuple[list[Any], list[str]]:
@@ -1365,6 +1419,13 @@ class FastplotlibAnimation:
         default.
     colorbar_label : str, optional
         What the colors measure, such as "probability" or "rate (Hz)".
+    track : Environment, optional
+        A linearized track of the same maze (``from_graph``,
+        ``linear_track``), to draw a 2-D environment's fields against
+        position along it and time, as on a track. Each 2-D bin's value is
+        added to the track bin nearest its center (as ``map_probabilities``
+        does), so the fields should be probabilities, such as a decoded
+        posterior; a track bin no 2-D bin maps to is missing.
 
     Attributes
     ----------
@@ -1411,6 +1472,7 @@ class FastplotlibAnimation:
         layout: str | None = None,
         layer_names: Sequence[str] | None = None,
         colorbar_label: str = "",
+        track: Environment | None = None,
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -1446,7 +1508,12 @@ class FastplotlibAnimation:
             min(max_playback_fps, _MAX_STEPS),
         )
         typical = float(np.median(np.diff(self._clock))) if self.n_frames > 1 else step
-        extents_along_track = track_extents(env)
+        # A 2-D field, such as a decoded posterior, can be drawn along a track
+        # of the same maze too: each 2-D bin's value goes to the nearest track
+        # bin, as non_local_detector's "projected 1D" view.
+        track_env = env if track is None else _checked_track(env, track)
+        self._projection = None if track is None else _projection(env, track)
+        extents_along_track = track_extents(track_env)
         several = len(stacks) > 1
         # On a 1-D environment the track panel shows all a field panel would,
         # at a size to read: no field panel.
@@ -1533,6 +1600,18 @@ class FastplotlibAnimation:
         )
         opaque_from = typical_peak(all_frames) if below else None
         scale = ColorScale(cmap, low, high, "lightgray", opaque_from=opaque_from)
+        track_scale = scale
+        if self._projection is not None:
+            # Robust limits of the fields summed along the track, from up to
+            # 2,000 frames spread over the recording.
+            sample = np.unique(np.linspace(0, self.n_frames - 1, 2_000).astype(int))
+            projected = _project(
+                np.stack([np.asarray(stacks[0][i], dtype=float) for i in sample]),
+                self._projection,
+            )
+            track_scale = ColorScale(
+                cmap, *animation_colormap_range(projected, None, None), "lightgray"
+            )
         # Computed limits leave about 1% of frames beyond each, a zero bottom
         # none below it.
         beyond = (vmin is None and low != 0.0, vmax is None)
@@ -1611,11 +1690,11 @@ class FastplotlibAnimation:
         self._tracks: list[_PositionTime] = []
         if extents_along_track is not None:
             for name, label in zip(track_names, names, strict=True):
-                track = _PositionTime(
+                panel = _PositionTime(
                     self.figure[name],
-                    env,
+                    track_env,
                     extents_along_track,
-                    scale,
+                    track_scale,
                     self._clock,
                     window_seconds,
                     positions,
@@ -1624,12 +1703,20 @@ class FastplotlibAnimation:
                     self._move_to,
                 )
                 if several:
-                    self.figure[name].title = f"{label}: {track.axis}"
+                    self.figure[name].title = f"{label}: {panel.axis}"
                 _mark_events(self.figure[name], events, self._start)
-                for data, strip in zip(epochs, track.strips, strict=True):
+                for data, strip in zip(epochs, panel.strips, strict=True):
                     _shade_epochs(self.figure[name], [data], self._start, strip=strip)
-                self._tracks.append(track)
+                self._tracks.append(panel)
         self._track = self._tracks[0] if self._tracks else None
+        if self._projection is not None and self._tracks:
+            # Summed along the track, a posterior is on its own scale.
+            for name in track_names:
+                draw_colorbar(
+                    self.figure[name], track_scale, colorbar_label, beyond=(False, True)
+                )
+            for name in time_panels:
+                self.figure[name].docks["right"].size = COLORBAR_WIDTH
         if not with_fields:
             # The colorbar goes on the first track; every time panel keeps
             # the same room on the right, so their time axes line up.
@@ -1773,6 +1860,10 @@ class FastplotlibAnimation:
     def _windowed(self, title: str) -> str:
         return f"{title}  \u00b7  {self.window_seconds:.3g} s window"
 
+    def _along_track(self, rows: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Fields as drawn along the track: projected from 2-D, if so."""
+        return rows if self._projection is None else _project(rows, self._projection)
+
     def _move_to(self, time: float) -> None:
         """Move the slider, and so every panel, to ``time`` on the clock."""
         self.widget.indices = {"time": time}
@@ -1793,7 +1884,9 @@ class FastplotlibAnimation:
             return _Frame(frame, values, images, 0, [])
         window = self._track.frames_at(time)
         rows = [
-            np.asarray(stack[window], dtype=np.float64).reshape(-1, len(field))
+            self._along_track(
+                np.asarray(stack[window], dtype=np.float64).reshape(-1, len(field))
+            )
             for stack, field in zip(self._stacks, values, strict=True)
         ]
         return _Frame(frame, values, images, window.start, rows)

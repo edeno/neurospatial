@@ -120,6 +120,7 @@ _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
             "layout",
             "layer_names",
             "colorbar_label",
+            "track",
             "dry_run",
         }
     ),
