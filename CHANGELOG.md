@@ -1262,8 +1262,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `times` move at their own sampling rate, so slow fields (a rate map per
   lap) do not freeze the animal or the camera between frames.
   `EpochOverlay` marks intervals such as ripples on every time panel and
-  names the current one in the title; N and Shift+N jump between epochs and
-  events. Frame times
+  names the current one in the title. Keyboard: Space plays, the arrows step
+  one frame, N and Shift+N jump between epochs and events, and `[` and `]`
+  halve or double the time windows. Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an

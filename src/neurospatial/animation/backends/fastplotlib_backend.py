@@ -517,47 +517,63 @@ class _PositionTime:
         start: float,
         move_to: Callable[[float], None],
     ) -> None:
-        self.scale, self.clock, self.start = scale, clock, start
-        self.window = window
+        self.subplot, self.scale, self.clock, self.start = subplot, scale, clock, start
         self.lower, self.upper = extents
-        typical = float(np.median(np.diff(clock))) if len(clock) > 1 else 1.0
-        self.ends = clock + np.minimum(np.diff(clock, append=np.inf), typical)
-        # Columns a window can hold: frames starting less than one typical
-        # interval before it, up to its end.
-        reach = np.searchsorted(clock, clock + window + typical, side="right")
-        self.n_columns = int(np.max(reach - np.arange(len(clock))))
-        n_bins = len(self.lower)
-        quads = _fans(np.zeros((4 * self.n_columns * n_bins, 2)), 4)
-        self.mesh = subplot.add_mesh(
-            quads.positions,
-            quads.triangles,
-            mode="basic",
-            mapcoords=np.zeros(len(quads.positions), dtype=np.float32),
-            cmap=scale.texture,
-            clim=(0.0, 1.0),
-        )
-        self.mesh.tooltip_format = self.describe
+        self.typical = float(np.median(np.diff(clock))) if len(clock) > 1 else 1.0
+        self.ends = clock + np.minimum(np.diff(clock, append=np.inf), self.typical)
         labels = env._plot_labels()
         self.axis = "position along track" + (
             f" ({labels.units})" if labels.units else ""
         )
+        self.positions = positions
         self.tracks = [
             (track_position(env, item.data.data), item.clock) for item in positions
         ]
+        self.first, self.rows = 0, np.empty((0, len(self.lower)))
+        self.mesh: Any = None
+        self.lines: list[Any] = []
+        self.view = _TimeWindow(subplot, window, move_to)
+        self.set_window(window)
+        subplot.title = self.axis
+        subplot.y_range = (float(self.lower.min()), float(self.upper.max()))
+
+    @property
+    def window(self) -> float:
+        """Seconds shown."""
+        return self.view.window
+
+    def set_window(self, window: float) -> None:
+        """Show ``window`` seconds, with room for the cells and samples in it."""
+        self.view.window = window
+        for graphic in [self.mesh, *self.lines]:
+            if graphic is not None:
+                self.subplot.delete_graphic(graphic)
+        # Columns a window can hold: frames starting less than one typical
+        # interval before it, up to its end.
+        reach = np.searchsorted(
+            self.clock, self.clock + window + self.typical, side="right"
+        )
+        self.n_columns = int(np.max(reach - np.arange(len(self.clock))))
+        quads = _fans(np.zeros((4 * self.n_columns * len(self.lower), 2)), 4)
+        self.mesh = self.subplot.add_mesh(
+            quads.positions,
+            quads.triangles,
+            mode="basic",
+            mapcoords=np.zeros(len(quads.positions), dtype=np.float32),
+            cmap=self.scale.texture,
+            clim=(0.0, 1.0),
+        )
+        self.mesh.tooltip_format = self.describe
         self.lines = [
-            subplot.add_line(
+            self.subplot.add_line(
                 np.full(
                     (self._most_in_window(item.clock), 3), np.nan, dtype=np.float32
                 ),
                 colors=item.data.color,
                 thickness=2,
             )
-            for item in positions
+            for item in self.positions
         ]
-        self.first, self.rows = 0, np.empty((0, n_bins))
-        self.view = _TimeWindow(subplot, window, move_to)
-        subplot.title = self.axis
-        subplot.y_range = (float(self.lower.min()), float(self.upper.max()))
 
     def _most_in_window(self, clock: _Samples) -> int:
         """The most samples of ``clock`` a window holds."""
@@ -577,6 +593,8 @@ class _PositionTime:
 
     def show(self, time: float, first: int, rows: NDArray[np.float64]) -> None:
         """Draw ``rows``, the fields from frame ``first``, around ``time``."""
+        # Rows read for a wider window before it narrowed: keep those inside.
+        rows = rows[: self.n_columns]
         self.first, self.rows = first, rows
         n_frames, n_bins = rows.shape
         frames = np.arange(first, first + n_frames)
@@ -602,7 +620,7 @@ class _PositionTime:
                 shown = np.arange(
                     np.searchsorted(clock.times, time - half, side="left"),
                     np.searchsorted(clock.times, time + half, side="right"),
-                )
+                )[: len(line.data)]
                 times = clock.times[shown]
             points = np.full((len(line.data), 2), np.nan)
             points[: len(shown)] = np.column_stack([times, track[shown]])
@@ -763,9 +781,9 @@ def playback_step(frame_times: NDArray[np.float64]) -> float:
             f"frame_times are unevenly spaced (intervals from {intervals.min():.3g} "
             f"to {intervals.max():.3g} s). Play and the step buttons move "
             f"{step:.3g} s at a time, so a long gap plays as one held frame and "
-            f"frames closer than {step:.3g} s can be passed over. Set "
-            "animation.frame to visit every frame, animate each event "
-            "separately, or use backend='napari', which steps frame by frame.",
+            f"frames closer than {step:.3g} s can be passed over. Step "
+            "frame by frame with the Left and Right arrow keys, jump between "
+            "events with N given an EpochOverlay, or set animation.frame.",
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
@@ -860,8 +878,13 @@ class FastplotlibAnimation:
 
     Keyboard, with the figure focused (click it first):
 
+    - Space: play or pause.
+    - Left and Right arrows: the previous or next frame, one at a time
+      however unevenly the frames are spaced.
     - N and Shift+N: the start of the next or previous epoch
       (``EpochOverlay``) or event (``EventOverlay``).
+    - ``[`` and ``]``: halve or double the window of every panel drawn
+      against time.
 
     Parameters
     ----------
@@ -1087,22 +1110,35 @@ class FastplotlibAnimation:
         )
         # fastplotlib has no public way to add a custom NDGraphic yet.
         self.widget[self._plot]._nd_graphics.append(frames)
-        for i, group in enumerate(groups):
-            _add_series(self.widget, f"series {i}", group, events, epochs, self._start)
+        self._series = [
+            drawn
+            for i, group in enumerate(groups)
+            for drawn in _add_series(
+                self.widget, f"series {i}", group, events, epochs, self._start
+            )
+        ]
         self.widget.indices = {"time": 0.0}  # adding a series can move the time
         # Only the field is fitted: fitting a series subplot's camera moves
         # the time, which follows the center of its view.
         self._plot.auto_scale()
         frame_view(self._plot, env)
         self._canvas: Any = None
+        self._step = step
         self.figure.renderer.add_event_handler(self._key, "key_down")
         self._show(0.0, self._read(0.0))
 
     def _key(self, event: Any) -> None:
         """The keyboard shortcuts listed in the class docstring."""
         key = event.key
-        if key.lower() == "n":
+        if key in (" ", "Space"):
+            playing = self.widget.ui_sliders._playing
+            playing["time"] = not playing["time"]
+        elif key in ("ArrowRight", "ArrowLeft"):
+            self.frame = self.frame + (1 if key == "ArrowRight" else -1)
+        elif key.lower() == "n":
             self._jump(-1 if "Shift" in event.modifiers or key == "N" else 1)
+        elif key in ("[", "]"):
+            self._scale_windows(0.5 if key == "[" else 2.0)
 
     def _jump(self, direction: int) -> None:
         """Move to the next (1) or previous (-1) epoch start or event."""
@@ -1115,6 +1151,26 @@ class FastplotlibAnimation:
             target = earlier[-1] if len(earlier) else None
         if target is not None:
             self._move_to(float(target))
+
+    def _scale_windows(self, factor: float) -> None:
+        """Widen or narrow the window of every panel drawn against time."""
+        longest = float(self._clock[-1]) + self._step
+
+        def scaled(window: float) -> float:
+            return float(np.clip(window * factor, self._step, max(longest, self._step)))
+
+        if self._track is not None:
+            self._track.set_window(scaled(self._track.window))
+        for raster in self._rasters:
+            raster.view.window = scaled(raster.view.window)
+        for series, rate in self._series:
+            window = scaled(series.display_window)
+            series.display_window = window
+            series.max_display_datapoints = min(
+                int(np.ceil(window * rate)) + 2, _MAX_SERIES_POINTS
+            )
+        now = self.widget.indices["time"]
+        self._show(now, self._read(now))
 
     def _move_to(self, time: float) -> None:
         """Move the slider, and so every panel, to ``time`` on the clock."""
@@ -1215,13 +1271,20 @@ def _add_series(
     events: Sequence[EventData],
     epochs: Sequence[EpochData],
     start: float,
-) -> None:
+) -> list[tuple[Any, float]]:
     """Draw a group of time series in one subplot, on the widget's clock.
 
     Times are shifted by ``start``, the first frame's time. Event times are
     marked as vertical lines in the events' colors, and epochs shaded.
+
+    Returns
+    -------
+    list of (NDTimeseries, float)
+        Each series drawn and its sampling rate, in Hz.
     """
     from fastplotlib import LinearSelector
+
+    drawn = []
 
     subplot = widget.figure[name]
     end = widget.ranges["time"].stop
@@ -1249,7 +1312,7 @@ def _add_series(
         color = _rgba(item.color)
         color[3] *= item.alpha
         rate = 1 / np.median(np.diff(times)) if len(times) > 1 else 1.0
-        widget[name].add_nd_timeseries(
+        series = widget[name].add_nd_timeseries(
             # The GPU draws float32: about 1 us at 10 s, 0.06 ms at 1000 s.
             np.column_stack([times, item.data])[None].astype(np.float32),
             ("series", "time", "xy"),
@@ -1265,6 +1328,7 @@ def _add_series(
             thickness=item.linewidth,
             name=item.label,
         )
+        drawn.append((series, float(rate)))
     _mark_events(subplot, events, start)
     _shade_epochs(subplot, epochs, start, lines=False)
     subplot.title = "  |  ".join(item.label for item in group)
@@ -1277,6 +1341,7 @@ def _add_series(
         # The cursor marks the current time; dragging it moves every panel.
         cursor.visible = group[0].show_cursor
         cursor.edge_color = group[0].cursor_color
+    return drawn
 
 
 def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> None:

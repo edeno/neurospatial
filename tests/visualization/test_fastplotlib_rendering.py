@@ -721,6 +721,55 @@ def test_epochs_are_marked_named_and_jumped_between(track, decoded):
     assert "ripple" not in figure["field"].title.text
 
 
+def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
+    times, _, fields = decoded
+    series = TimeSeriesOverlay(data=np.sin(times), times=times, label="lfp")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            window_seconds=1.0,
+            vmin=0.0,
+            vmax=1.0,
+            overlays=[series],
+        )
+    animation.show()
+    figure = animation.figure
+    animation.frame = 19
+    _press(figure, "ArrowRight")  # across the 3 s gap: the next frame
+    assert animation.frame == 20
+    _press(figure, "ArrowLeft")
+    assert animation.frame == 19
+    _press(figure, " ")
+    assert animation.widget.ui_sliders._playing["time"]
+    _press(figure, " ")
+    assert not animation.widget.ui_sliders._playing["time"]
+
+    animation.frame = 30  # 6.0 s, bin 0 holds the field
+    _press(figure, "]")
+    assert animation._track.window == pytest.approx(2.0)
+    ((lfp, _),) = animation._series
+    assert lfp.display_window == pytest.approx(4.0)  # each its own window, doubled
+    # The wider window draws frames a second away.
+    _render(animation)
+    far = times[21] + 0.05  # 0.85 s back, past a 1 s window; bin 3 holds it
+    np.testing.assert_allclose(
+        _pixel(figure, figure["track"], far, 45.0),
+        colormaps["viridis"](1.0)[:3],
+        atol=2 / 255,
+    )
+    np.testing.assert_allclose(  # and on the right: frame 38, bin 2
+        _pixel(figure, figure["track"], times[38] + 0.05, 25.0),
+        colormaps["viridis"](1.0)[:3],
+        atol=2 / 255,
+    )
+    _press(figure, "[")
+    _press(figure, "[")
+    assert animation._track.window == pytest.approx(0.5)
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")

@@ -461,15 +461,21 @@ An `EpochOverlay` marks intervals such as ripples on every time panel and
 names the current one in the title; see [Epoch
 Overlay](../animation_overlays.md#epoch-overlay).
 
-With the figure focused (click it first), N and Shift+N jump to the start
-of the next and previous epoch or event.
+Keyboard shortcuts, with the figure focused (click it first):
+
+| Key | Action |
+|-----|--------|
+| Space | Play or pause |
+| Left / Right arrow | Previous or next frame, however unevenly spaced |
+| N / Shift+N | Start of the next or previous epoch or event |
+| `[` / `]` | Halve or double the window of every panel drawn against time |
 
 Play and the step buttons move by a fixed time, short enough to reach every
 frame when frames are evenly spaced (camera jitter included). For frames with
 long gaps or very uneven spacing, such as decoded replay bins from separate
-ripples, a warning says so: playback holds a frame through a gap. Animate
-each event separately, set `animation.frame` to visit every frame, or use
-`backend="napari"`, which steps frame by frame.
+ripples, a warning says so: playback holds a frame through a gap. Step frame
+by frame with the arrow keys, jump between ripples with N (given an
+`EpochOverlay`), or set `animation.frame` from code.
 
 The video is placed in the environment through its calibration, which maps
 camera pixels to environment coordinates (see [Calibration
