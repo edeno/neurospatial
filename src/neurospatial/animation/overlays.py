@@ -2099,8 +2099,10 @@ class EpochOverlay:
         What an epoch is, such as ``"ripple"``, for the title.
     color : str, default="gold"
         Shading color.
-    alpha : float, default=0.25
-        Shading opacity, from 0 to 1.
+    alpha : float, default=0.45
+        Shading opacity, from 0 to 1, as it looks in Matplotlib. Over a
+        track's fields over time, which shading would tint, epochs are a
+        solid strip above them instead.
 
     Raises
     ------
@@ -2121,7 +2123,7 @@ class EpochOverlay:
     _: KW_ONLY
     label: str = "epoch"
     color: str = "gold"
-    alpha: float = 0.25
+    alpha: float = 0.45
     # Protocol attributes: epochs keep their own times.
     times: NDArray[np.float64] | None = field(default=None, init=False, repr=False)
     interp: Literal["linear", "nearest"] = field(

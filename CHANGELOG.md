@@ -1272,7 +1272,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   drawn against time share one time axis, at the bottom; a 1-D environment
   is drawn as position against time without a field panel; the colorbar
   marks clipped ends and the missing-value color (`colorbar_label=` names
-  it). Frame times
+  it). Opacities (`alpha`, `region_alpha`, trails, events, epochs) look as
+  in Matplotlib and napari, though pygfx blends in linear light; walls,
+  the track cursor and segment joints carry an edge that keeps them
+  visible on any colormap color, labels are outlined, and regions are
+  drawn sky blue, apart from orange landmarks in color-blind vision.
+  Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an

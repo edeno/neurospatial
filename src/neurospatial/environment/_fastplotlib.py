@@ -46,7 +46,7 @@ _N_COLORS = 255  # colormap entries; the lookup texture adds the missing color
 _BIN_COLOR = "#b9d3d6"
 _WALL_COLOR = "firebrick"
 _LANDMARK_COLOR = "orange"
-_REGION_COLOR = "gold"
+_REGION_COLOR = "#56b4e9"  # sky blue: apart from orange landmarks in any vision
 
 
 def import_fastplotlib() -> Any:
@@ -420,12 +420,25 @@ class FieldGraphic:
             self.graphic.colors = self._colors(values)
 
 
+def perceived_alpha(alpha: ArrayLike) -> NDArray[np.float64]:
+    """The opacity that, blended in linear light as pygfx does, looks like
+    ``alpha`` blended in sRGB, as Matplotlib and napari do.
+
+    Exact over black for a pure power-law gamma, close elsewhere; without it
+    an opacity of 0.25 looks like about 0.54.
+    """
+    return np.power(np.asarray(alpha, dtype=np.float64), 2.2)
+
+
 def _label(subplot: Any, text: str, at: ArrayLike, color: str) -> None:
-    """A name next to a point, in screen-sized text."""
+    """A name next to a point, in screen-sized text, outlined to stand out
+    on dark and light bins alike."""
     subplot.add_text(
         text,
-        font_size=13,
+        font_size=14,
         face_color=color,
+        outline_color="white",
+        outline_thickness=0.2,
         offset=tuple(xyz(at)[0]),
         anchor="bottom-left",
     )
@@ -440,7 +453,7 @@ def _area(subplot: Any, polygon: Any, color: str, alpha: float) -> None:
         cells.triangles,
         mode="basic",
         colors=color,
-        alpha=alpha,
+        alpha=float(perceived_alpha(alpha)),
         alpha_mode="blend",
     )
     rings = [polygon.exterior.coords, *(ring.coords for ring in polygon.interiors)]
@@ -452,11 +465,10 @@ def draw_walls(subplot: Any, env: Environment) -> None:
     arena = env.arena
     if not arena.walls:
         return
-    subplot.add_line(
-        polylines([wall.coords for wall in arena.walls]),
-        colors=_WALL_COLOR,
-        thickness=5,
-    )
+    walls = polylines([wall.coords for wall in arena.walls])
+    # A white edge keeps the walls apart from dark and mid colormap colors.
+    subplot.add_line(walls, colors="white", thickness=8)
+    subplot.add_line(walls, colors=_WALL_COLOR, thickness=5)
     named: set[str] = set()
     for name, wall in zip(arena.wall_names, arena.walls, strict=True):
         if name not in named:
@@ -509,7 +521,7 @@ def draw_connections(subplot: Any, env: Environment) -> None:
         pair_segments(centers[pairs[:, 0]], centers[pairs[:, 1]]),
         colors="#555555",
         thickness=1,
-        alpha=0.6,
+        alpha=float(perceived_alpha(0.6)),
         alpha_mode="blend",
     )
 

@@ -656,7 +656,7 @@ def test_clicking_a_units_row_shows_its_rate_map(apparatus, walk, track, decoded
     assert unit_panel.title.text.startswith("unit 1:")
     # The chosen row is striped, not only recolored.
     alpha = layer.bands.colors[:][:, 3].reshape(3, 4)[:, 0]
-    assert alpha[0] > 0.1 > alpha[1] == alpha[2] > 0
+    assert alpha[0] > 100 * alpha[1] and alpha[1] == alpha[2] > 0
     # Hovering anywhere in a row names its unit: the band is picked.
     raster_panel = animation.figure["raster 0"]
     x, y = raster_panel.map_world_to_screen((t[30] + 0.4, 2.0, 0))[:2]
@@ -672,7 +672,7 @@ def test_clicking_a_units_row_shows_its_rate_map(apparatus, walk, track, decoded
     assert unit_panel.title.text.startswith("unit 1:")
     _press(animation.figure, "Escape")
     assert "click a unit's row" in unit_panel.title.text
-    assert (layer.bands.colors[:][:, 3] < 0.1).all()
+    assert (layer.bands.colors[:][:, 3] < 1e-3).all()
 
     # On a track, the rate map is drawn against position along the track.
     times, _, fields = decoded
@@ -732,8 +732,13 @@ def test_epochs_are_marked_named_and_jumped_between(track, decoded):
         )
     animation.show()
     figure = animation.figure
-    (bounds,) = [g for g in figure["track"].graphics if g.name == "ripple bounds"]
-    np.testing.assert_allclose(np.sort(bounds.data[:]), [0.45, 0.65, 5.2, 5.4])
+    # Over the track's fields, a strip above them rather than shading.
+    (strip,) = [g for g in figure["track"].graphics if g.name == "ripple epochs"]
+    corners = strip.positions[:]
+    np.testing.assert_allclose(
+        [corners[:4, 0].min(), corners[:4, 0].max()], [0.45, 0.65], atol=1e-6
+    )
+    assert corners[:, 1].min() > animation._track.upper.max()
     for panel in ("raster 0", "series 0"):
         (bands,) = [g for g in figure[panel].graphics if g.name == "ripple epochs"]
         x = bands.positions[:][:, 0]
@@ -839,15 +844,29 @@ def test_a_tracks_segments_are_bounded_and_named(track, decoded):
             fields[:20], frame_times=times[:20], backend="fastplotlib"
         )
     panel = animation.figure["track"]
-    (bounds,) = [g for g in panel.graphics if type(g).__name__ == "InfLineGraphic"]
-    # Segment 0-1 stops at 30 cm, then 10 cm of spacing to 1-2.
-    np.testing.assert_allclose(np.sort(bounds.data[:]), [30.0, 40.0])
+    # 10 cm of spacing separates the segments already: no line between them.
+    lines = [g for g in panel.graphics if type(g).__name__ == "InfLineGraphic"]
+    assert [g.data[:].tolist() for g in lines] == [[0.0]]  # the cursor's edge
     names = [(label.text, middle) for label, middle in animation._track.labels]
     assert names == [("0\u20131", 15.0), ("1\u20132", 55.0)]
     animation.frame = 10
     _render(animation)
     (label, _), _ = animation._track.labels
-    assert label.offset[0] == pytest.approx(times[10] - 1.0)  # the window's left
+    assert label.offset[0] == pytest.approx(times[10] + 1.0)  # the window's right
+
+    # Segments that meet get a line, with a dark edge.
+    joined = Environment.linear_track(
+        node_positions=[[0.0, 0.0], [30.0, 0.0], [30.0, 30.0]], bin_size=10.0
+    )
+    animation = joined.animate_fields(
+        np.zeros((5, joined.n_bins)), frame_times=np.arange(5.0), backend="fastplotlib"
+    )
+    lines = [
+        g
+        for g in animation.figure["track"].graphics
+        if type(g).__name__ == "InfLineGraphic" and g.data[:].tolist() == [30.0]
+    ]
+    assert len(lines) == 2  # the edge and the line
 
 
 def test_several_fields_are_shown_side_by_side_on_one_scale(
@@ -1014,6 +1033,41 @@ def test_track_lines_break_between_segments_and_across_gaps(track):
     y = line.data[:][:, 1]
     first_gap = np.flatnonzero(np.isnan(y))[0]
     assert first_gap == 10  # after the last sample on segment 0-1
+
+
+def test_opacity_looks_as_in_matplotlib_and_the_cursor_shows_on_bright_bins(
+    track, decoded
+):
+    from neurospatial.animation import EpochOverlay, SpikeRasterOverlay
+
+    times, _, _ = decoded
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            np.ones((len(times), track.n_bins)),  # every bin the top color
+            frame_times=times,
+            backend="fastplotlib",
+            vmin=0.0,
+            vmax=1.0,
+            overlays=[
+                EpochOverlay([[1.0, 1.4]], color="white", alpha=0.25),
+                SpikeRasterOverlay([np.array([5.0])]),
+            ],
+        )
+    animation.show()
+    animation.widget.indices = {"time": 1.2}
+    _render(animation)
+    figure = animation.figure
+    # White at 0.25 over black, blended as Matplotlib does: a quarter gray.
+    band = _pixel(figure, figure["raster 0"], 1.1, 0.0)
+    np.testing.assert_allclose(band, 0.25, atol=0.04)
+    # The cursor's dark edge sets it apart from the brightest bins.
+    track_panel = figure["track"]
+    column, row = track_panel.map_world_to_screen((1.2, 50.0, 0))[:2]
+    image = np.asarray(figure.canvas.draw())[..., :3] / 255
+    around = image[int(row), int(column) - 4 : int(column) + 5]
+    yellow = colormaps["viridis"](1.0)[:3]
+    assert (np.abs(around - yellow).sum(axis=1) > 0.5).sum() >= 3
 
 
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):

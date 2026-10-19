@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Sequence
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
@@ -41,6 +42,7 @@ from neurospatial.environment._fastplotlib import (
     frame_view,
     import_fastplotlib,
     pair_segments,
+    perceived_alpha,
     plot_title,
     xyz,
 )
@@ -162,7 +164,9 @@ class _Position:
         self.length = clock.most_recent(self.frames) if self.frames > 1 else 0
         if self.length > 1:
             colors = np.tile(_rgba(data.color), (self.length, 1))
-            colors[:, 3] = np.linspace(0.0, _TRAIL_MAX_ALPHA, self.length)
+            colors[:, 3] = perceived_alpha(
+                np.linspace(0.0, _TRAIL_MAX_ALPHA, self.length)
+            )
             self.trail = subplot.add_line(
                 xyz(np.full((self.length, 2), np.nan)), colors=colors, thickness=2
             )
@@ -329,7 +333,8 @@ class _Events:
         frame = self.frame_of(time)
         for frames, fill, border, graphic in self.kinds:
             shown, alphas = _event_visibility(frames, frame, self.data.decay_frames)
-            fill[:, 3] = border[:, 3] = np.where(shown, alphas * self.data.opacity, 0)
+            opacity = perceived_alpha(alphas * self.data.opacity)
+            fill[:, 3] = border[:, 3] = np.where(shown, opacity, 0)
             graphic.colors, graphic.edge_colors = fill, border
 
 
@@ -394,7 +399,7 @@ class _Video:
             np.zeros((height, width, 3), dtype=np.uint8), vmin=0, vmax=255
         )
         self.image.alpha_mode = "blend"
-        self.image.alpha = data.alpha
+        self.image.alpha = float(perceived_alpha(data.alpha))
         matrix = np.eye(4)
         matrix[np.ix_([0, 1], [0, 1, 3])] = video_to_env(data, width, height)[:2]
         matrix[2, 3] = depth
@@ -501,6 +506,8 @@ class _TimeWindow:
         from fastplotlib import LinearSelector
 
         self.subplot, self.window = subplot, window
+        # A dark edge, so the cursor shows on light colormap colors too.
+        self.halo = subplot.add_inf_line([0.0], axis="x", colors="black", thickness=4)
         self.cursor = LinearSelector(
             0.0, limits=(-np.inf, np.inf), edge_color="lightgray"
         )
@@ -516,6 +523,7 @@ class _TimeWindow:
 
         with pause_events(self.cursor):
             self.cursor.selection = time
+        self.halo.data = [time]
         half = self.window / 2
         self.subplot.x_range = (time - half, time + half)
 
@@ -565,24 +573,27 @@ class _PositionTime:
         self.segment_starts = np.array([low for _, low, _ in segments])
         self.labels = []
         if len(segments) > 1:
-            bounds = np.unique([end for _, *ends in segments for end in ends])
-            subplot.add_inf_line(
-                bounds[1:-1], axis="y", colors=_SEGMENT_COLOR, thickness=1.0
-            )
+            _segment_joints(subplot, segments, axis="y")
             self.labels = [
                 (
                     subplot.add_text(
                         name,
-                        font_size=12,
+                        font_size=13,
                         face_color=_SEGMENT_COLOR,
-                        anchor="middle-left",
+                        outline_color="black",
+                        outline_thickness=0.25,
+                        anchor="middle-right",
                     ),
                     (low + high) / 2,
                 )
                 for name, low, high in segments
             ]
         subplot.title = self.axis
-        subplot.y_range = (float(self.lower.min()), float(self.upper.max()))
+        # A strip above the fields marks epochs without tinting them.
+        bottom, top = float(self.lower.min()), float(self.upper.max())
+        span = top - bottom
+        self.strip = (top + 0.01 * span, top + 0.06 * span)
+        subplot.y_range = (bottom, self.strip[1])
 
     @property
     def window(self) -> float:
@@ -682,7 +693,7 @@ class _PositionTime:
             points[: len(drawn)] = drawn
             line.data = xyz(points)
         for label, middle in self.labels:
-            label.offset = (time - half, middle, 1.0)
+            label.offset = (time + half, middle, 1.0)  # at the right edge
         self.view.follow(time)
 
     def describe(self, pick_info: dict[str, Any]) -> str:
@@ -723,10 +734,7 @@ class _UnitRates:
             )
             segments = track_segments(env) if env.is_linearized_track else []
             if len(segments) > 1:
-                bounds = np.unique([end for _, *ends in segments for end in ends])
-                subplot.add_inf_line(
-                    bounds[1:-1], axis="x", colors=_SEGMENT_COLOR, thickness=1.0
-                )
+                _segment_joints(subplot, segments, axis="x")
             subplot.camera.maintain_aspect = False
         else:
             self.field = FieldGraphic(
@@ -872,9 +880,9 @@ class _Raster:
         """Each row's band: barely there, and the chosen row's striped."""
         colors = np.zeros((4 * len(self.data.spike_times), 4), dtype=np.float32)
         colors[:, :3] = 1.0
-        colors[:, 3] = 0.01  # enough to be picked
+        colors[:, 3] = 1e-4  # unseen, but picked
         if self.selected >= 0:
-            colors[4 * self.selected : 4 * self.selected + 4, 3] = 0.12
+            colors[4 * self.selected : 4 * self.selected + 4, 3] = perceived_alpha(0.2)
         return colors
 
     def highlight(self, row: int | None) -> None:
@@ -882,6 +890,24 @@ class _Raster:
         self.selected = -1 if row is None else row
         self.ticks.colors = self._colors(row)
         self.bands.colors = self._band_colors()
+
+
+def _segment_joints(
+    subplot: Any, segments: Sequence[tuple[str, float, float]], axis: str
+) -> None:
+    """Lines where one segment of a maze meets the next along the track.
+
+    Segments with spacing between them are apart already, so get none. A
+    dark edge keeps a line visible on light colormap colors too.
+    """
+    joints = [
+        stop
+        for (_, _, stop), (_, start, _) in pairwise(segments)
+        if np.isclose(stop, start)
+    ]
+    if joints:
+        subplot.add_inf_line(joints, axis=axis, colors="black", thickness=3.0)
+        subplot.add_inf_line(joints, axis=axis, colors=_SEGMENT_COLOR, thickness=1.0)
 
 
 def _field_stacks(
@@ -1397,7 +1423,7 @@ class FastplotlibAnimation:
                 if several:
                     self.figure[name].title = f"{label}: {track.axis}"
                 _mark_events(self.figure[name], events, self._start)
-                _shade_epochs(self.figure[name], epochs, self._start, lines=True)
+                _shade_epochs(self.figure[name], epochs, self._start, strip=track.strip)
                 self._tracks.append(track)
         self._track = self._tracks[0] if self._tracks else None
         if not with_fields:
@@ -1421,7 +1447,7 @@ class FastplotlibAnimation:
         ]
         for i in range(len(rasters)):
             _mark_events(self.figure[f"raster {i}"], events, self._start)
-            _shade_epochs(self.figure[f"raster {i}"], epochs, self._start, lines=False)
+            _shade_epochs(self.figure[f"raster {i}"], epochs, self._start)
         frames = _frames_graphic(
             self.widget[self._plot],
             self.widget.indices,
@@ -1673,7 +1699,7 @@ def _add_series(
             # where its values start.
             widget.indices = {"time": max(times[finite][0], 0.0)}
         color = _rgba(item.color)
-        color[3] *= item.alpha
+        color[3] = perceived_alpha(color[3] * item.alpha)
         rate = 1 / np.median(np.diff(times)) if len(times) > 1 else 1.0
         series = widget[name].add_nd_timeseries(
             # The GPU draws float32: about 1 us at 10 s, 0.06 ms at 1000 s.
@@ -1694,7 +1720,7 @@ def _add_series(
         )
         drawn.append((series, float(rate)))
     _mark_events(subplot, events, start)
-    _shade_epochs(subplot, epochs, start, lines=False)
+    _shade_epochs(subplot, epochs, start)
     subplot.title = "  |  ".join(item.label for item in group)
     subplot.camera.maintain_aspect = False
     low = min(item.global_vmin for item in group)
@@ -1723,34 +1749,30 @@ def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> Non
 
 
 def _shade_epochs(
-    subplot: Any, epochs: Sequence[EpochData], start: float, *, lines: bool
+    subplot: Any,
+    epochs: Sequence[EpochData],
+    start: float,
+    *,
+    strip: tuple[float, float] | None = None,
 ) -> None:
-    """Epochs on the clock: shaded behind the data, or, over a heatmap that
-    shading would tint, as lines at their starts and stops."""
+    """Epochs on the clock, shaded behind the data; over a heatmap, which
+    shading would tint, as a solid strip between the heights ``strip``."""
     for data in epochs:
         starts, stops = data.intervals[:, 0] - start, data.intervals[:, 1] - start
-        if lines:
-            subplot.add_inf_line(
-                np.concatenate([starts, stops]),
-                axis="x",
-                colors=data.color,
-                thickness=1.5,
-                name=f"{data.label} bounds",
-            )
-            continue
         # Far past any data, so a band spans the panel at any zoom.
+        low, high = strip or (-1e6, 1e6)
         corners = _rectangles(
-            starts, stops, np.full(len(starts), -1e6), np.full(len(starts), 1e6)
+            starts, stops, np.full(len(starts), low), np.full(len(starts), high)
         )
         bands = _fans(corners, 4)
         positions = bands.positions.copy()
-        positions[:, 2] = -1.0  # behind the data
+        positions[:, 2] = 0.0 if strip else -1.0  # behind the data
         subplot.add_mesh(
             positions,
             bands.triangles,
             mode="basic",
             colors=data.color,
-            alpha=data.alpha,
+            alpha=1.0 if strip else float(perceived_alpha(data.alpha)),
             alpha_mode="blend",
             name=f"{data.label} epochs",
         )

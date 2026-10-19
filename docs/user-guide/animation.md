@@ -465,6 +465,12 @@ sequence reads as a diagonal under the posterior. With `rates=`, clicking a
 unit's row shows its rate map under the field. See [Spike Raster
 Overlay](../animation_overlays.md#spike-raster-overlay).
 
+Opacities look as they do in the other backends, though the GPU blends
+colors in linear light. Walls, the cursor over a track's fields and the lines
+where maze segments meet have a contrasting edge, labels are outlined, and
+regions are sky blue, so they stay visible on any colormap color and apart in
+color-blind vision.
+
 Several fields can be shown side by side on one color scale, as with napari:
 pass a list of lists of frames, such as `[list(posterior),
 list(likelihood)]`, with `layer_names=["posterior", "likelihood"]` and
