@@ -6047,6 +6047,8 @@ class Environment(Generic[_C]):
             - ``window_seconds`` : float, default=2.0
               On a track, seconds of fields shown in the position-by-time
               panel, centered on the current time
+            - ``layout`` and ``layer_names`` : as for napari, for several
+              fields side by side
 
         Returns
         -------

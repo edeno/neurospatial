@@ -816,6 +816,99 @@ class _Raster:
         self.ticks.colors = self._colors(row)
 
 
+def _field_stacks(
+    fields: Sequence[Any] | NDArray[np.float64], names: Sequence[str] | None
+) -> tuple[list[Any], list[str]]:
+    """The fields to show, one stack of frames each, and their names.
+
+    Several are a list of lists or tuples of frames, as napari takes them.
+    """
+    several = (
+        isinstance(fields, (list, tuple))
+        and len(fields) > 0
+        and isinstance(fields[0], (list, tuple))
+    )
+    stacks = [
+        stack if hasattr(stack, "shape") else np.asarray(stack)
+        for stack in (fields if several else [fields])
+    ]
+    lengths = sorted({len(stack) for stack in stacks})
+    if len(lengths) > 1:
+        raise ValueError(
+            f"Each field needs the same number of frames, got {lengths}. Why: "
+            "the fields share one clock. Fix: pass the same frames of each."
+        )
+    if names is None:
+        names = [f"Field {i + 1}" for i in range(len(stacks))]
+    elif len(names) != len(stacks):
+        raise ValueError(
+            f"layer_names has {len(names)} names for {len(stacks)} fields; "
+            "pass one name per field."
+        )
+    return stacks, list(names)
+
+
+def _arrange(
+    n: int, layout: str | None, right: float, bottom: float
+) -> list[tuple[float, float, float, float]]:
+    """Extents of ``n`` fields in the box from (0, 0) to (right, bottom).
+
+    Side by side for up to three, or as ``layout`` says: "horizontal",
+    "vertical" or "grid".
+    """
+    layout = layout or ("horizontal" if n <= 3 else "grid")
+    if layout == "horizontal":
+        rows, columns = 1, n
+    elif layout == "vertical":
+        rows, columns = n, 1
+    elif layout == "grid":
+        columns = int(np.ceil(np.sqrt(n)))
+        rows = int(np.ceil(n / columns))
+    else:
+        raise ValueError(
+            f"layout must be 'horizontal', 'vertical' or 'grid', got {layout!r}."
+        )
+    width, height = right / columns, bottom / rows
+    return [
+        (
+            (i % columns) * width,
+            (i % columns + 1) * width,
+            (i // columns) * height,
+            (i // columns + 1) * height,
+        )
+        for i in range(n)
+    ]
+
+
+def _spatial_overlays(
+    plot: Any,
+    overlay_data: OverlayData,
+    clock: Callable[[NDArray[np.float64] | None], _Samples],
+    env: Environment,
+    frame_of: Callable[[float], int],
+) -> tuple[list[Any], list[_Position]]:
+    """The overlays drawn over a field, and its position layers."""
+    layers: list[Any] = [
+        _ObjectVectors(plot, item, clock(item.times))
+        for item in overlay_data.object_vectors
+    ]
+    positions = [
+        _Position(plot, item, clock(item.times)) for item in overlay_data.positions
+    ]
+    layers += positions
+    layers += [
+        _Bodyparts(plot, item, clock(item.times)) for item in overlay_data.bodypart_sets
+    ]
+    anchor = positions[0] if len(positions) == 1 else None
+    center = env.bin_centers.mean(axis=0)
+    layers += [
+        _HeadDirection(plot, item, clock(item.times), anchor, center)
+        for item in overlay_data.head_directions
+    ]
+    layers += [_Events(plot, item, frame_of) for item in overlay_data.events]
+    return layers, positions
+
+
 def playback_step(frame_times: NDArray[np.float64]) -> float:
     """Seconds that play and the step buttons move: short enough to reach
     every frame, unless frames are much closer than the typical interval.
@@ -846,10 +939,10 @@ class _Frame(NamedTuple):
     """What one time shows, read on a worker thread."""
 
     frame: int
-    values: NDArray[np.float64]  # the field, shape (n_bins,)
+    values: list[NDArray[np.float64]]  # each field, shape (n_bins,)
     images: list[Any]  # each video's frame, or None
     first: int  # the first frame of ``rows``
-    rows: NDArray[np.float64]  # a track's fields in its window, (n, n_bins)
+    rows: list[NDArray[np.float64]]  # each field in a track's window, (n, n_bins)
 
 
 def _frames_graphic(
@@ -915,14 +1008,15 @@ class FastplotlibAnimation:
 
     Returned by ``env.animate_fields(..., backend="fastplotlib")``. It is a
     fastplotlib ``NDWidget``: a slider in seconds, play, step and loop
-    buttons, and a frame rate box. Time-series overlays are drawn beside the
-    field on the same clock, each showing its window around the current
-    time, with event times marked, and so are spike rasters. On a track (a linearized track or a 1-D
-    environment) the fields are also drawn over time, position along the
-    track against time, with the positions as lines over them: a decoded
-    posterior beside the animal's position, say. Hovering over a bin shows
-    its value. In Jupyter it displays itself; elsewhere call :meth:`show`
-    (in a script, then ``fastplotlib.loop.run()``).
+    buttons, and a frame rate box. Time series and spike rasters are drawn
+    beside the field on the same clock, each showing its window around the
+    current time, with event times marked. On a track (a linearized track or
+    a 1-D environment) the fields are also drawn over time, position along
+    the track against time, with the positions as lines over them: a decoded
+    posterior beside the animal's position, say. Several fields can be shown
+    side by side on one color scale. Hovering over a bin shows its value. In
+    Jupyter it displays itself; elsewhere call :meth:`show` (in a script,
+    then ``fastplotlib.loop.run()``).
 
     The slider and the time-series axes count seconds from the first frame,
     so session timestamps (such as 1.7e9 s) keep their precision on the GPU;
@@ -942,24 +1036,26 @@ class FastplotlibAnimation:
     ----------
     env : Environment
         The bins the fields are defined on.
-    fields : sequence of ndarray of shape (n_bins,), or ndarray (n_frames, n_bins)
+    fields : ndarray (n_frames, n_bins), sequence of ndarray (n_bins,), or a list of those
         One field per frame. An array, including a memory map, is read one
-        frame at a time.
+        frame at a time. A list of several lists or tuples of frames, such
+        as ``[list(posterior), list(likelihood)]``, is shown side by side,
+        all with the same frames.
     frame_times : ndarray of shape (n_frames,)
         Time of each frame, in seconds. A frame is shown from its time until
         the next frame's.
     fps : float
         Steps per second while playing; changeable in the controls.
     cmap, vmin, vmax
-        Colormap and its limits; limits default to the 1st percentile of the
-        frames' minima and the 99th of their maxima, estimated from a sample
-        of a very long recording.
+        Colormap and its limits, shared by every field; limits default to
+        the 1st percentile of the frames' minima and the 99th of their
+        maxima, estimated from a sample of a very long recording.
     frame_labels : sequence of str, optional
         A label per frame; the frame times by default.
     title : str, optional
         Plot title; the environment's name and units by default.
     overlay_data : OverlayData, optional
-        Overlays aligned to the frames.
+        Overlays aligned to the frames, drawn on every field.
     show_regions : bool or sequence of str, default=False
         Draw all regions, or the named ones.
     region_alpha : float, default=0.3
@@ -967,6 +1063,12 @@ class FastplotlibAnimation:
     window_seconds : float, default=2.0
         Seconds of fields shown in a track's position-by-time panel, centered
         on the current time.
+    layout : {"horizontal", "vertical", "grid"}, optional
+        How several fields are arranged; side by side for up to three, a
+        grid for more.
+    layer_names : sequence of str, optional
+        A name for each of several fields; "Field 1", "Field 2", ... by
+        default.
 
     Attributes
     ----------
@@ -978,14 +1080,22 @@ class FastplotlibAnimation:
         panels are ``"track"`` (a track's fields against position and time),
         ``"raster 0"``, ``"raster 1"``, ... (spike rasters), ``"unit"`` (the
         rate map of the unit chosen in a raster) and ``"series 0"``, ...
+        Several fields are ``"field 0"``, ``"field 1"``, ... and, on a track,
+        ``"track 0"``, ``"track 1"``, ...
     n_frames : int
         Number of frames.
+
+    Raises
+    ------
+    ValueError
+        If ``window_seconds`` is not positive, several fields have different
+        numbers of frames, or ``layer_names`` or ``layout`` do not fit them.
     """
 
     def __init__(
         self,
         env: Environment,
-        fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+        fields: Sequence[Any] | NDArray[np.float64],
         *,
         frame_times: NDArray[np.float64],
         fps: float,
@@ -998,6 +1108,8 @@ class FastplotlibAnimation:
         show_regions: bool | Sequence[str] = False,
         region_alpha: float = 0.3,
         window_seconds: float = 2.0,
+        layout: str | None = None,
+        layer_names: Sequence[str] | None = None,
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -1006,8 +1118,10 @@ class FastplotlibAnimation:
         )
 
         fastplotlib = import_fastplotlib()
-        self._fields = fields if hasattr(fields, "shape") else np.asarray(fields)
-        self.n_frames = len(fields)
+        stacks, names = _field_stacks(fields, layer_names)
+        self._fields = stacks[0]  # the first field; all are in _stacks
+        self._stacks = stacks
+        self.n_frames = len(stacks[0])
         self._frame_times = np.asarray(frame_times, dtype=np.float64)
         # The widget's clock: seconds from the first frame.
         self._start = float(self._frame_times[0])
@@ -1025,32 +1139,46 @@ class FastplotlibAnimation:
         groups = _group_timeseries(overlay_data.timeseries if overlay_data else [])
         step = playback_step(self._frame_times)
         extents_along_track = track_extents(env)
-        # Panels on the clock fill the right, stacked top to bottom: the
-        # track's fields over time, the rasters, then the time series; the
-        # field narrows when the right holds more than time series.
+        several = len(stacks) > 1
+        field_names = (
+            [f"field {i}" for i in range(len(stacks))] if several else ["field"]
+        )
+        track_names = (
+            []
+            if extents_along_track is None
+            else [f"track {i}" for i in range(len(stacks))]
+            if several
+            else ["track"]
+        )
+        # Panels on the clock fill the right, stacked top to bottom: each
+        # field over time on a track, the rasters, then the time series; the
+        # fields narrow when the right holds more than time series.
         rasters = overlay_data.spike_rasters if overlay_data else []
-        panels = [("track", 2.0)] if extents_along_track is not None else []
+        panels = [(name, 2.0) for name in track_names]
         panels += [(f"raster {i}", 2.0) for i in range(len(rasters))]
         panels += [(f"series {i}", 1.0) for i in range(len(groups))]
         split = (0.4 if len(panels) > len(groups) else 0.6) if panels else 1.0
-        # A raster with rate maps adds the chosen unit's map under the field.
+        # A raster with rate maps adds the chosen unit's map under the fields.
         with_rates = any(item.rates is not None for item in rasters)
-        extents = {"field": (0.0, split, 0.0, 0.65 if with_rates else 1.0)}
+        bottom = 0.65 if with_rates else 1.0
+        extents = dict(
+            zip(field_names, _arrange(len(stacks), layout, split, bottom), strict=True)
+        )
         if with_rates:
-            extents["unit"] = (0.0, split, 0.65, 1.0)
+            extents["unit"] = (0.0, split, bottom, 1.0)
         total, top = sum(weight for _, weight in panels), 0.0
         for name, weight in panels:
             extents[name] = (split, 1.0, top / total, (top + weight) / total)
             top += weight
         camera, controller = camera_options(env)
+        n_spatial = len(stacks) + with_rates
         # The slider stops at the last frame.
         self.widget = fastplotlib.NDWidget(
             ranges={"time": (0.0, self._clock[-1] + step, step)},
             extents=extents,
-            cameras=[camera] * (1 + with_rates) + ["2d"] * len(panels),
-            controller_types=[controller] * (1 + with_rates)
-            + ["panzoom"] * len(panels),
-            size=(1100 if panels else 800, 760),
+            cameras=[camera] * n_spatial + ["2d"] * len(panels),
+            controller_types=[controller] * n_spatial + ["panzoom"] * len(panels),
+            size=(1100 if panels or several else 800, 760),
         )
         # Playing moves one step per 1 / fps s (the box allows 1-100); a step
         # shorter than the typical interval plays faster to keep the speed.
@@ -1059,41 +1187,21 @@ class FastplotlibAnimation:
         self.widget.ui_sliders._fps["time"] = steps_per_second
         self.widget.ui_sliders._frame_time["time"] = 1 / steps_per_second
         self.figure = self.widget.figure
-        self._plot = self.figure["field"]
-        self._plot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
+        self._plots = [self.figure[name] for name in field_names]
+        self._plot = self._plots[0]
 
-        low, high = animation_colormap_range(fields, vmin, vmax)
+        # One color scale for every field, so they can be compared.
+        all_frames = (
+            stacks[0] if not several else [row for stack in stacks for row in stack]
+        )
+        low, high = animation_colormap_range(all_frames, vmin, vmax)
         scale = ColorScale(cmap, low, high, "lightgray")
-        first = np.asarray(fields[0], dtype=np.float64)
-        self._field = FieldGraphic(self._plot, env, first, scale)
 
         def clock(times: NDArray[np.float64] | None) -> _Samples:
             return _Samples(times, self._start, self._frame_of, typical)
 
-        self._videos: list[_Video] = []
-        if overlay_data is not None and overlay_data.videos:
-            # Depth orders the field, the videos and everything else (at 0).
-            # Fractional, so that fastplotlib does not restack the videos.
-            self._field.graphic.offset = (0.0, 0.0, -1.5)
-            self._videos = [
-                _Video(
-                    self._plot,
-                    item,
-                    clock(item.times),
-                    (-0.5 if item.z_order == "above" else -2.5) - i / 100,
-                )
-                for i, item in enumerate(overlay_data.videos)
-            ]
-        draw_layers(
-            self._plot,
-            env,
-            show_walls=True,
-            show_landmarks=True,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-        )
-        draw_colorbar(self._plot, scale, "")
         self._title = title or plot_title(env)
+        self._names = names
         events = overlay_data.events if overlay_data else []
         epochs = overlay_data.epochs if overlay_data else []
         self._epochs = epochs
@@ -1102,47 +1210,64 @@ class FastplotlibAnimation:
             times for item in events for times in item.event_times.values()
         ]
         self._marks = np.unique(np.concatenate([[], *marks])) - self._start
+        self._field_graphics: list[FieldGraphic] = []
+        self._videos: list[_Video] = []
         self._layers: list[Any] = []
         positions: list[_Position] = []
-        if overlay_data is not None:
-            self._layers += [
-                _ObjectVectors(self._plot, item, clock(item.times))
-                for item in overlay_data.object_vectors
-            ]
-            positions = [
-                _Position(self._plot, item, clock(item.times))
-                for item in overlay_data.positions
-            ]
-            self._layers += positions
-            self._layers += [
-                _Bodyparts(self._plot, item, clock(item.times))
-                for item in overlay_data.bodypart_sets
-            ]
-            anchor = positions[0] if len(positions) == 1 else None
-            center = env.bin_centers.mean(axis=0)
-            self._layers += [
-                _HeadDirection(self._plot, item, clock(item.times), anchor, center)
-                for item in overlay_data.head_directions
-            ]
-            self._layers += [
-                _Events(self._plot, item, self._frame_of)
-                for item in overlay_data.events
-            ]
-        self._track: _PositionTime | None = None
-        if extents_along_track is not None:
-            self._track = _PositionTime(
-                self.figure["track"],
+        for i, (plot, stack) in enumerate(zip(self._plots, stacks, strict=True)):
+            plot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
+            field = FieldGraphic(plot, env, np.asarray(stack[0], dtype=float), scale)
+            self._field_graphics.append(field)
+            if overlay_data is not None and overlay_data.videos:
+                # Depth orders the field, the videos and everything else (at
+                # 0). Fractional, so that fastplotlib does not restack them.
+                field.graphic.offset = (0.0, 0.0, -1.5)
+                self._videos += [
+                    _Video(
+                        plot,
+                        item,
+                        clock(item.times),
+                        (-0.5 if item.z_order == "above" else -2.5) - k / 100,
+                    )
+                    for k, item in enumerate(overlay_data.videos)
+                ]
+            draw_layers(
+                plot,
                 env,
-                extents_along_track,
-                scale,
-                self._clock,
-                window_seconds,
-                positions,
-                self._start,
-                self._move_to,
+                show_walls=True,
+                show_landmarks=True,
+                show_regions=show_regions,
+                region_alpha=region_alpha,
             )
-            _mark_events(self.figure["track"], events, self._start)
-            _shade_epochs(self.figure["track"], epochs, self._start, lines=True)
+            if i == 0:
+                draw_colorbar(plot, scale, "")
+            if overlay_data is not None:
+                layers, panel_positions = _spatial_overlays(
+                    plot, overlay_data, clock, env, self._frame_of
+                )
+                self._layers += layers
+                positions = positions or panel_positions
+        self._field = self._field_graphics[0]
+        self._tracks: list[_PositionTime] = []
+        if extents_along_track is not None:
+            for name, label in zip(track_names, names, strict=True):
+                track = _PositionTime(
+                    self.figure[name],
+                    env,
+                    extents_along_track,
+                    scale,
+                    self._clock,
+                    window_seconds,
+                    positions,
+                    self._start,
+                    self._move_to,
+                )
+                if several:
+                    self.figure[name].title = f"{label}: {track.axis}"
+                _mark_events(self.figure[name], events, self._start)
+                _shade_epochs(self.figure[name], epochs, self._start, lines=True)
+                self._tracks.append(track)
+        self._track = self._tracks[0] if self._tracks else None
         unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
         self._rasters = [
             _Raster(self.figure[f"raster {i}"], item, self._start, self._move_to, unit)
@@ -1170,10 +1295,11 @@ class FastplotlibAnimation:
             )
         ]
         self.widget.indices = {"time": 0.0}  # adding a series can move the time
-        # Only the field is fitted: fitting a series subplot's camera moves
+        # Only the fields are fitted: fitting a series subplot's camera moves
         # the time, which follows the center of its view.
-        self._plot.auto_scale()
-        frame_view(self._plot, env)
+        for plot in self._plots:
+            plot.auto_scale()
+            frame_view(plot, env)
         self._canvas: Any = None
         self._step = step
         self.figure.renderer.add_event_handler(self._key, "key_down")
@@ -1211,8 +1337,8 @@ class FastplotlibAnimation:
         def scaled(window: float) -> float:
             return float(np.clip(window * factor, self._step, max(longest, self._step)))
 
-        if self._track is not None:
-            self._track.set_window(scaled(self._track.window))
+        for track in self._tracks:
+            track.set_window(scaled(track.window))
         for raster in self._rasters:
             raster.view.window = scaled(raster.view.window)
         for series, rate in self._series:
@@ -1238,23 +1364,25 @@ class FastplotlibAnimation:
         Runs on a worker thread.
         """
         frame = self._frame_of(time)
-        values = np.asarray(self._fields[frame], dtype=np.float64)
+        values = [np.asarray(stack[frame], dtype=np.float64) for stack in self._stacks]
         images = [video.data.get_frame(video.clock.at(time)) for video in self._videos]
         if self._track is None:
-            return _Frame(frame, values, images, 0, np.empty((0, len(values))))
+            return _Frame(frame, values, images, 0, [])
         window = self._track.frames_at(time)
-        rows = np.asarray(self._fields[window], dtype=np.float64)
-        return _Frame(
-            frame, values, images, window.start, rows.reshape(-1, len(values))
-        )
+        rows = [
+            np.asarray(stack[window], dtype=np.float64).reshape(-1, len(field))
+            for stack, field in zip(self._stacks, values, strict=True)
+        ]
+        return _Frame(frame, values, images, window.start, rows)
 
     def _show(self, time: float, data: _Frame) -> None:
-        frame, values, images = data.frame, data.values, data.images
-        if self._track is not None:
-            self._track.show(time, data.first, data.rows)
+        frame, images = data.frame, data.images
+        for track, rows in zip(self._tracks, data.rows, strict=False):
+            track.show(time, data.first, rows)
         for raster in self._rasters:
             raster.view.follow(time)
-        self._field.update(values)
+        for field, values in zip(self._field_graphics, data.values, strict=True):
+            field.update(values)
         for video, image in zip(self._videos, images, strict=True):
             video.show(image)
         for layer in self._layers:
@@ -1265,6 +1393,11 @@ class FastplotlibAnimation:
             else f"t = {self._frame_times[frame]:.2f} s"
         )
         parts = [self._title, label, *self._epochs_at(self._start + time)]
+        if len(self._plots) > 1:
+            # The shared time over the first field; each field its name.
+            parts[0] = self._names[0]
+            for plot, name in zip(self._plots[1:], self._names[1:], strict=True):
+                plot.title = name
         self._plot.title = "  |  ".join(parts)
 
     def _epochs_at(self, time: float) -> list[str]:

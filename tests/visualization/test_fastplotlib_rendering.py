@@ -789,6 +789,63 @@ def test_a_tracks_segments_are_bounded_and_named(track, decoded):
     assert label.offset[0] == pytest.approx(times[10] - 1.0)  # the window's left
 
 
+def test_several_fields_are_shown_side_by_side_on_one_scale(
+    apparatus, walk, track, decoded
+):
+    t, path, fields = walk
+    doubled = 2 * fields
+    animation = apparatus.animate_fields(
+        [list(fields), list(doubled)],
+        frame_times=t,
+        backend="fastplotlib",
+        layer_names=["posterior", "likelihood"],
+        overlays=[PositionOverlay(positions=path, times=t)],
+    )
+    first, second = animation._field_graphics
+    assert [p.name for p in animation._plots] == ["field 0", "field 1"]
+    animation.frame = 40
+    _render(animation)
+    np.testing.assert_allclose(first.values, fields[40])
+    np.testing.assert_allclose(second.values, doubled[40])
+    assert first.scale is second.scale  # one scale, so they compare
+    assert first.scale.vmax > fields.max()  # it spans the doubled field
+    assert animation._plot.title.text.startswith("posterior  |  t = ")
+    assert animation.figure["field 1"].title.text == "likelihood"
+    # The animal is drawn over both.
+    markers = [layer for layer in animation._layers if hasattr(layer, "marker")]
+    assert len(markers) == 2
+    for layer in markers:
+        np.testing.assert_allclose(layer.marker.data[0, :2], path[40], rtol=1e-6)
+
+    times, _, fields = decoded
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = track.animate_fields(
+            [list(fields), list(fields[::-1])],
+            frame_times=times,
+            backend="fastplotlib",
+            layout="vertical",
+        )
+    assert len(animation._tracks) == 2
+    assert animation.figure["track 1"].title.text.startswith("Field 2: ")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the gap between runs
+        with pytest.raises(ValueError, match="one name per field"):
+            track.animate_fields(
+                [list(fields), list(fields)],
+                frame_times=times,
+                backend="fastplotlib",
+                layer_names=["only one"],
+            )
+        with pytest.raises(ValueError, match="layout must be"):
+            track.animate_fields(
+                [list(fields), list(fields)],
+                frame_times=times,
+                backend="fastplotlib",
+                layout="diagonal",
+            )
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")

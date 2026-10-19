@@ -117,6 +117,8 @@ _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
             "show_regions",
             "region_alpha",
             "window_seconds",
+            "layout",
+            "layer_names",
             "dry_run",
         }
     ),
@@ -717,18 +719,18 @@ def animate_fields(
         assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
         fields = [fields[i] for i in range(fields.shape[0])]
 
-    # Multi-field inputs are only supported by the napari backend
-    if is_multi_field and backend != "napari":
+    # Multi-field inputs are only supported by the napari and fastplotlib backends
+    if is_multi_field and backend not in ("napari", "fastplotlib"):
         raise ValueError(
             "Multi-field input (list of sequences) is only supported by the "
-            "'napari' backend.\n\n"
+            "'napari' and 'fastplotlib' backends.\n\n"
             "WHAT: Detected list-of-sequences input for 'fields', which encodes "
             "multiple spatial fields per frame (multi-field mode).\n\n"
             "WHY: Video, HTML, and widget backends currently expect a single "
             "field array per frame and cannot render multi-field layouts.\n\n"
             "Fix: Either:\n"
-            "  - Use backend='napari' (or backend='auto' without save_path) "
-            "to explore multi-field data interactively, or\n"
+            "  - Use backend='napari' or 'fastplotlib' (or backend='auto' "
+            "without save_path) to explore multi-field data interactively, or\n"
             "  - Convert your multi-field input into a single field per frame "
             "(e.g., by stacking or selecting one field) before calling "
             "animate_fields()."

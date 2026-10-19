@@ -459,6 +459,13 @@ sequence reads as a diagonal under the posterior. With `rates=`, clicking a
 unit's row shows its rate map under the field. See [Spike Raster
 Overlay](../animation_overlays.md#spike-raster-overlay).
 
+Several fields can be shown side by side on one color scale, as with napari:
+pass a list of lists of frames, such as `[list(posterior),
+list(likelihood)]`, with `layer_names=["posterior", "likelihood"]` and
+optionally `layout="horizontal"`, `"vertical"` or `"grid"` (side by side for
+up to three by default). The overlays are drawn over each, and on a track each
+gets its own position-by-time panel.
+
 An `EpochOverlay` marks intervals such as ripples on every time panel and
 names the current one in the title; see [Epoch
 Overlay](../animation_overlays.md#epoch-overlay).
