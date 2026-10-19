@@ -46,6 +46,44 @@ def test_directional_place_fields_record_spike_window():
     assert result.occupancy["A"].sum() == pytest.approx(0.6, abs=1e-12)
 
 
+@pytest.mark.parametrize("method", ["binned", "diffusion_kde"])
+def test_label_windows_match_hand_written_epochs(method):
+    """Per-label maps equal the estimator run on hand-written label windows."""
+    rng = np.random.default_rng(3)
+    times = np.arange(40) / 10
+    positions = np.linspace(5, 95, 40)[:, None]
+    positions[12] = np.nan
+    times[31:] += 1.0  # 1 s gap after sample 30
+    labels = np.array(["A"] * 10 + ["other"] * 5 + ["B"] * 10 + ["A"] * 15)
+    spikes = np.sort(rng.uniform(0, times[-1], 60))
+    env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
+    kwargs = {"method": method, "bandwidth": 10.0, "max_gap": 0.5}
+    fields = compute_directional_place_fields(
+        env, spikes, times, positions, labels, **kwargs
+    )
+    windows = {"A": [(0.0, 1.0), (2.5, 4.9)], "B": [(1.5, 2.5)]}
+    assert fields.labels == ("A", "B")
+    for label, epochs in windows.items():
+        ref = compute_spatial_rate(
+            env, spikes, times, positions, epochs=epochs, **kwargs
+        )
+        assert_array_equal(fields.firing_rates[label], ref.firing_rate)
+        assert_array_equal(fields.occupancy[label], ref.occupancy)
+
+
+def test_missing_labels_are_excluded_like_other():
+    times = np.arange(20) / 10
+    positions = np.c_[np.linspace(1, 19, 20)]
+    env = Environment.from_samples(np.c_[np.linspace(0, 20, 41)], bin_size=2.0)
+    labels = np.array(["A"] * 8 + [None] * 2 + ["B"] * 5 + [np.nan] * 2 + ["A"] * 3)
+    result = compute_directional_place_fields(
+        env, np.array([0.05, 1.55]), times, positions, labels, method="binned"
+    )
+    assert result.labels == ("A", "B")
+    assert result.occupancy["A"].sum() == pytest.approx(0.8 + 0.2, abs=1e-12)
+    assert result.occupancy["B"].sum() == pytest.approx(0.5, abs=1e-12)
+
+
 @pytest.mark.parametrize(
     ("epochs", "expected"),
     [

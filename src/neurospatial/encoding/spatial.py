@@ -4586,8 +4586,8 @@ def compute_directional_place_fields(
         Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
     direction_labels : NDArray[object], shape (n_timepoints,)
         Direction label for each timepoint. Each label is a hashable string
-        (e.g., "A→B", "forward", "CW"). The special label "other" is excluded
-        from results, allowing unlabeled periods to be ignored.
+        (e.g., "A→B", "forward", "CW"). The special label "other", ``None`` and
+        ``NaN`` mark unlabeled periods and are excluded from results.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method passed through to the place-field helper.
     bandwidth : float or None, default=None
@@ -4679,7 +4679,6 @@ def compute_directional_place_fields(
     from neurospatial._intervals import (
         intersect_intervals,
         resolve_time_windows,
-        run_time_bounds,
     )
     from neurospatial.encoding._spatial_counts import require_allocentric
 
@@ -4691,24 +4690,36 @@ def compute_directional_place_fields(
             f"got {len(direction_labels)} and {len(times)}"
         )
 
-    # Convert labels to array
-    labels_arr = np.asarray(direction_labels, dtype=object)
+    # Label code of each interval (the label at its start sample). "other",
+    # None and NaN are missing (-1); consecutive intervals with one code form
+    # one window, so separate runs never join.
+    import pandas as pd
 
-    # Get unique labels, excluding "other"
-    unique_labels = [label for label in np.unique(labels_arr) if label != "other"]
+    from neurospatial._observation import label_runs
+
+    labels_arr = np.empty(len(direction_labels), dtype=object)
+    for i, value in enumerate(direction_labels):
+        labels_arr[i] = value
+    codes, uniques = pd.factorize(labels_arr[:-1], use_na_sentinel=True)
+    codes = codes.astype(np.intp)
+    # The trailing False keeps an already-missing code (-1) missing.
+    is_other = np.array([bool(u == "other") for u in uniques] + [False])
+    codes[is_other[codes]] = -1
+    first, last, run_codes = label_runs(codes, np.ones(codes.size, dtype=bool))
+    sample_times = np.asarray(times, dtype=np.float64)
+    run_windows = np.column_stack([sample_times[first], sample_times[last + 1]])
 
     # Sort labels for reproducibility
-    unique_labels = sorted(unique_labels, key=str)
+    labelled = [(uniques[c], c) for c in np.unique(run_codes)]
+    labelled = sorted(labelled, key=lambda item: str(item[0]))
 
     # Compute place field for each direction
     firing_rates_dict: dict[str, NDArray[np.float64]] = {}
     occupancy_dict: dict[str, NDArray[np.float64]] = {}
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    for label in unique_labels:
-        label_windows = run_time_bounds(times, labels_arr[:-1] == label)
-        if label_windows.shape[0] == 0:
-            continue
+    for label, code in labelled:
+        label_windows = run_windows[run_codes == code]
         windows = (
             label_windows
             if resolved_epochs is None
