@@ -83,6 +83,8 @@ from neurospatial.behavior.segmentation import (
     trajectory_similarity,
 )
 from neurospatial.behavior.trajectory import (
+    CumulativeDistanceResult,
+    compute_cumulative_distance,
     compute_home_range,
     compute_speed,
     compute_step_lengths,
@@ -184,6 +186,8 @@ __all__ = [  # noqa: RUF022
     "goal_reward_field",
     "region_reward_field",
     # trajectory module
+    "CumulativeDistanceResult",
+    "compute_cumulative_distance",
     "compute_home_range",
     "compute_speed",
     "compute_step_lengths",

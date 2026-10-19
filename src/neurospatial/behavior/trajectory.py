@@ -22,9 +22,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import as_intervals
+from neurospatial._observation import ObservationSupport, validated_observations
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
@@ -61,6 +63,77 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
             "n_lags": int(self.lags.size),
             "max_lag": float(self.lags.max()) if self.lags.size else float("nan"),
             "final_msd": float(self.msd[-1]) if self.msd.size else float("nan"),
+        }
+
+
+@dataclass(frozen=True, repr=False)
+class CumulativeDistanceResult(ReadOnlyArraysMixin, ResultMixin):
+    """Observed distance travelled, returned by ``compute_cumulative_distance``.
+
+    Distances are Euclidean arclength along the observed polyline, in the
+    units of the positions. Intervals that are not usable (a missing sample, a
+    gap longer than ``max_gap``, outside ``epochs``, or a declared break)
+    add nothing, so distance never crosses a break.
+
+    Attributes
+    ----------
+    step_lengths : NDArray[np.float64], shape (n_samples - 1,)
+        Length of each interval; NaN on unusable intervals.
+    run_distance : NDArray[np.float64], shape (n_samples,)
+        Distance since the start of the sample's run (0 at each run start);
+        NaN where ``run_ids == -1``.
+    cumulative_distance : NDArray[np.float64], shape (n_samples,)
+        Observed distance since the first sample, summed over all runs so far;
+        NaN where ``run_ids == -1``.
+    run_ids : NDArray[np.intp], shape (n_samples,)
+        Run index in time order; -1 for samples that touch no usable interval.
+    sample_valid : NDArray[np.bool_], shape (n_samples,)
+        True where every coordinate is finite.
+    run_sample_bounds : NDArray[np.intp], shape (n_runs, 2)
+        Inclusive ``(first, last)`` sample indices of each run.
+    run_time_bounds : NDArray[np.float64], shape (n_runs, 2)
+        Start and end time of each run, in seconds.
+    run_path_lengths : NDArray[np.float64], shape (n_runs,)
+        Distance travelled in each run.
+    max_gap : float or None
+        The gap limit that was applied, in seconds.
+    epochs : NDArray[np.float64] or None, shape (n_epochs, 2)
+        Normalized half-open ``[start, stop)`` windows that were applied.
+    """
+
+    step_lengths: NDArray[np.float64]
+    run_distance: NDArray[np.float64]
+    cumulative_distance: NDArray[np.float64]
+    run_ids: NDArray[np.intp]
+    sample_valid: NDArray[np.bool_]
+    run_sample_bounds: NDArray[np.intp]
+    run_time_bounds: NDArray[np.float64]
+    run_path_lengths: NDArray[np.float64]
+    max_gap: float | None
+    epochs: NDArray[np.float64] | None
+
+    def __post_init__(self) -> None:
+        """Own read-only copies of the arrays."""
+        self._own_arrays()
+
+    @property
+    def total_distance(self) -> float:
+        """Distance over all runs; NaN when no interval was usable."""
+        if self.run_path_lengths.size == 0:
+            return float("nan")
+        return float(self.run_path_lengths.sum())
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        widths = self.run_time_bounds[:, 1] - self.run_time_bounds[:, 0]
+        return {
+            "n_samples": int(self.run_ids.size),
+            "n_runs": int(self.run_path_lengths.size),
+            "n_isolated_samples": int(
+                np.count_nonzero(self.sample_valid & (self.run_ids == -1))
+            ),
+            "total_distance": self.total_distance,
+            "observed_duration": float(widths.sum()),
         }
 
 
@@ -452,6 +525,144 @@ def compute_step_lengths(
         ]
 
     return step_lengths
+
+
+def _observed_cumulative(
+    positions: NDArray[np.float64], support: ObservationSupport
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Step lengths and observed cumulative distance over usable intervals.
+
+    Parameters
+    ----------
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+    support : ObservationSupport
+        Resolved from the same samples.
+
+    Returns
+    -------
+    steps : NDArray[np.float64], shape (n_samples - 1,)
+        Interval lengths; NaN on unusable intervals.
+    cumulative : NDArray[np.float64], shape (n_samples,)
+        Distance accumulated over usable intervals only, so it is flat across
+        every break. Defined for every sample, including those outside runs.
+    """
+    raw = compute_step_lengths(positions, metric="euclidean")
+    steps = np.where(support.interval_mask, raw, np.nan)
+    cumulative = np.r_[0.0, np.cumsum(np.where(support.interval_mask, raw, 0.0))]
+    return steps, cumulative
+
+
+def compute_cumulative_distance(
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+) -> CumulativeDistanceResult:
+    """
+    Compute observed distance travelled, never crossing a recording break.
+
+    Distance is added only over usable intervals: both samples have finite
+    coordinates, the time between them is at most ``max_gap``, they fall inside
+    one of ``epochs``, and no break is declared between them. A missing sample
+    or a break therefore splits the path into runs instead of adding the jump
+    across it or turning the total into NaN.
+
+    Parameters
+    ----------
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples,) or (n_samples, n_dims)
+        Positions in physical units. A 1-D array is one coordinate (for example
+        a linearized track). Rows with a non-finite coordinate are missing.
+    max_gap : float or None, default=0.5
+        Longest interval, in seconds, that counts as continuous observation.
+        ``None`` keeps every interval.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. An interval must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
+
+    Returns
+    -------
+    CumulativeDistanceResult
+        ``run_distance`` restarts at 0 at the start of each run;
+        ``cumulative_distance`` keeps adding across runs but never adds the
+        displacement across a break. Both are NaN for isolated samples (valid
+        positions with no usable interval). ``total_distance`` is NaN when no
+        interval was usable, which is different from ``0.0`` (observed and
+        stationary).
+
+    Raises
+    ------
+    ValueError
+        If ``times`` and ``positions`` are swapped or misaligned, ``times`` is
+        not strictly increasing, ``max_gap`` is not positive and finite or
+        ``None``, or ``break_before`` is not a Boolean array with one entry per
+        sample.
+
+    Notes
+    -----
+    Distance is Euclidean arclength over all coordinate columns, in the
+    positions' units. It is not geodesic distance; use
+    ``compute_step_lengths(metric="geodesic")`` for graph distance.
+
+    See Also
+    --------
+    compute_step_lengths : Per-step lengths without observation gating.
+
+    Examples
+    --------
+    Two recordings joined in one array; the 49 cm jump between them is not
+    travelled distance.
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import compute_cumulative_distance
+    >>> times = np.array([0.0, 0.1, 0.2, 0.3])
+    >>> positions = np.array([[0.0, 0.0], [1.0, 0.0], [50.0, 0.0], [51.0, 0.0]])
+    >>> new_recording = np.array([False, False, True, False])
+    >>> result = compute_cumulative_distance(
+    ...     times, positions, break_before=new_recording
+    ... )
+    >>> result.run_distance.tolist()
+    [0.0, 1.0, 0.0, 1.0]
+    >>> result.cumulative_distance.tolist()
+    [0.0, 1.0, 1.0, 2.0]
+    >>> result.total_distance
+    2.0
+    """
+    _, positions_arr, support = validated_observations(
+        times,
+        positions,
+        call="compute_cumulative_distance",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no distance was observed",
+    )
+    steps, cumulative = _observed_cumulative(positions_arr, support)
+    in_run = support.run_ids >= 0
+    bounds = support.run_sample_bounds
+    run_distance = np.full(cumulative.size, np.nan)
+    run_distance[in_run] = (
+        cumulative[in_run] - cumulative[bounds[support.run_ids[in_run], 0]]
+    )
+    return CumulativeDistanceResult(
+        step_lengths=steps,
+        run_distance=run_distance,
+        cumulative_distance=np.where(in_run, cumulative, np.nan),
+        run_ids=support.run_ids,
+        sample_valid=support.sample_valid,
+        run_sample_bounds=bounds,
+        run_time_bounds=support.run_time_bounds,
+        run_path_lengths=cumulative[bounds[:, 1]] - cumulative[bounds[:, 0]],
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+    )
 
 
 def _sample_dwell_times(

@@ -25,6 +25,7 @@ def recording():
     "name",
     [
         "approach_rate",
+        "compute_cumulative_distance",
         "compute_decision_analysis",
         "compute_goal_directed_metrics",
         "compute_path_efficiency",

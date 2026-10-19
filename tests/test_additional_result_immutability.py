@@ -17,7 +17,7 @@ from neurospatial.behavior.navigation import (
     SubgoalEfficiencyResult,
 )
 from neurospatial.behavior.segmentation import Run
-from neurospatial.behavior.trajectory import MSDResult
+from neurospatial.behavior.trajectory import CumulativeDistanceResult, MSDResult
 from neurospatial.decoding import DecodingSummary
 from neurospatial.decoding.assemblies import AssemblyDetectionResult, AssemblyPattern
 from neurospatial.decoding.trajectory import IsotonicFitResult, RadonDetectionResult
@@ -34,6 +34,21 @@ def env():
 
 
 CASES = [
+    (
+        CumulativeDistanceResult,
+        {
+            "step_lengths": np.ones(1),
+            "run_distance": np.array([0.0, 1.0]),
+            "cumulative_distance": np.array([0.0, 1.0]),
+            "run_ids": np.zeros(2, dtype=np.intp),
+            "sample_valid": np.ones(2, dtype=bool),
+            "run_sample_bounds": np.array([[0, 1]], dtype=np.intp),
+            "run_time_bounds": np.array([[0.0, 0.1]]),
+            "run_path_lengths": np.ones(1),
+            "max_gap": 0.5,
+            "epochs": np.array([[0.0, 1.0]]),
+        },
+    ),
     (
         DecodingSummary,
         {
