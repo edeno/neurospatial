@@ -221,13 +221,8 @@ print(f"Same distance ({n_shared} samples): at most {apart:.4f} cm apart")
 
 for name, (times, positions, recording_id) in sessions.items():
     path = resampled[name]
-    # compute_speed has no break_before: compute it in each recording
-    speed = np.concatenate(
-        [
-            compute_speed(times[recording_id == k], positions[recording_id == k])
-            for k in np.unique(recording_id)
-        ]
-    )
+    new_recording = np.r_[False, np.diff(recording_id) != 0]
+    speed = compute_speed(times, positions, break_before=new_recording)
     speed_at_samples = path.interpolate_signal(speed)
     # Feed the resampled path onward with its own breaks and no time-gap limit
     curvature = compute_planar_curvature(
@@ -261,7 +256,8 @@ the samples is 22.0 and 46.7 cm/s. The second is slightly below 47 cm/s
 because `compute_speed` smooths the velocity over 0.1 s, and averaging
 velocity directions around a curve shortens it. Use `interpolate_signal` for
 continuous signals such as speed or LFP amplitude; take labels and counts at
-`source_left`.
+`source_left`. `compute_speed` takes the same `break_before`, so speed is never
+smoothed across the join.
 
 **Path shape.** `compute_planar_curvature` measures how sharply the path
 bends, in 1/cm: 1/40 = 0.025 /cm on this track. On the resampled paths the
@@ -300,8 +296,11 @@ limit would break the path where the animal was merely slow; the run starts in
   example with one `epochs` window per lap or trial that begins where the lap
   or trial begins.
 - Build `break_before` from your recording or epoch IDs:
-  `break_before = np.r_[False, recording_id[1:] != recording_id[:-1]]`. A gap
-  in the clock longer than `max_gap` breaks the path on its own.
+  `break_before = np.r_[False, recording_id[1:] != recording_id[:-1]]`. Pass
+  the same array to every function that takes `break_before`, such as
+  `compute_speed`, `traveled_path_length`, `compute_path_efficiency`,
+  `compute_cumulative_distance`, `resample_by_distance` and the planar turning
+  functions. A gap in the clock longer than `max_gap` breaks the path on its own.
 - Choose `spacing` in the units of your positions (cm here), at the distance
   scale of your question.
 - When feeding a resampled path into another time-and-position function, pass

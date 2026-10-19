@@ -32,6 +32,22 @@
   increasing, and a 1-D `positions` is one coordinate, such as a linearized
   track.
 
+- `compute_path_efficiency` follows the same observation rule as
+  `traveled_path_length`, and takes `break_before` for joined recordings.
+
+  ```python
+  # before (v0.6.0): distance summed across pauses and joins; a lost frame made it NaN
+  result = compute_path_efficiency(env, positions, times, goal)
+  # after
+  result = compute_path_efficiency(env, times, positions, goal, break_before=new_recording)
+  ```
+
+  `traveled_length` counts only usable intervals (as `traveled_path_length`
+  does) and is `nan` with no observed travel; a single sample used to give
+  `0.0`. `efficiency` and `angular_efficiency` are `nan` unless the whole path
+  was observed; a single sample used to give `angular_efficiency = 1.0`.
+  `times` must be strictly increasing, and empty input raises.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
@@ -787,7 +803,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - Speed is one definition everywhere: the velocity vector smoothed with a
   0.1 s Gaussian (spyglass's default, as in non_local_detector's
   `get_velocity`), then its magnitude. New `neurospatial.behavior.compute_speed`
-  returns it. Every `min_speed` gate uses it: rate maps and their significance
+  returns it. It takes `break_before` to declare recording joins on one clock,
+  never smooths across a declared break, a lost frame, a gap longer than
+  `max_gap` or an `epochs` edge, and needs strictly increasing, non-empty
+  `times`. Every `min_speed` gate uses it: rate maps and their significance
   tests, `decode_session`, `segment_by_velocity`, `heading_from_velocity`,
   `heading_direction_labels`, and the decision, VTE and goal metrics. Before,
   speed came from differencing raw positions, so tracking jitter read as
@@ -2838,9 +2857,6 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   headings, and the two-epoch dwell totals 200 seconds instead of charging the
   pause to a bin. Entirely excluded speed windows return NaN without reduction
   warnings. Samples outside runs have NaN curvature and stationary labels.
-  `compute_path_efficiency` reports NaN traveled length, efficiency and angular
-  efficiency when any interval is unobserved. Shortest length and wall-clock
-  time efficiency/time-to-goal retain their existing meanings.
 - **Breaking:** `heading_from_velocity(times, positions)` replaces scalar `dt`, validates
   finite, strictly increasing aligned timestamps, and computes velocity,
   smoothing and circular interpolation separately per observed run. The

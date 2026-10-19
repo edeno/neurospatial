@@ -100,3 +100,87 @@ def test_rate_maps_and_compute_speed_share_one_definition():
 def test_velocity_segments_ignore_jitter_at_rest():
     times, positions = _still(30.0)
     assert segment_by_velocity(times, positions, 4.0) == []
+
+
+def test_speed_matches_rate_map_gate_with_missing_rows_and_gaps():
+    from neurospatial.encoding._spatial_counts import resolve_speed
+
+    times = np.r_[np.arange(0, 4, 1 / 30), 10 + np.arange(0, 4, 1 / 30)]
+    rng = np.random.default_rng(2)
+    positions = np.column_stack([20 * times, np.zeros_like(times)])
+    positions = positions + rng.normal(0, JITTER_CM, positions.shape)
+    positions[[7, 8, 200]] = np.nan
+    np.testing.assert_array_equal(
+        compute_speed(times, positions),
+        resolve_speed(times, positions, None, min_speed=1.0, max_gap=0.5),
+    )
+
+
+def test_epochs_speed_equals_speed_of_the_selected_samples():
+    times = np.arange(0, 4, 1 / 30)
+    _, positions = _running(30.0, seconds=4.0)
+    result = compute_speed(times, positions, epochs=(1.01, 2.99))
+    inside = (times > 1.01) & (times < 2.99)
+    assert np.isnan(result[~inside]).all()
+    np.testing.assert_array_equal(
+        result[inside], compute_speed(times[inside], positions[inside])
+    )
+
+
+def test_missing_row_is_nan_and_splits_the_run():
+    times = np.arange(10) / 4
+    x = np.arange(10.0)
+    x[5] = np.nan
+    np.testing.assert_array_equal(
+        compute_speed(times, x, smooth_window=0.0),
+        [4, 4, 4, 4, 4, np.nan, 4, 4, 4, 4],
+    )
+
+
+def test_lone_sample_has_no_speed():
+    np.testing.assert_array_equal(
+        compute_speed(np.array([0.0]), np.array([[1.0, 2.0]])), [np.nan]
+    )
+
+
+def test_declared_break_equals_separate_calls():
+    """A declared break keeps two recordings on one clock from smoothing together."""
+    t_a, p_a = _running(30.0, seconds=2.0, seed=1)
+    t_b, p_b = _running(30.0, seconds=2.0, seed=3)
+    times = np.r_[t_a, t_a[-1] + 1 / 30 + t_b]
+    positions = np.r_[p_a, p_b + np.array([0.0, 30.0])]  # put back 30 cm away
+    n = len(t_a)
+    new_recording = np.arange(len(times)) == n
+    joined = compute_speed(times, positions, break_before=new_recording)
+    # Slice the same arrays: re-zeroing the second clock changes the time
+    # differences by rounding, so the comparison would no longer be exact.
+    np.testing.assert_array_equal(
+        joined,
+        np.r_[
+            compute_speed(times[:n], positions[:n]),
+            compute_speed(times[n:], positions[n:]),
+        ],
+    )
+    around_join = slice(n - 10, n + 10)
+    assert np.nanmax(compute_speed(times, positions)[around_join]) > 60
+    assert np.nanmax(joined[around_join]) < 30
+
+
+def test_repeated_timestamp_raises():
+    times = np.array([0.0, 0.1, 0.1, 0.2])
+    with pytest.raises(ValueError, match="strictly increasing"):
+        compute_speed(times, np.arange(8.0).reshape(4, 2))
+
+
+def test_malformed_break_before_raises():
+    times = np.arange(5) / 10
+    with pytest.raises(ValueError, match="Boolean array"):
+        compute_speed(
+            times, np.arange(10.0).reshape(5, 2), break_before=np.zeros(5, dtype=int)
+        )
+
+
+def test_negative_smooth_window_raises():
+    times = np.arange(5) / 10
+    with pytest.raises(ValueError, match="smooth_window must be a finite number"):
+        compute_speed(times, np.arange(10.0).reshape(5, 2), smooth_window=-0.1)
