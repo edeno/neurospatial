@@ -856,7 +856,9 @@ def heading_from_velocity(
         Minimum speed threshold in **the same units per second as
         ``positions``** (e.g. cm/s if positions are in cm). Samples slower
         than this have no heading (NaN). Samples with zero speed have no
-        heading at any threshold.
+        heading at any threshold. The velocity is smoothed, so at the default
+        of 0 most of a short stop still has a heading; set ``min_speed`` (for
+        example 2 cm/s) to mark stops as having no heading.
     smooth_window : float, default 0.1
         Standard deviation, in seconds, of the Gaussian that smooths the
         velocity before its direction and speed are taken, the same
@@ -996,14 +998,20 @@ def heading_from_velocity(
     if in_run.any() and not moving.any():
         fastest = float(np.max(speed[in_run]))
         if not allow_all_nan:
+            fix = (
+                "lower min_speed in position-units per second, or pass "
+                "allow_all_nan=True for a batch pipeline that handles NaN."
+                if min_speed > 0
+                else "the animal never moves, so pass allow_all_nan=True for a "
+                "batch pipeline that handles NaN, or use "
+                "heading_from_body_orientation() with pose keypoints."
+            )
             raise ValueError(
                 f"Cannot compute heading: every observed sample's speed is "
                 f"below min_speed={min_speed} or zero (the fastest is "
                 f"{fastest:.4g}).\n"
                 "Why: velocity direction is undefined for an all-stationary "
-                "or too-slow trajectory.\n"
-                "Fix: lower min_speed in position-units per second, or pass "
-                "allow_all_nan=True for a batch pipeline that handles NaN."
+                f"or too-slow trajectory.\nFix: {fix}"
             )
         warnings.warn(
             f"Every observed sample's speed (max {fastest:.4g}) is below "

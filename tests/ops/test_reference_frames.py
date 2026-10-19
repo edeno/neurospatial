@@ -42,11 +42,12 @@ def test_slow_samples_have_no_heading_in_either_run(two_epoch_recording):
     positions = np.c_[
         np.r_[0, 1, 2, 2, 2, 2, np.full(6, 20)], np.r_[np.zeros(6), np.arange(6)]
     ]
-    # Unsmoothed, the first run moves East for three samples, then stands still
-    # (speed 0 at samples 3-5); the second run moves North throughout.
-    headings = heading_from_velocity(times, positions, min_speed=5.0, smooth_window=0.0)
-    np.testing.assert_allclose(headings[:3], 0.0, atol=0)
-    assert np.isnan(headings[3:6]).all()
+    # Smoothed speed in the first run falls from 32.7 to 13.7 cm/s as the
+    # animal stops; samples 4-5 are below 20 cm/s. The second run moves North
+    # at 50 cm/s throughout.
+    headings = heading_from_velocity(times, positions, min_speed=20.0)
+    np.testing.assert_allclose(headings[:4], 0.0, atol=0)
+    assert np.isnan(headings[4:6]).all()
     np.testing.assert_allclose(headings[6:], np.pi / 2, atol=0)
 
 
@@ -143,19 +144,20 @@ def test_heading_rejects_bad_break_before(break_before):
 
 
 @pytest.mark.parametrize(
-    "times",
+    ("times", "labels_why"),
     [
-        np.array(0.1),
-        np.zeros((3, 1)),
-        np.array([0.0, 0.1]),
-        np.array([0.0, 0.0, 0.1]),
-        np.array([0.2, 0.1, 0.0]),
-        np.array([0.0, np.nan, 0.2]),
-        np.array([0.0, np.inf, 0.2]),
-        np.array(["zero", "one", "two"]),
+        (np.array(0.1), True),
+        (np.zeros((3, 1)), True),
+        (np.array([0.0, 0.1]), True),
+        # The shared repeated-timestamp message states why without a label.
+        (np.array([0.0, 0.0, 0.1]), False),
+        (np.array([0.2, 0.1, 0.0]), True),
+        (np.array([0.0, np.nan, 0.2]), True),
+        (np.array([0.0, np.inf, 0.2]), True),
+        (np.array(["zero", "one", "two"]), True),
     ],
 )
-def test_heading_from_velocity_rejects_bad_times(times):
+def test_heading_from_velocity_rejects_bad_times(times, labels_why):
     from neurospatial.ops.egocentric import heading_from_velocity
 
     positions = np.c_[[0.0, 1.0, 2.0], np.zeros(3)]
@@ -163,6 +165,7 @@ def test_heading_from_velocity_rejects_bad_times(times):
         heading_from_velocity(times, positions)
     message = str(caught.value)
     assert "times" in message
+    assert ("Why:" in message) is labels_why
     assert "Fix:" in message
 
 
@@ -832,6 +835,23 @@ class TestHeadingFromVelocity:
                 allow_all_nan=True,
             )
         assert np.all(np.isnan(headings))
+
+    def test_still_recording_fix_does_not_suggest_lowering_zero_min_speed(self):
+        """At min_speed=0 the only remedies are allow_all_nan or a pose heading."""
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        positions = np.zeros((10, 2))
+        times = np.arange(10) * 0.1
+        with pytest.raises(ValueError, match="or zero") as caught:
+            heading_from_velocity(times, positions)
+        fix = str(caught.value).split("Fix:")[1]
+        assert "lower min_speed" not in fix
+        assert "allow_all_nan=True" in fix
+        assert "heading_from_body_orientation" in fix
+
+        with pytest.raises(ValueError) as caught:
+            heading_from_velocity(times, positions, min_speed=2.0)
+        assert "lower min_speed" in str(caught.value).split("Fix:")[1]
 
     def test_single_sample_has_no_heading(self):
         """One sample has a position but no movement, so its heading is NaN."""
