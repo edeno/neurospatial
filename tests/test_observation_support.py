@@ -330,3 +330,37 @@ def test_signals_refuse_integers_float64_cannot_hold(dtype):
 def test_signals_accept_integers_at_the_float64_limit():
     sig = np.array([-(2**53), 2**53, 0, 1, 2], dtype=np.int64)
     _signals(signals=sig)
+
+
+def test_interval_gates_ignore_sample_validity():
+    """``interval_mask == interval_gates & valid[:-1] & valid[1:]``."""
+    times = np.array([0.0, 0.1, 0.2, 0.3, 1.5, 1.6, 1.7, 1.8])
+    positions = np.c_[np.arange(8.0), np.zeros(8)]
+    positions[1] = np.nan
+    break_before = np.zeros(8, dtype=bool)
+    break_before[6] = True
+    s = validated_observations(
+        times,
+        positions,
+        call="f",
+        max_gap=0.5,
+        epochs=None,
+        break_before=break_before,
+        result="r",
+    )[2]
+    # gap after sample 3 (1.2 s) and the break before sample 6 close gates;
+    # the NaN row does not.
+    np.testing.assert_array_equal(
+        s.interval_gates, [True, True, True, False, True, False, True]
+    )
+    np.testing.assert_array_equal(
+        s.interval_mask,
+        s.interval_gates & s.sample_valid[:-1] & s.sample_valid[1:],
+    )
+    assert s.interval_mask.sum() < s.interval_gates.sum()
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_interval_gates_shape(n):
+    s = _support(np.arange(n, dtype=float) * 0.1)
+    assert s.interval_gates.shape == (max(n - 1, 0),)

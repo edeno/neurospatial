@@ -113,7 +113,7 @@ neurospatial.behavior.heading_direction_labels(positions=None, times=None, *, sp
 neurospatial.behavior.in_epochs(t, epochs, *, closed='both')
 neurospatial.behavior.instantaneous_goal_alignment(times, positions, goal, *, min_speed, max_gap=0.5, epochs=None)
 neurospatial.behavior.laps_to_direction_labels(laps, times, *, unknown_label='other')
-neurospatial.behavior.mean_square_displacement(times, positions, *, metric='euclidean', env=None, max_tau=None)
+neurospatial.behavior.mean_square_displacement(times, positions, *, metric='euclidean', env=None, max_tau=None, epochs=None, break_before=None)
 neurospatial.behavior.normalize_vte_scores(head_sweeps, speeds)
 neurospatial.behavior.path_progress(position_bins, env, *, start_bins, goal_bins, metric='geodesic')
 neurospatial.behavior.pre_decision_heading_stats(times, positions, *, min_speed, max_gap=0.5, epochs=None)

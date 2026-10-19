@@ -473,9 +473,7 @@ _msd = mean_square_displacement(
 tau_values, msd_values = _msd.lags, _msd.msd
 
 # OR: Geodesic distance for constrained environments
-# tau_geo, msd_geo = mean_square_displacement(
-#     positions, times, metric="geodesic", env=env, max_tau=10.0
-# )
+# _msd_geo = mean_square_displacement(times, positions, metric="geodesic", env=env, max_tau=10.0)
 
 # Fit power law: MSD ~ τ^α
 log_tau = np.log(tau_values[1:])

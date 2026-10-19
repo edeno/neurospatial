@@ -73,6 +73,26 @@
   from being turned or smoothed across the join, and repeated timestamps
   raise. Recordings without gaps give the same values as before.
 
+- `mean_square_displacement` follows the same observation rule and takes
+  `epochs` and `break_before`:
+  `mean_square_displacement(times, positions, *, metric="euclidean", env=None,
+  max_tau=None, epochs=None, break_before=None)`.
+
+  ```python
+  # before: displacement pairs spanned the join between recordings
+  msd = mean_square_displacement(times, positions, max_tau=10.0)
+  # after
+  msd = mean_square_displacement(times, positions, max_tau=10.0, break_before=new_recording)
+  ```
+
+  No displacement pair spans a declared break or an interval outside
+  `epochs`. There is no `max_gap`: MSD compares two observed positions a lag
+  apart and does not integrate along the path, so samples missing between them
+  do not change it. Repeated timestamps and empty input raise (a repeated
+  timestamp used to be accepted), and a 1-D `positions` is one coordinate. A
+  single sample returns an empty result. Recordings without breaks give the
+  same values as before.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).

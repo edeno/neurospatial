@@ -1338,12 +1338,14 @@ def compute_home_range(
 
 
 def mean_square_displacement(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
     *,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
     max_tau: float | None = None,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> MSDResult:
     """
     Compute mean square displacement (MSD) from continuous trajectory positions.
@@ -1355,10 +1357,11 @@ def mean_square_displacement(
 
     Parameters
     ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps corresponding to each sample in the trajectory.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions in continuous space.
+    times : array-like, shape (n_samples,)
+        Strictly increasing timestamps in seconds, one per sample.
+    positions : array-like, shape (n_samples, n_dims) or (n_samples,)
+        Trajectory positions in continuous space. A 1-D array is one
+        coordinate. Rows with a non-finite coordinate are missing.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
         - "euclidean": Straight-line distance (ecology standard, most accurate).
@@ -1373,6 +1376,14 @@ def mean_square_displacement(
         Maximum lag time to compute. If None, uses half the total duration.
         Recommended: use max_tau ≤ T/4 where T is total duration, to ensure
         sufficient samples for reliable averaging.
+    epochs : array-like, shape (n_epochs, 2), optional
+        ``(start, stop)`` windows in seconds. A displacement pair is used only
+        when both samples lie in the same window; touching windows merge.
+        ``None`` uses the whole recording.
+    break_before : array of bool, shape (n_samples,), optional
+        True at sample ``k`` declares a recording break between samples
+        ``k - 1`` and ``k``. No pair spans a break. Use it when the
+        positions of two recordings are joined in one array.
 
     Returns
     -------
@@ -1385,11 +1396,15 @@ def mean_square_displacement(
     ------
     ValueError
         If metric="geodesic" but env is None.
-        If positions and times have different lengths.
-        If positions is not a 2D array.
-        If times contains non-finite values.
-        If the median consecutive time step is <= 0 (all-duplicate or
-        non-increasing timestamps), which would make the lag grid undefined.
+        If there are no samples, or positions and times have different lengths.
+        If times are not finite and strictly increasing (a repeated timestamp
+        raises).
+        If ``break_before`` is not a Boolean array with one entry per sample.
+
+    Warns
+    -----
+    UserWarning
+        If ``epochs`` leaves no displacement pair observed.
 
     Notes
     -----
@@ -1405,7 +1420,15 @@ def mean_square_displacement(
     Each target time is matched to the nearest recorded sample within half
     the median sample interval. Targets beyond the recording are excluded.
     Pairs with missing positions are excluded; geodesic pairs additionally
-    require both positions to be inside the environment and connected.
+    require both positions to be inside the environment and connected. A pair
+    is also excluded when a declared ``break_before`` or an ``epochs`` edge
+    lies between its two samples. A single sample returns an empty result.
+
+    There is no ``max_gap``. MSD compares two observed positions a lag apart
+    and does not integrate along the path, so samples missing between them do
+    not change the displacement. A gap matters only when the two positions are
+    not in the same coordinate frame, which is what ``break_before`` and
+    ``epochs`` declare.
 
     **Movement classification from scaling exponent**:
 
@@ -1465,6 +1488,16 @@ def mean_square_displacement(
     >>> alpha = np.polyfit(log_tau, log_msd, 1)[0]  # doctest: +SKIP
     >>> print(f"Diffusion exponent: {alpha:.2f}")  # doctest: +SKIP
     Diffusion exponent: 1.02  # ≈ 1.0 (diffusive motion)
+    >>>
+    >>> # Two recordings joined in one array: declare the join so no
+    >>> # displacement pair spans it.
+    >>> times = np.arange(10.0)
+    >>> positions = np.c_[[0, 1, 2, 3, 4, 100, 101, 102, 103, 104], np.zeros(10)]
+    >>> new_recording = np.arange(10) == 5
+    >>> mean_square_displacement(
+    ...     times, positions, max_tau=3.0, break_before=new_recording
+    ... ).msd
+    array([1., 4., 9.])
 
     References
     ----------
@@ -1477,18 +1510,15 @@ def mean_square_displacement(
            Physical Review E, 87(5), 052713.
     .. [4] Traja documentation: https://traja.readthedocs.io/
     """
-    # Coerce array-likes (e.g. Python lists) before any .ndim access.
-    from neurospatial._validation import validate_times_positions
-
-    times, positions = validate_times_positions(
-        times, positions, call="mean_square_displacement"
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="mean_square_displacement",
+        max_gap=None,
+        epochs=epochs,
+        break_before=break_before,
+        result="no displacement pair was observed",
     )
-    # Input validation
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
-        )
-
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
 
@@ -1499,6 +1529,8 @@ def mean_square_displacement(
         )
 
     n_samples = len(positions)
+    if n_samples < 2:
+        return MSDResult(lags=np.empty(0), msd=np.empty(0))
 
     # Determine lag times to compute
     if max_tau is None:
@@ -1506,17 +1538,8 @@ def mean_square_displacement(
 
     # Find all unique time differences up to max_tau
     time_diffs = np.diff(times)
-    # Create lag times by accumulating time differences. Use the median delta as
-    # the typical time step; reject records whose typical step is not positive
-    # (all-duplicate or non-increasing timestamps), which would make the lag grid
-    # ill-defined (ZeroDivisionError or negative n_lags).
+    # The resolver guarantees strictly increasing times, so dt > 0.
     dt = float(np.median(time_diffs))  # Typical time step
-    if dt <= 0:
-        raise ValueError(
-            f"times must be increasing: the median consecutive time step is "
-            f"{dt!r} (<= 0), so the lag grid is undefined. Sort and "
-            f"de-duplicate timestamps before calling."
-        )
     n_lags = int(max_tau / dt)
     n_lags = max(1, min(n_lags, n_samples // 2))  # At least 1, at most n_samples/2
 
@@ -1546,7 +1569,10 @@ def mean_square_displacement(
         )
 
     sample_indices = np.arange(n_samples)
-    finite_positions = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
+    finite_positions = support.sample_valid
+    # Segments are separated by declared breaks and epoch edges; a pair is
+    # valid only inside one segment.
+    segment = np.r_[0, np.cumsum(~support.interval_gates)]
     # Adding a lag can round an observed endpoint one timestamp ULP upward.
     # Allow that roundoff without extending support by the matching tolerance.
     recording_stop = np.nextafter(times[-1], np.inf)
@@ -1566,6 +1592,7 @@ def mean_square_displacement(
             & (time_errors < dt / 2)
             & finite_positions
             & finite_positions[future_idx]
+            & (segment == segment[future_idx])
         )
 
         if metric == "euclidean":
