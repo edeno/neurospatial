@@ -351,6 +351,29 @@ class TestPathEfficiency:
         assert np.isnan(eff)
 
 
+class TestPathEfficiencyObservedSupport:
+    """Gap-free traveled length is the plain sum of step lengths."""
+
+    @pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+    def test_gap_free_lengths_equal_step_length_sum(self, continuous_recording, metric):
+        from neurospatial.behavior.navigation import (
+            angular_efficiency,
+            compute_path_efficiency,
+        )
+        from neurospatial.behavior.trajectory import compute_step_lengths
+
+        r = continuous_recording
+        goal = r.positions[-1]
+        result = compute_path_efficiency(
+            r.env, r.times, r.positions, goal, metric=metric
+        )
+        assert result.traveled_length == float(
+            np.sum(compute_step_lengths(r.positions, metric=metric, env=r.env))
+        )
+        assert result.efficiency == result.shortest_length / result.traveled_length
+        assert result.angular_efficiency == angular_efficiency(r.positions, goal)
+
+
 class TestAngularEfficiency:
     """Test angular_efficiency function."""
 
