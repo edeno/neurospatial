@@ -738,7 +738,25 @@ class _UnitRates:
             subplot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
             subplot.auto_scale()
             frame_view(subplot, env)
-        subplot.title = "click a spike to show its unit's rate map"
+        self.clear()
+
+    def clear(self) -> None:
+        """Show no unit."""
+        if self.raster is not None:
+            self.raster.highlight(None)
+        self.raster = None
+        if self.extents is not None:
+            self.line.data = np.full(self.line.data[:].shape, np.nan, np.float32)
+        else:
+            self.field.update(np.full(len(self.field.values), np.nan))
+        self.subplot.title = "click a unit's row, or press Up or Down, for its rate map"
+
+    def step(self, rasters: Sequence[_Raster], direction: int) -> None:
+        """Show the unit one row up (1) or down (-1), from the bottom row."""
+        raster = self.raster or next(r for r in rasters if r.data.rates is not None)
+        row = -1 if self.raster is None else raster.selected
+        n_rows = len(raster.data.spike_times)
+        self.show(raster, int(np.clip(row + direction, 0, n_rows - 1)))
 
     def show(self, raster: _Raster, row: int) -> None:
         """Show the rate map of ``row`` in ``raster``, and highlight it there."""
@@ -759,7 +777,7 @@ class _UnitRates:
             self.field.scale = ColorScale(self.cmap, 0.0, top, "lightgray")
             self.field.update(rates)
         self.subplot.title = (
-            f"unit {raster.data.unit_ids[row]}: rate map, peak {peak:.3g} Hz"
+            f"unit {raster.data.unit_ids[row]}: rate map, 0 to {peak:.3g} Hz"
         )
 
 
@@ -767,8 +785,9 @@ class _Raster:
     """Spikes as ticks, a row per unit, around the slider's time.
 
     Every spike is drawn once, as a vertical segment most of its row's
-    height; the view follows the time. With rate maps, clicking a unit's
-    row shows its map in ``rates`` and highlights the unit's spikes.
+    height; the view follows the time. Hovering anywhere in a row names its
+    unit. With rate maps, clicking a unit's row shows its map in ``rates``
+    and marks the unit: its spikes highlighted and its row striped.
     """
 
     def __init__(
@@ -781,6 +800,7 @@ class _Raster:
         rates: _UnitRates | None,
     ) -> None:
         self.data, self.start, self.rates = data, start, rates
+        self.selected: int = -1
         counts = [len(train) for train in data.spike_times]
         self.row = np.repeat(np.arange(len(counts)), counts)
         self.times = np.concatenate(data.spike_times)
@@ -795,18 +815,41 @@ class _Raster:
             segments, colors=self._colors(None), thickness=data.linewidth
         )
         self.ticks.tooltip_format = self.describe
+        # A band behind each row, far past any time: hovering it names the
+        # unit, and the chosen unit's is striped.
+        n_rows = len(counts)
+        reach = np.full(n_rows, 1e6)
+        rows = np.arange(n_rows, dtype=np.float64)
+        bands = _fans(_rectangles(-reach, reach, rows - 0.5, rows + 0.5), 4)
+        positions = bands.positions.copy()
+        positions[:, 2] = -0.5  # behind the ticks, before epochs
+        self.bands = subplot.add_mesh(
+            positions,
+            bands.triangles,
+            mode="basic",
+            colors=self._band_colors(),
+            alpha_mode="blend",
+        )
+        self.bands.tooltip_format = self.describe_row
         if rates is not None and data.rates is not None:
             # The whole row answers a click, not only its thin ticks.
             subplot.renderer.add_event_handler(self.clicked, "click")
         self.view = _TimeWindow(subplot, window, move_to)
-        subplot.title = f"spikes, {len(counts)} units"
-        subplot.y_range = (-0.5, len(counts) - 0.5)
+        subplot.title = f"spikes, {n_rows} units"
+        subplot.y_range = (-0.5, n_rows - 0.5)
+        # Its ticks would number the rows, not name the units: hover names them.
+        subplot.axes.y.visible = False
 
     def describe(self, pick_info: dict[str, Any]) -> str:
         """The tooltip for the spike under the pointer."""
         spike = int(pick_info["vertex_index"]) // 3
         unit = self.data.unit_ids[self.row[spike]]
         return f"unit {unit}\nt = {self.times[spike]:.4f} s"
+
+    def describe_row(self, pick_info: dict[str, Any]) -> str:
+        """The tooltip for a row, away from its spikes."""
+        row = int(pick_info["face_index"]) // 2
+        return f"unit {self.data.unit_ids[row]}"
 
     def clicked(self, event: Any) -> None:
         """Show the unit of the row clicked, if the click is in this panel."""
@@ -825,9 +868,20 @@ class _Raster:
             colors[np.repeat(self.row == row, 3)] = _rgba(_SELECTED_COLOR)
         return colors
 
+    def _band_colors(self) -> NDArray[np.float32]:
+        """Each row's band: barely there, and the chosen row's striped."""
+        colors = np.zeros((4 * len(self.data.spike_times), 4), dtype=np.float32)
+        colors[:, :3] = 1.0
+        colors[:, 3] = 0.01  # enough to be picked
+        if self.selected >= 0:
+            colors[4 * self.selected : 4 * self.selected + 4, 3] = 0.12
+        return colors
+
     def highlight(self, row: int | None) -> None:
-        """Color the spikes of ``row``; None for none."""
+        """Mark the unit of ``row``; None for none."""
+        self.selected = -1 if row is None else row
         self.ticks.colors = self._colors(row)
+        self.bands.colors = self._band_colors()
 
 
 def _field_stacks(
@@ -1069,6 +1123,8 @@ class FastplotlibAnimation:
       (``EpochOverlay``) or event (``EventOverlay``).
     - ``[`` and ``]``: halve or double the window of every panel drawn
       against time.
+    - Up and Down arrows: the unit one row up or down in a spike raster
+      with rate maps; Escape: no unit.
 
     Parameters
     ----------
@@ -1351,6 +1407,7 @@ class FastplotlibAnimation:
             for name in time_panels[1:]:
                 self.figure[name].docks["right"].size = COLORBAR_WIDTH
         unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
+        self._unit = unit
         self._rasters = [
             _Raster(
                 self.figure[f"raster {i}"],
@@ -1419,6 +1476,10 @@ class FastplotlibAnimation:
             self._jump(-1 if "Shift" in event.modifiers or key == "N" else 1)
         elif key in ("[", "]"):
             self._scale_windows(0.5 if key == "[" else 2.0)
+        elif key in ("ArrowUp", "ArrowDown") and self._unit is not None:
+            self._unit.step(self._rasters, 1 if key == "ArrowUp" else -1)
+        elif key == "Escape" and self._unit is not None:
+            self._unit.clear()
 
     def _jump(self, direction: int) -> None:
         """Move to the next (1) or previous (-1) epoch start or event."""

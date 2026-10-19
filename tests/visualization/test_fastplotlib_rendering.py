@@ -646,7 +646,7 @@ def test_clicking_a_units_row_shows_its_rate_map(apparatus, walk, track, decoded
     # Between the ticks of the bottom row, unit 1's.
     _click(animation.figure, animation.figure["raster 0"], t[30] + 0.3, -0.3)
     assert (
-        unit_panel.title.text == f"unit 1: rate map, peak {np.nanmax(rates[1]):.3g} Hz"
+        unit_panel.title.text == f"unit 1: rate map, 0 to {np.nanmax(rates[1]):.3g} Hz"
     )
     np.testing.assert_array_equal(layer.rates.field.values, rates[1])
     colors = layer.ticks.colors[:]
@@ -654,6 +654,25 @@ def test_clicking_a_units_row_shows_its_rate_map(apparatus, walk, track, decoded
     np.testing.assert_allclose(colors[3:9], np.tile(to_rgba("white"), (6, 1)))
     _click(animation.figure, animation._plot, 20.0, 20.0)  # the field: no change
     assert unit_panel.title.text.startswith("unit 1:")
+    # The chosen row is striped, not only recolored.
+    alpha = layer.bands.colors[:][:, 3].reshape(3, 4)[:, 0]
+    assert alpha[0] > 0.1 > alpha[1] == alpha[2] > 0
+    # Hovering anywhere in a row names its unit: the band is picked.
+    raster_panel = animation.figure["raster 0"]
+    x, y = raster_panel.map_world_to_screen((t[30] + 0.4, 2.0, 0))[:2]
+    animation.figure.canvas.draw()
+    info = animation.figure.renderer.get_pick_info((x, y))
+    assert info["world_object"] == layer.bands.world_object  # a weak proxy
+    assert layer.describe_row(info) == "unit 0"  # row 2: unit 0
+    # The keyboard chooses units too.
+    _press(animation.figure, "ArrowUp")
+    assert unit_panel.title.text.startswith("unit 2:")  # row 1
+    _press(animation.figure, "ArrowDown")
+    _press(animation.figure, "ArrowDown")  # stays on the bottom row
+    assert unit_panel.title.text.startswith("unit 1:")
+    _press(animation.figure, "Escape")
+    assert "click a unit's row" in unit_panel.title.text
+    assert (layer.bands.colors[:][:, 3] < 0.1).all()
 
     # On a track, the rate map is drawn against position along the track.
     times, _, fields = decoded

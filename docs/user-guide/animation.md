@@ -484,6 +484,8 @@ Keyboard shortcuts, with the figure focused (click it first):
 | Left / Right arrow | Previous or next frame, however unevenly spaced |
 | N / Shift+N | Start of the next or previous epoch or event |
 | `[` / `]` | Halve or double the window of every panel drawn against time |
+| Up / Down arrow | The unit one row up or down in a spike raster with rate maps |
+| Escape | No unit |
 
 Play and the step buttons move by a fixed time, short enough to reach every
 frame when frames are evenly spaced (camera jitter included). For frames with

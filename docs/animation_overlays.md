@@ -262,12 +262,14 @@ env.animate_fields(
 )
 ```
 
-`order` lists the units from the bottom row up. Hovering over a spike shows
-its unit's label (`unit_ids`, or the labels of a pynapple `TsGroup`) and time.
-With `rates`, one rate map per unit on the animated environment, clicking
-anywhere in a unit's row shows its rate map under the field (on a track, rate
-against position along it) and highlights its spikes, so you can check where
-each cell of a sequence has its field.
+`order` lists the units from the bottom row up. Hovering anywhere in a row
+shows its unit's label (`unit_ids`, or the labels of a pynapple `TsGroup`),
+and over a spike also its time. With `rates`, one rate map per unit on the
+animated environment, clicking anywhere in a unit's row, or the Up and Down
+arrow keys, shows its rate map under the field (on a track, rate against
+position along it) and marks the unit: its spikes highlighted and its row
+striped. Escape shows none. So you can check where each cell of a sequence
+has its field.
 Only `backend="fastplotlib"` draws rasters; the other backends skip them with
 a warning.
 

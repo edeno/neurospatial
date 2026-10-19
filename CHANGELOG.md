@@ -1257,8 +1257,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   a decoded posterior; on a maze, lines mark where segments meet and each
   is named by its nodes. `SpikeRasterOverlay` draws many units' spikes as a
   raster beside the field on the same clock, rows in a chosen order (by
-  place-field peak, say); with `rates=`, clicking a unit's row shows its rate
-  map under the field. Other backends skip it with a warning. Position,
+  place-field peak, say); hovering a row names its unit, and with `rates=`,
+  clicking a unit's row or pressing Up and Down shows its rate map and
+  stripes its row. Other backends skip it with a warning. Position,
   pose, head-direction, object-vector and video overlays with their own
   `times` move at their own sampling rate, so slow fields (a rate map per
   lap) do not freeze the animal or the camera between frames.
