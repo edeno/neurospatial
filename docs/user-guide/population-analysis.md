@@ -193,13 +193,32 @@ print("Map correlation, cells that moved their field:", np.round(per_cell[moves]
 def standardize(x):
     """Z-score each location's population vector across cells."""
     # A location where every cell has the same rate has zero spread and comes
-    # out NaN, so those bins drop out of the mean below.
-    return (x - x.mean(axis=0)) / x.std(axis=0)
+    # out NaN. Such a location has no defined correlation.
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return (x - x.mean(axis=0)) / x.std(axis=0)
 
 
-per_location = (standardize(before) * standardize(after)).mean(axis=0)
-print(f"Population-vector correlation per location: "
-      f"median {np.median(per_location):.2f}")
+def median_pv_correlation(x, y):
+    """Median population-vector correlation over locations where it is defined."""
+    per_location = (standardize(x) * standardize(y)).mean(axis=0)
+    defined = np.isfinite(per_location)
+    n_undefined = int((~defined).sum())
+    if not defined.any():
+        return np.nan, n_undefined
+    return float(np.median(per_location[defined])), n_undefined
+
+
+# Identical maps with one flat location: the flat one is skipped, the rest are 1.
+demo = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
+demo_median, demo_undefined = median_pv_correlation(demo, demo)
+assert demo_undefined == 1 and np.isclose(demo_median, 1.0)
+
+pv_median, n_undefined = median_pv_correlation(before, after)
+if np.isnan(pv_median):
+    print("Population-vector correlation is undefined: every location is flat.")
+else:
+    print(f"Population-vector correlation per location: median {pv_median:.2f} "
+          f"({n_undefined} of {before.shape[1]} locations undefined)")
 ```
 
 The cells that kept their field have map correlations of 0.99-1.00, and the
@@ -214,7 +233,10 @@ between two halves of the same condition before calling a change remapping.
 
 `field_overlap` asks the same question with field boundaries instead of rates:
 the Jaccard index of the bins inside a cell's fields in the two conditions
-(1 = same bins, 0 = no shared bin).
+(1 = same bins, 0 = no shared bin). Only bins with occupancy in both
+conditions (`shared`) count, because a bin one condition never visited cannot
+show whether a field is there. A cell with no field bin on shared bins in
+either condition has no defined overlap and gets NaN.
 
 ```python
 fields_before = population_coverage(env, maps["before"].firing_rates).place_fields
@@ -226,8 +248,24 @@ def field_bins(fields):
     return np.concatenate(list(fields)) if len(fields) else np.empty(0, dtype=np.int64)
 
 
+def shared_field_overlap(a, b, shared):
+    """Jaccard overlap of two cells' fields, counting only bins in `shared`.
+
+    NaN when the cell has no field bin on shared bins in either condition.
+    """
+    bins_a = np.intersect1d(field_bins(a), np.flatnonzero(shared))
+    bins_b = np.intersect1d(field_bins(b), np.flatnonzero(shared))
+    if len(bins_a) == 0 and len(bins_b) == 0:
+        return np.nan
+    return field_overlap(bins_a, bins_b)
+
+
+# Identical fields, but the second condition visited fewer bins: overlap is 1.
+demo_shared = np.array([True, True, True, False, False, False])
+assert shared_field_overlap([np.array([0, 1, 2, 3])], [np.array([0, 1, 2])], demo_shared) == 1.0
+
 overlap = np.array([
-    field_overlap(field_bins(a), field_bins(b))
+    shared_field_overlap(a, b, shared)
     for a, b in zip(fields_before, fields_after, strict=True)
 ])
 print("Field overlap, cells that kept their field:", np.round(overlap[~moves], 2))

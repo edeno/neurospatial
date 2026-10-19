@@ -701,6 +701,10 @@ def field_overlap(
     The Jaccard index is preferred over correlation for sparse binary fields
     because it's invariant to the number of non-field bins.
 
+    When comparing conditions, restrict both field bin sets to bins observed
+    in both conditions first; a bin one condition never visited cannot show
+    whether a field is there.
+
     References
     ----------
     .. [1] Muller, R. U., & Kubie, J. L. (1987). The effects of changes in
