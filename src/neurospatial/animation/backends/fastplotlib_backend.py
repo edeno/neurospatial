@@ -1115,6 +1115,48 @@ def _warn_undrawn_on_a_line(overlay_data: OverlayData) -> None:
 _MAX_STEPS = 100
 
 
+def _playback(
+    frame_step: float, overlay_interval: float, speed: float, max_steps: int
+) -> tuple[float, int]:
+    """The time each step moves, and the steps a second, to play at ``speed``.
+
+    Every field frame is visited: if that needs more than ``max_steps`` a
+    second, playback is slower, with a warning. Overlays with their own
+    samples are stepped through as finely as the speed allows. The step is
+    then shortened a little so the speed comes out exactly.
+
+    Parameters
+    ----------
+    frame_step : float
+        Seconds a step may move without passing over a frame.
+    overlay_interval : float
+        Typical sampling interval of the fastest overlay with its own times,
+        in seconds; infinite without one.
+    speed : float
+        Seconds of recording a second.
+    max_steps : int
+        The most steps a second.
+
+    Returns
+    -------
+    step : float
+    steps_per_second : int
+    """
+    played = min(speed, max_steps * frame_step)
+    if played < speed:
+        warnings.warn(
+            f"Playing every frame at speed {speed:g} needs "
+            f"{speed / frame_step:.0f} steps a second; the controls take at most "
+            f"{max_steps}, so it plays at speed {played:.2g}. Raise "
+            "max_playback_fps (up to 100), lower speed, or subsample the frames.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    step = min(frame_step, max(overlay_interval, played / max_steps))
+    steps_per_second = min(max(int(np.ceil(played / step - 1e-9)), 1), max_steps)
+    return played / steps_per_second, steps_per_second
+
+
 def _finest_interval(overlay_data: OverlayData | None) -> float:
     """The typical sampling interval of the fastest overlay with its own
     samples, in seconds; infinite without one."""
@@ -1274,8 +1316,14 @@ class FastplotlibAnimation:
     frame_times : ndarray of shape (n_frames,)
         Time of each frame, in seconds. A frame is shown from its time until
         the next frame's.
-    fps : float
-        Steps per second while playing; changeable in the controls.
+    speed : float, default=1.0
+        Playback speed, in seconds of recording a second. Play visits every
+        frame; overlays with their own times are sampled as finely as the
+        speed allows.
+    max_playback_fps : int, default=60
+        The most steps a second Play takes (fastplotlib allows 100). When
+        visiting every frame at ``speed`` needs more, it plays slower and
+        warns.
     cmap, vmin, vmax
         Colormap and its limits, shared by every field; limits default to
         the 1st percentile of the frames' minima and the 99th of their
@@ -1333,7 +1381,8 @@ class FastplotlibAnimation:
         fields: Sequence[Any] | NDArray[np.float64],
         *,
         frame_times: NDArray[np.float64],
-        fps: float,
+        speed: float = 1.0,
+        max_playback_fps: int = 60,
         cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -1373,15 +1422,13 @@ class FastplotlibAnimation:
                 "the seconds of fields shown in a track's position-by-time panel."
             )
         groups = _group_timeseries(overlay_data.timeseries if overlay_data else [])
-        step = playback_step(self._frame_times)
-        typical = float(np.median(np.diff(self._clock))) if self.n_frames > 1 else step
-        # Overlays with samples of their own play each sample too, as finely
-        # as the controls (at most 100 steps a second) allow at this speed.
-        seconds_per_second = fps * typical
-        step = min(
-            step,
-            max(_finest_interval(overlay_data), seconds_per_second / _MAX_STEPS),
+        step, steps_per_second = _playback(
+            playback_step(self._frame_times),
+            _finest_interval(overlay_data),
+            speed,
+            min(max_playback_fps, _MAX_STEPS),
         )
+        typical = float(np.median(np.diff(self._clock))) if self.n_frames > 1 else step
         extents_along_track = track_extents(env)
         several = len(stacks) > 1
         # On a 1-D environment the track panel shows all a field panel would,
@@ -1443,9 +1490,6 @@ class FastplotlibAnimation:
             controller_types=[controller] * n_spatial + ["panzoom"] * len(panels),
             size=(1100 if panels or several else 800, 760),
         )
-        # Playing moves one step per 1 / fps s (the box allows 1-100); a step
-        # shorter than the typical interval plays faster to keep the speed.
-        steps_per_second = min(max(round(seconds_per_second / step), 1), _MAX_STEPS)
         self.widget.ui_sliders._fps["time"] = steps_per_second
         self.widget.ui_sliders._frame_time["time"] = 1 / steps_per_second
         self.figure = self.widget.figure

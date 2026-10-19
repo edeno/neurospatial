@@ -648,7 +648,9 @@ def animate_fields(
     requested_fps = sample_rate_hz * speed
     was_capped_at_max = requested_fps > max_playback_fps
     was_capped_at_min = requested_fps < MIN_PLAYBACK_FPS
-    if was_capped_at_max or was_capped_at_min:
+    # fastplotlib steps by time and warns of its own limit; "auto" never
+    # chooses it.
+    if (was_capped_at_max or was_capped_at_min) and backend != "fastplotlib":
         cap_description = (
             f"Capped to {max_playback_fps} fps"
             if was_capped_at_max
@@ -859,7 +861,8 @@ def animate_fields(
             fields,
             overlay_data=overlay_data,
             frame_times=frame_times,
-            fps=playback_fps,
+            speed=speed,
+            max_playback_fps=max_playback_fps,
             **options,
         )
 
