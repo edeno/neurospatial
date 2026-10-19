@@ -4,6 +4,11 @@
 
 ### Breaking
 
+- `AnnotationResult` from `annotate_video` has four fields,
+  `(environment, regions, walls, landmarks)`; unpack it as
+  `env, regions, walls, landmarks = result` or use the attributes.
+  `RegionType` adds `"wall"` and `"landmark"`.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
@@ -741,6 +746,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   some bins are inactive (it was white on a full grid and dark gray
   otherwise), leaves inactive cells unfilled, and outlines a polygon grid's
   polygon instead of shading over the bins.
+- The `animation` extra allows napari 0.5 through 0.9 (`napari[all]>=0.5,<0.10`);
+  it was capped below 0.6. The napari tests pass on 0.9.2. The floor rises from
+  0.4.18 to 0.5, whose `border_color` names the animation and annotation code
+  already uses.
 
 - Speed is one definition everywhere: the velocity vector smoothed with a
   0.1 s Gaussian (spyglass's default, as in non_local_detector's
@@ -1242,6 +1251,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `Axes` for it; with `backend="fastplotlib"` they return the fastplotlib
   figure, and Matplotlib-only options raise a `TypeError`.
 
+- `annotate_video` draws walls and landmarks as well as the boundary, holes
+  and regions. Press M to reach wall mode, which switches to the path tool
+  (magenta), and landmark mode (orange), where the shape sets the kind: an
+  ellipse marks a point at its center (a reward port or a cue), a path a line
+  (a monitor), a polygon or rectangle an area (an object). The returned
+  environment holds the named walls, clipped to the boundary, and the
+  landmarks; `result.walls` and `result.landmarks` hold them too.
+
 - Landmarks: named cues, monitors, objects and reward ports, stored with the
   environment. `env.with_landmarks(Landmarks([Landmark("monitor", "line",
   [(10, 100), (90, 100)]), ...]))` attaches them; each is a point, a line or a
@@ -1673,6 +1690,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- `wall_fit="snap"` no longer fails for two kinds of walls: a wall that snaps
+  to a single bin edge (it raised "Cannot linemerge"), and a wall reaching a
+  slanted outline, whose snapped edges could leave the arena (it raised "lies
+  outside the arena domain"). Snapped walls are now kept to the arena;
+  environments that built before are unchanged.
+- The napari backend showed the wrong events after any jump larger than
+  `decay_frames`, forward or backward: moving to frame 1 from napari's
+  starting frame 99 showed frames 0-9 instead of 0-1, and frame 10 then
+  showed 90 events instead of 6, staying wrong until the end. Napari opens at
+  the middle frame, so the first move to the start triggered it. Visibility is
+  now the run of frame-sorted events the frame calls for, found by binary
+  search and updated where it changes, so any jump shows exactly the right
+  events.
 
 - The default smoothing bandwidth for an environment with no neighbor pairs and
   no metric units used each bin's measure to the power `1 / n_dims`, so a track

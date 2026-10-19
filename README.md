@@ -122,7 +122,7 @@ For animation features, install optional dependencies:
 
 ```bash
 # Napari backend (GPU-accelerated interactive viewer)
-pip install "napari[all]>=0.4.18,<0.6"
+pip install "napari[all]>=0.5,<0.10"
 
 # Jupyter widget backend (notebook integration)
 pip install "ipywidgets>=8.0,<9.0"

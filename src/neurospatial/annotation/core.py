@@ -22,10 +22,11 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import napari
     from numpy.typing import NDArray
-    from shapely.geometry import Polygon
+    from shapely.geometry import LineString, Polygon
 
     from neurospatial.annotation._boundary_inference import BoundaryConfig
     from neurospatial.environment import Environment
+    from neurospatial.landmarks import Landmarks
     from neurospatial.ops.transforms import VideoCalibration
     from neurospatial.regions import Regions
 
@@ -36,14 +37,23 @@ class AnnotationResult(NamedTuple):
     Attributes
     ----------
     environment : Environment or None
-        Discretized environment if boundary was annotated, else None.
+        Discretized environment if boundary was annotated, else None. It
+        holds the regions, the walls (clipped to the boundary) and the
+        landmarks.
     regions : Regions
         All annotated regions (excluding environment boundary).
+    walls : dict of str to LineString
+        Each drawn wall by name, as drawn. Pass them to
+        ``OpenArena(polygon, walls=walls)`` to build another environment.
+    landmarks : Landmarks
+        The drawn landmarks; attach them with ``env.with_landmarks``.
 
     """
 
     environment: Environment | None
     regions: Regions
+    walls: dict[str, LineString]
+    landmarks: Landmarks
 
 
 def annotate_video(
@@ -65,9 +75,12 @@ def annotate_video(
     """Launch interactive napari annotation on a video frame.
 
     Opens a napari viewer with the specified video frame. Users can draw
-    polygons to define an environment boundary and/or named regions.
-    After closing the viewer, annotations are converted to Regions and
-    optionally an Environment.
+    polygons to define an environment boundary and/or named regions, paths
+    for named walls, and named landmarks: an ellipse marks a point (a reward
+    port or a cue), a path a line (a monitor) and a polygon an area (an
+    object). Press M to cycle through these. After closing the viewer,
+    annotations are converted to Regions, walls and Landmarks, and optionally
+    an Environment that holds all of them.
 
     Parameters
     ----------
@@ -133,6 +146,8 @@ def annotate_video(
         Named tuple containing:
         - environment: Environment or None
         - regions: Regions collection
+        - walls: dict of wall name to LineString
+        - landmarks: Landmarks collection
 
     Raises
     ------
@@ -297,7 +312,7 @@ def _add_initial_regions(
 
     from neurospatial.annotation._helpers import (
         rebuild_features,
-        sync_face_colors_from_features,
+        sync_colors_from_features,
     )
 
     data = []
@@ -328,8 +343,8 @@ def _add_initial_regions(
         # Update features DataFrame using centralized builder
         shapes_layer.features = rebuild_features(roles, names)
 
-        # Sync face colors from features
-        sync_face_colors_from_features(shapes_layer)
+        # Sync colors from features
+        sync_colors_from_features(shapes_layer)
 
         # Note: Don't reset feature_defaults here - let the widget control the mode.
         # The widget's initial_mode determines what role/name new shapes will have.
@@ -725,11 +740,13 @@ def _process_annotation_results(
     from neurospatial.annotation.converters import (
         env_from_boundary_region,
         shapes_to_regions,
+        shapes_to_walls_and_landmarks,
     )
+    from neurospatial.landmarks import Landmarks
     from neurospatial.regions import Regions
 
     # Get annotation data from shapes layer
-    shapes_data, names, roles = get_annotation_data(shapes)
+    shapes_data, names, roles, shape_types = get_annotation_data(shapes)
     logger.debug(
         "Processing %d shapes: names=%s, roles=%s",
         len(shapes_data),
@@ -745,13 +762,19 @@ def _process_annotation_results(
             UserWarning,
             stacklevel=3,  # Points to annotate_video() caller
         )
-        return AnnotationResult(environment=None, regions=Regions([]))
+        return AnnotationResult(
+            environment=None, regions=Regions([]), walls={}, landmarks=Landmarks()
+        )
 
-    # Convert shapes to regions
+    walls, landmarks = shapes_to_walls_and_landmarks(
+        shapes_data, names, roles, shape_types, calibration=calibration
+    )
+    areas = [i for i, role in enumerate(roles) if role not in ("wall", "landmark")]
+    # Convert the area shapes to regions
     regions, env_boundary, holes = shapes_to_regions(
-        shapes_data,
-        names,
-        roles,
+        [shapes_data[i] for i in areas],
+        [names[i] for i in areas],
+        [roles[i] for i in areas],
         calibration=calibration,
         simplify_tolerance=simplify_tolerance,
         multiple_boundaries=multiple_boundaries,
@@ -781,18 +804,32 @@ def _process_annotation_results(
     if mode in ("environment", "both") and env_boundary is not None:
         assert bin_size is not None  # Validated earlier
         logger.debug("Building environment with bin_size=%s", bin_size)
-        environment = env_from_boundary_region(env_boundary, bin_size, holes=holes)
+        environment = env_from_boundary_region(
+            env_boundary, bin_size, holes=holes, walls=walls
+        )
         logger.debug(
             "Created environment with %d bins, attaching %d regions",
             environment.n_bins,
             len(regions),
         )
-        # Attach regions to environment
-        environment = environment.with_regions(regions)
+        # Attach regions and landmarks to environment
+        environment = environment.with_regions(regions).with_landmarks(landmarks)
+    elif walls:
+        warnings.warn(
+            f"{len(walls)} wall(s) were drawn but no environment was built, so "
+            "result.walls holds them unattached. Draw an environment boundary "
+            "with mode='both' or mode='environment' to apply them.",
+            UserWarning,
+            stacklevel=3,
+        )
 
     logger.debug(
-        "Annotation complete: environment=%s, regions=%d",
+        "Annotation complete: environment=%s, regions=%d, walls=%d, landmarks=%d",
         "created" if environment else "None",
         len(regions),
+        len(walls),
+        len(landmarks),
     )
-    return AnnotationResult(environment=environment, regions=regions)
+    return AnnotationResult(
+        environment=environment, regions=regions, walls=walls, landmarks=landmarks
+    )
