@@ -305,7 +305,7 @@ def test_summary_scalars_and_repr():
     )
     summary = result.summary()
     assert summary["n_events"] == 2
-    assert summary["n_events_excluded"] == 2
+    assert summary["n_events_dropped"] == 2
     assert summary["n_features"] == 1
     assert summary["n_relative_times"] == 4
     assert summary["window_start"] == -0.5

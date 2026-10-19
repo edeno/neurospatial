@@ -151,7 +151,7 @@ result = align_continuous_to_events(
 events = result.events_table()
 events["reward_time"] = reward_times
 print(events[events["status"] != "retained"])
-print(f"{result.n_events} rewards kept, {result.n_events_excluded} excluded")
+print(f"{result.n_events} rewards kept, {result.n_events_dropped} excluded")
 assert events.loc[events["reward_time"] == 36.0, "status"].item() == "incomplete_support"
 ```
 

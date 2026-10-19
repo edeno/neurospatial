@@ -32,7 +32,7 @@ def test_event_cohort_keeps_input_order_and_duplicates():
     np.testing.assert_array_equal(result.event_indices, [0, 1, 2])
     assert result.event_indices.dtype == np.intp
     assert result.n_events == 3
-    assert result.n_events_excluded == 1
+    assert result.n_events_dropped == 1
     assert result.values.shape == (3, 4, 1)
     np.testing.assert_array_equal(result.values[0], result.values[2])
     np.testing.assert_array_equal(result.values[1, :, 0], 1.0 + result.relative_times)

@@ -236,8 +236,8 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         return int(np.count_nonzero(self.event_status == "retained"))
 
     @property
-    def n_events_excluded(self) -> int:
-        """Number of input events that were excluded (see ``event_status``)."""
+    def n_events_dropped(self) -> int:
+        """Number of input events that were dropped (``event_status`` says why)."""
         return int(self.event_status.size - self.n_events)
 
     @property
@@ -508,7 +508,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         dict
-            ``n_events``, ``n_events_excluded``, ``n_features``,
+            ``n_events``, ``n_events_dropped``, ``n_features``,
             ``n_relative_times``, ``window_start``, ``window_stop`` (s),
             ``dt`` (s), ``window_coverage``, ``n_overlapping_events``,
             ``min_count`` (smallest supported-event count over cells) and
@@ -528,7 +528,7 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         """
         out: dict[str, Any] = {
             "n_events": self.n_events,
-            "n_events_excluded": self.n_events_excluded,
+            "n_events_dropped": self.n_events_dropped,
             "n_features": int(self.feature_ids.size),
             "n_relative_times": int(self.relative_times.size),
             "window_start": float(self.window[0]),
