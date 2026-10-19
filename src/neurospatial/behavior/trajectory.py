@@ -546,7 +546,8 @@ def _observed_cumulative(
         Distance accumulated over usable intervals only, so it is flat across
         every break. Defined for every sample, including those outside runs.
     """
-    raw = compute_step_lengths(positions, metric="euclidean")
+    with np.errstate(invalid="ignore"):  # inf - inf on consecutive missing rows
+        raw = compute_step_lengths(positions, metric="euclidean")
     steps = np.where(support.interval_mask, raw, np.nan)
     cumulative = np.r_[0.0, np.cumsum(np.where(support.interval_mask, raw, 0.0))]
     return steps, cumulative

@@ -41,6 +41,7 @@ def recording():
         "pre_decision_speed_stats",
         "segment_by_velocity",
         "time_efficiency",
+        "traveled_path_length",
         "heading_from_velocity",
         "compute_trajectory_curvature",
     ],

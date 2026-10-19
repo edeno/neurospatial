@@ -57,7 +57,7 @@ class TestNavigationFunctionality:
 
         # Straight line path
         positions = np.array([[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]])
-        length = traveled_path_length(positions)
+        length = traveled_path_length(np.array([0.0, 0.1, 0.2]), positions)
 
         assert_allclose(length, 20.0)
 

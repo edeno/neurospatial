@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -143,3 +145,16 @@ def test_arrays_read_only_and_summary_scalars():
     assert summary["n_isolated_samples"] == 0
     assert summary["observed_duration"] == pytest.approx(0.2)
     assert all(type(v) in (int, float) for v in summary.values())
+
+
+def test_consecutive_non_finite_rows_do_not_warn():
+    positions = np.array(
+        [[0.0, 0.0], [np.inf, 0.0], [np.inf, 0.0], [1.0, 0.0], [2.0, 0.0]]
+    )
+    times = np.arange(5) * 0.1
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_cumulative_distance(times, positions)
+
+    assert result.total_distance == 1.0

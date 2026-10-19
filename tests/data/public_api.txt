@@ -127,7 +127,7 @@ neurospatial.behavior.subgoal_efficiency(env, positions, subgoals, *, metric='ge
 neurospatial.behavior.time_efficiency(times, positions, *, reference_speed, optimal_distance)
 neurospatial.behavior.time_to_goal(times, trials)
 neurospatial.behavior.trajectory_similarity(position_bins1, position_bins2, env, *, method='jaccard')
-neurospatial.behavior.traveled_path_length(positions, *, metric='euclidean', env=None)
+neurospatial.behavior.traveled_path_length(times, positions, *, metric='euclidean', env=None, max_gap=0.5, epochs=None, break_before=None)
 neurospatial.behavior.trials_to_region_arrays(trials, times, env)
 neurospatial.binning.BinConnections (class)
 neurospatial.binning.Binning (class)
