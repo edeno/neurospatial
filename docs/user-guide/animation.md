@@ -85,10 +85,10 @@ Choose the right backend for your workflow:
 | **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Fastplotlib** | ✓ | ✓ | ✓ | ✗ | ✓ |
+| **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Fastplotlib also draws event overlays, walls and landmarks; it skips video,
-time-series and object-vector overlays with a warning.
+Fastplotlib also draws event, time-series and object-vector overlays, walls
+and landmarks.
 
 See [Animation Overlays](../animation_overlays.md) for detailed overlay documentation including VideoOverlay calibration.
 
