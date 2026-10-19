@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -115,6 +116,11 @@ _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
             "title",
             "show_regions",
             "region_alpha",
+            "window_seconds",
+            "layout",
+            "layer_names",
+            "colorbar_label",
+            "track",
             "dry_run",
         }
     ),
@@ -633,6 +639,12 @@ def animate_fields(
     else:
         sample_rate_hz = 30.0  # Fallback for edge cases
 
+    # Auto-select backend, before anything that depends on the backend
+    auto_reason = None
+    if backend == "auto":
+        backend = _select_backend(n_frames, save_path)
+        auto_reason = _auto_reason(backend, n_frames, save_path)
+
     # Compute playback fps from frame_times and speed
     playback_fps, actual_speed = _compute_playback_fps(
         frame_times, speed, max_fps=max_playback_fps
@@ -643,7 +655,8 @@ def animate_fields(
     requested_fps = sample_rate_hz * speed
     was_capped_at_max = requested_fps > max_playback_fps
     was_capped_at_min = requested_fps < MIN_PLAYBACK_FPS
-    if was_capped_at_max or was_capped_at_min:
+    # fastplotlib steps by time and warns of its own limit.
+    if (was_capped_at_max or was_capped_at_min) and backend != "fastplotlib":
         cap_description = (
             f"Capped to {max_playback_fps} fps"
             if was_capped_at_max
@@ -664,7 +677,12 @@ def animate_fields(
         # frame_times is guaranteed to be set by _build_frame_times above
         assert frame_times is not None, "frame_times should be built before conversion"
         overlay_data = _convert_overlays_to_data(
-            overlays=overlays, frame_times=frame_times, n_frames=n_frames, env=env
+            overlays=overlays,
+            frame_times=frame_times,
+            n_frames=n_frames,
+            env=env,
+            # fastplotlib shows each overlay at its own rate.
+            own_samples=backend == "fastplotlib",
         )
 
         # Validate pickle-ability for parallel rendering (applies to video backend)
@@ -675,11 +693,25 @@ def animate_fields(
 
             _validate_pickle_ability(overlay_data, n_workers=n_workers)
 
-    # Auto-select backend
-    auto_reason = None
-    if backend == "auto":
-        backend = _select_backend(n_frames, save_path)
-        auto_reason = _auto_reason(backend, n_frames, save_path)
+    if overlay_data and backend != "fastplotlib":
+        # Overlays only the fastplotlib backend draws: skipped, with a warning.
+        skipped = [
+            name
+            for name, items in (
+                ("SpikeRasterOverlay", overlay_data.spike_rasters),
+                ("EpochOverlay", overlay_data.epochs),
+            )
+            if items
+        ]
+        if skipped:
+            warnings.warn(
+                f"The {backend} backend does not draw {' or '.join(skipped)}, "
+                "so it is skipped; the other overlays are drawn. Use "
+                "backend='fastplotlib' to show it.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
+            overlay_data = replace(overlay_data, spike_rasters=[], epochs=[])
 
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)
@@ -689,18 +721,18 @@ def animate_fields(
         assert isinstance(fields, np.ndarray)  # nosec: type narrowing for mypy
         fields = [fields[i] for i in range(fields.shape[0])]
 
-    # Multi-field inputs are only supported by the napari backend
-    if is_multi_field and backend != "napari":
+    # Multi-field inputs are only supported by the napari and fastplotlib backends
+    if is_multi_field and backend not in ("napari", "fastplotlib"):
         raise ValueError(
             "Multi-field input (list of sequences) is only supported by the "
-            "'napari' backend.\n\n"
+            "'napari' and 'fastplotlib' backends.\n\n"
             "WHAT: Detected list-of-sequences input for 'fields', which encodes "
             "multiple spatial fields per frame (multi-field mode).\n\n"
             "WHY: Video, HTML, and widget backends currently expect a single "
             "field array per frame and cannot render multi-field layouts.\n\n"
             "Fix: Either:\n"
-            "  - Use backend='napari' (or backend='auto' without save_path) "
-            "to explore multi-field data interactively, or\n"
+            "  - Use backend='napari' or 'fastplotlib' (or backend='auto' "
+            "without save_path) to explore multi-field data interactively, or\n"
             "  - Convert your multi-field input into a single field per frame "
             "(e.g., by stacking or selecting one field) before calling "
             "animate_fields()."
@@ -828,7 +860,8 @@ def animate_fields(
             fields,
             overlay_data=overlay_data,
             frame_times=frame_times,
-            fps=playback_fps,
+            speed=speed,
+            max_playback_fps=max_playback_fps,
             **options,
         )
 
@@ -1065,8 +1098,11 @@ def estimate_colormap_range_from_subset(
 ) -> tuple[float, float]:
     """Estimate colormap range from random subset of frames.
 
-    Essential utility for large-scale sessions where computing exact min/max
-    over all frames would be too slow or memory-intensive.
+    The same rule `animate_fields` uses by default, on a random sample of
+    frames: the bottom is a low percentile of the sampled frames' minima and
+    the top a high percentile of their maxima, so a sharp posterior's peak
+    reaches the top color rather than passing it in every frame. Useful
+    for large sessions, where reading every frame would be slow.
 
     Parameters
     ----------
@@ -1077,8 +1113,9 @@ def estimate_colormap_range_from_subset(
         Maximum number of frames to sample. If dataset has fewer frames,
         all frames are used.
     percentile : tuple of float, default=(1.0, 99.0)
-        Lower and upper percentiles for range estimation. Using percentiles
-        instead of min/max provides robustness against outliers.
+        The percentile of the frames' minima for the bottom and of their
+        maxima for the top: about this share of frames reach past each end,
+        so a few outlier frames cannot wash out the rest.
     seed : int, optional
         Random seed for reproducibility. If None, results may vary between calls.
 
@@ -1103,9 +1140,8 @@ def estimate_colormap_range_from_subset(
 
     Notes
     -----
-    For uniform random [0, 1] data with default percentiles (1, 99):
-    - Expected vmin: ~0.01
-    - Expected vmax: ~0.99
+    A bottom between zero and a thousandth of the top is zero, and a
+    constant field gets limits half a unit around it.
 
     This function is designed to complete quickly (<0.5s) even for
     datasets with 1M+ frames by sampling a subset rather than computing
@@ -1126,27 +1162,16 @@ def estimate_colormap_range_from_subset(
         # Sample without replacement
         indices = rng.choice(n_frames, size=n_samples, replace=False)
 
-    # Collect sampled values
-    if isinstance(fields, np.ndarray):
-        # For arrays, advanced indexing creates a copy (required for memmaps)
-        sampled = fields[indices]  # Shape: (n_samples, n_bins)
-        values = sampled.ravel()
-    else:
-        # For lists, gather sampled frames
-        values = np.concatenate([fields[i] for i in indices])
+    from neurospatial.animation.rendering import frame_extremes, robust_limits
 
-    # Filter NaN/inf values
-    valid_values = values[np.isfinite(values)]
-
-    if len(valid_values) == 0:
-        # Fallback for all-NaN data
-        return (0.0, 1.0)
-
-    # Compute percentiles
-    vmin = float(np.percentile(valid_values, percentile[0]))
-    vmax = float(np.percentile(valid_values, percentile[1]))
-
-    return (vmin, vmax)
+    # Sorted, so a memory-mapped array is read forward.
+    indices = np.sort(indices)
+    sampled = (
+        fields[indices]
+        if isinstance(fields, np.ndarray)
+        else [fields[i] for i in indices]
+    )
+    return robust_limits(*frame_extremes(sampled), percentile)
 
 
 def large_session_napari_config(

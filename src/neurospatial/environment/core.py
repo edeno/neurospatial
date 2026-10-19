@@ -5932,9 +5932,14 @@ class Environment(Generic[_C]):
         cmap : str, default="viridis"
             Matplotlib colormap name (e.g., "hot", "Blues", "viridis", "RdBu_r")
         vmin : float, optional
-            Minimum value for colormap normalization. If None, computed from all frames.
+            Minimum value for colormap normalization. If None, the 1st
+            percentile of the frames' minima.
         vmax : float, optional
-            Maximum value for colormap normalization. If None, computed from all frames.
+            Maximum value for colormap normalization. If None, the 99th
+            percentile of the frames' maxima: about 1% of frames reach past
+            it and show its color, so one extreme frame does not wash out the
+            rest (a sharp posterior keeps its shape). Pass a value to compare
+            animations on one scale.
         frame_labels : Sequence[str], optional
             Labels for each frame (e.g., ["Trial 1", "Trial 2", ...]). If None,
             auto-generated as "Frame 1", "Frame 2", etc.
@@ -6037,6 +6042,18 @@ class Environment(Generic[_C]):
               Number of frames to pre-render
             - ``cache_limit`` : int, default=1000
               Maximum cache size
+
+            **Fastplotlib backend:**
+            - ``window_seconds`` : float, default=2.0
+              On a track, seconds of fields shown in the position-by-time
+              panel, centered on the current time
+            - ``layout`` and ``layer_names`` : as for napari, for several
+              fields side by side
+            - ``colorbar_label`` : str, optional
+              What the colors measure, such as "probability"
+            - ``track`` : Environment, optional
+              A linearized track of the same maze, to draw a 2-D posterior
+              against position along it and time
 
         Returns
         -------

@@ -309,12 +309,12 @@ def _png_width(png: bytes) -> int:
 def test_html_frames_are_the_scale_bar_renders(animation, tmp_path):
     """The embedded frame is the shared renderer's frame with a scale bar."""
     from neurospatial.animation.rendering import (
-        compute_global_colormap_range,
+        animation_colormap_range,
         render_field_to_image_bytes,
     )
 
     env, fields, times = animation
-    vmin, vmax = compute_global_colormap_range([fields[0]], None, None)
+    vmin, vmax = animation_colormap_range([fields[0]], None, None)
     path = tmp_path / "scale_bar.html"
     env.animate_fields(
         fields[:1],

@@ -18,6 +18,9 @@ PositionOverlay, BodypartOverlay, HeadDirectionOverlay, ObjectVectorOverlay : cl
     Sample-aligned spatial overlays.
 EventOverlay, TimeSeriesOverlay, VideoOverlay : class
     Discrete events, scalar signals and calibrated video overlays.
+SpikeRasterOverlay, EpochOverlay : class
+    Spikes of many units as a raster, and intervals such as ripples, on the
+    animation's clock (fastplotlib).
 FastplotlibAnimation : class
     The interactive animation ``animate_fields(backend="fastplotlib")`` returns.
 ScaleBarConfig : class
@@ -41,10 +44,12 @@ from neurospatial.animation.core import (
 )
 from neurospatial.animation.overlays import (
     BodypartOverlay,
+    EpochOverlay,
     EventOverlay,
     HeadDirectionOverlay,
     ObjectVectorOverlay,
     PositionOverlay,
+    SpikeRasterOverlay,
     TimeSeriesOverlay,
     VideoOverlay,
 )
@@ -62,6 +67,7 @@ __all__: list[str] = [
     "RAT_SKELETON",
     "SIMPLE_SKELETON",
     "BodypartOverlay",
+    "EpochOverlay",
     "EventOverlay",
     "FastplotlibAnimation",
     "HeadDirectionOverlay",
@@ -69,6 +75,7 @@ __all__: list[str] = [
     "PositionOverlay",
     "ScaleBarConfig",
     "Skeleton",
+    "SpikeRasterOverlay",
     "TimeSeriesOverlay",
     "VideoOverlay",
     "calibrate_video",

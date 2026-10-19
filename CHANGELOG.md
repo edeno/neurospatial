@@ -738,6 +738,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `animate_fields` color limits default to robust ones in every backend: the
+  1st percentile of the frames' minima and the 99th of their maxima, instead
+  of the minimum and maximum over all frames. One extreme frame no longer
+  dims the whole animation; about 1% of frames reach past each limit and show
+  its color, and a bottom below a thousandth of the top is zero. Pass `vmin`
+  and `vmax` to keep the old range or to compare animations on one scale.
+  `estimate_colormap_range_from_subset` uses the same rule on its sample of
+  frames (its `percentile` is now of the frames' minima and maxima, not of
+  all values, which put a sharp posterior's peak past the top in every
+  frame). The unused `rendering.compute_global_colormap_range` is removed.
 - `env.plot()` draws everything the environment holds by default: declared
   walls (labeled with their names), landmarks (labeled, with the axes widened
   to show any outside the arena) and regions. `show_regions` now defaults to
@@ -1244,9 +1254,52 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   rather than the colormap's top color. Inside Jupyter the figure renders on
   the machine running the kernel and streams to the browser, so it works on a
   remote GPU server through an SSH tunnel. Animations draw position, pose,
-  head direction, events, regions, walls and landmarks, update a frame in
-  about 5 ms, and have a play button and slider in Jupyter or keyboard
-  controls in a window; `animate_fields` returns a `FastplotlibAnimation`.
+  head direction, events, regions, walls and landmarks and update a frame in
+  about 5 ms. `animate_fields` returns a `FastplotlibAnimation`, a
+  fastplotlib `NDWidget` with a time slider in seconds and play, step and
+  loop controls; hovering over a bin shows its position and value.
+  Time-series overlays are drawn beside the field on the same clock, every
+  sample in their window at their own sampling rate, with event times marked.
+  Video overlays are placed in the environment through their calibration
+  (rotation and mirroring included), above or below the field, with walls,
+  landmarks and the moving overlays on top. Object vectors are drawn as lines
+  from the animal to each object, fading with the firing rate. On a track
+  (`linear_track`, `from_graph` or a 1-D environment) the fields are also
+  drawn as position along the track against time, over `window_seconds`
+  around the current time, with position overlays as lines: the usual view of
+  a decoded posterior; on a maze, lines mark where segments meet and each
+  is named by its nodes. `SpikeRasterOverlay` draws many units' spikes as a
+  raster beside the field on the same clock, rows in a chosen order (by
+  place-field peak, say); hovering a row names its unit, and with `rates=`,
+  clicking a unit's row or pressing Up and Down shows its rate map and
+  stripes its row. Other backends skip it with a warning. Position,
+  pose, head-direction, object-vector and video overlays with their own
+  `times` move at their own sampling rate, so slow fields (a rate map per
+  lap) do not freeze the animal or the camera between frames.
+  `EpochOverlay` marks intervals such as ripples on every time panel and
+  names the current one in a line above the panels, with the time.
+  Keyboard: Space plays, the arrows step
+  one frame, N and Shift+N jump between epochs and events, and `[` and `]`
+  halve or double the shared time window: every panel drawn against time
+  shows the animation's `window_seconds`, so they line up. Several fields can be shown side by side
+  on one color scale (`layout=`, `layer_names=`), as with napari. The panels
+  drawn against time share one time axis, at the bottom; a 1-D environment
+  is drawn as position against time without a field panel; the colorbar
+  marks clipped ends and the missing-value color (`colorbar_label=` names
+  it). Opacities (`alpha`, `region_alpha`, trails, events, epochs) look as
+  in Matplotlib and napari, though pygfx blends in linear light; walls,
+  the track cursor and segment joints carry an edge that keeps them
+  visible on any colormap color, labels are outlined, and regions are
+  drawn sky blue, apart from orange landmarks in color-blind vision. A video
+  drawn below the field (`z_order="below"`) shows through where the field's
+  values are low, so a 2-D decoded posterior sits over the camera's view,
+  and `track=` (a linearized track of the same maze) also draws a 2-D
+  posterior against position along the maze and time. The
+  decoding recipe draws true position magenta and decoded position green,
+  only where the posterior is not nearly flat.
+  Frame times
+  with long gaps or very uneven spacing are warned about, since playback
+  moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an
   `Axes` for it; with `backend="fastplotlib"` they return the fastplotlib
   figure, and Matplotlib-only options raise a `TypeError`.

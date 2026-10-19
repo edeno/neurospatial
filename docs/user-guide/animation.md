@@ -85,10 +85,10 @@ Choose the right backend for your workflow:
 | **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Fastplotlib** | ✓ | ✓ | ✓ | ✗ | ✓ |
+| **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Fastplotlib also draws event overlays, walls and landmarks; it skips video,
-time-series and object-vector overlays with a warning.
+Fastplotlib also draws event, time-series, spike-raster and object-vector
+overlays, walls and landmarks.
 
 See [Animation Overlays](../animation_overlays.md) for detailed overlay documentation including VideoOverlay calibration.
 
@@ -393,19 +393,191 @@ animation = env.animate_fields(
     fields,
     frame_times=frame_times,
     backend="fastplotlib",
-    overlays=[PositionOverlay(positions=positions, times=times, trail_length=30)],
+    overlays=[
+        PositionOverlay(positions=positions, times=times, trail_length=30),
+        VideoOverlay(source="session.mp4", times=video_times, calibration=calibration),
+        TimeSeriesOverlay(data=speed, times=times, label="speed (cm/s)"),
+    ],
 )
-animation  # in Jupyter: the figure, a play button and a slider
+animation  # in Jupyter: the plot, a time slider and playback controls
 ```
+
+The animation is a fastplotlib `NDWidget`: a slider in seconds, buttons to
+play, step and loop, and a frame rate box. Each frame is shown from its time
+until the next frame's. A line above the panels gives the time and the epochs
+it is in. Every time shown (the slider, the time axes, that line and the
+tooltips) counts seconds from the first frame, so session timestamps such as
+1.7e9 s keep their precision; the line gives the first frame's own time once
+("t = 4.50 s from 1700000000.00 s"). Hovering over a bin
+shows its position and value.
+
+Position, pose, head direction, object vectors and video each move at their
+own sampling rate when given their own `times`, so a field shown once a
+second (a rate map per lap, say) does not freeze 30 Hz tracking or the camera
+between frames. Each sample is shown from its time until the next, or for one
+typical interval across a gap (an interval more than twice the typical one;
+timestamp jitter and a dropped sample are not gaps), and nothing is drawn
+before an overlay's first
+sample or after its last. A trail spans the time of its last `trail_length`
+animation frames. Overlays without `times` follow the field's frames, as in
+the other backends.
+
+Time series are drawn beside the field on the same clock, with every sample
+in the window drawn (up to 100,000), so a ripple-band LFP keeps its shape.
+Event times from an `EventOverlay` are marked on every series panel in the
+events' colors. Drag the cursor in a series to move every panel.
+
+Every panel drawn against time (a track's fields, spike rasters, time series)
+shows the same `window_seconds` (default 2 s) around the current time, named
+in its title, so a spike, a posterior column and an LFP peak at one x are at
+one time. `[` and `]` halve or double it for all of them. A
+`TimeSeriesOverlay`'s own `window_seconds` is used by the other backends.
+
+On a track (`Environment.linear_track`, `from_graph`, or any 1-D environment)
+the fields are also drawn against time (a 1-D environment has no other
+panel for them: the track panel takes the field panel's place): position along the track on the y axis,
+time on the x axis, over `window_seconds` (default 2 s) around the current time.
+This is the usual way to read a decoded posterior on a linear track:
+
+```python
+result = decode_session(env, spike_times, times, positions, dt=0.025)
+# A nearly flat posterior has no decoded position worth drawing: its peak
+# lands anywhere. Keep the bins whose entropy is below 90% of a flat one's.
+confident = result.posterior_entropy < 0.9 * np.log2(env.n_bins)
+env.animate_fields(
+    result.posterior,
+    frame_times=result.times,
+    backend="fastplotlib",
+    window_seconds=4.0,
+    colorbar_label="probability",
+    overlays=[
+        PositionOverlay(positions=positions, times=times, color="magenta"),
+        PositionOverlay(
+            positions=result.map_position[confident],
+            times=result.times[confident],
+            color="limegreen",
+            interp="nearest",
+        ),
+    ],
+)
+```
+
+True position is magenta and decoded position green, as in the lab's decoding
+figures; magenta stays visible on every viridis color and apart from green in
+color-blind vision, where white disappears on the posterior's yellow and red
+and green look alike. The decoded position is drawn only where the posterior
+is not nearly flat: there its peak is arbitrary. On a simulated 200 cm track
+decoded in 25 ms bins, 48% of the bins were nearly flat, every one put the
+peak at 180 cm, and it was a median 68 cm from the animal (1 cm in the other
+bins); drawn with the others, those bins look like confident jumps. The 90% threshold is a
+display choice; tighten or loosen it for your data. Each overlay keeps its
+own samples, so nothing is drawn between the confident ones.
+
+Each position overlay is drawn as a line along the track. A column starts at
+its frame's time and lasts until the next frame, as the field panel holds it,
+so the cursor always sits in the column the field panel shows; across a
+recording gap (an interval more than twice the typical one) the column ends
+after one typical frame interval and the gap stays empty. On a track built from several segments, the spacing between them
+(`edge_spacing`) stays empty too, lines mark where segments meet, and each
+segment is named by its nodes ("center–left") at the right of the panel, so a
+W-track or T-maze posterior can be read by arm. Hovering over a cell shows its time,
+position and value; drag the cursor to move every panel.
+
+A 2-D decode can be read the same way: pass a linearized track of the same
+maze as `track=`, and the 2-D posterior is also drawn against position along
+it and time, with the positions as lines, as non_local_detector's "projected
+1D" view does. Each 2-D bin's probability is added to the track bin nearest its
+center (as `map_probabilities` does), so pass probabilities, and build the
+track with bins no finer than the 2-D ones (a warning says so otherwise); a
+track bin no 2-D bin maps to is missing. The panel has its own color scale,
+since probability summed along the track is larger than per 2-D bin:
+
+```python
+maze = Environment.from_graph(graph, edge_order=edge_order, bin_size=4.0)
+env_2d.animate_fields(
+    result.posterior,  # decoded on env_2d, 4 cm bins
+    frame_times=result.times,
+    backend="fastplotlib",
+    track=maze,
+    overlays=[VideoOverlay(video, calibration=calibration, times=video_times, z_order="below")],
+)
+```
+
+A `SpikeRasterOverlay` draws each unit's spikes as a row of ticks beside the
+field on the same clock; pass `order=np.argsort(env.to_linear(rates.peak_locations()))`
+to sort the rows by place-field peak along the track, so a replay or theta
+sequence reads as a diagonal under the posterior. With `rates=`, clicking a
+unit's row shows its rate map under the field. See [Spike Raster
+Overlay](../animation_overlays.md#spike-raster-overlay).
+
+Opacities look as they do in the other backends, though the GPU blends
+colors in linear light. Walls, the cursor over a track's fields and the lines
+where maze segments meet have a contrasting edge, labels are outlined, and
+regions are sky blue, so they stay visible on any colormap color and apart in
+color-blind vision.
+
+Several fields can be shown side by side on one color scale, as with napari:
+pass a list of lists of frames, such as `[list(posterior),
+list(likelihood)]`, with `layer_names=["posterior", "likelihood"]` and
+optionally `layout="horizontal"`, `"vertical"` or `"grid"` (side by side for
+up to three by default). The overlays are drawn over each, and on a track each
+gets its own position-by-time panel.
+
+An `EpochOverlay` marks intervals such as ripples on every time panel and
+names the current one above the panels; see [Epoch
+Overlay](../animation_overlays.md#epoch-overlay).
+
+Keyboard shortcuts, named in a line above the panels; click the figure first
+so it receives the keys (in Jupyter, Tab cannot reach it yet, and the
+fastplotlib controls themselves need a mouse):
+
+| Key | Action |
+|-----|--------|
+| Space | Play or pause |
+| Left / Right arrow | Previous or next frame, however unevenly spaced |
+| N / Shift+N | Start of the next or previous epoch or event |
+| `[` / `]` | Halve or double the window of every panel drawn against time |
+| Up / Down arrow | The unit one row up or down in a spike raster with rate maps |
+| Escape | No unit |
+
+Playback can show many frames a second: a posterior that jumps between
+replay bins can flash over a large area. Lower the frame rate in the controls,
+or step with the arrow keys, if flashing is a concern.
+
+Play runs at `speed` (seconds of recording a second) and visits every field
+frame; when that needs more than `max_playback_fps` steps a second (fastplotlib
+allows up to 100), it plays slower and warns. Recording gaps do not change the
+speed. Play and the step buttons also reach every sample of an overlay with
+its own `times` between slow field frames, as finely as the speed allows. They move by a fixed time, short enough to reach every
+frame when frames are evenly spaced (camera jitter included). For frames with
+long gaps or very uneven spacing, such as decoded replay bins from separate
+ripples, a warning says so: playback holds a frame through a gap. Step frame
+by frame with the arrow keys, jump between ripples with N (given an
+`EpochOverlay`), or set `animation.frame` from code.
+
+The video is placed in the environment through its calibration, which maps
+camera pixels to environment coordinates (see [Calibration
+Methods](../animation_overlays.md#calibration-methods)), so a camera that is rotated, mirrored or in
+pixels still lines up with the bins. With `z_order="above"` (the default) the
+video is blended over the field at `alpha`. With `"below"` the field is
+drawn over the video and is see-through where its values are low: each bin's
+opacity rises from clear at the bottom of the color scale to opaque at a
+typical frame's peak (the median of the frames' maxima), so a 2-D decoded
+posterior sits over the camera's view of the animal. Missing bins keep their
+gray. For a posterior, a `vmax` near that typical peak (non_local_detector's
+2-D movies use 0.07) spreads most frames over the whole colormap; sharper
+frames then show the colorbar's top triangle. Walls, landmarks, regions and the moving
+overlays are always drawn on top, so the arena you defined can be checked
+against the recording frame by frame.
 
 In Jupyter the frames are rendered on the machine running the kernel and
 streamed to the browser as images, so the GPU does not have to be on your
 laptop; see [Remote Server Workflow](#remote-server-workflow). Outside Jupyter,
 `animation.show()` opens a window (in a script, follow it with
-`fastplotlib.loop.run()`): space plays and pauses, the arrow keys step one
-frame, Home and End jump to the ends. `animation.frame = 120` shows a frame
-from code, and `animation.figure` is the fastplotlib figure, for adding your
-own graphics.
+`fastplotlib.loop.run()`). `animation.frame = 120` moves the slider to a frame
+from code; `animation.widget` is the `NDWidget` and `animation.figure` its
+figure, for adding your own graphics to `animation.figure["field"]`.
+`animation.show(sidecar=True)` opens it beside the notebook in JupyterLab.
 
 `env.plot(backend="fastplotlib")` and `env.plot_field(field,
 backend="fastplotlib")` draw a single picture the same way, including 3-D
@@ -424,12 +596,23 @@ Every backend uses these parameters:
 | `speed` | float | 1.0 | Playback speed relative to real time |
 | `max_playback_fps` | int | 60 | Upper bound for displayed playback frame rate |
 | `cmap` | str | `"viridis"` | Matplotlib colormap |
-| `vmin` | float | None | Minimum value for colormap (auto if None) |
-| `vmax` | float | None | Maximum value for colormap (auto if None) |
+| `vmin` | float | None | Minimum value for colormap; if None, the 1st percentile of the frames' minima |
+| `vmax` | float | None | Maximum value for colormap; if None, the 99th percentile of the frames' maxima |
 | `frame_labels` | list[str] | None | Custom labels for each frame |
 | `overlays` | list | None | Position, pose, heading and other overlays |
 | `show_regions` | bool/list[str] | False | Draw all regions, or the named ones |
 | `dry_run` | bool | False | Report what would be rendered without rendering |
+
+The default color limits ignore the most extreme 1% of frames at each end:
+about 1% of frames reach past the top and show its color, so a single noisy
+frame cannot dim the rest. They are percentiles of each frame's extremes, not
+of all values: a sharp posterior covers few bins, and a percentile of all
+values would put the top below its peak in every frame. Pass `vmin` and `vmax`
+to compare animations on one scale. A bottom between zero and a thousandth of
+the top, such as a posterior's 1e-56, is zero. In the fastplotlib backend a
+triangle at an end of the colorbar shows that values pass it, a swatch below
+shows the missing-value color, and `colorbar_label=` names what the colors
+measure.
 
 Some parameters apply only to some backends:
 
@@ -579,7 +762,7 @@ env.animate_fields(
 |-----------|---------|-------------|
 | `fields` | Required | Array shape (n_frames, n_bins) or list of fields |
 | `n_samples` | 10,000 | Max frames to sample |
-| `percentile` | (1.0, 99.0) | Percentile range (excludes outliers) |
+| `percentile` | (1.0, 99.0) | Percentiles of the sampled frames' minima and maxima, as `animate_fields` uses by default |
 | `seed` | None | Random seed for reproducibility |
 
 **Why this matters**: Without explicit `vmin/vmax`, napari computes min/max over the **entire dataset**, causing "extremely long processing times" per napari docs. This function samples a representative subset instead.
@@ -663,7 +846,7 @@ When working on a remote server without display:
 
 Run Jupyter on the server, reach it through an SSH tunnel, and use
 `backend="fastplotlib"`. The figure renders on the server's GPU and streams to
-your browser, with the play button and slider working as on a local machine.
+your browser, with the slider and playback controls working as on a local machine.
 
 ```bash
 # On the server

@@ -230,13 +230,77 @@ env.animate_fields(
 | Balanced view | `alpha=0.5, z_order="above"` | Equal video/field visibility (default) |
 | Field dominant | `alpha=0.3, z_order="above"` | Field shows through video |
 | Video dominant | `alpha=0.7, z_order="above"` | Video shows through field |
-| Video as background | `z_order="below"` | Only works if field has transparent regions |
+| Video as background | `z_order="below"` | Field drawn over the video; in the fastplotlib backend, see-through where its values are low (a posterior over the camera's view); elsewhere only where the field is transparent |
 
 **Requirements:**
 
 - 2D environments only (`env.n_dims == 2`)
 - Not supported for 1D linearized tracks or 3D environments
 - Non-grid 2D environments work with approximate alignment (warning emitted)
+
+### Spike Raster Overlay
+
+Draws the spikes of many units beside the field, one row per unit, over the
+animation's `window_seconds` around the current time, so replay or theta sequences can be
+read against a decoded posterior. Sort the rows by place-field peak to see a
+sequence as a diagonal:
+
+```python
+from neurospatial.animation import SpikeRasterOverlay
+from neurospatial.encoding import compute_spatial_rates
+
+rates = compute_spatial_rates(env, spike_times, times, positions)
+# Along the track; on a 1-D environment use rates.peak_locations()[:, 0].
+order = np.argsort(env.to_linear(rates.peak_locations()))
+
+env.animate_fields(
+    result.posterior,
+    frame_times=result.times,
+    backend="fastplotlib",
+    window_seconds=1.0,  # every panel drawn against time
+    overlays=[SpikeRasterOverlay(spike_times, order=order, rates=rates.firing_rates)],
+)
+```
+
+`order` lists the units from the bottom row up. Hovering anywhere in a row
+shows its unit's label (`unit_ids`, or the labels of a pynapple `TsGroup`),
+and over a spike also its time. With `rates`, one rate map per unit on the
+animated environment, clicking anywhere in a unit's row, or the Up and Down
+arrow keys, shows its rate map under the field (on a track, rate against
+position along it) and marks the unit: its spikes highlighted and its row
+striped. Escape shows none. So you can check where each cell of a sequence
+has its field.
+Only `backend="fastplotlib"` draws rasters; the other backends skip them with
+a warning.
+
+### Epoch Overlay
+
+Marks intervals of time, such as sharp-wave ripples, replay events or run
+bouts, on every panel drawn against time: shaded behind spike rasters and time
+series, and as a strip above a track's position-by-time panel, where shading
+would tint the posterior's colors. The line above the panels names the epoch
+the current time is in ("ripple 3 of 120"), and N and Shift+N
+jump to the start of the next and previous epoch (or event).
+
+```python
+from neurospatial.animation import EpochOverlay
+
+ripples = EpochOverlay(ripple_times, label="ripple")  # (n_ripples, 2) seconds
+env.animate_fields(
+    result.posterior,
+    frame_times=result.times,
+    backend="fastplotlib",
+    overlays=[ripples, SpikeRasterOverlay(spike_times, order=order)],
+)
+```
+
+For non-local or replay periods, the lab's decoding figures shade red:
+`EpochOverlay(nonlocal_times, label="non-local", color="red", alpha=0.2)`.
+
+`epochs` takes a `(start, stop)` pair, an `(n, 2)` array or a pynapple
+`IntervalSet`; overlapping or touching epochs are merged. Only
+`backend="fastplotlib"` draws epochs; the other backends skip them with a
+warning.
 
 ## Multi-Animal Support
 
@@ -371,6 +435,9 @@ Not all backends support all overlay types.
 | **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
 | **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+Spike rasters and epochs are drawn only by the fastplotlib backend.
 
 **HTML backend limitations:**
 

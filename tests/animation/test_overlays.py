@@ -2213,5 +2213,43 @@ class TestRegionsNormalization:
         assert overlay_data.regions is None
 
 
+def test_own_samples_keep_an_overlays_times_and_check_it_against_frames():
+    """For a backend that shows overlays at their own rate."""
+    import warnings
+
+    from neurospatial import Environment
+    from neurospatial.animation.overlays import (
+        PositionOverlay,
+        _convert_overlays_to_data,
+    )
+
+    env = Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 10, (200, 2)), bin_size=2.0
+    )
+    times = np.arange(3.0, 20.0, 0.5)  # misses most frames: warned once
+    path = np.c_[np.linspace(1, 9, len(times)), np.full(len(times), 5.0)]
+    overlays = [
+        PositionOverlay(positions=path, times=times),
+        PositionOverlay(np.full((40, 2), 5.0)),  # one row a frame
+    ]
+    frame_times = np.arange(40) * 0.1
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        data = _convert_overlays_to_data(
+            overlays[:1], frame_times, 40, env, own_samples=True
+        )
+    assert len([w for w in caught if "overlap" in str(w.message).lower()]) == 1
+    (own,) = data.positions
+    assert_array_equal(own.times, times)
+    assert_array_equal(own.data, path)
+    # Without times, or without own_samples, rows follow the frames.
+    (aligned,) = _convert_overlays_to_data(
+        overlays[1:], frame_times, 40, env, own_samples=True
+    ).positions
+    assert aligned.times is None
+    (aligned,) = _convert_overlays_to_data(overlays[:1], frame_times, 40, env).positions
+    assert aligned.times is None and len(aligned.data) == 40
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

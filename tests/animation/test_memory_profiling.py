@@ -73,7 +73,7 @@ def test_napari_lazy_loading_memory(memory_test_env, tmp_path):
     """
     pytest.importorskip("napari")
     from neurospatial.animation.backends.napari_backend import LazyFieldRenderer
-    from neurospatial.animation.rendering import compute_global_colormap_range
+    from neurospatial.animation.rendering import animation_colormap_range
 
     # Force garbage collection for accurate baseline
     gc.collect()
@@ -98,7 +98,7 @@ def test_napari_lazy_loading_memory(memory_test_env, tmp_path):
     fields.flush()
 
     # Compute colormap
-    vmin, vmax = compute_global_colormap_range(fields)
+    vmin, vmax = animation_colormap_range(fields, None, None)
     cmap_lookup = np.zeros((256, 3), dtype=np.uint8)
 
     # Measure memory after memmap creation (should be minimal)

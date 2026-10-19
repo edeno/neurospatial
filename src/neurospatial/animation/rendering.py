@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import warnings
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
@@ -19,7 +20,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "_validate_frame_labels",
-    "compute_global_colormap_range",
     "field_to_rgb_for_napari",
     "render_field_to_image_bytes",
     "render_field_to_png_bytes",
@@ -32,16 +32,27 @@ __all__ = [
 _EXACT_RANGE_MAX_FRAMES = 200_000
 
 
+# Color limits of an animation: these percentiles of the frames' minima and
+# maxima.
+_ROBUST_PERCENTILES = (1.0, 99.0)
+
+
 def animation_colormap_range(
-    fields: list[NDArray[np.float64]] | NDArray[np.float64],
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     vmin: float | None,
     vmax: float | None,
 ) -> tuple[float, float]:
-    """Color range for an animation, sampling frames of a very long one.
+    """Color limits for an animation, robust to a few extreme frames.
+
+    The top of the colormap is the 99th percentile of the frames' maxima
+    and the bottom the 1st percentile of their minima (see
+    `robust_limits`). A percentile of all bin values would not do, because
+    a sharp posterior fills few bins: its peak would pass the top in every
+    frame.
 
     Parameters
     ----------
-    fields : list of ndarray or ndarray, shape (n_frames, n_bins)
+    fields : sequence of ndarray, or ndarray of shape (n_frames, n_bins)
         The frames.
     vmin, vmax : float or None
         Given limits; None computes them.
@@ -57,10 +68,103 @@ def animation_colormap_range(
     """
     if vmin is not None and vmax is not None:
         return vmin, vmax
+    low, high = robust_limits(*frame_extremes(fields))
+    return (low if vmin is None else vmin), (high if vmax is None else vmax)
+
+
+def robust_limits(
+    lows: NDArray[np.float64],
+    highs: NDArray[np.float64],
+    percentiles: tuple[float, float] = _ROBUST_PERCENTILES,
+) -> tuple[float, float]:
+    """Color limits from each frame's smallest and largest value.
+
+    The bottom is a low percentile of the frames' minima and the top a high
+    percentile of their maxima: about 1% of frames (by default) reach past
+    each end and are drawn in its color, and a single outlier frame cannot
+    wash out the rest.
+
+    Parameters
+    ----------
+    lows, highs : ndarray of shape (n_frames,)
+        Each frame's smallest and largest finite value, NaN for a frame
+        with none (as `frame_extremes` returns).
+    percentiles : tuple of float, default=(1.0, 99.0)
+        The percentile of the minima and of the maxima.
+
+    Returns
+    -------
+    vmin, vmax : float
+        Tidied by `tidy_range`; (0, 1) when no value is finite.
+    """
+    finite = np.isfinite(highs)
+    if not finite.any():
+        return 0.0, 1.0
+    return tidy_range(
+        float(np.percentile(lows[finite], percentiles[0])),
+        float(np.percentile(highs[finite], percentiles[1])),
+    )
+
+
+def tidy_range(low: float, high: float) -> tuple[float, float]:
+    """A display range: a near-zero floor is zero, and a constant widens.
+
+    A floor between zero and a thousandth of the top (a posterior's 1e-56,
+    a rate map's near-zero floor) becomes zero, and equal limits become
+    half a unit either side.
+    """
+    if 0.0 <= low < 1e-3 * high:
+        low = 0.0
+    if low == high:
+        low, high = low - 0.5, high + 0.5
+    return low, high
+
+
+def typical_peak(highs: NDArray[np.float64]) -> float:
+    """The median of the frames' maxima: a typical frame's peak.
+
+    Parameters
+    ----------
+    highs : ndarray of shape (n_frames,)
+        Each frame's largest finite value, NaN for none (as
+        `frame_extremes` returns).
+
+    Returns
+    -------
+    float
+        1.0 when no value is finite.
+    """
+    finite = highs[np.isfinite(highs)]
+    return float(np.median(finite)) if len(finite) else 1.0
+
+
+def frame_extremes(
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Each frame's smallest and largest finite value; NaN for none.
+
+    Very long recordings (over 200,000 frames) use every n-th frame, about
+    50,000 of them, with a warning. Frames are read 10,000 at a time, so a
+    memory-mapped recording is never loaded whole.
+
+    Parameters
+    ----------
+    fields : sequence of ndarray, or ndarray of shape (n_frames, ...)
+        The frames.
+
+    Returns
+    -------
+    lows, highs : ndarray of shape (n_used_frames,)
+
+    Warns
+    -----
+    UserWarning
+        When only every n-th frame is used.
+    """
     n_frames = len(fields)
-    stride = None
-    if n_frames > _EXACT_RANGE_MAX_FRAMES and isinstance(fields, np.ndarray):
-        stride = max(1, n_frames // 50_000)
+    stride = 1
+    if n_frames > _EXACT_RANGE_MAX_FRAMES:
+        stride = n_frames // 50_000
         warnings.warn(
             f"Estimating colormap range from {n_frames:,} frames using "
             f"sample_stride={stride} (every {stride}th frame). For exact "
@@ -68,172 +172,22 @@ def animation_colormap_range(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
-    low, high = compute_global_colormap_range(
-        fields, vmin=vmin, vmax=vmax, sample_stride=stride
-    )
-    return (low if vmin is None else vmin), (high if vmax is None else vmax)
-
-
-def compute_global_colormap_range(
-    fields: list[NDArray[np.float64]] | NDArray[np.float64],
-    vmin: float | None = None,
-    vmax: float | None = None,
-    max_frames_for_exact: int = 50_000,
-    sample_stride: int | None = None,
-) -> tuple[float, float]:
-    """Compute NaN-robust color scale across all fields.
-
-    Vectorized computation for efficiency. Ignores NaN and infinite values
-    when computing the range. Automatically stacks list inputs for ~10x
-    faster processing on large datasets.
-
-    For very large datasets, uses chunked streaming to avoid loading all data
-    into memory at once.
-
-    Parameters
-    ----------
-    fields : list of ndarray or ndarray
-        All fields to animate. Can be:
-        - List of 1D arrays, each with shape (n_bins,)
-        - 2D array with shape (n_frames, n_bins)
-    vmin : float, optional
-        Manual minimum limit. If provided, skips computation for minimum.
-        Useful for consistent colormaps across multiple animations.
-    vmax : float, optional
-        Manual maximum limit. If provided, skips computation for maximum.
-        Useful for consistent colormaps across multiple animations.
-    max_frames_for_exact : int, default=50_000
-        For 2D arrays with more frames than this threshold, use chunked
-        streaming to compute min/max without loading all data at once.
-        This prevents memory spikes for very large datasets.
-    sample_stride : int, optional
-        If provided, subsample the array using `fields[::sample_stride]`
-        for faster (but approximate) range estimation. Useful for quick
-        preview of very large datasets. Note: may miss true extremes
-        if they occur at non-sampled positions.
-
-    Returns
-    -------
-    vmin : float
-        Minimum value for color scale.
-    vmax : float
-        Maximum value for color scale.
-        Returns (0.0, 1.0) if all values are NaN/inf or fields is empty.
-
-    Notes
-    -----
-    For large datasets (e.g., 41k frames), vectorized stacking provides
-    ~10x speedup over per-field iteration:
-    - List iteration: ~265ms
-    - Stacked array: ~22ms
-
-    For very large datasets (100K+ frames), chunked streaming prevents
-    memory spikes by processing 10K frames at a time.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> fields = [np.array([0, 1, 2]), np.array([3, 4, 5])]
-    >>> vmin, vmax = compute_global_colormap_range(fields)
-    >>> vmin, vmax
-    (0.0, 5.0)
-
-    Also accepts 2D arrays directly:
-    >>> fields_2d = np.array([[0, 1, 2], [3, 4, 5]])
-    >>> vmin, vmax = compute_global_colormap_range(fields_2d)
-    >>> vmin, vmax
-    (0.0, 5.0)
-
-    For very large arrays, use sample_stride for faster estimation:
-    >>> large_fields = np.random.rand(100_000, 500)
-    >>> vmin, vmax = compute_global_colormap_range(large_fields, sample_stride=10)
-    """
-    # Vectorized min/max computation with NaN-robustness
-    if vmin is None or vmax is None:
-        # Handle empty input
-        if len(fields) == 0:
-            return (0.0, 1.0)
-
-        # Apply sample_stride if provided (for faster approximate estimation)
-        if sample_stride is not None and isinstance(fields, np.ndarray):
-            fields = fields[::sample_stride]
-
-        # Try to stack list into array for vectorized operations (~10x faster)
-        # Falls back to iteration if shapes don't match (rare edge case)
-        stacked: NDArray[np.float64] | None = None
-        if isinstance(fields, list):
-            # Check if all fields have the same shape for stacking
-            first_shape = fields[0].shape
-            if all(f.shape == first_shape for f in fields):
-                # Stack into 2D array (n_frames, n_bins)
-                stacked = np.stack(fields, axis=0)
-        else:
-            # Already an array
-            stacked = fields
-
-        # Suppress RuntimeWarning from nanmin/nanmax on all-NaN arrays
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "All-NaN slice encountered")
-
-            if stacked is not None:
-                n_frames = stacked.shape[0]
-
-                # For large arrays, use chunked streaming to avoid memory spikes
-                if n_frames > max_frames_for_exact:
-                    # Chunked streaming: process 10K frames at a time
-                    chunk_size = 10_000
-                    all_min = float("inf")
-                    all_max = float("-inf")
-
-                    for start in range(0, n_frames, chunk_size):
-                        end = min(start + chunk_size, n_frames)
-                        chunk = stacked[start:end]
-
-                        # Find finite values in this chunk
-                        finite_mask = np.isfinite(chunk)
-                        if finite_mask.any():
-                            finite_values = chunk[finite_mask]
-                            chunk_min = float(finite_values.min())
-                            chunk_max = float(finite_values.max())
-                            all_min = min(all_min, chunk_min)
-                            all_max = max(all_max, chunk_max)
-                else:
-                    # Fast path: mask out NaN and inf, then take min/max
-                    # np.isfinite filters both NaN and inf in one vectorized pass
-                    finite_mask = np.isfinite(stacked)
-                    if finite_mask.any():
-                        finite_values = stacked[finite_mask]
-                        all_min = float(finite_values.min())
-                        all_max = float(finite_values.max())
-                    else:
-                        # All NaN/inf - will be handled by degenerate case below
-                        all_min = float("inf")
-                        all_max = float("-inf")
+    frames = range(0, n_frames, stride)
+    lows, highs = [np.empty(0)], [np.empty(0)]
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "All-NaN slice encountered")
+        for start in range(0, len(frames), 10_000):
+            index = frames[start : start + 10_000]
+            if isinstance(fields, np.ndarray):
+                chunk = np.asarray(
+                    fields[index.start : index.stop : stride], dtype=float
+                )
             else:
-                # Fallback: iterate when shapes don't match
-                all_min = float("inf")
-                all_max = float("-inf")
-                for field in fields:
-                    field_min = float(np.nanmin(field))
-                    field_max = float(np.nanmax(field))
-                    if np.isfinite(field_min):
-                        all_min = min(all_min, field_min)
-                    if np.isfinite(field_max):
-                        all_max = max(all_max, field_max)
-
-        vmin = vmin if vmin is not None else all_min
-        vmax = vmax if vmax is not None else all_max
-
-    # Handle degenerate cases
-    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmin == vmax:
-        # All NaN/inf or single value: use safe default
-        if vmin == vmax and np.isfinite(vmin):
-            vmin -= 0.5
-            vmax += 0.5
-        else:
-            vmin, vmax = 0.0, 1.0
-
-    return float(vmin), float(vmax)
+                chunk = np.stack([np.asarray(fields[i], dtype=float) for i in index])
+            chunk = np.where(np.isfinite(chunk), chunk, np.nan)
+            lows.append(np.nanmin(chunk.reshape(len(chunk), -1), axis=1))
+            highs.append(np.nanmax(chunk.reshape(len(chunk), -1), axis=1))
+    return np.concatenate(lows), np.concatenate(highs)
 
 
 def render_field_to_rgb(

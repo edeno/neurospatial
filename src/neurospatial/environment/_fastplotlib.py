@@ -46,7 +46,7 @@ _N_COLORS = 255  # colormap entries; the lookup texture adds the missing color
 _BIN_COLOR = "#b9d3d6"
 _WALL_COLOR = "firebrick"
 _LANDMARK_COLOR = "orange"
-_REGION_COLOR = "gold"
+_REGION_COLOR = "#56b4e9"  # sky blue: apart from orange landmarks in any vision
 
 
 def import_fastplotlib() -> Any:
@@ -118,12 +118,19 @@ class ColorScale:
         Values mapped to the colormap's ends; values outside are clipped.
     nan_color : str or None
         Color of NaN bins; None leaves them transparent.
+    opaque_from : float or None, default=None
+        Make low values see-through: opacity rises (as perceived) from 0 at
+        ``vmin`` to 1 at this value and above (at ``vmax`` at the latest;
+        at or below ``vmin``, every value is opaque), so what is drawn
+        below, such as a video, shows where values are low. Missing bins
+        keep ``nan_color``. None: every value is opaque.
     """
 
     cmap: str | Colormap
     vmin: float
     vmax: float
     nan_color: str | None
+    opaque_from: float | None = None
 
     @cached_property
     def lut(self) -> NDArray[np.float32]:
@@ -134,6 +141,15 @@ class ColorScale:
         colormap = colormaps[self.cmap] if isinstance(self.cmap, str) else self.cmap
         missing = (0.0, 0.0, 0.0, 0.0) if self.nan_color is None else self.nan_color
         colors = colormap(np.linspace(0.0, 1.0, _N_COLORS))
+        if self.opaque_from is not None:
+            # Opaque from the threshold, but by the top color at the latest;
+            # a threshold at or below the floor leaves every color opaque.
+            opaque = min(self.opaque_from, self.vmax)
+            if opaque > self.vmin:
+                values = np.linspace(self.vmin, self.vmax, _N_COLORS)
+                colors[:, 3] = perceived_alpha(
+                    (values - self.vmin) / (opaque - self.vmin)
+                )
         return np.vstack([to_rgba(missing), colors]).astype(np.float32)
 
     @cached_property
@@ -334,6 +350,7 @@ class FieldGraphic:
 
     In three dimensions a point's opacity follows its value, so the bins with
     the highest values show through the volume; missing bins are faint.
+    Hovering over a bin shows its index, position and value.
 
     Parameters
     ----------
@@ -355,14 +372,25 @@ class FieldGraphic:
         scale: ColorScale,
     ) -> None:
         self.scale = scale
+        self.values = values
         self._volume = env.n_dims == 3
         cells = cell_mesh(env)
         # Only the bin of each vertex is needed again; the mesh owns the rest.
         self._vertex_bin = None if cells is None else cells.vertex_bin
+        self._triangle_bin = (
+            None if cells is None else cells.vertex_bin[cells.triangles[:, 0]]
+        )
+        self._centers = env.bin_centers
+        labels = env._plot_labels()
+        self._axes = list(labels.coordinates.axis_labels(labels.units))
+        if self._volume:
+            suffix = f" ({labels.units})" if labels.units else ""
+            self._axes.append(f"Z Position{suffix}")
         if self._volume:
             alpha_mode = "weighted_blend"  # order-independent: no depth sort
         else:
-            alpha_mode = "blend" if scale.nan_color is None else "solid"
+            see_through = scale.nan_color is None or scale.opaque_from is not None
+            alpha_mode = "blend" if see_through else "solid"
         if cells is not None:
             style = {
                 "mapcoords": self._coordinates(values),
@@ -372,6 +400,23 @@ class FieldGraphic:
         else:
             style = {"colors": self._colors(values)}
         self.graphic = add_bins(subplot, env, cells, alpha_mode=alpha_mode, **style)
+        self.graphic.tooltip_format = self.describe
+
+    def describe(self, pick_info: dict[str, Any]) -> str:
+        """The tooltip for the bin under the pointer."""
+        if self._triangle_bin is not None:
+            bin_index = int(self._triangle_bin[pick_info["face_index"]])
+        else:
+            bin_index = int(pick_info["vertex_index"])
+        where = (
+            f"{axis}: {coordinate:.4g}"
+            for axis, coordinate in zip(
+                self._axes, self._centers[bin_index], strict=False
+            )
+        )
+        value = self.values[bin_index]
+        shown = "missing" if np.isnan(value) else f"{value:.4g}"
+        return "\n".join([f"bin {bin_index}", *where, f"value: {shown}"])
 
     def _coordinates(self, values: NDArray[np.float64]) -> NDArray[np.float32]:
         assert self._vertex_bin is not None
@@ -385,18 +430,32 @@ class FieldGraphic:
 
     def update(self, values: NDArray[np.float64]) -> None:
         """Recolor the bins with new values."""
+        self.values = values
         if self._vertex_bin is not None:
             self.graphic.mapcoords = self._coordinates(values)
         else:
             self.graphic.colors = self._colors(values)
 
 
+def perceived_alpha(alpha: ArrayLike) -> NDArray[np.float64]:
+    """The opacity that, blended in linear light as pygfx does, looks like
+    ``alpha`` blended in sRGB, as Matplotlib and napari do.
+
+    Exact over black for a pure power-law gamma, close elsewhere; without it
+    an opacity of 0.25 looks like about 0.54. Opacities are clipped to [0, 1].
+    """
+    return np.power(np.clip(np.asarray(alpha, dtype=np.float64), 0.0, 1.0), 2.2)
+
+
 def _label(subplot: Any, text: str, at: ArrayLike, color: str) -> None:
-    """A name next to a point, in screen-sized text."""
+    """A name next to a point, in screen-sized text, outlined to stand out
+    on dark and light bins alike."""
     subplot.add_text(
         text,
-        font_size=13,
+        font_size=14,
         face_color=color,
+        outline_color="white",
+        outline_thickness=0.2,
         offset=tuple(xyz(at)[0]),
         anchor="bottom-left",
     )
@@ -411,7 +470,7 @@ def _area(subplot: Any, polygon: Any, color: str, alpha: float) -> None:
         cells.triangles,
         mode="basic",
         colors=color,
-        alpha=alpha,
+        alpha=float(perceived_alpha(alpha)),
         alpha_mode="blend",
     )
     rings = [polygon.exterior.coords, *(ring.coords for ring in polygon.interiors)]
@@ -423,11 +482,10 @@ def draw_walls(subplot: Any, env: Environment) -> None:
     arena = env.arena
     if not arena.walls:
         return
-    subplot.add_line(
-        polylines([wall.coords for wall in arena.walls]),
-        colors=_WALL_COLOR,
-        thickness=5,
-    )
+    walls = polylines([wall.coords for wall in arena.walls])
+    # A white edge keeps the walls apart from dark and mid colormap colors.
+    subplot.add_line(walls, colors="white", thickness=8)
+    subplot.add_line(walls, colors=_WALL_COLOR, thickness=5)
     named: set[str] = set()
     for name, wall in zip(arena.wall_names, arena.walls, strict=True):
         if name not in named:
@@ -480,7 +538,7 @@ def draw_connections(subplot: Any, env: Environment) -> None:
         pair_segments(centers[pairs[:, 0]], centers[pairs[:, 1]]),
         colors="#555555",
         thickness=1,
-        alpha=0.6,
+        alpha=float(perceived_alpha(0.6)),
         alpha_mode="blend",
     )
 
@@ -509,10 +567,24 @@ def draw_layers(
         draw_landmarks(subplot, env)
 
 
-def draw_colorbar(subplot: Any, scale: ColorScale, label: str) -> None:
-    """A vertical color scale, with its limits and label, docked to the right."""
+COLORBAR_WIDTH = 90  # pixels of the right dock
+
+
+def draw_colorbar(
+    subplot: Any,
+    scale: ColorScale,
+    label: str,
+    *,
+    beyond: tuple[bool, bool] = (False, False),
+) -> None:
+    """A vertical color scale, with its limits and label, docked to the right.
+
+    ``beyond`` says whether values pass the bottom and the top limit; each
+    end they pass gets a triangle in its color, as Matplotlib's ``extend``.
+    Below the bar, a swatch shows the missing-value color.
+    """
     dock = subplot.docks["right"]
-    dock.size = 90
+    dock.size = COLORBAR_WIDTH
     bar = _fans(_rectangles(*np.array([[0.0], [1.0], [0.0], [1.0]])), 4)
     # The bar runs through the colormap's rows, from the first to the last.
     bottom, top = 1.5 / len(scale.lut), (len(scale.lut) - 0.5) / len(scale.lut)
@@ -524,16 +596,34 @@ def draw_colorbar(subplot: Any, scale: ColorScale, label: str) -> None:
         cmap=scale.texture,
         clim=(0.0, 1.0),
     )
+    for passed, tip, base, color in (
+        (beyond[0], -0.08, 0.0, 0),
+        (beyond[1], 1.08, 1.0, -1),
+    ):
+        if passed:
+            dock.add_mesh(
+                np.array([[0.0, base, 0], [1.0, base, 0], [0.5, tip, 0]], np.float32),
+                np.array([[0, 1, 2]], np.uint32),
+                mode="basic",
+                colors=scale.lut[color],
+            )
     # Limits above and below the bar, where a long number has the bar's width.
-    texts = [(f"{scale.vmax:.3g}", 1.02, "bottom-center")]
-    texts += [(f"{scale.vmin:.3g}", -0.02, "top-center")]
-    texts += [(label, 1.12, "bottom-center")] if label else []
+    texts = [(f"{scale.vmax:.3g}", 1.1 if beyond[1] else 1.02, "bottom-center")]
+    texts += [(f"{scale.vmin:.3g}", -0.1 if beyond[0] else -0.02, "top-center")]
+    texts += [(label, 1.24, "bottom-center")] if label else []
+    if scale.nan_color is not None:
+        swatch = _fans(_rectangles(*np.array([[0.0], [1.0], [-0.27], [-0.2]])), 4)
+        dock.add_mesh(
+            swatch.positions, swatch.triangles, mode="basic", colors=scale.nan_color
+        )
+        texts.append(("missing", -0.28, "top-center"))
     for text, height, anchor in texts:
         dock.add_text(
             text, font_size=12, face_color="w", offset=(0.5, height, 0.0), anchor=anchor
         )
     dock.camera.maintain_aspect = False
-    dock.camera.show_rect(-0.4, 1.4, -0.12, 1.22)
+    top = 1.42 if label else 1.3
+    dock.camera.show_rect(-0.4, 1.4, -0.48 if scale.nan_color else -0.2, top)
 
 
 # --- figures --------------------------------------------------------------------
@@ -547,15 +637,18 @@ def new_figure(env: Environment) -> tuple[Any, Any]:
     aspect.
     """
     fastplotlib = import_fastplotlib()
-    volume = env.n_dims == 3
+    camera, controller = camera_options(env)
     figure = fastplotlib.Figure(
-        cameras="3d" if volume else "2d",
-        controller_types=["orbit" if volume else "panzoom"],
-        size=(800, 700),
+        cameras=camera, controller_types=[controller], size=(800, 700)
     )
     subplot = figure[0, 0]
     subplot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
     return figure, subplot
+
+
+def camera_options(env: Environment) -> tuple[str, str]:
+    """The camera and controller for ``env``: rotatable 3-D, or pan and zoom."""
+    return ("3d", "orbit") if env.n_dims == 3 else ("2d", "panzoom")
 
 
 def frame_view(subplot: Any, env: Environment) -> None:

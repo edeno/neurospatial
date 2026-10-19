@@ -27,14 +27,15 @@ Performance Considerations
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import warnings
+from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import numpy as np
 from matplotlib import colormaps
 from matplotlib.colors import to_hex
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.animation._region_names import shown_region_names
 from neurospatial.geometry import require_cartesian
@@ -130,6 +131,8 @@ class OverlayProtocol(Protocol):
         | VideoData
         | EventData
         | TimeSeriesData
+        | SpikeRasterData
+        | EpochData
         | ObjectVectorData
     ):
         """Convert overlay to internal data representation.
@@ -145,7 +148,7 @@ class OverlayProtocol(Protocol):
 
         Returns
         -------
-        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | ObjectVectorData
+        PositionData | BodypartData | HeadDirectionData | VideoData | EventData | TimeSeriesData | SpikeRasterData | EpochData | ObjectVectorData
             Internal data container aligned to frame times.
 
         Notes
@@ -1292,6 +1295,7 @@ class EventOverlay:
 
         event_positions_out: dict[str, NDArray[np.float64]] = {}
         event_frame_indices_out: dict[str, NDArray[np.int_]] = {}
+        event_times_out: dict[str, NDArray[np.float64]] = {}
 
         # Get frame time range for filtering
         frame_t_min = frame_times[0] if len(frame_times) > 0 else 0.0
@@ -1343,6 +1347,7 @@ class EventOverlay:
 
             # Get filtered event times
             filtered_times = event_times_arr[in_range_mask]
+            event_times_out[event_name] = filtered_times
 
             if len(filtered_times) == 0:
                 # No events in range - use empty arrays
@@ -1423,6 +1428,7 @@ class EventOverlay:
         return EventData(
             event_positions=event_positions_out,
             event_frame_indices=event_frame_indices_out,
+            event_times=event_times_out,
             colors=colors_out,
             markers=markers_out,
             size=self.size,
@@ -1509,7 +1515,9 @@ class TimeSeriesOverlay:
         Line color (matplotlib color string). Default is "white".
     window_seconds : float, optional
         Total time window to display, centered on current frame.
-        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0.
+        E.g., 2.0 shows ±1 second. Must be positive. Default is 2.0. The
+        fastplotlib backend shows every panel drawn against time over the
+        animation's own ``window_seconds`` instead, so they line up.
     linewidth : float, optional
         Line width in points. Default is 1.0.
     alpha : float, optional
@@ -1909,6 +1917,256 @@ class TimeSeriesOverlay:
             update_mode=self.update_mode,
             playback_throttle_hz=self.playback_throttle_hz,
             scrub_throttle_hz=self.scrub_throttle_hz,
+        )
+
+
+@dataclass
+class SpikeRasterOverlay:
+    """Spikes of many units as a raster beside the field, on the same clock.
+
+    Each unit is a row of ticks at its spike times, and the panel shows the
+    animation's ``window_seconds`` around the current time, lined up with the
+    other panels drawn against time, so replay or theta sequences
+    can be read against a decoded posterior or the animal's position.
+    Hovering over a spike names its unit; with ``rates``, clicking a unit's
+    row shows its rate map under the field and highlights its spikes. Drawn
+    by ``backend="fastplotlib"``; the other backends skip it with a warning.
+
+    Parameters
+    ----------
+    spike_times : sequence of ndarray, ndarray, or spike group
+        Spike times of each unit, in seconds, on the clock of
+        ``frame_times``: one array per unit, a 2-D NaN-padded array, or a
+        group such as a pynapple ``TsGroup``.
+    order : array-like of int, shape (n_units,), optional
+        The units from the bottom row up, as indices into ``spike_times``.
+        On a track, sort by place-field peak with
+        ``np.argsort(env.to_linear(rates.peak_locations()))``, or
+        ``np.argsort(rates.peak_locations()[:, 0])`` on a 1-D environment.
+        Default: the order of ``spike_times``.
+    unit_ids : array-like, shape (n_units,), optional
+        Unit labels, in the order of ``spike_times``. Default: the labels a
+        spike group carries, else ``0 .. n_units - 1``.
+    rates : ndarray of float64, shape (n_units, n_bins), optional
+        Each unit's firing rate map, in spikes per second, on the animated
+        environment's bins and in the order of ``spike_times``, such as
+        ``compute_spatial_rates(...).firing_rates``. NaN marks bins without
+        an estimate.
+    color : str, default="white"
+        Tick color.
+    linewidth : float, default=1.5
+        Tick width, in screen pixels.
+
+    Raises
+    ------
+    ValueError
+        If there are no units, ``order`` is not a permutation of the units,
+        ``unit_ids`` has the wrong length or repeats a label, or a spike time
+        is not finite.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.animation import SpikeRasterOverlay
+    >>> spike_times = [np.array([0.1, 0.5]), np.array([0.3])]
+    >>> raster = SpikeRasterOverlay(spike_times, order=[1, 0])
+    >>> raster.color
+    'white'
+    """
+
+    spike_times: Any
+    _: KW_ONLY
+    order: ArrayLike | None = None
+    unit_ids: ArrayLike | None = None
+    rates: NDArray[np.float64] | None = None
+    color: str = "white"
+    linewidth: float = 1.5
+    # Protocol attributes: spikes are drawn at their own times.
+    times: NDArray[np.float64] | None = field(default=None, init=False, repr=False)
+    interp: Literal["linear", "nearest"] = field(
+        default="nearest", init=False, repr=False
+    )
+    # The units in row order, bottom row first: the order of spike_times.
+    _order: NDArray[np.intp] = field(init=False, repr=False, compare=False)
+    _rows: tuple[list[NDArray[np.float64]], NDArray[Any]] = field(
+        init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        """Check the spikes, the order and the labels."""
+        from neurospatial._results import resolve_unit_ids
+        from neurospatial.encoding._spikes import _as_spike_trains_with_ids
+
+        trains, carried = _as_spike_trains_with_ids(self.spike_times)
+        if not trains:
+            raise ValueError(
+                "SpikeRasterOverlay needs the spikes of at least one unit."
+            )
+        ids = resolve_unit_ids(
+            None if self.unit_ids is None else np.asarray(self.unit_ids),
+            len(trains),
+            context="SpikeRasterOverlay",
+            input_ids=carried,
+        )
+        order = (
+            np.arange(len(trains))
+            if self.order is None
+            else np.asarray(self.order).astype(np.intp, casting="same_kind")
+        )
+        if not np.array_equal(np.sort(order), np.arange(len(trains))):
+            raise ValueError(
+                f"order must list each of the {len(trains)} units once, as "
+                f"indices into spike_times; got {order.tolist()}. Why: each "
+                "row of the raster is one unit. Fix: pass a permutation, such "
+                "as np.argsort of each unit's place-field peak."
+            )
+        for i, train in enumerate(trains):
+            if not np.all(np.isfinite(train)):
+                raise ValueError(
+                    f"Unit {ids[i].item()!r} has spike times that are NaN or infinite. "
+                    "Why: a spike is drawn at its time. Fix: drop them, e.g. "
+                    "train[np.isfinite(train)]."
+                )
+        self._order = order
+        self._rows = [trains[i] for i in order], ids[order]
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> SpikeRasterData:
+        """The raster's rows, bottom row first.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps with shape (n_frames,); unused, the
+            spikes keep their own times.
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            The environment ``rates`` must have one value per bin of.
+
+        Returns
+        -------
+        SpikeRasterData
+
+        Raises
+        ------
+        ValueError
+            If ``rates`` is not one rate map per unit over ``env``'s bins.
+        """
+        spike_times, unit_ids = self._rows
+        rates = None
+        if self.rates is not None:
+            rates = np.asarray(self.rates, dtype=np.float64)
+            expected = (len(spike_times), env.n_bins)
+            if rates.shape != expected:
+                raise ValueError(
+                    f"rates has shape {rates.shape}, expected {expected}: one "
+                    "rate map per unit, in the order of spike_times, over the "
+                    "animated environment's bins. Fix: pass rate maps computed "
+                    "on this environment, e.g. "
+                    "compute_spatial_rates(env, ...).firing_rates."
+                )
+            rates = rates[self._order]
+        return SpikeRasterData(
+            spike_times=spike_times,
+            unit_ids=unit_ids,
+            rates=rates,
+            color=self.color,
+            linewidth=self.linewidth,
+        )
+
+
+@dataclass
+class EpochOverlay:
+    """Intervals of time, such as ripples or run bouts, on every time panel.
+
+    Each epoch is shaded on the panels drawn against time (a track's fields
+    over time, spike rasters and time series), the line above the panels
+    names the epoch the current time is in, and N and Shift+N jump to the start of the
+    next and previous epoch. Drawn by ``backend="fastplotlib"``; the other
+    backends skip it with a warning.
+
+    Parameters
+    ----------
+    epochs : (start, stop), array-like of shape (n_epochs, 2), or IntervalSet
+        Start and stop of each epoch, in seconds, on the clock of
+        ``frame_times``. Overlapping or touching epochs are merged.
+    label : str, default="epoch"
+        What an epoch is, such as ``"ripple"``, for the status line.
+    color : str, default="gold"
+        Shading color.
+    alpha : float, default=0.45
+        Shading opacity, from 0 to 1, as it looks in Matplotlib. Over a
+        track's fields over time, which shading would tint, epochs are a
+        solid strip above them instead.
+
+    Raises
+    ------
+    ValueError
+        If an epoch is not finite or does not stop after it starts, or
+        ``alpha`` is outside [0, 1].
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.animation import EpochOverlay
+    >>> ripples = EpochOverlay([[1.0, 1.1], [3.2, 3.35]], label="ripple")
+    >>> ripples.label
+    'ripple'
+    """
+
+    epochs: Any
+    _: KW_ONLY
+    label: str = "epoch"
+    color: str = "gold"
+    alpha: float = 0.45
+    # Protocol attributes: epochs keep their own times.
+    times: NDArray[np.float64] | None = field(default=None, init=False, repr=False)
+    interp: Literal["linear", "nearest"] = field(
+        default="nearest", init=False, repr=False
+    )
+    _intervals: NDArray[np.float64] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Check the epochs and the opacity."""
+        from neurospatial._intervals import as_intervals
+
+        intervals = as_intervals(self.epochs, name="epochs")
+        assert intervals is not None  # epochs is required
+        if not 0.0 <= self.alpha <= 1.0:
+            raise ValueError(f"alpha must be between 0 and 1, got {self.alpha}.")
+        self._intervals = intervals
+
+    def convert_to_data(
+        self,
+        frame_times: NDArray[np.float64],
+        n_frames: int,
+        env: Any,
+    ) -> EpochData:
+        """The epochs, sorted and merged.
+
+        Parameters
+        ----------
+        frame_times : NDArray[np.float64]
+            Animation frame timestamps; unused, epochs keep their own times.
+        n_frames : int
+            Number of animation frames.
+        env : Any
+            The environment; unused.
+
+        Returns
+        -------
+        EpochData
+        """
+        return EpochData(
+            intervals=self._intervals,
+            label=self.label,
+            color=self.color,
+            alpha=self.alpha,
         )
 
 
@@ -2555,6 +2813,10 @@ class PositionData:
         Marker size in points.
     trail_length : int or None
         Trail length in frames, or None for no trail.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2576,6 +2838,7 @@ class PositionData:
     color: str
     size: float
     trail_length: int | None
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -2595,6 +2858,10 @@ class BodypartData:
     colors : dict of str to str or None
         Per-part colors as matplotlib color strings. Takes precedence over
         skeleton.node_colors if both are provided.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2614,6 +2881,7 @@ class BodypartData:
     bodyparts: dict[str, NDArray[np.float64]]
     skeleton: Skeleton | None
     colors: dict[str, str] | None
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -2635,6 +2903,10 @@ class HeadDirectionData:
         Length of direction line in environment coordinate units.
     width : float
         Line width in pixels.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2656,6 +2928,7 @@ class HeadDirectionData:
     color: str
     length: float
     width: float = 3.0
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -2673,6 +2946,8 @@ class EventData:
     event_frame_indices : dict[str, NDArray[np.int_]]
         Dict mapping event type names to frame index arrays with shape (n_events,).
         Each value is the animation frame index where the event should appear.
+    event_times : dict[str, ndarray of shape (n_events,)], optional
+        Times of the events within the animation, in seconds, by type.
     colors : dict[str, str]
         Dict mapping event type names to color strings.
     markers : dict[str, str]
@@ -2698,6 +2973,8 @@ class EventData:
         Event positions by type.
     event_frame_indices : dict[str, NDArray[np.int_]]
         Frame indices by type.
+    event_times : dict[str, NDArray[np.float64]]
+        Times of the events in the animation, in seconds, by type.
     colors : dict[str, str]
         Colors by type.
     markers : dict[str, str]
@@ -2727,6 +3004,7 @@ class EventData:
     border_color: str
     border_width: float
     opacity: float
+    event_times: dict[str, NDArray[np.float64]] = field(default_factory=dict)
 
 
 @dataclass
@@ -2754,6 +3032,10 @@ class VideoData:
         Opacity of the video layer (0.0-1.0).
     z_order : {"below", "above"}
         Rendering order relative to the spatial field layer.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -2790,6 +3072,7 @@ class VideoData:
     env_bounds: tuple[float, float, float, float]
     alpha: float
     z_order: Literal["below", "above"]
+    times: NDArray[np.float64] | None = None
 
     def get_frame(self, anim_frame_idx: int) -> NDArray[np.uint8] | None:
         """Get the video frame for a given animation frame index.
@@ -3013,6 +3296,57 @@ class TimeSeriesData:
 
 
 @dataclass
+class SpikeRasterData:
+    """Internal container for a spike raster, one row per unit.
+
+    Created by the conversion pipeline from a SpikeRasterOverlay.
+
+    Attributes
+    ----------
+    spike_times : list of ndarray of float64
+        Each row's spike times, in seconds, bottom row first.
+    unit_ids : ndarray, shape (n_units,)
+        Each row's unit label.
+    rates : ndarray of float64, shape (n_units, n_bins), or None
+        Each row's rate map, in spikes per second.
+    color : str
+        Tick color.
+    linewidth : float
+        Tick width, in screen pixels.
+    """
+
+    spike_times: list[NDArray[np.float64]]
+    unit_ids: NDArray[Any]
+    rates: NDArray[np.float64] | None
+    color: str
+    linewidth: float
+
+
+@dataclass
+class EpochData:
+    """Internal container for epochs: intervals of time.
+
+    Created by the conversion pipeline from an EpochOverlay.
+
+    Attributes
+    ----------
+    intervals : ndarray of float64, shape (n_epochs, 2)
+        Start and stop of each epoch, in seconds, sorted and merged.
+    label : str
+        What an epoch is.
+    color : str
+        Shading color.
+    alpha : float
+        Shading opacity.
+    """
+
+    intervals: NDArray[np.float64]
+    label: str
+    color: str
+    alpha: float
+
+
+@dataclass
 class ObjectVectorData:
     """Internal container for object-vector overlay data aligned to animation frames.
 
@@ -3040,6 +3374,10 @@ class ObjectVectorData:
         Marker style for objects.
     object_size : float
         Size of object markers in points.
+    times : ndarray of shape (n_samples,), dtype float64, or None
+        Times of the rows, in seconds, when the overlay keeps its own
+        samples (the fastplotlib backend shows each until the next); None
+        when the rows are aligned to the animation's frames.
 
     Attributes
     ----------
@@ -3073,6 +3411,7 @@ class ObjectVectorData:
     show_objects: bool
     object_marker: str
     object_size: float
+    times: NDArray[np.float64] | None = None
 
 
 @dataclass
@@ -3098,6 +3437,10 @@ class OverlayData:
         List of event overlays. Default is empty list.
     timeseries : list[TimeSeriesData], optional
         List of time series overlays. Default is empty list.
+    spike_rasters : list[SpikeRasterData], optional
+        List of spike rasters. Default is empty list.
+    epochs : list[EpochData], optional
+        List of epoch overlays. Default is empty list.
     object_vectors : list[ObjectVectorData], optional
         List of object-vector overlays. Default is empty list.
     regions : dict[int, list[str]] | None, optional
@@ -3123,6 +3466,10 @@ class OverlayData:
         List of event overlays.
     timeseries : list[TimeSeriesData]
         List of time series overlays.
+    spike_rasters : list[SpikeRasterData]
+        List of spike rasters.
+    epochs : list[EpochData]
+        List of epoch overlays.
     object_vectors : list[ObjectVectorData]
         List of object-vector overlays.
     regions : dict[int, list[str]] | None
@@ -3155,6 +3502,8 @@ class OverlayData:
     videos: list[VideoData] = field(default_factory=list)
     events: list[EventData] = field(default_factory=list)
     timeseries: list[TimeSeriesData] = field(default_factory=list)
+    spike_rasters: list[SpikeRasterData] = field(default_factory=list)
+    epochs: list[EpochData] = field(default_factory=list)
     object_vectors: list[ObjectVectorData] = field(default_factory=list)
     regions: dict[int, list[str]] | None = None
     frame_times: NDArray[np.float64] | None = None
@@ -4111,12 +4460,25 @@ def _interp_nearest(
 # =============================================================================
 
 
+# Overlays with samples of their own, which a backend can show at their own
+# rate.
+_OWN_SAMPLE_TYPES = (
+    PositionData,
+    BodypartData,
+    HeadDirectionData,
+    VideoData,
+    ObjectVectorData,
+)
+
+
 def _convert_overlays_to_data(
     overlays: list[OverlayProtocol],
     frame_times: NDArray[np.float64],
     n_frames: int,
     env: Any,
     show_regions: bool | list[str] = False,
+    *,
+    own_samples: bool = False,
 ) -> OverlayData:
     """Convert overlay configurations to aligned internal data representation.
 
@@ -4144,6 +4506,12 @@ def _convert_overlays_to_data(
         from env.regions are included. If a list, only those region names
         are included. If False, no regions are included. Normalized to
         dict[int, list[str]] format where key 0 means "all frames".
+    own_samples : bool, default=False
+        Keep the samples of each position, pose, heading, object-vector and
+        video overlay that has ``times``, with those times in the data's
+        ``times``, instead of aligning them to ``frame_times``; for a backend
+        that shows each overlay at its own sampling rate. Every overlay is
+        still checked against ``frame_times``.
 
     Returns
     -------
@@ -4227,6 +4595,8 @@ def _convert_overlays_to_data(
     video_data_list: list[VideoData] = []
     event_data_list: list[EventData] = []
     timeseries_data_list: list[TimeSeriesData] = []
+    spike_raster_data_list: list[SpikeRasterData] = []
+    epoch_data_list: list[EpochData] = []
     object_vector_data_list: list[ObjectVectorData] = []
 
     # Process each overlay using protocol dispatch
@@ -4241,6 +4611,20 @@ def _convert_overlays_to_data(
 
         # Delegate to overlay's convert_to_data method
         internal_data = overlay.convert_to_data(frame_times, n_frames, env)
+        own_times = overlay.times
+        if (
+            own_samples
+            and own_times is not None
+            and isinstance(internal_data, _OWN_SAMPLE_TYPES)
+        ):
+            own_times = np.asarray(own_times, dtype=np.float64)
+            with warnings.catch_warnings():
+                # Checked against the frames above; its own times match.
+                warnings.simplefilter("ignore")
+                own = overlay.convert_to_data(own_times, len(own_times), env)
+            assert isinstance(own, _OWN_SAMPLE_TYPES)
+            own.times = own_times
+            internal_data = own
 
         # Dispatch to appropriate list based on return type
         if isinstance(internal_data, PositionData):
@@ -4255,13 +4639,18 @@ def _convert_overlays_to_data(
             event_data_list.append(internal_data)
         elif isinstance(internal_data, TimeSeriesData):
             timeseries_data_list.append(internal_data)
+        elif isinstance(internal_data, SpikeRasterData):
+            spike_raster_data_list.append(internal_data)
+        elif isinstance(internal_data, EpochData):
+            epoch_data_list.append(internal_data)
         elif isinstance(internal_data, ObjectVectorData):
             object_vector_data_list.append(internal_data)
         else:
             raise TypeError(
                 f"convert_to_data() must return PositionData, BodypartData, "
                 f"HeadDirectionData, VideoData, EventData, TimeSeriesData, "
-                f"or ObjectVectorData, got {type(internal_data).__name__}."
+                f"SpikeRasterData, EpochData or ObjectVectorData, got "
+                f"{type(internal_data).__name__}."
             )
 
     # Normalize regions to dict[int, list[str]] format
@@ -4278,6 +4667,8 @@ def _convert_overlays_to_data(
         videos=video_data_list,
         events=event_data_list,
         timeseries=timeseries_data_list,
+        spike_rasters=spike_raster_data_list,
+        epochs=epoch_data_list,
         object_vectors=object_vector_data_list,
         regions=normalized_regions,
         frame_times=frame_times,

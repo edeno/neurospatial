@@ -55,7 +55,7 @@ def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
     from neurospatial.animation.backends.napari_backend import (
         LazyFieldRenderer,
     )
-    from neurospatial.animation.rendering import compute_global_colormap_range
+    from neurospatial.animation.rendering import animation_colormap_range
 
     n_frames = 100_000
     n_seeks = 500  # Increased from 100 for better statistics
@@ -76,7 +76,7 @@ def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
     fields.flush()
 
     # Compute colormap range
-    vmin, vmax = compute_global_colormap_range(fields)
+    vmin, vmax = animation_colormap_range(fields, None, None)
     cmap_lookup = np.zeros((256, 3), dtype=np.uint8)  # Dummy LUT
 
     # Create lazy renderer
@@ -241,7 +241,7 @@ def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
         ChunkedLazyFieldRenderer,
         LazyFieldRenderer,
     )
-    from neurospatial.animation.rendering import compute_global_colormap_range
+    from neurospatial.animation.rendering import animation_colormap_range
 
     n_frames = 100_000  # 100K frames for realistic large dataset
     n_seeks = 500  # More seeks for better statistics
@@ -262,7 +262,7 @@ def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
     fields.flush()
 
     # Compute colormap
-    vmin, vmax = compute_global_colormap_range(fields)
+    vmin, vmax = animation_colormap_range(fields, None, None)
     cmap_lookup = np.zeros((256, 3), dtype=np.uint8)
 
     # Test regular cache
