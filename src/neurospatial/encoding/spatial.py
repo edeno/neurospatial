@@ -48,7 +48,7 @@ from collections import deque
 from collections.abc import Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -75,7 +75,9 @@ if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
 
+    from neurospatial._intervals import TimeSupport
     from neurospatial._typing import SpikeTrainsLike
+    from neurospatial.encoding._spatial_counts import LinearSpatialIntervals
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment import Environment
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -2763,6 +2765,246 @@ def _compute_glm_spatial_rates(
     return firing_rates_out, fit
 
 
+def _check_spatial_env(
+    env: Environment,
+    time_allocation: str,
+    *,
+    context: str,
+) -> None:
+    """Check the environment and the time allocation it must support.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment passed to the spatial entry point.
+    time_allocation : str
+        Requested time allocation, ``"start"`` or ``"linear"``.
+    context : str
+        Name of the calling entry point, used in error messages.
+    """
+    from neurospatial.encoding._spatial_counts import (
+        require_allocentric,
+        require_linear_allocation,
+    )
+    from neurospatial.encoding._validation import _validate_env_argument
+
+    _validate_env_argument(
+        env, context=context, arguments="spike_times, times, positions"
+    )
+    if time_allocation not in ("start", "linear"):
+        raise ValueError("time_allocation must be 'start' or 'linear'.")
+    # Refuse polar before any default (such as the bandwidth) is resolved.
+    if time_allocation == "start":
+        require_allocentric(env, f"{context}()")
+    else:
+        require_linear_allocation(env)
+
+
+def _resolve_spatial_method(
+    env: Environment,
+    method: str,
+    *,
+    bandwidth: float | None,
+    min_occupancy: float | None,
+    fill_value: float | None,
+    penalty: float | None,
+    rank: int | None,
+    pooled: bool,
+) -> tuple[float, float, float | None, int | None]:
+    """Validate the method parameters and resolve the ratio defaults.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment that sets the default bandwidth.
+    method : str
+        Spatial rate estimator.
+    bandwidth, min_occupancy, fill_value : float or None
+        Ratio-method parameters as passed by the caller.
+    penalty : float or None
+        GLM smoothing penalty as passed by the caller.
+    rank : int or None
+        GLM basis rank as passed by the caller.
+    pooled : bool
+        Whether the GLM shares one penalty across units.
+
+    Returns
+    -------
+    bandwidth : float
+        Resolved bandwidth in environment units (``0.0`` for ``"glm"``).
+    min_occupancy : float
+        Resolved minimum occupancy in seconds.
+    penalty : float or None
+        Validated GLM penalty.
+    rank : int or None
+        Validated GLM basis rank.
+    """
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        _validate_spatial_method_params,
+        resolve_spatial_bandwidth,
+        validate_pooled,
+    )
+
+    # Method-specific validation (mutual exclusivity + value domains), in the
+    # contract order, then resolve the ratio defaults. For glm the ratio params
+    # stay unset (None); for ratio methods bandwidth/min_occupancy resolve to
+    # their historical defaults so existing behavior is byte-identical.
+    penalty, rank = _validate_spatial_method_params(
+        method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+    )
+    # ``pooled`` (glm-only, strict bool): shared vs per-unit lambda. pooled=True
+    # with a ratio method is the harmless default; pooled=False with one raises.
+    validate_pooled(pooled, method)
+    # Resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
+    # returns before any smoothing and stamps bandwidth=None on the result).
+    resolved_bandwidth = (
+        resolve_spatial_bandwidth(env, bandwidth) if method != "glm" else 0.0
+    )
+    resolved_min_occupancy = 0.0 if min_occupancy is None else min_occupancy
+    if method != "glm":
+        _validate_smoothing_parameters(method, resolved_bandwidth)
+    return resolved_bandwidth, resolved_min_occupancy, penalty, rank
+
+
+class _SpatialSupport(NamedTuple):
+    """Speed gate, training support and provenance shared by spatial rates."""
+
+    speed: NDArray[np.float64] | None  # (n_time,) resolved gate, or None
+    linear_intervals: LinearSpatialIntervals | None  # time_allocation="linear"
+    time_support: TimeSupport
+    analysis_settings: dict[str, Any]
+
+
+def _prepare_spatial_support(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    max_gap: float | None,
+    epochs: Any,
+    spike_window: Any,
+    warn_on_drop: bool,
+    time_allocation: Literal["start", "linear"],
+    method: str,
+    bandwidth: float,
+    min_occupancy: float,
+    fill_value: float | None,
+    penalty: float | None,
+    rank: int | None,
+    pooled: bool,
+    backend: str,
+) -> _SpatialSupport:
+    """Resolve the speed gate, training support and provenance once.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose active bins define spatial support.
+    times : ndarray of shape (n_time,)
+        Validated trajectory timestamps in seconds.
+    positions : ndarray of shape (n_time, n_dims)
+        Validated positions in environment units.
+    speed : ndarray of shape (n_time,) or None
+        Speed supplied by the caller, recorded as given in the provenance.
+    min_speed, max_gap : float or None
+        Speed gate and maximum timestamp gap in seconds.
+    epochs, spike_window
+        Recording windows as passed by the caller.
+    warn_on_drop : bool
+        Whether to warn when support is dropped.
+    time_allocation : {"start", "linear"}
+        How each observation interval is assigned to bins.
+    method : str
+        Spatial rate estimator.
+    bandwidth, min_occupancy : float
+        Resolved ratio parameters.
+    fill_value, penalty : float or None
+        Validated fill value and GLM penalty.
+    rank : int or None
+        Validated GLM basis rank.
+    pooled : bool
+        Whether the GLM shares one penalty across units.
+    backend : str
+        Resolved backend recorded in the provenance.
+
+    Returns
+    -------
+    _SpatialSupport
+        The resolved speed gate, linear intervals (``None`` for
+        ``time_allocation="start"``), time support and analysis settings.
+    """
+    from neurospatial.encoding._provenance import rate_analysis_settings
+    from neurospatial.encoding._spatial_counts import (
+        _resolve_spatial_time_support,
+        prepare_linear_spatial_intervals,
+        resolve_speed,
+    )
+
+    # Resolve the speed gate ONCE so the SAME concrete array feeds both the
+    # spike numerator and the occupancy denominator (numerator/denominator
+    # alignment by construction). When min_speed is None this returns None and
+    # nothing speed-related changes downstream (byte-for-byte unchanged).
+    resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
+
+    linear_intervals = (
+        prepare_linear_spatial_intervals(
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+        if time_allocation == "linear"
+        else None
+    )
+
+    time_support = _resolve_spatial_time_support(
+        env,
+        times,
+        positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        warn_on_drop=warn_on_drop,
+        time_allocation=time_allocation,
+        linear_intervals=linear_intervals,
+    )
+
+    settings = rate_analysis_settings(
+        time_support,
+        min_speed=min_speed,
+        speed=speed,
+        method=method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        backend=backend,
+        penalty=penalty,
+        rank=rank,
+        pooled=pooled,
+        time_allocation=time_allocation,
+    )
+    return _SpatialSupport(
+        speed=resolved_speed,
+        linear_intervals=linear_intervals,
+        time_support=time_support,
+        analysis_settings=settings,
+    )
+
+
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -3060,68 +3302,32 @@ default="diffusion_kde"
         is_jax_available,
         validate_and_resolve_backend,
     )
-    from neurospatial.encoding._smoothing import (
-        _validate_smoothing_parameters,
-        smooth_rate_map,
-    )
+    from neurospatial.encoding._smoothing import smooth_rate_map
     from neurospatial.encoding._spatial_counts import (
-        _resolve_spatial_time_support,
         bin_spike_train,
         compute_occupancy,
-        prepare_linear_spatial_intervals,
-        require_allocentric,
-        require_linear_allocation,
-        resolve_speed,
     )
     from neurospatial.encoding._validation import (
-        _validate_env_argument,
         validate_spike_times,
         validate_trajectory,
     )
 
-    _validate_env_argument(
-        env, context="compute_spatial_rate", arguments="spike_times, times, positions"
-    )
-    if time_allocation not in ("start", "linear"):
-        raise ValueError("time_allocation must be 'start' or 'linear'.")
-    # Refuse polar before any default (such as the bandwidth) is resolved.
-    if time_allocation == "start":
-        require_allocentric(env, "compute_spatial_rate()")
-    else:
-        require_linear_allocation(env)
+    _check_spatial_env(env, time_allocation, context="compute_spatial_rate")
 
     # Raises ValueError for unknown names and ImportError if jax is unavailable;
     # "auto" resolves to "numpy" or "jax".
     resolved_backend = validate_and_resolve_backend(backend)
 
-    # Method-specific validation (mutual exclusivity + value domains), in the
-    # contract order, then resolve the ratio defaults. For glm the ratio params
-    # stay unset (None); for ratio methods bandwidth/min_occupancy resolve to
-    # their historical defaults so existing behavior is byte-identical.
-    from neurospatial.encoding._smoothing import (
-        _validate_spatial_method_params,
-        validate_pooled,
-    )
-
-    penalty, rank = _validate_spatial_method_params(
+    bandwidth, min_occupancy, penalty, rank = _resolve_spatial_method(
+        env,
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         fill_value=fill_value,
         penalty=penalty,
         rank=rank,
+        pooled=pooled,
     )
-    # ``pooled`` (glm-only, strict bool): shared vs per-unit lambda. pooled=True
-    # with a ratio method is the harmless default; pooled=False with one raises.
-    validate_pooled(pooled, method)
-    # Resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
-    # returns before any smoothing and stamps bandwidth=None on the result).
-    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
-
-    bandwidth = resolve_spatial_bandwidth(env, bandwidth) if method != "glm" else 0.0
-    min_occupancy = 0.0 if min_occupancy is None else min_occupancy
-    if method != "glm":
-        _validate_smoothing_parameters(method, bandwidth)
 
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
@@ -3133,59 +3339,31 @@ default="diffusion_kde"
     )
     validate_spike_times(spike_times, context="compute_spatial_rate")
 
-    # Resolve the speed gate ONCE so the SAME concrete array feeds both the
-    # spike numerator and the occupancy denominator (numerator/denominator
-    # alignment by construction). When min_speed is None this returns None and
-    # nothing speed-related changes downstream (byte-for-byte unchanged).
-    resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
-
-    linear_intervals = (
-        prepare_linear_spatial_intervals(
-            env,
-            times,
-            positions,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
-        )
-        if time_allocation == "linear"
-        else None
-    )
-
-    time_support = _resolve_spatial_time_support(
+    support = _prepare_spatial_support(
         env,
         times,
         positions,
-        speed=resolved_speed,
+        speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
         time_allocation=time_allocation,
-        linear_intervals=linear_intervals,
-    )
-
-    interval_mask = time_support.mask
-    resolved_spike_window = time_support.spike_window
-    from neurospatial.encoding._provenance import rate_analysis_settings
-
-    settings = rate_analysis_settings(
-        time_support,
-        min_speed=min_speed,
-        speed=speed,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         fill_value=fill_value,
-        backend=resolved_backend,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
-        time_allocation=time_allocation,
+        backend=resolved_backend,
     )
+    resolved_speed = support.speed
+    linear_intervals = support.linear_intervals
+    interval_mask = support.time_support.mask
+    resolved_spike_window = support.time_support.spike_window
+    settings = support.analysis_settings
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
@@ -3650,35 +3828,17 @@ default="diffusion_kde"
         is_jax_available,
         validate_and_resolve_backend,
     )
-    from neurospatial.encoding._smoothing import (
-        _validate_smoothing_parameters,
-        smooth_rate_maps_batch,
-    )
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
     from neurospatial.encoding._spatial_counts import (
-        _resolve_spatial_time_support,
         _warn_if_population_silent,
         bin_spike_trains,
-        prepare_linear_spatial_intervals,
-        require_allocentric,
-        require_linear_allocation,
-        resolve_speed,
     )
     from neurospatial.encoding._validation import (
-        _validate_env_argument,
         validate_spike_trains,
         validate_trajectory,
     )
 
-    _validate_env_argument(
-        env, context="compute_spatial_rates", arguments="spike_times, times, positions"
-    )
-    if time_allocation not in ("start", "linear"):
-        raise ValueError("time_allocation must be 'start' or 'linear'.")
-    # Refuse polar before any default (such as the bandwidth) is resolved.
-    if time_allocation == "start":
-        require_allocentric(env, "compute_spatial_rates()")
-    else:
-        require_linear_allocation(env)
+    _check_spatial_env(env, time_allocation, context="compute_spatial_rates")
 
     # Raises ValueError for unknown names and ImportError if jax is unavailable;
     # "auto" resolves to "numpy" or "jax".
@@ -3703,32 +3863,16 @@ default="diffusion_kde"
     # Normalize to the canonical numpy scalar type for downstream casts.
     dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
 
-    # Method-specific validation (mutual exclusivity + value domains), then
-    # resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
-    # below returns before any smoothing and stamps bandwidth=None on the result);
-    # for ratio methods this restores the historical defaults byte-for-byte.
-    from neurospatial.encoding._smoothing import (
-        _validate_spatial_method_params,
-        validate_pooled,
-    )
-
-    penalty, rank = _validate_spatial_method_params(
+    bandwidth, min_occupancy, penalty, rank = _resolve_spatial_method(
+        env,
         method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         fill_value=fill_value,
         penalty=penalty,
         rank=rank,
+        pooled=pooled,
     )
-    # ``pooled`` (glm-only, strict bool): shared vs per-unit lambda. pooled=True
-    # with a ratio method is the harmless default; pooled=False with one raises.
-    validate_pooled(pooled, method)
-    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
-
-    bandwidth = resolve_spatial_bandwidth(env, bandwidth) if method != "glm" else 0.0
-    min_occupancy = 0.0 if min_occupancy is None else min_occupancy
-    if method != "glm":
-        _validate_smoothing_parameters(method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format and resolve the
     # per-unit identity labels (defaults to arange). A labelled input keeps its
@@ -3748,63 +3892,34 @@ default="diffusion_kde"
     )
     validate_spike_trains(spike_times_list, context="compute_spatial_rates")
 
-    # Resolve the shared speed gate ONCE here (raises on speed-without-min_speed,
-    # mirroring env.occupancy). Resolving once also lets us warn a single time
-    # if min_speed excludes ALL intervals — instead of per-neuron in the batch
-    # path below. The resolved array is forwarded so bin_spike_trains does not
-    # re-derive it.
-    resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
-
-    linear_intervals = (
-        prepare_linear_spatial_intervals(
-            env,
-            times,
-            positions,
-            speed=resolved_speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-            epochs=epochs,
-            spike_window=spike_window,
-        )
-        if time_allocation == "linear"
-        else None
-    )
-
-    time_support = _resolve_spatial_time_support(
+    # The speed gate is resolved once for the population, so a gate that
+    # excludes every interval warns once rather than per neuron.
+    support = _prepare_spatial_support(
         env,
         times,
         positions,
-        speed=resolved_speed,
+        speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
         time_allocation=time_allocation,
-        linear_intervals=linear_intervals,
-    )
-
-    interval_mask = time_support.mask
-    resolved_epochs, resolved_spike_window = (
-        time_support.epochs,
-        time_support.spike_window,
-    )
-    from neurospatial.encoding._provenance import rate_analysis_settings
-
-    settings = rate_analysis_settings(
-        time_support,
-        min_speed=min_speed,
-        speed=speed,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         fill_value=fill_value,
-        backend=resolved_backend,
         penalty=penalty,
         rank=rank,
         pooled=pooled,
-        time_allocation=time_allocation,
+        backend=resolved_backend,
     )
+    resolved_speed = support.speed
+    linear_intervals = support.linear_intervals
+    interval_mask = support.time_support.mask
+    resolved_epochs = support.time_support.epochs
+    resolved_spike_window = support.time_support.spike_window
+    settings = support.analysis_settings
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
     _warn_if_population_silent(
