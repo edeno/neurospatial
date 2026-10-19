@@ -2781,6 +2781,16 @@ def _check_spatial_env(
         Requested time allocation, ``"start"`` or ``"linear"``.
     context : str
         Name of the calling entry point, used in error messages.
+
+    Raises
+    ------
+    TypeError
+        If ``env`` is not an environment.
+    ValueError
+        If ``time_allocation`` is not ``"start"`` or ``"linear"``.
+    CartesianOnlyError
+        If the environment is polar (``time_allocation="start"`` needs an
+        allocentric environment, ``"linear"`` a Cartesian one).
     """
     from neurospatial.encoding._spatial_counts import (
         require_allocentric,
@@ -2847,9 +2857,9 @@ def _resolve_spatial_method(
     )
 
     # Method-specific validation (mutual exclusivity + value domains), in the
-    # contract order, then resolve the ratio defaults. For glm the ratio params
-    # stay unset (None); for ratio methods bandwidth/min_occupancy resolve to
-    # their historical defaults so existing behavior is byte-identical.
+    # contract order, then resolve the ratio defaults. For ratio methods
+    # bandwidth/min_occupancy resolve to their historical defaults so existing
+    # behavior is byte-identical.
     penalty, rank = _validate_spatial_method_params(
         method,
         bandwidth=bandwidth,

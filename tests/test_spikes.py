@@ -1,6 +1,7 @@
 """Tests for neurospatial._spikes module.
 
-This module tests spike format normalization for encoding functions:
+This module tests spike format normalization for encoding, decoding and
+peri-event functions:
 - as_spike_trains: Converts various input formats to canonical list-of-arrays
 
 Input formats supported:

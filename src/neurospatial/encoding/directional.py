@@ -1885,8 +1885,11 @@ def _count_directional(
         Trajectory timestamps in seconds.
     headings : ndarray of shape (n_time,)
         Heading at each timestamp, in ``angle_unit``.
-    bin_size, bandwidth : float
-        Requested bin size and smoothing bandwidth, in ``angle_unit``.
+    bin_size : float
+        Requested bin size, in ``angle_unit``.
+    bandwidth : float or None
+        Requested smoothing bandwidth, in ``angle_unit``; ``None`` records
+        an unsmoothed (binned) analysis.
     angle_unit : {"rad", "deg"}
         Unit of ``headings``, ``bin_size`` and ``bandwidth``.
     max_gap : float or None

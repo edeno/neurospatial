@@ -79,7 +79,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -1245,6 +1245,14 @@ def _as_gaze_offsets(
     return offsets
 
 
+class _ViewCounts(NamedTuple):
+    """Unsmoothed view counts with the provenance used."""
+
+    spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
+    occupancy: NDArray[np.float64]  # (n_bins,) seconds
+    analysis_settings: dict[str, Any]
+
+
 def _count_views(
     env: Environment,
     spike_trains: Sequence[NDArray[np.float64]],
@@ -1265,7 +1273,7 @@ def _count_views(
     boundary_source: Literal["physical", "analysis"],
     view_bins: NDArray[np.intp] | None = None,
     n_jobs: int = 1,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]:
+) -> _ViewCounts:
     """Bin gaze locations, count spikes and build provenance for view rates.
 
     Parameters
@@ -1331,7 +1339,7 @@ def _count_views(
         gaze_offsets_source="provided" if gaze_offsets is not None else None,
         boundary_source=boundary_source if gaze_model != "fixed_distance" else None,
     )
-    return spike_counts, occupancy, settings
+    return _ViewCounts(spike_counts, occupancy, settings)
 
 
 def compute_view_rate(
@@ -1583,7 +1591,7 @@ def compute_view_rate(
 
     gaze_offsets = _as_gaze_offsets(gaze_offsets, n_samples)
 
-    spike_counts_batch, occupancy, settings = _count_views(
+    counts = _count_views(
         env,
         [spike_times],
         times,
@@ -1601,14 +1609,14 @@ def compute_view_rate(
         backend=resolved_backend,
         boundary_source=boundary_source,
     )
-    spike_counts = spike_counts_batch[0]
+    spike_counts = counts.spike_counts[0]
 
     # Apply smoothing to compute firing rate
     # smooth_rate_map dispatches to JAX or NumPy based on backend
     firing_rate = smooth_rate_map(
         env,
         spike_counts,
-        occupancy,
+        counts.occupancy,
         method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -1617,11 +1625,11 @@ def compute_view_rate(
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rate is already JAX from smooth_rate_map)
-    occupancy_out: ArrayLike = occupancy
+    occupancy_out: ArrayLike = counts.occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
 
     # Return result
     return ViewRateResult(
@@ -1633,7 +1641,7 @@ def compute_view_rate(
         method=method,
         bandwidth=bandwidth,
         spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        analysis_settings=counts.analysis_settings,
     )
 
 
@@ -2001,7 +2009,7 @@ def _compute_view_rates(
         spike_window=resolved_spike_window,
     )
 
-    spike_counts, occupancy, settings = _count_views(
+    counts = _count_views(
         env,
         spike_times_list,
         times,
@@ -2029,8 +2037,8 @@ def _compute_view_rates(
     else:
         firing_rates = smooth_rate_maps_batch(
             env,
-            spike_counts,
-            occupancy,
+            counts.spike_counts,
+            counts.occupancy,
             method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
@@ -2039,11 +2047,11 @@ def _compute_view_rates(
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
-    occupancy_out: ArrayLike = occupancy
+    occupancy_out: ArrayLike = counts.occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
         firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
 
     # Return result
@@ -2057,7 +2065,7 @@ def _compute_view_rates(
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids,
         spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        analysis_settings=counts.analysis_settings,
     )
 
 

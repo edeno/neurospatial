@@ -45,7 +45,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, TypeAlias
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -1892,13 +1892,23 @@ def _check_object_vector_env(
         )
 
 
+class _ObjectVectorCounts(NamedTuple):
+    """Unsmoothed object-vector counts with the geometry and provenance used."""
+
+    spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
+    occupancy: NDArray[np.float64]  # (n_bins,) seconds
+    polar_env: PolarEnvironment  # polar geometry (distance in env units, angle in rad)
+    bandwidth: float  # resolved smoothing bandwidth
+    analysis_settings: dict[str, Any]
+
+
 def _count_object_vectors(
     spike_trains: Sequence[NDArray[np.float64]],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
-    object_names: Any,
+    object_names: list[str] | None,
     env: Environment | None,
     *,
     distance_range: tuple[float, float],
@@ -1915,9 +1925,7 @@ def _count_object_vectors(
     n_jobs: int = 1,
     frame_bins: NDArray[np.int64] | None = None,
     polar_env: PolarEnvironment | None = None,
-) -> tuple[
-    NDArray[np.float64], NDArray[np.float64], PolarEnvironment, float, dict[str, Any]
-]:
+) -> _ObjectVectorCounts:
     """Bin egocentric coordinates, count spikes and build provenance.
 
     Parameters
@@ -2005,7 +2013,7 @@ def _count_object_vectors(
         metric=metric,
         objects=object_names,
     )
-    return spike_counts, occupancy, polar_env, bandwidth, settings
+    return _ObjectVectorCounts(spike_counts, occupancy, polar_env, bandwidth, settings)
 
 
 def _object_vector_rate(
@@ -2079,59 +2087,57 @@ def _object_vector_rate(
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
-    spike_counts_batch, occupancy, polar_env, bandwidth, settings = (
-        _count_object_vectors(
-            [spike_times],
-            times,
-            positions,
-            headings,
-            object_positions,
-            object_names,
-            env,
-            distance_range=distance_range,
-            n_distance_bins=n_distance_bins,
-            n_direction_bins=n_direction_bins,
-            metric=metric,
-            max_gap=max_gap,
-            epochs=resolved_epochs,
-            spike_window=resolved_spike_window,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            backend=resolved_backend,
-        )
-    )
-    spike_counts = spike_counts_batch[0]
-
-    firing_rate = _egocentric_firing_rate(
-        polar_env,
-        spike_counts,
-        occupancy,
+    counts = _count_object_vectors(
+        [spike_times],
+        times,
+        positions,
+        headings,
+        object_positions,
+        object_names,
+        env,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        metric=metric,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
         method=method,
         bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=resolved_backend,
+    )
+    spike_counts = counts.spike_counts[0]
+
+    firing_rate = _egocentric_firing_rate(
+        counts.polar_env,
+        spike_counts,
+        counts.occupancy,
+        method=method,
+        bandwidth=counts.bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
     )
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rate is already JAX from smooth_rate_map)
-    occupancy_out: ArrayLike = occupancy
+    occupancy_out: ArrayLike = counts.occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
 
     # Return result
     return ObjectVectorRateResult(
         direction_frame="allocentric" if headings is None else "egocentric",
         firing_rate=firing_rate,
         occupancy=occupancy_out,
-        env=polar_env,
+        env=counts.polar_env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
         spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        analysis_settings=counts.analysis_settings,
     )
 
 
@@ -2767,7 +2773,7 @@ def _object_vector_rates(
     )
 
     # Retain the exact binning support for result provenance.
-    spike_counts, occupancy, polar_env, bandwidth, settings = _count_object_vectors(
+    counts = _count_object_vectors(
         spike_times_list,
         times,
         positions,
@@ -2796,13 +2802,13 @@ def _object_vector_rates(
     # and erases distance tuning (see _raw_polar_rate). Other methods smooth.
     firing_rates: ArrayLike
     if n_neurons == 0:
-        firing_rates = np.empty((0, polar_env.n_bins), dtype=np.float64)
+        firing_rates = np.empty((0, counts.polar_env.n_bins), dtype=np.float64)
     elif method == "binned":
-        _warn_if_fully_masked(occupancy, min_occupancy)
+        _warn_if_fully_masked(counts.occupancy, min_occupancy)
         firing_rates = np.stack(
             [
-                _raw_polar_rate(counts, occupancy, min_occupancy)
-                for counts in spike_counts
+                _raw_polar_rate(unit_counts, counts.occupancy, min_occupancy)
+                for unit_counts in counts.spike_counts
             ]
         )
         if resolved_backend == "jax" and is_jax_available():
@@ -2812,22 +2818,22 @@ def _object_vector_rates(
     else:
         # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
         firing_rates = smooth_rate_maps_batch(
-            polar_env,
-            spike_counts,
-            occupancy,
+            counts.polar_env,
+            counts.spike_counts,
+            counts.occupancy,
             method=method,
-            bandwidth=bandwidth,
+            bandwidth=counts.bandwidth,
             min_occupancy=min_occupancy,
             backend=resolved_backend,
         )
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
-    occupancy_out: ArrayLike = occupancy
+    occupancy_out: ArrayLike = counts.occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(counts.occupancy, dtype=jnp.float64)
         firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
 
     # Return result
@@ -2835,13 +2841,13 @@ def _object_vector_rates(
         direction_frame="allocentric" if headings is None else "egocentric",
         firing_rates=firing_rates,
         occupancy=occupancy_out,
-        env=polar_env,
+        env=counts.polar_env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
         unit_ids=resolved_unit_ids,
         spike_window=resolved_spike_window,
-        analysis_settings=settings,
+        analysis_settings=counts.analysis_settings,
     )
 
 

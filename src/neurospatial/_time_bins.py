@@ -46,8 +46,9 @@ def _time_bins_in_windows(
 
     Each window is tiled independently, so no bin spans the space between two
     windows. A remainder shorter than one bin at the end of a window is
-    dropped, because the decoder's Poisson likelihood assumes every bin is
-    ``dt`` long. A window that is a whole number of bins up to float rounding
+    dropped, because every bin must have the same width ``dt`` for counts from
+    different bins (decoding likelihoods, peri-event histograms) to be
+    comparable. A window that is a whole number of bins up to float rounding
     keeps its last bin, whose right edge is clamped to exactly ``stop``.
 
     Parameters

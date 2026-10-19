@@ -2,8 +2,9 @@
 
 Provides :func:`bin_spikes_in_time`, the public primitive that turns a
 sequence of per-neuron spike-time arrays into a regular time grid of spike
-counts. It owns the time-grid construction (left edges plus ``dt / 2`` bin
-centers) so the spike -> time-bin -> decode seam has a single, explicit home.
+counts. It builds the bin centers (left edges plus ``dt / 2``) so the
+spike -> time-bin -> decode seam has a single, explicit home; the tiling of
+time windows into whole bins lives in :mod:`neurospatial._time_bins`.
 
 The default ``orient="time_x_neuron"`` -- ``(n_time_bins, n_neurons)`` -- is the
 one convention used across the library: both
