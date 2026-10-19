@@ -4,6 +4,35 @@
 
 ### Breaking
 
+- `population_vector_correlation` is now `rate_map_correlations`. It always
+  returned the correlation between every pair of rate maps (rows), not the
+  per-location population-vector correlation of remapping studies. The
+  argument is `firing_rates`, and a map with constant rates now has a NaN
+  diagonal entry (before, 1.0), because its correlation is undefined. A map
+  counts as constant when all its rates are exactly equal; equal rates such
+  as 0.1 everywhere, whose standard deviation rounds to about 1e-17, used to
+  give a meaningless correlation near 0 instead of NaN.
+
+  ```python
+  # before
+  corr = population_vector_correlation(population_matrix)
+  # after
+  corr = rate_map_correlations(firing_rates)  # same (n_maps, n_maps) matrix
+  ```
+
+  `population_vector_correlation` now returns one correlation per location
+  between two conditions; the old matrix is `rate_map_correlations`. A call
+  with one argument raises a `TypeError`.
+- `field_overlap` returns NaN, not 0.0, when neither field has a bin: with
+  no field in either condition there is nothing to compare, which is not the
+  same as fields that do not overlap. One empty field still gives 0.0.
+
+  ```python
+  # before
+  field_overlap(np.array([], dtype=int), np.array([], dtype=int))  # 0.0
+  # after
+  field_overlap(np.array([], dtype=int), np.array([], dtype=int))  # nan
+  ```
 - `AnnotationResult` from `annotate_video` has four fields,
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.
@@ -1358,6 +1387,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `neurospatial.encoding.population_vector_correlation(firing_rates_1,
+  firing_rates_2, *, spatial_support=None)` returns the population-vector
+  correlation at each location between two conditions, the remapping measure
+  of Leutgeb et al. (2005): one value per bin, the Pearson correlation across
+  cells of the rates at that bin. A location is NaN, never 0, when a rate is
+  NaN in either map, the bin is outside `spatial_support` (pass it for
+  zero-filled maps), or every cell has exactly the same rate there. Summarize
+  with the median over defined locations and report how many were undefined.
+
+  ```python
+  pv = population_vector_correlation(before.firing_rates, after.firing_rates)
+  defined = np.isfinite(pv)
+  print(np.median(pv[defined]), (~defined).sum())
+  ```
 - `neurospatial.events.align_continuous_to_events(times, signals,
   event_times, window, *, dt, ...)` samples per-frame signals such as speed,
   heading or the occupied zone at fixed times around each event and returns a

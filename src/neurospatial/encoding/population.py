@@ -658,7 +658,10 @@ def field_overlap(
     -------
     overlap : float
         Jaccard coefficient = |intersection| / |union|. Range [0, 1].
-        Returns 0.0 if either field is empty.
+        0.0 if exactly one field is empty: a field in one set and none in the
+        other is a real absence of overlap. NaN if both are empty: with no
+        field bin in either set there is nothing to compare, which is not the
+        same as no overlap.
 
     Examples
     --------
@@ -678,6 +681,13 @@ def field_overlap(
     >>> # Intersection: {2, 3}, Union: {0,1,2,3,4,5}
     >>> print(f"{overlap:.2f}")  # 2/6 = 0.33
     0.33
+
+    >>> # No field in either set: undefined, not zero overlap
+    >>> empty = np.array([], dtype=np.int64)
+    >>> field_overlap(field1, empty)
+    0.0
+    >>> field_overlap(empty, empty)
+    nan
 
     See Also
     --------
@@ -711,110 +721,264 @@ def field_overlap(
            the environment on the spatial firing of hippocampal complex-spike
            cells. Journal of Neuroscience, 7(7), 1951-1968.
     """
-    # Handle empty fields
-    if len(field_bins_i) == 0 or len(field_bins_j) == 0:
-        return 0.0
-
-    # Convert to sets for efficient set operations
     set_i = set(field_bins_i.tolist())
     set_j = set(field_bins_j.tolist())
-
-    # Compute Jaccard coefficient
-    intersection = set_i & set_j
     union = set_i | set_j
-
-    if len(union) == 0:
-        # Both fields empty (edge case already handled above, but be defensive)
-        return 0.0
-
-    return len(intersection) / len(union)
+    if not union:
+        # No field bin in either set: nothing to compare.
+        return np.nan
+    return len(set_i & set_j) / len(union)
 
 
-def population_vector_correlation(
-    population_matrix: NDArray[np.float64],
+def rate_map_correlations(
+    firing_rates: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
-    Compute pairwise correlation matrix between firing rate maps.
+    Pearson correlation between every pair of rate maps.
 
-    Calculates Pearson correlation between all pairs of cells' firing rate
-    vectors. Used to assess similarity of spatial representations and detect
-    functional cell assemblies.
+    Each row of ``firing_rates`` is one rate map: a cell, or one cell in one
+    condition. The result is the map-by-map correlation matrix, computed over
+    bins. It is not the population-vector correlation of remapping studies,
+    which correlates all cells' rates at each location.
 
     Parameters
     ----------
-    population_matrix : array, shape (n_cells, n_bins)
-        Firing rate maps for each cell (rows: cells, columns: bins).
+    firing_rates : array, shape (n_maps, n_bins)
+        One rate map per row, one bin per column. A NaN bin makes every
+        correlation involving that row NaN, so pass only bins supported in all
+        maps, for example ``rates.firing_rates[:, shared]`` with
+        ``shared = a.spatial_support & b.spatial_support``.
 
     Returns
     -------
-    correlation_matrix : array, shape (n_cells, n_cells)
-        Pairwise Pearson correlation coefficients. Symmetric matrix with
-        diagonal = 1.0. Off-diagonal entries in range [-1, 1].
-        Returns NaN for pairs involving cells with zero variance.
+    correlation_matrix : array, shape (n_maps, n_maps)
+        Pearson correlations, symmetric, off-diagonal entries in [-1, 1].
+        The diagonal is 1.0. NaN propagates per row: a map with a NaN bin or
+        with constant rates has no defined correlation, so its row, column
+        and diagonal entry are NaN, and the other entries are unchanged.
+        A map is constant when all its rates are exactly equal, even if their
+        standard deviation rounds to a tiny nonzero value. With no bins, every
+        entry is NaN.
 
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding.population import population_vector_correlation
-    >>> # Three cells with different firing patterns
+    >>> from neurospatial.encoding import rate_map_correlations
     >>> rng = np.random.default_rng(42)
-    >>> population_matrix = rng.random((3, 50))
-    >>> corr_matrix = population_vector_correlation(population_matrix)
-    >>> print(corr_matrix.shape)
+    >>> firing_rates = rng.random((3, 50))
+    >>> corr = rate_map_correlations(firing_rates)
+    >>> corr.shape
     (3, 3)
-    >>> # Diagonal is self-correlation (always 1.0)
-    >>> print(np.diag(corr_matrix))
-    [1. 1. 1.]
+    >>> np.diag(corr)
+    array([1., 1., 1.])
+
+    Compare the same cells in two conditions: stack the maps, then read the
+    diagonal of the before-versus-after block.
+
+    >>> before = rng.random((4, 50))
+    >>> after = before.copy()
+    >>> after[2] = rng.random(50)  # cell 2 remaps
+    >>> corr = rate_map_correlations(np.vstack([before, after]))
+    >>> per_cell = np.diag(corr[:4, 4:])
+    >>> np.round(per_cell[[0, 1, 3]], 2)
+    array([1., 1., 1.])
+    >>> bool(abs(per_cell[2]) < 0.5)
+    True
+
+    A constant map has no defined correlation.
+
+    >>> flat = np.vstack([np.ones(50), firing_rates[0]])
+    >>> np.isnan(rate_map_correlations(flat)).tolist()
+    [[True, True], [True, False]]
 
     See Also
     --------
-    field_stability : Correlation between same cell across sessions
-    field_overlap : Jaccard-based overlap measure
+    population_vector_correlation : Correlation across cells at each location
+    field_stability : Correlation between one cell's maps in two conditions
+    field_overlap : Jaccard-based overlap of place fields
+    """
+    maps = np.atleast_2d(np.asarray(firing_rates, dtype=np.float64))
+    if maps.shape[1] == 0:
+        # No bins, for example no bin supported in both conditions.
+        return np.full((maps.shape[0], maps.shape[0]), np.nan)
+
+    # A constant map divides by zero; the NaN it produces is the documented result.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        correlation_matrix = np.atleast_2d(np.corrcoef(maps))
+
+    # Exact constancy: the std of equal rates can round to ~1e-17, which
+    # corrcoef would turn into a meaningless correlation instead of NaN.
+    constant = maps.max(axis=1) == maps.min(axis=1)
+    correlation_matrix[constant, :] = np.nan
+    correlation_matrix[:, constant] = np.nan
+
+    # Self-correlation is 1.0 up to rounding; keep NaN for undefined maps.
+    diagonal = np.where(np.isnan(np.diag(correlation_matrix)), np.nan, 1.0)
+    np.fill_diagonal(correlation_matrix, diagonal)
+
+    return correlation_matrix
+
+
+def population_vector_correlation(
+    firing_rates_1: NDArray[np.float64],
+    firing_rates_2: NDArray[np.float64],
+    *,
+    spatial_support: NDArray[np.bool_] | None = None,
+) -> NDArray[np.float64]:
+    r"""
+    Population-vector correlation at each location between two conditions.
+
+    At each location (bin), the population vector is every cell's rate there.
+    The result correlates that vector in condition 1 with the same location's
+    vector in condition 2, across cells, giving one value per location. This
+    is the remapping measure of Leutgeb et al. (2005): near 1 where the
+    population fires the same way in both conditions, near 0 where the code at
+    that location is unrelated.
+
+    Parameters
+    ----------
+    firing_rates_1, firing_rates_2 : array, shape (n_units, n_bins)
+        Rate maps of the same units in the two conditions, one unit per row in
+        the same order in both, one bin per column. Matching the rows is the
+        caller's job: a correlation across cells is meaningless if row ``i``
+        is a different unit in each condition. NaN rates (bins without
+        occupancy, the default of ``compute_spatial_rates``) exclude that
+        location.
+    spatial_support : array of bool, shape (n_bins,), optional
+        Bins observed in both conditions, for example
+        ``rates_1.spatial_support & rates_2.spatial_support``. Pass it when the
+        maps were zero-filled, so an unvisited bin is not read as 0 Hz.
+        Locations outside it are NaN. With NaN-kept maps it is not needed.
+
+    Returns
+    -------
+    correlation : array, shape (n_bins,)
+        Pearson correlation across units at each location, in [-1, 1]. NaN
+        where the location is not used (a NaN rate in either map, or outside
+        ``spatial_support``) or where either population vector is flat (every
+        unit has the same rate there). NaN means undefined, never zero
+        correlation.
+
+    Raises
+    ------
+    ValueError
+        If either map is not 2-D, the two shapes differ, there are fewer than
+        two units, or ``spatial_support`` is not a bool array of shape
+        ``(n_bins,)``.
+
+    See Also
+    --------
+    rate_map_correlations : Correlation between every pair of rate maps
+    field_overlap : Jaccard overlap of place fields
 
     Notes
     -----
-    **Interpretation**:
+    With ``a`` and ``b`` the population vectors at one location, each centered
+    by subtracting its mean across units,
 
-    - **r = 1.0**: Identical spatial firing patterns
-    - **r = 0.0**: Uncorrelated (orthogonal) representations
-    - **r = -1.0**: Anticorrelated (complementary) firing
-    - **r = NaN**: One or both cells have constant firing (zero variance)
+    .. math::
 
-    **Use cases**:
+        r = \frac{\sum_c a_c b_c}{\sqrt{\sum_c a_c^2 \sum_c b_c^2}},
 
-    - Identify functional cell assemblies (high positive correlation)
-    - Detect complementary coding schemes (negative correlation)
-    - Analyze remapping (correlation drop between environments)
-    - Study ensemble dynamics during learning
+    clipped to [-1, 1] against rounding. A location is flat when every unit
+    has exactly the same rate there (maximum equals minimum); the correlation
+    is then 0/0 and the result is NaN. The check is exact, so equal rates
+    whose standard deviation rounds to about 1e-17 are still flat.
 
-    The matrix is symmetric by construction: `corr[i,j] = corr[j,i]`.
-
-    For cells with constant firing rates, correlation is undefined (NaN).
-    This typically indicates interneurons or cells with insufficient data.
+    Summarize over the defined locations, for example with the median, and
+    report how many were undefined:
+    ``np.median(r[np.isfinite(r)])`` with ``(~np.isfinite(r)).sum()``.
+    Because the measure correlates rates across cells, it drops both when
+    fields move (global remapping) and when cells change their rates relative
+    to each other (rate remapping); a change of every rate by the same factor
+    leaves it unchanged.
 
     References
     ----------
-    .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the
-           hippocampal ensemble code for space. Science, 261(5124), 1055-1058.
-    .. [2] Harris, K. D., et al. (2003). Organization of cell assemblies in
-           the hippocampus. Nature, 424(6948), 552-556.
+    .. [1] Leutgeb, S., Leutgeb, J. K., Barnes, C. A., Moser, E. I.,
+           McNaughton, B. L., & Moser, M.-B. (2005). Independent codes for
+           spatial and episodic memory in hippocampal neuronal ensembles.
+           Science, 309(5734), 619-623. https://doi.org/10.1126/science.1114037
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding import population_vector_correlation
+    >>> rates = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
+    >>> np.round(population_vector_correlation(rates, rates), 2)
+    array([ 1., nan,  1.])
+
+    Location 1 is flat (every unit fires at 2 Hz), so it has no defined
+    correlation. Opposite population vectors give -1:
+
+    >>> np.round(population_vector_correlation(rates, -rates), 2)
+    array([-1., nan, -1.])
+
+    Summarize over the defined locations and say how many were undefined:
+
+    >>> pv = population_vector_correlation(rates, rates)
+    >>> defined = np.isfinite(pv)
+    >>> print(
+    ...     f"median {np.median(pv[defined]):.2f}, "
+    ...     f"{(~defined).sum()} of {pv.size} locations undefined"
+    ... )
+    median 1.00, 1 of 3 locations undefined
+
+    With zero-filled maps, pass the bins observed in both conditions so an
+    unvisited bin is not compared as 0 Hz:
+
+    >>> filled = rates.copy()
+    >>> filled[:, 0] = 0.0  # bin 0 was never visited
+    >>> visited = np.array([False, True, True])
+    >>> pv = population_vector_correlation(filled, rates, spatial_support=visited)
+    >>> np.round(pv, 2)
+    array([nan, nan,  1.])
     """
-    n_cells = population_matrix.shape[0]
+    rates_1 = np.asarray(firing_rates_1, dtype=np.float64)
+    rates_2 = np.asarray(firing_rates_2, dtype=np.float64)
+    if rates_1.ndim != 2 or rates_2.ndim != 2:
+        raise ValueError(
+            "firing_rates_1 and firing_rates_2 must be 2-D (n_units, n_bins), "
+            f"got shapes {rates_1.shape} and {rates_2.shape}. Pass one rate map "
+            "per unit, for example rates.firing_rates from compute_spatial_rates."
+        )
+    if rates_1.shape != rates_2.shape:
+        raise ValueError(
+            "firing_rates_1 and firing_rates_2 must have the same shape, got "
+            f"{rates_1.shape} and {rates_2.shape}. Compute both maps for the same "
+            "units on the same environment, with the units in the same row order."
+        )
+    n_units, n_bins = rates_1.shape
+    if n_units < 2:
+        raise ValueError(
+            f"A population-vector correlation needs at least two units, got {n_units}: "
+            "it correlates rates across cells at each location. For one cell, "
+            "compare its two maps with field_stability."
+        )
 
-    # Use numpy's corrcoef for efficiency
-    # corrcoef computes correlation between rows
-    # Explicit dtype for mypy type checking
-    correlation_matrix = np.corrcoef(population_matrix, dtype=np.float64)
+    used = np.isfinite(rates_1).all(axis=0) & np.isfinite(rates_2).all(axis=0)
+    if spatial_support is not None:
+        support = np.asarray(spatial_support)
+        if support.dtype != np.bool_ or support.shape != (n_bins,):
+            raise ValueError(
+                f"spatial_support must be a bool array of shape ({n_bins},), got "
+                f"dtype {support.dtype} and shape {support.shape}. Pass the bins "
+                "observed in both conditions, for example "
+                "rates_1.spatial_support & rates_2.spatial_support."
+            )
+        used &= support
 
-    # Ensure output is 2D even for single cell
-    if n_cells == 1:
-        correlation_matrix = correlation_matrix.reshape(1, 1)
+    a = rates_1[:, used]
+    b = rates_2[:, used]
+    # Exact flatness: the standard deviation of equal floats can round to ~1e-17.
+    varies = (a.max(axis=0) > a.min(axis=0)) & (b.max(axis=0) > b.min(axis=0))
+    a = a[:, varies] - a[:, varies].mean(axis=0)
+    b = b[:, varies] - b[:, varies].mean(axis=0)
+    r = np.sum(a * b, axis=0) / np.sqrt(np.sum(a**2, axis=0) * np.sum(b**2, axis=0))
 
-    # Fix diagonal: self-correlation is always 1.0 by definition
-    # (even for constant cells where numpy returns NaN)
-    np.fill_diagonal(correlation_matrix, 1.0)
-
-    return correlation_matrix
+    correlation = np.full(n_bins, np.nan)
+    correlation[np.flatnonzero(used)[varies]] = np.clip(r, -1.0, 1.0)
+    return correlation
 
 
 __all__ = [
@@ -825,4 +989,5 @@ __all__ = [
     "plot_population_coverage",
     "population_coverage",
     "population_vector_correlation",
+    "rate_map_correlations",
 ]
