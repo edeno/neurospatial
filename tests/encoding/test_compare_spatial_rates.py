@@ -243,8 +243,11 @@ def test_choices_are_validated(make, argument, value) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("topology", ["same", "may_differ"])
 @pytest.mark.parametrize("mismatch", ["units", "frame", "coordinates"])
-def test_equal_shapes_cannot_bypass_environment_validation(env, make, mismatch) -> None:
+def test_equal_shapes_cannot_bypass_environment_validation(
+    env, make, mismatch, topology
+) -> None:
     if mismatch == "coordinates":
         other = Environment.from_samples(
             np.linspace(1000, 1040, 41)[:, None], bin_size=10.0, units="cm"
@@ -254,8 +257,10 @@ def test_equal_shapes_cannot_bypass_environment_validation(env, make, mismatch) 
     assert other.n_bins == env.n_bins
     rates_a = make(F)
 
+    # A bin difference refuses whatever topology= says: may_differ only
+    # accepts different connectivity between the same places.
     with pytest.raises(IncompatibleEnvironmentError, match="differ in"):
-        compare_spatial_rates(rates_a, make(G, on=other))
+        compare_spatial_rates(rates_a, make(G, on=other), topology=topology)
     assert rates_a.env.units == "cm"
 
 
@@ -341,6 +346,9 @@ def test_bins_selection_restricts_a_mapping(env, make) -> None:
     )
     assert result.bins_a.tolist() == [0, 3, 4]
     assert result.bins_b.tolist() == [0, 2, 3]
+    # Bin 2 was selected but has no partner in the subset, so it is dropped.
+    assert result.analysis_settings["bins_selected"] == 4
+    assert result.analysis_settings["n_compared_bins"] == 3
 
 
 def _renumbered(env: Environment, order) -> Environment:
@@ -662,22 +670,48 @@ def test_settings_record_the_comparison(make) -> None:
 # ---------------------------------------------------------------------------
 
 
+_RESULT_ARRAYS = (
+    "unit_ids",
+    "correlation",
+    "status",
+    "n_common_bins",
+    "bins_a",
+    "bins_b",
+    "firing_rates_a_on_bins",
+    "firing_rates_b_on_bins",
+    "occupancy_a",
+    "occupancy_b",
+    "occupied_a",
+    "occupied_b",
+    "common_support",
+    "unit_ids_only_a",
+    "unit_ids_only_b",
+)
+
+
 def test_result_owns_read_only_arrays(make) -> None:
-    rates = np.array([F, G])
-    occupancy = OCC.copy()
-    rates_a = make(rates, occupancy, ids=[1, 2])
-    result = compare_spatial_rates(rates_a, make([G, F], ids=[1, 2]))
-    before = result.firing_rates_a_on_bins.copy()
+    rates_a = make([F, G, F], ids=[1, 2, 3])
+    rates_b = make([G, F, G], ids=[1, 2, 4])
+    result = compare_spatial_rates(rates_a, rates_b)
+    inputs = [
+        np.asarray(value)
+        for rates in (rates_a, rates_b)
+        for value in (rates.firing_rates, rates.occupancy, rates.unit_ids)
+    ]
 
-    rates[:] = 0
-    occupancy[:] = 0
-
-    np.testing.assert_array_equal(result.firing_rates_a_on_bins, before)
-    assert not np.shares_memory(result.firing_rates_a_on_bins, rates_a.firing_rates)
+    for name in _RESULT_ARRAYS:
+        array = getattr(result, name)
+        assert not array.flags.writeable, name
+        assert not any(np.shares_memory(array, source) for source in inputs), name
+        with pytest.raises(ValueError, match="read-only"):
+            array[...] = array
+    difference = result.rate_difference
     with pytest.raises(ValueError, match="read-only"):
-        result.correlation[0] = 0.0
-    with pytest.raises(ValueError, match="read-only"):
-        result.rate_difference[0, 0] = 0.0
+        difference[0, 0] = 0.0
+    # A one-unit selection owns its arrays too.
+    child = result[0]
+    for name in _RESULT_ARRAYS:
+        assert not getattr(child, name).flags.writeable, name
 
 
 def test_indexing_returns_one_unit_and_sel_selects_by_label(make) -> None:

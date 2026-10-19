@@ -367,7 +367,9 @@ def compare_spatial_rates(
         neighbors.
     bins : array-like of int, optional
         Bin IDs of ``rates_a.env`` to restrict the comparison to, for example
-        ``env.bins_in_region("center")``.
+        ``env.bins_in_region("center")``. With ``bin_mapping``, selected bins
+        that have no mapped partner are dropped; ``analysis_settings`` records
+        both counts, ``bins_selected`` and ``n_compared_bins``.
     topology : {"same", "may_differ"}, default="same"
         ``"may_differ"`` accepts environments whose bins are the same places
         but whose connectivity or walls differ, as when a door opens between
