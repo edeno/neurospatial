@@ -283,6 +283,16 @@ def _validated_signal_array(
                 fix=fix,
             )
         )
+    if sig.ndim == 2 and sig.shape[1] == 0:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs at least one feature; got signals of shape "
+                f"{sig.shape}.",
+                why="each column of signals is one feature to align, and there is "
+                "nothing to align without one.",
+                fix=fix,
+            )
+        )
     return sig[:, None] if sig.ndim == 1 else sig
 
 

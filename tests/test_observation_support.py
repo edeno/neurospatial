@@ -285,6 +285,7 @@ def test_signals_shared_gate_warns_once_for_many_features():
         ([0.4, 0.3, 0.2, 0.1, 0.0], np.ones((5, 2)), None),
         (_T5, np.ones((5, 2), dtype=complex), None),
         (_T5, np.array([["a", "b"]] * 5), None),
+        (_T5, np.ones((5, 0)), None),
     ],
     ids=[
         "repeated-time",
@@ -297,11 +298,17 @@ def test_signals_shared_gate_warns_once_for_many_features():
         "decreasing-time",
         "complex",
         "non-numeric",
+        "zero-features",
     ],
 )
 def test_signals_errors_name_the_fix(times, signals, valid):
     with pytest.raises(ValueError, match="Fix:"):
         _signals(times, signals, valid=valid)
+
+
+def test_signals_without_features_say_so():
+    with pytest.raises(ValueError, match="at least one feature"):
+        _signals(signals=np.ones((5, 0)))
 
 
 def test_signals_reuse_max_gap_and_break_validation():
