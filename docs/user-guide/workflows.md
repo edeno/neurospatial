@@ -281,8 +281,9 @@ Two maps with the same number of bins are not necessarily maps of the same
 places. Here the second map is estimated on the same bins, but with the
 environment's units declared as meters instead of centimeters:
 
-<!-- docs-test: raises IncompatibleEnvironmentError -->
+<!-- docs-test: run -->
 ```python
+from neurospatial import IncompatibleEnvironmentError
 from neurospatial.encoding import compare_spatial_rates, compute_spatial_rates
 from neurospatial.simulation import linear_track_session
 
@@ -296,19 +297,20 @@ rates_m = compute_spatial_rates(
     env_in_meters, session.spike_times, session.times, session.positions,
     unit_ids=session.unit_ids,
 )
-compare_spatial_rates(rates_cm, rates_m)  # raises IncompatibleEnvironmentError
+try:
+    compare_spatial_rates(rates_cm, rates_m)
+except IncompatibleEnvironmentError as error:
+    message = str(error)
+else:
+    raise AssertionError("compare_spatial_rates accepted maps in different units")
+print(message)
+assert "differ in units or coordinate frames ('cm', None vs 'm', None)" in message
+assert "a bin_mapping cannot pair bins in different units" in message
 ```
 
-The error says what differs and how to fix it:
-
-```text
-IncompatibleEnvironmentError: compare_spatial_rates(): rates_a and rates_b were
-estimated on environments that differ in units or coordinate frames, so bin j of
-one map is not the same place as bin j of the other. Equal numbers of bins do not
-make them the same places.
-Fix: estimate both conditions on the same environment, or pass a one-to-one
-bin_mapping between them
-```
+The error names what differs, the units of each environment, and how to fix
+it: a `bin_mapping` pairs bins by place, so it cannot pair bins measured in
+different units.
 
 Units, coordinate frame, bin positions and sizes, and the connections between
 bins must all match. Estimate every condition on one environment. If the maps

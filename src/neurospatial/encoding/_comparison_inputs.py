@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 _OPERATION = "compare_spatial_rates()"
+# Bin differences in coordinate labels, which no bin_mapping can bridge.
+_LABEL_REASONS = ("coordinate systems", "units or coordinate frames")
 _MERGED_RATE_EXAMPLE = (
     "Merging bins by averaging rates is wrong: rates [0, 100] Hz with occupancy "
     "[100, 1] s merge to 0.99 Hz from counts and occupancy, not 50 Hz."
@@ -188,13 +190,13 @@ def _bin_pairs(
     topology_difference = differences.topology
     if bin_mapping is None:
         if differences.bins is not None:
+            named, fix = _bin_refusal(differences.bins, env_a, env_b)
             raise IncompatibleEnvironmentError(
                 f"{_OPERATION}: rates_a and rates_b were estimated on "
-                f"environments that differ in {differences.bins}, so bin j of "
-                "one map is not the same place as bin j of the other. Equal "
-                "numbers of bins do not make them the same places.",
-                fix="estimate both conditions on the same environment, or pass a "
-                "one-to-one bin_mapping between them",
+                f"environments that differ in {named}, so bin j of one map is "
+                "not the same place as bin j of the other. Equal numbers of "
+                "bins do not make them the same places.",
+                fix=fix,
                 first=env_a,
                 second=env_b,
             )
@@ -266,30 +268,66 @@ def _validate_bin_mapping(
                 )
             )
     _refuse_repeats(mapping)
-    # The shared check compares coordinate labels before bins, so these two
+    # The shared check compares coordinate labels before bins, so these
     # reasons mean the labels differ; any other reason is about bins, which a
     # mapping between different environments expects.
-    reason: str | None
-    if differences.bins == "coordinate systems":
-        reason = differences.bins
-    elif differences.bins == "units or coordinate frames":
-        reason = (
-            f"{differences.bins} ({env_a.units!r}, {env_a.frame!r} vs "
-            f"{env_b.units!r}, {env_b.frame!r})"
-        )
-    else:
-        reason = _mapped_bin_difference(env_a, env_b, mapping)
+    reason = (
+        differences.bins
+        if differences.bins in _LABEL_REASONS
+        else _mapped_bin_difference(env_a, env_b, mapping)
+    )
     if reason is not None:
+        named, fix = _bin_refusal(reason, env_a, env_b)
         raise IncompatibleEnvironmentError(
-            f"{_OPERATION}: bin_mapping pairs bins that differ in {reason}, so "
+            f"{_OPERATION}: bin_mapping pairs bins that differ in {named}, so "
             "paired bins are not the same place.",
-            fix="pair only bins with identical centers and sizes in the same "
-            "units and frame, or re-estimate both conditions on one common "
-            "environment",
+            fix=fix,
             first=env_a,
             second=env_b,
         )
     return mapping.astype(np.intp)
+
+
+def _bin_refusal(
+    reason: str, env_a: Environment, env_b: Environment
+) -> tuple[str, str]:
+    """The reason with what differs named, and the fix that reason needs.
+
+    A ``bin_mapping`` fixes bins listed in another order. It cannot pair
+    bins in different coordinates, nor bins whose cells differ.
+    """
+    if reason == "coordinate systems":
+        return (
+            f"{reason} ({env_a.coordinate_system!r} vs {env_b.coordinate_system!r})",
+            "estimate both conditions on environments in the same coordinate "
+            "system; a bin_mapping cannot pair bins in different coordinate "
+            "systems",
+        )
+    if reason == "units or coordinate frames":
+        return (
+            f"{reason} ({env_a.units!r}, {env_a.frame!r} vs {env_b.units!r}, "
+            f"{env_b.frame!r})",
+            "estimate both conditions on environments with the same units and "
+            "frame; a bin_mapping cannot pair bins in different units or frames",
+        )
+    if reason == "bin coordinates or ordering":
+        return (
+            reason,
+            "pass a one-to-one bin_mapping of (bin in rates_a.env, bin in "
+            "rates_b.env) rows pairing bins at the same place, or estimate both "
+            "conditions on the same environment",
+        )
+    if reason == "bin coordinates":
+        return (
+            reason,
+            "pair only bins with identical centers, or re-estimate both "
+            "conditions on one common environment",
+        )
+    return (
+        reason,
+        "re-estimate both conditions on one common environment; a bin_mapping "
+        "cannot pair bins whose cells differ",
+    )
 
 
 def _refuse_repeats(mapping: NDArray[np.integer]) -> None:

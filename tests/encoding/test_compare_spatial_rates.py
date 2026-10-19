@@ -679,6 +679,75 @@ def test_an_identity_mapping_is_refused_like_no_mapping(
         )
 
 
+# The fix each bin difference needs. A mapping cannot bridge coordinate
+# labels or different cells; it is the fix only for bins in another order.
+_RELABEL = "a bin_mapping cannot pair bins in different"
+_ONE_ENVIRONMENT = "re-estimate both conditions on one common environment"
+_FIXES = {
+    "coordinate systems": (_RELABEL, _RELABEL),
+    "units or coordinate frames": (_RELABEL, _RELABEL),
+    "bin coordinates or ordering": ("pass a one-to-one bin_mapping", None),
+    "bin coordinates": (None, "pair only bins with identical centers"),
+    "bin measures": (_ONE_ENVIRONMENT, _ONE_ENVIRONMENT),
+    "polygon cell geometry": (_ONE_ENVIRONMENT, _ONE_ENVIRONMENT),
+    "bin-boundary ownership": (_ONE_ENVIRONMENT, _ONE_ENVIRONMENT),
+    "cell shapes": (_ONE_ENVIRONMENT, _ONE_ENVIRONMENT),
+}
+
+
+@pytest.mark.parametrize(("pair", "reason", "mapped_reason"), _BIN_DIFFERENCES)
+def test_a_bin_refusal_suggests_the_fix_for_its_reason(
+    make, pair, reason, mapped_reason
+) -> None:
+    env_a, env_b = pair()
+    rates_a, rates_b = (
+        make(np.arange(1.0, env.n_bins + 1), np.ones(env.n_bins), on=env)
+        for env in (env_a, env_b)
+    )
+    identity = np.column_stack([np.arange(env_a.n_bins)] * 2)
+    for mapping, fix in (
+        (None, _FIXES[reason][0]),
+        (identity, _FIXES[mapped_reason][1]),
+    ):
+        with pytest.raises(IncompatibleEnvironmentError) as refused:
+            compare_spatial_rates(
+                rates_a, rates_b, bin_mapping=mapping, topology="may_differ"
+            )
+        fix_line = str(refused.value).splitlines()[-1]
+        assert fix_line.startswith("Fix: ")
+        assert fix in fix_line
+        # Only bins in another order are fixed by a mapping.
+        suggests_mapping = "pass a one-to-one bin_mapping" in fix_line
+        assert suggests_mapping == (
+            reason == "bin coordinates or ordering" and mapping is None
+        )
+
+
+@pytest.mark.parametrize("mapped", [False, True])
+def test_a_label_refusal_names_both_environments_labels(env, make, mapped) -> None:
+    other = env.with_metadata(units="m", frame="room")
+    mapping = np.column_stack([np.arange(5)] * 2) if mapped else None
+    with pytest.raises(
+        IncompatibleEnvironmentError,
+        match=re.escape("units or coordinate frames ('cm', None vs 'm', 'room')"),
+    ):
+        compare_spatial_rates(make(F), make(G, on=other), bin_mapping=mapping)
+
+    polar, grid = _polar_and_cartesian()
+    with pytest.raises(
+        IncompatibleEnvironmentError,
+        match=re.escape(
+            "coordinate systems (EgocentricPolarSystem(circular=True) vs "
+            "CartesianSystem())"
+        ),
+    ):
+        compare_spatial_rates(
+            make(np.arange(1.0, 9), np.ones(8), on=polar),
+            make(np.arange(1.0, 9), np.ones(8), on=grid),
+            bin_mapping=np.column_stack([np.arange(8)] * 2) if mapped else None,
+        )
+
+
 def test_a_subset_of_polygon_cells_maps_onto_its_parent(make) -> None:
     # A subset keeps its parent's cells and boundary ownership for the bins
     # it keeps, so only the connections to the dropped bins differ.
