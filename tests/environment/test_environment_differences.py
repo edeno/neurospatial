@@ -193,9 +193,31 @@ def _hexagons() -> Environment:
 _MESH_WARNING = "ignore:Triangular mesh is non-K-orthogonal:UserWarning"
 
 
-@pytest.mark.filterwarnings(_MESH_WARNING)
-def test_independently_built_meshes_agree() -> None:
-    first, second = _mesh(), _mesh()
+def _polar() -> Environment:
+    return Environment.from_polar_egocentric(
+        distance_range=(0.0, 20.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 4,
+    )
+
+
+def _grid_3d() -> Environment:
+    positions = np.random.default_rng(1).uniform(0, 10, (3000, 3))
+    return Environment.from_samples(positions, bin_size=2.0)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        pytest.param(_mesh, id="mesh", marks=pytest.mark.filterwarnings(_MESH_WARNING)),
+        pytest.param(_hexagons, id="hexagons"),
+        pytest.param(_polar, id="polar grid"),
+        pytest.param(_grid_3d, id="3-D grid"),
+    ],
+)
+def test_independently_built_cells_agree(build) -> None:
+    first, second = build(), build()
     assert first._geometry is not second._geometry
     assert _environment_differences(first, second) == (None, None)
 
@@ -336,7 +358,21 @@ def test_faces_present_in_only_one_environment_are_a_topology_difference() -> No
         arena=wide.arena,
     )
     assert _environment_differences(wide, without) == (None, _FACES)
-    assert _environment_differences(without, without.with_metadata()) == (None, None)
+
+
+def test_two_environments_that_cannot_smooth_have_the_same_conductances() -> None:
+    def without_faces() -> Environment:
+        wide = _three_bins_in_a_row(10.0)
+        return Environment.from_bins(
+            replace(wide.binning, faces=MissingFaces("no cell faces for a test")),
+            arena=wide.arena,
+        )
+
+    first, second = without_faces(), without_faces()
+    assert first._geometry is not second._geometry
+    assert _environment_differences(first, second) == (None, None)
+    identity = np.column_stack([np.arange(3), np.arange(3)])
+    assert _mapped_topology_difference(first, second, identity) is None
 
 
 _IDENTITY_3 = np.column_stack([np.arange(3), np.arange(3)])
