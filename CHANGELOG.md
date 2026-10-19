@@ -107,6 +107,39 @@
   last of them. Repeated timestamps and empty input raise in all six
   functions. Recordings without missing rows give the same values as before.
 
+- VTE metrics are `NaN`, not `0.0`, when nothing was observed, and a trial
+  without an observed heading is unclassified instead of "no head sweep".
+
+  ```python
+  # before: a pause with no movement heading scored IdPhi = 0.0 and was
+  # z-scored and classified like a straight run
+  result = compute_vte_session(env, times, positions, decision_region="center", trials=trials)
+  result.trial_results[k].head_sweep_magnitude  # 0.0
+  result.trial_results[k].is_vte                 # True or False
+  # after
+  result.trial_results[k].head_sweep_magnitude  # nan
+  result.trial_results[k].is_vte                 # None ("unclassified")
+  ```
+
+  `head_sweep_magnitude` returns `nan` with fewer than two finite headings,
+  and `head_sweep_from_positions` returns `nan` when the animal never moved
+  faster than `min_speed` (a still animal, a single sample), without the
+  all-`NaN` heading warning. `compute_vte_trial` reports `mean_speed` and
+  `min_speed` as `nan` when the window has no observed interval (fewer than
+  two samples); a measured stop is still `0.0`. `normalize_vte_scores` takes
+  the mean and std over the finite entries and gives a missing entry a `nan`
+  z-score. In `compute_vte_session`, a trial with a `nan` z-score has a `nan`
+  `vte_index` and `is_vte=None`; `n_vte_trials` counts `is_vte is True`,
+  `vte_fraction` is over the classified trials only, the session means and
+  stds use the trials where each quantity was observed, and a session
+  without any analyzed trial reports `nan` statistics and `vte_fraction`
+  (they used to be `0.0`). A `NaN` row is a missing sample: no heading or
+  speed spans it, and a trial is skipped when its window has fewer than
+  three observed samples. `head_sweep_from_positions`, `compute_vte_trial`
+  and `compute_vte_session` take `break_before` for joined recordings, and
+  repeated timestamps and empty input raise. Recordings without missing rows
+  give the same values as before wherever something was observed.
+
 - `heading_direction_labels` takes `times` before `positions`, like every
   other behavior function. The old order raises an error that names the swap.
 

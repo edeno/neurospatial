@@ -18,8 +18,14 @@ from neurospatial.behavior.decisions import (
 )
 from neurospatial.behavior.navigation import goal_bias
 from neurospatial.behavior.segmentation import (
+    Trial,
     detect_region_crossings,
     segment_by_velocity,
+)
+from neurospatial.behavior.vte import (
+    compute_vte_session,
+    compute_vte_trial,
+    head_sweep_from_positions,
 )
 from neurospatial.events import add_positions
 from neurospatial.ops.egocentric import heading_from_velocity
@@ -63,6 +69,25 @@ CALLS = {
         p,
         decision_region="mid_area",
         goal_regions=["mid_area"],
+        min_speed=1.0,
+        **kw,
+    ),
+    "head_sweep_from_positions": lambda env, t, p, **kw: head_sweep_from_positions(
+        t, p, min_speed=1.0, **kw
+    ),
+    "compute_vte_trial": lambda env, t, p, **kw: compute_vte_trial(
+        t, p, 50.0, 10.0, min_speed=1.0, **kw
+    ),
+    "compute_vte_session": lambda env, t, p, **kw: compute_vte_session(
+        env,
+        t,
+        p,
+        decision_region="mid_area",
+        trials=[
+            Trial(0.0, 39.0, "start", "mid_area", True),
+            Trial(40.0, 79.0, "start", "mid_area", True),
+        ],
+        window_duration=10.0,
         min_speed=1.0,
         **kw,
     ),
