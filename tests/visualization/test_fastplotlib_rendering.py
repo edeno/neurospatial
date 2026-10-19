@@ -211,7 +211,7 @@ def test_animation_moves_the_overlays_with_the_frame(apparatus, walk):
         _render(animation)
         np.testing.assert_allclose(position.marker.data[0, :2], path[frame], rtol=1e-6)
         assert (event_graphic.colors[:][:, 3] > 0).any() == shown
-    assert animation._plot.title.text.endswith(f"t = {t[50]:.2f} s")
+    assert animation.status.endswith(f"t = {t[50]:.2f} s")
 
 
 def test_a_frame_is_shown_until_the_next_one_starts(apparatus, walk):
@@ -433,9 +433,7 @@ def test_session_timestamps_keep_their_precision(apparatus, walk):
     (line,) = animation.widget[subplot]["speed"].graphic.graphics
     x = line.data[:][:, 0]
     assert len(np.unique(x[np.isfinite(x)])) >= 99  # not collapsed by float32
-    assert animation._plot.title.text.endswith(
-        f"t = {t[60]:.2f} s from 1700000000.00 s"
-    )
+    assert animation.status == f"t = {t[60]:.2f} s from 1700000000.00 s"
 
 
 def test_a_series_without_values_at_the_start_is_drawn_from_its_first_value(
@@ -752,12 +750,12 @@ def test_epochs_are_marked_named_and_jumped_between(track, decoded):
         marks.append(animation.widget.indices["time"])
         _render(animation)
         if marks[-1] == pytest.approx(0.45):
-            assert figure["field"].title.text.endswith("ripple 1 of 2")
+            assert animation.status.endswith("ripple 1 of 2")
     np.testing.assert_allclose(marks, [0.45, 1.2, 5.2, 5.2])  # stays at the last
     _press(figure, "N", ("Shift",))
     assert animation.widget.indices["time"] == pytest.approx(1.2)
     _render(animation)
-    assert "ripple" not in figure["field"].title.text
+    assert "ripple" not in animation.status
 
 
 def test_keys_step_frames_play_and_resize_the_time_windows(track, decoded):
@@ -894,7 +892,8 @@ def test_several_fields_are_shown_side_by_side_on_one_scale(
     np.testing.assert_allclose(second.values, doubled[40])
     assert first.scale is second.scale  # one scale, so they compare
     assert first.scale.vmax > fields.max()  # it spans the doubled field
-    assert animation._plot.title.text.startswith("posterior  |  t = ")
+    assert animation._plot.title.text == "posterior"
+    assert animation.status.startswith("t = ")
     assert animation.figure["field 1"].title.text == "likelihood"
     # The animal is drawn over both.
     markers = [layer for layer in animation._layers if hasattr(layer, "marker")]
@@ -954,7 +953,8 @@ def test_a_1d_environment_is_drawn_as_position_against_time():
     assert names == ["track", "raster 0", "series 0", "unit"]  # no field panel
     assert animation._field is None
     track = animation.figure["track"]
-    assert track.title.text.startswith("t = 0.00 s")  # the status heads it
+    assert animation.status.startswith("t = 0.00 s")
+    assert track.title.text.startswith("position along track")
     assert track.docks["right"].size > 0  # the colorbar
     # One time axis, at the bottom, and no toolbars on the time panels.
     time_panels = [animation.figure[name] for name in names[:3]]

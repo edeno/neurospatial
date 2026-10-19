@@ -1176,9 +1176,10 @@ class FastplotlibAnimation:
     Jupyter it displays itself; elsewhere call :meth:`show` (in a script,
     then ``fastplotlib.loop.run()``).
 
-    Every time shown (the slider, the time axes, the title and the
-    tooltips) counts seconds from the first frame, so session timestamps
-    (such as 1.7e9 s) keep their precision on the GPU; the title also gives
+    A line above the panels gives the time and the epochs it is in (see
+    ``status``). Every time shown (the slider, the time axes, that line and
+    the tooltips) counts seconds from the first frame, so session timestamps
+    (such as 1.7e9 s) keep their precision on the GPU; the line also gives
     the first frame's own time ("t = 4.50 s from 1700000000.00 s").
 
     Keyboard, with the figure focused (click it first):
@@ -1247,6 +1248,9 @@ class FastplotlibAnimation:
         ``"track 0"``, ``"track 1"``, ...
     n_frames : int
         Number of frames.
+    status : str
+        What the line above the panels shows: the time ("t = 4.50 s from
+        1700000000.00 s", or the frame's label) and the epochs it is in.
 
     Raises
     ------
@@ -1454,6 +1458,13 @@ class FastplotlibAnimation:
                     plot, overlay_data, clock, env, self._frame_of
                 )
         self._field = self._field_graphics[0] if self._field_graphics else None
+        # Each field its name; the time and epochs go above the panels, which
+        # a field's title is too narrow for.
+        for plot, name in zip(
+            self._plots, names if several else [self._title], strict=False
+        ):
+            plot.title = name
+        self.status = ""
         self._tracks: list[_PositionTime] = []
         if extents_along_track is not None:
             for name, label in zip(track_names, names, strict=True):
@@ -1540,7 +1551,8 @@ class FastplotlibAnimation:
         self._show(0.0, self._read(0.0))
 
     def _add_key_hint(self) -> None:
-        """A line above the panels naming the keyboard shortcuts."""
+        """Two lines above the panels, as wide as the figure: the status (the
+        time and the epochs it is in) and the keyboard shortcuts."""
         from imgui_bundle import imgui
 
         keys = ["Space play", "Left/Right frame", "[ ] window"]
@@ -1550,9 +1562,10 @@ class FastplotlibAnimation:
             keys.append("Up/Down unit, Esc none")
         self.key_hint = "Keys, after a click on the figure:  " + "  |  ".join(keys)
 
-        @self.figure.add_imgui_window(location="top", size=26, title=None)
+        @self.figure.add_imgui_window(location="top", size=48, title=None)
         def hint() -> None:
-            imgui.text(self.key_hint)
+            imgui.text(self.status)
+            imgui.text_disabled(self.key_hint)
 
     def _key(self, event: Any) -> None:
         """The keyboard shortcuts listed in the class docstring."""
@@ -1657,15 +1670,11 @@ class FastplotlibAnimation:
         if self._start != 0.0 and self._labels is None:
             # Every time shown counts from the first frame; its own, once.
             label += f" from {self._start:.2f} s"
-        parts = [self._title, label, *self._epochs_at(self._start + time)]
-        if len(self._plots) > 1:
-            # The shared time over the first field; each field its name.
-            parts[0] = self._names[0]
-            for plot, name in zip(self._plots[1:], self._names[1:], strict=True):
-                plot.title = name
-        if self._plot in self._time_titles:  # a track heads the status
-            parts.append(self._windowed(self._time_titles[self._plot]))
-        self._plot.title = "  |  ".join(part for part in parts if part)
+        # Without a field panel to carry it, the title heads the status.
+        parts = [label, *self._epochs_at(self._start + time)]
+        if not self._plots:
+            parts.insert(0, self._title)
+        self.status = "  |  ".join(part for part in parts if part)
 
     def _epochs_at(self, time: float) -> list[str]:
         """Each epoch ``time`` (absolute) is in, as "ripple 3 of 120"."""

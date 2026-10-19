@@ -277,9 +277,9 @@ a warning.
 
 Marks intervals of time, such as sharp-wave ripples, replay events or run
 bouts, on every panel drawn against time: shaded behind spike rasters and time
-series, and as lines at their starts and stops over a track's position-by-time
-panel, where shading would tint the posterior's colors. The field's title
-names the epoch the current time is in ("ripple 3 of 120"), and N and Shift+N
+series, and as a strip above a track's position-by-time panel, where shading
+would tint the posterior's colors. The line above the panels names the epoch
+the current time is in ("ripple 3 of 120"), and N and Shift+N
 jump to the start of the next and previous epoch (or event).
 
 ```python

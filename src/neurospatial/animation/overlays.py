@@ -2085,8 +2085,8 @@ class EpochOverlay:
     """Intervals of time, such as ripples or run bouts, on every time panel.
 
     Each epoch is shaded on the panels drawn against time (a track's fields
-    over time, spike rasters and time series), the field's title names the
-    epoch the current time is in, and N and Shift+N jump to the start of the
+    over time, spike rasters and time series), the line above the panels
+    names the epoch the current time is in, and N and Shift+N jump to the start of the
     next and previous epoch. Drawn by ``backend="fastplotlib"``; the other
     backends skip it with a warning.
 
@@ -2096,7 +2096,7 @@ class EpochOverlay:
         Start and stop of each epoch, in seconds, on the clock of
         ``frame_times``. Overlapping or touching epochs are merged.
     label : str, default="epoch"
-        What an epoch is, such as ``"ripple"``, for the title.
+        What an epoch is, such as ``"ripple"``, for the status line.
     color : str, default="gold"
         Shading color.
     alpha : float, default=0.45

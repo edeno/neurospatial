@@ -1273,7 +1273,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `times` move at their own sampling rate, so slow fields (a rate map per
   lap) do not freeze the animal or the camera between frames.
   `EpochOverlay` marks intervals such as ripples on every time panel and
-  names the current one in the title. Keyboard: Space plays, the arrows step
+  names the current one in a line above the panels, with the time.
+  Keyboard: Space plays, the arrows step
   one frame, N and Shift+N jump between epochs and events, and `[` and `]`
   halve or double the shared time window: every panel drawn against time
   shows the animation's `window_seconds`, so they line up. Several fields can be shown side by side

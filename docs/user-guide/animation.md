@@ -404,10 +404,11 @@ animation  # in Jupyter: the plot, a time slider and playback controls
 
 The animation is a fastplotlib `NDWidget`: a slider in seconds, buttons to
 play, step and loop, and a frame rate box. Each frame is shown from its time
-until the next frame's. Every time shown (the slider, the time axes, the
-title and the tooltips) counts seconds from the first frame, so session
-timestamps such as 1.7e9 s keep their precision; the title gives the first
-frame's own time once ("t = 4.50 s from 1700000000.00 s"). Hovering over a bin
+until the next frame's. A line above the panels gives the time and the epochs
+it is in. Every time shown (the slider, the time axes, that line and the
+tooltips) counts seconds from the first frame, so session timestamps such as
+1.7e9 s keep their precision; the line gives the first frame's own time once
+("t = 4.50 s from 1700000000.00 s"). Hovering over a bin
 shows its position and value.
 
 Position, pose, head direction, object vectors and video each move at their
@@ -503,7 +504,7 @@ up to three by default). The overlays are drawn over each, and on a track each
 gets its own position-by-time panel.
 
 An `EpochOverlay` marks intervals such as ripples on every time panel and
-names the current one in the title; see [Epoch
+names the current one above the panels; see [Epoch
 Overlay](../animation_overlays.md#epoch-overlay).
 
 Keyboard shortcuts, named in a line above the panels; click the figure first
