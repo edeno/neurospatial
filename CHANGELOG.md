@@ -7,7 +7,11 @@
 - `field_stability` returns NaN when fewer than 3 bins are finite in both maps
   (the correlation is undefined, not "uncorrelated"): fewer than 2 paired bins
   was `0.0` and exactly 2 was always `+-1`; both are now `nan`. Use `np.nanmean` or
-  `np.isfinite` when averaging across cells.
+  `np.isfinite` when averaging across cells. It is also `nan` when either map
+  is flat up to rounding (highest and lowest rates within `1e-12` of its
+  largest rate), the rule `compare_spatial_rates` uses. Before, only an exactly
+  constant map gave `nan`, so a flat map from a smoothing estimator, which
+  differs from constant by rounding, was correlated with the other map.
 
 - `SpatialRateResult` and `SpatialRatesResult` raise `ValueError` when built
   with firing rates or occupancy that do not have one value per bin of `env`

@@ -33,6 +33,7 @@ from neurospatial.encoding._comparison_inputs import (
     _match_units,
     _single_unit_label,
 )
+from neurospatial.encoding._field_metrics import _is_constant
 from neurospatial.encoding._provenance import occupancy_support
 from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
 from neurospatial.environment import _validate_target_bins
@@ -50,13 +51,6 @@ __all__ = ["RateComparisonResult", "compare_spatial_rates"]
 _METHODS = ("pearson", "spearman")
 _UNIT_SELECTIONS = ("intersection", "exact")
 _TOPOLOGIES = ("same", "may_differ")
-# A map whose spread over the common bins is at most this fraction of its
-# largest rate is flat. Dividing smoothed counts by smoothed occupancy leaves
-# rounding of order 1e-14 relative (a flat map from the package's estimators
-# spreads tens to hundreds of ulps), and correlating that noise reports a
-# spurious score.
-# A real field is many orders of magnitude deeper than 1e-12 of its peak.
-_CONSTANT_RELATIVE_SPREAD = 1e-12
 
 
 @_copy_analysis_settings
@@ -1123,24 +1117,6 @@ def _correlate(
         correlation = covariance / scale
     correlation = np.where(status == "scored", np.clip(correlation, -1.0, 1.0), np.nan)
     return correlation, status, n_common
-
-
-def _is_constant(
-    values: NDArray[np.float64], common: NDArray[np.bool_]
-) -> NDArray[np.bool_]:
-    """Whether each row is flat, up to rounding, over its ``common`` bins.
-
-    A row is flat when ``max - min <= _CONSTANT_RELATIVE_SPREAD *
-    max(|values|)`` over its common bins: the spread is rounding from
-    computing the rates, not a field. Rows without common bins count as flat;
-    the caller reports them as having too few bins first.
-    """
-    highest = np.where(common, values, -np.inf).max(axis=1, initial=-np.inf)
-    lowest = np.where(common, values, np.inf).min(axis=1, initial=np.inf)
-    magnitude = np.maximum(np.abs(highest), np.abs(lowest))
-    tolerance = _CONSTANT_RELATIVE_SPREAD * magnitude
-    constant: NDArray[np.bool_] = highest - lowest <= tolerance
-    return constant
 
 
 def _centered(
