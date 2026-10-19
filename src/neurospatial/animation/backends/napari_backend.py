@@ -1869,8 +1869,8 @@ def _render_event_overlay(
 
     Performance characteristics:
     - Instant mode: No callback (native napari handling)
-    - Cumulative mode: O(log N) per frame update (searchsorted)
-    - Decay mode: O(N) per frame update (range comparison)
+    - Cumulative and decay modes: O(log N) to find the events shown, plus
+      the events whose visibility changes
     """
     layers: list[Layer] = []
 
@@ -1947,23 +1947,6 @@ def _render_event_overlay(
         layers.append(points_layer)
         return layers
 
-    # For cumulative/decay modes, use callback-based visibility
-    # Precompute per-frame index ranges for O(events_per_frame) updates
-    # frame_starts[f] and frame_stops[f] give the slice of events for frame f
-    if n_events > 0:
-        max_frame = int(frame_indices_array[-1]) + 1
-        # Count events per frame
-        counts = np.bincount(frame_indices_array.astype(np.int64), minlength=max_frame)
-        # Cumulative sum gives end indices
-        frame_stops = np.cumsum(counts)
-        # Start indices are shifted stops
-        frame_starts = np.empty_like(frame_stops)
-        frame_starts[0] = 0
-        frame_starts[1:] = frame_stops[:-1]
-    else:
-        frame_starts = np.array([], dtype=np.int64)
-        frame_stops = np.array([], dtype=np.int64)
-
     # Create Points layer with all events initially hidden via shown mask
     # shown mask is ~30x faster than alpha (O(N) bool vs O(N*4) float)
     initial_shown = np.zeros(n_events, dtype=bool)
@@ -1982,23 +1965,70 @@ def _render_event_overlay(
         scale=points_scale,
     )
 
-    # Store metadata for callback - includes precomputed per-frame ranges
+    # Store metadata for callback: the events' frames (sorted above), the mode,
+    # and the run of events shown, which the callback updates incrementally.
     points_layer.metadata["event_frame_indices"] = frame_indices_array
     points_layer.metadata["event_decay_frames"] = event_data.decay_frames
-    points_layer.metadata["event_n_events"] = n_events
-    points_layer.metadata["event_frame_starts"] = frame_starts
-    points_layer.metadata["event_frame_stops"] = frame_stops
-    # Persistent shown mask (updated in-place by callback)
     points_layer.metadata["event_shown_mask"] = initial_shown
-    # State tracking for incremental updates
-    points_layer.metadata["event_last_frame"] = -1
-    points_layer.metadata["event_last_cutoff_idx"] = 0
+    points_layer.metadata["event_visible_run"] = (0, 0)
 
     # Register frame-change callback
     _register_event_visibility_callback(viewer, points_layer)
 
     layers.append(points_layer)
     return layers
+
+
+def _visible_run(
+    frame_indices: NDArray[np.int_], frame: int, decay_frames: int | None
+) -> tuple[int, int]:
+    """The events shown on ``frame``, as a run ``[start, stop)`` of sorted events.
+
+    Parameters
+    ----------
+    frame_indices : ndarray of int, shape (n_events,)
+        Each event's frame, sorted.
+    frame : int
+        The frame shown.
+    decay_frames : int or None
+        None shows every event so far, 0 only this frame's, and a positive
+        count the events of the last ``decay_frames`` frames and this one.
+
+    Returns
+    -------
+    start, stop : int
+    """
+    stop = int(np.searchsorted(frame_indices, frame, side="right"))
+    if decay_frames is None:
+        return 0, stop
+    first = frame - decay_frames
+    return int(np.searchsorted(frame_indices, first, side="left")), stop
+
+
+def _show_run(
+    shown: NDArray[np.bool_], old: tuple[int, int], new: tuple[int, int]
+) -> bool:
+    """Change ``shown`` in place from the run ``old`` to the run ``new``.
+
+    Only the events whose visibility changes are written, so stepping one
+    frame costs the events of that step, and a jump of any length is exact.
+
+    Returns
+    -------
+    bool
+        Whether ``shown`` changed.
+    """
+    (old_start, old_stop), (start, stop) = old, new
+    if (old_start, old_stop) == (start, stop):
+        return False
+    if old_stop <= start or stop <= old_start:  # the runs do not overlap
+        shown[old_start:old_stop] = False
+        shown[start:stop] = True
+    else:
+        # Each end moved: the events between its old and new place change.
+        shown[min(start, old_start) : max(start, old_start)] = start < old_start
+        shown[min(stop, old_stop) : max(stop, old_stop)] = stop > old_stop
+    return True
 
 
 def _register_event_visibility_callback(
@@ -2015,27 +2045,17 @@ def _register_event_visibility_callback(
         Points layer containing event markers with metadata:
         - event_frame_indices: Sorted array of frame indices for each event
         - event_decay_frames: None (cumulative), 0 (instant), or >0 (decay window)
-        - event_n_events: Total number of events
-        - event_frame_starts: Precomputed start indices for each frame
-        - event_frame_stops: Precomputed stop indices for each frame
         - event_shown_mask: Persistent boolean mask (updated in-place)
-        - event_last_frame: Last processed frame index
-        - event_last_cutoff_idx: Last cutoff index (for cumulative mode)
+        - event_visible_run: The ``[start, stop)`` run of events shown
 
     Notes
     -----
-    Uses in-place updates to a persistent ``shown`` mask for O(events_per_frame)
-    performance instead of O(N_total) per frame. The precomputed frame_starts
-    and frame_stops arrays enable direct slicing without scanning all events.
-
-    Visibility modes with optimized update strategies:
-
-    - **Cumulative** (decay_frames=None): Only set newly visible events to True.
-      Work is O(new_events) = O(events at current frame).
-    - **Instant** (decay_frames=0): Clear previous frame's events, set current.
-      Work is O(events_at_prev + events_at_current).
-    - **Decay** (decay_frames>0): Update sliding window edges.
-      Work is O(events_entering + events_leaving).
+    With the events sorted by frame, the events shown on any frame are one
+    run of them (all so far, this frame's, or the last ``decay_frames``
+    frames'), found by binary search. Only the events between the old and the
+    new ends of the run are updated: a step costs the events of that step,
+    and a jump of any length, forward or backward, shows exactly the right
+    events.
     """
 
     def on_frame_change(event: Any) -> None:
@@ -2049,112 +2069,22 @@ def _register_event_visibility_callback(
             for event callback signature).
         """
         with perf_timer("event_visibility_callback"):
-            # Get current frame from dims slider
-            current_frame = int(viewer.dims.current_step[0])
-
-            # Retrieve metadata
-            frame_indices = points_layer.metadata["event_frame_indices"]
-            decay_frames = points_layer.metadata["event_decay_frames"]
-            n_events = points_layer.metadata["event_n_events"]
-            frame_starts = points_layer.metadata["event_frame_starts"]
-            frame_stops = points_layer.metadata["event_frame_stops"]
-            shown = points_layer.metadata["event_shown_mask"]
-            last_frame = points_layer.metadata["event_last_frame"]
-            last_cutoff_idx = points_layer.metadata["event_last_cutoff_idx"]
-
-            # Handle edge cases
-            if n_events == 0:
-                return
-
-            n_frames = len(frame_starts)
-            mask_changed = False
-
-            # Compute visibility mask based on mode using in-place updates
-            if decay_frames is None:
-                # Cumulative mode: all events up to current frame
-                # Only set newly visible events (between last_cutoff and new cutoff)
-                # Use searchsorted for O(log N) cutoff lookup
-                cutoff_idx = np.searchsorted(frame_indices, current_frame, side="right")
-                if cutoff_idx > last_cutoff_idx:
-                    # Moving forward: set new events to True
-                    shown[last_cutoff_idx:cutoff_idx] = True
-                    mask_changed = True
-                elif cutoff_idx < last_cutoff_idx:
-                    # Moving backward: set removed events to False
-                    shown[cutoff_idx:last_cutoff_idx] = False
-                    mask_changed = True
-                # Update state
-                points_layer.metadata["event_last_cutoff_idx"] = cutoff_idx
-
-            elif decay_frames == 0:
-                # Instant mode: only events on exact frame
-                # Clear previous frame's events, set current frame's events
-                if last_frame >= 0 and last_frame < n_frames:
-                    prev_start = frame_starts[last_frame]
-                    prev_stop = frame_stops[last_frame]
-                    if prev_stop > prev_start:
-                        shown[prev_start:prev_stop] = False
-                        mask_changed = True
-
-                if 0 <= current_frame < n_frames:
-                    curr_start = frame_starts[current_frame]
-                    curr_stop = frame_stops[current_frame]
-                    if curr_stop > curr_start:
-                        shown[curr_start:curr_stop] = True
-                        mask_changed = True
-
-            else:
-                # Decay mode: events within window [current - decay, current]
-                # Update sliding window: hide events leaving, show events entering
-                start_frame = max(0, current_frame - decay_frames)
-                prev_start_frame = (
-                    max(0, last_frame - decay_frames) if last_frame >= 0 else 0
-                )
-
-                if last_frame < 0:
-                    # First update: show entire window
-                    if start_frame < n_frames:
-                        window_start = frame_starts[start_frame]
-                        window_stop = frame_stops[min(current_frame, n_frames - 1)]
-                        if window_stop > window_start:
-                            shown[window_start:window_stop] = True
-                            mask_changed = True
-                elif current_frame > last_frame:
-                    # Moving forward: hide events leaving window, show new events
-                    # Events leaving: frames in [prev_start_frame, start_frame)
-                    for f in range(prev_start_frame, min(start_frame, n_frames)):
-                        if f < n_frames:
-                            shown[frame_starts[f] : frame_stops[f]] = False
-                            mask_changed = True
-                    # Events entering: frames in (last_frame, current_frame]
-                    for f in range(last_frame + 1, min(current_frame + 1, n_frames)):
-                        if f < n_frames:
-                            shown[frame_starts[f] : frame_stops[f]] = True
-                            mask_changed = True
-                elif current_frame < last_frame:
-                    # Moving backward: show events re-entering, hide events leaving
-                    # Events leaving: frames in (current_frame, last_frame]
-                    for f in range(current_frame + 1, min(last_frame + 1, n_frames)):
-                        if f < n_frames:
-                            shown[frame_starts[f] : frame_stops[f]] = False
-                            mask_changed = True
-                    # Events re-entering: frames in [start_frame, prev_start_frame)
-                    for f in range(start_frame, min(prev_start_frame, n_frames)):
-                        if f < n_frames:
-                            shown[frame_starts[f] : frame_stops[f]] = True
-                            mask_changed = True
-
-            # Update last_frame state
-            points_layer.metadata["event_last_frame"] = current_frame
-
+            metadata = points_layer.metadata
+            shown = metadata["event_shown_mask"]
+            run = _visible_run(
+                metadata["event_frame_indices"],
+                int(viewer.dims.current_step[0]),
+                metadata["event_decay_frames"],
+            )
+            changed = _show_run(shown, metadata["event_visible_run"], run)
+            metadata["event_visible_run"] = run
             # Only update layer if mask changed (napari repaints on shown change)
-            if mask_changed:
+            if changed:
                 with perf_timer("event_shown_update"), points_layer.events.blocker():
                     points_layer.shown = shown
                 # Note: refresh() removed for performance. Setting shown triggers
                 # napari's internal refresh via EventedList. Explicit refresh()
                 # caused redundant Qt/OpenGL updates (~18ms overhead).
-                # If visual glitches occur, uncomment: points_layer.refresh()
 
     # Connect to dims change event
     viewer.dims.events.current_step.connect(on_frame_change)

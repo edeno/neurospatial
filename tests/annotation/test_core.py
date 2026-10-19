@@ -12,6 +12,7 @@ from neurospatial.annotation.core import (
     _resolve_config_params,
     annotate_video,
 )
+from neurospatial.landmarks import Landmarks
 from neurospatial.ops.transforms import Affine2D, VideoCalibration
 from neurospatial.regions import Region, Regions
 
@@ -153,22 +154,31 @@ class TestAnnotationResult:
     """Tests for AnnotationResult named tuple."""
 
     def test_creation(self):
-        """Create AnnotationResult with environment and regions."""
+        """Create AnnotationResult with environment, regions, walls, landmarks."""
         regions = Regions([])
-        result = AnnotationResult(environment=None, regions=regions)
+        result = AnnotationResult(
+            environment=None, regions=regions, walls={}, landmarks=Landmarks()
+        )
 
         assert result.environment is None
         assert isinstance(result.regions, Regions)
+        assert result.walls == {}
+        assert len(result.landmarks) == 0
 
     def test_unpacking(self):
         """Unpack AnnotationResult as tuple."""
         regions = Regions([])
-        result = AnnotationResult(environment=None, regions=regions)
+        landmarks = Landmarks()
+        result = AnnotationResult(
+            environment=None, regions=regions, walls={}, landmarks=landmarks
+        )
 
-        env, regs = result
+        env, regs, walls, marks = result
 
         assert env is None
         assert regs is regions
+        assert walls == {}
+        assert marks is landmarks
 
 
 @pytest.mark.gui
@@ -209,6 +219,145 @@ class TestProcessAnnotationResults:
             assert result.environment is None
         finally:
             viewer.close()
+
+    def test_environment_holds_drawn_walls_landmarks_and_regions(self):
+        """The built environment carries every drawn kind of annotation."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._napari_widget import rebuild_features
+
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(name="test")
+            # (row, col) = (y, x) in pixels
+            shapes.add(
+                np.array([[0, 0], [0, 100], [80, 100], [80, 0]]), shape_type="polygon"
+            )
+            shapes.add(
+                np.array([[10, 10], [10, 30], [30, 30], [30, 10]]), shape_type="polygon"
+            )
+            shapes.add(np.array([[0, 50], [60, 50]]), shape_type="path")
+            shapes.add(np.array([[70, 10], [70, 90]]), shape_type="path")
+            shapes.add(
+                np.array([[4, 80], [4, 84], [8, 84], [8, 80]]), shape_type="ellipse"
+            )
+            shapes.features = rebuild_features(
+                ["environment", "region", "wall", "landmark", "landmark"],
+                ["arena", "goal", "divider", "monitor", "port"],
+            )
+
+            result = _process_annotation_results(
+                shapes,
+                mode="both",
+                bin_size=5.0,
+                calibration=None,
+                simplify_tolerance=None,
+                multiple_boundaries="last",
+            )
+        finally:
+            viewer.close()
+
+        env = result.environment
+        assert env is not None
+        assert list(env.regions) == ["goal"]
+        assert env.arena.wall_names == ("divider",)
+        assert list(env.landmarks) == ["monitor", "port"]
+        assert env.landmarks["monitor"].kind == "line"
+        np.testing.assert_allclose(env.landmarks["port"].data, [82.0, 6.0])
+        assert list(result.walls) == ["divider"]
+        assert list(result.landmarks) == ["monitor", "port"]
+
+    def test_deleting_a_shape_keeps_the_types_of_the_others(self):
+        """A path wall after a deleted region stays a path, not a polygon."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._controller import ShapesLayerController
+        from neurospatial.annotation._napari_widget import rebuild_features
+        from neurospatial.annotation._state import AnnotationModeState
+
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(name="test")
+            shapes.add(
+                np.array([[0, 0], [0, 100], [80, 100], [80, 0]]), shape_type="polygon"
+            )
+            shapes.add(
+                np.array([[10, 10], [10, 30], [30, 30], [30, 10]]), shape_type="polygon"
+            )
+            shapes.add(
+                np.array([[4, 80], [4, 84], [8, 84], [8, 80]]), shape_type="ellipse"
+            )
+            shapes.add(np.array([[0, 50], [60, 50]]), shape_type="path")
+            shapes.features = rebuild_features(
+                ["environment", "region", "landmark", "wall"],
+                ["arena", "goal", "port", "divider"],
+            )
+            ShapesLayerController(
+                shapes, AnnotationModeState(region_type="region")
+            ).delete_shapes_by_indices({1})
+            assert shapes.shape_type == ["polygon", "ellipse", "path"]
+
+            result = _process_annotation_results(
+                shapes,
+                mode="both",
+                bin_size=5.0,
+                calibration=None,
+                simplify_tolerance=None,
+                multiple_boundaries="last",
+            )
+        finally:
+            viewer.close()
+        assert result.landmarks["port"].kind == "point"
+        assert list(result.walls) == ["divider"]
+        assert result.environment.arena.wall_names == ("divider",)
+
+    def test_an_initial_boundary_moves_to_the_front_with_the_types(self):
+        """Putting the boundary first keeps every other shape's type."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._napari_widget import (
+            add_initial_boundary_to_shapes,
+            rebuild_features,
+        )
+
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(name="test")
+            shapes.add(np.array([[0, 50], [60, 50]]), shape_type="path")
+            shapes.add(
+                np.array([[4, 80], [4, 84], [8, 84], [8, 80]]), shape_type="ellipse"
+            )
+            shapes.features = rebuild_features(
+                ["wall", "landmark"], ["divider", "port"]
+            )
+            add_initial_boundary_to_shapes(
+                shapes, shp.Polygon([(0, 0), (100, 0), (100, 80), (0, 80)])
+            )
+            assert shapes.shape_type == ["polygon", "path", "ellipse"]
+            assert list(shapes.features["name"]) == ["arena", "divider", "port"]
+        finally:
+            viewer.close()
+
+    def test_walls_without_an_environment_are_returned_with_a_warning(self):
+        """Walls drawn in regions mode come back unattached, and say so."""
+        napari = pytest.importorskip("napari")
+        from neurospatial.annotation._napari_widget import rebuild_features
+
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(name="test")
+            shapes.add(np.array([[0, 50], [60, 50]]), shape_type="path")
+            shapes.features = rebuild_features(["wall"], ["divider"])
+            with pytest.warns(UserWarning, match="no environment was built"):
+                result = _process_annotation_results(
+                    shapes,
+                    mode="regions",
+                    bin_size=None,
+                    calibration=None,
+                    simplify_tolerance=None,
+                    multiple_boundaries="last",
+                )
+        finally:
+            viewer.close()
+        assert result.environment is None
+        assert list(result.walls) == ["divider"]
 
 
 @pytest.mark.gui  # Skip in headless CI with: pytest -m "not gui"
@@ -344,6 +493,44 @@ class TestAnnotationWidgetIntegration:
         assert str(name_default) == "arena"
 
         viewer.close()
+
+    def test_wall_mode_draws_paths_in_the_wall_color(self):
+        """Choosing wall mode switches to the path tool; walls draw magenta."""
+        napari = pytest.importorskip("napari")
+        from qtpy.QtWidgets import QApplication
+
+        from neurospatial.annotation._napari_widget import (
+            create_annotation_widget,
+            rebuild_features,
+        )
+
+        viewer = napari.Viewer(show=False)
+        try:
+            shapes = viewer.add_shapes(
+                name="Annotations", features=rebuild_features([], [])
+            )
+            widget = create_annotation_widget(
+                viewer, "Annotations", initial_mode="environment"
+            )
+            role_selector = next(w for w in widget if w.label == "Annotation Type:")
+            assert list(role_selector.choices) == [
+                "environment",
+                "hole",
+                "region",
+                "wall",
+                "landmark",
+            ]
+            role_selector.value = "wall"
+            assert shapes.mode == "add_path"
+            shapes.add_paths([np.array([[0, 50], [60, 50]])])
+            QApplication.processEvents()
+            assert str(shapes.features["role"].iloc[0]) == "wall"
+            assert str(shapes.features["name"].iloc[0]) == "wall_1"
+            np.testing.assert_allclose(shapes.edge_color[0], [1.0, 0.0, 1.0, 1.0])
+            role_selector.value = "region"
+            assert shapes.mode == "add_polygon"
+        finally:
+            viewer.close()
 
     def test_programmatic_shape_addition_sets_features(self):
         """Adding shapes programmatically should set features correctly."""
@@ -482,7 +669,7 @@ class TestAnnotationWidgetIntegration:
         napari = pytest.importorskip("napari")
         from neurospatial.annotation._napari_widget import (
             rebuild_features,
-            sync_face_colors_from_features,
+            sync_colors_from_features,
         )
 
         viewer = napari.Viewer(show=False)
@@ -507,7 +694,7 @@ class TestAnnotationWidgetIntegration:
         )
 
         # Sync colors from features
-        sync_face_colors_from_features(shapes)
+        sync_colors_from_features(shapes)
 
         # Verify each shape has correct color
         # napari stores face_color as RGBA arrays
