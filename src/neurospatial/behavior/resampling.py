@@ -220,7 +220,11 @@ def resample_by_distance(
     >>> result.weights.tolist()
     [0.0, 0.5, 0.0, 0.5, 0.0]
     """
-    if not np.isfinite(spacing) or spacing <= 0:
+    try:
+        valid_spacing = bool(np.isfinite(spacing) and spacing > 0)
+    except TypeError:  # None, strings and other non-numbers
+        valid_spacing = False
+    if not valid_spacing:
         raise ValueError(
             _format_error(
                 f"resample_by_distance() needs spacing to be a positive finite "

@@ -50,20 +50,66 @@ def test_output_dtypes():
     )
     for name in ("source_left", "source_right", "run_ids", "run_sample_bounds"):
         assert getattr(result, name).dtype == np.intp, name
-    for name in ("times", "positions", "weights", "run_distance", "run_time_bounds"):
+    for name in (
+        "times",
+        "positions",
+        "weights",
+        "run_distance",
+        "cumulative_distance",
+        "run_time_bounds",
+        "run_path_lengths",
+    ):
         assert getattr(result, name).dtype == np.float64, name
     assert result.off_grid_endpoint.dtype == np.bool_
 
 
-def test_floating_point_cumsum_snaps_to_exact_sample():
-    times = np.array([0.0, 1.0, 2.0, 10.0, 11.0])
+@pytest.mark.parametrize(
+    ("x", "spacing", "at", "source"),
+    [
+        # 0.1 * 3 is 0.30000000000000004, one ulp past the sample at 0.3
+        ([0, 0.1, 0.3, 0.6], 0.1, 3, 2),
+        # 0.3 * 3 is 0.8999999999999999, one ulp short of the run end at 0.9
+        ([0, 0.7, 0.8, 0.9], 0.3, 3, 3),
+    ],
+)
+def test_target_within_tolerance_snaps_to_sample(x, spacing, at, source):
+    times = np.arange(len(x), dtype=float)
     result = resample_by_distance(
-        times, _xline([0, 0.1, 0.3, 0.3, 0.6], times), spacing=0.3, max_gap=None
+        times, _xline(x, times), spacing=spacing, max_gap=None
     )
-    at = int(np.flatnonzero(np.isclose(result.run_distance, 0.3))[0])
-    assert result.times[at] == 10.0
-    assert result.source_left[at] == result.source_right[at] == 3
+    assert result.source_left[at] == result.source_right[at] == source
     assert result.weights[at] == 0.0
+    assert result.times[at] == times[source]
+    assert result.positions[at, 0] == x[source]
+
+
+def test_run_end_within_tolerance_of_grid_keeps_final_sample():
+    # 4.3 / 0.1 floors to 42 although 0.1 * 43 == 4.3
+    assert 0.1 * 43 == 4.3 and np.floor(4.3 / 0.1) == 42
+    times = np.array([0.0, 1.0])
+    result = resample_by_distance(
+        times, _xline([0, 4.3], times), spacing=0.1, max_gap=None
+    )
+    assert result.times.size == 44
+    assert result.run_distance[-1] == 4.3
+    assert result.source_left[-1] == result.source_right[-1] == 1
+    assert result.times[-1] == 1.0
+    assert not result.off_grid_endpoint.any()
+
+
+def test_last_target_past_run_end_is_clipped_to_run_end():
+    # 0.1 * 6 is 0.6000000000000001, just past the run length 0.6
+    times = np.arange(4, dtype=float)
+    result = resample_by_distance(
+        times, _xline([0, 0.1, 0.3, 0.6], times), spacing=0.1, max_gap=None
+    )
+    assert result.times.size == 7
+    assert result.run_distance[-1] == result.run_path_lengths[0] == 0.6
+    assert result.cumulative_distance[-1] == 0.6
+    assert result.source_left[-1] == result.source_right[-1] == 3
+    assert result.weights[-1] == 0.0
+    assert result.times[-1] == 3.0
+    assert not result.off_grid_endpoint.any()
 
 
 def test_endpoint_rule():
@@ -252,7 +298,7 @@ def test_one_dimensional_positions():
     np.testing.assert_allclose(result.positions[:, 0], [0, 0.5, 1, 1.5, 2])
 
 
-@pytest.mark.parametrize("spacing", [0, -1.0, np.nan, np.inf])
+@pytest.mark.parametrize("spacing", [0, -1.0, np.nan, np.inf, None, "2 cm"])
 def test_invalid_spacing_raises(spacing):
     times = np.arange(3) * 0.1
     with pytest.raises(ValueError, match="spacing") as caught:

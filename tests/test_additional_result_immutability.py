@@ -241,8 +241,9 @@ def test_directional_maps_are_owned_and_read_only(env, how):
 
 def test_summary_xarray_export_is_editable_and_independent(env):
     pytest.importorskip("xarray")
+    inputs = next(inputs for cls, inputs in CASES if cls is DecodingSummary)
     result = DecodingSummary(
-        env=env, **copy.deepcopy(CASES[0][1]), spike_window=np.array([[0.0, 2.0]])
+        env=env, **copy.deepcopy(inputs), spike_window=np.array([[0.0, 2.0]])
     )
     dataset = result.to_xarray()
     for name in dataset.variables:
