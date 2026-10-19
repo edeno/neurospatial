@@ -1043,6 +1043,30 @@ def _warn_undrawn_on_a_line(overlay_data: OverlayData) -> None:
         )
 
 
+# The most steps a second fastplotlib's frame rate box allows.
+_MAX_STEPS = 100
+
+
+def _finest_interval(overlay_data: OverlayData | None) -> float:
+    """The typical sampling interval of the fastest overlay with its own
+    samples, in seconds; infinite without one."""
+    if overlay_data is None:
+        return np.inf
+    own = [
+        item.times
+        for items in (
+            overlay_data.positions,
+            overlay_data.bodypart_sets,
+            overlay_data.head_directions,
+            overlay_data.object_vectors,
+            overlay_data.videos,
+        )
+        for item in items
+        if item.times is not None and len(item.times) > 1
+    ]
+    return min((float(np.median(np.diff(times))) for times in own), default=np.inf)
+
+
 def playback_step(frame_times: NDArray[np.float64]) -> float:
     """Seconds that play and the step buttons move: short enough to reach
     every frame, unless frames are much closer than the typical interval.
@@ -1278,6 +1302,14 @@ class FastplotlibAnimation:
             )
         groups = _group_timeseries(overlay_data.timeseries if overlay_data else [])
         step = playback_step(self._frame_times)
+        typical = float(np.median(np.diff(self._clock))) if self.n_frames > 1 else step
+        # Overlays with samples of their own play each sample too, as finely
+        # as the controls (at most 100 steps a second) allow at this speed.
+        seconds_per_second = fps * typical
+        step = min(
+            step,
+            max(_finest_interval(overlay_data), seconds_per_second / _MAX_STEPS),
+        )
         extents_along_track = track_extents(env)
         several = len(stacks) > 1
         # On a 1-D environment the track panel shows all a field panel would,
@@ -1341,8 +1373,7 @@ class FastplotlibAnimation:
         )
         # Playing moves one step per 1 / fps s (the box allows 1-100); a step
         # shorter than the typical interval plays faster to keep the speed.
-        typical = float(np.median(np.diff(self._clock))) if self.n_frames > 1 else step
-        steps_per_second = min(max(round(fps * typical / step), 1), 100)
+        steps_per_second = min(max(round(seconds_per_second / step), 1), _MAX_STEPS)
         self.widget.ui_sliders._fps["time"] = steps_per_second
         self.widget.ui_sliders._frame_time["time"] = 1 / steps_per_second
         self.figure = self.widget.figure

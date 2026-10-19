@@ -1219,6 +1219,39 @@ def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
     )
 
 
+def test_playback_reaches_overlay_samples_between_slow_frames(apparatus):
+    # One rate map a second; tracking at 20 Hz.
+    times = np.arange(0.0, 5.0, 0.05)
+    path = np.c_[5 + 30 * times / 5, np.full(len(times), 20.0)]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = apparatus.animate_fields(
+            np.zeros((5, apparatus.n_bins)),
+            frame_times=np.arange(5.0),
+            backend="fastplotlib",
+            overlays=[PositionOverlay(positions=path, times=times)],
+        )
+    step = animation.widget.ranges["time"].step
+    assert step <= 0.05 + 1e-9  # every tracking sample is played
+    # ...in real time: 20 steps a second.
+    assert animation.widget.ui_sliders._fps["time"] == 20
+
+    # Faster than the controls can step (100 a second): real time still, in
+    # 10 ms steps.
+    times = np.arange(0.0, 5.0, 0.002)
+    path = np.c_[5 + 30 * times / 5, np.full(len(times), 20.0)]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = apparatus.animate_fields(
+            np.zeros((5, apparatus.n_bins)),
+            frame_times=np.arange(5.0),
+            backend="fastplotlib",
+            overlays=[PositionOverlay(positions=path, times=times)],
+        )
+    assert animation.widget.ranges["time"].step == pytest.approx(0.01)
+    assert animation.widget.ui_sliders._fps["time"] == 100
+
+
 def test_timestamp_jitter_is_not_a_gap(apparatus):
     times = np.array([0.0, 0.1, 0.21, 0.31, 2.0, 2.1])  # jitter, then a real gap
     path = np.c_[np.linspace(5, 30, 6), np.full(6, 20.0)]

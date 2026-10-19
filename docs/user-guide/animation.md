@@ -523,7 +523,9 @@ Playback can show many frames a second: a posterior that jumps between
 replay bins can flash over a large area. Lower the frame rate in the controls,
 or step with the arrow keys, if flashing is a concern.
 
-Play and the step buttons move by a fixed time, short enough to reach every
+Play and the step buttons also reach every sample of an overlay with its own
+`times` between slow field frames, as finely as 100 steps a second allow at
+the playback speed. They move by a fixed time, short enough to reach every
 frame when frames are evenly spaced (camera jitter included). For frames with
 long gaps or very uneven spacing, such as decoded replay bins from separate
 ripples, a warning says so: playback holds a frame through a gap. Step frame
