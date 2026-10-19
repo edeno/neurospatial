@@ -29,6 +29,8 @@ def recording():
         "compute_decision_analysis",
         "compute_goal_directed_metrics",
         "compute_path_efficiency",
+        "compute_planar_curvature",
+        "compute_planar_turn_angles",
         "compute_pre_decision_metrics",
         "compute_vte_session",
         "compute_vte_trial",

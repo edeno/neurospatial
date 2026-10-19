@@ -360,6 +360,300 @@ def compute_turn_angles(
     return angles
 
 
+def _planar_turns(
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    call: str,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]
+]:
+    """Incoming and outgoing displacement at each sample of a planar path.
+
+    Returns
+    -------
+    times : NDArray[np.float64], shape (n_samples,)
+        Validated sample times in seconds.
+    a, b : NDArray[np.float64], shape (n_samples, 2)
+        ``positions[i] - positions[i - 1]`` and ``positions[i + 1] - positions[i]``;
+        NaN rows where ``supported`` is False.
+    supported : NDArray[np.bool_], shape (n_samples,)
+        True at interior samples whose two neighbouring intervals are both
+        usable and whose two displacements are both nonzero.
+    """
+    # Validate first so a swapped (positions, times) call gets that message.
+    t, p, support = validated_observations(
+        times,
+        positions,
+        call=call,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no turning was observed",
+    )
+    shape = np.shape(positions)
+    if len(shape) != 2 or shape[1] != 2:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs positions with exactly two columns (x, y); "
+                f"got shape {shape}.",
+                why=(
+                    "a signed turn and planar curvature are defined for two "
+                    "coordinates, and the N-D formula of compute_turn_angles is "
+                    "neither a projection nor 3-D curvature."
+                ),
+                fix="pass positions[:, :2] to analyze movement in the horizontal plane",
+            )
+        )
+    n_samples = t.size
+    a = np.full((n_samples, 2), np.nan)
+    b = np.full((n_samples, 2), np.nan)
+    supported = np.zeros(n_samples, dtype=bool)
+    if n_samples >= 3:
+        with np.errstate(invalid="ignore"):  # inf - inf on missing rows
+            a[1:-1] = p[1:-1] - p[:-2]
+            b[1:-1] = p[2:] - p[1:-1]
+        supported[1:-1] = support.interval_mask[:-1] & support.interval_mask[1:]
+        supported &= np.any(a != 0, axis=1) & np.any(b != 0, axis=1)
+    a[~supported] = np.nan
+    b[~supported] = np.nan
+    return t, a, b, supported
+
+
+def compute_planar_turn_angles(
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+) -> NDArray[np.float64]:
+    """
+    Compute the signed turn in movement direction at each tracking sample.
+
+    At sample ``i`` the turn is the angle from the incoming displacement
+    ``a = positions[i] - positions[i - 1]`` to the outgoing displacement
+    ``b = positions[i + 1] - positions[i]``, in the horizontal (x, y) plane.
+    Positive turns are counterclockwise (to the animal's left, seen from above).
+    Only observed movement is used: a turn is never computed across a missing
+    sample, a time gap or a declared recording break.
+
+    Parameters
+    ----------
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, 2)
+        x, y positions in physical units. Rows with a non-finite coordinate are
+        missing. Exactly two columns are required.
+    max_gap : float or None, default=0.5
+        Longest interval, in seconds, that counts as continuous observation.
+        ``None`` keeps every interval.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. An interval must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples,)
+        Turn in radians, in ``(-pi, pi]``, aligned with ``times``. An exact
+        reversal is ``pi``. NaN at the first and last sample, at samples next to
+        a missing sample, time gap or break, and where the incoming or outgoing
+        displacement is zero (the animal did not move, so there is no
+        direction).
+
+    Raises
+    ------
+    ValueError
+        If ``positions`` does not have exactly two columns, ``times`` and
+        ``positions`` are swapped or misaligned, ``times`` is not strictly
+        increasing, ``max_gap`` is not positive and finite or ``None``, or
+        ``break_before`` is not a Boolean array with one entry per sample.
+
+    Notes
+    -----
+    The turn is ``atan2(a_x * b_y - a_y * b_x, a . b)``. It is a turn per
+    sample, so it depends on the frame rate: sampling the same smooth path
+    four times faster makes each turn about four times smaller. For a measure
+    of path shape that does not depend on the frame rate, use
+    ``compute_planar_curvature``.
+
+    Tracking jitter makes small displacements point in random directions, so
+    turns at slow speeds are noisy. Resample the path at a spacing you choose
+    with ``resample_by_distance`` first, or smooth the positions explicitly;
+    this function does no smoothing.
+
+    For 3-D tracking, pass ``positions[:, :2]`` to analyze turns in the
+    horizontal plane.
+
+    See Also
+    --------
+    compute_planar_curvature : Signed geometric curvature, independent of frame rate.
+    resample_by_distance : Equal-distance samples, a distance-scale regularization.
+    compute_turn_angles : Turns between successive distinct positions, without
+        times, observation gaps or sample alignment.
+
+    Examples
+    --------
+    A right-angle left turn:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import compute_planar_turn_angles
+    >>> times = np.array([0.0, 0.1, 0.2])
+    >>> positions = np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]])
+    >>> turns = compute_planar_turn_angles(times, positions)
+    >>> np.round(turns, 4).tolist()
+    [nan, 1.5708, nan]
+
+    Running counterclockwise around a circle at 0.8 rad/s, sampled at 30 Hz,
+    turns by ``0.8 / 30`` radians per sample:
+
+    >>> times = np.arange(0, 5, 1 / 30)
+    >>> positions = 7.0 * np.c_[np.cos(0.8 * times), np.sin(0.8 * times)]
+    >>> turns = compute_planar_turn_angles(times, positions)
+    >>> bool(np.allclose(turns[1:-1], 0.8 / 30))
+    True
+    """
+    _, a, b, _ = _planar_turns(
+        times,
+        positions,
+        call="compute_planar_turn_angles",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+    )
+    cross = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
+    angles: NDArray[np.float64] = np.arctan2(cross, np.sum(a * b, axis=1))
+    angles[angles == -np.pi] = np.pi  # a reversal is pi, not -pi
+    return angles
+
+
+def compute_planar_curvature(
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+) -> NDArray[np.float64]:
+    """
+    Compute the signed curvature of the observed path at each tracking sample.
+
+    Curvature at sample ``i`` is one over the radius of the circle through
+    positions ``i - 1``, ``i`` and ``i + 1`` in the horizontal (x, y) plane:
+    0 on a straight segment, ``1 / r`` on a circle of radius ``r``. It is
+    positive when the path bends counterclockwise (to the animal's left, seen
+    from above) and negative when it bends clockwise. Only observed movement is
+    used: curvature is never computed across a missing sample, a time gap or a
+    declared recording break.
+
+    Parameters
+    ----------
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples, 2)
+        x, y positions in physical units. Rows with a non-finite coordinate are
+        missing. Exactly two columns are required.
+    max_gap : float or None, default=0.5
+        Longest interval, in seconds, that counts as continuous observation.
+        ``None`` keeps every interval.
+    epochs : None, (start, stop) or array-like of shape (n_epochs, 2), optional
+        Half-open ``[start, stop)`` windows in seconds, on the clock of
+        ``times``. An interval must lie inside one window.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples,)
+        Signed curvature in inverse position units (for example 1/cm), aligned
+        with ``times``. NaN at the first and last sample, at samples next to a
+        missing sample, time gap or break, where the incoming or outgoing
+        displacement is zero, and at an exact reversal (no circle passes
+        through the three points).
+
+    Raises
+    ------
+    ValueError
+        If ``positions`` does not have exactly two columns, ``times`` and
+        ``positions`` are swapped or misaligned, ``times`` is not strictly
+        increasing, ``max_gap`` is not positive and finite or ``None``, or
+        ``break_before`` is not a Boolean array with one entry per sample.
+
+    Notes
+    -----
+    With ``a = positions[i] - positions[i - 1]`` and
+    ``b = positions[i + 1] - positions[i]``, this is the discrete Menger
+    curvature ``2 (a_x b_y - a_y b_x) / (|a| |b| |a + b|)``. It is exact for any
+    three points on a circle, however unevenly they are spaced, so it does not
+    depend on the frame rate or on running speed. Scaling positions by ``s``
+    divides it by ``s``; time units do not enter.
+
+    Tracking jitter dominates the curvature of very short steps. Resample the
+    path at a spacing you choose with ``resample_by_distance`` first (curvature
+    is then measured at that distance scale), or smooth the positions
+    explicitly; this function does no smoothing.
+
+    For 3-D tracking, pass ``positions[:, :2]`` to analyze curvature in the
+    horizontal plane.
+
+    See Also
+    --------
+    compute_planar_turn_angles : Signed turn per sample, in radians.
+    resample_by_distance : Equal-distance samples, a distance-scale regularization.
+    compute_trajectory_curvature : Smoothed turn angle per sample (radians, not
+        geometric curvature), without observation gaps.
+
+    Examples
+    --------
+    A right-angle left turn through ``(10, 0)`` lies on a circle of radius
+    ``5 * sqrt(2)``:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import compute_planar_curvature
+    >>> times = np.array([0.0, 0.1, 0.2])
+    >>> positions = np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]])
+    >>> curvature = compute_planar_curvature(times, positions)
+    >>> np.round(curvature * 5 * np.sqrt(2), 6).tolist()
+    [nan, 1.0, nan]
+
+    A counterclockwise circle of radius 7 cm has curvature 1/7 per cm at every
+    interior sample, and the reversed path has -1/7:
+
+    >>> times = np.arange(0, 5, 1 / 30)
+    >>> positions = 7.0 * np.c_[np.cos(0.8 * times), np.sin(0.8 * times)]
+    >>> curvature = compute_planar_curvature(times, positions)
+    >>> bool(np.allclose(curvature[1:-1], 1 / 7))
+    True
+    >>> reversed_path = compute_planar_curvature(times, positions[::-1])
+    >>> bool(np.allclose(reversed_path[1:-1], -1 / 7))
+    True
+    """
+    _, a, b, _ = _planar_turns(
+        times,
+        positions,
+        call="compute_planar_curvature",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+    )
+    cross = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
+    chord = np.linalg.norm(a + b, axis=1)
+    denominator = np.linalg.norm(a, axis=1) * np.linalg.norm(b, axis=1) * chord
+    with np.errstate(invalid="ignore"):  # 0 / 0 at an exact reversal
+        curvature: NDArray[np.float64] = 2.0 * cross / denominator
+    curvature[chord == 0] = np.nan
+    return curvature
+
+
 def compute_step_lengths(
     positions: NDArray[np.float64],
     *,
