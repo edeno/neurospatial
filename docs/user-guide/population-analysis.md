@@ -21,7 +21,7 @@ time bins and are with the decoding tools.
 | --- | --- | --- |
 | Rate maps for every unit | `compute_spatial_rates` | `neurospatial` or `neurospatial.encoding` |
 | How much of the environment is covered, and by how many place cells? | `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
-| Does the map change between conditions? | `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
+| Does the map change between conditions? | `population_vector_correlation`, `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
 | Spike counts in time bins | `bin_spikes_in_time` | `neurospatial.decoding` |
 | Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `reactivation_strength`, `explained_variance_reactivation` | `neurospatial.decoding` (defined in `neurospatial.decoding.assemblies`) |
 | What position does the population encode? | `decode_position`, `decode_session`, `BayesianDecoder` | `neurospatial.decoding` |
@@ -147,7 +147,11 @@ Use one environment and the same rate-map settings for both conditions, and
 select each condition with `epochs=` instead of slicing the arrays.
 
 ```python
-from neurospatial.encoding import field_overlap, rate_map_correlations
+from neurospatial.encoding import (
+    field_overlap,
+    population_vector_correlation,
+    rate_map_correlations,
+)
 from neurospatial.simulation import PlaceCellModel
 
 session = linear_track_session(duration=240.0, n_place_cells=16, n_laps=20, seed=1)
@@ -186,8 +190,11 @@ Pearson correlation of every pair of rows in a `(n_maps, n_bins)` matrix.
 Stack the two conditions, and the diagonal of the before-versus-after block
 is each cell's rate-map correlation across the change. The classic
 population-vector correlation of remapping studies works the other way round:
-it correlates the vector of all cells' rates at each location, giving one
-value per bin.
+`population_vector_correlation` correlates the vector of all cells' rates at
+each location, giving one value per bin. A location where every cell has the
+same rate has no defined correlation and is NaN, as is a location with a NaN
+rate in either condition; summarize over the defined locations and report how
+many were undefined.
 
 ```python
 n_units = len(spike_times)
@@ -198,37 +205,16 @@ print("Map correlation, cells that moved their field:", np.round(per_cell[moves]
 assert per_cell[~moves].min() >= 0.99 - 0.006  # 0.99-1.00
 assert (per_cell[moves] > -0.15).all() and (per_cell[moves] < 0).all()
 
-
-def standardize(x):
-    """Z-score each location's population vector across cells."""
-    # A location where every cell has the same rate has zero spread and comes
-    # out NaN. Such a location has no defined correlation.
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return (x - x.mean(axis=0)) / x.std(axis=0)
-
-
-def median_pv_correlation(x, y):
-    """Median population-vector correlation over locations where it is defined."""
-    per_location = (standardize(x) * standardize(y)).mean(axis=0)
-    defined = np.isfinite(per_location)
-    n_undefined = int((~defined).sum())
-    if not defined.any():
-        return np.nan, n_undefined
-    return float(np.median(per_location[defined])), n_undefined
-
-
-# Identical maps with one flat location: the flat one is skipped, the rest are 1.
+# Identical maps with one flat location: the flat one is NaN, the rest are 1.
 demo = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
-demo_median, demo_undefined = median_pv_correlation(demo, demo)
-assert demo_undefined == 1 and np.isclose(demo_median, 1.0)
+demo_pv = population_vector_correlation(demo, demo)
+assert np.isnan(demo_pv[1]) and np.allclose(demo_pv[[0, 2]], 1.0)
 
-pv_median, n_undefined = median_pv_correlation(before, after)
-if np.isnan(pv_median):
-    print("Population-vector correlation is undefined: every location is flat.")
-else:
-    print(f"Population-vector correlation per location: median {pv_median:.2f} "
-          f"({n_undefined} of {before.shape[1]} locations undefined)")
-assert np.isclose(pv_median, 0.27, atol=0.006) and n_undefined == 0
+pv = population_vector_correlation(before, after)
+defined = np.isfinite(pv)
+print(f"Population-vector correlation per location: median {np.median(pv[defined]):.2f} "
+      f"({(~defined).sum()} of {pv.size} locations undefined)")
+assert np.isclose(np.median(pv[defined]), 0.27, atol=0.006) and defined.all()
 ```
 
 The cells that kept their field have map correlations of 0.99-1.00, and the
@@ -286,7 +272,7 @@ Cells that kept their field share most of their field bins (overlap
 0.86-1.00), and cells that moved share none. Neither per-cell measure detects
 a cell that keeps its field but changes its peak rate (rate remapping): field
 overlap ignores rates, and a correlation ignores a change of scale. Compare
-in-field rates for that; the per-location population-vector correlation does
+in-field rates for that; the per-location `population_vector_correlation` does
 drop when cells change their rates relative to each other.
 
 ## Which cells fire together, and does that pattern return during rest?
