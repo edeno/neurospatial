@@ -392,7 +392,7 @@ def head_sweep_from_positions(
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
         increasing, if ``break_before`` is not a Boolean array with one entry
-        per sample, or if two or more samples have fewer than two coordinates.
+        per sample, or if positions has fewer than two coordinates (x and y).
 
     Notes
     -----
@@ -438,9 +438,7 @@ def head_sweep_from_positions(
         break_before=break_before,
         result="no head sweep was observed",
     )
-    if times.size >= 2:
-        # Check the caller's shape: the resolver reshapes 1-D positions.
-        _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions)
     return _head_sweep(times, positions, support.interval_mask, min_speed=min_speed)
 
 
@@ -715,7 +713,7 @@ def compute_vte_trial(
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
         increasing, if ``break_before`` is not a Boolean array with one entry
-        per sample, or if two or more samples have fewer than two coordinates.
+        per sample, or if positions has fewer than two coordinates (x and y).
 
     Notes
     -----
@@ -779,9 +777,7 @@ def compute_vte_trial(
         break_before=break_before,
         result="no VTE metric was observed",
     )
-    if times.size >= 2:
-        # Check the caller's shape: the resolver reshapes 1-D positions.
-        _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions)
     window = _pre_decision_window(
         times, support.interval_gates, entry_time, window_duration
     )
@@ -903,7 +899,7 @@ def compute_vte_session(
         If ``decision_region`` is not in ``env.regions``, if there are no
         samples, if ``times`` is not finite and strictly increasing, if
         ``break_before`` is not a Boolean array with one entry per sample, or
-        if two or more samples have fewer than two coordinates.
+        if positions has fewer than two coordinates (x and y).
 
     Warns
     -----
@@ -1009,9 +1005,7 @@ def compute_vte_session(
     )
     from neurospatial.ops.egocentric import _validate_velocity_positions
 
-    if times.size >= 2:
-        # Check the caller's shape: the resolver reshapes 1-D positions.
-        _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions)
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session()")
     # First pass: compute raw metrics for all trials
     raw_head_sweeps: list[float] = []

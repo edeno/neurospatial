@@ -1075,9 +1075,12 @@ def test_empty_input_raises(t_maze_environment, name):
         )
 
 
-def test_heading_stats_one_dimensional_error_names_the_passed_shape():
+@pytest.mark.parametrize("n_samples", [1, 30])
+def test_heading_stats_one_dimensional_positions_raise(n_samples):
+    """A heading needs x and y, so 1-D positions raise, naming the passed shape."""
     from neurospatial.behavior import pre_decision_heading_stats
 
-    times = np.arange(30) / 10
-    with pytest.raises(ValueError, match=r"got shape \(30,\)"):
+    times = np.arange(n_samples) / 10
+    match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
+    with pytest.raises(ValueError, match=match):
         pre_decision_heading_stats(times, 10 * times, min_speed=1.0)

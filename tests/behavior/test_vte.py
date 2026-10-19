@@ -796,15 +796,6 @@ class TestComputeVTETrial:
         )
         assert np.isfinite(result.mean_speed)
 
-    def test_one_dimensional_positions_error_names_the_passed_shape(self):
-        from neurospatial.behavior.vte import compute_vte_trial
-
-        times = np.arange(30) / 10
-        with pytest.raises(ValueError, match=r"got shape \(30,\)"):
-            compute_vte_trial(
-                times, 10 * times, entry_time=2.0, window_duration=1.0, min_speed=1.0
-            )
-
 
 # =============================================================================
 # Test compute_vte_session()
@@ -1303,3 +1294,28 @@ def test_session_break_before_ends_the_window(t_maze_environment):
     for a, b in zip(declared.trial_results, alone.trial_results, strict=True):
         assert a == replace(b, window_start=a.window_start)
     assert declared.trial_results[1] != undeclared.trial_results[1]
+
+
+@pytest.mark.parametrize("n_samples", [1, 30])
+@pytest.mark.parametrize(
+    "name", ["head_sweep_from_positions", "compute_vte_trial", "compute_vte_session"]
+)
+def test_one_dimensional_positions_raise(t_maze_environment, name, n_samples):
+    """A heading needs x and y, so 1-D positions raise, naming the passed shape."""
+    from neurospatial.behavior import vte
+
+    times = np.arange(n_samples) / 10
+    calls = {
+        "head_sweep_from_positions": lambda p: vte.head_sweep_from_positions(
+            times, p, min_speed=1.0
+        ),
+        "compute_vte_trial": lambda p: vte.compute_vte_trial(
+            times, p, entry_time=2.0, window_duration=1.0, min_speed=1.0
+        ),
+        "compute_vte_session": lambda p: vte.compute_vte_session(
+            t_maze_environment, times, p, trials=[], **_SESSION_KWARGS
+        ),
+    }
+    match = rf"got shape \({n_samples},\)(.|\n)*heading .*needs both x and y"
+    with pytest.raises(ValueError, match=match):
+        calls[name](10 * times)

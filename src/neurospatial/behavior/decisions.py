@@ -558,7 +558,7 @@ def pre_decision_heading_stats(
     ValueError
         If there are no samples, if ``times`` is not finite and strictly
         increasing, if ``break_before`` is not a Boolean array with one entry
-        per sample, or if two or more samples have fewer than two coordinates.
+        per sample, or if positions has fewer than two coordinates (x and y).
 
     Notes
     -----
@@ -609,9 +609,7 @@ def pre_decision_heading_stats(
         break_before=break_before,
         result="the heading statistics are NaN",
     )
-    if times.size >= 2:
-        # Check the caller's shape: the resolver reshapes 1-D positions.
-        _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions)
     return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
 
 

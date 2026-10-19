@@ -143,6 +143,13 @@
   repeated timestamps and empty input raise. Recordings without missing rows
   give the same values as before wherever something was observed.
 
+  `head_sweep_from_positions`, `compute_vte_trial`, `compute_vte_session` and
+  `pre_decision_heading_stats` raise on `positions` with fewer than two
+  columns, whatever the number of samples, because a heading needs both x
+  and y. A 1-D input of one sample used to return `0.0` (head sweep and
+  trial speeds) or `nan` (heading statistics), and a 1-D session whose
+  trials were all skipped used to return an empty result.
+
 - `heading_direction_labels` takes `times` before `positions`, like every
   other behavior function. The old order raises an error that names the swap.
 

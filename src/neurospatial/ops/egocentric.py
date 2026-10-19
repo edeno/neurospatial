@@ -674,14 +674,19 @@ def compute_egocentric_distance(
 def _validate_velocity_positions(
     positions: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """Reject shapes that cannot supply aligned x/y velocity components."""
+    """Reject positions without x and y columns, naming the shape as passed.
+
+    Call it on the caller's array, before any reshaping, so the message
+    shows the shape the scientist passed.
+    """
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] < 2:
         raise ValueError(
             f"positions must be a 2-D array with at least x/y coordinates; "
             f"got shape {positions.shape}.\n"
-            "Why: per-interval timestamps must align with position rows; "
-            "a 1-D array would broadcast into a square velocity matrix.\n"
+            "Why: a movement heading is the direction of travel in the x-y "
+            "plane, so it needs both x and y; 1-D positions (such as a "
+            "linearized track) have only one coordinate.\n"
             "Fix: pass positions with shape (n_samples, 2), for example "
             "np.column_stack([x, y]), with one timestamp per row."
         )
@@ -986,7 +991,6 @@ def heading_from_velocity(
         break_before=break_before,
         result="every heading is NaN",
     )
-    # Check the caller's shape: the resolver reshapes 1-D positions to (n, 1).
     _validate_velocity_positions(raw_positions)
     heading, speed = _movement_heading_and_speed(
         times, positions, support.interval_mask, smooth_window=smooth_window
