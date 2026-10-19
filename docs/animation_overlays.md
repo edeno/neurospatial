@@ -294,6 +294,9 @@ env.animate_fields(
 )
 ```
 
+For non-local or replay periods, the lab's decoding figures shade red:
+`EpochOverlay(nonlocal_times, label="non-local", color="red", alpha=0.2)`.
+
 `epochs` takes a `(start, stop)` pair, an `(n, 2)` array or a pynapple
 `IntervalSet`; overlapping or touching epochs are merged. Only
 `backend="fastplotlib"` draws epochs; the other backends skip them with a

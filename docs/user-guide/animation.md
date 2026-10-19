@@ -438,17 +438,37 @@ This is the usual way to read a decoded posterior on a linear track:
 
 ```python
 result = decode_session(env, spike_times, times, positions, dt=0.025)
+# A nearly flat posterior has no decoded position worth drawing: its peak
+# lands anywhere. Keep the bins whose entropy is below 90% of a flat one's.
+confident = result.posterior_entropy < 0.9 * np.log2(env.n_bins)
 env.animate_fields(
     result.posterior,
     frame_times=result.times,
     backend="fastplotlib",
     window_seconds=4.0,
+    colorbar_label="probability",
     overlays=[
-        PositionOverlay(positions=positions, times=times, color="white"),
-        PositionOverlay(positions=result.map_position, times=result.times, color="red", interp="nearest"),
+        PositionOverlay(positions=positions, times=times, color="magenta"),
+        PositionOverlay(
+            positions=result.map_position[confident],
+            times=result.times[confident],
+            color="limegreen",
+            interp="nearest",
+        ),
     ],
 )
 ```
+
+True position is magenta and decoded position green, as in the lab's decoding
+figures; magenta stays visible on every viridis color and apart from green in
+color-blind vision, where white disappears on the posterior's yellow and red
+and green look alike. The decoded position is drawn only where the posterior
+is not nearly flat: there its peak is arbitrary. On a simulated 200 cm track
+decoded in 25 ms bins, 48% of the bins were nearly flat, every one put the
+peak at 180 cm, and it was a median 68 cm from the animal (1 cm in the other
+bins); drawn with the others, those bins look like confident jumps. The 90% threshold is a
+display choice; tighten or loosen it for your data. Each overlay keeps its
+own samples, so nothing is drawn between the confident ones.
 
 Each position overlay is drawn as a line along the track. A column starts at
 its frame's time and lasts until the next frame, as the field panel holds it,
@@ -456,7 +476,7 @@ so the cursor always sits in the column the field panel shows; across a
 recording gap the column ends after one typical frame interval and the gap
 stays empty. On a track built from several segments, the spacing between them
 (`edge_spacing`) stays empty too, lines mark where segments meet, and each
-segment is named by its nodes ("center–left") at the left of the panel, so a
+segment is named by its nodes ("center–left") at the right of the panel, so a
 W-track or T-maze posterior can be read by arm. Hovering over a cell shows its time,
 position and value; drag the cursor to move every panel.
 
@@ -485,7 +505,8 @@ names the current one in the title; see [Epoch
 Overlay](../animation_overlays.md#epoch-overlay).
 
 Keyboard shortcuts, named in a line above the panels; click the figure first
-so it receives the keys (in Jupyter, Tab cannot reach it yet):
+so it receives the keys (in Jupyter, Tab cannot reach it yet, and the
+fastplotlib controls themselves need a mouse):
 
 | Key | Action |
 |-----|--------|
@@ -495,6 +516,10 @@ so it receives the keys (in Jupyter, Tab cannot reach it yet):
 | `[` / `]` | Halve or double the window of every panel drawn against time |
 | Up / Down arrow | The unit one row up or down in a spike raster with rate maps |
 | Escape | No unit |
+
+Playback can show many frames a second: a posterior that jumps between
+replay bins can flash over a large area. Lower the frame rate in the controls,
+or step with the arrow keys, if flashing is a concern.
 
 Play and the step buttons move by a fixed time, short enough to reach every
 frame when frames are evenly spaced (camera jitter included). For frames with
