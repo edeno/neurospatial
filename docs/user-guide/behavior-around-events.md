@@ -206,7 +206,7 @@ table = course.pivot(index="relative_time", columns="feature_id", values="mean")
 categories = result.category_counts_table()
 rough = categories[categories["category_label"] == "rough"]
 table["rough"] = rough.set_index("relative_time")["proportion"]
-shown = table.index.round(2).isin([-3.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0])
+shown = table.index.round(2).isin([-3.0, -2.1, -1.9, -1.0, -0.5, 0.0, 0.5, 1.0, 1.9, 2.1])
 print(table.loc[shown, ["speed", "wall_distance", "rough"]].round(1))
 print(f"events per cell: {result.counts.min()} to {result.counts.max()}")
 
@@ -230,26 +230,27 @@ printed table shows, with time in seconds from reward:
 | time (s) | speed (cm/s) | wall distance (cm) | proportion on rough floor |
 | --- | --- | --- | --- |
 | −3.0 | 22.2 | 21.7 | 0.0 |
-| −2.0 | 31.4 | 46.9 | 0.4 |
+| −2.1 | 31.3 | 46.4 | 0.0 |
+| −1.9 | 31.3 | 46.0 | 1.0 |
 | −1.0 | 22.2 | 21.7 | 1.0 |
 | −0.5 | 12.0 | 13.0 | 1.0 |
 | 0.0 | 0.0 | 10.0 | 1.0 |
 | 0.5 | 12.0 | 13.0 | 1.0 |
 | 1.0 | 22.2 | 21.7 | 1.0 |
-| 2.0 | 31.4 | 46.9 | 0.9 |
+| 1.9 | 31.3 | 46.0 | 1.0 |
+| 2.1 | 31.3 | 46.4 | 0.0 |
 
-- **Speed** is 31.4 cm/s 2 s before reward, in the middle of the box, and
-  falls to 0.0 cm/s at the reward: the animal stops at the port. It speeds up
-  again in the same way afterwards.
-- **Wall distance** is 46.9 cm mid-run and reaches its minimum, 10.0 cm, at
-  the reward. A cell that responds near walls will be active around every
-  reward here.
-- **Texture**: no event is on rough floor 3 s before reward, and every event is
-  on it from 1 s before to 1 s after. At ±2 s the animal is crossing the
-  midline where the textures meet, so the proportion is in between (0.4 and
-  0.9). The two differ because a categorical feature holds the last observed
-  code: on the way in, the last frame before −2 s is usually still on smooth
-  floor; on the way out, it is on rough floor.
+- **Speed** is 31.3 cm/s about 2 s before reward, in the middle of the box,
+  and falls to 0.0 cm/s at the reward: the animal stops at the port. It speeds
+  up again in the same way afterwards.
+- **Wall distance** is 46.4 cm 2.1 s before reward, mid-run, and reaches its
+  minimum, 10.0 cm, at the reward. A cell that responds near walls will be
+  active around every reward here.
+- **Texture**: the animal crosses the midline, where the two textures meet, 2 s
+  before and 2 s after every reward. All events cross at the same moment, so
+  the proportion on rough floor steps from 0.0 at −2.1 s to 1.0 at −1.9 s,
+  stays 1.0 through the reward, and steps from 1.0 at 1.9 s back to 0.0 at
+  2.1 s.
 
 In the figure, speed (top) traces a "V" with its point at 0 s. Wall distance
 (middle) has the same shape: the stop and the closest approach to the wall
