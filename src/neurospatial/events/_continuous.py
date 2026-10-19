@@ -1,0 +1,320 @@
+"""Private helpers for continuous event alignment.
+
+Per-feature metadata (value kind, interpolation, units, category labels) is
+validated once into a frozen :class:`_FeatureSpec`, and category codes in the
+data are checked against it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from neurospatial._exceptions import _format_error
+from neurospatial._results import as_label_array, read_only_copy
+
+_VALUE_KINDS = ("linear", "circular", "categorical")
+_ALLOWED_INTERPOLATION = {
+    "linear": ("linear", "previous"),
+    "circular": ("circular", "previous"),
+    "categorical": ("previous",),
+}
+_RADIAN_UNITS = frozenset({"rad", "radian", "radians"})
+
+
+@dataclass(frozen=True)
+class _FeatureSpec:
+    """Validated per-feature metadata.
+
+    Attributes
+    ----------
+    feature_ids : ndarray, shape (n_features,)
+        Unique feature labels.
+    value_kinds : tuple of str
+        ``"linear"``, ``"circular"`` or ``"categorical"`` per feature.
+    interpolation : tuple of str
+        Resolved interpolation per feature.
+    units : tuple of str or None
+        Unit per feature; circular features default to ``"rad"``.
+    category_features : ndarray of intp, shape (n_categories,)
+        Feature column of each category row.
+    category_codes : ndarray of int64, shape (n_categories,)
+        Integer codes, sorted within each feature.
+    category_labels : ndarray of str, shape (n_categories,)
+        Label of each category row.
+    """
+
+    feature_ids: NDArray[Any]
+    value_kinds: tuple[str, ...]
+    interpolation: tuple[str, ...]
+    units: tuple[str | None, ...]
+    category_features: NDArray[np.intp]
+    category_codes: NDArray[np.int64]
+    category_labels: NDArray[np.str_]
+
+
+def _plain(value: Any) -> Any:
+    """Return a NumPy scalar as a plain Python value."""
+    return value.item() if isinstance(value, np.generic) else value
+
+
+def _key_index(
+    mapping: Mapping[Any, Any] | None,
+    name: str,
+    ids: list[Any],
+    call: str,
+) -> dict[int, Any]:
+    """Map ``{feature_id: value}`` to ``{column: value}``, rejecting unknown keys."""
+    if mapping is None:
+        return {}
+    position = {fid: i for i, fid in enumerate(ids)}
+    out: dict[int, Any] = {}
+    for key, value in mapping.items():
+        try:
+            column = position[_plain(key)]
+        except (KeyError, TypeError):
+            raise ValueError(
+                _format_error(
+                    f"{call}: {name} has the key {key!r}, which is not a feature id.",
+                    why=f"Valid feature ids are {ids}.",
+                    fix=f"Key {name} by the ids in feature_ids.",
+                )
+            ) from None
+        out[column] = value
+    return out
+
+
+def _resolve_features(
+    n_features: int,
+    *,
+    feature_ids: Sequence[Any] | NDArray[Any] | None,
+    feature_units: Mapping[Any, str | None] | None,
+    value_kinds: Mapping[Any, str] | None,
+    category_labels: Mapping[Any, Mapping[int, str]] | None,
+    interpolation: Mapping[Any, str] | None,
+    call: str,
+) -> _FeatureSpec:
+    """Validate per-feature metadata into a :class:`_FeatureSpec`.
+
+    Parameters
+    ----------
+    n_features : int
+        Number of signal columns.
+    feature_ids : sequence or None
+        Unique labels, shape ``(n_features,)``; default ``arange(n_features)``.
+    feature_units, value_kinds, category_labels, interpolation : mapping or None
+        Keyed by feature id; omitted features take defaults.
+    call : str
+        Calling function's name for error messages.
+
+    Returns
+    -------
+    _FeatureSpec
+        Frozen, validated metadata.
+
+    Raises
+    ------
+    ValueError
+        On any inconsistent or unsupported metadata.
+    """
+    if feature_ids is None:
+        ids_array = np.arange(n_features)
+    else:
+        ids_array = as_label_array(feature_ids)
+    if ids_array.ndim != 1 or len(ids_array) != n_features:
+        raise ValueError(
+            _format_error(
+                f"{call}: got {len(ids_array)} feature_ids for {n_features} "
+                "signal columns.",
+                fix="Pass one unique id per column of signals.",
+            )
+        )
+    ids = [_plain(f) for f in ids_array]
+    seen = set()
+    for fid in ids:
+        if fid in seen:
+            raise ValueError(
+                _format_error(
+                    f"{call}: duplicate feature id {fid!r}.",
+                    why="Mappings are keyed by feature id, so ids must be unique.",
+                    fix="Pass distinct feature_ids.",
+                )
+            )
+        seen.add(fid)
+
+    kinds_in = _key_index(value_kinds, "value_kinds", ids, call)
+    interp_in = _key_index(interpolation, "interpolation", ids, call)
+    units_in = _key_index(feature_units, "feature_units", ids, call)
+    labels_in = _key_index(category_labels, "category_labels", ids, call)
+
+    kinds: list[str] = []
+    interps: list[str] = []
+    units: list[str | None] = []
+    cat_features: list[int] = []
+    cat_codes: list[int] = []
+    cat_labels: list[str] = []
+
+    for col, fid in enumerate(ids):
+        kind = kinds_in.get(col, "linear")
+        if kind not in _VALUE_KINDS:
+            raise ValueError(
+                _format_error(
+                    f"{call}: value_kinds[{fid!r}] is {kind!r}.",
+                    why=f"Supported kinds are {list(_VALUE_KINDS)}.",
+                    fix=f"Use one of {list(_VALUE_KINDS)}.",
+                )
+            )
+        allowed = _ALLOWED_INTERPOLATION[kind]
+        method = interp_in.get(col, allowed[0])
+        if method not in allowed:
+            why = (
+                f"Feature {fid!r} is {kind}; allowed interpolation is {list(allowed)}."
+            )
+            if kind == "categorical":
+                why = (
+                    f"Feature {fid!r} is categorical: codes are labels, a value "
+                    "between two codes is not a category."
+                )
+            raise ValueError(
+                _format_error(
+                    f"{call}: interpolation[{fid!r}] is {method!r}.",
+                    why=why,
+                    fix=f"Pass interpolation={{{fid!r}: {allowed[-1]!r}}}.",
+                )
+            )
+        unit = units_in.get(col)
+        if kind == "circular":
+            if unit is None:
+                unit = "rad"
+            elif unit not in _RADIAN_UNITS:
+                raise ValueError(
+                    _format_error(
+                        f"{call}: circular feature {fid!r} has unit {unit!r}.",
+                        why="Circular values are radians.",
+                        fix="Convert with np.deg2rad and pass feature_units="
+                        f"{{{fid!r}: 'rad'}}.",
+                    )
+                )
+        kinds.append(kind)
+        interps.append(method)
+        units.append(unit)
+
+        mapping = labels_in.get(col)
+        if kind != "categorical":
+            if mapping is not None:
+                raise ValueError(
+                    _format_error(
+                        f"{call}: category_labels given for feature {fid!r}, "
+                        f"which is {kind}.",
+                        fix=f"Set value_kinds={{{fid!r}: 'categorical'}} or drop "
+                        "its category_labels.",
+                    )
+                )
+            continue
+        if mapping is None:
+            raise ValueError(
+                _format_error(
+                    f"{call}: categorical feature {fid!r} has no category_labels.",
+                    why="Codes are only meaningful with their labels.",
+                    fix=f"Pass category_labels={{{fid!r}: {{0: 'label', ...}}}}.",
+                )
+            )
+        if len(mapping) == 0:
+            raise ValueError(
+                _format_error(
+                    f"{call}: category_labels for feature {fid!r} is empty.",
+                    fix="List every code the signal can take with its label.",
+                )
+            )
+        for code, label in sorted(mapping.items(), key=lambda kv: int(kv[0])):
+            if isinstance(code, bool | np.bool_) or not isinstance(
+                code, int | np.integer
+            ):
+                raise ValueError(
+                    _format_error(
+                        f"{call}: category code {code!r} for feature {fid!r} is "
+                        "not an integer.",
+                        why="Codes must be integers (0 is allowed); bool is not.",
+                        fix="Use integer keys such as {0: 'center', 1: 'arm'}.",
+                    )
+                )
+            if not isinstance(label, str):
+                raise ValueError(
+                    _format_error(
+                        f"{call}: label {label!r} for code {code} of feature "
+                        f"{fid!r} is not a str.",
+                        fix="Use string labels.",
+                    )
+                )
+            cat_features.append(col)
+            cat_codes.append(int(code))
+            cat_labels.append(label)
+
+    return _FeatureSpec(
+        feature_ids=read_only_copy(ids_array),
+        value_kinds=tuple(kinds),
+        interpolation=tuple(interps),
+        units=tuple(units),
+        category_features=read_only_copy(cat_features, dtype=np.intp),
+        category_codes=read_only_copy(cat_codes, dtype=np.int64),
+        category_labels=read_only_copy(cat_labels, dtype=np.str_),
+    )
+
+
+def _check_category_codes(
+    signals: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    spec: _FeatureSpec,
+    *,
+    call: str,
+) -> None:
+    """Raise when a valid categorical sample is not a listed integer code.
+
+    Parameters
+    ----------
+    signals : ndarray, shape (n_samples, n_features)
+        Signal values.
+    sample_valid : ndarray of bool, shape (n_samples, n_features)
+        Per-feature sample validity; invalid samples are not checked.
+    spec : _FeatureSpec
+        Validated metadata.
+    call : str
+        Calling function's name for error messages.
+
+    Raises
+    ------
+    ValueError
+        Naming the first offending sample index and value.
+    """
+    for col, kind in enumerate(spec.value_kinds):
+        if kind != "categorical":
+            continue
+        fid = _plain(spec.feature_ids[col])
+        listed = spec.category_codes[spec.category_features == col]
+        column = signals[:, col]
+        checked = sample_valid[:, col] & np.isfinite(column)
+        integer = column == np.round(column)
+        listed_mask = np.isin(column, listed)
+        bad = np.flatnonzero(checked & ~(integer & listed_mask))
+        if len(bad) == 0:
+            continue
+        index = int(bad[0])
+        value = float(column[index])
+        reason = (
+            f"is not in category_labels (codes {listed.tolist()})"
+            if integer[index]
+            else "is not an integer"
+        )
+        raise ValueError(
+            _format_error(
+                f"{call}: categorical feature {fid!r} has value {value!r} at "
+                f"sample {index}, which {reason}.",
+                why="Category codes must be listed integers; NaN marks missing.",
+                fix="Add the code to category_labels, or set unknown samples to "
+                "NaN (or False in valid).",
+            )
+        )
