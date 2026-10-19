@@ -14,12 +14,13 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import observed_interval_mask, run_sample_bounds
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import (
+    times_positions_problems,
     validate_strictly_increasing,
     validate_times_positions,
 )
@@ -92,6 +93,51 @@ def validate_max_gap(max_gap: float | None) -> float | None:
     return max_gap
 
 
+def _interval_gates(
+    times: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: NDArray[np.bool_] | None,
+    result: str,
+) -> NDArray[np.bool_]:
+    """Return the sample-independent usable-interval gates, shape (n_samples - 1,).
+
+    Combines ``max_gap``, ``epochs`` and declared breaks. Emits the shared
+    excluded-interval warning at most once.
+    """
+    gates = observed_interval_mask(times, max_gap=max_gap, epochs=epochs, result=result)
+    if break_before is not None:
+        gates = gates & ~break_before[1:]
+    return gates
+
+
+def _support_from_gates(
+    times: NDArray[np.float64],
+    sample_valid: NDArray[np.bool_],
+    gates: NDArray[np.bool_],
+) -> ObservationSupport:
+    """Resolve intervals and runs for one sample-validity vector under ``gates``."""
+    n_samples = times.size
+    interval_mask = gates & sample_valid[:-1] & sample_valid[1:]
+    bounds = run_sample_bounds(interval_mask)
+    run_ids = np.full(n_samples, -1, dtype=np.intp)
+    lengths = bounds[:, 1] - bounds[:, 0] + 1
+    if lengths.size:
+        starts_in_output = np.cumsum(lengths) - lengths
+        samples = np.arange(lengths.sum()) + np.repeat(
+            bounds[:, 0] - starts_in_output, lengths
+        )
+        run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
+    return ObservationSupport(
+        sample_valid=sample_valid,
+        interval_mask=interval_mask,
+        run_ids=run_ids,
+        run_sample_bounds=bounds,
+        run_time_bounds=times[bounds],
+    )
+
+
 def resolve_observation_support(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -116,30 +162,11 @@ def resolve_observation_support(
     result : str
         What an all-excluded selection leaves, for the shared warning.
     """
-    n_samples = times.size
     sample_valid: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
-    interval_mask = observed_interval_mask(
-        times, max_gap=max_gap, epochs=epochs, result=result
+    gates = _interval_gates(
+        times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
     )
-    interval_mask = interval_mask & sample_valid[:-1] & sample_valid[1:]
-    if break_before is not None:
-        interval_mask = interval_mask & ~break_before[1:]
-    bounds = run_sample_bounds(interval_mask)
-    run_ids = np.full(n_samples, -1, dtype=np.intp)
-    lengths = bounds[:, 1] - bounds[:, 0] + 1
-    if lengths.size:
-        starts_in_output = np.cumsum(lengths) - lengths
-        samples = np.arange(lengths.sum()) + np.repeat(
-            bounds[:, 0] - starts_in_output, lengths
-        )
-        run_ids[samples] = np.repeat(np.arange(lengths.size, dtype=np.intp), lengths)
-    return ObservationSupport(
-        sample_valid=sample_valid,
-        interval_mask=interval_mask,
-        run_ids=run_ids,
-        run_sample_bounds=bounds,
-        run_time_bounds=times[bounds],
-    )
+    return _support_from_gates(times, sample_valid, gates)
 
 
 def validated_observations(
@@ -188,3 +215,159 @@ def validated_observations(
         t, p, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
     )
     return t, p, support
+
+
+def _empty_times_error(call: str) -> ValueError:
+    return ValueError(
+        _format_error(
+            f"{call}() got no samples: times is empty.",
+            why="there is no observation to measure.",
+            fix=(
+                "pass at least one sample; if the arrays came from an epoch or "
+                "trial selection, check that the selection kept any samples."
+            ),
+        )
+    )
+
+
+def _validated_signal_times(times: ArrayLike, *, call: str) -> NDArray[np.float64]:
+    try:
+        t = np.asarray(times, dtype=np.float64)
+    except (TypeError, ValueError):
+        t = None
+    problems = (
+        ["times must contain numeric values convertible to float64."]
+        if t is None
+        else times_positions_problems(t, None)[0]
+    )
+    if problems:
+        raise ValueError(
+            _format_error(
+                f"Invalid times passed to {call}():\n- " + "\n- ".join(problems),
+                why="each interval [times[k], times[k+1]) is judged by its duration, "
+                "so mis-shaped or unsorted timestamps give wrong numbers.",
+                fix="pass times as a sorted 1-D array of finite timestamps in seconds.",
+            )
+        )
+    assert t is not None
+    if t.size == 0:
+        raise _empty_times_error(call)
+    validate_strictly_increasing(t, call=call)
+    return t
+
+
+def _validated_signal_array(
+    signals: ArrayLike, n_samples: int, *, call: str
+) -> NDArray[np.float64]:
+    fix = (
+        "pass a real-valued array of shape (n_samples, n_features) or "
+        "(n_samples,) with one row per timestamp; use NaN for missing samples."
+    )
+    raw = np.asarray(signals)
+    if raw.dtype.kind not in "biuf":
+        raise ValueError(
+            _format_error(
+                f"{call}() needs real numeric signals; got dtype {raw.dtype}.",
+                why="complex and non-numeric values have no ordering or average "
+                "that the analysis could use.",
+                fix=fix,
+            )
+        )
+    sig = raw.astype(np.float64)
+    if sig.ndim not in (1, 2) or sig.shape[0] != n_samples:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs signals of shape (n_samples, n_features) or "
+                f"(n_samples,) with n_samples={n_samples}; got shape {sig.shape}.",
+                why="each signal row is the observation at the matching timestamp.",
+                fix=fix,
+            )
+        )
+    return sig[:, None] if sig.ndim == 1 else sig
+
+
+def _validated_signal_flags(
+    valid: ArrayLike | None, n_samples: int, n_features: int, *, call: str
+) -> NDArray[np.bool_] | None:
+    if valid is None:
+        return None
+    flags = np.asarray(valid)
+    if flags.dtype != np.bool_ or flags.shape not in (
+        (n_samples,),
+        (n_samples, n_features),
+    ):
+        raise ValueError(
+            _format_error(
+                f"{call}() needs valid to be a Boolean array of shape "
+                f"({n_samples},) or ({n_samples}, {n_features}); got dtype "
+                f"{flags.dtype} and shape {flags.shape}.",
+                why="valid marks which samples may be used, for all features "
+                "(1-D) or per feature (2-D).",
+                fix="pass a Boolean array, e.g. valid = speed > 5.0",
+            )
+        )
+    return flags if flags.ndim == 2 else flags[:, None]
+
+
+def validated_signals(
+    times: ArrayLike,
+    signals: ArrayLike,
+    *,
+    valid: ArrayLike | None,
+    call: str,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: Any,
+    result: str,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], tuple[ObservationSupport, ...]]:
+    """Validate a signal table and resolve observation support for each feature.
+
+    Features share one clock, so the ``max_gap``, ``epochs`` and ``break_before``
+    gates are resolved once (one excluded-interval warning). Validity differs
+    by feature: sample ``i`` of feature ``f`` is valid when
+    ``isfinite(signals[i, f])`` and ``valid[i, f]``. A finite zero is valid.
+
+    Parameters
+    ----------
+    times : array-like, shape (n_samples,)
+        Seconds; finite, strictly increasing, non-empty.
+    signals : array-like, shape (n_samples, n_features) or (n_samples,)
+        Real values; NaN or infinity marks a missing sample of that feature.
+    valid : array-like of bool, shape (n_samples,) or (n_samples, n_features), or None
+        Extra validity for every feature (1-D) or per feature (2-D).
+    call : str
+        Public function name, used in messages.
+    max_gap, epochs, break_before
+        The shared interval gates, as for ``validated_observations``.
+    result : str
+        What an all-excluded selection leaves, for the shared warning.
+
+    Returns
+    -------
+    times : ndarray, shape (n_samples,)
+    signals : ndarray, shape (n_samples, n_features)
+        float64; 1-D input is reshaped to ``(n_samples, 1)``.
+    supports : tuple of ObservationSupport
+        One per feature.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are malformed, empty or repeat a timestamp.
+    """
+    t = _validated_signal_times(times, call=call)
+    sig = _validated_signal_array(signals, t.size, call=call)
+    flags = _validated_signal_flags(valid, t.size, sig.shape[1], call=call)
+    validate_max_gap(max_gap)
+    breaks = validate_break_before(break_before, t.size, call=call)
+    sample_valid = np.isfinite(sig)
+    if flags is not None:
+        sample_valid = sample_valid & flags
+    gates = _interval_gates(
+        t, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
+    )
+    supports = tuple(
+        _support_from_gates(t, np.ascontiguousarray(sample_valid[:, f]), gates)
+        for f in range(sig.shape[1])
+    )
+    return t, sig, supports
