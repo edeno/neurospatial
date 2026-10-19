@@ -74,7 +74,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
@@ -790,6 +790,7 @@ def heading_from_velocity(
     *,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     min_speed: float = 0.0,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,
     allow_all_nan: bool = False,
@@ -809,8 +810,14 @@ def heading_from_velocity(
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
-        inside one window. ``None`` (default) means unrestricted.
-
+        inside one window. ``None`` (default) means unrestricted. Windows that
+        touch merge into one, so to keep recordings joined on one clock apart
+        use ``break_before``.
+    break_before : ArrayLike of bool, shape (n_time,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. No velocity, smoothing or low-speed fill
+        spans a declared break.
     min_speed : float, default 0.0
         Minimum speed threshold in **the same units per second as
         ``positions``** (e.g. cm/s if positions are in cm). Samples
@@ -842,8 +849,9 @@ def heading_from_velocity(
     ValueError
         If positions has fewer than 2 samples, contains non-finite values,
         or is not 2-D with at least x/y coordinates,
-        if times is not 1-D, finite, strictly increasing and aligned, or if
-        every observed sample is
+        if times is not 1-D, finite, strictly increasing and aligned, if
+        ``break_before`` is not a Boolean array with one entry per sample, or
+        if every observed sample is
         below ``min_speed`` and ``allow_all_nan`` is ``False`` (the default).
 
     Warns
@@ -854,8 +862,9 @@ def heading_from_velocity(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``
+    and not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause or a declared break.
 
     Velocity is the centered secant of position over each sample's actual
     elapsed time (one-sided at a run's ends), smoothed separately within each
@@ -882,7 +891,27 @@ def heading_from_velocity(
     >>> headings = heading_from_velocity(t, positions)
     >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
     True
+
+    Two recordings joined on one clock: the animal runs East, then is put
+    back 40 cm to the west and runs North. Undeclared, the jump reads as
+    running West; declared with ``break_before``, it does not.
+
+    >>> times = np.arange(8) / 4  # s
+    >>> x = np.array([0.0, 1.0, 2.0, 3.0, -37.0, -37.0, -37.0, -37.0])  # cm
+    >>> y = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0])  # cm
+    >>> positions = np.column_stack([x, y])
+    >>> new_recording = times == 1.0
+    >>> np.round(heading_from_velocity(times, positions, smooth_window=0.0), 2).tolist()
+    [0.0, 0.0, 0.0, 3.14, 3.12, 1.57, 1.57, 1.57]
+    >>> np.round(
+    ...     heading_from_velocity(
+    ...         times, positions, smooth_window=0.0, break_before=new_recording
+    ...     ),
+    ...     2,
+    ... ).tolist()
+    [0.0, 0.0, 0.0, 0.0, 1.57, 1.57, 1.57, 1.57]
     """
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(
@@ -892,7 +921,12 @@ def heading_from_velocity(
 
     positions = _validate_velocity_positions(positions)
     times = _validate_velocity_times(times, len(positions))
+    breaks = validate_break_before(
+        break_before, len(times), call="heading_from_velocity"
+    )
     interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    if breaks is not None:
+        interval_mask &= ~breaks[1:]
     heading, speed = _velocity_heading_and_speed(
         times, positions, interval_mask=interval_mask, smooth_window=smooth_window
     )

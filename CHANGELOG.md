@@ -1320,6 +1320,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   whose layout cannot tell whether a position is inside a bin (a track built
   without `track_width`, a linearized 1-D track) raise `NotImplementedError`
   instead of assigning the nearest bin.
+- `heading_from_velocity` takes `break_before`, like `compute_speed`: for
+  recordings joined on one clock, mark the first frame of each later
+  recording, and no velocity, smoothing or low-speed fill spans the join, so a
+  jump in position between recordings is not read as running. Touching
+  `epochs` rows merge into one window and do not separate recordings.
 - `compute_cumulative_distance(times, positions, *, max_gap, epochs,
   break_before)` returns a `CumulativeDistanceResult`: the distance at every
   frame since the start of its run of continuous observation

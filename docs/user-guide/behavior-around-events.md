@@ -367,10 +367,12 @@ change in which events you are averaging.
   your positions from a camera, align the clocks first.
 - **Joined recordings.** If you concatenate recordings on one clock, mark the
   first frame of each later recording with `break_before`, and pass it to
-  `compute_speed`, `compute_movement_angular_velocity` and
-  `align_continuous_to_events`. Nothing is then smoothed, interpolated or
-  averaged across the join. `heading_from_velocity` has no `break_before`;
-  pass each recording's `[start, stop)` as `epochs` instead.
+  `compute_speed`, `heading_from_velocity`,
+  `compute_movement_angular_velocity` and `align_continuous_to_events`.
+  Nothing is then smoothed, filled, interpolated or averaged across the join,
+  and a jump in position between the recordings is not read as running.
+  Passing each recording's `[start, stop)` as `epochs` does not do this:
+  windows that touch merge into one.
 - **Angles.** Declare every angle feature (heading, head direction, a bearing
   to an object) `"circular"` and give it in radians. A rate of turning in
   rad/s is not an angle: leave it `"linear"`.
@@ -407,14 +409,11 @@ def behavior_around_events(env, times, positions, recording_id, event_times, win
     recording_id : (n_frames,) int, which recording each frame came from
     event_times : (n_events,) s, on the same clock as times
     """
-    new_recording = np.r_[False, np.diff(recording_id) != 0]
-    starts = times[np.r_[True, new_recording[1:]]]
-    stops = np.r_[starts[1:], times[-1] + 1.0]
-    recordings = np.column_stack([starts, stops])  # [start, stop) of each recording, s
+    new_recording = np.r_[False, np.diff(recording_id) != 0]  # first frame of each later recording
 
     speed = compute_speed(times, positions, break_before=new_recording)
     turning = compute_movement_angular_velocity(times, positions, break_before=new_recording)
-    heading = heading_from_velocity(times, positions, min_speed=2.0, epochs=recordings)
+    heading = heading_from_velocity(times, positions, min_speed=2.0, break_before=new_recording)
     wall_distance, _ = nearest_boundary(env, positions)
 
     signals = np.column_stack([speed, turning, heading, wall_distance])
@@ -437,17 +436,45 @@ def behavior_around_events(env, times, positions, recording_id, event_times, win
 
 
 # Two recordings joined on one clock at 60 s
+recording_id = (times >= 60.0).astype(int)
 summary = behavior_around_events(
-    env, times, positions, (times >= 60.0).astype(int), reward_times, (-3.0, 3.0), dt=0.05
+    env, times, positions, recording_id, reward_times, (-3.0, 3.0), dt=0.05
 )
 print(summary.summary())
 assert summary.values is None
+
+# Check: if the second recording started 30 cm further north, the jump would
+# not be read as running. Heading equals heading of each recording on its own.
+second = recording_id == 1
+moved = positions + np.where(second[:, None], [0.0, 30.0], [0.0, 0.0])  # cm
+new_recording = np.r_[False, np.diff(recording_id) != 0]
+joined = heading_from_velocity(times, moved, min_speed=2.0, break_before=new_recording)
+separate = np.r_[
+    heading_from_velocity(times[~second], moved[~second], min_speed=2.0),
+    heading_from_velocity(times[second], moved[second], min_speed=2.0),
+]
+bridged = heading_from_velocity(times, moved, min_speed=2.0)  # join not declared
+near_join = np.abs(times - 60.0) < 0.5  # s
+north = np.sin(joined[near_join]) > np.sqrt(0.5)  # within 45 degrees of North
+north_bridged = np.sin(bridged[near_join]) > np.sqrt(0.5)
+print(
+    f"frames within 0.5 s of the join heading North: {north.sum()} with "
+    f"break_before, {north_bridged.sum()} without, of {near_join.sum()}"
+)
+assert np.allclose(joined, separate)
+assert not north.any()
 ```
 
 `summary()` lists the number of events kept and excluded, the window and the
-smallest count over all cells. For your data, replace `times`, `positions`,
-`recording_id` and `reward_times` with your own arrays, after dropping lost
-frames (or, if you do not need heading, writing them as NaN rows).
+smallest count over all cells. The check at the end moves the second
+recording 30 cm north, as if the animal had been put down elsewhere. With
+`break_before`, heading is exactly what each recording gives on its own, and
+no frame within 0.5 s of the join points North. Without it, 14 of those 29
+frames point North: the jump between the recordings is read as running.
+
+For your data, replace `times`, `positions`, `recording_id` and
+`reward_times` with your own arrays, after dropping lost frames (or, if you do
+not need heading, writing them as NaN rows).
 
 ## What this does not do
 
