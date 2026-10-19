@@ -255,7 +255,10 @@ def field_stability(
     -------
     stability : float
         Correlation coefficient in range [-1, 1]. Higher values indicate
-        more stable place fields.
+        more stable place fields. NaN when the correlation is undefined:
+        fewer than 3 bins are finite in both maps (two points always give
+        exactly +-1), or either map is constant over those bins. NaN is not 0 ("uncorrelated"); skip such cells with
+        ``np.nanmean`` or ``np.isfinite`` when averaging across cells.
 
     Notes
     -----
@@ -266,7 +269,8 @@ def field_stability(
 
     **Edge Cases**:
     - Constant arrays (zero variance) return NaN (correlation undefined)
-    - Arrays with <2 valid bins return 0.0
+    - Fewer than 3 bins finite in both maps return NaN (2 points give exactly
+      +-1 whatever the maps, so the correlation is not a measurement)
 
     **Pearson vs Spearman**: Pearson measures linear correlation of firing
     rates. Spearman measures rank correlation and is robust to outliers.
@@ -291,8 +295,10 @@ def field_stability(
     map1_clean = rate_map_1[valid_mask]
     map2_clean = rate_map_2[valid_mask]
 
-    if len(map1_clean) < 2:
-        return 0.0
+    # Fewer than 3 paired bins: 2 points always give r = +-1 (not a measurement)
+    # and fewer give no correlation; neither is "no similarity"
+    if len(map1_clean) < 3:
+        return np.nan
 
     # Check for constant arrays (zero variance) - correlation undefined
     if np.std(map1_clean) == 0 or np.std(map2_clean) == 0:

@@ -4,6 +4,11 @@
 
 ### Breaking
 
+- `field_stability` returns NaN when fewer than 3 bins are finite in both maps
+  (the correlation is undefined, not "uncorrelated"): fewer than 2 paired bins
+  was `0.0` and exactly 2 was always `+-1`; both are now `nan`. Use `np.nanmean` or
+  `np.isfinite` when averaging across cells.
+
 - `AnnotationResult` from `annotate_video` has four fields,
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.

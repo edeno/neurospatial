@@ -172,7 +172,8 @@ stability = field_stability(
     rate_map_session2,
     method='pearson'  # or 'spearman'
 )
-# Returns: correlation coefficient [-1, 1]
+# Returns: correlation coefficient [-1, 1], or NaN when undefined
+# (fewer than 3 bins finite in both maps, or a constant map)
 ```
 
 **Methods:**
