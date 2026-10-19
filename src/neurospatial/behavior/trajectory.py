@@ -235,9 +235,12 @@ def compute_turn_angles(
     Returns
     -------
     NDArray[np.float64], shape (n_angles,)
-        Turn angles in radians, in the range [-π, π]. Length is the number
-        of movement transitions minus 1 (n_samples - 2). Consecutive duplicate
-        positions (stationary periods) are filtered out before computing angles.
+        Turn angles in radians, in the range [-π, π]. Consecutive duplicate
+        positions (stationary periods) are dropped first, so the length is
+        ``n_unique - 2``, where ``n_unique`` is the number of positions left,
+        not ``n_samples - 2``. The output is not aligned with the input samples
+        and carries no times; use ``compute_planar_turn_angles`` for a
+        sample-aligned result.
 
     Notes
     -----
@@ -249,8 +252,15 @@ def compute_turn_angles(
 
     where :math:`v_i` is the movement vector from position i-1 to position i.
 
-    For 2D trajectories, this uses the 2D cross product (scalar). For higher
-    dimensions, the function uses the first two dimensions only.
+    With ``v1`` and ``v2`` the incoming and outgoing movement vectors, the
+    angle is ``atan2(v1_x * v2_y - v1_y * v2_x, sum(v1 * v2))``. The cross
+    product uses the first two columns (x, y); the dot product sums over all
+    columns. For positions with more than two columns this mixes a projected
+    cross product with a full-dimensional dot product, so the result is neither
+    the angle in the x-y plane nor the angle in 3-D space. The positions
+    ``[[0, 0, 0], [1, 0, 1], [1, 1, 2]]`` give ``π/4`` here, whereas the x-y
+    projection ``positions[:, :2]`` gives ``π/2``. For a horizontal-plane
+    analysis pass ``positions[:, :2]`` explicitly.
 
     Stationary periods (consecutive duplicate positions) are removed before
     computing turn angles to avoid undefined angles from zero-length vectors.
@@ -264,6 +274,10 @@ def compute_turn_angles(
 
     See Also
     --------
+    compute_planar_turn_angles : Sample-aligned planar turning angles that
+        respect time gaps, missing samples and recording breaks.
+    compute_planar_curvature : Signed geometric curvature (inverse length).
+    compute_movement_angular_velocity : Turning rate of the movement direction.
     compute_step_lengths : Compute distances between consecutive positions
     mean_square_displacement : Analyze diffusive properties of trajectory
 
@@ -281,8 +295,16 @@ def compute_turn_angles(
     >>> # Right-angle turn: [0,0] → [10,0] → [10,10]
     >>> positions = np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]])
     >>> angles = compute_turn_angles(positions)
-    >>> angles[0]  # doctest: +SKIP
-    1.5707963267948966  # ≈ π/2 (90° left turn)
+    >>> float(angles[0])  # π/2: a 90° left turn
+    1.5707963267948966
+    >>>
+    >>> # With more than two columns the cross product uses x, y only but the
+    >>> # dot product uses every column
+    >>> positions_3d = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
+    >>> float(compute_turn_angles(positions_3d)[0])  # π/4
+    0.7853981633974483
+    >>> float(compute_turn_angles(positions_3d[:, :2])[0])  # x-y projection, π/2
+    1.5707963267948966
 
     References
     ----------
@@ -607,9 +629,12 @@ def compute_planar_curvature(
     With ``a = positions[i] - positions[i - 1]`` and
     ``b = positions[i + 1] - positions[i]``, this is the discrete Menger
     curvature ``2 (a_x b_y - a_y b_x) / (|a| |b| |a + b|)``. It is exact for any
-    three points on a circle, however unevenly they are spaced, so it does not
-    depend on the frame rate or on running speed. Scaling positions by ``s``
-    divides it by ``s``; time units do not enter.
+    three points on a circle, however unevenly they are spaced. For a path of
+    constant curvature it therefore does not depend on frame rate or running
+    speed; on a general path it estimates curvature at the scale of the step
+    length (speed times the sampling interval), and noise amplification grows
+    as steps shrink. Resample by distance first to fix that scale. Scaling
+    positions by ``s`` divides it by ``s``; time units do not enter.
 
     Tracking jitter dominates the curvature of very short steps. Resample the
     path at a spacing you choose with ``resample_by_distance`` first (curvature
@@ -1528,8 +1553,11 @@ def compute_trajectory_curvature(
 ) -> NDArray[np.float64]:
     """Compute trajectory curvature from position data.
 
-    Works for any dimensionality (1D, 2D, 3D, N-D). Computes signed
-    angle between consecutive movement direction vectors.
+    Despite its name, this returns turning angles in radians (the signed change
+    of movement direction at each sample), not geometric curvature. For
+    curvature in inverse length units use ``compute_planar_curvature``.
+    Works for any number of columns (1D, 2D, 3D, N-D), but see Notes for how
+    extra columns enter.
 
     Parameters
     ----------
@@ -1584,8 +1612,12 @@ def compute_trajectory_curvature(
     Stationary duplicates and the first and last retained positions have zero
     curvature before smoothing, preserving the timestamps of actual turns.
 
-    For N-D trajectories where N > 2, only the first 2 dimensions are used
-    (consistent with `compute_turn_angles()` implementation).
+    For positions with more than two columns the angle is
+    ``atan2(v1_x * v2_y - v1_y * v2_x, sum(v1 * v2))``: the cross product uses
+    the first two columns (x, y) and the dot product sums over all columns
+    (as in `compute_turn_angles()`). This is neither the horizontal-plane angle
+    nor the 3-D angle; pass ``positions[:, :2]`` for a horizontal-plane
+    analysis.
 
     Examples
     --------
@@ -1606,6 +1638,15 @@ def compute_trajectory_curvature(
     ... )
     >>> curvature_3d = compute_trajectory_curvature(positions_3d)
     >>>
+    >>> # With three columns the cross product uses x, y and the dot product
+    >>> # uses all three: the turn at the middle sample is π/4, not the π/2
+    >>> # of the x-y projection
+    >>> x = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
+    >>> float(compute_trajectory_curvature(x)[1])
+    0.7853981633974483
+    >>> float(compute_trajectory_curvature(x[:, :2])[1])
+    1.5707963267948966
+    >>>
     >>> # Smooth for noisy tracking data
     >>> times = np.linspace(0, 10, 20)
     >>> curvature_smooth = compute_trajectory_curvature(
@@ -1615,6 +1656,9 @@ def compute_trajectory_curvature(
     See Also
     --------
     compute_turn_angles : Raw turn angles without padding
+    compute_planar_turn_angles : Sample-aligned planar turning angles
+    compute_planar_curvature : Signed geometric curvature (inverse length)
+    compute_movement_angular_velocity : Turning rate of the movement direction
     """
     if times is None:
         return _compute_trajectory_curvature_contiguous(

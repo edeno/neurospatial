@@ -986,6 +986,15 @@ def heading_from_body_orientation(
     ValueError
         If all keypoints are NaN.
 
+    Notes
+    -----
+    NaN keypoints are interpolated by sample index across any gap, including a
+    gap that spans a recording break; this function has no ``times`` argument
+    and cannot see breaks. For a recording with breaks, call it separately on
+    each run, for example over the inclusive sample bounds in
+    ``compute_cumulative_distance(times, nose).run_sample_bounds``, or set the
+    filled samples back to NaN afterwards.
+
     Examples
     --------
     >>> import numpy as np
