@@ -1744,6 +1744,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The error for an unknown `method` lists the valid estimators in a fixed
+  order. Before, it printed a Python set, so the order changed from run to run.
 - The warning about a bandwidth that spans the environment now points at your
   own call for population view rates, object-vector rates, egocentric rates,
   `decode_session` and `BayesianDecoder.fit`. Before, for these it pointed at
