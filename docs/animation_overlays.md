@@ -257,12 +257,20 @@ env.animate_fields(
     result.posterior,
     frame_times=result.times,
     backend="fastplotlib",
-    overlays=[SpikeRasterOverlay(spike_times, order=order, window_seconds=1.0)],
+    overlays=[
+        SpikeRasterOverlay(
+            spike_times, order=order, rates=rates.firing_rates, window_seconds=1.0
+        )
+    ],
 )
 ```
 
 `order` lists the units from the bottom row up. Hovering over a spike shows
 its unit's label (`unit_ids`, or the labels of a pynapple `TsGroup`) and time.
+With `rates`, one rate map per unit on the animated environment, clicking
+anywhere in a unit's row shows its rate map under the field (on a track, rate
+against position along it) and highlights its spikes, so you can check where
+each cell of a sequence has its field.
 Only `backend="fastplotlib"` draws rasters; the other backends skip them with
 a warning.
 

@@ -533,11 +533,68 @@ class _PositionTime:
         )
 
 
+_SELECTED_COLOR = "orange"
+
+
+class _UnitRates:
+    """The rate map of the unit chosen in a raster.
+
+    Drawn like the field, all missing until a unit is chosen, or on a track
+    as rate against position along it.
+    """
+
+    def __init__(self, subplot: Any, env: Environment, cmap: str | Colormap) -> None:
+        self.subplot, self.cmap = subplot, cmap
+        self.raster: _Raster | None = None
+        self.extents = track_extents(env)
+        if self.extents is not None:
+            self.line = subplot.add_line(
+                np.full((env.n_bins, 3), np.nan, dtype=np.float32),
+                colors=_SELECTED_COLOR,
+                thickness=2,
+            )
+            subplot.camera.maintain_aspect = False
+        else:
+            self.field = FieldGraphic(
+                subplot,
+                env,
+                np.full(env.n_bins, np.nan),
+                ColorScale(cmap, 0.0, 1.0, "lightgray"),
+            )
+            subplot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
+            subplot.auto_scale()
+            frame_view(subplot, env)
+        subplot.title = "click a spike to show its unit's rate map"
+
+    def show(self, raster: _Raster, row: int) -> None:
+        """Show the rate map of ``row`` in ``raster``, and highlight it there."""
+        if self.raster is not None and self.raster is not raster:
+            self.raster.highlight(None)
+        self.raster = raster
+        raster.highlight(row)
+        assert raster.data.rates is not None
+        rates = raster.data.rates[row]
+        peak = float(np.nanmax(rates)) if np.isfinite(rates).any() else np.nan
+        top = peak if peak > 0 else 1.0
+        if self.extents is not None:
+            lower, upper = self.extents
+            self.line.data = xyz(np.column_stack([(lower + upper) / 2, rates]))
+            self.subplot.x_range = (float(lower.min()), float(upper.max()))
+            self.subplot.y_range = (0.0, 1.05 * top)
+        else:
+            self.field.scale = ColorScale(self.cmap, 0.0, top, "lightgray")
+            self.field.update(rates)
+        self.subplot.title = (
+            f"unit {raster.data.unit_ids[row]}: rate map, peak {peak:.3g} Hz"
+        )
+
+
 class _Raster:
     """Spikes as ticks, a row per unit, around the slider's time.
 
     Every spike is drawn once, as a vertical segment most of its row's
-    height; the view follows the time.
+    height; the view follows the time. With rate maps, clicking a unit's
+    row shows its map in ``rates`` and highlights the unit's spikes.
     """
 
     def __init__(
@@ -546,8 +603,9 @@ class _Raster:
         data: SpikeRasterData,
         start: float,
         move_to: Callable[[float], None],
+        rates: _UnitRates | None,
     ) -> None:
-        self.data, self.start = data, start
+        self.data, self.start, self.rates = data, start, rates
         counts = [len(train) for train in data.spike_times]
         self.row = np.repeat(np.arange(len(counts)), counts)
         self.times = np.concatenate(data.spike_times)
@@ -559,9 +617,12 @@ class _Raster:
         if not len(segments):
             segments = np.full((1, 3), np.nan, dtype=np.float32)
         self.ticks = subplot.add_line(
-            segments, colors=data.color, thickness=data.linewidth
+            segments, colors=self._colors(None), thickness=data.linewidth
         )
         self.ticks.tooltip_format = self.describe
+        if rates is not None and data.rates is not None:
+            # The whole row answers a click, not only its thin ticks.
+            subplot.renderer.add_event_handler(self.clicked, "click")
         self.view = _TimeWindow(subplot, data.window_seconds, move_to)
         subplot.title = f"spikes, {len(counts)} units"
         subplot.y_range = (-0.5, len(counts) - 0.5)
@@ -571,6 +632,27 @@ class _Raster:
         spike = int(pick_info["vertex_index"]) // 3
         unit = self.data.unit_ids[self.row[spike]]
         return f"unit {unit}\nt = {self.times[spike]:.4f} s"
+
+    def clicked(self, event: Any) -> None:
+        """Show the unit of the row clicked, if the click is in this panel."""
+        assert self.rates is not None
+        where = self.view.subplot.map_screen_to_world(event)
+        if where is None:
+            return
+        row = round(float(where[1]))
+        if 0 <= row < len(self.data.spike_times):
+            self.rates.show(self, row)
+
+    def _colors(self, row: int | None) -> NDArray[np.float32]:
+        """Each vertex's color: the spikes of ``row`` highlighted."""
+        colors = np.tile(_rgba(self.data.color), (max(3 * len(self.row), 1), 1))
+        if row is not None:
+            colors[np.repeat(self.row == row, 3)] = _rgba(_SELECTED_COLOR)
+        return colors
+
+    def highlight(self, row: int | None) -> None:
+        """Color the spikes of ``row``; None for none."""
+        self.ticks.colors = self._colors(row)
 
 
 def playback_step(frame_times: NDArray[np.float64]) -> float:
@@ -720,8 +802,10 @@ class FastplotlibAnimation:
         The widget; ``widget.indices["time"]`` is the slider's time, in
         seconds from the first frame.
     figure : fastplotlib.Figure
-        The widget's figure; add graphics to ``figure["field"]``, or on a
-        track to ``figure["track"]``, the position-by-time panel.
+        The widget's figure; add graphics to ``figure["field"]``. The other
+        panels are ``"track"`` (a track's fields against position and time),
+        ``"raster 0"``, ``"raster 1"``, ... (spike rasters), ``"unit"`` (the
+        rate map of the unit chosen in a raster) and ``"series 0"``, ...
     n_frames : int
         Number of frames.
     """
@@ -777,7 +861,11 @@ class FastplotlibAnimation:
         panels += [(f"raster {i}", 2.0) for i in range(len(rasters))]
         panels += [(f"series {i}", 1.0) for i in range(len(groups))]
         split = (0.4 if len(panels) > len(groups) else 0.6) if panels else 1.0
-        extents = {"field": (0.0, split, 0.0, 1.0)}
+        # A raster with rate maps adds the chosen unit's map under the field.
+        with_rates = any(item.rates is not None for item in rasters)
+        extents = {"field": (0.0, split, 0.0, 0.65 if with_rates else 1.0)}
+        if with_rates:
+            extents["unit"] = (0.0, split, 0.65, 1.0)
         total, top = sum(weight for _, weight in panels), 0.0
         for name, weight in panels:
             extents[name] = (split, 1.0, top / total, (top + weight) / total)
@@ -787,8 +875,9 @@ class FastplotlibAnimation:
         self.widget = fastplotlib.NDWidget(
             ranges={"time": (0.0, self._clock[-1] + step, step)},
             extents=extents,
-            cameras=[camera] + ["2d"] * len(panels),
-            controller_types=[controller] + ["panzoom"] * len(panels),
+            cameras=[camera] * (1 + with_rates) + ["2d"] * len(panels),
+            controller_types=[controller] * (1 + with_rates)
+            + ["panzoom"] * len(panels),
             size=(1100 if panels else 800, 760),
         )
         # Playing moves one step per 1 / fps s (the box allows 1-100); a step
@@ -860,8 +949,9 @@ class FastplotlibAnimation:
                 self._move_to,
             )
             _mark_events(self.figure["track"], events, self._start)
+        unit = _UnitRates(self.figure["unit"], env, cmap) if with_rates else None
         self._rasters = [
-            _Raster(self.figure[f"raster {i}"], item, self._start, self._move_to)
+            _Raster(self.figure[f"raster {i}"], item, self._start, self._move_to, unit)
             for i, item in enumerate(rasters)
         ]
         for i in range(len(rasters)):

@@ -69,3 +69,13 @@ def test_other_backends_skip_the_raster_with_a_warning(env):
             dry_run=True,
             overlays=[SpikeRasterOverlay(SPIKES)],
         )
+
+
+def test_rate_maps_follow_the_rows_and_must_cover_the_bins(env):
+    rates = np.arange(3 * env.n_bins, dtype=float).reshape(3, -1)
+    raster = SpikeRasterOverlay(SPIKES, order=[2, 0, 1], rates=rates)
+    (data,) = _convert_overlays_to_data([raster], np.arange(3.0), 3, env).spike_rasters
+    np.testing.assert_array_equal(data.rates, rates[[2, 0, 1]])
+    wrong = SpikeRasterOverlay(SPIKES, rates=rates[:, :-1])
+    with pytest.raises(ValueError, match="one rate map per unit"):
+        _convert_overlays_to_data([wrong], np.arange(3.0), 3, env)

@@ -591,6 +591,77 @@ def test_a_raster_draws_each_spike_in_its_units_row_on_the_clock(apparatus, walk
     assert animation.widget.indices["time"] == pytest.approx(t[30])
 
 
+def _click(figure, subplot, x, y):
+    """Click at world (x, y) of ``subplot``, as a person would."""
+    import time
+
+    column, row = subplot.map_world_to_screen((x, y, 0))[:2]
+    for kind, buttons in (("pointer_down", (1,)), ("pointer_up", ())):
+        figure.canvas.submit_event(
+            {
+                "event_type": kind,
+                "x": float(column),
+                "y": float(row),
+                "button": 1,
+                "buttons": buttons,
+                "modifiers": (),
+                "ntouches": 0,
+                "touches": {},
+                "time_stamp": time.perf_counter(),
+            }
+        )
+        figure.canvas._process_events()  # what the event loop would do
+
+
+def test_clicking_a_units_row_shows_its_rate_map(apparatus, walk, track, decoded):
+    from neurospatial.animation import SpikeRasterOverlay
+
+    t, _, fields = walk
+    spikes = [np.array([0.5, 1.0]), np.array([2.0]), np.array([1.2])]
+    rates = np.arange(3 * apparatus.n_bins, dtype=float).reshape(3, -1)
+    rates[1, :5] = np.nan  # bins without an estimate
+    raster = SpikeRasterOverlay(spikes, order=[1, 2, 0], rates=rates)
+    animation = apparatus.animate_fields(
+        fields, frame_times=t, backend="fastplotlib", overlays=[raster]
+    )
+    animation.show()
+    animation.frame = 30  # t = 1 s
+    _render(animation)
+    animation.figure.canvas.draw()
+    (layer,) = animation._rasters
+    unit_panel = animation.figure["unit"]
+    assert "click" in unit_panel.title.text
+    # Between the ticks of the bottom row, unit 1's.
+    _click(animation.figure, animation.figure["raster 0"], t[30] + 0.3, -0.3)
+    assert (
+        unit_panel.title.text == f"unit 1: rate map, peak {np.nanmax(rates[1]):.3g} Hz"
+    )
+    np.testing.assert_array_equal(layer.rates.field.values, rates[1])
+    colors = layer.ticks.colors[:]
+    np.testing.assert_allclose(colors[0:3], np.tile(to_rgba("orange"), (3, 1)))
+    np.testing.assert_allclose(colors[3:9], np.tile(to_rgba("white"), (6, 1)))
+    _click(animation.figure, animation._plot, 20.0, 20.0)  # the field: no change
+    assert unit_panel.title.text.startswith("unit 1:")
+
+    # On a track, the rate map is drawn against position along the track.
+    times, _, fields = decoded
+    rates = np.tile(np.arange(track.n_bins, dtype=float), (2, 1))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the gap between runs
+        animation = track.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            overlays=[SpikeRasterOverlay([times[:3], times[3:5]], rates=rates)],
+        )
+    (layer,) = animation._rasters
+    layer.rates.show(layer, 0)
+    np.testing.assert_allclose(
+        layer.rates.line.data[:][:, :2],
+        [[5, 0], [15, 1], [25, 2], [45, 3], [55, 4], [65, 5]],
+    )
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")

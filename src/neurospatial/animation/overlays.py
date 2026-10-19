@@ -1923,8 +1923,9 @@ class SpikeRasterOverlay:
     Each unit is a row of ticks at its spike times, and the panel shows
     ``window_seconds`` around the current time, so replay or theta sequences
     can be read against a decoded posterior or the animal's position.
-    Hovering over a spike names its unit. Drawn by ``backend="fastplotlib"``;
-    the other backends skip it with a warning.
+    Hovering over a spike names its unit; with ``rates``, clicking a unit's
+    row shows its rate map under the field and highlights its spikes. Drawn
+    by ``backend="fastplotlib"``; the other backends skip it with a warning.
 
     Parameters
     ----------
@@ -1941,6 +1942,11 @@ class SpikeRasterOverlay:
     unit_ids : array-like, shape (n_units,), optional
         Unit labels, in the order of ``spike_times``. Default: the labels a
         spike group carries, else ``0 .. n_units - 1``.
+    rates : ndarray of float64, shape (n_units, n_bins), optional
+        Each unit's firing rate map, in spikes per second, on the animated
+        environment's bins and in the order of ``spike_times``, such as
+        ``compute_spatial_rates(...).firing_rates``. NaN marks bins without
+        an estimate.
     window_seconds : float, default=2.0
         Seconds shown, centered on the current time.
     color : str, default="white"
@@ -1969,6 +1975,7 @@ class SpikeRasterOverlay:
     _: KW_ONLY
     order: ArrayLike | None = None
     unit_ids: ArrayLike | None = None
+    rates: NDArray[np.float64] | None = None
     window_seconds: float = 2.0
     color: str = "white"
     linewidth: float = 1.5
@@ -1977,7 +1984,8 @@ class SpikeRasterOverlay:
     interp: Literal["linear", "nearest"] = field(
         default="nearest", init=False, repr=False
     )
-    # The spike trains and labels, bottom row first.
+    # The units in row order, bottom row first: the order of spike_times.
+    _order: NDArray[np.intp] = field(init=False, repr=False, compare=False)
     _rows: tuple[list[NDArray[np.float64]], NDArray[Any]] = field(
         init=False, repr=False, compare=False
     )
@@ -2021,6 +2029,7 @@ class SpikeRasterOverlay:
             raise ValueError(
                 f"window_seconds must be positive, got {self.window_seconds}."
             )
+        self._order = order
         self._rows = [trains[i] for i in order], ids[order]
 
     def convert_to_data(
@@ -2039,16 +2048,35 @@ class SpikeRasterOverlay:
         n_frames : int
             Number of animation frames.
         env : Any
-            The environment; unused.
+            The environment ``rates`` must have one value per bin of.
 
         Returns
         -------
         SpikeRasterData
+
+        Raises
+        ------
+        ValueError
+            If ``rates`` is not one rate map per unit over ``env``'s bins.
         """
         spike_times, unit_ids = self._rows
+        rates = None
+        if self.rates is not None:
+            rates = np.asarray(self.rates, dtype=np.float64)
+            expected = (len(spike_times), env.n_bins)
+            if rates.shape != expected:
+                raise ValueError(
+                    f"rates has shape {rates.shape}, expected {expected}: one "
+                    "rate map per unit, in the order of spike_times, over the "
+                    "animated environment's bins. Fix: pass rate maps computed "
+                    "on this environment, e.g. "
+                    "compute_spatial_rates(env, ...).firing_rates."
+                )
+            rates = rates[self._order]
         return SpikeRasterData(
             spike_times=spike_times,
             unit_ids=unit_ids,
+            rates=rates,
             window_seconds=self.window_seconds,
             color=self.color,
             linewidth=self.linewidth,
@@ -3172,6 +3200,8 @@ class SpikeRasterData:
         Each row's spike times, in seconds, bottom row first.
     unit_ids : ndarray, shape (n_units,)
         Each row's unit label.
+    rates : ndarray of float64, shape (n_units, n_bins), or None
+        Each row's rate map, in spikes per second.
     window_seconds : float
         Seconds shown, centered on the current time.
     color : str
@@ -3182,6 +3212,7 @@ class SpikeRasterData:
 
     spike_times: list[NDArray[np.float64]]
     unit_ids: NDArray[Any]
+    rates: NDArray[np.float64] | None
     window_seconds: float
     color: str
     linewidth: float

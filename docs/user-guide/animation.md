@@ -444,7 +444,8 @@ position and value; drag the cursor to move every panel.
 A `SpikeRasterOverlay` draws each unit's spikes as a row of ticks beside the
 field on the same clock; pass `order=np.argsort(env.to_linear(rates.peak_locations()))`
 to sort the rows by place-field peak along the track, so a replay or theta
-sequence reads as a diagonal under the posterior. See [Spike Raster
+sequence reads as a diagonal under the posterior. With `rates=`, clicking a
+unit's row shows its rate map under the field. See [Spike Raster
 Overlay](../animation_overlays.md#spike-raster-overlay).
 
 Play and the step buttons move by a fixed time, short enough to reach every

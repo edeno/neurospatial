@@ -1250,7 +1250,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   around the current time, with position overlays as lines: the usual view of
   a decoded posterior. `SpikeRasterOverlay` draws many units' spikes as a
   raster beside the field on the same clock, rows in a chosen order (by
-  place-field peak, say); other backends skip it with a warning. Frame times
+  place-field peak, say); with `rates=`, clicking a unit's row shows its rate
+  map under the field. Other backends skip it with a warning. Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an
