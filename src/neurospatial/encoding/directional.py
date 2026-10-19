@@ -50,7 +50,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -1850,6 +1850,107 @@ class DirectionalRatesResult(SpatialResultMixin, UnitSelectionMixin):
         return _directional_summary_frame(self, index=index_ids)
 
 
+class _DirectionalCounts(NamedTuple):
+    """Unsmoothed directional counts with the binning and provenance used."""
+
+    spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
+    occupancy: NDArray[np.float64]  # (n_bins,) seconds
+    bin_centers: NDArray[np.float64]  # (n_bins,) radians
+    bin_size: float  # radians, 2*pi / n_bins actually used
+    bandwidth: float | None  # radians
+    analysis_settings: dict[str, Any]
+
+
+def _count_directional(
+    spike_trains: Sequence[NDArray[np.float64]],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    bin_size: float,
+    bandwidth: float | None,
+    angle_unit: Literal["rad", "deg"],
+    max_gap: float | None,
+    epochs: Any,
+    spike_window: Any,
+    backend: str,
+    n_jobs: int = 1,
+) -> _DirectionalCounts:
+    """Bin headings, count spikes and build provenance for directional rates.
+
+    Parameters
+    ----------
+    spike_trains : sequence of ndarray of shape (n_spikes_i,)
+        Validated spike times, one array per unit.
+    times : ndarray of shape (n_time,)
+        Trajectory timestamps in seconds.
+    headings : ndarray of shape (n_time,)
+        Heading at each timestamp, in ``angle_unit``.
+    bin_size, bandwidth : float
+        Requested bin size and smoothing bandwidth, in ``angle_unit``.
+    angle_unit : {"rad", "deg"}
+        Unit of ``headings``, ``bin_size`` and ``bandwidth``.
+    max_gap : float or None
+        Maximum timestamp gap, in seconds, bridged within a tracked run.
+    epochs, spike_window
+        Resolved time windows.
+    backend : str
+        Resolved backend recorded in the provenance.
+    n_jobs : int, default=1
+        Parallel jobs for spike counting.
+
+    Returns
+    -------
+    _DirectionalCounts
+        Counts of shape ``(n_units, n_bins)`` and occupancy ``(n_bins,)``,
+        both unsmoothed, with the bin spacing and bandwidth in radians.
+    """
+    from neurospatial.encoding._directional_counts import (
+        prepare_directional_binning,
+    )
+    from neurospatial.encoding._provenance import rate_analysis_settings
+
+    # Counts and occupancy share one frame mask, including a single unit.
+    prepared, bin_centers = prepare_directional_binning(
+        times,
+        headings,
+        bin_size,
+        angle_unit=angle_unit,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
+
+    # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
+    # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
+    # bin spacing may differ from the requested bin_size
+    actual_bin_size_rad = 2 * np.pi / len(bin_centers)
+
+    # Convert bandwidth to radians for storage
+    if angle_unit == "deg":
+        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
+    else:
+        bandwidth_rad = bandwidth
+
+    settings = rate_analysis_settings(
+        prepared.support,
+        method="binned" if bandwidth_rad is None else "circular_gaussian",
+        bandwidth=bandwidth_rad,
+        backend=backend,
+        bin_size=float(actual_bin_size_rad),
+        angle_unit="rad",
+        input_angle_unit=angle_unit,
+    )
+    return _DirectionalCounts(
+        spike_counts=spike_counts,
+        occupancy=occupancy,
+        bin_centers=bin_centers,
+        bin_size=actual_bin_size_rad,
+        bandwidth=bandwidth_rad,
+        analysis_settings=settings,
+    )
+
+
 def compute_directional_rate(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -2015,9 +2116,6 @@ def compute_directional_rate(
         is_jax_available,
         validate_and_resolve_backend,
     )
-    from neurospatial.encoding._directional_counts import (
-        prepare_directional_binning,
-    )
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,
@@ -2039,42 +2137,24 @@ def compute_directional_rate(
     validate_trajectory(times, headings=headings, context="compute_directional_rate")
     validate_spike_times(spike_times, context="compute_directional_rate")
 
-    # Counts and occupancy share one frame mask, including a single unit.
-    prepared, bin_centers = prepare_directional_binning(
+    counts = _count_directional(
+        [spike_times],
         times,
         headings,
-        bin_size,
+        bin_size=bin_size,
+        bandwidth=bandwidth,
         angle_unit=angle_unit,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-    )
-    counts_batch, occupancy = prepared.count([spike_times])
-    spike_counts = counts_batch[0]
-
-    # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
-    # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
-    # bin spacing may differ from the requested bin_size
-    n_bins = len(bin_centers)
-    actual_bin_size_rad = 2 * np.pi / n_bins
-
-    # Convert bandwidth to radians for storage
-    if angle_unit == "deg":
-        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
-    else:
-        bandwidth_rad = bandwidth
-
-    from neurospatial.encoding._provenance import rate_analysis_settings
-
-    settings = rate_analysis_settings(
-        prepared.support,
-        method="binned" if bandwidth_rad is None else "circular_gaussian",
-        bandwidth=bandwidth_rad,
         backend=resolved_backend,
-        bin_size=float(actual_bin_size_rad),
-        angle_unit="rad",
-        input_angle_unit=angle_unit,
     )
+    spike_counts = counts.spike_counts[0]
+    occupancy = counts.occupancy
+    bin_centers = counts.bin_centers
+    actual_bin_size_rad = counts.bin_size
+    bandwidth_rad = counts.bandwidth
+    settings = counts.analysis_settings
 
     # Apply smoothing if requested
     if bandwidth_rad is not None:
@@ -2314,9 +2394,6 @@ def compute_directional_rates(
         is_jax_available,
         validate_and_resolve_backend,
     )
-    from neurospatial.encoding._directional_counts import (
-        prepare_directional_binning,
-    )
     from neurospatial.encoding._validation import (
         validate_spike_trains,
         validate_trajectory,
@@ -2354,41 +2431,26 @@ def compute_directional_rates(
         spike_window=resolved_spike_window,
     )
 
-    # Precompute frame bins and one shared mask for the whole population.
-    prepared, bin_centers = prepare_directional_binning(
+    counts = _count_directional(
+        spike_times_list,
         times,
         headings,
-        bin_size,
+        bin_size=bin_size,
+        bandwidth=bandwidth,
         angle_unit=angle_unit,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
-    )
-    spike_counts_batch, occupancy = prepared.count(spike_times_list, n_jobs=n_jobs)
-    n_bins = len(bin_centers)
-
-    # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
-    # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
-    # bin spacing may differ from the requested bin_size
-    actual_bin_size_rad = 2 * np.pi / n_bins
-
-    # Convert bandwidth to radians for storage
-    if angle_unit == "deg":
-        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
-    else:
-        bandwidth_rad = bandwidth
-
-    from neurospatial.encoding._provenance import rate_analysis_settings
-
-    settings = rate_analysis_settings(
-        prepared.support,
-        method="binned" if bandwidth_rad is None else "circular_gaussian",
-        bandwidth=bandwidth_rad,
         backend=resolved_backend,
-        bin_size=float(actual_bin_size_rad),
-        angle_unit="rad",
-        input_angle_unit=angle_unit,
+        n_jobs=n_jobs,
     )
+    spike_counts_batch = counts.spike_counts
+    occupancy = counts.occupancy
+    bin_centers = counts.bin_centers
+    n_bins = len(bin_centers)
+    actual_bin_size_rad = counts.bin_size
+    bandwidth_rad = counts.bandwidth
+    settings = counts.analysis_settings
 
     # Precompute smoothed occupancy once (instead of per-neuron)
     if bandwidth_rad is not None:
