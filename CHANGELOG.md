@@ -1244,7 +1244,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   Video overlays are placed in the environment through their calibration
   (rotation and mirroring included), above or below the field, with walls,
   landmarks and the moving overlays on top. Object vectors are drawn as lines
-  from the animal to each object, fading with the firing rate. Frame times
+  from the animal to each object, fading with the firing rate. On a track
+  (`linear_track`, `from_graph` or a 1-D environment) the fields are also
+  drawn as position along the track against time, over `window_seconds`
+  around the current time, with position overlays as lines: the usual view of
+  a decoded posterior. Frame times
   with long gaps or very uneven spacing are warned about, since playback
   moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an

@@ -414,6 +414,33 @@ drawn (up to 100,000), so a ripple-band LFP keeps its shape. Event times from
 an `EventOverlay` are marked on every series panel in the events' colors.
 Drag the cursor in a series to move every panel.
 
+On a track (`Environment.linear_track`, `from_graph`, or any 1-D environment)
+the fields are also drawn against time: position along the track on the y axis,
+time on the x axis, over `window_seconds` (default 2 s) around the current time.
+This is the usual way to read a decoded posterior on a linear track:
+
+```python
+result = decode_session(env, spike_times, times, positions, dt=0.025)
+env.animate_fields(
+    result.posterior,
+    frame_times=result.times,
+    backend="fastplotlib",
+    window_seconds=4.0,
+    overlays=[
+        PositionOverlay(positions=positions, times=times, color="white"),
+        PositionOverlay(positions=result.map_position, times=result.times, color="red", interp="nearest"),
+    ],
+)
+```
+
+Each position overlay is drawn as a line along the track. A column starts at
+its frame's time and lasts until the next frame, as the field panel holds it,
+so the cursor always sits in the column the field panel shows; across a
+recording gap the column ends after one typical frame interval and the gap
+stays empty. On a track built from several segments, the spacing between them
+(`edge_spacing`) stays empty too. Hovering over a cell shows its time,
+position and value; drag the cursor to move every panel.
+
 Play and the step buttons move by a fixed time, short enough to reach every
 frame when frames are evenly spaced (camera jitter included). For frames with
 long gaps or very uneven spacing, such as decoded replay bins from separate

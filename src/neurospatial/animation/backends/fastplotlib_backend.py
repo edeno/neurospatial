@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -31,6 +31,8 @@ from neurospatial.animation._parallel import (
 from neurospatial.environment._fastplotlib import (
     ColorScale,
     FieldGraphic,
+    _fans,
+    _rectangles,
     camera_options,
     draw_colorbar,
     draw_layers,
@@ -361,6 +363,158 @@ def video_to_env(data: VideoData, width: int, height: int) -> NDArray[np.float64
     )
 
 
+def track_extents(
+    env: Environment,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
+    """Where each bin starts and ends along a track; None off a track.
+
+    Linearized tracks (``linear_track``, ``from_graph``) measure distance
+    along the track, with the spacing between segments left empty; 1-D
+    environments use their own coordinate.
+    """
+    if env.is_linearized_track:
+        linearization = env._binning.linearization
+        assert linearization is not None
+        edges = np.asarray(linearization.grid_edges[0], dtype=np.float64)
+        active = linearization.active_mask
+        return edges[:-1][active], edges[1:][active]
+    if env.n_dims == 1:
+        centers, half = env.bin_centers[:, 0], env.bin_sizes / 2
+        return centers - half, centers + half
+    return None
+
+
+def track_position(
+    env: Environment, positions: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Positions as distances along the track, shape (n,); NaN stays NaN."""
+    if env.is_linearized_track:
+        return np.asarray(env.to_linear(positions), dtype=np.float64)
+    return np.asarray(positions, dtype=np.float64)[:, 0]
+
+
+class _PositionTime:
+    """A track's fields over time: a column per frame, a row per bin.
+
+    A column starts at its frame's time and lasts until the next frame, as
+    the field panel holds it, or one typical frame interval at a gap, which
+    stays empty. Rows span each bin along the track. Positions are drawn as
+    lines along the track, and the slider's time as a cursor that can be
+    dragged.
+    """
+
+    def __init__(
+        self,
+        subplot: Any,
+        env: Environment,
+        extents: tuple[NDArray[np.float64], NDArray[np.float64]],
+        scale: ColorScale,
+        clock: NDArray[np.float64],
+        window: float,
+        positions: Sequence[PositionData],
+        start: float,
+        move_to: Callable[[float], None],
+    ) -> None:
+        from fastplotlib import LinearSelector
+
+        self.subplot, self.scale, self.clock, self.start = subplot, scale, clock, start
+        self.window = window
+        self.lower, self.upper = extents
+        typical = float(np.median(np.diff(clock))) if len(clock) > 1 else 1.0
+        self.ends = clock + np.minimum(np.diff(clock, append=np.inf), typical)
+        # Columns a window can hold: frames starting less than one typical
+        # interval before it, up to its end.
+        reach = np.searchsorted(clock, clock + window + typical, side="right")
+        self.n_columns = int(np.max(reach - np.arange(len(clock))))
+        n_bins = len(self.lower)
+        quads = _fans(np.zeros((4 * self.n_columns * n_bins, 2)), 4)
+        self.mesh = subplot.add_mesh(
+            quads.positions,
+            quads.triangles,
+            mode="basic",
+            mapcoords=np.zeros(len(quads.positions), dtype=np.float32),
+            cmap=scale.texture,
+            clim=(0.0, 1.0),
+        )
+        self.mesh.tooltip_format = self.describe
+        labels = env._plot_labels()
+        self.axis = "position along track" + (
+            f" ({labels.units})" if labels.units else ""
+        )
+        self.tracks = [track_position(env, item.data) for item in positions]
+        self.lines = [
+            subplot.add_line(
+                np.full((self.n_columns, 3), np.nan, dtype=np.float32),
+                colors=item.color,
+                thickness=2,
+            )
+            for item in positions
+        ]
+        self.first, self.rows = 0, np.empty((0, n_bins))
+        self.cursor = LinearSelector(
+            0.0, limits=(-np.inf, np.inf), edge_color="lightgray"
+        )
+        self.cursor.add_event_handler(
+            lambda event: move_to(event.info["value"]), "selection"
+        )
+        subplot.add_graphic(self.cursor)
+        subplot.title = self.axis
+        subplot.camera.maintain_aspect = False
+        subplot.y_range = (float(self.lower.min()), float(self.upper.max()))
+
+    def frames_at(self, time: float) -> slice:
+        """The frames whose columns show in the window around ``time``."""
+        half = self.window / 2
+        return slice(
+            int(np.searchsorted(self.ends, time - half, side="right")),
+            int(np.searchsorted(self.clock, time + half, side="left")),
+        )
+
+    def show(self, time: float, first: int, rows: NDArray[np.float64]) -> None:
+        """Draw ``rows``, the fields from frame ``first``, around ``time``."""
+        from fastplotlib.graphics.utils import pause_events
+
+        self.first, self.rows = first, rows
+        n_frames, n_bins = rows.shape
+        frames = np.arange(first, first + n_frames)
+        corners = _rectangles(
+            np.repeat(self.clock[frames], n_bins),
+            np.repeat(self.ends[frames], n_bins),
+            np.tile(self.lower, n_frames),
+            np.tile(self.upper, n_frames),
+        )
+        positions = np.zeros((len(self.mesh.positions), 3), dtype=np.float32)
+        positions[: len(corners), :2] = corners  # unused columns have no area
+        self.mesh.positions = positions
+        mapcoords = np.zeros(len(positions), dtype=np.float32)
+        mapcoords[: len(corners)] = np.repeat(
+            self.scale.texture_coordinates(rows.ravel()), 4
+        )
+        self.mesh.mapcoords = mapcoords
+        for line, track in zip(self.lines, self.tracks, strict=True):
+            points = np.full((self.n_columns, 2), np.nan)
+            points[:n_frames] = np.column_stack([self.clock[frames], track[frames]])
+            line.data = xyz(points)
+        with pause_events(self.cursor):
+            self.cursor.selection = time
+        half = self.window / 2
+        self.subplot.x_range = (time - half, time + half)
+
+    def describe(self, pick_info: dict[str, Any]) -> str:
+        """The tooltip for the cell under the pointer."""
+        column, bin_index = divmod(pick_info["face_index"] // 2, len(self.lower))
+        frame = self.first + column
+        value = self.rows[column, bin_index]
+        middle = (self.lower[bin_index] + self.upper[bin_index]) / 2
+        return "\n".join(
+            [
+                f"t = {self.start + self.clock[frame]:.3f} s",
+                f"bin {bin_index}, {self.axis}: {middle:.4g}",
+                f"value: {'missing' if np.isnan(value) else f'{value:.4g}'}",
+            ]
+        )
+
+
 def playback_step(frame_times: NDArray[np.float64]) -> float:
     """Seconds that play and the step buttons move: short enough to reach
     every frame, unless frames are much closer than the typical interval.
@@ -387,20 +541,30 @@ def playback_step(frame_times: NDArray[np.float64]) -> float:
     return step
 
 
+class _Frame(NamedTuple):
+    """What one time shows, read on a worker thread."""
+
+    frame: int
+    values: NDArray[np.float64]  # the field, shape (n_bins,)
+    images: list[Any]  # each video's frame, or None
+    first: int  # the first frame of ``rows``
+    rows: NDArray[np.float64]  # a track's fields in its window, (n, n_bins)
+
+
 def _frames_graphic(
     nd_subplot: Any,
     indices: Any,
     fields: Any,
     frame_of: Callable[[float], int],
-    read: Callable[[int], Any],
-    show: Callable[[int, Any], None],
+    read: Callable[[float], Any],
+    show: Callable[[float, Any], None],
     graphic: Any,
 ) -> Any:
-    """The field and every frame-aligned overlay, as one ``NDGraphic``.
+    """The field and every frame-aligned panel, as one ``NDGraphic``.
 
     The widget's slider is in seconds; ``frame_of`` maps it to the frame
-    shown, which is held until the next frame starts. ``read`` loads a
-    frame's data (field values, video images) on a worker thread, so disk
+    shown, which is held until the next frame starts. ``read`` loads the
+    data for a time (field values, video images) on a worker thread, so disk
     reads do not stall the controls; ``show`` then draws all of it together,
     so the overlays never show another frame than the field. Built in a
     function because fastplotlib is optional.
@@ -438,8 +602,8 @@ def _frames_graphic(
 
         async def _set_indices_(self, at: dict[str, float] | None = None) -> None:
             at = self.indices if at is None else at
-            frame = frame_of(at["time"])
-            show(frame, await run_in_thread_pool(self._reader, read, frame))
+            time = at["time"]
+            show(time, await run_in_thread_pool(self._reader, read, time))
             self._last_indices = at
 
     return Frames()
@@ -452,9 +616,12 @@ class FastplotlibAnimation:
     fastplotlib ``NDWidget``: a slider in seconds, play, step and loop
     buttons, and a frame rate box. Time-series overlays are drawn beside the
     field on the same clock, each showing its window around the current
-    time, with event times marked. Hovering over a bin shows its value. In
-    Jupyter it displays itself; elsewhere call :meth:`show` (in a script,
-    then ``fastplotlib.loop.run()``).
+    time, with event times marked. On a track (a linearized track or a 1-D
+    environment) the fields are also drawn over time, position along the
+    track against time, with the positions as lines over them: a decoded
+    posterior beside the animal's position, say. Hovering over a bin shows
+    its value. In Jupyter it displays itself; elsewhere call :meth:`show`
+    (in a script, then ``fastplotlib.loop.run()``).
 
     The slider and the time-series axes count seconds from the first frame,
     so session timestamps (such as 1.7e9 s) keep their precision on the GPU;
@@ -485,6 +652,9 @@ class FastplotlibAnimation:
         Draw all regions, or the named ones.
     region_alpha : float, default=0.3
         Opacity of region areas.
+    window_seconds : float, default=2.0
+        Seconds of fields shown in a track's position-by-time panel, centered
+        on the current time.
 
     Attributes
     ----------
@@ -492,7 +662,8 @@ class FastplotlibAnimation:
         The widget; ``widget.indices["time"]`` is the slider's time, in
         seconds from the first frame.
     figure : fastplotlib.Figure
-        The widget's figure; add graphics to ``figure["field"]``.
+        The widget's figure; add graphics to ``figure["field"]``, or on a
+        track to ``figure["track"]``, the position-by-time panel.
     n_frames : int
         Number of frames.
     """
@@ -512,6 +683,7 @@ class FastplotlibAnimation:
         overlay_data: OverlayData | None = None,
         show_regions: bool | Sequence[str] = False,
         region_alpha: float = 0.3,
+        window_seconds: float = 2.0,
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -531,19 +703,32 @@ class FastplotlibAnimation:
             self.n_frames,
             "fastplotlib",
         )
+        if window_seconds <= 0:
+            raise ValueError(
+                f"window_seconds must be positive, got {window_seconds}. It is "
+                "the seconds of fields shown in a track's position-by-time panel."
+            )
         groups = _group_timeseries(overlay_data.timeseries if overlay_data else [])
         step = playback_step(self._frame_times)
-        # The slider stops at the last frame; series subplots fill the right.
-        extents = {"field": (0.0, 0.6 if groups else 1.0, 0.0, 1.0)}
-        for i in range(len(groups)):
-            extents[f"series {i}"] = (0.6, 1.0, i / len(groups), (i + 1) / len(groups))
+        extents_along_track = track_extents(env)
+        # Panels on the clock fill the right, stacked top to bottom: the
+        # track's fields over time, then the time series.
+        panels = [("track", 2.0)] if extents_along_track is not None else []
+        panels += [(f"series {i}", 1.0) for i in range(len(groups))]
+        split = (0.4 if extents_along_track is not None else 0.6) if panels else 1.0
+        extents = {"field": (0.0, split, 0.0, 1.0)}
+        total, top = sum(weight for _, weight in panels), 0.0
+        for name, weight in panels:
+            extents[name] = (split, 1.0, top / total, (top + weight) / total)
+            top += weight
         camera, controller = camera_options(env)
+        # The slider stops at the last frame.
         self.widget = fastplotlib.NDWidget(
             ranges={"time": (0.0, self._clock[-1] + step, step)},
             extents=extents,
-            cameras=[camera] + ["2d"] * len(groups),
-            controller_types=[controller] + ["panzoom"] * len(groups),
-            size=(1100 if groups else 800, 760),
+            cameras=[camera] + ["2d"] * len(panels),
+            controller_types=[controller] + ["panzoom"] * len(panels),
+            size=(1100 if panels else 800, 760),
         )
         # Playing moves one step per 1 / fps s (the box allows 1-100); a step
         # shorter than the typical interval plays faster to keep the speed.
@@ -582,6 +767,7 @@ class FastplotlibAnimation:
         )
         draw_colorbar(self._plot, scale, "")
         self._title = title or plot_title(env)
+        events = overlay_data.events if overlay_data else []
         self._layers: list[Any] = []
         if overlay_data is not None:
             positions = overlay_data.positions
@@ -599,18 +785,31 @@ class FastplotlibAnimation:
                 for item in overlay_data.head_directions
             ]
             self._layers += [_Events(self._plot, item) for item in overlay_data.events]
+        self._track: _PositionTime | None = None
+        if extents_along_track is not None:
+            self._track = _PositionTime(
+                self.figure["track"],
+                env,
+                extents_along_track,
+                scale,
+                self._clock,
+                window_seconds,
+                overlay_data.positions if overlay_data else [],
+                self._start,
+                lambda time: setattr(self.widget, "indices", {"time": time}),
+            )
+            _mark_events(self.figure["track"], events, self._start)
         frames = _frames_graphic(
             self.widget[self._plot],
             self.widget.indices,
             self._fields,
             self._frame_of,
-            self._read_frame,
-            self._show_frame,
+            self._read,
+            self._show,
             self._field.graphic,
         )
         # fastplotlib has no public way to add a custom NDGraphic yet.
         self.widget[self._plot]._nd_graphics.append(frames)
-        events = overlay_data.events if overlay_data else []
         for i, group in enumerate(groups):
             _add_series(self.widget, f"series {i}", group, events, self._start)
         self.widget.indices = {"time": 0.0}  # adding a series can move the time
@@ -619,21 +818,32 @@ class FastplotlibAnimation:
         self._plot.auto_scale()
         frame_view(self._plot, env)
         self._canvas: Any = None
-        self._show_frame(0, self._read_frame(0))
+        self._show(0.0, self._read(0.0))
 
     def _frame_of(self, time: float) -> int:
         """The frame shown at ``time`` on the clock: the last one that started."""
         return max(int(np.searchsorted(self._clock, time, side="right")) - 1, 0)
 
-    def _read_frame(self, frame: int) -> tuple[NDArray[np.float64], list[Any]]:
-        """A frame's field values and video images; runs on a worker thread."""
-        values = np.asarray(self._fields[frame], dtype=np.float64)
-        return values, [video.data.get_frame(frame) for video in self._videos]
+    def _read(self, time: float) -> _Frame:
+        """What ``time`` shows, read from the fields and videos.
 
-    def _show_frame(
-        self, frame: int, data: tuple[NDArray[np.float64], list[Any]]
-    ) -> None:
-        values, images = data
+        Runs on a worker thread.
+        """
+        frame = self._frame_of(time)
+        values = np.asarray(self._fields[frame], dtype=np.float64)
+        images = [video.data.get_frame(frame) for video in self._videos]
+        if self._track is None:
+            return _Frame(frame, values, images, 0, np.empty((0, len(values))))
+        window = self._track.frames_at(time)
+        rows = np.asarray(self._fields[window], dtype=np.float64)
+        return _Frame(
+            frame, values, images, window.start, rows.reshape(-1, len(values))
+        )
+
+    def _show(self, time: float, data: _Frame) -> None:
+        frame, values, images = data.frame, data.values, data.images
+        if self._track is not None:
+            self._track.show(time, data.first, data.rows)
         self._field.update(values)
         for video, image in zip(self._videos, images, strict=True):
             video.show(image)
@@ -742,16 +952,7 @@ def _add_series(
             thickness=item.linewidth,
             name=item.label,
         )
-    for data in events:
-        for event, event_times in data.event_times.items():
-            if len(event_times):
-                subplot.add_inf_line(
-                    event_times - start,
-                    axis="x",
-                    colors=data.colors[event],
-                    thickness=1.0,
-                    name=f"{event} times",
-                )
+    _mark_events(subplot, events, start)
     subplot.title = "  |  ".join(item.label for item in group)
     subplot.camera.maintain_aspect = False
     low = min(item.global_vmin for item in group)
@@ -762,6 +963,20 @@ def _add_series(
         # The cursor marks the current time; dragging it moves every panel.
         cursor.visible = group[0].show_cursor
         cursor.edge_color = group[0].cursor_color
+
+
+def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> None:
+    """Event times as vertical lines in the events' colors, on the clock."""
+    for data in events:
+        for event, event_times in data.event_times.items():
+            if len(event_times):
+                subplot.add_inf_line(
+                    event_times - start,
+                    axis="x",
+                    colors=data.colors[event],
+                    thickness=1.0,
+                    name=f"{event} times",
+                )
 
 
 def render_fastplotlib(

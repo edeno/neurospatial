@@ -6038,6 +6038,11 @@ class Environment(Generic[_C]):
             - ``cache_limit`` : int, default=1000
               Maximum cache size
 
+            **Fastplotlib backend:**
+            - ``window_seconds`` : float, default=2.0
+              On a track, seconds of fields shown in the position-by-time
+              panel, centered on the current time
+
         Returns
         -------
         viewer or path or widget

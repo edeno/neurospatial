@@ -474,6 +474,92 @@ def test_uneven_frames_are_each_reached_and_gaps_warned(apparatus, walk):
     assert reached == set(range(len(jittered)))
 
 
+@pytest.fixture(scope="module")
+def track():
+    """Two 30 cm segments, 10 cm apart along the track: bins 0-2, then 3-5."""
+    return Environment.linear_track(
+        node_positions=[[0.0, 0.0], [30.0, 0.0], [30.0, 30.0]],
+        bin_size=10.0,
+        edge_spacing=10.0,
+        units="cm",
+    )
+
+
+@pytest.fixture
+def decoded(track):
+    """One bin holds all of each frame's field, as a sharp posterior would.
+
+    Frames come at 10 Hz in two runs, 3 s apart.
+    """
+    times = np.concatenate([np.arange(20) * 0.1, 5.0 + np.arange(20) * 0.1])
+    peak = np.arange(len(times)) % track.n_bins
+    fields = np.zeros((len(times), track.n_bins))
+    fields[np.arange(len(times)), peak] = 1.0
+    return times, peak, fields
+
+
+def test_a_track_shows_its_fields_against_position_and_time(track, decoded):
+    times, peak, fields = decoded
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the 3 s gap is warned about
+        animation = track.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            vmin=0.0,
+            vmax=1.0,
+            window_seconds=1.0,
+            overlays=[PositionOverlay(positions=track.bin_centers[peak], times=times)],
+        )
+    animation.show()
+    panel = animation.figure["track"]
+    high, low = colormaps["viridis"](1.0)[:3], colormaps["viridis"](0.0)[:3]
+    animation.frame = 15  # its field is all in bin 3, 40-50 cm along the track
+    _render(animation)
+    middle = times[15] + 0.05
+    np.testing.assert_allclose(
+        _pixel(animation.figure, panel, middle, 45.0), high, atol=2 / 255
+    )
+    np.testing.assert_allclose(
+        _pixel(animation.figure, panel, middle, 15.0), low, atol=2 / 255
+    )
+    # Between the segments there is no bin.
+    np.testing.assert_allclose(
+        _pixel(animation.figure, panel, middle, 35.0), 0.0, atol=0.05
+    )
+    (line,) = animation._track.lines
+    column = 15 - animation._track.first
+    np.testing.assert_allclose(line.data[column, :2], [times[15], 45.0], rtol=1e-6)
+    face = 2 * (column * track.n_bins + 3)
+    assert animation._track.mesh.tooltip_format({"face_index": face}).splitlines() == [
+        f"t = {times[15]:.3f} s",
+        "bin 3, position along track (cm): 45",
+        "value: 1",
+    ]
+    # The last frame before the gap lasts one frame interval, not the gap.
+    animation.frame = 19  # bin 1, 10-20 cm
+    _render(animation)
+    np.testing.assert_allclose(
+        _pixel(animation.figure, panel, times[19] + 0.05, 15.0), high, atol=2 / 255
+    )
+    np.testing.assert_allclose(
+        _pixel(animation.figure, panel, times[19] + 0.3, 15.0), 0.0, atol=0.05
+    )
+    animation._track.cursor.selection = times[12]  # dragging the cursor
+    assert animation.widget.indices["time"] == pytest.approx(times[12])
+
+
+def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
+    t, _, fields = walk
+    animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")
+    assert [subplot.name for subplot in animation.figure] == ["field"]
+    times, _, fields = decoded
+    with pytest.raises(ValueError, match="window_seconds must be positive"):
+        track.animate_fields(
+            fields[:20], frame_times=times[:20], backend="fastplotlib", window_seconds=0
+        )
+
+
 @pytest.fixture
 def video(walk):
     """Frames whose top rows are red, and a calibration that flips y."""

@@ -115,6 +115,7 @@ _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
             "title",
             "show_regions",
             "region_alpha",
+            "window_seconds",
             "dry_run",
         }
     ),
