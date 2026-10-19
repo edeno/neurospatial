@@ -22,14 +22,20 @@ from neurospatial.arena import OpenArena
 from neurospatial.binning import (
     BinConnections,
     Binning,
+    FaceGeometry,
+    KnownFaces,
+    MeshLocator,
     MissingFaces,
     NearestBinLocator,
     SpatialBins,
+    TriangleShapes,
 )
 from neurospatial.environment import (
     _environment_differences,
     _mapped_topology_difference,
 )
+from neurospatial.layout import create_layout
+from neurospatial.ops import AffineND
 
 
 def _grid(*, offset: float = 0.0, diagonals: bool = True) -> Environment:
@@ -163,18 +169,148 @@ def test_independently_built_environments_from_the_same_samples_agree() -> None:
     assert _environment_differences(first, second) == (None, None)
 
 
-@pytest.mark.parametrize("layout", ["samples", "polygon", "track"])
+def _mesh() -> Environment:
+    return Environment.from_layout(
+        create_layout(
+            "TriangularMesh",
+            boundary_polygon=Polygon([(0, 0), (20, 0), (20, 20), (0, 20)]),
+            point_spacing=3.0,
+        )
+    )
+
+
+def _hexagons() -> Environment:
+    return Environment.from_layout(
+        create_layout(
+            "Hexagonal", hexagon_width=3.0, dimension_ranges=[(0, 20), (0, 20)]
+        )
+    )
+
+
+def test_independently_built_meshes_agree() -> None:
+    first, second = _mesh(), _mesh()
+    assert first._geometry is not second._geometry
+    assert _environment_differences(first, second) == (None, None)
+
+
+def _two_triangles(points: list[tuple[float, float]], triangles) -> Environment:
+    """Two triangles sharing an edge, in a fixed arena, with their own faces."""
+    points_array = np.asarray(points, dtype=float)
+    triangles_array = np.asarray(triangles)
+    corners = points_array[triangles_array]
+    centers = corners.mean(axis=1)
+    sides = corners[:, 1:] - corners[:, :1]
+    areas = (
+        np.abs(sides[:, 0, 0] * sides[:, 1, 1] - sides[:, 0, 1] * sides[:, 1, 0]) / 2
+    )
+    distance = np.hypot(*(centers[1] - centers[0]))
+    pairs = np.array([[0, 1]])
+    return Environment.from_bins(
+        Binning(
+            "TriangularMesh",
+            SpatialBins.from_arrays(centers, areas, 2),
+            BinConnections.from_arrays(pairs, [distance]),
+            MeshLocator(points_array, triangles_array, np.arange(2), None),
+            KnownFaces(
+                FaceGeometry(pairs, np.array([6 * np.sqrt(2)]), [distance], areas)
+            ),
+            shapes=TriangleShapes(points_array, triangles_array),
+        ),
+        arena=OpenArena(box(-5, -5, 12, 12)),
+    )
+
+
+def test_triangles_with_equal_centroids_areas_and_faces_differ_in_cell_shapes() -> None:
+    # The second mesh is the first reflected through the midpoint of its two
+    # centroids, so its triangles swap places: each bin keeps its centroid,
+    # area, shared edge and neighbor distance, but is a different triangle.
+    first = _two_triangles([(0, 0), (6, 0), (0, 6), (9, 3)], [[0, 1, 2], [1, 2, 3]])
+    second = _two_triangles([(1, 5), (7, -1), (-2, 2), (7, 5)], [[0, 1, 2], [3, 0, 1]])
+    np.testing.assert_array_equal(first.bin_centers, second.bin_centers)
+    np.testing.assert_array_equal(first.bin_sizes, second.bin_sizes)
+    np.testing.assert_array_equal(
+        first.binning.connections.pair_distances,
+        second.binning.connections.pair_distances,
+    )
+    assert _environment_differences(first, second) == ("cell shapes", None)
+
+
+def test_the_same_triangles_listed_differently_have_the_same_cells() -> None:
+    # Vertex order within a triangle and the numbering of mesh points do not
+    # change the cell.
+    first = _two_triangles([(0, 0), (6, 0), (0, 6), (9, 3)], [[0, 1, 2], [1, 2, 3]])
+    relisted = _two_triangles([(9, 3), (0, 6), (6, 0), (0, 0)], [[3, 1, 2], [0, 2, 1]])
+    assert _environment_differences(first, relisted) == (None, None)
+
+
+def test_hexagons_with_equal_centers_and_areas_differ_in_cell_shapes() -> None:
+    # One hexagon moved to the origin, then turned a quarter turn about it:
+    # the same center and area, but a flat-topped instead of a pointy-topped cell.
+    single = _hexagons().subset(mask=np.arange(_hexagons().n_bins) == 5)
+    x, y = single.bin_centers[0]
+    at_origin = single.apply_transform(
+        AffineND(np.array([[1.0, 0, -x], [0, 1, -y], [0, 0, 1]]))
+    )
+    turned = at_origin.apply_transform(
+        AffineND(np.array([[0.0, -1, 0], [1, 0, 0], [0, 0, 1]]))
+    )
+    np.testing.assert_array_equal(at_origin.bin_centers, turned.bin_centers)
+    np.testing.assert_array_equal(at_origin.bin_sizes, turned.bin_sizes)
+    assert _environment_differences(at_origin, turned).bins == "cell shapes"
+
+
+_ROOM = OpenArena(box(-20, -20, 30, 30))
+
+
+def _one_cell(x_edges: list[float], y_edges: list[float]) -> Environment:
+    return Environment.from_grid_mask(
+        np.ones((1, 1), dtype=bool),
+        grid_edges=(np.array(x_edges), np.array(y_edges)),
+        arena=_ROOM,
+    )
+
+
+def test_grid_cells_with_equal_centers_and_areas_differ_in_cell_shapes() -> None:
+    square, wide = _one_cell([0, 10], [0, 10]), _one_cell([-5, 15], [2.5, 7.5])
+    np.testing.assert_array_equal(square.bin_centers, wide.bin_centers)
+    np.testing.assert_array_equal(square.bin_sizes, wide.bin_sizes)
+    assert _environment_differences(square, wide) == ("cell shapes", None)
+
+
+def test_a_rotated_grid_cell_differs_from_an_axis_aligned_one() -> None:
+    square = _one_cell([-5, 5], [-5, 5])
+    c, s = np.cos(np.pi / 4), np.sin(np.pi / 4)
+    diamond = square.apply_transform(
+        AffineND(np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]]))
+    )
+    np.testing.assert_array_equal(square.bin_centers, diamond.bin_centers)
+    np.testing.assert_array_equal(square.bin_sizes, diamond.bin_sizes)
+    assert _environment_differences(square, diamond).bins == "cell shapes"
+
+
+def _rotated_grid() -> Environment:
+    c, s = np.cos(np.pi / 6), np.sin(np.pi / 6)
+    return Environment.from_samples(_samples(), bin_size=3.0).apply_transform(
+        AffineND(np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]]))
+    )
+
+
+_ROUND_TRIP_LAYOUTS = {
+    "samples": lambda: Environment.from_samples(_samples(), bin_size=3.0),
+    "polygon": lambda: Environment.from_polygon(Point(15, 15).buffer(15), bin_size=2.0),
+    "track": _t_maze,
+    "mesh": _mesh,
+    "hexagons": _hexagons,
+    "rotated grid": _rotated_grid,
+}
+
+
+@pytest.mark.parametrize("layout", list(_ROUND_TRIP_LAYOUTS))
 def test_nwb_restored_environment_equals_its_original(layout: str, tmp_path) -> None:
     pynwb = pytest.importorskip("pynwb")
     from neurospatial.io.nwb import read_environment, write_environment
 
-    if layout == "samples":
-        env = Environment.from_samples(_samples(), bin_size=3.0)
-    elif layout == "polygon":
-        env = Environment.from_polygon(Point(15, 15).buffer(15), bin_size=2.0)
-    else:
-        env = _t_maze()
-    env = env.with_metadata(units="cm", frame="room")
+    env = _ROUND_TRIP_LAYOUTS[layout]().with_metadata(units="cm", frame="room")
 
     nwbfile = pynwb.NWBFile(
         session_description="environment comparison round trip",

@@ -11,6 +11,7 @@ Equal bin counts or array shapes never establish either.
 from __future__ import annotations
 
 from collections import Counter
+from itertools import product
 from typing import TYPE_CHECKING, NamedTuple
 
 import networkx as nx
@@ -19,7 +20,9 @@ from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 from neurospatial.geometry import (
+    HexagonShapes,
     PolygonCells,
+    TriangleShapes,
     encode,
     encode_arena,
     materialize_cells,
@@ -27,7 +30,7 @@ from neurospatial.geometry import (
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry import Arena, Binning, SpatialBins
+    from neurospatial.geometry import Arena, Binning, RectilinearGrid, SpatialBins
 
 
 class _EnvironmentDifferences(NamedTuple):
@@ -38,8 +41,8 @@ class _EnvironmentDifferences(NamedTuple):
     bins : str or None
         First difference in what the bins mean: ``"coordinate systems"``,
         ``"units or coordinate frames"``, ``"bin coordinates or ordering"``,
-        ``"bin measures"``, ``"polygon cell geometry"`` or
-        ``"bin-boundary ownership"``.
+        ``"bin measures"``, ``"polygon cell geometry"``,
+        ``"bin-boundary ownership"`` or ``"cell shapes"``.
     topology : str or None
         First difference in how the space is connected:
         ``"weighted connectivity"`` or ``"continuous arena or physical walls"``.
@@ -71,6 +74,13 @@ def _environment_differences(
     hides a bin difference. Environments that share published geometry, such
     as ``env.with_metadata(...)`` copies, differ at most in their coordinate
     labels.
+
+    Equal centers and measures do not make equal cells: a 10 x 10 square and
+    a 20 x 5 rectangle share a center and an area. Cells are compared
+    whenever both environments record them (polygon cells, triangles,
+    hexagons, or grid boxes, axis-aligned or in an affine frame). Bins
+    without recorded cells, such as explicit point bins or track bins, are
+    compared by center and measure only.
     """
     if first is second:
         return _EnvironmentDifferences(None, None)
@@ -98,7 +108,64 @@ def _bin_difference(first: Environment, second: Environment) -> str | None:
         second_binning.shapes, PolygonCells
     ):
         return _polygon_cell_difference(first_binning, second_binning)
+    first_corners = _cell_corners(first_binning)
+    second_corners = _cell_corners(second_binning)
+    if first_corners is None or second_corners is None:
+        return None
+    if not np.array_equal(first_corners, second_corners):
+        return "cell shapes"
     return None
+
+
+def _cell_corners(binning: Binning) -> NDArray[np.float64] | None:
+    """Each bin's cell corners in a canonical order, or None without cells.
+
+    Triangles, regular hexagons and grid boxes are convex, so their corners
+    determine them. Sorting each cell's corners by coordinate makes the
+    result independent of vertex order and of how mesh points are numbered.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_bins, n_corners, n_dims), or None
+        None when the binning records no triangles, hexagons or grid.
+    """
+    shapes = binning.shapes
+    if isinstance(shapes, TriangleShapes):
+        corners = shapes.points[shapes.triangles]
+    elif isinstance(shapes, HexagonShapes):
+        corners = shapes.centers[:, np.newaxis, :] + shapes.corner_offsets()
+    elif binning.rectilinear is not None:
+        corners = _box_corners(binning.rectilinear)
+    elif binning.grid_frame is not None:
+        forward = binning.grid_frame.forward
+        corners = (
+            _box_corners(binning.grid_frame.source) @ forward[:-1, :-1].T
+            + forward[:-1, -1]
+        )
+    else:
+        return None
+    # lexsort orders by its last key first: x, then y, then z.
+    order = np.lexsort(np.moveaxis(corners, -1, 0)[::-1], axis=-1)
+    return np.take_along_axis(corners, order[..., np.newaxis], axis=1)
+
+
+def _box_corners(grid: RectilinearGrid) -> NDArray[np.float64]:
+    """Corners of each active grid cell, shape (n_bins, 2**n_dims, n_dims).
+
+    Active cells are bins in row-major order of the mask.
+    """
+    cells = np.nonzero(grid.active_mask)
+    bounds = np.stack(
+        [
+            np.column_stack([edges[index], edges[index + 1]])
+            for edges, index in zip(grid.edges, cells, strict=True)
+        ],
+        axis=1,
+    )  # (n_bins, n_dims, 2): low and high edge on each axis
+    n_dims = len(cells)
+    choices = np.array(list(product((0, 1), repeat=n_dims)))
+    corners: NDArray[np.float64] = bounds[:, np.arange(n_dims), choices]
+    return corners
 
 
 def _same_measures(first: SpatialBins, second: SpatialBins) -> bool:
