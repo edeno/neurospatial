@@ -334,6 +334,7 @@ class FieldGraphic:
 
     In three dimensions a point's opacity follows its value, so the bins with
     the highest values show through the volume; missing bins are faint.
+    Hovering over a bin shows its index, position and value.
 
     Parameters
     ----------
@@ -355,10 +356,20 @@ class FieldGraphic:
         scale: ColorScale,
     ) -> None:
         self.scale = scale
+        self.values = values
         self._volume = env.n_dims == 3
         cells = cell_mesh(env)
         # Only the bin of each vertex is needed again; the mesh owns the rest.
         self._vertex_bin = None if cells is None else cells.vertex_bin
+        self._triangle_bin = (
+            None if cells is None else cells.vertex_bin[cells.triangles[:, 0]]
+        )
+        self._centers = env.bin_centers
+        labels = env._plot_labels()
+        self._axes = list(labels.coordinates.axis_labels(labels.units))
+        if self._volume:
+            suffix = f" ({labels.units})" if labels.units else ""
+            self._axes.append(f"Z Position{suffix}")
         if self._volume:
             alpha_mode = "weighted_blend"  # order-independent: no depth sort
         else:
@@ -372,6 +383,23 @@ class FieldGraphic:
         else:
             style = {"colors": self._colors(values)}
         self.graphic = add_bins(subplot, env, cells, alpha_mode=alpha_mode, **style)
+        self.graphic.tooltip_format = self.describe
+
+    def describe(self, pick_info: dict[str, Any]) -> str:
+        """The tooltip for the bin under the pointer."""
+        if self._triangle_bin is not None:
+            bin_index = int(self._triangle_bin[pick_info["face_index"]])
+        else:
+            bin_index = int(pick_info["vertex_index"])
+        where = (
+            f"{axis}: {coordinate:.4g}"
+            for axis, coordinate in zip(
+                self._axes, self._centers[bin_index], strict=False
+            )
+        )
+        value = self.values[bin_index]
+        shown = "missing" if np.isnan(value) else f"{value:.4g}"
+        return "\n".join([f"bin {bin_index}", *where, f"value: {shown}"])
 
     def _coordinates(self, values: NDArray[np.float64]) -> NDArray[np.float32]:
         assert self._vertex_bin is not None
@@ -385,6 +413,7 @@ class FieldGraphic:
 
     def update(self, values: NDArray[np.float64]) -> None:
         """Recolor the bins with new values."""
+        self.values = values
         if self._vertex_bin is not None:
             self.graphic.mapcoords = self._coordinates(values)
         else:

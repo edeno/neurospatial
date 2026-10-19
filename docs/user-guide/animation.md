@@ -404,9 +404,22 @@ animation  # in Jupyter: the plot, a time slider and playback controls
 
 The animation is a fastplotlib `NDWidget`: a slider in seconds, buttons to
 play, step and loop, and a frame rate box. Each frame is shown from its time
-until the next frame's. Time series are drawn beside the field on the same
-clock, each over its `window_seconds` around the current time and at its own
-sampling rate; drag the cursor in a series to move every panel.
+until the next frame's. The slider counts seconds from the first frame, so
+session timestamps such as 1.7e9 s keep their precision; the title shows each
+frame's own time. Hovering over a bin shows its position and value.
+
+Time series are drawn beside the field on the same clock, each over its
+`window_seconds` around the current time, with every sample in the window
+drawn (up to 100,000), so a ripple-band LFP keeps its shape. Event times from
+an `EventOverlay` are marked on every series panel in the events' colors.
+Drag the cursor in a series to move every panel.
+
+Play and the step buttons move by a fixed time, short enough to reach every
+frame when frames are evenly spaced (camera jitter included). For frames with
+long gaps or very uneven spacing, such as decoded replay bins from separate
+ripples, a warning says so: playback holds a frame through a gap. Animate
+each event separately, set `animation.frame` to visit every frame, or use
+`backend="napari"`, which steps frame by frame.
 
 The video is placed in the environment through its calibration, which maps
 camera pixels to environment coordinates (see [Calibration
@@ -424,7 +437,7 @@ laptop; see [Remote Server Workflow](#remote-server-workflow). Outside Jupyter,
 `fastplotlib.loop.run()`). `animation.frame = 120` moves the slider to a frame
 from code; `animation.widget` is the `NDWidget` and `animation.figure` its
 figure, for adding your own graphics to `animation.figure["field"]`.
-Object-vector overlays are not drawn by this backend.
+`animation.show(sidecar=True)` opens it beside the notebook in JupyterLab.
 
 `env.plot(backend="fastplotlib")` and `env.plot_field(field,
 backend="fastplotlib")` draw a single picture the same way, including 3-D

@@ -1238,11 +1238,15 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   head direction, events, regions, walls and landmarks and update a frame in
   about 5 ms. `animate_fields` returns a `FastplotlibAnimation`, a
   fastplotlib `NDWidget` with a time slider in seconds and play, step and
-  loop controls. Time-series overlays are drawn beside the field on the same
-  clock at their own sampling rates. Video overlays are placed in the
-  environment through their calibration (rotation and mirroring included),
-  above or below the field, with walls, landmarks and the moving overlays on
-  top. Object-vector overlays are skipped with a warning.
+  loop controls; hovering over a bin shows its position and value.
+  Time-series overlays are drawn beside the field on the same clock, every
+  sample in their window at their own sampling rate, with event times marked.
+  Video overlays are placed in the environment through their calibration
+  (rotation and mirroring included), above or below the field, with walls,
+  landmarks and the moving overlays on top. Object vectors are drawn as lines
+  from the animal to each object, fading with the firing rate. Frame times
+  with long gaps or very uneven spacing are warned about, since playback
+  moves by a fixed time.
   `plot` and `plot_field` keep Matplotlib as the default and return an
   `Axes` for it; with `backend="fastplotlib"` they return the fastplotlib
   figure, and Matplotlib-only options raise a `TypeError`.

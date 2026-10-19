@@ -1292,6 +1292,7 @@ class EventOverlay:
 
         event_positions_out: dict[str, NDArray[np.float64]] = {}
         event_frame_indices_out: dict[str, NDArray[np.int_]] = {}
+        event_times_out: dict[str, NDArray[np.float64]] = {}
 
         # Get frame time range for filtering
         frame_t_min = frame_times[0] if len(frame_times) > 0 else 0.0
@@ -1343,6 +1344,7 @@ class EventOverlay:
 
             # Get filtered event times
             filtered_times = event_times_arr[in_range_mask]
+            event_times_out[event_name] = filtered_times
 
             if len(filtered_times) == 0:
                 # No events in range - use empty arrays
@@ -1423,6 +1425,7 @@ class EventOverlay:
         return EventData(
             event_positions=event_positions_out,
             event_frame_indices=event_frame_indices_out,
+            event_times=event_times_out,
             colors=colors_out,
             markers=markers_out,
             size=self.size,
@@ -2673,6 +2676,8 @@ class EventData:
     event_frame_indices : dict[str, NDArray[np.int_]]
         Dict mapping event type names to frame index arrays with shape (n_events,).
         Each value is the animation frame index where the event should appear.
+    event_times : dict[str, ndarray of shape (n_events,)], optional
+        Times of the events within the animation, in seconds, by type.
     colors : dict[str, str]
         Dict mapping event type names to color strings.
     markers : dict[str, str]
@@ -2698,6 +2703,8 @@ class EventData:
         Event positions by type.
     event_frame_indices : dict[str, NDArray[np.int_]]
         Frame indices by type.
+    event_times : dict[str, NDArray[np.float64]]
+        Times of the events in the animation, in seconds, by type.
     colors : dict[str, str]
         Colors by type.
     markers : dict[str, str]
@@ -2727,6 +2734,7 @@ class EventData:
     border_color: str
     border_width: float
     opacity: float
+    event_times: dict[str, NDArray[np.float64]] = field(default_factory=dict)
 
 
 @dataclass
