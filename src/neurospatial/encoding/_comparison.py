@@ -44,11 +44,13 @@ __all__ = ["RateComparisonResult", "compare_spatial_rates"]
 _METHODS = ("pearson", "spearman")
 _UNIT_SELECTIONS = ("intersection", "exact")
 _TOPOLOGIES = ("same", "may_differ")
-# A map whose spread over the common bins is at most this many units in the
-# last place of its largest rate is flat: dividing counts by occupancy and
-# smoothing leave a few ulps of rounding, and correlating that noise reports a
-# spurious score. No estimated field varies by only 16 ulps (~4e-15 relative).
-_CONSTANT_ULPS = 16
+# A map whose spread over the common bins is at most this fraction of its
+# largest rate is flat. Dividing smoothed counts by smoothed occupancy leaves
+# rounding of order 1e-14 relative (a flat map from the package's estimators
+# spreads tens to hundreds of ulps), and correlating that noise reports a
+# spurious score.
+# A real field is many orders of magnitude deeper than 1e-12 of its peak.
+_CONSTANT_RELATIVE_SPREAD = 1e-12
 
 
 @_copy_analysis_settings
@@ -424,10 +426,10 @@ def compare_spatial_rates(
     common bins (``"insufficient_common_bins"``) or a map that is flat over
     the common bins (``"constant_rates_a"``, ``"constant_rates_b"``,
     ``"constant_rates_both"``). A map counts as flat when its highest and
-    lowest common-bin rates differ by at most 16 units in the last place of
-    the larger magnitude (about 4e-15 relative): that spread is rounding left
-    by computing the rates, and correlating it would report a score for a
-    flat map.
+    lowest common-bin rates differ by at most ``1e-12`` times the larger
+    magnitude: a uniform map from the smoothing estimators differs by about
+    ``1e-14`` relative through rounding alone, and correlating that rounding
+    would report a score for a flat map.
 
     Maps are never coarsened or merged here. Rates of several bins cannot be
     averaged into one bin: 0 Hz over 100 s and 100 Hz over 1 s hold 100
@@ -657,15 +659,15 @@ def _is_constant(
 ) -> NDArray[np.bool_]:
     """Whether each row is flat, up to rounding, over its ``common`` bins.
 
-    A row is flat when ``max - min <= _CONSTANT_ULPS * eps * max(|values|)``
-    over its common bins: the spread is rounding from computing the rates, not
-    a field. Rows without common bins count as flat; the caller reports them
+    A row is flat when ``max - min <= _CONSTANT_RELATIVE_SPREAD *
+    max(|values|)`` over its common bins: the spread is rounding from
+    computing the rates, not a field. Rows without common bins count as flat; the caller reports them
     as having too few bins first.
     """
     highest = np.where(common, values, -np.inf).max(axis=1, initial=-np.inf)
     lowest = np.where(common, values, np.inf).min(axis=1, initial=np.inf)
     magnitude = np.maximum(np.abs(highest), np.abs(lowest))
-    tolerance = _CONSTANT_ULPS * np.finfo(np.float64).eps * magnitude
+    tolerance = _CONSTANT_RELATIVE_SPREAD * magnitude
     constant: NDArray[np.bool_] = highest - lowest <= tolerance
     return constant
 

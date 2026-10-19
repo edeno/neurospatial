@@ -200,7 +200,7 @@ def test_constant_map_is_nan_with_a_reason(
 
 @pytest.mark.parametrize("method", ["pearson", "spearman"])
 def test_map_flat_up_to_rounding_is_constant(make, method) -> None:
-    # 1 + 1e-15 differs from 1 only by floating-point rounding (about 5 ulps);
+    # 1 + 1e-15 differs from 1 only by floating-point rounding (5 ulps);
     # correlating that noise with a real field would report r = 0.71.
     flat = [1.0, 1.0, 1.0, 1.0, 1.0 + 1e-15]
     assert flat[-1] != flat[0]
@@ -209,8 +209,37 @@ def test_map_flat_up_to_rounding_is_constant(make, method) -> None:
     assert result.status.tolist() == ["constant_rates_b"]
 
 
+@pytest.mark.parametrize("estimator", ["diffusion_kde", "gaussian_kde", "binned"])
+def test_flat_map_from_an_estimator_is_constant(estimator) -> None:
+    # One spike at the start of every occupancy interval fires at exactly
+    # 1 / dt = 30 Hz everywhere the animal went: smoothed counts over smoothed
+    # occupancy are flat analytically, and differ only by rounding.
+    times = np.arange(3000) / 30.0
+    positions = 50 + 40 * np.column_stack(
+        [np.sin(2 * np.pi * times / 20), np.cos(2 * np.pi * times / 13)]
+    )
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
+    in_field = np.linalg.norm(positions - [70.0, 70.0], axis=1) < 15
+    field_spikes = times[in_field][::2]
+
+    def estimate(spike_times):
+        return compute_spatial_rates(
+            env, [spike_times], times, positions, method=estimator, unit_ids=[1]
+        )
+
+    flat = estimate(times[:-1])
+    rates = flat.firing_rates[0][flat.spatial_support]
+    np.testing.assert_allclose(rates, 30.0, rtol=1e-12)
+    assert rates.max() > rates.min()  # rounding left a spread
+
+    result = compare_spatial_rates(flat, estimate(field_spikes))
+
+    assert result.status.tolist() == ["constant_rates_a"]
+    assert np.isnan(result.correlation[0])
+
+
 def test_small_real_variation_is_still_scored(make) -> None:
-    # A field a millionth of a hertz deep is far above rounding noise.
+    # A field a millionth of its rate deep is 1e6 times the flat tolerance.
     result = compare_spatial_rates(make(F), make(1.0 + 1e-6 * np.asarray(F)))
     assert result.status.tolist() == ["scored"]
     np.testing.assert_allclose(result.correlation, [1.0], atol=1e-6)
