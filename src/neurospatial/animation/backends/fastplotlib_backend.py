@@ -1602,12 +1602,17 @@ class FastplotlibAnimation:
         scale = ColorScale(cmap, low, high, "lightgray", opaque_from=opaque_from)
         track_scale = scale
         if self._projection is not None:
-            # Robust limits of the fields summed along the track, from up to
-            # 2,000 frames spread over the recording.
+            # Robust limits of every field summed along the track, from up to
+            # 2,000 frames of each spread over the recording.
             sample = np.unique(np.linspace(0, self.n_frames - 1, 2_000).astype(int))
-            projected = _project(
-                np.stack([np.asarray(stacks[0][i], dtype=float) for i in sample]),
-                self._projection,
+            projected = np.concatenate(
+                [
+                    _project(
+                        np.stack([np.asarray(stack[i], dtype=float) for i in sample]),
+                        self._projection,
+                    )
+                    for stack in stacks
+                ]
             )
             track_scale = ColorScale(
                 cmap, *animation_colormap_range(projected, None, None), "lightgray"

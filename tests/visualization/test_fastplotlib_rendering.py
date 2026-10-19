@@ -1177,6 +1177,26 @@ def test_see_through_fields_keep_the_displayed_peak_opaque():
     assert alpha[0] == 0.0 and alpha[-1] == pytest.approx(1.0)
 
 
+def test_side_by_side_posteriors_share_the_tracks_color_limits(track):
+    rng = np.random.default_rng(0)
+    along = track.linear_to_nd(rng.uniform(0, 70, 3000))
+    plane = Environment.from_samples(
+        along + rng.normal(0, 1, along.shape), bin_size=10.0
+    )
+    times = np.arange(30) * 0.1
+    diffuse = np.full((30, plane.n_bins), 1.0 / plane.n_bins)
+    sharp = np.zeros((30, plane.n_bins))
+    sharp[np.arange(30), rng.integers(0, plane.n_bins, 30)] = 1.0
+    tops = []
+    for fields in ([list(diffuse), list(sharp)], [list(sharp), list(diffuse)]):
+        animation = plane.animate_fields(
+            fields, frame_times=times, backend="fastplotlib", track=track
+        )
+        tops.append(animation._tracks[0].scale.vmax)
+    assert tops[0] == pytest.approx(tops[1])  # the order does not matter
+    assert tops[0] == pytest.approx(1.0)  # the sharp posterior is on the scale
+
+
 def test_only_tracks_get_a_position_by_time_panel(apparatus, walk, track, decoded):
     t, _, fields = walk
     animation = apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")
