@@ -49,6 +49,7 @@ def recording():
         "traveled_path_length",
         "heading_from_velocity",
         "compute_trajectory_curvature",
+        "heading_direction_labels",
     ],
 )
 def test_old_order_raises(name, recording):
@@ -79,6 +80,7 @@ def test_old_order_raises(name, recording):
         "compute_vte_trial",
         "goal_bias",
         "head_sweep_from_positions",
+        "heading_direction_labels",
         "instantaneous_goal_alignment",
         "pre_decision_heading_stats",
     }:

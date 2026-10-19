@@ -53,6 +53,32 @@
   was observed; a single sample used to give `angular_efficiency = 1.0`.
   `times` must be strictly increasing, and empty input raises.
 
+- `heading_direction_labels` takes `times` before `positions`, like every
+  other behavior function. The old order raises an error that names the swap.
+
+  ```python
+  # before
+  heading_direction_labels(positions, times, min_speed=5.0)
+  # after
+  heading_direction_labels(times, positions, min_speed=5.0)
+  ```
+
+  Calls that pass `positions=` and `times=` by keyword, or precomputed
+  `speed=` and `heading=`, are unchanged.
+
+- `approach_rate` follows the same observation rule as
+  `traveled_path_length`, and takes `break_before` for joined recordings.
+
+  ```python
+  # before: a join on one continuous clock read as a fast approach
+  rates = approach_rate(times, positions, goal)
+  # after
+  rates = approach_rate(times, positions, goal, break_before=new_recording)
+  ```
+
+  The rate at the first frame of a new recording is `nan`. Empty input now
+  raises instead of returning an empty array; a single sample gives `[nan]`.
+
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
 page](https://edeno.github.io/neurospatial/migration/environment-architecture/).

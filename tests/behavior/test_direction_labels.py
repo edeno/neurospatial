@@ -456,7 +456,7 @@ class TestHeadingDirectionLabels:
     def test_error_incomplete_positions(self, rng) -> None:
         """Raises ValueError if positions provided without times."""
         positions = rng.random((100, 2))
-        with pytest.raises(ValueError, match="positions and times"):
+        with pytest.raises(ValueError, match="times and positions"):
             heading_direction_labels(positions=positions, min_speed=5.0)
 
     def test_error_incomplete_precomputed(self, rng) -> None:

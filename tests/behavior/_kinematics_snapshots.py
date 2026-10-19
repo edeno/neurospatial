@@ -81,7 +81,7 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             r.times, r.positions, min_speed=5.0
         ),
         "heading_direction_labels": heading_direction_labels(
-            r.positions, r.times, min_speed=5.0
+            r.times, r.positions, min_speed=5.0
         ),
         "heading_direction_precomputed": heading_direction_labels(
             speed=np.ones(len(r.times)) * 10,

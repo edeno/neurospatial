@@ -22,22 +22,6 @@ def test_swapped_times_positions_names_swap():
     assert len([line for line in message.splitlines() if line.startswith("- ")]) == 2
 
 
-def test_positions_first_order_names_reverse_swap():
-    from neurospatial._validation import validate_times_positions
-
-    with pytest.raises(ValueError) as caught:
-        validate_times_positions(
-            np.zeros((3, 2)),
-            np.arange(3.0),
-            call="compute_trajectory_curvature",
-            order="positions, times",
-        )
-    assert "did you pass times before positions" in str(caught.value)
-    assert "compute_trajectory_curvature(..., positions, times, ...)" in str(
-        caught.value
-    )
-
-
 def test_unsorted_times_reports_first_decrease():
     from neurospatial._validation import validate_times_positions
 

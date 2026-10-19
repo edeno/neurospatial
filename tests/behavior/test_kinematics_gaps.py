@@ -129,10 +129,10 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
 
 def test_heading_direction_labels_post_pause_sample(two_epoch_recording):
     r = two_epoch_recording
-    labels = heading_direction_labels(r.positions, r.times, min_speed=0)
+    labels = heading_direction_labels(r.times, r.positions, min_speed=0)
     # The first sample after the pause is labeled from its own run's motion,
     # never from the jump across the pause.
-    after = heading_direction_labels(r.positions[5000:], r.times[5000:], min_speed=0)
+    after = heading_direction_labels(r.times[5000:], r.positions[5000:], min_speed=0)
     assert labels[5000] == after[0] != "stationary"
     assert labels[5001] != "stationary"
 

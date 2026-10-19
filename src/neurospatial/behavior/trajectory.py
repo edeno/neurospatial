@@ -1712,7 +1712,7 @@ def compute_trajectory_curvature(
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(
-        times, positions, call="compute_trajectory_curvature", order="positions, times"
+        times, positions, call="compute_trajectory_curvature"
     )
     curvature: NDArray[np.float64] = np.full(len(positions), np.nan)
     for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
