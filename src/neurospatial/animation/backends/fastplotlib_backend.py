@@ -556,13 +556,25 @@ class _TimeWindow:
         self.subplot.x_range = (time - half, time + half)
 
 
-class _ClearOfTheAxis:
-    """Keeps a panel's data above its x axis.
+def range_ticks(low: float, high: float) -> dict[float, str]:
+    """Y ticks at a panel's lowest and highest values, and 0 between them.
+
+    A short panel has room for few automatic ticks, often only one near 0;
+    these name its range ("0" and "85.3" for speed in cm/s).
+    """
+    values = {low, high} | ({0.0} if low < 0.0 < high else set())
+    return {value: f"{value:.3g}" for value in sorted(values)}
+
+
+class _Room:
+    """Keeps a panel's data, and the labels of its y range, in view.
 
     fastplotlib draws the x axis inside the panel, its tick labels' height
     (plus 4 pixels) above the bottom edge, so in a short panel it runs
-    through the data. The y range is padded below by as many pixels, refit
-    whenever the panel's height or the data's range changes.
+    through the data; and a y tick label at the very top or bottom of the
+    range is centered on it, half outside the panel. The y range is padded
+    by as many pixels, refit whenever the panel's height or the data's range
+    changes.
     """
 
     def __init__(self, subplot: Any, low: float, high: float) -> None:
@@ -572,19 +584,22 @@ class _ClearOfTheAxis:
         self.fit()
 
     def set(self, low: float, high: float) -> None:
-        """Keep ``low`` to ``high`` above the axis."""
+        """Keep ``low`` to ``high`` in view."""
         self.range = (low, high)
         self.fit()
 
     def fit(self) -> None:
+        axes = self.subplot.axes
         height = float(self.subplot.viewport.rect[3])
-        margin = self.subplot.axes._get_label_margins()[0] + 4
-        key = (height, margin, self.range)
-        if key == self._fitted or height <= margin:
+        label = axes.y.text.font_size / 2 + 2 if axes.y.visible else 0.0
+        below = axes._get_label_margins()[0] + 4 if axes.x.visible else label
+        key = (height, below, label, self.range)
+        if key == self._fitted or height <= below + label:
             return
         self._fitted = key
         low, high = self.range
-        self.subplot.y_range = (low - (high - low) * margin / (height - margin), high)
+        per_pixel = (high - low) / (height - below - label)
+        self.subplot.y_range = (low - below * per_pixel, high + label * per_pixel)
 
 
 class _PositionTime:
@@ -814,7 +829,7 @@ class _UnitRates:
             if len(segments) > 1:
                 _segment_joints(subplot, segments, axis="x")
             subplot.camera.maintain_aspect = False
-            self.room = _ClearOfTheAxis(subplot, 0.0, 1.0)
+            self.room = _Room(subplot, 0.0, 1.0)
         else:
             self.field = FieldGraphic(
                 subplot,
@@ -859,7 +874,8 @@ class _UnitRates:
             lower, upper = self.extents
             self.line.data = xyz(np.column_stack([(lower + upper) / 2, rates]))
             self.subplot.x_range = (float(lower.min()), float(upper.max()))
-            self.room.set(0.0, 1.05 * top)
+            self.room.set(0.0, top)
+            self.subplot.axes.y.ticks = range_ticks(0.0, top)
         else:
             self.field.scale = ColorScale(self.cmap, 0.0, top, "lightgray")
             self.field.update(rates)
@@ -1666,9 +1682,10 @@ class FastplotlibAnimation:
             self.figure[name]: self.figure[name].title.text for name in time_panels
         }
         self._title_windows()
-        if time_panels:  # the one time axis, at the bottom, clear of the data
+        if time_panels and not groups:  # a series keeps its own room
+            # The one time axis, at the bottom, clear of the data.
             bottom_panel = self.figure[time_panels[-1]]
-            self._time_axis_room = _ClearOfTheAxis(bottom_panel, *bottom_panel.y_range)
+            self._time_axis_room = _Room(bottom_panel, *bottom_panel.y_range)
         self.figure.renderer.add_event_handler(self._key, "key_down")
         self._add_key_hint()
         self._show(0.0, self._read(0.0))
@@ -1924,8 +1941,12 @@ def _add_series(
     subplot.camera.maintain_aspect = False
     low = min(item.global_vmin for item in group)
     high = max(item.global_vmax for item in group)
-    margin = 0.05 * (high - low) or 0.5
-    subplot.y_range = (low - margin, high + margin)
+    if 0.0 < low < 1e-3 * high:
+        low = 0.0  # a speed's 0.002 cm/s floor reads as 0
+    if low == high:
+        low, high = low - 0.5, high + 0.5
+    subplot.axes.y.ticks = range_ticks(low, high)
+    _Room(subplot, low, high)
     for cursor in (g for g in subplot.selectors if isinstance(g, LinearSelector)):
         # The cursor marks the current time; dragging it moves every panel.
         cursor.visible = group[0].show_cursor

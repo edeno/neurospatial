@@ -405,6 +405,11 @@ def test_time_series_are_drawn_beside_the_field_on_its_clock(apparatus, walk):
     assert len(np.unique(x)) >= 1999
     low, high = subplot.y_range  # the series' whole range, with a margin
     assert low < np.sin(series_times).min() and high > np.sin(series_times).max()
+    # Its ends are labeled, and 0 between: a short panel shows its scale.
+    lowest, highest = np.sin(series_times).min(), np.sin(series_times).max()
+    ticks = subplot.axes.y.ticks
+    np.testing.assert_allclose(list(ticks), [lowest, 0.0, highest])
+    assert list(ticks.values()) == [f"{lowest:.3g}", "0", f"{highest:.3g}"]
     (marks,) = [g for g in subplot.graphics if g.name == "reward times"]
     np.testing.assert_allclose(np.sort(marks.data[:]), t[[20, 70]], rtol=1e-5)
     (cursor,) = subplot.selectors
