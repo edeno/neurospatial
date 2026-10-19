@@ -475,6 +475,32 @@ def test_same_estimator_settings_do_not_warn(make, recwarn) -> None:
     assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
 
 
+def test_no_occupancy_threshold_is_the_same_whether_none_or_zero(
+    two_sessions, recwarn
+) -> None:
+    # compute_spatial_rates records min_occupancy=0.0; a hand-built result
+    # without settings has none. Both mean "no threshold".
+    first, second = two_sessions
+    assert first.analysis_settings["min_occupancy"] == 0.0
+    manual = SpatialRatesResult(
+        firing_rates=second.firing_rates,
+        occupancy=second.occupancy,
+        env=second.env,
+        method=second.method,
+        bandwidth=second.bandwidth,
+        unit_ids=second.unit_ids,
+    )
+
+    result = compare_spatial_rates(first, manual)
+
+    assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
+    assert result.analysis_settings["estimator_a"]["min_occupancy"] == 0.0
+    assert result.analysis_settings["estimator_b"]["min_occupancy"] == 0.0
+    np.testing.assert_array_equal(
+        result.correlation, compare_spatial_rates(first, second).correlation
+    )
+
+
 # ---------------------------------------------------------------------------
 # Scores
 # ---------------------------------------------------------------------------
@@ -531,8 +557,8 @@ def test_settings_record_the_comparison(make) -> None:
         "bin_mapping": None,
         "n_compared_bins": 5,
         "bins_selected": None,
-        "estimator_a": {"method": "binned", "bandwidth": 5.0, "min_occupancy": None},
-        "estimator_b": {"method": "binned", "bandwidth": 5.0, "min_occupancy": None},
+        "estimator_a": {"method": "binned", "bandwidth": 5.0, "min_occupancy": 0.0},
+        "estimator_b": {"method": "binned", "bandwidth": 5.0, "min_occupancy": 0.0},
         "units": "cm",
     }
 

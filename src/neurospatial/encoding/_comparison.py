@@ -107,7 +107,9 @@ shape (n_units, n_bins)
         ``min_common_bins``, ``topology``, ``topology_differs``,
         ``bin_mapping`` (``None`` or ``"explicit"``), ``n_compared_bins``,
         ``bins_selected``, each condition's estimator settings
-        (``estimator_a``, ``estimator_b``) and ``units``.
+        (``estimator_a``, ``estimator_b``: ``method``, ``bandwidth`` and
+        ``min_occupancy`` in seconds, ``0.0`` when no threshold was set) and
+        ``units``.
 
     Examples
     --------
@@ -632,13 +634,17 @@ def _centered(
 
 
 def _estimator(rates: SpatialRatesResult | SpatialRateResult) -> dict[str, Any]:
-    """The estimator settings that shape a rate map, JSON-safe."""
+    """The estimator settings that shape a rate map, JSON-safe.
+
+    ``min_occupancy`` is recorded as the threshold the comparison applied:
+    a missing or ``None`` value means no threshold, as in
+    ``occupancy_support``, and is recorded as ``0.0``.
+    """
     settings = rates.analysis_settings or {}
-    min_occupancy = settings.get("min_occupancy")
     return {
         "method": rates.method,
         "bandwidth": None if rates.bandwidth is None else float(rates.bandwidth),
-        "min_occupancy": None if min_occupancy is None else float(min_occupancy),
+        "min_occupancy": float(settings.get("min_occupancy") or 0.0),
     }
 
 
