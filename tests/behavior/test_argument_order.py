@@ -28,6 +28,7 @@ def recording():
         "compute_cumulative_distance",
         "compute_decision_analysis",
         "compute_goal_directed_metrics",
+        "compute_movement_angular_velocity",
         "compute_path_efficiency",
         "compute_planar_curvature",
         "compute_planar_turn_angles",

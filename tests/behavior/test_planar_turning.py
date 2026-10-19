@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial.behavior import (
+    compute_movement_angular_velocity,
     compute_planar_curvature,
     compute_planar_turn_angles,
     resample_by_distance,
@@ -14,6 +15,7 @@ from neurospatial.behavior import (
 RADIUS = 7.0
 ANGULAR_RATE = 0.8  # rad/s, counterclockwise
 PLANAR = [compute_planar_turn_angles, compute_planar_curvature]
+SUPPORTED = [*PLANAR, compute_movement_angular_velocity]
 
 
 def circle(times: np.ndarray) -> np.ndarray:
@@ -190,3 +192,95 @@ def test_curvature_of_distance_resampled_path():
     )
     assert np.isnan(curvature[[0, -1]]).all()
     np.testing.assert_allclose(curvature[1:-1], 1 / RADIUS, rtol=1e-3)
+
+
+def test_angular_velocity_recovers_rate_under_irregular_sampling():
+    times = np.sort(np.random.default_rng(0).uniform(0, 5, 60))
+    positions = circle(times)
+    omega = compute_movement_angular_velocity(times, positions, max_gap=None)
+    assert omega.shape == (60,) and omega.dtype == np.float64
+    assert np.isnan(omega[[0, -1]]).all()
+    np.testing.assert_allclose(omega[1:-1], ANGULAR_RATE, rtol=1e-9)
+
+    clockwise = compute_movement_angular_velocity(
+        times, positions * [1.0, -1.0], max_gap=None
+    )
+    np.testing.assert_allclose(clockwise[1:-1], -ANGULAR_RATE, rtol=1e-9)
+
+
+def test_scaling_times_divides_angular_velocity_but_not_curvature(uniform_circle):
+    times, positions = uniform_circle
+    np.testing.assert_allclose(
+        compute_movement_angular_velocity(2 * times, positions, max_gap=None),
+        compute_movement_angular_velocity(times, positions) / 2,
+        rtol=1e-12,
+    )
+    np.testing.assert_array_equal(
+        compute_planar_curvature(2 * times, positions, max_gap=None),
+        compute_planar_curvature(times, positions),
+    )
+
+
+def test_angular_velocity_is_the_same_for_dense_and_sparse_sampling():
+    dense = np.arange(0, 5, 1 / 120)
+    sparse = np.arange(0, 5, 1 / 20)
+    for times in (dense, sparse):
+        omega = compute_movement_angular_velocity(times, circle(times))
+        np.testing.assert_allclose(omega[1:-1], ANGULAR_RATE, rtol=1e-9)
+
+
+def test_angular_velocity_is_turn_over_mean_neighbour_spacing():
+    times = np.array([0.0, 0.1, 0.35, 0.4])
+    positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+    omega = compute_movement_angular_velocity(times, positions)
+    turns = compute_planar_turn_angles(times, positions)
+    np.testing.assert_allclose(omega[1], turns[1] / 0.175)
+    np.testing.assert_allclose(omega[2], turns[2] / 0.15)
+
+
+def test_straight_line_angular_velocity_is_zero_in_the_interior():
+    times = np.arange(10) / 30
+    positions = np.c_[np.linspace(0, 9, 10), np.linspace(0, 4.5, 10)]
+    omega = compute_movement_angular_velocity(times, positions)
+    assert np.isnan(omega[[0, -1]]).all()
+    np.testing.assert_allclose(omega[1:-1], 0.0, atol=1e-12)
+
+
+def test_angular_velocity_is_nan_exactly_where_the_turn_angle_is(uniform_circle):
+    times, positions = uniform_circle[0][:20], uniform_circle[1][:20].copy()
+    positions[5] = np.nan
+    positions[12] = positions[11]  # stationary
+    break_before = np.zeros(20, dtype=bool)
+    break_before[16] = True
+    kwargs = {"break_before": break_before}
+    omega = compute_movement_angular_velocity(times, positions, **kwargs)
+    turns = compute_planar_turn_angles(times, positions, **kwargs)
+    np.testing.assert_array_equal(np.isnan(omega), np.isnan(turns))
+    assert np.isnan(omega[[4, 5, 6, 11, 12, 15, 16]]).all()
+    assert np.isfinite(omega[[1, 8, 13, 18]]).all()
+
+
+def test_declared_break_angular_velocity_equals_separate_calls(uniform_circle):
+    times, positions = uniform_circle[0][:20], uniform_circle[1][:20]
+    break_before = np.zeros(20, dtype=bool)
+    break_before[5] = True
+    values = compute_movement_angular_velocity(
+        times, positions, break_before=break_before
+    )
+    separate = np.r_[
+        compute_movement_angular_velocity(times[:5], positions[:5]),
+        compute_movement_angular_velocity(times[5:], positions[5:]),
+    ]
+    np.testing.assert_array_equal(values, separate)
+
+
+@pytest.mark.parametrize("positions", [np.zeros((4, 3)), np.arange(4.0)])
+def test_angular_velocity_rejects_non_planar_positions(positions):
+    with pytest.raises(ValueError, match="positions\\[:, :2\\]"):
+        compute_movement_angular_velocity(np.arange(4) / 30, positions)
+
+
+@pytest.mark.parametrize("function", SUPPORTED)
+def test_planar_error_names_the_called_function(function):
+    with pytest.raises(ValueError, match=f"{function.__name__}\\(\\)"):
+        function([0.0, 0.1, 0.2], np.zeros((3, 3)))
