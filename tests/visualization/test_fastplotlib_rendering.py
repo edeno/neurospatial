@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import warnings
-from types import SimpleNamespace
 
 # Render into memory: no window, and the same in a terminal, on CI or over SSH.
 os.environ.setdefault("RENDERCANVAS_FORCE_OFFSCREEN", "1")
@@ -33,9 +32,12 @@ from neurospatial.animation import (  # noqa: E402
     EventOverlay,
     FastplotlibAnimation,
     PositionOverlay,
+    TimeSeriesOverlay,
+    VideoOverlay,
 )
 from neurospatial.arena import OpenArena  # noqa: E402
 from neurospatial.landmarks import Landmark, Landmarks  # noqa: E402
+from neurospatial.ops.transforms import Affine2D, VideoCalibration  # noqa: E402
 
 EDGES = np.arange(0.0, 41.0, 4.0)
 
@@ -52,6 +54,17 @@ def apparatus():
         arena=arena,
     )
     return env.with_landmarks(Landmarks([Landmark("cue", "point", [20.0, 44.0])]))
+
+
+def _render(animation):
+    """Draw every graphic at the slider's time now.
+
+    Without a running event loop, the widget's updates are only queued.
+    """
+    from fastplotlib.widgets.nd_widget._async import run_sync
+
+    for graphic in animation.widget.ndgraphics:
+        run_sync(graphic._set_indices_())
 
 
 def _pixel(figure, subplot, x, y):
@@ -195,35 +208,25 @@ def test_animation_moves_the_overlays_with_the_frame(apparatus, walk):
     ((_, _, _, event_graphic),) = event_layer.kinds
     for frame, shown in ((10, True), (14, True), (16, False), (50, True)):
         animation.frame = frame
+        _render(animation)
         np.testing.assert_allclose(position.marker.data[0, :2], path[frame], rtol=1e-6)
         assert (event_graphic.colors[:][:, 3] > 0).any() == shown
     assert animation._plot.title.text.endswith(f"t = {t[50]:.2f} s")
 
 
-def test_keys_and_clock_drive_playback(apparatus, walk, monkeypatch):
+def test_a_frame_is_shown_until_the_next_one_starts(apparatus, walk):
     t, _, fields = walk
     animation = apparatus.animate_fields(
         fields, frame_times=t, backend="fastplotlib", speed=1.0
     )
-
-    def Key(key):
-        return SimpleNamespace(key=key)
-
-    animation._on_key(Key("End"))
+    for time, frame in ((t[5], 5), (t[5] + 0.9 * (t[6] - t[5]), 5), (-1.0, 0)):
+        animation.widget.indices = {"time": time}
+        assert animation.frame == frame
+    animation.frame = 10**6
     assert animation.frame == animation.n_frames - 1
-    animation._on_key(Key("ArrowLeft"))
-    assert animation.frame == animation.n_frames - 2
-    animation._on_key(Key("Home"))
-    assert animation.frame == 0
-
-    clock = iter([100.0, 100.5])
-    monkeypatch.setattr(
-        "neurospatial.animation.backends.fastplotlib_backend.time.perf_counter",
-        lambda: next(clock),
-    )
-    animation._on_key(Key(" "))  # play, starting the clock at 100 s
-    animation._advance()  # half a second later
-    assert animation.frame == int(0.5 * animation.fps)
+    # Playing steps one frame per 1 / fps seconds of the recording's clock.
+    assert animation.widget.ui_sliders._fps["time"] == 30  # 30 Hz frames at speed 1
+    assert animation.widget.ranges["time"].step == pytest.approx(t[1] - t[0])
 
 
 def test_a_shown_animation_draws_without_warnings(apparatus, walk):
@@ -247,18 +250,101 @@ def test_an_event_marker_without_a_gpu_shape_warns(apparatus, walk):
         )
 
 
-def test_unsupported_overlays_are_skipped_with_a_warning(apparatus, walk):
-    from neurospatial.animation import TimeSeriesOverlay
+def test_object_vectors_are_skipped_with_a_warning(apparatus, walk):
+    from neurospatial.animation import ObjectVectorOverlay
 
-    t, _, fields = walk
-    series = TimeSeriesOverlay(data=np.sin(t), times=t, label="speed")
-    with pytest.warns(UserWarning, match="does not draw time-series overlays"):
+    t, path, fields = walk
+    vectors = ObjectVectorOverlay(
+        object_positions=np.array([[10.0, 10.0]]), animal_positions=path, times=t
+    )
+    with pytest.warns(UserWarning, match="does not draw object-vector overlays"):
         apparatus.animate_fields(
-            fields, frame_times=t, backend="fastplotlib", overlays=[series]
+            fields, frame_times=t, backend="fastplotlib", overlays=[vectors]
         )
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         apparatus.animate_fields(fields, frame_times=t, backend="fastplotlib")
+
+
+def test_time_series_are_drawn_beside_the_field_on_its_clock(apparatus, walk):
+    t, _, fields = walk
+    series_times = np.arange(0.0, 4.0, 0.01)  # 100 Hz, not the frames' 30 Hz
+    speed = TimeSeriesOverlay(
+        data=np.sin(series_times),
+        times=series_times,
+        label="speed",
+        window_seconds=1.0,
+    )
+    accel = TimeSeriesOverlay(
+        data=np.cos(series_times),
+        times=series_times,
+        label="accel",
+        window_seconds=1.0,
+        group="kinematics",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # time series coverage notes
+        animation = apparatus.animate_fields(
+            fields, frame_times=t, backend="fastplotlib", overlays=[speed, accel]
+        )
+    animation.show()
+    animation.figure.canvas.draw()
+    assert animation.frame == 0  # fitting the series' view does not move the time
+    assert {s.title.text for s in animation.figure if s.name != "field"} == {
+        "speed",
+        "accel",
+    }
+    animation.frame = 50
+    _render(animation)
+    (subplot,) = [s for s in animation.figure if s.title.text == "speed"]
+    low, high = animation.widget[subplot]["speed"].display_range
+    assert low < t[50] < high
+    assert high - low == pytest.approx(1.0, abs=0.02)
+    low, high = subplot.y_range  # the series' whole range, with a margin
+    assert low < np.sin(series_times).min() and high > np.sin(series_times).max()
+
+
+@pytest.fixture
+def video(walk):
+    """Frames whose top rows are red, and a calibration that flips y."""
+    t, _, _ = walk
+    frames = np.zeros((len(t), 20, 40, 3), dtype=np.uint8)
+    frames[:, :10, :, 0] = 255
+    # x = column, y = 40 - 2 * row: the camera's rows run down the arena.
+    pixels_to_cm = Affine2D(np.array([[1.0, 0, 0], [0, -2.0, 40.0], [0, 0, 1]]))
+    return frames, VideoCalibration(pixels_to_cm, frame_size_px=(40, 20))
+
+
+@pytest.mark.parametrize(("z_order", "above"), [("above", True), ("below", False)])
+def test_video_is_placed_through_its_calibration_under_the_walls(
+    apparatus, walk, video, z_order, above
+):
+    t, _, _ = walk
+    frames, calibration = video
+    overlay = VideoOverlay(
+        source=frames, times=t, calibration=calibration, alpha=1.0, z_order=z_order
+    )
+    animation = apparatus.animate_fields(
+        np.zeros((len(t), apparatus.n_bins)),
+        frame_times=t,
+        backend="fastplotlib",
+        vmin=0.0,
+        vmax=1.0,
+        overlays=[overlay],
+    )
+    animation.show()
+    plot = animation._plot
+    field = np.asarray(colormaps["viridis"](0.0)[:3])
+    red, black = np.array([1.0, 0, 0]), np.zeros(3)
+    top, bottom = (
+        _pixel(animation.figure, plot, 10, 35),
+        _pixel(animation.figure, plot, 10, 5),
+    )
+    np.testing.assert_allclose(top, red if above else field, atol=2 / 255)
+    np.testing.assert_allclose(bottom, black if above else field, atol=2 / 255)
+    wall = _pixel(animation.figure, plot, 20, 10)  # the divider, red too
+    np.testing.assert_allclose(wall, to_rgba("firebrick")[:3], atol=3 / 255)
+    assert plot.camera.local.scale_y > 0  # y still points up
 
 
 def test_dry_run_reports_without_drawing(apparatus, walk, capsys):

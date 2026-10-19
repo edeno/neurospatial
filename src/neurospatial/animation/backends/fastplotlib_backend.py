@@ -1,24 +1,22 @@
 """Animate fields over time on the GPU with fastplotlib.
 
 ``env.animate_fields(fields, frame_times=..., backend="fastplotlib")`` returns
-a :class:`FastplotlibAnimation`. Each frame recolors the bins' cells and moves
-the overlays; nothing is pre-rendered, so long recordings start at once.
-
-Inside Jupyter, frames are rendered where the kernel runs and streamed to the
-browser, with a play button and a slider; this works on a remote GPU server.
-In a desktop window, space plays and pauses, the arrow keys step one frame,
-and Home and End jump to the ends.
+a :class:`FastplotlibAnimation`, a fastplotlib ``NDWidget`` with a time
+slider in seconds and playback controls. Each frame recolors the bins' cells
+and moves the overlays; nothing is pre-rendered, so long recordings start at
+once. Inside Jupyter, frames are rendered where the kernel runs and streamed
+to the browser, so this works on a remote GPU server.
 
 Drawn: position (marker and fading trail), body parts with skeleton, head
-direction, events, regions, walls and landmarks. Video, time-series and
-object-vector overlays are skipped with a warning.
+direction, events, video placed through its calibration, time series beside
+the field on the same clock, regions, walls and landmarks. Object-vector
+overlays are skipped with a warning.
 """
 
 from __future__ import annotations
 
-import time
 import warnings
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -34,10 +32,11 @@ from neurospatial.animation._parallel import (
 from neurospatial.environment._fastplotlib import (
     ColorScale,
     FieldGraphic,
+    camera_options,
     draw_colorbar,
     draw_layers,
     frame_view,
-    new_figure,
+    import_fastplotlib,
     pair_segments,
     plot_title,
     xyz,
@@ -52,6 +51,8 @@ if TYPE_CHECKING:
         HeadDirectionData,
         OverlayData,
         PositionData,
+        TimeSeriesData,
+        VideoData,
     )
     from neurospatial.environment import Environment
 
@@ -260,35 +261,140 @@ class _Events:
             graphic.colors, graphic.edge_colors = fill, border
 
 
-def _skip_unsupported(overlay_data: OverlayData) -> OverlayData:
-    """Warn about overlays this backend does not draw, and drop them."""
-    skipped = [
-        name
-        for name, items in (
-            ("video", overlay_data.videos),
-            ("time-series", overlay_data.timeseries),
-            ("object-vector", overlay_data.object_vectors),
+class _Video:
+    """Video frames placed in the environment through the calibration.
+
+    ``depth`` puts the frames above or below the field; walls, landmarks and
+    the moving overlays are drawn above both.
+    """
+
+    def __init__(self, subplot: Any, data: VideoData, depth: float) -> None:
+        self.data = data
+        if isinstance(data.reader, np.ndarray):
+            height, width = data.reader.shape[1:3]
+        else:
+            width, height = data.reader.frame_size_px
+        self.image = subplot.add_image(
+            np.zeros((height, width, 3), dtype=np.uint8), vmin=0, vmax=255
         )
-        if items
-    ]
-    if not skipped:
+        self.image.alpha_mode = "blend"
+        self.image.alpha = data.alpha
+        matrix = np.eye(4)
+        matrix[np.ix_([0, 1], [0, 1, 3])] = video_to_env(data, width, height)[:2]
+        matrix[2, 3] = depth
+        self.image.world_object.local.matrix = matrix
+
+    def update(self, frame: int) -> None:
+        image = self.data.get_frame(frame)
+        self.image.visible = image is not None
+        if image is not None:
+            self.image.data = image
+
+
+def video_to_env(data: VideoData, width: int, height: int) -> NDArray[np.float64]:
+    """The matrix taking a video pixel ``(column, row, 1)`` to ``(x, y, 1)``.
+
+    The first pixel's center is ``(0, 0)``. With a calibration this is its
+    complete pixel-to-environment transform, rotation and reflection
+    included; without one the frame is stretched upright over the
+    environment's extent.
+
+    Parameters
+    ----------
+    data : VideoData
+        The video overlay.
+    width, height : int
+        Frame size, in pixels.
+
+    Returns
+    -------
+    ndarray of float64, shape (3, 3)
+    """
+    if data.transform_to_env is not None:
+        return np.asarray(data.transform_to_env.A, dtype=np.float64)
+    xmin, xmax, ymin, ymax = data.env_bounds
+    sx, sy = (xmax - xmin) / width, (ymax - ymin) / height
+    # The first row at the top, and the frame's edges on the extent.
+    return np.array(
+        [[sx, 0.0, xmin + sx / 2], [0.0, -sy, ymax - sy / 2], [0.0, 0.0, 1.0]]
+    )
+
+
+def _skip_object_vectors(overlay_data: OverlayData) -> OverlayData:
+    """Warn that this backend does not draw object vectors, and drop them."""
+    if not overlay_data.object_vectors:
         return overlay_data
     warnings.warn(
-        f"The fastplotlib backend does not draw {', '.join(skipped)} overlays; "
-        "they are skipped and the other overlays are drawn. Use "
-        "backend='napari' or backend='video' to include them.",
+        "The fastplotlib backend does not draw object-vector overlays; they "
+        "are skipped and the other overlays are drawn. Use backend='html' "
+        "to include them.",
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
-    return replace(overlay_data, videos=[], timeseries=[], object_vectors=[])
+    return replace(overlay_data, object_vectors=[])
+
+
+def _frames_graphic(
+    nd_subplot: Any,
+    indices: Any,
+    fields: Any,
+    frame_of: Callable[[float], int],
+    show: Callable[[int, NDArray[np.float64]], None],
+) -> Any:
+    """The field and every frame-aligned overlay, as one ``NDGraphic``.
+
+    The widget's slider is in seconds; ``frame_of`` maps it to the frame
+    shown, which is held until the next frame starts. Everything drawn for a
+    frame is updated together, so the overlays never show another frame
+    than the field. Built in a function because fastplotlib is optional.
+    """
+    from fastplotlib.widgets.nd_widget import NDGraphic, NDSlicer
+
+    class FieldSlicer(NDSlicer):  # type: ignore[misc,unused-ignore]
+        async def get(self, indices: dict[str, float]) -> NDArray[np.float64]:
+            values = await self.get_window_output(indices)
+            return np.asarray(values, dtype=np.float64)
+
+    class Frames(NDGraphic):  # type: ignore[misc,unused-ignore]
+        def __init__(self) -> None:
+            super().__init__(nd_subplot, "field")
+            self._slicer = FieldSlicer(
+                fields, ("time", "bin"), ("bin",), slider_maps={"time": frame_of}
+            )
+
+        @property
+        def slicer(self) -> Any:
+            return self._slicer
+
+        @property
+        def graphic(self) -> Any:
+            return self._graphic
+
+        @property
+        def display_dims(self) -> tuple[str, ...]:
+            return self._slicer.display_dims  # type: ignore[no-any-return]
+
+        @property
+        def indices(self) -> dict[str, float]:
+            return {"time": indices["time"]}
+
+        async def _set_indices_(self, at: dict[str, float] | None = None) -> None:
+            at = self.indices if at is None else at
+            show(frame_of(at["time"]), await self._slicer.get(at))
+            self._last_indices = at
+
+    return Frames()
 
 
 class FastplotlibAnimation:
-    """Fields over time on the GPU, with playback controls.
+    """Fields over time on the GPU, with a time slider and playback controls.
 
-    Returned by ``env.animate_fields(..., backend="fastplotlib")``. In Jupyter
-    it displays itself with a play button and a slider; elsewhere call
-    :meth:`show` (in a script, then ``fastplotlib.loop.run()``).
+    Returned by ``env.animate_fields(..., backend="fastplotlib")``. It is a
+    fastplotlib ``NDWidget``: a slider in seconds, play, step and loop
+    buttons, and a frame rate box. Time-series overlays are drawn beside the
+    field on the same clock, each showing its window around the current
+    time. In Jupyter it displays itself; elsewhere call :meth:`show` (in a
+    script, then ``fastplotlib.loop.run()``).
 
     Parameters
     ----------
@@ -298,9 +404,10 @@ class FastplotlibAnimation:
         One field per frame. An array, including a memory map, is read one
         frame at a time.
     frame_times : ndarray of shape (n_frames,)
-        Time of each frame, in seconds; labels the frames.
+        Time of each frame, in seconds. A frame is shown from its time until
+        the next frame's.
     fps : float
-        Frames per second while playing.
+        Frames per second while playing; changeable in the controls.
     cmap, vmin, vmax
         Colormap and its limits; limits default to the range over all frames,
         estimated from a sample of a very long recording.
@@ -317,12 +424,12 @@ class FastplotlibAnimation:
 
     Attributes
     ----------
+    widget : fastplotlib.NDWidget
+        The widget; ``widget.indices["time"]`` is the time shown.
     figure : fastplotlib.Figure
-        The figure; add graphics to ``figure[0, 0]``.
+        The widget's figure; add graphics to ``figure["field"]``.
     n_frames : int
         Number of frames.
-    fps : float
-        Frames per second while playing.
     """
 
     def __init__(
@@ -341,26 +448,65 @@ class FastplotlibAnimation:
         show_regions: bool | Sequence[str] = False,
         region_alpha: float = 0.3,
     ) -> None:
+        from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
             _validate_frame_labels,
             animation_colormap_range,
         )
 
-        self._fields = fields
+        fastplotlib = import_fastplotlib()
+        self._fields = fields if hasattr(fields, "shape") else np.asarray(fields)
         self.n_frames = len(fields)
-        self.fps = float(fps)
         self._frame_times = np.asarray(frame_times, dtype=np.float64)
         self._labels = _validate_frame_labels(
             None if frame_labels is None else list(frame_labels),
             self.n_frames,
             "fastplotlib",
         )
+        if overlay_data is not None:
+            overlay_data = _skip_object_vectors(overlay_data)
+        groups = _group_timeseries(overlay_data.timeseries if overlay_data else [])
+        times = self._frame_times
+        step = float(np.median(np.diff(times))) if self.n_frames > 1 else 1.0
+        # The slider stops at the last frame; series subplots fill the right.
+        extents = {"field": (0.0, 0.6 if groups else 1.0, 0.0, 1.0)}
+        for i in range(len(groups)):
+            extents[f"series {i}"] = (0.6, 1.0, i / len(groups), (i + 1) / len(groups))
+        camera, controller = camera_options(env)
+        self.widget = fastplotlib.NDWidget(
+            ranges={"time": (times[0], times[-1] + step, step)},
+            extents=extents,
+            cameras=[camera] + ["2d"] * len(groups),
+            controller_types=[controller] + ["panzoom"] * len(groups),
+            size=(1100 if groups else 800, 760),
+        )
+        # Playback steps one frame per 1 / fps seconds; the box allows 1-100.
+        self.widget.ui_sliders._fps["time"] = min(max(round(fps), 1), 100)
+        self.widget.ui_sliders._frame_time["time"] = (
+            1 / self.widget.ui_sliders._fps["time"]
+        )
+        self.figure = self.widget.figure
+        self._plot = self.figure["field"]
+        self._plot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
+
         low, high = animation_colormap_range(fields, vmin, vmax)  # type: ignore[arg-type]
         scale = ColorScale(cmap, low, high, "lightgray")
-        self.figure, self._plot = new_figure(env)
         self._field = FieldGraphic(
             self._plot, env, np.asarray(fields[0], dtype=np.float64), scale
         )
+        self._layers: list[Any] = []
+        if overlay_data is not None and overlay_data.videos:
+            # Depth orders the field, the videos and everything else (at 0).
+            # Fractional, so that fastplotlib does not restack the videos.
+            self._field.graphic.offset = (0.0, 0.0, -1.5)
+            self._layers += [
+                _Video(
+                    self._plot,
+                    item,
+                    (-0.5 if item.z_order == "above" else -2.5) - i / 100,
+                )
+                for i, item in enumerate(overlay_data.videos)
+            ]
         draw_layers(
             self._plot,
             env,
@@ -371,9 +517,7 @@ class FastplotlibAnimation:
         )
         draw_colorbar(self._plot, scale, "")
         self._title = title or plot_title(env)
-        self._layers: list[Any] = []
         if overlay_data is not None:
-            overlay_data = _skip_unsupported(overlay_data)
             positions = overlay_data.positions
             self._layers += [_Position(self._plot, item) for item in positions]
             self._layers += [
@@ -386,26 +530,32 @@ class FastplotlibAnimation:
                 for item in overlay_data.head_directions
             ]
             self._layers += [_Events(self._plot, item) for item in overlay_data.events]
+        frames = _frames_graphic(
+            self.widget[self._plot],
+            self.widget.indices,
+            self._fields,
+            self._frame_of,
+            self._show_frame,
+        )
+        # fastplotlib has no public way to add a custom NDGraphic yet.
+        self.widget[self._plot]._nd_graphics.append(frames)
+        for i, group in enumerate(groups):
+            _add_series(self.widget, f"series {i}", group)
+        # Only the field is fitted: fitting a series subplot's camera moves
+        # the time, which follows the center of its view.
+        self._plot.auto_scale()
         frame_view(self._plot, env)
-        self._frame = -1
-        self._playing = False
-        self._clock = (0.0, 0)
-        self._slider: Any = None
-        self._controls: Any = None
-        self.frame = 0
+        self._canvas: Any = None
+        self._shown = -1
+        self._show_frame(0, np.asarray(fields[0], dtype=np.float64))
 
-    @property
-    def frame(self) -> int:
-        """The frame shown; set it to show another."""
-        return self._frame
+    def _frame_of(self, time: float) -> int:
+        """The frame shown at ``time``: the last one that started."""
+        return max(int(np.searchsorted(self._frame_times, time, side="right")) - 1, 0)
 
-    @frame.setter
-    def frame(self, frame: int) -> None:
-        frame = int(np.clip(frame, 0, self.n_frames - 1))
-        if frame == self._frame:
-            return
-        self._frame = frame
-        self._field.update(np.asarray(self._fields[frame], dtype=np.float64))
+    def _show_frame(self, frame: int, values: NDArray[np.float64]) -> None:
+        self._shown = frame
+        self._field.update(values)
         for layer in self._layers:
             layer.update(frame)
         label = (
@@ -414,44 +564,16 @@ class FastplotlibAnimation:
             else f"t = {self._frame_times[frame]:.2f} s"
         )
         self._plot.title = f"{self._title}  |  {label}"
-        if self._slider is not None and self._slider.value != frame:
-            self._slider.value = frame
 
-    def play(self) -> None:
-        """Play from the current frame; at the last frame, from the start."""
-        if self._frame >= self.n_frames - 1:
-            self.frame = 0
-        self._clock = (time.perf_counter(), self._frame)
-        self._playing = True
+    @property
+    def frame(self) -> int:
+        """The frame at the slider's time; set it to move the slider there."""
+        return self._frame_of(self.widget.indices["time"])
 
-    def pause(self) -> None:
-        """Stop playing."""
-        self._playing = False
-
-    def _advance(self, figure: Any = None) -> None:
-        """Move to the frame the playback clock has reached.
-
-        fastplotlib calls an animation function with the figure.
-        """
-        if not self._playing:
-            return
-        started, first = self._clock
-        frame = first + int((time.perf_counter() - started) * self.fps)
-        if frame >= self.n_frames - 1:
-            frame = self.n_frames - 1
-            self._playing = False
-        self.frame = frame
-
-    def _on_key(self, event: Any) -> None:
-        key = getattr(event, "key", None)
-        if key == " ":
-            self.pause() if self._playing else self.play()
-        elif key in ("ArrowRight", "ArrowLeft"):
-            self.pause()
-            self.frame = self._frame + (1 if key == "ArrowRight" else -1)
-        elif key in ("Home", "End"):
-            self.pause()
-            self.frame = 0 if key == "Home" else self.n_frames - 1
+    @frame.setter
+    def frame(self, frame: int) -> None:
+        frame = int(np.clip(frame, 0, self.n_frames - 1))
+        self.widget.indices = {"time": self._frame_times[frame]}
 
     def show(self) -> Any:
         """Display the animation with its controls.
@@ -459,37 +581,13 @@ class FastplotlibAnimation:
         Returns
         -------
         object
-            In Jupyter, a widget holding the figure, a play button and a
-            slider; elsewhere the figure's canvas.
+            The canvas: a widget in Jupyter, a window elsewhere.
         """
-        if self._controls is not None:  # shown already: the controls exist
-            return self._controls
-        output = self.figure.show()
-        if _in_notebook(self.figure.canvas):
-            import ipywidgets
-
-            play = ipywidgets.Play(
-                min=0,
-                max=self.n_frames - 1,
-                value=self._frame,
-                interval=max(1, int(1000 / self.fps)),
-            )
-            self._slider = ipywidgets.IntSlider(
-                min=0, max=self.n_frames - 1, value=self._frame
-            )
-            ipywidgets.jslink((play, "value"), (self._slider, "value"))
-            self._slider.observe(self._on_slider, names="value")
-            self._controls = ipywidgets.VBox(
-                [output, ipywidgets.HBox([play, self._slider])]
-            )
-        else:
-            self.figure.renderer.add_event_handler(self._on_key, "key_down")
-            self.figure.add_animations(self._advance)
-            self._controls = output
-        return self._controls
-
-    def _on_slider(self, change: dict[str, Any]) -> None:
-        self.frame = change["new"]
+        if self._canvas is None:
+            self._canvas = self.widget.show(autoscale=False)
+            # fastplotlib turns y downward for images; environments keep y up.
+            self._plot.camera.local.scale_y = abs(self._plot.camera.local.scale_y)
+        return self._canvas
 
     def _ipython_display_(self) -> None:
         from IPython.display import display
@@ -497,13 +595,30 @@ class FastplotlibAnimation:
         display(self.show())
 
 
-def _in_notebook(canvas: Any) -> bool:
-    """Whether ``canvas`` is a Jupyter widget, which streams frames to a browser."""
-    try:
-        import ipywidgets
-    except ImportError:
-        return False
-    return isinstance(canvas, ipywidgets.DOMWidget)
+def _add_series(widget: Any, name: str, group: list[TimeSeriesData]) -> None:
+    """Draw a group of time series in one subplot, on the widget's clock."""
+    subplot = widget.figure[name]
+    for item in group:
+        color = _rgba(item.color)
+        color[3] *= item.alpha
+        widget[name].add_nd_timeseries(
+            # The GPU draws float32: times resolve to 1 us at 10 s, 0.06 ms at 1000 s.
+            np.column_stack([item.times, item.data])[None].astype(np.float32),
+            ("series", "time", "xy"),
+            ("series", "time", "xy"),
+            slider_maps={"time": item.times},
+            display_window=item.window_seconds,
+            x_range_mode="auto",
+            colors=color,
+            thickness=item.linewidth,
+            name=item.label,
+        )
+    subplot.title = "  |  ".join(item.label for item in group)
+    subplot.camera.maintain_aspect = False
+    low = min(item.global_vmin for item in group)
+    high = max(item.global_vmax for item in group)
+    margin = 0.05 * (high - low) or 0.5
+    subplot.y_range = (low - margin, high + margin)
 
 
 def render_fastplotlib(

@@ -1235,9 +1235,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   rather than the colormap's top color. Inside Jupyter the figure renders on
   the machine running the kernel and streams to the browser, so it works on a
   remote GPU server through an SSH tunnel. Animations draw position, pose,
-  head direction, events, regions, walls and landmarks, update a frame in
-  about 5 ms, and have a play button and slider in Jupyter or keyboard
-  controls in a window; `animate_fields` returns a `FastplotlibAnimation`.
+  head direction, events, regions, walls and landmarks and update a frame in
+  about 5 ms. `animate_fields` returns a `FastplotlibAnimation`, a
+  fastplotlib `NDWidget` with a time slider in seconds and play, step and
+  loop controls. Time-series overlays are drawn beside the field on the same
+  clock at their own sampling rates. Video overlays are placed in the
+  environment through their calibration (rotation and mirroring included),
+  above or below the field, with walls, landmarks and the moving overlays on
+  top. Object-vector overlays are skipped with a warning.
   `plot` and `plot_field` keep Matplotlib as the default and return an
   `Axes` for it; with `backend="fastplotlib"` they return the fastplotlib
   figure, and Matplotlib-only options raise a `TypeError`.

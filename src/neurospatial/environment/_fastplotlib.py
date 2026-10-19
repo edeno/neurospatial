@@ -547,15 +547,18 @@ def new_figure(env: Environment) -> tuple[Any, Any]:
     aspect.
     """
     fastplotlib = import_fastplotlib()
-    volume = env.n_dims == 3
+    camera, controller = camera_options(env)
     figure = fastplotlib.Figure(
-        cameras="3d" if volume else "2d",
-        controller_types=["orbit" if volume else "panzoom"],
-        size=(800, 700),
+        cameras=camera, controller_types=[controller], size=(800, 700)
     )
     subplot = figure[0, 0]
     subplot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
     return figure, subplot
+
+
+def camera_options(env: Environment) -> tuple[str, str]:
+    """The camera and controller for ``env``: rotatable 3-D, or pan and zoom."""
+    return ("3d", "orbit") if env.n_dims == 3 else ("2d", "panzoom")
 
 
 def frame_view(subplot: Any, env: Environment) -> None:

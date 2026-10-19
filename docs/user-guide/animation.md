@@ -393,19 +393,38 @@ animation = env.animate_fields(
     fields,
     frame_times=frame_times,
     backend="fastplotlib",
-    overlays=[PositionOverlay(positions=positions, times=times, trail_length=30)],
+    overlays=[
+        PositionOverlay(positions=positions, times=times, trail_length=30),
+        VideoOverlay(source="session.mp4", times=video_times, calibration=calibration),
+        TimeSeriesOverlay(data=speed, times=times, label="speed (cm/s)"),
+    ],
 )
-animation  # in Jupyter: the figure, a play button and a slider
+animation  # in Jupyter: the plot, a time slider and playback controls
 ```
+
+The animation is a fastplotlib `NDWidget`: a slider in seconds, buttons to
+play, step and loop, and a frame rate box. Each frame is shown from its time
+until the next frame's. Time series are drawn beside the field on the same
+clock, each over its `window_seconds` around the current time and at its own
+sampling rate; drag the cursor in a series to move every panel.
+
+The video is placed in the environment through its calibration, which maps
+camera pixels to environment coordinates (see [Calibration
+Methods](../animation_overlays.md#calibration-methods)), so a camera that is rotated, mirrored or in
+pixels still lines up with the bins. With `z_order="above"` (the default) the
+video is blended over the field at `alpha`; with `"below"` it shows only
+where the field is transparent. Walls, landmarks, regions and the moving
+overlays are always drawn on top, so the arena you defined can be checked
+against the recording frame by frame.
 
 In Jupyter the frames are rendered on the machine running the kernel and
 streamed to the browser as images, so the GPU does not have to be on your
 laptop; see [Remote Server Workflow](#remote-server-workflow). Outside Jupyter,
 `animation.show()` opens a window (in a script, follow it with
-`fastplotlib.loop.run()`): space plays and pauses, the arrow keys step one
-frame, Home and End jump to the ends. `animation.frame = 120` shows a frame
-from code, and `animation.figure` is the fastplotlib figure, for adding your
-own graphics.
+`fastplotlib.loop.run()`). `animation.frame = 120` moves the slider to a frame
+from code; `animation.widget` is the `NDWidget` and `animation.figure` its
+figure, for adding your own graphics to `animation.figure["field"]`.
+Object-vector overlays are not drawn by this backend.
 
 `env.plot(backend="fastplotlib")` and `env.plot_field(field,
 backend="fastplotlib")` draw a single picture the same way, including 3-D
@@ -663,7 +682,7 @@ When working on a remote server without display:
 
 Run Jupyter on the server, reach it through an SSH tunnel, and use
 `backend="fastplotlib"`. The figure renders on the server's GPU and streams to
-your browser, with the play button and slider working as on a local machine.
+your browser, with the slider and playback controls working as on a local machine.
 
 ```bash
 # On the server
