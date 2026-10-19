@@ -927,3 +927,25 @@ class TestMeanSquareDisplacementBreaks:
         # Each recording spans four seconds, so lag 5 has no pair inside one.
         np.testing.assert_array_equal(result.msd[:4], [1.0, 4.0, 9.0, 16.0])
         assert np.isnan(result.msd[4])
+
+    def test_geodesic_pairs_do_not_span_the_break(self):
+        times, positions = self._two_recordings()
+        line = np.c_[np.linspace(0.0, 104.0, 400), np.zeros(400)]
+        env = Environment.from_samples(line, bin_size=1.0)
+        break_before = np.zeros(10, dtype=bool)
+        break_before[5] = True
+        joined = mean_square_displacement(
+            times, positions, metric="geodesic", env=env, max_tau=3.0
+        )
+        split = mean_square_displacement(
+            times,
+            positions,
+            metric="geodesic",
+            env=env,
+            max_tau=3.0,
+            break_before=break_before,
+        )
+        # Pairs across the join are ~100 units apart; within a recording the
+        # displacement is at most 3 bin-widths.
+        assert np.all(joined.msd > 100.0)
+        np.testing.assert_allclose(split.msd, [1.0, 4.0, 9.0], atol=1.5)

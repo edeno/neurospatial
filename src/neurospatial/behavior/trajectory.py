@@ -1528,6 +1528,17 @@ def mean_square_displacement(
             "Use metric='euclidean' if env is not available."
         )
 
+    if metric == "geodesic":
+        assert env is not None  # Already checked above
+        require_cartesian(
+            env.coordinate_system,
+            "mean_square_displacement(metric='geodesic')",
+            why="It reads positions as the animal's allocentric positions, located "
+            "in the environment's bins.",
+            fix="use the allocentric environment the positions were recorded in, or "
+            "metric='euclidean'",
+        )
+
     n_samples = len(positions)
     if n_samples < 2:
         return MSDResult(lags=np.empty(0), msd=np.empty(0))
@@ -1549,14 +1560,6 @@ def mean_square_displacement(
     if metric == "geodesic":
         # Map positions to bins for geodesic distance
         assert env is not None  # Already checked above
-        require_cartesian(
-            env.coordinate_system,
-            "mean_square_displacement(metric='geodesic')",
-            why="It reads positions as the animal's allocentric positions, located "
-            "in the environment's bins.",
-            fix="use the allocentric environment the positions were recorded in, or "
-            "metric='euclidean'",
-        )
         position_bins = env.bin_at(positions)
         valid_bins = (position_bins >= 0) & (position_bins < env.n_bins)
 
