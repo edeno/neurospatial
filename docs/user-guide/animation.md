@@ -539,8 +539,14 @@ The video is placed in the environment through its calibration, which maps
 camera pixels to environment coordinates (see [Calibration
 Methods](../animation_overlays.md#calibration-methods)), so a camera that is rotated, mirrored or in
 pixels still lines up with the bins. With `z_order="above"` (the default) the
-video is blended over the field at `alpha`; with `"below"` it shows only
-where the field is transparent. Walls, landmarks, regions and the moving
+video is blended over the field at `alpha`. With `"below"` the field is
+drawn over the video and is see-through where its values are low: each bin's
+opacity rises from clear at the bottom of the color scale to opaque at a
+typical frame's peak (the median of the frames' maxima), so a 2-D decoded
+posterior sits over the camera's view of the animal. Missing bins keep their
+gray. For a posterior, a `vmax` near that typical peak (non_local_detector's
+2-D movies use 0.07) spreads most frames over the whole colormap; sharper
+frames then show the colorbar's top triangle. Walls, landmarks, regions and the moving
 overlays are always drawn on top, so the arena you defined can be checked
 against the recording frame by frame.
 

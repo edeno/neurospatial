@@ -1286,7 +1286,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   in Matplotlib and napari, though pygfx blends in linear light; walls,
   the track cursor and segment joints carry an edge that keeps them
   visible on any colormap color, labels are outlined, and regions are
-  drawn sky blue, apart from orange landmarks in color-blind vision. The
+  drawn sky blue, apart from orange landmarks in color-blind vision. A video
+  drawn below the field (`z_order="below"`) shows through where the field's
+  values are low, so a 2-D decoded posterior sits over the camera's view. The
   decoding recipe draws true position magenta and decoded position green,
   only where the posterior is not nearly flat.
   Frame times

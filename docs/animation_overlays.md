@@ -230,7 +230,7 @@ env.animate_fields(
 | Balanced view | `alpha=0.5, z_order="above"` | Equal video/field visibility (default) |
 | Field dominant | `alpha=0.3, z_order="above"` | Field shows through video |
 | Video dominant | `alpha=0.7, z_order="above"` | Video shows through field |
-| Video as background | `z_order="below"` | Only works if field has transparent regions |
+| Video as background | `z_order="below"` | Field drawn over the video; in the fastplotlib backend, see-through where its values are low (a posterior over the camera's view); elsewhere only where the field is transparent |
 
 **Requirements:**
 

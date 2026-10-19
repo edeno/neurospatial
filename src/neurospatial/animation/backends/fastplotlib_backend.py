@@ -1416,6 +1416,7 @@ class FastplotlibAnimation:
         from neurospatial.animation.rendering import (
             _validate_frame_labels,
             animation_colormap_range,
+            typical_peak,
         )
 
         fastplotlib = import_fastplotlib()
@@ -1523,7 +1524,15 @@ class FastplotlibAnimation:
             stacks[0] if not several else [row for stack in stacks for row in stack]
         )
         low, high = animation_colormap_range(all_frames, vmin, vmax)
-        scale = ColorScale(cmap, low, high, "lightgray")
+        # A video below the field shows through where its values are low: a
+        # posterior over the camera's view of the animal. A bin is opaque
+        # from the typical frame's peak (the median of the frames' maxima),
+        # so a spread-out posterior still shows; colors keep the scale.
+        below = overlay_data is not None and any(
+            item.z_order == "below" for item in overlay_data.videos
+        )
+        opaque_from = typical_peak(all_frames) if below else None
+        scale = ColorScale(cmap, low, high, "lightgray", opaque_from=opaque_from)
         # Computed limits leave about 1% of frames beyond each, a zero bottom
         # none below it.
         beyond = (vmin is None and low != 0.0, vmax is None)

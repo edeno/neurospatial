@@ -714,3 +714,12 @@ def test_animation_color_limits_ignore_a_few_extreme_frames():
     assert animation_colormap_range(fields + 0.1, None, None)[0] == pytest.approx(0.1)
     assert animation_colormap_range(np.full((3, 4), np.nan), None, None) == (0.0, 1.0)
     assert animation_colormap_range([np.full(4, 2.0)] * 3, None, None) == (1.5, 2.5)
+
+
+def test_typical_peak_is_the_median_frame_maximum():
+    from neurospatial.animation.rendering import typical_peak
+
+    fields = np.zeros((5, 4))
+    fields[:, 1] = [0.1, 0.2, 0.3, 0.4, 9.0]  # one extreme frame
+    fields[2, 3] = np.nan
+    assert typical_peak(fields) == pytest.approx(0.3)

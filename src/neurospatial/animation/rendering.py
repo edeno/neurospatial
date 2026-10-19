@@ -98,6 +98,20 @@ def animation_colormap_range(
     return (low if vmin is None else vmin), (high if vmax is None else vmax)
 
 
+def typical_peak(
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+) -> float:
+    """The median of the frames' maxima: a typical frame's peak.
+
+    Every n-th frame of a very long recording, as for the color limits.
+    """
+    n_frames = len(fields)
+    stride = max(1, n_frames // 50_000) if n_frames > _EXACT_RANGE_MAX_FRAMES else 1
+    _, highs = _frame_extremes(fields, stride)
+    finite = highs[np.isfinite(highs)]
+    return float(np.median(finite)) if len(finite) else 1.0
+
+
 def _frame_extremes(
     fields: Sequence[NDArray[np.float64]] | NDArray[np.float64], stride: int
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:

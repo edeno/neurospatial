@@ -1144,8 +1144,10 @@ def test_video_is_placed_through_its_calibration_under_the_walls(
     overlay = VideoOverlay(
         source=frames, times=t, calibration=calibration, alpha=1.0, z_order=z_order
     )
+    # The field is 1 on the right of the arena and 0 on the left.
+    field = (apparatus.bin_centers[:, 0] > 20).astype(float)
     animation = apparatus.animate_fields(
-        np.zeros((len(t), apparatus.n_bins)),
+        np.tile(field, (len(t), 1)),
         frame_times=t,
         backend="fastplotlib",
         vmin=0.0,
@@ -1154,14 +1156,16 @@ def test_video_is_placed_through_its_calibration_under_the_walls(
     )
     animation.show()
     plot = animation._plot
-    field = np.asarray(colormaps["viridis"](0.0)[:3])
+    high = np.asarray(colormaps["viridis"](1.0)[:3])
     red, black = np.array([1.0, 0, 0]), np.zeros(3)
-    top, bottom = (
-        _pixel(animation.figure, plot, 10, 35),
-        _pixel(animation.figure, plot, 10, 5),
+    figure = animation.figure
+    # Above, the video covers the field. Below, it shows through where the
+    # field is low (clear at 0), and the field is opaque at its peak.
+    np.testing.assert_allclose(_pixel(figure, plot, 10, 35), red, atol=2 / 255)
+    np.testing.assert_allclose(_pixel(figure, plot, 10, 5), black, atol=2 / 255)
+    np.testing.assert_allclose(
+        _pixel(figure, plot, 30, 35), red if above else high, atol=2 / 255
     )
-    np.testing.assert_allclose(top, red if above else field, atol=2 / 255)
-    np.testing.assert_allclose(bottom, black if above else field, atol=2 / 255)
     wall = _pixel(animation.figure, plot, 20, 10)  # the divider, red too
     np.testing.assert_allclose(wall, to_rgba("firebrick")[:3], atol=3 / 255)
     assert plot.camera.local.scale_y > 0  # y still points up
