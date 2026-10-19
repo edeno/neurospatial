@@ -738,6 +738,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `env.plot()` draws everything the environment holds by default: declared
+  walls (labeled with their names), landmarks (labeled, with the axes widened
+  to show any outside the arena) and regions. `show_regions` now defaults to
+  True; `show_walls=False` and `show_landmarks=False` hide the new layers.
+- `env.plot()` fills active grid cells with one light color whether or not
+  some bins are inactive (it was white on a full grid and dark gray
+  otherwise), leaves inactive cells unfilled, and outlines a polygon grid's
+  polygon instead of shading over the bins.
+- The `animation` extra allows napari 0.5 through 0.9 (`napari[all]>=0.5,<0.10`);
+  it was capped below 0.6. The napari tests pass on 0.9.2. The floor rises from
+  0.4.18 to 0.5, whose `border_color` names the animation and annotation code
+  already uses.
+
 - Speed is one definition everywhere: the velocity vector smoothed with a
   0.1 s Gaussian (spyglass's default, as in non_local_detector's
   `get_velocity`), then its magnitude. New `neurospatial.behavior.compute_speed`
@@ -1561,6 +1574,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Performance
 
+- `env.plot()` draws the connections between bins as one collection rather
+  than a line each, and marks grid cell edges with unlabeled minor ticks. A
+  10,201-bin grid draws in 0.15 s instead of 4.0 s, and a 114,352-bin grid in
+  1.1 s instead of 31 s.
+
 - `summary_table()` and `label_cell_types()` prepare the physical wall
   geometry once per environment instead of once per cell. For a 2,500-bin
   arena, 100 cells take 0.35 s instead of 14.6 s and 1,000 cells 1.1 s instead
@@ -1649,6 +1667,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   slanted outline, whose snapped edges could leave the arena (it raised "lies
   outside the arena domain"). Snapped walls are now kept to the arena;
   environments that built before are unchanged.
+- The napari backend showed the wrong events after any jump larger than
+  `decay_frames`, forward or backward: moving to frame 1 from napari's
+  starting frame 99 showed frames 0-9 instead of 0-1, and frame 10 then
+  showed 90 events instead of 6, staying wrong until the end. Napari opens at
+  the middle frame, so the first move to the start triggered it. Visibility is
+  now the run of frame-sorted events the frame calls for, found by binary
+  search and updated where it changes, so any jump shows exactly the right
+  events.
 
 - The default smoothing bandwidth for an environment with no neighbor pairs and
   no metric units used each bin's measure to the power `1 / n_dims`, so a track

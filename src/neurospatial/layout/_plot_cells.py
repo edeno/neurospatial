@@ -284,7 +284,10 @@ def _polygon_field(
     cmap_obj = plt.get_cmap(style.cmap).copy()
     cmap_obj.set_bad(style.nan_color or "none")
     collection = PatchCollection(
-        _polygon_patches(shapes), cmap=cmap_obj, rasterized=style.rasterized, **kwargs
+        _polygon_patches(shapes.polygons),
+        cmap=cmap_obj,
+        rasterized=style.rasterized,
+        **kwargs,
     )
     collection.set_array(np.ma.masked_invalid(field))
     collection.set_clim(style.vmin, style.vmax)

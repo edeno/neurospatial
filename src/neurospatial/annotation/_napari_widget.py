@@ -445,10 +445,10 @@ def create_annotation_widget(
                 "No Annotations",
                 "Close without saving any annotations?\n\n"
                 "Python will receive an empty result.",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
-            if reply == QMessageBox.No:
+            if reply == QMessageBox.StandardButton.No:
                 return
         viewer.close()
 
@@ -529,10 +529,10 @@ def create_annotation_widget(
                     "Environment Already Exists",
                     "An environment boundary already exists.\n\n"
                     "Replace it with this new boundary?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
                 )
-                if reply == QMessageBox.Yes:
+                if reply == QMessageBox.StandardButton.Yes:
                     # Delete the existing environment boundary
                     env_indices = [
                         i for i, r in enumerate(roles) if str(r) == "environment"
