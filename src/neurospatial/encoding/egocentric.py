@@ -45,7 +45,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterator, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -81,6 +81,9 @@ if TYPE_CHECKING:
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult
+
+# Object coordinates, fixed or per sample, or names of ``env.landmarks``.
+ObjectPositions: TypeAlias = ArrayLike | Sequence[str]
 
 
 __all__ = [
@@ -1398,7 +1401,7 @@ def compute_egocentric_rate(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -1439,8 +1442,13 @@ def compute_egocentric_rate(
         -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
         transform is applied internally; pass world-frame headings, not
         animal-frame angles.
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside
@@ -1628,7 +1636,7 @@ def compute_object_vector_rate(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -1663,8 +1671,13 @@ def compute_object_vector_rate(
         positions) are treated as missing data and excluded from
         occupancy and firing-rate computation; callers do not need to
         pre-filter tracking dropouts.
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for allocentric binning. Distances outside
@@ -1848,7 +1861,7 @@ def _object_vector_rate(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -1872,8 +1885,8 @@ def _object_vector_rate(
         is_jax_available,
     )
     from neurospatial.encoding._egocentric_counts import (
-        normalize_object_positions,
         prepare_egocentric_binning,
+        resolve_object_positions,
     )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
@@ -1920,8 +1933,6 @@ def _object_vector_rate(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = None if headings is None else np.asarray(headings, dtype=np.float64)
-    # Normalize object_positions: [x, y] -> [[x, y]] for single object
-    object_positions = normalize_object_positions(object_positions)
 
     validate_trajectory(
         times,
@@ -1929,6 +1940,10 @@ def _object_vector_rate(
         headings=headings,
         context=context,
         n_dims=env.n_dims if env is not None else None,
+    )
+    # Coordinates, or each named landmark's nearest point at every sample.
+    object_positions, object_names = resolve_object_positions(
+        object_positions, env=env, positions=positions, metric=metric
     )
     validate_spike_times(
         spike_times,
@@ -1974,6 +1989,7 @@ def _object_vector_rate(
         n_distance_bins=int(n_distance_bins),
         n_direction_bins=int(n_direction_bins),
         metric=metric,
+        objects=object_names,
     )
 
     spike_counts = spike_counts_batch[0]
@@ -2016,7 +2032,7 @@ def compute_egocentric_rates(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -2069,8 +2085,13 @@ def compute_egocentric_rates(
         -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
         transform is applied internally; pass world-frame headings, not
         animal-frame angles.
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside
@@ -2312,7 +2333,7 @@ def compute_object_vector_rates(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -2359,8 +2380,13 @@ def compute_object_vector_rates(
         positions) are treated as missing data and excluded from
         occupancy and firing-rate computation; callers do not need to
         pre-filter tracking dropouts.
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for allocentric binning. Distances outside
@@ -2545,7 +2571,7 @@ def _object_vector_rates(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -2577,8 +2603,8 @@ def _object_vector_rates(
         is_jax_available,
     )
     from neurospatial.encoding._egocentric_counts import (
-        normalize_object_positions,
         prepare_egocentric_binning,
+        resolve_object_positions,
     )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
@@ -2639,8 +2665,6 @@ def _object_vector_rates(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = None if headings is None else np.asarray(headings, dtype=np.float64)
-    # Normalize object_positions: [x, y] -> [[x, y]] for single object
-    object_positions = normalize_object_positions(object_positions)
 
     validate_trajectory(
         times,
@@ -2648,6 +2672,10 @@ def _object_vector_rates(
         headings=headings,
         context=context,
         n_dims=env.n_dims if env is not None else None,
+    )
+    # Coordinates, or each named landmark's nearest point at every sample.
+    object_positions, object_names = resolve_object_positions(
+        object_positions, env=env, positions=positions, metric=metric
     )
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"{context} (neuron {i})")
@@ -2702,6 +2730,7 @@ def _object_vector_rates(
         n_distance_bins=int(n_distance_bins),
         n_direction_bins=int(n_direction_bins),
         metric=metric,
+        objects=object_names,
     )
 
     # Compute firing rates. The "binned" method uses the raw bin rate (no graph
@@ -2899,7 +2928,7 @@ def is_object_vector_cell(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     criterion: Literal["threshold", "shuffle"] = "threshold",
     min_info: float | None = None,
@@ -2936,8 +2965,13 @@ def is_object_vector_cell(
     positions : ndarray, shape (n_samples, n_dims)
         Raw animal coordinates aligned with times, in environment units.
 
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for allocentric binning. Distances outside
@@ -3125,7 +3159,7 @@ def is_egocentric_object_vector_cell(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     criterion: Literal["threshold", "shuffle"] = "threshold",
     min_info: float | None = None,
@@ -3168,8 +3202,13 @@ def is_egocentric_object_vector_cell(
         -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
         transform is applied internally; pass world-frame headings, not
         animal-frame angles.
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside
@@ -3475,7 +3514,7 @@ def _object_vector_significance(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     context: str,
     direction_frame: Literal["allocentric", "egocentric"],
@@ -3524,7 +3563,7 @@ def _object_vector_significance(
         _compute_object_coords,
         _coords_to_flat_bin_idx,
         _create_egocentric_environment,
-        normalize_object_positions,
+        resolve_object_positions,
     )
     from neurospatial.encoding._significance import (
         run_shuffle_test,
@@ -3544,7 +3583,6 @@ def _object_vector_significance(
     positions = np.array(positions, dtype=np.float64, copy=True)
     if egocentric:
         headings = np.array(headings, dtype=np.float64, copy=True)
-    object_positions = np.array(object_positions, dtype=np.float64, copy=True)
     ids = np.array(
         resolve_unit_ids(
             unit_ids,
@@ -3583,7 +3621,9 @@ def _object_vector_significance(
     for train in trains:
         validate_spike_times(train, context=context)
     _validate_object_vector_metric(env, metric, context=context)
-    object_positions = normalize_object_positions(object_positions)
+    object_positions, _ = resolve_object_positions(
+        object_positions, env=env, positions=positions, metric=metric
+    )
     distances, bearings = _compute_object_coords(
         positions, headings, object_positions, metric=metric, env=env
     )
@@ -3644,7 +3684,7 @@ def object_vector_cell_significance(
     spike_times: SpikeTrainsLike,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -3694,8 +3734,13 @@ def object_vector_cell_significance(
     positions : ndarray, shape (n_samples, n_dims)
         Raw animal coordinates aligned with times, in environment units.
 
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for allocentric binning. Distances outside
@@ -3836,7 +3881,7 @@ def egocentric_object_vector_cell_significance(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
-    object_positions: NDArray[np.float64],
+    object_positions: ObjectPositions,
     *,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
@@ -3892,8 +3937,13 @@ def egocentric_object_vector_cell_significance(
         -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
         transform is applied internally; pass world-frame headings, not
         animal-frame angles.
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates. The firing rate is
+    object_positions : array-like, str or sequence of str
+        The objects, as allocentric positions with shape ``(n_objects, 2)``,
+        as positions at every sample with shape ``(n_time, n_objects, 2)``, or
+        as names of ``env.landmarks``. A line or polygon landmark contributes
+        its nearest point at each sample, so a monitor is measured from its
+        closest edge rather than its center; names are recorded in the
+        result's ``analysis_settings["objects"]``. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside

@@ -7,7 +7,7 @@ from itertools import product
 
 import numpy as np
 from numpy.typing import NDArray
-from shapely.geometry import Polygon
+from shapely.geometry import LineString, Polygon
 
 from neurospatial._exceptions import _format_error
 from neurospatial.environment._cache import AnalysisCache
@@ -21,6 +21,7 @@ from neurospatial.geometry import (
     transform_binning,
 )
 from neurospatial.geometry._derive import _classification
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.ops.transforms import Affine2D, AffineND
 from neurospatial.regions import Region, Regions
 
@@ -30,10 +31,11 @@ def _apply_transform(
     *,
     binning: Binning,
     regions: Regions,
+    landmarks: Landmarks,
     arena: Arena,
     cache: AnalysisCache,
 ) -> _Derivation:
-    """Transform owned cells, their bounds, arenas and regions together."""
+    """Transform owned cells, their bounds, arenas, regions and landmarks together."""
     n_dims = binning.bins.n_dims
     if not isinstance(transform, (AffineND, Affine2D)):
         shape = np.shape(transform) if isinstance(transform, np.ndarray) else None
@@ -111,8 +113,24 @@ def _apply_transform(
         regions=Regions(
             _transformed_region(region, transform) for region in regions.values()
         ),
+        landmarks=Landmarks(
+            _transformed_landmark(landmark, transform)
+            for landmark in landmarks.values()
+        ),
         arena=arena.transformed(transform.A),
     )
+
+
+def _transformed_landmark(
+    landmark: Landmark, transform: AffineND | Affine2D
+) -> Landmark:
+    """Map a landmark's geometry through ``transform``, keeping its name."""
+    data: NDArray[np.float64] | LineString | Polygon
+    if isinstance(landmark.data, np.ndarray):
+        data = transform(landmark.data.reshape(1, -1))[0]
+    else:
+        data = mapped_geometry(landmark.data, transform.A)
+    return Landmark(landmark.name, landmark.kind, data, landmark.metadata)
 
 
 def _transformed_region(region: Region, transform: AffineND | Affine2D) -> Region:

@@ -1297,6 +1297,10 @@ _POLAR_INHERITED_MEMBERS = {
     "wall records, empty because a polar surround has no walls": {
         "get_blocked_edges",
     },
+    "landmarks, empty: a surround centered on the animal refuses them": {
+        "landmarks",
+        "with_landmarks",
+    },
     "graph and diffusion operations on physical polar geometry": {
         "bin_sizes",
         "components",

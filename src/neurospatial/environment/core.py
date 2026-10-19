@@ -80,6 +80,7 @@ from neurospatial.environment._publication import (
     _Unset,
     editable_graph,
     environment_state,
+    owned_landmarks,
     publish_derived,
 )
 from neurospatial.environment._queries import (
@@ -135,6 +136,7 @@ from neurospatial.geometry import (
     locate,
     own_binning,
 )
+from neurospatial.landmarks import Landmarks
 from neurospatial.layout import LayoutType
 from neurospatial.ops import (
     _compute_differential_operator,
@@ -210,6 +212,10 @@ def _read_only(cls: type, name: str) -> AttributeError:
         return AttributeError(
             "Environment.regions is read-only; use env.with_regions(regions)."
         )
+    if name == "landmarks":
+        return AttributeError(
+            "Environment.landmarks is read-only; use env.with_landmarks(landmarks)."
+        )
     return AttributeError(
         _format_error(
             f"Environment.{name} is read-only.",
@@ -280,6 +286,7 @@ class Environment(Generic[_C]):
 
     _metadata: _Metadata
     _regions: Regions
+    _landmarks: Landmarks
     _provenance: _Provenance
     _geometry: _PublishedGeometry[_C]
     _cache: AnalysisCache
@@ -357,6 +364,15 @@ class Environment(Generic[_C]):
     def regions(self) -> Regions:
         """Owned immutable named regions; edit a standalone Regions builder."""
         return self._regions
+
+    @property
+    def landmarks(self) -> Landmarks:
+        """Named landmarks: cues, monitors, objects and reward ports.
+
+        Their geometry is in this environment's coordinates. Encoding
+        functions that take ``object_positions`` accept their names.
+        """
+        return self._landmarks
 
     def __init__(self) -> None:
         """Use an Environment factory to build owned geometry and metadata."""
@@ -558,6 +574,53 @@ class Environment(Generic[_C]):
         snapshot = _owned_regions(regions, self.n_dims)
         result = self._replace_value()
         result._regions = snapshot
+        return result
+
+    def with_landmarks(self, landmarks: Landmarks) -> Self:
+        """Return a new environment with these landmarks.
+
+        Parameters
+        ----------
+        landmarks : Landmarks
+            Complete replacement, in order; an empty collection clears them.
+            Coordinates must match this environment's dimension, and may lie
+            outside the arena, as a cue on the room wall does.
+
+        Returns
+        -------
+        Environment
+            Same concrete type and geometry. It shares this environment's
+            analysis cache.
+
+        Raises
+        ------
+        ValueError
+            If a landmark's dimension differs, or this environment is polar.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.landmarks import Landmark, Landmarks
+        >>> env = Environment.from_grid_mask(
+        ...     np.ones((10, 10), dtype=bool),
+        ...     grid_edges=(np.arange(0.0, 101.0, 10.0),) * 2,
+        ...     units="cm",
+        ... )
+        >>> env = env.with_landmarks(
+        ...     Landmarks(
+        ...         [
+        ...             Landmark("cue_card", "point", [50.0, 105.0]),
+        ...             Landmark("monitor", "line", [(0.0, 100.0), (40.0, 100.0)]),
+        ...         ]
+        ...     )
+        ... )
+        >>> list(env.landmarks)
+        ['cue_card', 'monitor']
+        """
+        snapshot = owned_landmarks(landmarks, self.n_dims, self.coordinate_kind)
+        result = self._replace_value()
+        result._landmarks = snapshot
         return result
 
     def with_track_width(
@@ -789,6 +852,7 @@ class Environment(Generic[_C]):
             dimension_ranges=self.dimension_ranges,
             grid_edges=self.grid_edges,
             region_names=list(self.regions),
+            landmark_names=list(self.landmarks),
             is_linearized_track=self.is_linearized_track,
         )
 
@@ -1517,8 +1581,8 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> x, y = np.meshgrid(np.arange(0.5, 10.0), np.arange(0.5, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> points = np.array([[5.0, 5.0], [15.0, 15.0]])
         >>> env.contains(points)  # the second point is outside the arena
         array([ True, False])
@@ -2808,6 +2872,7 @@ class Environment(Generic[_C]):
             transform,
             binning=self._binning,
             regions=self.regions,
+            landmarks=self.landmarks,
             arena=self._arena,
             cache=self._cache,
         )

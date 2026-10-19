@@ -47,11 +47,12 @@ with other encoding modules.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     interval_valid_mask,
     start_allocated_occupancy,
@@ -172,6 +173,98 @@ def normalize_object_positions(
     )
 
 
+def _landmark_names(object_positions: object) -> list[str] | None:
+    """The landmark names ``object_positions`` gives, or None for coordinates."""
+    if isinstance(object_positions, str):
+        return [object_positions]
+    if (
+        isinstance(object_positions, (list, tuple))
+        and object_positions
+        and all(isinstance(item, str) for item in object_positions)
+    ):
+        return list(object_positions)
+    return None
+
+
+def resolve_object_positions(
+    object_positions: Any,
+    *,
+    env: Environment | None,
+    positions: NDArray[np.float64],
+    metric: Literal["euclidean", "geodesic"],
+) -> tuple[NDArray[np.float64], list[str] | None]:
+    """Object coordinates for the egocentric encoders, and their landmark names.
+
+    Parameters
+    ----------
+    object_positions : array-like, str or sequence of str
+        Fixed positions ``(n_objects, 2)`` (or one ``[x, y]``), positions per
+        sample ``(n_time, n_objects, 2)``, or names of ``env.landmarks``.
+    env : Environment or None
+        Holds the landmarks; required for names.
+    positions : ndarray, shape (n_time, 2)
+        The animal's positions, for the nearest point of each landmark.
+    metric : {"euclidean", "geodesic"}
+        Geodesic distance needs fixed object points.
+
+    Returns
+    -------
+    objects : ndarray, shape (n_objects, 2) or (n_time, n_objects, 2)
+        Fixed points when every object is a point; otherwise each object's
+        nearest point at each sample.
+    names : list of str or None
+        The landmark names, in order, or None for coordinates.
+    """
+    names = _landmark_names(object_positions)
+    if names is None:
+        array = np.asarray(object_positions, dtype=np.float64)
+        if array.ndim != 3:
+            return normalize_object_positions(array), None
+        if (
+            array.shape[0] != len(positions)
+            or array.shape[1] == 0
+            or array.shape[2] != 2
+        ):
+            raise ValueError(
+                _format_error(
+                    f"object_positions per sample must have shape (n_time, "
+                    f"n_objects, 2) with n_time={len(positions)}, got {array.shape}.",
+                    fix="give each object's position at every sample, or one "
+                    "fixed position per object as shape (n_objects, 2)",
+                )
+            )
+        if metric == "geodesic":
+            raise ValueError(_moving_geodesic_error())
+        return array, None
+    if env is None:
+        raise ValueError(
+            _format_error(
+                f"object_positions names landmarks {names} but no environment "
+                "was given.",
+                fix="pass the environment that holds the landmarks, or give the "
+                "objects' coordinates",
+            )
+        )
+    landmarks = [env.landmarks[name] for name in names]
+    if any(landmark.n_dims != 2 for landmark in landmarks):
+        raise ValueError("Egocentric encoding needs two-dimensional landmarks.")
+    if all(landmark.kind == "point" for landmark in landmarks):
+        return np.array([landmark.position for landmark in landmarks]), names
+    if metric == "geodesic":
+        raise ValueError(_moving_geodesic_error())
+    return env.landmarks.nearest_points(positions, names), names
+
+
+def _moving_geodesic_error() -> str:
+    return _format_error(
+        "metric='geodesic' needs a fixed position for each object, but these "
+        "objects' nearest points move with the animal (a line or polygon "
+        "landmark, or positions per sample).",
+        why="Why: geodesic distance is computed outward from each object's bin.",
+        fix="use metric='euclidean', or name point landmarks",
+    )
+
+
 def _compute_object_coords(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
@@ -188,8 +281,9 @@ def _compute_object_coords(
         Animal positions in allocentric coordinates.
     headings : ndarray, shape (n_time,)
         Heading at each time (radians, 0=East), or None for allocentric bearing.
-    object_positions : ndarray, shape (n_objects, 2)
-        Object positions in allocentric coordinates.
+    object_positions : ndarray, shape (n_objects, 2) or (n_time, n_objects, 2)
+        Object positions in allocentric coordinates, fixed or per sample.
+        Per-sample positions need the Euclidean metric.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing distance to objects.
     env : Environment, optional
@@ -210,15 +304,14 @@ def _compute_object_coords(
     the nearest object, the second dimension is always 1.
     """
     n_time = len(positions)
-    n_objects = len(object_positions)
+    n_objects = object_positions.shape[-2]
+    # Objects at every sample, shape (n_time or 1, n_objects, 2).
+    targets = object_positions if object_positions.ndim == 3 else object_positions[None]
 
     # Compute distances to all objects
     if metric == "euclidean":
         # distances: (n_time, n_objects)
-        distances_all = np.linalg.norm(
-            positions[:, np.newaxis, :] - object_positions[np.newaxis, :, :],
-            axis=2,
-        )
+        distances_all = np.linalg.norm(targets - positions[:, np.newaxis, :], axis=2)
     else:  # geodesic
         from neurospatial.ops.distance import distance_field as compute_distance_field
 
@@ -254,7 +347,7 @@ def _compute_object_coords(
     # Compute bearings to all objects (egocentric)
     # bearings_all: (n_time, n_objects)
     if headings is None:
-        delta = object_positions[None, :, :] - positions[:, None, :]
+        delta = targets - positions[:, None, :]
         bearings_all = _wrap_bearing(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
     else:
         bearings_all = compute_egocentric_bearing(positions, headings, object_positions)

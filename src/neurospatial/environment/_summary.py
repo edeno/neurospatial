@@ -161,6 +161,7 @@ def _info(
     dimension_ranges: Sequence[tuple[float, float]] | None,
     grid_edges: tuple[NDArray[np.float64], ...] | None,
     region_names: Sequence[str],
+    landmark_names: Sequence[str] = (),
     is_linearized_track: bool,
 ) -> str:
     """Format the multi-line geometry and region summary."""
@@ -247,6 +248,9 @@ def _info(
     else:
         lines.append("Regions: None")
     lines.append("")
+    if landmark_names:
+        lines.append(f"Landmarks: {', '.join(landmark_names)}")
+        lines.append("")
 
     # 1D-specific information
     if is_linearized_track:

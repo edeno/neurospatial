@@ -1222,6 +1222,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- Landmarks: named cues, monitors, objects and reward ports, stored with the
+  environment. `env.with_landmarks(Landmarks([Landmark("monitor", "line",
+  [(10, 100), (90, 100)]), ...]))` attaches them; each is a point, a line or a
+  polygon in the environment's coordinates, may lie outside the arena, and
+  keeps its name across sessions. `env.landmarks.nearest_points(positions)`
+  gives each landmark's nearest point at every sample and
+  `env.landmarks.near(gaze, "monitor", tolerance=2)` tells whether projected
+  gaze lands on it. `subset`, `clip` and `rebin` keep them, `apply_transform`
+  moves them, `combine` prefixes their names, and `to_dict`, `to_file` and
+  NWB save them. The object-vector and egocentric encoding functions accept
+  landmark names as `object_positions` (and per-sample positions,
+  `(n_time, n_objects, 2)`): a monitor is measured from its nearest edge
+  rather than its center, and results record the names in
+  `analysis_settings["objects"]`.
+
 - `Environment.combine` joins components whose bins measure different things,
   such as a corridor built with `linear_track` and the arena it leads into.
   Each bin keeps its own measure; occupancy, rate maps, smoothing within each

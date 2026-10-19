@@ -646,6 +646,30 @@ allocentric.plot()
 egocentric.plot()
 ```
 
+`object_positions` also accepts names of `env.landmarks` (see
+[landmarks](environments.md#landmarks)). A point landmark gives the same map as
+its coordinates. A line or polygon landmark, such as a monitor along a wall,
+is measured from its nearest edge at each sample, so a cell tuned to the
+screen's surface is not smeared by distances to the screen's center. The names
+are kept in `result.analysis_settings["objects"]`.
+
+<!-- docs-test: run -->
+```python
+from neurospatial.encoding import compute_object_vector_rate
+from neurospatial.landmarks import Landmark, Landmarks
+
+(x_low, x_high), (y_low, y_high) = env.dimension_ranges
+screen = Landmark("monitor", "line", [(x_low, y_high), (x_high, y_high)])
+with_screen = env.with_landmarks(Landmarks([screen]))
+by_screen = compute_object_vector_rate(
+    with_screen, spike_times, times, positions, "monitor",
+    distance_range=(0.0, 50.0), n_distance_bins=10, n_direction_bins=12,
+    epochs=(float(times[0]), float(times[-1])),
+    spike_window=(float(times[0]), float(times[-1])),
+)
+print(by_screen.analysis_settings["objects"])
+```
+
 Compare support in the two polar domains before comparing their information
 scores. Polar bin area grows with distance, and occupancy corrects dwell time;
 do not smooth a finished rate map as if it contained counts. A place field near

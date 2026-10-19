@@ -18,7 +18,9 @@ from neurospatial.regions.io import _SCHEMA_TAG as _SCHEMA_TAG
 
 # --- core value objects ---------------------------------
 from .core import Region, Regions
+from .core import _freeze_metadata as _freeze_metadata
 from .core import _snapshot_regions as _snapshot_regions
+from .core import _thaw_metadata as _thaw_metadata
 
 # --- thin adapters --------------------------------------
 from .io import (

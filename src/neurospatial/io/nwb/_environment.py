@@ -38,8 +38,8 @@ def write_environment(
 ) -> None:
     """Store complete bins and Arena using NWB environment schema 3.0.
 
-    Bins, lookup, cell faces, drawing components, graph attributes, regions and
-    coordinate metadata and Arena are saved losslessly. Reading decodes these
+    Bins, lookup, cell faces, drawing components, graph attributes, regions,
+    landmarks, coordinate metadata and Arena are saved losslessly. Reading decodes these
     data without rebuilding a layout. Environment records from schemas 1.0 and
     1.1 are refused.
 
