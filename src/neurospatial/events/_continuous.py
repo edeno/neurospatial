@@ -20,7 +20,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import intervals_contain
-from neurospatial._results import as_label_array, read_only_copy
+from neurospatial._results import (
+    as_label_array,
+    read_only_copy,
+    require_feature_id_sequence,
+)
 
 if TYPE_CHECKING:
     from neurospatial._observation import ObservationSupport
@@ -140,6 +144,7 @@ def _resolve_features(
     if feature_ids is None:
         ids_array = np.arange(n_features)
     else:
+        require_feature_id_sequence(feature_ids, call=call, example="speed")
         ids_array = as_label_array(feature_ids)
     if ids_array.ndim != 1 or len(ids_array) != n_features:
         raise ValueError(

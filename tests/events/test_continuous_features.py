@@ -142,6 +142,19 @@ def test_feature_id_errors():
         _resolve(2, feature_ids=["a", "b", "c"])
 
 
+@pytest.mark.parametrize("feature_ids", ["speed", "s", b"s", 3, np.int64(3)])
+def test_single_label_feature_ids_raise_actionable_error(feature_ids):
+    """A lone label is refused, not split into characters or a bare TypeError."""
+    from neurospatial.events import align_continuous_to_events
+
+    times = np.arange(0.0, 10.0, 0.1)
+    with pytest.raises(ValueError, match="sequence of labels") as err:
+        align_continuous_to_events(
+            times, times, [5.0], (-1.0, 1.0), dt=0.1, feature_ids=feature_ids
+        )
+    assert "feature_ids=['speed']" in str(err.value)
+
+
 def test_spec_arrays_are_read_only_and_frozen():
     spec = _mixed()
     for array in (

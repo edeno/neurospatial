@@ -23,7 +23,12 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, as_label_array
+from neurospatial._results import (
+    ReadOnlyArraysMixin,
+    ResultMixin,
+    as_label_array,
+    require_feature_id_sequence,
+)
 from neurospatial.geometry import (
     CallIndexes,
     locate,
@@ -555,17 +560,7 @@ def _validated_feature_ids(
     """Return one unique label per feature, defaulting to ``arange``."""
     if feature_ids is None:
         return np.arange(n_features)
-    if isinstance(feature_ids, str | bytes) or np.ndim(feature_ids) == 0:
-        raise ValueError(
-            _format_error(
-                f"{call} got feature_ids={feature_ids!r}; it must be a sequence "
-                "of labels, one per feature.",
-                why="A single string or number would be split into characters or "
-                "cannot label each feature.",
-                fix="Pass a list or array, e.g. feature_ids=['height'] for one "
-                "feature.",
-            )
-        )
+    require_feature_id_sequence(feature_ids, call=call, example="height")
     ids = as_label_array(feature_ids)
     if ids.shape != (n_features,):
         raise ValueError(

@@ -77,6 +77,34 @@ def as_label_array(labels: Any) -> NDArray[Any]:
     return array
 
 
+def require_feature_id_sequence(feature_ids: Any, *, call: str, example: str) -> None:
+    """Refuse a lone string, bytes or scalar where one label per feature is needed.
+
+    ``list("speed")`` would split a string into characters, and a number is
+    not iterable at all.
+
+    Parameters
+    ----------
+    feature_ids : Any
+        The caller's ``feature_ids`` argument (not ``None``).
+    call : str
+        Calling function's name, for the message.
+    example : str
+        One plausible label, shown in the fix (e.g. ``"speed"``).
+    """
+    if isinstance(feature_ids, str | bytes) or np.ndim(feature_ids) == 0:
+        raise ValueError(
+            _format_error(
+                f"{call} got feature_ids={feature_ids!r}; it must be a sequence "
+                "of labels, one per feature.",
+                why="A single string or number would be split into characters or "
+                "cannot label each feature.",
+                fix=f"Pass a list or array, e.g. feature_ids=[{example!r}] for one "
+                "feature.",
+            )
+        )
+
+
 def label_at(unit_ids: Any, index: int) -> Any:
     """Return one label as a plain Python value, whatever the array's dtype."""
     value = np.asarray(unit_ids)[index]
