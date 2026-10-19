@@ -41,12 +41,22 @@ class TestTraveledPathLength:
 
         assert_allclose(length, 50.0, rtol=1e-12)
 
-    def test_malformed_input_raises_domain_error(self):
-        """Non-numeric positions raise a domain error, never AttributeError."""
+    @pytest.mark.parametrize(
+        "positions",
+        [[[0.0, 1.0], [2.0], [3.0, 4.0]], [["a", "b"], ["c", "d"], ["e", "f"]]],
+        ids=["ragged", "strings"],
+    )
+    def test_malformed_input_raises_domain_error(self, positions):
+        """Ragged or non-numeric positions get the validator's what/why/fix."""
         from neurospatial.behavior.navigation import traveled_path_length
 
-        with pytest.raises((ValueError, TypeError)):
-            traveled_path_length([0.0, 0.1, 0.2], [[0.0, 1.0], [2.0], [3.0, 4.0]])
+        with pytest.raises(
+            ValueError,
+            match=r"(?s)Invalid times/positions passed to traveled_path_length\(\):"
+            r"\n- positions must contain numeric values convertible to float64.*"
+            r"\nWhy: .*\nFix: pass times as a sorted 1-D array",
+        ):
+            traveled_path_length([0.0, 0.1, 0.2], positions)
 
     def test_one_dimensional_positions_are_one_coordinate(self):
         """A 1-D array is one coordinate (for example a linearized track)."""
@@ -68,7 +78,10 @@ class TestTraveledPathLength:
     def test_unknown_metric_raises(self):
         from neurospatial.behavior.navigation import traveled_path_length
 
-        with pytest.raises(ValueError, match="metric"):
+        with pytest.raises(
+            ValueError,
+            match=r"got metric='manhattan'; it must be .*\n.*\nFix: use metric='euclidean'",
+        ):
             traveled_path_length(
                 np.array([0.0, 0.1]), np.zeros((2, 2)), metric="manhattan"
             )
@@ -465,5 +478,9 @@ class TestErrorHandling:
 
         positions = np.array([]).reshape(0, 2)
 
-        with pytest.raises(ValueError, match="positions array is empty"):
+        with pytest.raises(
+            ValueError,
+            match=r"traveled_path_length\(\) got no samples: times and positions "
+            r"are empty",
+        ):
             traveled_path_length(np.array([]), positions)

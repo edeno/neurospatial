@@ -5,8 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from neurospatial import behavior
 from neurospatial._observation import (
     ObservationSupport,
+    resolve_observation_support,
     validate_break_before,
     validate_max_gap,
     validated_observations,
@@ -131,7 +133,14 @@ def test_validate_break_before_none_and_valid():
 
 @pytest.mark.parametrize("n", [0, 1])
 def test_zero_and_one_sample(n):
-    s = _support(np.arange(n) * 0.1)
+    s = resolve_observation_support(
+        np.arange(n) * 0.1,
+        np.zeros((n, 2)),
+        max_gap=0.5,
+        epochs=None,
+        break_before=None,
+        result="r",
+    )
     assert s.interval_mask.shape == (0,)
     np.testing.assert_array_equal(s.run_ids, np.full(n, -1))
     assert s.run_sample_bounds.shape == (0, 2)
@@ -164,3 +173,24 @@ def test_arrays_are_read_only():
     ):
         with pytest.raises(ValueError, match="read-only"):
             getattr(s, name)[...] = 0
+
+
+@pytest.mark.parametrize(
+    ("name", "kwargs"),
+    [
+        ("compute_cumulative_distance", {}),
+        ("traveled_path_length", {}),
+        ("resample_by_distance", {"spacing": 1.0}),
+        ("compute_planar_turn_angles", {}),
+        ("compute_planar_curvature", {}),
+        ("compute_movement_angular_velocity", {}),
+    ],
+)
+def test_empty_input_raises_actionable_error(name, kwargs):
+    with pytest.raises(ValueError) as excinfo:
+        getattr(behavior, name)(np.array([]), np.zeros((0, 2)), **kwargs)
+    what, why, fix = str(excinfo.value).split("\n")
+    assert what == f"{name}() got no samples: times and positions are empty."
+    assert why == "there is no observation to measure."
+    assert fix.startswith("Fix: pass at least one sample")
+    assert "epoch or trial selection" in fix

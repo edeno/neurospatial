@@ -160,8 +160,25 @@ def validated_observations(
     positions : ndarray, shape (n_samples, n_dims)
         1-D input is reshaped to ``(n_samples, 1)``.
     support : ObservationSupport
+
+    Raises
+    ------
+    ValueError
+        If the inputs are malformed or empty (zero samples). One sample is
+        valid input: it has a position but no observed interval.
     """
     t, p = validate_times_positions(times, positions, call=call)
+    if t.size == 0:
+        raise ValueError(
+            _format_error(
+                f"{call}() got no samples: times and positions are empty.",
+                why="there is no observation to measure.",
+                fix=(
+                    "pass at least one sample; if the arrays came from an epoch or "
+                    "trial selection, check that the selection kept any samples."
+                ),
+            )
+        )
     validate_strictly_increasing(t, call=call)
     if p.ndim == 1:
         p = p[:, None]

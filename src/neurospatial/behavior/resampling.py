@@ -290,9 +290,10 @@ def resample_by_distance(
     ------
     ValueError
         If ``spacing`` is not a positive finite number, ``times`` and
-        ``positions`` are swapped or misaligned, ``times`` is not strictly
-        increasing, ``max_gap`` is not positive and finite or ``None``, or
-        ``break_before`` is not a Boolean array with one entry per sample.
+        ``positions`` are empty, swapped or misaligned, ``times`` is not
+        strictly increasing, ``max_gap`` is not positive and finite or
+        ``None``, or ``break_before`` is not a Boolean array with one entry per
+        sample.
 
     Notes
     -----

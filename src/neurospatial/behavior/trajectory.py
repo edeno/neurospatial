@@ -510,9 +510,10 @@ def compute_planar_turn_angles(
     ------
     ValueError
         If ``positions`` does not have exactly two columns, ``times`` and
-        ``positions`` are swapped or misaligned, ``times`` is not strictly
-        increasing, ``max_gap`` is not positive and finite or ``None``, or
-        ``break_before`` is not a Boolean array with one entry per sample.
+        ``positions`` are empty, swapped or misaligned, ``times`` is not
+        strictly increasing, ``max_gap`` is not positive and finite or
+        ``None``, or ``break_before`` is not a Boolean array with one entry per
+        sample.
 
     Notes
     -----
@@ -620,9 +621,10 @@ def compute_planar_curvature(
     ------
     ValueError
         If ``positions`` does not have exactly two columns, ``times`` and
-        ``positions`` are swapped or misaligned, ``times`` is not strictly
-        increasing, ``max_gap`` is not positive and finite or ``None``, or
-        ``break_before`` is not a Boolean array with one entry per sample.
+        ``positions`` are empty, swapped or misaligned, ``times`` is not
+        strictly increasing, ``max_gap`` is not positive and finite or
+        ``None``, or ``break_before`` is not a Boolean array with one entry per
+        sample.
 
     Notes
     -----
@@ -747,9 +749,10 @@ def compute_movement_angular_velocity(
     ------
     ValueError
         If ``positions`` does not have exactly two columns, ``times`` and
-        ``positions`` are swapped or misaligned, ``times`` is not strictly
-        increasing, ``max_gap`` is not positive and finite or ``None``, or
-        ``break_before`` is not a Boolean array with one entry per sample.
+        ``positions`` are empty, swapped or misaligned, ``times`` is not
+        strictly increasing, ``max_gap`` is not positive and finite or
+        ``None``, or ``break_before`` is not a Boolean array with one entry per
+        sample.
 
     Notes
     -----
@@ -1051,10 +1054,10 @@ def compute_cumulative_distance(
     Raises
     ------
     ValueError
-        If ``times`` and ``positions`` are swapped or misaligned, ``times`` is
-        not strictly increasing, ``max_gap`` is not positive and finite or
-        ``None``, or ``break_before`` is not a Boolean array with one entry per
-        sample.
+        If ``times`` and ``positions`` are empty, swapped or misaligned,
+        ``times`` is not strictly increasing, ``max_gap`` is not positive and
+        finite or ``None``, or ``break_before`` is not a Boolean array with one
+        entry per sample.
 
     Notes
     -----

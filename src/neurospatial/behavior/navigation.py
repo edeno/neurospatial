@@ -115,6 +115,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _positive_dt
@@ -1431,19 +1432,24 @@ def traveled_path_length(
 
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"metric must be 'euclidean' or 'geodesic', got {metric!r}. "
-            "Use metric='euclidean' for straight-line distances."
+            _format_error(
+                f"traveled_path_length() got metric={metric!r}; it must be "
+                "'euclidean' or 'geodesic'.",
+                why=(
+                    "path length is summed either along straight lines or along "
+                    "the environment's connectivity graph."
+                ),
+                fix=(
+                    "use metric='euclidean' for straight-line distances, or "
+                    "metric='geodesic' with env= to respect barriers."
+                ),
+            )
         )
     if metric == "geodesic" and env is None:
         raise ValueError(
             "env parameter is required when metric='geodesic'. "
             "Provide the Environment instance, or use metric='euclidean' "
             "for straight-line distances."
-        )
-    if np.asarray(positions, dtype=float).size == 0:
-        raise ValueError(
-            "Cannot compute path length: positions array is empty. "
-            "Provide at least 2 positions to compute path length."
         )
 
     _, positions_arr, support = validated_observations(
