@@ -41,49 +41,6 @@ OPT_IN = (
     "docs/migration/environment-architecture.md",
 )
 SETUPS = {
-    "docs_behavior_around_reward": """import numpy as np
-from shapely.geometry import box
-
-from neurospatial import Environment
-from neurospatial.behavior import compute_speed
-from neurospatial.ops import heading_from_velocity, nearest_boundary, sample_spatial_features
-
-rng = np.random.default_rng(0)
-
-# 120 s of tracking at 30 Hz in a 100 x 100 cm box
-times = np.arange(0.0, 120.0, 1 / 30)  # s
-lap = (times // 8).astype(int)  # one 8 s lap: west wall -> reward port -> west wall
-lateral = rng.uniform(-10.0, 10.0, size=lap.max() + 1)  # cm, each lap's sideways bend
-x = 50.0 - 40.0 * np.cos(2 * np.pi * times / 8)
-y = 50.0 + lateral[lap] * np.sin(np.pi * times / 8) ** 2
-positions = np.column_stack([x, y])  # cm
-reward_times = np.arange(4.0, 120.0, 8.0)  # s, each arrival at the port (x = 90 cm)
-
-# The tracker lost the animal for 0.8 s around one reward: drop those frames
-lost = (times > 35.6) & (times < 36.4)
-times, positions = times[~lost], positions[~lost]
-print(f"{lost.sum()} frames dropped; {times.size} frames kept; {reward_times.size} rewards")
-
-env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
-
-# Behavioral features, one value per frame
-speed = compute_speed(times, positions)  # cm/s
-heading = heading_from_velocity(times, positions, min_speed=2.0)  # rad, 0 = East
-wall_distance, _ = nearest_boundary(env, positions)  # cm
-texture_map = np.where(env.bin_centers[:, 0] < 50, 0, 1).astype(float)  # 0 smooth, 1 rough
-texture = sample_spatial_features(env, texture_map, positions, feature_ids=["texture"])
-
-# heading_from_velocity fills slow frames by interpolation; they are not observations
-heading_observed = speed >= 2.0
-
-for t in (11.0, 12.0, 13.0):  # 1 s before, at, and 1 s after the second reward
-    i = np.argmin(np.abs(times - t))
-    print(
-        f"t = {t:4.1f} s: speed {speed[i]:4.1f} cm/s, heading {heading[i]:5.2f} rad "
-        f"(observed: {heading_observed[i]}), wall {wall_distance[i]:4.1f} cm, "
-        f"texture code {texture.values[i, 0]:.0f}"
-    )
-""",
     "docs_animation_quick_start": """import os
 import numpy as np
 os.environ["MPLBACKEND"] = "Agg"
@@ -230,6 +187,14 @@ def collect_blocks(text: str, path: str) -> list[DocBlock]:
             )
         )
     return blocks
+
+
+# Later blocks of the guide continue from its first block; reading that block
+# from the document keeps the setup identical to what readers run.
+_BEHAVIOR_GUIDE = "docs/user-guide/behavior-around-events.md"
+SETUPS["docs_behavior_around_reward"] = collect_blocks(
+    (ROOT / _BEHAVIOR_GUIDE).read_text(encoding="utf-8"), _BEHAVIOR_GUIDE
+)[0].code
 
 
 def _fixture_namespace() -> dict[str, object]:
