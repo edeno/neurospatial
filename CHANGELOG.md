@@ -1744,6 +1744,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `detect_assemblies` orients each ICA and PCA pattern so its largest-magnitude
+  weight is positive, and flips its activation with it. Before, the sign was
+  arbitrary, so an assembly's members could have negative weights and
+  `assembly_activation` could drop below zero during that assembly's events.
 - `plot_population_coverage` draws 1-D environments, such as the one from
   `linear_track_session`, as a line with a vertical mark at each gap. Before,
   it raised `IndexError` when any bin was uncovered. On a track built from a

@@ -308,6 +308,75 @@ class TestDetectAssemblies:
         assert len(result.patterns) >= 1
 
 
+class TestPatternSign:
+    """Patterns are oriented so an assembly's events give positive activation."""
+
+    @pytest.fixture
+    def planted_events(self) -> tuple[np.ndarray, list[np.ndarray], np.ndarray]:
+        """Three 5-cell assemblies, each co-firing in its own 150 event bins.
+
+        Returns counts ``(n_time_bins, n_neurons)``, the member indices of each
+        assembly and a ``(3, n_time_bins)`` mask of each assembly's events.
+        Without a sign convention, this seed gives negative largest weights
+        for both ICA and PCA patterns.
+        """
+        rng = np.random.default_rng(1)
+        n_time, n_neurons = 3000, 30
+        counts = rng.poisson(1.0, (n_time, n_neurons)).astype(np.float64)
+        members = [np.arange(0, 5), np.arange(10, 15), np.arange(20, 25)]
+        events = np.zeros((3, n_time), dtype=bool)
+        for k, cells in enumerate(members):
+            events[k, rng.choice(n_time, 150, replace=False)] = True
+            counts[np.ix_(events[k], cells)] += rng.poisson(
+                4.0, (int(events[k].sum()), cells.size)
+            )
+        return counts, members, events
+
+    @pytest.mark.parametrize("algorithm", ["ica", "pca"])
+    def test_largest_weight_positive_and_events_activate(
+        self,
+        planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray],
+        algorithm: str,
+    ) -> None:
+        counts, members, events = planted_events
+        result = detect_assemblies(counts, algorithm=algorithm, rng=0)
+        assert result.n_significant == 3
+
+        for k, pattern in enumerate(result.patterns):
+            largest = int(np.argmax(np.abs(pattern.weights)))
+            assert pattern.weights[largest] > 0
+            # The assembly holding the largest weight is active in its events.
+            (assembly,) = [a for a, cells in enumerate(members) if largest in cells]
+            in_event = events[assembly]
+            activation = assembly_activation(counts, pattern)
+            assert activation[in_event].mean() > 2.0
+            assert result.activations[k][in_event].mean() > 0.0
+
+    def test_ica_members_have_positive_weights(
+        self, planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray]
+    ) -> None:
+        counts, members, _ = planted_events
+        result = detect_assemblies(counts, algorithm="ica", rng=0)
+        recovered = sorted(p.member_indices.tolist() for p in result.patterns)
+        assert recovered == [cells.tolist() for cells in members]
+        for pattern in result.patterns:
+            assert np.all(pattern.weights[pattern.member_indices] > 0)
+
+    @pytest.mark.parametrize("algorithm", ["ica", "pca"])
+    def test_flip_keeps_activations_consistent(
+        self,
+        planted_events: tuple[np.ndarray, list[np.ndarray], np.ndarray],
+        algorithm: str,
+    ) -> None:
+        """Flipping a pattern flips its activation: weights @ z == activations."""
+        from scipy.stats import zscore
+
+        counts, _, _ = planted_events
+        result = detect_assemblies(counts, algorithm=algorithm, rng=0)
+        weights = np.array([pattern.weights for pattern in result.patterns])
+        assert_allclose(weights @ zscore(counts, axis=0).T, result.activations)
+
+
 # =============================================================================
 # Tests for assembly_activation
 # =============================================================================
