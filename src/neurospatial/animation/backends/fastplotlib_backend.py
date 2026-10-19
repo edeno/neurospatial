@@ -71,6 +71,20 @@ _MARKERS = {
 }
 
 
+def _marker(code: str) -> str:
+    """A Matplotlib marker code as a pygfx marker; circles, with a warning, if none."""
+    marker = _MARKERS.get(code)
+    if marker is None:
+        warnings.warn(
+            f"The fastplotlib backend has no marker {code!r}; drawing circles. "
+            f"Use one of {sorted(_MARKERS)}.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        return "circle"
+    return marker
+
+
 def _rgba(color: str) -> NDArray[np.float32]:
     from matplotlib.colors import to_rgba
 
@@ -163,7 +177,7 @@ class _HeadDirection:
         self.data, self.anchor, self.center = data, anchor, center
         self.line = subplot.add_line(
             xyz(np.full((2, 2), np.nan)),
-            colors=np.ones((2, 4), dtype=np.float32),
+            colors="w",
             thickness=data.width,
         )
 
@@ -176,7 +190,7 @@ class _HeadDirection:
         if np.all(np.isfinite(segment)):
             direction = segment[1] - segment[0]
             color = _head_direction_color(self.data.color, direction)
-            self.line.colors = np.tile(np.asarray(color, dtype=np.float32), (2, 1))
+            self.line.colors = color
 
 
 def heading_segment(
@@ -231,7 +245,7 @@ class _Events:
                 xyz(positions),
                 colors=fill,
                 sizes=data.size,
-                markers=_MARKERS.get(data.markers.get(name, "o"), "circle"),
+                markers=_marker(data.markers.get(name, "o")),
                 edge_colors=border,
                 edge_width=data.border_width * data.size,  # a fraction of the size
                 alpha_mode="blend",
@@ -414,8 +428,11 @@ class FastplotlibAnimation:
         """Stop playing."""
         self._playing = False
 
-    def _advance(self) -> None:
-        """Move to the frame the playback clock has reached."""
+    def _advance(self, figure: Any = None) -> None:
+        """Move to the frame the playback clock has reached.
+
+        fastplotlib calls an animation function with the figure.
+        """
         if not self._playing:
             return
         started, first = self._clock

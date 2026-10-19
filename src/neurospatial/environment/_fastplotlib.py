@@ -136,6 +136,20 @@ class ColorScale:
         colors = colormap(np.linspace(0.0, 1.0, _N_COLORS))
         return np.vstack([to_rgba(missing), colors]).astype(np.float32)
 
+    @cached_property
+    def texture(self) -> Any:
+        """``lut`` as a texture sampled at the nearest row, never blended.
+
+        Passed as a ready texture, pygfx uses it as it is; as an array, pygfx
+        resamples any table that does not have exactly 256 rows, which would
+        blend the missing color into the colormap's low end.
+        """
+        import pygfx
+
+        return pygfx.TextureMap(
+            pygfx.Texture(self.lut, dim=1), filter="nearest", wrap="clamp"
+        )
+
     def scaled(self, values: NDArray[np.float64]) -> NDArray[np.float64]:
         """``values`` mapped onto [0, 1] by the limits; NaN stays NaN."""
         span = (self.vmax - self.vmin) or 1.0
@@ -352,7 +366,7 @@ class FieldGraphic:
         if cells is not None:
             style = {
                 "mapcoords": self._coordinates(values),
-                "cmap": scale.lut,
+                "cmap": scale.texture,
                 "clim": (0.0, 1.0),
             }
         else:
@@ -393,10 +407,15 @@ def _area(subplot: Any, polygon: Any, color: str, alpha: float) -> None:
     corners, _ = _triangles([polygon])
     cells = _fans(corners, 3)
     subplot.add_mesh(
-        cells.positions, cells.triangles, mode="basic", colors=color, alpha=alpha
+        cells.positions,
+        cells.triangles,
+        mode="basic",
+        colors=color,
+        alpha=alpha,
+        alpha_mode="blend",
     )
     rings = [polygon.exterior.coords, *(ring.coords for ring in polygon.interiors)]
-    subplot.add_line(polylines(rings), colors=color, thickness=2)
+    subplot.add_line(polylines(rings), colors=color, thickness=2, alpha_mode="blend")
 
 
 def draw_walls(subplot: Any, env: Environment) -> None:
@@ -462,6 +481,7 @@ def draw_connections(subplot: Any, env: Environment) -> None:
         colors="#555555",
         thickness=1,
         alpha=0.6,
+        alpha_mode="blend",
     )
 
 
@@ -501,7 +521,7 @@ def draw_colorbar(subplot: Any, scale: ColorScale, label: str) -> None:
         bar.triangles,
         mode="basic",
         mapcoords=np.array([bottom, bottom, top, top], dtype=np.float32),
-        cmap=scale.lut,
+        cmap=scale.texture,
         clim=(0.0, 1.0),
     )
     # Limits above and below the bar, where a long number has the bar's width.

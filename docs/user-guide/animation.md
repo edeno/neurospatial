@@ -672,7 +672,11 @@ jupyter lab --no-browser --port 8888
 ssh -N -L 8888:localhost:8888 user@server
 ```
 
-VS Code's remote Jupyter works the same way. To save a picture without a
+VS Code's remote Jupyter works the same way. A Jupyter server started from
+an SSH shell inherits `SSH_CLIENT`, and rendercanvas then tries its terminal
+canvas first and warns "could not load some backends" before falling back to
+the notebook canvas; start Jupyter with `RENDERCANVAS_BACKEND=anywidget` to go
+straight to it. To save a picture without a
 browser, set `RENDERCANVAS_FORCE_OFFSCREEN=1` before importing fastplotlib and
 read `figure.canvas.draw()` as an RGBA array.
 
