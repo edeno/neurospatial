@@ -1219,6 +1219,23 @@ def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
     )
 
 
+def test_timestamp_jitter_is_not_a_gap(apparatus):
+    times = np.array([0.0, 0.1, 0.21, 0.31, 2.0, 2.1])  # jitter, then a real gap
+    path = np.c_[np.linspace(5, 30, 6), np.full(6, 20.0)]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        animation = apparatus.animate_fields(
+            np.zeros((3, apparatus.n_bins)),
+            frame_times=np.array([0.0, 1.0, 2.0]),
+            backend="fastplotlib",
+            overlays=[PositionOverlay(positions=path, times=times)],
+        )
+    clock = animation._layers[0].clock
+    assert clock.at(0.205) == 1  # held through 10 ms of jitter
+    assert clock.at(0.30) == 2
+    assert clock.at(1.0) == -1  # but not through 1.7 s without tracking
+
+
 def test_every_field_with_a_video_stands_upright(apparatus, walk, video):
     t, _, fields = walk
     frames, calibration = video

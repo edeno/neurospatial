@@ -100,12 +100,30 @@ def _rgba(color: str) -> NDArray[np.float32]:
     return np.asarray(to_rgba(color), dtype=np.float32)
 
 
+# An interval longer than this many typical intervals is a gap in the
+# samples; shorter ones, timestamp jitter or a dropped sample, are not.
+_GAP = 2.0
+
+
+def held_until(times: NDArray[np.float64], typical: float) -> NDArray[np.float64]:
+    """When each sample stops being shown: at the next sample, or, across a
+    gap (an interval over ``_GAP`` typical ones), one typical interval on.
+
+    So ordinary jitter in the timestamps never blanks a sample, and a real
+    gap in the recording stays empty.
+    """
+    intervals = np.diff(times, append=np.inf)
+    held: NDArray[np.float64] = np.where(intervals > _GAP * typical, typical, intervals)
+    return times + held
+
+
 class _Samples:
     """Which row of an overlay the slider's time shows.
 
     Rows aligned to the animation's frames follow the field. Rows with times
     of their own are each shown from their time until the next, or for one
-    typical interval at a gap, and none before the first.
+    typical interval across a gap (see ``held_until``), and none before the
+    first.
     """
 
     def __init__(
@@ -120,9 +138,7 @@ class _Samples:
         if self.times is not None:
             intervals = np.diff(self.times)
             typical = float(np.median(intervals)) if len(intervals) else np.inf
-            self.ends = self.times + np.minimum(
-                np.diff(self.times, append=np.inf), typical
-            )
+            self.ends = held_until(self.times, typical)
 
     def at(self, time: float) -> int:
         """The row shown at ``time`` on the clock; -1 for none."""
@@ -532,8 +548,8 @@ class _PositionTime:
     """A track's fields over time: a column per frame, a row per bin.
 
     A column starts at its frame's time and lasts until the next frame, as
-    the field panel holds it, or one typical frame interval at a gap, which
-    stays empty. Rows span each bin along the track. Positions are drawn as
+    the field panel holds it, or one typical frame interval across a gap
+    (see ``held_until``), which stays empty. Rows span each bin along the track. Positions are drawn as
     lines along the track, every sample of their own, broken where the
     samples change segment of a maze or leave a gap in time, so no line
     crosses space or time that was not seen.
@@ -554,7 +570,7 @@ class _PositionTime:
         self.subplot, self.scale, self.clock, self.start = subplot, scale, clock, start
         self.lower, self.upper = extents
         self.typical = float(np.median(np.diff(clock))) if len(clock) > 1 else 1.0
-        self.ends = clock + np.minimum(np.diff(clock, append=np.inf), self.typical)
+        self.ends = held_until(clock, self.typical)
         labels = env._plot_labels()
         self.axis = "position along track" + (
             f" ({labels.units})" if labels.units else ""
@@ -606,10 +622,10 @@ class _PositionTime:
         for graphic in [self.mesh, *self.lines]:
             if graphic is not None:
                 self.subplot.delete_graphic(graphic)
-        # Columns a window can hold: frames starting less than one typical
-        # interval before it, up to its end.
+        # Columns a window can hold: frames starting less than one hold
+        # (at most _GAP times the typical interval) before it, up to its end.
         reach = np.searchsorted(
-            self.clock, self.clock + window + self.typical, side="right"
+            self.clock, self.clock + window + _GAP * self.typical, side="right"
         )
         self.n_columns = int(np.max(reach - np.arange(len(self.clock))))
         quads = _fans(np.zeros((4 * self.n_columns * len(self.lower), 2)), 4)

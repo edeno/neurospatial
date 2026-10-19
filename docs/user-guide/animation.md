@@ -414,7 +414,9 @@ Position, pose, head direction, object vectors and video each move at their
 own sampling rate when given their own `times`, so a field shown once a
 second (a rate map per lap, say) does not freeze 30 Hz tracking or the camera
 between frames. Each sample is shown from its time until the next, or for one
-typical interval at a gap, and nothing is drawn before an overlay's first
+typical interval across a gap (an interval more than twice the typical one;
+timestamp jitter and a dropped sample are not gaps), and nothing is drawn
+before an overlay's first
 sample or after its last. A trail spans the time of its last `trail_length`
 animation frames. Overlays without `times` follow the field's frames, as in
 the other backends.
@@ -473,8 +475,8 @@ own samples, so nothing is drawn between the confident ones.
 Each position overlay is drawn as a line along the track. A column starts at
 its frame's time and lasts until the next frame, as the field panel holds it,
 so the cursor always sits in the column the field panel shows; across a
-recording gap the column ends after one typical frame interval and the gap
-stays empty. On a track built from several segments, the spacing between them
+recording gap (an interval more than twice the typical one) the column ends
+after one typical frame interval and the gap stays empty. On a track built from several segments, the spacing between them
 (`edge_spacing`) stays empty too, lines mark where segments meet, and each
 segment is named by its nodes ("center–left") at the right of the panel, so a
 W-track or T-maze posterior can be read by arm. Hovering over a cell shows its time,
