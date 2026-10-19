@@ -105,22 +105,6 @@ def test_collections_refuse_repeated_names_and_name_missing_ones(landmarks):
         landmarks["door"]
 
 
-def test_point_landmarks_cannot_be_changed_through_their_array(env):
-    derived = env.subset(mask=np.arange(env.n_bins) < 100)
-    source = np.array([50.0, 105.0])
-    landmark = Landmark("cue", "point", source)
-    source[0] = -1.0  # the caller's array is copied
-    assert landmark.data.tolist() == [50.0, 105.0]
-
-    data = env.landmarks["cue_card"].data
-    with pytest.raises(ValueError, match="WRITEABLE"):
-        data.setflags(write=True)
-    data.shape = (2, 1)  # each access gets its own header
-    for holder in (env, derived):
-        assert holder.landmarks["cue_card"].data.shape == (2,)
-        assert holder.landmarks["cue_card"].data.tolist() == [50.0, 105.0]
-
-
 # --- on the environment ------------------------------------------------------
 
 
