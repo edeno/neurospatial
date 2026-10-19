@@ -82,6 +82,31 @@
   was observed; a single sample used to give `angular_efficiency = 1.0`.
   `times` must be strictly increasing, and empty input raises.
 
+- `extract_pre_decision_window` returns `(times, positions)`, times first like
+  every other behavior function.
+
+  ```python
+  # before
+  window_positions, window_times = extract_pre_decision_window(times, positions, entry, 1.0)
+  # after
+  window_times, window_positions = extract_pre_decision_window(times, positions, entry, 1.0)
+  ```
+
+  The decision analyses (`extract_pre_decision_window`,
+  `pre_decision_speed_stats`, `pre_decision_heading_stats`,
+  `compute_pre_decision_metrics`, `detect_boundary_crossings` and
+  `compute_decision_analysis`) now follow the same observation rule as
+  `traveled_path_length` and take `break_before` for joined recordings: the
+  pre-decision window never reaches back across a declared break, and no
+  speed, heading or boundary crossing spans one. A `NaN` row is a missing
+  sample: it stays in the pre-decision window as a missing row instead of
+  cutting the window short, and the statistics use only the observed samples.
+  `pre_decision_heading_stats` and `compute_pre_decision_metrics` no longer
+  raise on a `NaN` row. `PreDecisionMetrics.n_samples` counts the observed
+  samples in the window, and `window_duration` runs from the first to the
+  last of them. Repeated timestamps and empty input raise in all six
+  functions. Recordings without missing rows give the same values as before.
+
 - `heading_direction_labels` takes `times` before `positions`, like every
   other behavior function. The old order raises an error that names the swap.
 

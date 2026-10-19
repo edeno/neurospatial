@@ -197,7 +197,7 @@ class TestExtractPreDecisionWindow:
         times = np.linspace(0, 10, 100)
 
         # Extract 2-second window before entry at t=5
-        window_pos, window_times = extract_pre_decision_window(
+        window_times, window_pos = extract_pre_decision_window(
             times, positions, entry_time=5.0, window_duration=2.0
         )
 
@@ -214,7 +214,7 @@ class TestExtractPreDecisionWindow:
         times = np.linspace(0, 5, 50)
 
         # Request 3-second window before t=1 (extends before t=0)
-        window_pos, window_times = extract_pre_decision_window(
+        window_times, window_pos = extract_pre_decision_window(
             times, positions, entry_time=1.0, window_duration=3.0
         )
 
@@ -808,3 +808,261 @@ def test_goal_regions_are_represented_by_their_centroid_bin():
         result.boundary.distance_to_boundary,
         distance_to_decision_boundary(env, env.bin_at(positions), goals),
     )
+
+
+# =============================================================================
+# Missing samples, declared breaks and strict clocks
+# =============================================================================
+
+
+@pytest.fixture
+def eastward_path():
+    """3 s of a 10 cm/s eastward run sampled at 10 Hz."""
+    times = np.arange(30) / 10
+    positions = np.column_stack([10 * times, np.zeros(30)])
+    return times, positions
+
+
+def test_pre_decision_window_returns_times_first(eastward_path):
+    from neurospatial.behavior import extract_pre_decision_window
+
+    times, positions = eastward_path
+    window_times, window_positions = extract_pre_decision_window(
+        times, positions, entry_time=2.0, window_duration=1.0
+    )
+    np.testing.assert_array_equal(window_times, times[10:20])
+    np.testing.assert_array_equal(window_positions, positions[10:20])
+
+
+def test_pre_decision_window_starts_at_declared_break(eastward_path):
+    from neurospatial.behavior import extract_pre_decision_window
+
+    times, positions = eastward_path
+    break_before = np.zeros(30, dtype=bool)
+    break_before[18] = True
+    window_times, window_positions = extract_pre_decision_window(
+        times, positions, 2.0, 1.0, break_before=break_before
+    )
+    np.testing.assert_array_equal(window_times, times[18:20])
+    np.testing.assert_array_equal(window_positions, positions[18:20])
+
+
+def test_pre_decision_window_keeps_missing_row(eastward_path):
+    """A lost frame stays in the window as a missing row instead of cutting it."""
+    from neurospatial.behavior import extract_pre_decision_window
+
+    times, positions = eastward_path
+    positions = positions.copy()
+    positions[15] = np.nan
+    window_times, window_positions = extract_pre_decision_window(
+        times, positions, 2.0, 1.0
+    )
+    np.testing.assert_array_equal(window_times, times[10:20])
+    assert np.isnan(window_positions[5]).all()
+    np.testing.assert_array_equal(
+        np.delete(window_positions, 5, axis=0), np.delete(positions[10:20], 5, axis=0)
+    )
+
+
+def test_pre_decision_heading_stats_skip_missing_row(eastward_path):
+    from neurospatial.behavior import pre_decision_heading_stats
+
+    times, positions = eastward_path
+    positions = positions.copy()
+    positions[15] = np.nan
+    np.testing.assert_allclose(
+        pre_decision_heading_stats(times, positions, min_speed=1.0),
+        (0.0, 0.0, 1.0),
+        atol=1e-12,
+    )
+
+
+def test_pre_decision_speed_stats_do_not_span_declared_break():
+    """Two 10 cm/s recordings 50 cm apart on one clock: the jump is not speed."""
+    from neurospatial.behavior import pre_decision_speed_stats
+
+    times = np.arange(40) / 10
+    x = np.r_[10 * times[:20], 10 * times[20:] + 50.0]
+    positions = np.column_stack([x, np.zeros(40)])
+    break_before = np.zeros(40, dtype=bool)
+    break_before[20] = True
+    mean_speed, min_speed = pre_decision_speed_stats(
+        times, positions, break_before=break_before
+    )
+    np.testing.assert_allclose([mean_speed, min_speed], [10.0, 10.0], atol=1e-9)
+    undeclared_mean, _ = pre_decision_speed_stats(times, positions)
+    assert undeclared_mean > 10.0
+
+
+def test_pre_decision_metrics_count_observed_samples():
+    from neurospatial.behavior import compute_pre_decision_metrics
+
+    times = np.arange(50) / 10
+    positions = np.column_stack([10 * times, np.zeros(50)])
+    positions[[22, 27, 33]] = np.nan
+    metrics = compute_pre_decision_metrics(
+        times, positions, entry_time=4.0, window_duration=2.0, min_speed=1.0
+    )
+    # The window holds samples 20..39 (20 rows), 3 of them missing.
+    assert metrics.n_samples == 17
+    assert metrics.window_duration == pytest.approx(times[39] - times[20])
+    np.testing.assert_allclose(metrics.mean_speed, 10.0, atol=1e-9)
+    np.testing.assert_allclose(metrics.heading_mean_resultant_length, 1.0, atol=1e-12)
+
+
+def test_pre_decision_metrics_window_duration_spans_observed_samples():
+    from neurospatial.behavior import compute_pre_decision_metrics
+
+    times = np.arange(50) / 10
+    positions = np.column_stack([10 * times, np.zeros(50)])
+    positions[[20, 39]] = np.nan  # first and last window rows lost
+    metrics = compute_pre_decision_metrics(
+        times, positions, entry_time=4.0, window_duration=2.0, min_speed=1.0
+    )
+    assert metrics.n_samples == 18
+    assert metrics.window_duration == pytest.approx(times[38] - times[21])
+
+
+def test_pre_decision_metrics_follow_declared_break():
+    from neurospatial.behavior import compute_pre_decision_metrics
+
+    times = np.arange(50) / 10
+    positions = np.column_stack([10 * times, np.zeros(50)])
+    break_before = np.zeros(50, dtype=bool)
+    break_before[30] = True
+    with_break = compute_pre_decision_metrics(
+        times,
+        positions,
+        entry_time=4.0,
+        window_duration=2.0,
+        min_speed=1.0,
+        break_before=break_before,
+    )
+    alone = compute_pre_decision_metrics(
+        times[30:], positions[30:], entry_time=4.0, window_duration=2.0, min_speed=1.0
+    )
+    assert with_break == alone
+    assert with_break.n_samples == 10
+
+
+def test_boundary_crossing_at_interval_midpoint():
+    from neurospatial.behavior import detect_boundary_crossings
+
+    labels = np.array([0, 1])
+    crossing_times, directions = detect_boundary_crossings(
+        np.array([0, 0, 1, 1]), labels, np.arange(4) / 8
+    )
+    assert crossing_times == [0.1875]
+    assert directions == [(0, 1)]
+
+
+def test_boundary_crossing_not_across_declared_break():
+    from neurospatial.behavior import detect_boundary_crossings
+
+    crossing_times, directions = detect_boundary_crossings(
+        np.array([0, 0, 1, 1]),
+        np.array([0, 1]),
+        np.arange(4) / 8,
+        break_before=np.array([False, False, True, False]),
+    )
+    assert crossing_times == []
+    assert directions == []
+
+
+def test_decision_analysis_forwards_declared_break(t_maze_environment):
+    from neurospatial.behavior import compute_decision_analysis
+
+    env = t_maze_environment
+    times = np.arange(100) / 10
+    positions = np.column_stack(
+        [
+            np.r_[np.full(30, 50.0), np.linspace(50, 90, 70)],
+            np.r_[np.linspace(5, 55, 30), np.full(70, 55.0)],
+        ]
+    )
+    kwargs = {
+        "decision_region": "center",
+        "goal_regions": ["left", "right"],
+        "pre_window": 1.0,
+        "min_speed": 5.0,
+    }
+    result = compute_decision_analysis(env, times, positions, **kwargs)
+    entry = int(np.flatnonzero(times == result.entry_time)[0])
+    break_before = np.zeros(100, dtype=bool)
+    break_before[entry - 3] = True
+    broken = compute_decision_analysis(
+        env, times, positions, break_before=break_before, **kwargs
+    )
+    assert result.pre_decision.n_samples == 10
+    assert broken.pre_decision.n_samples == 3
+
+
+def _repeated_clock_calls():
+    from neurospatial.behavior import (
+        compute_decision_analysis,
+        compute_pre_decision_metrics,
+        detect_boundary_crossings,
+        extract_pre_decision_window,
+        pre_decision_heading_stats,
+        pre_decision_speed_stats,
+    )
+
+    return {
+        "extract_pre_decision_window": lambda env, t, p: extract_pre_decision_window(
+            t, p, 0.5, 1.0
+        ),
+        "pre_decision_speed_stats": lambda env, t, p: pre_decision_speed_stats(t, p),
+        "pre_decision_heading_stats": lambda env, t, p: pre_decision_heading_stats(
+            t, p, min_speed=1.0
+        ),
+        "compute_pre_decision_metrics": lambda env, t, p: compute_pre_decision_metrics(
+            t, p, 0.5, 1.0, min_speed=1.0
+        ),
+        "detect_boundary_crossings": lambda env, t, p: detect_boundary_crossings(
+            np.zeros(len(t), dtype=np.int64), np.array([0]), t
+        ),
+        "compute_decision_analysis": lambda env, t, p: compute_decision_analysis(
+            env,
+            t,
+            p,
+            decision_region="center",
+            goal_regions=["left", "right"],
+            min_speed=5.0,
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "extract_pre_decision_window",
+        "pre_decision_speed_stats",
+        "pre_decision_heading_stats",
+        "compute_pre_decision_metrics",
+        "detect_boundary_crossings",
+        "compute_decision_analysis",
+    ],
+)
+def test_repeated_timestamp_raises(t_maze_environment, name):
+    times = np.array([0.0, 0.1, 0.1, 0.2, 0.3, 0.4])
+    positions = np.column_stack([np.full(6, 50.0), np.linspace(40, 58, 6)])
+    with pytest.raises(ValueError, match="strictly increasing"):
+        _repeated_clock_calls()[name](t_maze_environment, times, positions)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "extract_pre_decision_window",
+        "pre_decision_speed_stats",
+        "pre_decision_heading_stats",
+        "compute_pre_decision_metrics",
+        "detect_boundary_crossings",
+        "compute_decision_analysis",
+    ],
+)
+def test_empty_input_raises(t_maze_environment, name):
+    with pytest.raises(ValueError, match="no samples"):
+        _repeated_clock_calls()[name](
+            t_maze_environment, np.array([]), np.empty((0, 2))
+        )

@@ -349,11 +349,11 @@ def test_duplicate_timestamps_give_undefined_not_infinite_speed():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         velocity = interval_velocity(times, positions, np.ones(4, dtype=bool))
-        mean_speed, min_speed = pre_decision_speed_stats(times, positions)
     assert np.all(np.isnan(velocity[1]))
     np.testing.assert_allclose(velocity[[0, 2, 3], 0], 10.0)
-    assert mean_speed == pytest.approx(10.0)
-    assert min_speed == pytest.approx(10.0)
+    # The public speed statistics refuse a repeated timestamp outright.
+    with pytest.raises(ValueError, match="strictly increasing"):
+        pre_decision_speed_stats(times, positions)
 
 
 def test_one_dimensional_positions_give_track_speed():

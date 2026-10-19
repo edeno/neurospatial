@@ -218,7 +218,7 @@ def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
 
 def test_pre_decision_window_stays_in_run(pause_track):
     r = pause_track
-    positions, times = extract_pre_decision_window(
+    times, positions = extract_pre_decision_window(
         r.times, r.positions, entry_time=1100.5, window_duration=1001
     )
     np.testing.assert_array_equal(times, r.times[1000:1005])
@@ -238,7 +238,7 @@ def test_pre_decision_window_stays_in_run(pause_track):
 @pytest.mark.parametrize("entry", [500.0, 1200.0])
 def test_entry_outside_observed_runs_has_empty_window(pause_track, entry):
     r = pause_track
-    positions, times = extract_pre_decision_window(
+    times, positions = extract_pre_decision_window(
         r.times, r.positions, entry_time=entry, window_duration=1001
     )
     assert positions.shape == (0, 2)
@@ -261,7 +261,7 @@ def test_window_callers_forward_epochs(pause_track, function):
         **speed_gate,
     )
     if function is extract_pre_decision_window:
-        assert result[1].size == 0
+        assert result[0].size == 0
     elif function is compute_pre_decision_metrics:
         assert result.n_samples == 0
     else:
@@ -322,7 +322,7 @@ def test_decision_analysis_forwards_windows(pause_track):
 
 def test_max_gap_none_preserves_requested_window(pause_track):
     r = pause_track
-    _, times = extract_pre_decision_window(
+    times, _ = extract_pre_decision_window(
         r.times, r.positions, entry_time=1100.5, window_duration=1001, max_gap=None
     )
     assert times.size == 10

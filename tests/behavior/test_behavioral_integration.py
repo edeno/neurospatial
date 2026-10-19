@@ -38,7 +38,7 @@ class TestVTEDecisionAnalysisIntegration:
         window_duration = 2.0
 
         # Extract window using decision_analysis
-        window_positions, window_times = extract_pre_decision_window(
+        window_times, window_positions = extract_pre_decision_window(
             times, positions, entry_time, window_duration
         )
 

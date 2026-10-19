@@ -12,7 +12,10 @@ import pandas as pd
 import pytest
 
 from neurospatial import Environment, Regions
-from neurospatial.behavior.decisions import extract_pre_decision_window
+from neurospatial.behavior.decisions import (
+    compute_decision_analysis,
+    extract_pre_decision_window,
+)
 from neurospatial.behavior.navigation import goal_bias
 from neurospatial.behavior.segmentation import (
     detect_region_crossings,
@@ -53,6 +56,15 @@ CALLS = {
     ),
     "extract_pre_decision_window": lambda env, t, p, **kw: (
         extract_pre_decision_window(t, p, 50.0, 10.0, **kw)
+    ),
+    "compute_decision_analysis": lambda env, t, p, **kw: compute_decision_analysis(
+        env,
+        t,
+        p,
+        decision_region="mid_area",
+        goal_regions=["mid_area"],
+        min_speed=1.0,
+        **kw,
     ),
     "add_positions": lambda env, t, p, **kw: add_positions(
         pd.DataFrame({"timestamp": [10.5, 50.5]}), times=t, positions=p, **kw

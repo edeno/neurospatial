@@ -637,7 +637,7 @@ def compute_vte_trial(
     )
 
     # Extract pre-decision window
-    window_positions, window_times = extract_pre_decision_window(
+    window_times, window_positions = extract_pre_decision_window(
         times,
         positions,
         entry_time,
@@ -824,7 +824,7 @@ def compute_vte_session(
 
         # Extract the pre-decision window from this trial's samples only, so
         # it stops at the trial start.
-        window_positions, window_times = extract_pre_decision_window(
+        window_times, window_positions = extract_pre_decision_window(
             trial_times,
             trial_positions,
             entry_time,
