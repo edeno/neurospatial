@@ -1581,8 +1581,8 @@ class Environment(Generic[_C]):
         --------
         >>> import numpy as np
         >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
+        >>> x, y = np.meshgrid(np.arange(0.5, 10.0), np.arange(0.5, 10.0))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
         >>> points = np.array([[5.0, 5.0], [15.0, 15.0]])
         >>> env.contains(points)  # the second point is outside the arena
         array([ True, False])
