@@ -86,9 +86,14 @@ def test_nan_field_value_is_unobserved(grid_env):
     assert result.support[1, 0]
 
 
-def test_nan_position_is_missing(grid_env):
+@pytest.mark.parametrize(
+    "missing",
+    [[np.nan, 5.0], [np.inf, 5.0], [-np.inf, 5.0], [5.0, np.inf]],
+    ids=["nan", "inf", "-inf", "inf-y"],
+)
+def test_non_finite_position_is_missing(grid_env, missing):
     result = sample_spatial_features(
-        grid_env, np.ones(grid_env.n_bins), np.array([[np.nan, 5.0], [5.0, 5.0]])
+        grid_env, np.ones(grid_env.n_bins), np.array([missing, [5.0, 5.0]])
     )
     assert result.bins[0] == -1
     assert np.isnan(result.values[0, 0])
@@ -188,16 +193,35 @@ def test_result_owns_read_only_arrays(grid_env):
     np.testing.assert_array_equal(restored.values, result.values)
 
 
+def _one_field(n_bins):
+    return np.ones(n_bins)
+
+
+def _inf_field(n_bins):
+    field = np.ones(n_bins)
+    field[2] = np.inf
+    return field
+
+
+def _two_fields(n_bins):
+    return np.ones((2, n_bins))
+
+
+_INSIDE = np.array([[5.0, 5.0]])
+
+
 @pytest.mark.parametrize(
-    ("fields", "positions", "feature_ids", "match"),
+    ("make_fields", "positions", "feature_ids", "match"),
     [
-        (np.ones(3), np.array([[5.0, 5.0]]), None, "bin"),
-        ("inf", np.array([[5.0, 5.0]]), None, "inf"),
-        (None, np.array([[5.0, 5.0, 5.0]]), None, "positions"),
-        (None, np.array([5.0, 5.0]), None, "positions"),
-        ("two", np.array([[5.0, 5.0]]), ["a", "a"], "unique"),
-        ("two", np.array([[5.0, 5.0]]), ["a"], "feature_ids"),
-        (np.ones((1, 1, 1)), np.array([[5.0, 5.0]]), None, "fields"),
+        (lambda n_bins: np.ones(3), _INSIDE, None, "got fields of shape \\(3,\\)"),
+        (_inf_field, _INSIDE, None, "inf in fields"),
+        (_one_field, np.array([[5.0, 5.0, 5.0]]), None, "positions"),
+        (_one_field, np.array([5.0, 5.0]), None, "positions"),
+        (_two_fields, _INSIDE, ["a", "a"], "not unique"),
+        (_two_fields, _INSIDE, ["a"], "feature_ids of shape"),
+        (_one_field, _INSIDE, "a", "sequence of labels"),
+        (_one_field, _INSIDE, 3, "sequence of labels"),
+        (lambda n_bins: np.ones((1, 1, 1)), _INSIDE, None, "got fields of shape"),
     ],
     ids=[
         "wrong-bin-count",
@@ -206,21 +230,21 @@ def test_result_owns_read_only_arrays(grid_env):
         "positions-flat",
         "duplicate-feature-ids",
         "feature-ids-wrong-length",
+        "feature-ids-string",
+        "feature-ids-scalar",
         "fields-3d",
     ],
 )
 def test_invalid_inputs_raise_actionable_errors(
-    grid_env, fields, positions, feature_ids, match
+    grid_env, make_fields, positions, feature_ids, match
 ):
-    if fields is None:
-        fields = np.ones(grid_env.n_bins)
-    elif isinstance(fields, str) and fields == "inf":
-        fields = np.ones(grid_env.n_bins)
-        fields[2] = np.inf
-    elif isinstance(fields, str) and fields == "two":
-        fields = np.ones((2, grid_env.n_bins))
     with pytest.raises(ValueError, match=match) as info:
-        sample_spatial_features(grid_env, fields, positions, feature_ids=feature_ids)
+        sample_spatial_features(
+            grid_env,
+            make_fields(grid_env.n_bins),
+            positions,
+            feature_ids=feature_ids,
+        )
     assert "Fix:" in str(info.value)
 
 
@@ -318,5 +342,30 @@ def test_result_rejects_inconsistent_fields(change):
         "units": None,
         "frame": None,
     }
+    with pytest.raises(ValueError, match="inconsistent"):
+        SpatialFeatureResult(**(inputs | change))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"ego_points": [[1.0, 0.0, 0.0]]},
+        {"query_positions": [[[0.0, 0.0]]]},
+        {"ego_points": None},
+    ],
+    ids=["ego-points-list", "query-positions-list", "ego-points-missing"],
+)
+def test_egocentric_result_rejects_inconsistent_points(change):
+    inputs = {
+        "values": np.ones((2, 1, 1)),
+        "support": np.ones((2, 1, 1), dtype=bool),
+        "bins": np.zeros((2, 1), dtype=np.intp),
+        "feature_ids": np.array(["a"]),
+        "units": None,
+        "frame": None,
+        "ego_points": np.zeros((1, 2)),
+        "query_positions": np.zeros((2, 1, 2)),
+    }
+    SpatialFeatureResult(**inputs)  # consistent as given
     with pytest.raises(ValueError, match="inconsistent"):
         SpatialFeatureResult(**(inputs | change))

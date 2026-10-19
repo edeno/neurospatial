@@ -6,8 +6,8 @@ each tracked position from the bin that contains the position, so the sampled
 features can be aligned to events or used as regressors next to the neural
 data.
 
-Lookup is by containment only. A position outside the environment, or a NaN
-position, has no bin and its value is missing (NaN), never the value of the
+Lookup is by containment only. A position outside the environment, or one
+with a non-finite coordinate, has no bin and its value is missing (NaN), never the value of the
 nearest bin. A NaN in a feature map is an unknown value and stays missing; a
 finite zero is a valid value. Values are the bins' own values: nothing is
 smoothed or interpolated, and ``support`` beside every value says whether it
@@ -58,7 +58,7 @@ class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
         feature value is finite.
     bins : NDArray[np.intp], shape (n_time,) or (n_time, n_points)
         Bin containing each query point, or -1 for a point outside the
-        environment or with a NaN coordinate.
+        environment or with a non-finite coordinate.
     feature_ids : NDArray, shape (n_features,)
         Label of each feature column.
     units : str or None
@@ -130,10 +130,10 @@ class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
                 )
         else:
             n_time, n_points = shape[:2]
-            if self.ego_points is None or self.ego_points.shape != (n_points, 2):
+            if self.ego_points is None or np.shape(self.ego_points) != (n_points, 2):
                 problems.append(f"ego_points needs shape ({n_points}, 2)")
             query = self.query_positions
-            if query is None or query.shape != (n_time, n_points, 2):
+            if query is None or np.shape(query) != (n_time, n_points, 2):
                 problems.append(
                     f"query_positions needs shape ({n_time}, {n_points}, 2)"
                 )
@@ -200,8 +200,23 @@ class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
             ``n_samples``, ``n_features``, ``n_points`` (0 when sampling at
             the positions themselves), ``fraction_supported`` (supported
             values over all values; NaN with no values) and ``n_outside``
-            (query points with no bin: outside the environment or with a NaN
-            coordinate).
+            (query points with no bin: outside the environment or with a
+            non-finite coordinate).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.ops import sample_spatial_features
+        >>> x, y = np.meshgrid(np.arange(0.5, 10), np.arange(0.5, 10))
+        >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
+        >>> inside, outside = [5.0, 5.0], [50.0, 50.0]
+        >>> result = sample_spatial_features(
+        ...     env, np.ones(env.n_bins), np.array([inside, outside])
+        ... )
+        >>> summary = result.summary()
+        >>> summary["fraction_supported"], summary["n_outside"]
+        (0.5, 1)
         """
         n_values = self.support.size
         return {
@@ -225,8 +240,8 @@ def sample_spatial_features(
     """Read bin-valued feature maps at the animal's positions.
 
     Each position takes the value of the bin that contains it
-    (``env.bin_at``). A position outside the environment or with a NaN
-    coordinate has no bin, and a NaN in a feature map marks an unknown value:
+    (``env.bin_at``). A position outside the environment or with a
+    non-finite coordinate has no bin, and a NaN in a feature map marks an unknown value:
     both give NaN with ``support`` False. A finite zero is a valid value.
     Nothing is smoothed or interpolated, so a step in a map (a texture
     boundary, a raised platform) stays a step.
@@ -372,6 +387,17 @@ def _validated_feature_ids(
     """Return one unique label per feature, defaulting to ``arange``."""
     if feature_ids is None:
         return np.arange(n_features)
+    if isinstance(feature_ids, str | bytes) or np.ndim(feature_ids) == 0:
+        raise ValueError(
+            _format_error(
+                f"{call} got feature_ids={feature_ids!r}; it must be a sequence "
+                "of labels, one per feature.",
+                why="A single string or number would be split into characters or "
+                "cannot label each feature.",
+                fix="Pass a list or array, e.g. feature_ids=['height'] for one "
+                "feature.",
+            )
+        )
     ids = as_label_array(feature_ids)
     if ids.shape != (n_features,):
         raise ValueError(

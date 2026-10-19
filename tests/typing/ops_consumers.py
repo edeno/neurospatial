@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         plot_basis_functions,
         regions_to_mask,
         resample_field,
+        sample_spatial_features,
         select_basis_centers,
         spatial_basis,
     )
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
         BinningConsumer,
         BinsConsumer,
         CartesianBinsConsumer,
+        FeatureLookupConsumer,
         FieldPlotConsumer,
         GraphConsumer,
         GraphLookupConsumer,
@@ -70,6 +72,7 @@ if TYPE_CHECKING:
         _wavelets: WaveletBasisConsumer = env
         _plot: FieldPlotConsumer = env
         _regions: RegionMaskConsumer = env
+        _features: FeatureLookupConsumer = env
         graph_convolve(env, values, lambda distance: distance)
         regions_to_mask(env, "goal")
         select_basis_centers(env, 3, method="farthest_point")
@@ -77,6 +80,7 @@ if TYPE_CHECKING:
         heat_kernel_wavelet_basis(env, center_method="farthest_point")
         plot_basis_functions(env, np.ones((env.n_bins, 2)))
         compute_egocentric_distance(values, values, values, metric="geodesic", env=env)
+        sample_spatial_features(env, values, values, feature_ids=["height"])
         assert_type(compute_viewshed(env, values, 0.0), ViewshedResult)
 
     def _cartesian_only(
