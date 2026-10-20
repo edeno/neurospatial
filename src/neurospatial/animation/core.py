@@ -1014,6 +1014,7 @@ def _subsample_indices(n: int, source_fps: int, target_fps: int) -> NDArray[np.i
 
 def subsample_frames(
     fields: NDArray | list,
+    *,
     target_fps: int,
     source_fps: int,
 ) -> NDArray | list:
