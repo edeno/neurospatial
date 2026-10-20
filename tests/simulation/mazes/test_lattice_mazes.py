@@ -125,14 +125,15 @@ class TestHamletMaze:
     """Test Hamlet maze specific behavior."""
 
     def test_has_five_house_regions(self):
-        """Hamlet should have 5 houses (goal boxes)."""
-        maze = make_hamlet_maze(bin_size=3.0)
-        house_regions = [r for r in maze.env_2d.regions if r.startswith("house_")]
+        """Hamlet should have 5 houses (goal boxes) and the agora."""
+        maze = make_hamlet_maze(bin_size=2.0)
+        house_regions = [r for r in maze.env_2d.regions if r.endswith("_house")]
         assert len(house_regions) == 5
+        assert "agora" in maze.env_2d.regions
 
     def test_has_ring_and_split_regions(self):
         """Hamlet marks where each radial alley leaves the ring and splits."""
-        maze = make_hamlet_maze(bin_size=3.0)
+        maze = make_hamlet_maze(bin_size=2.0)
         ring_regions = [r for r in maze.env_2d.regions if r.startswith("ring_")]
         split_regions = [r for r in maze.env_2d.regions if r.startswith("split_")]
         assert len(ring_regions) == len(split_regions) == 5
