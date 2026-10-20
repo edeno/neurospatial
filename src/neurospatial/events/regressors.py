@@ -1,31 +1,21 @@
 """
 GLM regressor generation for neurospatial events.
 
-This module provides functions to generate regressors for GLM design matrices:
+This module provides functions to generate time-based regressors for GLM
+design matrices:
 
-Temporal regressors:
 - time_to_nearest_event: Signed time to nearest event (peri-event time)
 - event_count_in_window: Count events in time window
 - event_indicator: Binary indicator of event presence
 
-Spatial regressors:
-- distance_to_reward: Distance to reward location (event-triggered)
-- distance_to_boundary: Distance to environment boundary/obstacles
+Per-sample spatial covariates (distance to a reward, a boundary or a region)
+are in :mod:`neurospatial.behavior`.
 """
 
 from __future__ import annotations
 
-import warnings
-from typing import TYPE_CHECKING, Literal
-
 import numpy as np
 from numpy.typing import NDArray
-
-from neurospatial.geometry import require_cartesian
-from neurospatial.ops.mapping import _require_region_mask
-
-if TYPE_CHECKING:
-    from neurospatial.environment import Environment
 
 
 def time_to_nearest_event(
@@ -247,7 +237,7 @@ def event_count_in_window(
         E.g., (-1.0, 0.0) counts events in previous 1 second.
         E.g., (0.0, 1.0) counts events in next 1 second.
         E.g., (-0.5, 0.5) counts events within +/- 0.5 seconds.
-        Window boundaries are inclusive.
+        Half-open: ``[sample_time + start, sample_time + stop)``.
 
     Returns
     -------
@@ -259,7 +249,7 @@ def event_count_in_window(
     ------
     ValueError
         If sample_times or event_times contain NaN or Inf values.
-        If window start > window end.
+        If window start >= window stop.
 
     Notes
     -----
@@ -269,8 +259,11 @@ def event_count_in_window(
     - Count licks before reward: ``window=(-1.0, 0.0)``
     - Count spikes around event: ``window=(-0.5, 0.5)``
 
-    Window boundaries are inclusive on both ends, so an event exactly
-    at ``sample_time + window[0]`` or ``sample_time + window[1]`` is counted.
+    Windows are half-open, ``[sample_time + start, sample_time + stop)``: an
+    event exactly at the start is counted and one exactly at the stop is not.
+    Windows of samples ``bin_size`` apart with ``window=(-bin_size / 2,
+    bin_size / 2)`` therefore tile time, and each event counts at exactly one
+    sample.
 
     Examples
     --------
@@ -325,11 +318,14 @@ def event_count_in_window(
 
     # Validate window
     window_start, window_end = window
-    if window_start > window_end:
+    if window_start >= window_end:
         raise ValueError(
-            f"window start ({window_start}) must be <= window end ({window_end}).\n"
-            "  WHY: Window defines a time range [start, end] relative to sample.\n"
-            "  Fix: Use window=(start, end) where start <= end."
+            f"window start ({window_start}) must be before its stop ({window_end}).\n"
+            "  WHY: Window is the half-open range [start, stop) relative to each "
+            "sample, so a window with stop <= start holds no time.\n"
+            "  Fix: Use window=(start, stop) with start < stop, e.g. "
+            "window=(-bin_size / 2, bin_size / 2) to count each event at the "
+            "sample nearest it."
         )
 
     # Handle empty sample_times
@@ -350,11 +346,11 @@ def event_count_in_window(
 
     # Use searchsorted to find event indices at window boundaries
     # left_indices: first event >= window_start
-    # right_indices: first event > window_end (so count = right - left)
+    # right_indices: first event >= window_end (so count = right - left)
     left_indices = np.searchsorted(sorted_events, window_starts, side="left")
-    right_indices = np.searchsorted(sorted_events, window_ends, side="right")
+    right_indices = np.searchsorted(sorted_events, window_ends, side="left")
 
-    # Count = number of events in [window_start, window_end]
+    # Count = number of events in [window_start, window_end)
     counts = right_indices - left_indices
 
     return counts.astype(np.int64)
@@ -364,7 +360,7 @@ def event_indicator(
     sample_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
     *,
-    window: tuple[float, float] = (0.0, 0.0),
+    window: tuple[float, float],
 ) -> NDArray[np.bool_]:
     """
     Binary indicator of whether an event occurs near each sample time.
@@ -379,13 +375,12 @@ def event_indicator(
         Sample timestamps.
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps.
-    window : tuple[float, float], default=(0.0, 0.0)
-        Time window (start, end) relative to sample_time (seconds).
-        Creates a window [sample_time + start, sample_time + end].
-        If (0.0, 0.0), only exact matches count (sample_time == event_time).
-        E.g., (-0.5, 0.5) matches events within +/- 0.5 seconds.
-        E.g., (-1.0, 0.0) matches events in the previous 1 second.
-        Window boundaries are inclusive.
+    window : tuple[float, float]
+        Time window (start, stop) relative to sample_time (seconds), half-open
+        ``[sample_time + start, sample_time + stop)``. Required: no window is
+        right for every sampling rate. For time-binned samples ``bin_size``
+        apart, ``(-bin_size / 2, bin_size / 2)`` marks each event at exactly
+        one sample. E.g., (-1.0, 0.0) matches events in the previous 1 second.
 
     Returns
     -------
@@ -396,19 +391,18 @@ def event_indicator(
     ------
     ValueError
         If sample_times or event_times contain NaN or Inf values.
-        If window start > window end.
+        If window start >= window stop.
 
     Notes
     -----
     Common use cases:
 
-    - Binary event regressor: ``window=(0.0, 0.0)`` for impulse at event time
-    - Smoothed indicator: ``window=(-bin_size/2, bin_size/2)`` for time-binned data
+    - Impulse regressor for time-binned data: ``window=(-bin_size/2, bin_size/2)``
+      marks each event at the one sample whose bin holds it
     - Event presence detection: ``window=(-0.1, 0.1)`` for events within 100ms
 
-    Window boundaries are inclusive, so events exactly at
-    ``sample_time + start`` or ``sample_time + end`` are included
-    (returns True).
+    Windows are half-open, so an event exactly at ``sample_time + start`` is
+    included and one exactly at ``sample_time + stop`` is not.
 
     This function is semantically clearer than ``event_count_in_window() > 0``
     for creating binary indicators and returns bool dtype directly. It shares
@@ -420,15 +414,10 @@ def event_indicator(
     >>> import numpy as np
     >>> from neurospatial.events import event_indicator
 
-    Check for exact event occurrence:
+    Mark each event at the sample whose 1 s bin holds it:
 
     >>> sample_times = np.array([0.0, 1.0, 2.0, 3.0])
     >>> event_times = np.array([1.0, 3.0])
-    >>> event_indicator(sample_times, event_times)
-    array([False,  True, False,  True])
-
-    Check for events within window:
-
     >>> event_indicator(sample_times, event_times, window=(-0.5, 0.5))
     array([False,  True, False,  True])
 
@@ -437,707 +426,6 @@ def event_indicator(
     >>> indicator = event_indicator(sample_times, event_times, window=(-0.1, 0.1))
     >>> X = indicator.astype(float)  # Convert to float for design matrix
     """
-    # Convert to numpy arrays and validate
-    sample_times = np.asarray(sample_times, dtype=np.float64)
-    event_times = np.asarray(event_times, dtype=np.float64)
-
-    # Input validation
-    if np.any(np.isnan(sample_times)):
-        raise ValueError(
-            "sample_times contains NaN values.\n"
-            "  WHY: Times must be valid numeric values.\n"
-            "  Fix: Remove or interpolate NaN values before calling."
-        )
-
-    if np.any(np.isinf(sample_times)):
-        raise ValueError(
-            "sample_times contains inf values.\n"
-            "  WHY: Times must be finite.\n"
-            "  Fix: Remove or clip infinite values before calling."
-        )
-
-    if len(event_times) > 0:
-        if np.any(np.isnan(event_times)):
-            raise ValueError(
-                "event_times contains NaN values.\n"
-                "  WHY: Event times must be valid numeric values.\n"
-                "  Fix: Remove NaN values from event times."
-            )
-
-        if np.any(np.isinf(event_times)):
-            raise ValueError(
-                "event_times contains inf values.\n"
-                "  WHY: Event times must be finite.\n"
-                "  Fix: Remove infinite values from event times."
-            )
-
-    # Validate window
-    window_start, window_end = window
-    if window_start > window_end:
-        raise ValueError(
-            f"window start ({window_start}) must be <= window end ({window_end}).\n"
-            "  WHY: Window defines a time range [start, end] relative to sample.\n"
-            "  Fix: Use window=(start, end) where start <= end."
-        )
-
-    # Handle empty sample_times
-    if len(sample_times) == 0:
-        return np.array([], dtype=np.bool_)
-
-    # Handle empty events
-    if len(event_times) == 0:
-        return np.zeros(len(sample_times), dtype=np.bool_)
-
-    # Sort events for efficient searchsorted
-    sorted_events = np.sort(event_times)
-
-    # For each sample, check if any event falls within
-    # [sample + start, sample + end]. Use searchsorted to find events at
-    # window boundaries.
-    window_starts = sample_times + window_start
-    window_ends = sample_times + window_end
-
-    # left_indices: first event >= window_start
-    # right_indices: first event > window_end
-    left_indices = np.searchsorted(sorted_events, window_starts, side="left")
-    right_indices = np.searchsorted(sorted_events, window_ends, side="right")
-
-    # If right > left, there's at least one event in the window
-    result = right_indices > left_indices
-
-    return result
-
-
-def distance_to_reward(
-    env: Environment,
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    reward_times: NDArray[np.float64],
-    reward_positions: NDArray[np.float64] | None = None,
-    *,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
-    mode: Literal["nearest", "last", "next"] = "nearest",
-) -> NDArray[np.float64]:
-    """
-    Compute distance to reward location at each sample.
-
-    For each sample, computes the distance from current position to the
-    reward location. The reward location is determined by the ``mode``:
-
-    - "nearest": Uses the closest reward in time (before or after)
-    - "last": Uses the most recent reward before current time
-    - "next": Uses the next upcoming reward after current time
-
-    Parameters
-    ----------
-    env : Environment
-        Spatial environment.
-    times : NDArray[np.float64], shape (n_samples,)
-        Sample timestamps (seconds).
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates at each sample time. Must match environment
-        dimensionality (e.g., 2D for grid environments).
-    reward_times : NDArray[np.float64], shape (n_events,)
-        Reward event timestamps (seconds).
-    reward_positions : NDArray[np.float64], shape (n_events, n_dims), optional
-        Reward locations in environment coordinates. If None, reward
-        locations are inferred by interpolating ``positions`` at
-        ``reward_times``.
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric:
-
-        - 'geodesic': Shortest-path distance respecting environment geometry
-          (walls, obstacles). Uses graph-based distances.
-        - 'euclidean': Straight-line L2 distance. Ignores obstacles.
-    mode : {'nearest', 'last', 'next'}, default='nearest'
-        Which reward to use for distance computation:
-
-        - 'nearest': Distance to temporally closest reward (before or after).
-        - 'last': Distance to most recent reward. NaN before first reward.
-        - 'next': Distance to next upcoming reward. NaN after last reward.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_samples,)
-        Distance from current position to the reward location at each
-        sample. Units match environment coordinates (e.g., cm).
-        Returns NaN when:
-
-        - No relevant reward exists (e.g., mode="last" before first reward)
-        - Position is outside environment (invalid bin)
-        - Reward position is outside environment
-
-    Raises
-    ------
-    ValueError
-        If positions and times have different lengths.
-        If reward_positions provided but doesn't match reward_times length.
-        If positions dimensionality doesn't match environment.
-        If ``times``, ``positions``, or ``reward_times`` contain non-finite
-        values.
-        If ``times`` is not ascending when reward positions are inferred
-        (no ``reward_positions`` given).
-
-    Notes
-    -----
-    **Performance**:
-
-    This function computes distance fields for each unique reward location,
-    which is O(V log V + E) per location using Dijkstra's algorithm. For
-    many unique reward locations, consider caching or using Euclidean
-    distances.
-
-    **Interpolation**:
-
-    When ``reward_positions`` is not provided, positions are interpolated
-    using linear interpolation. This assumes smooth movement between
-    samples. For teleporting animals or discontinuous tracking, provide
-    explicit reward positions.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.events import distance_to_reward
-    >>> # Distance to nearest reward (default)
-    >>> dist = distance_to_reward(  # doctest: +SKIP
-    ...     env,
-    ...     times,
-    ...     positions,
-    ...     reward_times,
-    ...     metric="geodesic",
-    ...     mode="nearest",
-    ... )
-    >>>
-    >>> # Distance to most recent reward
-    >>> dist_last = distance_to_reward(  # doctest: +SKIP
-    ...     env,
-    ...     times,
-    ...     positions,
-    ...     reward_times,
-    ...     mode="last",
-    ... )
-    >>>
-    >>> # Distance to next upcoming reward
-    >>> dist_next = distance_to_reward(  # doctest: +SKIP
-    ...     env,
-    ...     times,
-    ...     positions,
-    ...     reward_times,
-    ...     mode="next",
-    ... )
-    >>>
-    >>> # GLM design matrix
-    >>> X = np.column_stack(  # doctest: +SKIP
-    ...     [
-    ...         time_to_nearest_event(times, reward_times, max_time=5.0),
-    ...         distance_to_reward(env, times, positions, reward_times),
-    ...     ]
-    ... )
-
-    See Also
-    --------
-    time_to_nearest_event : Temporal distance to events
-    distance_to_boundary : Distance to environment boundaries
-    """
-    from neurospatial._validation import validate_finite
-    from neurospatial.ops.distance import distance_field
-
-    require_cartesian(
-        env.coordinate_system,
-        "distance_to_reward()",
-        why="It reads positions as the animal's allocentric positions, located "
-        "in the environment's bins.",
-        fix="use the allocentric environment the positions were recorded in",
-    )
-
-    # Input validation: reject NaN/Inf in the spatial + temporal inputs.
-    # A non-finite time or position silently corrupts interpolation,
-    # searchsorted ordering, and the resulting distance-to-reward regressor.
-    times = validate_finite(times, name="times")
-    reward_times = validate_finite(reward_times, name="reward_times")
-    positions = validate_finite(
-        np.asarray(positions, dtype=np.float64), name="positions"
-    )
-    if positions.ndim == 1:
-        positions = positions.reshape(-1, 1)
-
-    n_samples = len(times)
-
-    if len(positions) != n_samples:
-        raise ValueError(
-            f"positions and times must have same length. "
-            f"Got positions: {len(positions)}, times: {n_samples}."
-        )
-
-    # Handle empty inputs
-    if n_samples == 0:
-        return np.array([], dtype=np.float64)
-
-    if len(reward_times) == 0:
-        return np.full(n_samples, np.nan, dtype=np.float64)
-
-    # Get or interpolate reward positions
-    if reward_positions is not None:
-        reward_positions = np.asarray(reward_positions, dtype=np.float64)
-        if len(reward_positions) != len(reward_times):
-            raise ValueError(
-                f"reward_positions and reward_times must have same length. "
-                f"Got reward_positions: {len(reward_positions)}, "
-                f"reward_times: {len(reward_times)}."
-            )
-    else:
-        # Interpolate positions at reward times.
-        # Reward times outside the recorded session window cannot be
-        # interpolated, so they are clipped to the nearest session boundary
-        # (np.interp would otherwise just hold the endpoint anyway). Warn so
-        # the caller knows the reward position is the session edge, not a
-        # true interpolated location -- a silently clipped reward can bias a
-        # distance-to-reward regressor near session boundaries.
-        #
-        # np.interp requires its sample points (times) to be ascending;
-        # unsorted times produce silently-wrong interpolated reward positions.
-        if np.any(np.diff(times) < 0):
-            raise ValueError(
-                "times must be sorted in ascending order to interpolate "
-                "reward positions.\n"
-                "  WHY: linear interpolation of reward locations assumes "
-                "monotonically increasing timestamps; unsorted times yield "
-                "wrong reward positions and a corrupted distance regressor.\n"
-                "  Fix: sort (times, positions) by time before calling, or "
-                "pass explicit reward_positions to skip interpolation."
-            )
-        t_min = times.min()
-        t_max = times.max()
-        n_out_of_range = int(np.sum((reward_times < t_min) | (reward_times > t_max)))
-        if n_out_of_range > 0:
-            warnings.warn(
-                f"{n_out_of_range} reward time"
-                f"{'' if n_out_of_range == 1 else 's'} fall outside the "
-                f"session window [{t_min:g}, {t_max:g}] and were clipped to "
-                "the nearest boundary before interpolating reward position(s). "
-                "Pass explicit reward_positions to avoid clipping.",
-                UserWarning,
-                stacklevel=2,
-            )
-        clipped_reward_times = np.clip(reward_times, t_min, t_max)
-        reward_positions = np.column_stack(
-            [
-                np.interp(clipped_reward_times, times, positions[:, dim])
-                for dim in range(positions.shape[1])
-            ]
-        )
-
-    # Map positions to bins
-    position_bins = env.bin_at(positions)
-
-    # Map reward positions to bins
-    reward_bins = env.bin_at(reward_positions)
-
-    # Sort rewards by time for efficient lookup
-    sorted_idx = np.argsort(reward_times)
-    sorted_reward_times = reward_times[sorted_idx]
-    sorted_reward_bins = reward_bins[sorted_idx]
-
-    # Find relevant reward for each sample based on mode
-    if mode == "nearest":
-        # Find nearest reward in time (before or after)
-        # Use searchsorted to find insertion points
-        idx_right = np.searchsorted(sorted_reward_times, times, side="left")
-        idx_left = idx_right - 1
-
-        # Compute time distances to left and right rewards
-        n_rewards = len(sorted_reward_times)
-        dist_left = np.full(n_samples, np.inf)
-        dist_right = np.full(n_samples, np.inf)
-
-        has_left = idx_left >= 0
-        dist_left[has_left] = times[has_left] - sorted_reward_times[idx_left[has_left]]
-
-        has_right = idx_right < n_rewards
-        dist_right[has_right] = (
-            sorted_reward_times[idx_right[has_right]] - times[has_right]
-        )
-
-        # Select nearest
-        use_left = dist_left <= dist_right
-        relevant_reward_idx = np.where(use_left, idx_left, idx_right)
-
-        # Handle edge case: no rewards exist
-        no_reward = (idx_left < 0) & (idx_right >= n_rewards)
-        relevant_reward_idx = np.clip(relevant_reward_idx, 0, n_rewards - 1)
-
-    elif mode == "last":
-        # Find most recent reward before each sample
-        # searchsorted gives index of first reward > time, so idx-1 is last reward <= time
-        idx = np.searchsorted(sorted_reward_times, times, side="right") - 1
-        relevant_reward_idx = idx
-        no_reward = idx < 0
-
-    elif mode == "next":
-        # Find next upcoming reward after each sample
-        # searchsorted gives index of first reward >= time
-        idx = np.searchsorted(sorted_reward_times, times, side="left")
-        relevant_reward_idx = idx
-        no_reward = idx >= len(sorted_reward_times)
-
-    else:
-        raise ValueError(f"mode must be 'nearest', 'last', or 'next', got '{mode}'.")
-
-    # Clip indices to valid range for array access
-    relevant_reward_idx = np.clip(relevant_reward_idx, 0, len(sorted_reward_bins) - 1)
-
-    # Get reward bins for each sample
-    target_bins = sorted_reward_bins[relevant_reward_idx]
-
-    # Compute distances
-    # Find unique target bins to minimize distance field computations
-    unique_targets = np.unique(target_bins[~no_reward])
-    unique_targets = unique_targets[unique_targets >= 0]  # Filter invalid bins
-
-    # Initialize distances
-    distances = np.full(n_samples, np.nan, dtype=np.float64)
-
-    # Compute distance field for each unique target
-    for target_bin in unique_targets:
-        # Find samples with this target
-        mask = (target_bins == target_bin) & ~no_reward
-
-        if not np.any(mask):
-            continue
-
-        # Compute distance field from this reward location
-        dist_field = distance_field(
-            env.connectivity,
-            [int(target_bin)],
-            metric=metric,
-            bin_centers=env.bin_centers if metric == "euclidean" else None,
-        )
-
-        # Look up distances for trajectory bins
-        sample_bins = position_bins[mask]
-        valid_bins = sample_bins >= 0
-        distances[mask] = np.where(
-            valid_bins,
-            dist_field[np.clip(sample_bins, 0, len(dist_field) - 1)],
-            np.nan,
-        )
-
-    # Set NaN for samples with no relevant reward
-    distances[no_reward] = np.nan
-
-    # Set NaN for invalid trajectory bins
-    distances[position_bins < 0] = np.nan
-
-    # Set NaN for invalid reward bins
-    invalid_reward_mask = target_bins < 0
-    distances[invalid_reward_mask & ~no_reward] = np.nan
-
-    return distances
-
-
-def distance_to_boundary(
-    env: Environment,
-    positions: NDArray[np.float64],
-    *,
-    boundary_type: Literal["edge", "obstacle", "region"] = "edge",
-    region_name: str | None = None,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
-) -> NDArray[np.float64]:
-    """
-    Compute distance to environment boundary at each position.
-
-    Measures the instantaneous distance from trajectory positions to various
-    types of boundaries: environment edges, obstacles, or named regions.
-
-    Parameters
-    ----------
-    env : Environment
-        Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates at each sample. Must match environment
-        dimensionality.
-    boundary_type : {'edge', 'obstacle', 'region'}, default='edge'
-        Type of boundary to compute distance to:
-
-        - 'edge': Distance to the edge of the environment's bins: bins
-          next to unoccupied space, including unvisited areas and holes.
-          This is not the distance to the arena's walls; for that use
-          :func:`neurospatial.ops.nearest_boundary`.
-        - 'obstacle': Distance to obstacle regions. Requires environment
-          to have regions with ``obstacle=True`` attribute.
-        - 'region': Distance to boundary of a specific named region.
-          Requires ``region_name`` parameter.
-    region_name : str, optional
-        Name of region for boundary_type='region'. Required when
-        boundary_type='region', ignored otherwise.
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric:
-
-        - 'geodesic': Shortest-path distance respecting environment geometry.
-        - 'euclidean': Straight-line L2 distance.
-
-    Returns
-    -------
-    NDArray[np.float64], shape (n_samples,)
-        Distance from each position to the center of the nearest boundary
-        bin, so it is quantized to bin centers.
-        Units match environment coordinates (e.g., cm).
-        Returns NaN for positions outside the environment.
-
-    Raises
-    ------
-    ValueError
-        If boundary_type='region' but region_name is not provided.
-        If region_name is provided but region doesn't exist.
-        If no boundary bins found for the specified boundary_type.
-
-    Notes
-    -----
-    **Boundary detection**:
-
-    - **edge**: Finds bins adjacent to unoccupied space. A bin is an edge
-      bin if any of its graph neighbors are not in the environment.
-    - **obstacle**: Finds bins adjacent to obstacle regions. Obstacles
-      are regions marked with ``obstacle=True`` during annotation.
-    - **region**: Finds bins at the boundary of the named region. Boundary
-      bins are region bins adjacent to non-region bins.
-
-    **Performance**:
-
-    The distance field is computed once and cached for the duration of the
-    call. For repeated queries with different positions but the same
-    boundary, consider caching the distance field manually using
-    ``distance_field(env.connectivity, boundary_bins)``.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.events import distance_to_boundary
-    >>> # Distance to environment walls
-    >>> dist_wall = distance_to_boundary(
-    ...     env, positions, boundary_type="edge"
-    ... )  # doctest: +SKIP
-    >>>
-    >>> # Distance to obstacle
-    >>> dist_obstacle = distance_to_boundary(
-    ...     env, positions, boundary_type="obstacle"
-    ... )  # doctest: +SKIP
-    >>>
-    >>> # Distance to goal region boundary
-    >>> dist_goal = distance_to_boundary(  # doctest: +SKIP
-    ...     env, positions, boundary_type="region", region_name="goal"
-    ... )
-    >>>
-    >>> # GLM design matrix with multiple boundary features
-    >>> X = np.column_stack(  # doctest: +SKIP
-    ...     [
-    ...         distance_to_boundary(env, positions, boundary_type="edge"),
-    ...         distance_to_boundary(
-    ...             env, positions, boundary_type="region", region_name="goal"
-    ...         ),
-    ...     ]
-    ... )
-
-    See Also
-    --------
-    distance_to_reward : Distance to reward locations
-    time_to_nearest_event : Temporal distance to events
-    neurospatial.ops.nearest_boundary : Exact distance and direction to walls
-    """
-    from neurospatial.ops.distance import distance_field
-
-    require_cartesian(
-        env.coordinate_system,
-        "distance_to_boundary()",
-        why="It reads positions as the animal's allocentric positions, located "
-        "in the environment's bins.",
-        fix="use the allocentric environment the positions were recorded in",
-    )
-
-    # Input validation
-    positions = np.asarray(positions, dtype=np.float64)
-    n_samples = len(positions)
-
-    if n_samples == 0:
-        return np.array([], dtype=np.float64)
-
-    if boundary_type == "region" and region_name is None:
-        raise ValueError(
-            "region_name is required when boundary_type='region'. "
-            "Provide the name of the region to compute distance to."
-        )
-
-    # Find boundary bins based on boundary_type
-    if boundary_type == "edge":
-        # Edge bins: bins adjacent to unoccupied space
-        # A bin is an edge bin if it has fewer neighbors than expected
-        # for a fully-surrounded bin
-        boundary_bins = _find_edge_bins(env)
-
-    elif boundary_type == "obstacle":
-        # Obstacle bins: bins adjacent to obstacle regions
-        boundary_bins = _find_obstacle_boundary_bins(env)
-
-    elif boundary_type == "region":
-        # Region boundary bins: boundary of the named region
-        # region_name is already validated as not None by the earlier check
-        assert region_name is not None  # for type checker
-        _require_region_mask(
-            env,
-            region_name,
-            operation="distance_to_boundary()",
-            argument="region_name",
-        )
-        boundary_bins = _find_region_boundary_bins(env, region_name)
-
-    else:
-        raise ValueError(
-            f"boundary_type must be 'edge', 'obstacle', or 'region', "
-            f"got '{boundary_type}'."
-        )
-
-    if len(boundary_bins) == 0:
-        raise ValueError(
-            f"No boundary bins found for boundary_type='{boundary_type}'"
-            + (f", region_name='{region_name}'" if region_name else "")
-            + ". Check that the environment has valid boundaries."
-        )
-
-    # Compute distance field from boundary bins
-    dist_field = distance_field(
-        env.connectivity,
-        list(boundary_bins),
-        metric=metric,
-        bin_centers=env.bin_centers if metric == "euclidean" else None,
-    )
-
-    # Map positions to bins
-    position_bins = env.bin_at(positions)
-
-    # Look up distances
-    distances = np.full(n_samples, np.nan, dtype=np.float64)
-    valid_bins = position_bins >= 0
-    distances[valid_bins] = dist_field[position_bins[valid_bins]]
-
-    return distances
-
-
-def _find_edge_bins(env: Environment) -> list[int]:
-    """Find bins at the edge of the environment.
-
-    A bin is an edge bin if it has fewer than the maximum number of
-    neighbors, i.e. it is adjacent to unoccupied space (the outer rim, the
-    rim of an interior hole, etc.).
-
-    The notion of "edge" is layout-dependent and falls out naturally from
-    the connectivity graph:
-
-    - **1D linearized track** (a path graph): interior bins have degree 2
-      and the two end bins have degree 1, so the edge bins are exactly the
-      two ends of the track. This is the meaningful boundary of a 1D track.
-    - **Masked / holed 2D grids**: bins flanking a masked-out region have
-      fewer neighbors than a fully surrounded interior bin and are flagged,
-      so both the outer rim and any inner-hole rim are returned.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment.
-
-    Returns
-    -------
-    list[int]
-        Bin (node) indices at the environment boundary. Empty if the graph
-        has no nodes.
-
-    Notes
-    -----
-    The degree scan is vectorized over nodes: degrees are pulled from the
-    NetworkX ``DegreeView`` into arrays and the comparison is done with
-    NumPy rather than a per-node Python loop.
-    """
-    graph = env.connectivity
-    n_nodes = graph.number_of_nodes()
-    if n_nodes == 0:
-        return []
-
-    # Pull (node, degree) pairs once and compare vectorized. Node ids are
-    # arbitrary hashables in general, but Environment connectivity uses
-    # integer bin indices, so an int64 array is safe here.
-    degree_view = graph.degree()
-    nodes = np.fromiter((n for n, _ in degree_view), dtype=np.int64, count=n_nodes)
-    degrees = np.fromiter((d for _, d in graph.degree()), dtype=np.int64, count=n_nodes)
-
-    max_degree = int(degrees.max())
-
-    # A bin is an edge bin if it has fewer neighbors than a fully-surrounded
-    # bin in this layout (i.e., it borders unoccupied space).
-    edge_nodes = nodes[degrees < max_degree]
-    edge_bins: list[int] = edge_nodes.tolist()
-    return edge_bins
-
-
-def _find_obstacle_boundary_bins(env: Environment) -> list[int]:
-    """Find bins adjacent to obstacle regions.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment with obstacle regions.
-
-    Returns
-    -------
-    list[int]
-        Bin indices at obstacle boundaries.
-    """
-    # Find all obstacle regions
-    obstacle_regions = [
-        name
-        for name, region in env.regions.items()
-        if hasattr(region, "obstacle") and region.obstacle
-    ]
-
-    if not obstacle_regions:
-        # No obstacle regions defined - return empty
-        return []
-
-    # For environments with obstacle regions, bins adjacent to obstacles
-    # are typically edge bins (they have fewer neighbors because the
-    # obstacle removes connectivity). This is currently a simplification.
-    # A more complete implementation would require the environment to
-    # explicitly track which bins were removed due to obstacles.
-    return _find_edge_bins(env)
-
-
-def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
-    """Find bins at the boundary of a named region.
-
-    A bin is a region boundary bin if it's in the region AND has at least
-    one neighbor outside the region.
-
-    Parameters
-    ----------
-    env : Environment
-        Environment.
-    region_name : str
-        Name of the region.
-
-    Returns
-    -------
-    list[int]
-        Bin indices at the region boundary.
-    """
-    graph = env.connectivity
-    region_bins = set(env.bins_in_region(region_name))
-
-    if not region_bins:
-        return []
-
-    boundary_bins = []
-    for bin_idx in region_bins:
-        neighbors = set(graph.neighbors(bin_idx))
-        # Check if any neighbor is outside the region
-        if not neighbors.issubset(region_bins):
-            boundary_bins.append(bin_idx)
-
-    return boundary_bins
+    counts = event_count_in_window(sample_times, event_times, window=window)
+    indicator: NDArray[np.bool_] = counts > 0
+    return indicator

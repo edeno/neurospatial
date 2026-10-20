@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 __all__ = ["boundary_directions", "compute_boundary_distances", "nearest_boundary"]
 
 
-def boundary_directions(n_directions: int) -> NDArray[np.float64]:
+def boundary_directions(*, n_directions: int) -> NDArray[np.float64]:
     """Ray directions, the centers of ``n_directions`` equal sectors of a turn.
 
     Parameters
@@ -145,6 +145,12 @@ def compute_boundary_distances(
     --------
     nearest_boundary : Distance and direction to the closest wall point.
     compute_viewed_location : First wall along the gaze direction.
+    neurospatial.behavior.distance_to_boundary : Distance to the edge of the
+        environment's bins, to obstacles or to a region's boundary.
+    neurospatial.behavior.distance_to_region : Distance to a target bin or
+        region.
+    neurospatial.behavior.distance_to_reward : Distance to the reward location
+        at each sample.
 
     Examples
     --------
@@ -163,7 +169,7 @@ def compute_boundary_distances(
     [[28.3, 70.7, 70.7, 28.3]]
     """
     positions, headings = _check_samples(positions, headings, direction_frame)
-    directions = boundary_directions(n_directions)
+    directions = boundary_directions(n_directions=n_directions)
     binning, arena = env.binning, env.arena
     walls = boundary_geometry(binning, arena, boundary_source)
     indexes = CallIndexes()
@@ -227,6 +233,12 @@ def nearest_boundary(
     See Also
     --------
     compute_boundary_distances : Distance to the first wall along each ray.
+    neurospatial.behavior.distance_to_boundary : Distance to the edge of the
+        environment's bins, to obstacles or to a region's boundary.
+    neurospatial.behavior.distance_to_region : Distance to a target bin or
+        region.
+    neurospatial.behavior.distance_to_reward : Distance to the reward location
+        at each sample.
 
     Examples
     --------
@@ -287,7 +299,7 @@ def _check_samples(
                     why="Why: egocentric directions are measured from where "
                     "the animal faces (0 = ahead, +pi/2 = left).",
                     fix="pass headings in radians (0 = East), for example "
-                    "from neurospatial.ops.heading_from_velocity",
+                    "from neurospatial.behavior.heading_from_velocity",
                 )
             )
         headings = np.asarray(headings, dtype=np.float64).ravel()

@@ -12,9 +12,10 @@ from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import as_intervals, intervals_contain
+from neurospatial._intervals import as_intervals, interval_valid_mask, intervals_contain
+from neurospatial._observation import validate_break_before
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
@@ -125,6 +126,7 @@ def detect_region_visits(
     region_names: Sequence[str],
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> list[RegionVisit]:
     """Detect observed visits to disjoint named regions.
 
@@ -152,6 +154,10 @@ def detect_region_visits(
         inputs are also accepted. Only fully contained sampling intervals
         contribute duration. An entry at an epoch stop is excluded; the
         interval ending at that stop can still contribute observed dwell.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -163,8 +169,9 @@ def detect_region_visits(
     Raises
     ------
     ValueError
-        For invalid shapes, clocks, gap thresholds, duplicate/empty names, or
-        overlapping selected-region bins.
+        For invalid shapes, clocks, gap thresholds, duplicate/empty names,
+        overlapping selected-region bins, or a ``break_before`` that is not a
+        Boolean array with one entry per sample.
     TypeError
         If ``position_bins`` is not an integer array or names are not strings.
     RegionNotFoundError
@@ -175,8 +182,9 @@ def detect_region_visits(
     An entry is observed only when a preceding continuous sample was outside
     that region. An exit is observed at the first following outside sample.
     These are sampled crossing times, without sub-frame interpolation. A visit
-    starting inside a region after a gap is left-censored, not a new entry.
-    Invalid observations censor both adjacent runs and never fabricate exits.
+    starting inside a region after a gap or a declared break is left-censored,
+    not a new entry. Invalid observations censor both adjacent runs and never
+    fabricate exits.
 
     Use :func:`region_transitions` before filtering visits to obtain consecutive
     entry-to-entry pairs. Use ``detect_runs_between_regions`` instead when the
@@ -209,6 +217,9 @@ def detect_region_visits(
         raise TypeError("region_names must contain strings from env.regions.")
     if len(set(names)) != len(names):
         raise ValueError("region_names must not contain duplicate names.")
+    breaks = validate_break_before(
+        break_before, clock.size, call="detect_region_visits"
+    )
 
     # Resolve every bin's exclusive label before looking at this trajectory:
     # unvisited overlap is still ambiguous geometry, not a name-order policy.
@@ -238,11 +249,13 @@ def detect_region_visits(
         return []
 
     # A terminal epoch boundary can close exposure, but cannot create an event.
-    continuous = valid[:-1] & valid[1:]
-    if max_gap is not None:
-        continuous &= np.diff(clock) <= max_gap
-    if windows is not None:
-        continuous &= intervals_contain(windows, clock[:-1], clock[1:])
+    continuous = (
+        valid[:-1]
+        & valid[1:]
+        & interval_valid_mask(
+            clock, max_gap=max_gap, epochs=windows, break_before=breaks
+        )
+    )
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
     stops = np.flatnonzero(selected & np.r_[~connected, True]) + 1

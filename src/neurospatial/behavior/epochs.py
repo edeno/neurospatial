@@ -16,8 +16,9 @@ restrict
     (``restrict(spike_train, epochs=...)`` -> the in-epoch spikes).
 in_epochs
     The boolean mask primitive: ``True`` where ``t`` falls inside **any**
-    interval. Inclusive endpoints by default (``closed="both"``), matching
-    :mod:`neurospatial.behavior.segmentation` and pynapple.
+    interval. Half-open ``[start, stop)`` by default (``closed="left"``), the
+    same windows every analysis ``epochs=`` argument and
+    :func:`labels_to_epochs` use, so adjacent windows never share a point.
 restrict_spike_trains
     Ragged per-unit spike times are **not** aligned to a common ``times``; each
     train is restricted by its **own** timestamps. Accepts a plain sequence of
@@ -142,7 +143,7 @@ def in_epochs(
     t: NDArray[np.float64],
     epochs: Any,
     *,
-    closed: _Closed = "both",
+    closed: _Closed = "left",
 ) -> NDArray[np.bool_]:
     """Boolean mask: ``True`` where each element of ``t`` falls in any epoch.
 
@@ -161,19 +162,24 @@ def in_epochs(
         arrays are not an input form; pass an ``(n, 2)`` array instead.
         ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
-        Which endpoints are inclusive. Default ``"both"`` (``start <= t <=
-        end``), matching :mod:`neurospatial.behavior.segmentation` and pynapple.
-        Analysis ``epochs=``/``spike_window=`` arguments are half-open
-        ``[start, stop)`` because they tile time bins and sampling intervals,
-        so a point exactly at a stop is kept here but excluded there; pass
-        ``closed="left"`` to match them. Touching rows merge first, so a
-        boundary shared by two rows is inside the merged window for every
-        ``closed`` value.
+        Which endpoints are inclusive. Default ``"left"``: ``start <= t <
+        stop``, the half-open windows of every analysis ``epochs=`` and
+        ``spike_window=`` argument, so a spike exactly at the stop of one
+        window and the start of the next lands in exactly one of them.
+        ``"both"`` matches pynapple's inclusive ``restrict``. Touching rows
+        merge first, so a boundary shared by two rows is inside the merged
+        window for every ``closed`` value.
 
     Returns
     -------
     ndarray of bool
         Same shape as ``t``; ``True`` where ``t`` is inside any interval.
+
+    See Also
+    --------
+    restrict : Slice times and aligned arrays to the epochs.
+    neurospatial.events.filter_by_intervals : Keep the rows of an events
+        DataFrame that fall in an intervals DataFrame.
 
     Notes
     -----
@@ -185,6 +191,8 @@ def in_epochs(
     >>> import numpy as np
     >>> from neurospatial.behavior import in_epochs
     >>> in_epochs(np.array([0.0, 2.5, 5.0, 6.0]), (0.0, 5.0))
+    array([ True,  True, False, False])
+    >>> in_epochs(np.array([0.0, 2.5, 5.0, 6.0]), (0.0, 5.0), closed="both")
     array([ True,  True,  True, False])
     """
     # Validate ``closed`` up front -- before ``as_intervals`` and the
@@ -203,7 +211,7 @@ def restrict(
     times: NDArray[np.float64],
     *arrays: NDArray[Any],
     epochs: Any,
-    closed: _Closed = "both",
+    closed: _Closed = "left",
 ) -> NDArray[Any] | tuple[NDArray[Any], ...]:
     """Restrict ``times`` and time-aligned arrays to a set of epochs.
 
@@ -225,9 +233,12 @@ def restrict(
 
     For occupancy, firing rates, velocity or decoding, pass the original arrays
     with ``epochs=`` to the analysis. Sliced arrays cannot encode the excluded
-    time between windows; an analysis may otherwise reconnect nearby windows.
-    This function warns when aligned arrays would lose such a boundary.
-    Use ``closed="left"`` for point events in disjoint train/test cohorts.
+    time between windows, so an analysis may reconnect nearby windows, and the
+    sample on a window's stop is left out, so the window's last sampling
+    interval is lost. This function warns when aligned arrays would lose
+    either.
+    Windows are half-open by default, so disjoint train/test windows split
+    point events without sharing any.
 
     Parameters
     ----------
@@ -259,6 +270,13 @@ def restrict(
         If any array's first-axis length differs from ``len(times)`` (the error
         names the offending positional index).
 
+    See Also
+    --------
+    in_epochs : The boolean mask this function slices by.
+    restrict_spike_trains : Restrict ragged per-unit spike trains.
+    neurospatial.events.filter_by_intervals : Keep the rows of an events
+        DataFrame that fall in an intervals DataFrame.
+
     Examples
     --------
     >>> import numpy as np
@@ -267,7 +285,7 @@ def restrict(
     >>> positions = np.column_stack([times, times])
     >>> t, pos = restrict(times, positions, epochs=(1.0, 3.0))
     >>> t
-    array([1., 2., 3.])
+    array([1., 2.])
     """
     times_arr = np.asarray(times)
     n = len(times_arr)
@@ -289,20 +307,26 @@ def restrict(
     if not coerced:
         return times_kept
     intervals = as_intervals(epochs, name="epochs")
-    if (
-        intervals is not None
-        and len(times_kept) > 1
-        and not np.all(intervals_contain(intervals, times_kept[:-1], times_kept[1:]))
-    ):
-        warnings.warn(
-            "restrict() returns samples without their observation windows; "
-            "joining these samples can bridge excluded time. "
-            "For occupancy, rates, movement or decoding, pass the original "
-            "times and arrays with epochs= to the analysis. If you use these "
-            "sliced arrays, pass epochs= again; max_gap alone is insufficient.",
-            UserWarning,
-            stacklevel=2,
+    if intervals is not None:
+        # The first sample dropped after a kept one, when it sits on a window
+        # stop, closes that window's last interval, which slicing loses.
+        closing = np.flatnonzero(mask[:-1] & ~mask[1:]) + 1
+        loses_last = bool(np.isin(times_arr[closing], intervals[:, 1]).any())
+        bridges = len(times_kept) > 1 and not np.all(
+            intervals_contain(intervals, times_kept[:-1], times_kept[1:])
         )
+        if loses_last or bridges:
+            warnings.warn(
+                "restrict() returns samples without their observation windows: "
+                "it keeps samples in [start, stop), so the interval that ends "
+                "at a window's stop is lost, and joining samples can bridge "
+                "excluded time. For occupancy, rates, movement or decoding, pass "
+                "the original times and arrays with epochs= to the analysis. If "
+                "you use these sliced arrays, pass epochs= again; max_gap alone "
+                "is insufficient.",
+                UserWarning,
+                stacklevel=2,
+            )
     return (times_kept, *(arr[mask] for arr in coerced))
 
 
@@ -310,7 +334,7 @@ def restrict_spike_trains(
     spike_times: Sequence[NDArray[np.float64]],
     epochs: Any,
     *,
-    closed: _Closed = "both",
+    closed: _Closed = "left",
 ) -> list[NDArray[np.float64]]:
     """Restrict each ragged per-unit spike train by its **own** timestamps.
 

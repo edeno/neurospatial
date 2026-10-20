@@ -36,6 +36,8 @@ with methods for spatial queries, occupancy, smoothing, plotting and saving.
 - `Environment`: Discretized spatial environment, built with factory
   classmethods such as `Environment.from_samples` and `Environment.from_polygon`
 - `BinSequenceWithRuns`: Result of `Environment.bin_sequence_with_runs`
+- `BinMapping`: Result of `Environment.bin_mapping_from`, the exact bin pairs
+  between an environment and the one it was derived from
 - `CartesianSystem`, `EgocentricPolarSystem`: What the bin coordinates mean
 
 Every method is documented on the
@@ -138,8 +140,11 @@ Bayesian decoding of position from spike counts.
 
 ### [neurospatial.decoding.assemblies](neurospatial/decoding/assemblies.md)
 
-Population covariance and reactivation analyses take count matrices, with
-consistent units and column order across template, match and control periods:
+Population covariance and reactivation analyses take count matrices with the
+same units in the template, match and control periods. Pass each period's
+column labels (`unit_ids=` or `template_unit_ids=`, `match_unit_ids=`,
+`control_unit_ids=`) to match cells by label; without labels the columns pair
+by position:
 
 - `detect_assemblies()`: Dimensions above the Marchenko-Pastur reference and
   fitted patterns; a selected dimension may have no thresholded core members
@@ -159,12 +164,18 @@ Behavioral analysis built on trajectory + environment.
 
 **Key Modules:**
 
-- `behavior.trajectory`: Step lengths, cumulative distance, MSD, curvature,
-  planar turning angles, planar curvature, movement angular velocity,
-  home range
+- `behavior.trajectory`: Speed, step lengths, cumulative distance, MSD,
+  curvature, planar turning angles, planar curvature, movement angular
+  velocity, home range
+- `compute_speed(times, positions)`, `heading_from_velocity(times, positions)`,
+  `heading_from_body_orientation(nose, tail)`: Per-sample speed and heading
+  (radians, 0 = East) from tracking data
 - `behavior.resampling`: Distance resampling of observed runs
 - `behavior.navigation`: Path efficiency, goal-directed metrics,
   graph turn sequences
+- `distance_to_region()`, `distance_to_boundary()`, `distance_to_reward()`:
+  Per-sample distance to a goal, the environment's edge or the reward
+  location (GLM covariates)
 - `behavior.segmentation`: Laps, trials, region crossings,
   velocity-based segmentation
 - `detect_region_visits()`, `region_transitions()`: Observed visits and
@@ -185,7 +196,8 @@ Peri-event spike alignment and GLM regressors.
 - `align_spikes_to_events()`: Per-trial spike rasters
 - `align_continuous_to_events()`: Speed, heading or zone sampled around events
   only where observed, with per-kind means and category counts
-- `time_to_nearest_event()`, `distance_to_reward()`: GLM regressors
+- `time_to_nearest_event()`, `event_count_in_window()`, `event_indicator()`:
+  Time-based GLM regressors
 
 ### [neurospatial.ops.egocentric](neurospatial/ops/egocentric.md)
 
@@ -193,8 +205,6 @@ Allocentric ↔ egocentric coordinate transforms.
 
 **Key Functions:**
 
-- `heading_from_velocity(times, positions)`, `heading_from_body_orientation()`:
-  Derive head direction from tracking data
 - `allocentric_to_egocentric()`, `egocentric_to_allocentric()`:
   Frame conversions
 - `compute_egocentric_bearing()`, `compute_egocentric_distance()`:
@@ -378,7 +388,7 @@ pynwb.
 - `read_units(nwbfile, *, unit_ids=None, lazy=False)` →
   `NWBUnits(spike_times, unit_ids, obs_intervals, spike_window)`. Unit labels
   are table IDs; `spike_window` intersects the selected units' acquisition
-  coverage. Choose analysis epochs with `read_intervals(nwbfile, "epochs")`.
+  coverage. Choose analysis epochs with `read_intervals(nwbfile, interval_name="epochs")`.
 - Holders are frozen and cannot be tuple-unpacked. Position units describe
   converted values; missing declarations are `None`. `read_position` /
   `read_pose` / `read_units` accept `lazy=True` (handles valid only while the

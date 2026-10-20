@@ -38,6 +38,7 @@ Neurospatial provides a comprehensive suite of tools for analyzing animal trajec
    - [Observed Region Visits and Transitions](#observed-region-visits-and-transitions)
    - [Detecting Runs Between Regions](#detecting-runs-between-regions)
    - [Velocity-Based Segmentation](#velocity-based-segmentation)
+   - [Joined Recordings](#joined-recordings)
 3. [Lap Detection](#lap-detection)
    - [Auto Template Detection](#auto-template-detection)
    - [Reference Method](#reference-method)
@@ -333,8 +334,9 @@ limit would break the path where the animal was merely slow; the run starts in
   `break_before = np.r_[False, recording_id[1:] != recording_id[:-1]]`. Pass
   the same array to every function that takes `break_before`, such as
   `compute_speed`, `traveled_path_length`, `compute_path_efficiency`,
-  `compute_cumulative_distance`, `resample_by_distance` and the planar turning
-  functions. A gap in the clock longer than `max_gap` breaks the path on its own.
+  `compute_cumulative_distance`, `resample_by_distance`, the planar turning
+  functions, `compute_home_range` and the detectors in
+  [Joined Recordings](#joined-recordings). A gap in the clock longer than `max_gap` breaks the path on its own.
 - Choose `spacing` in the units of your positions (cm here), at the distance
   scale of your question.
 - When feeding a resampled path into another time-and-position function, pass
@@ -617,8 +619,9 @@ before filtering visits, since omitted visit identifiers are not bridged.
 Entry-to-entry `duration` includes source dwell time. Use
 `detect_runs_between_regions` below for source-exit to target-entry intervals.
 
-Invalid bins (`-1` or outside the environment's bin range), recording gaps, and
-excluded epochs break observation continuity; they do not fabricate exits or
+Invalid bins (`-1` or outside the environment's bin range), recording gaps,
+declared breaks (`break_before`, see [Joined Recordings](#joined-recordings))
+and excluded epochs break observation continuity; they do not fabricate exits or
 entries. Valid bins outside all selected regions are observed travel. Singleton
 observations are retained as zero-duration, doubly censored visits. Empty event
 lists remain empty; check for an empty list before grouping a DataFrame made
@@ -737,16 +740,83 @@ laps = [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)
 labels = laps_to_direction_labels(laps, times)  # "other" outside every lap
 conditions = labels_to_epochs(times, labels, missing_label="other")
 print(conditions.epochs_table()[["label", "start", "stop", "duration"]])
-assert conditions["clockwise"].tolist() == [[0.0, 4.5]]
+assert conditions["clockwise"].tolist() == [[0.0, 4.0]]
 assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
 ```
 
-The time between two frames takes the label of the frame at its start, so the
-clockwise window runs to 4.5 s, the frame after the lap's last frame at 4.0 s.
-The last frame of the recording starts no interval, so the counter-clockwise
-window ends at 9.5 s. Pass `valid=` to leave out frames with lost tracking.
+The time between two frames takes the label of the frame at its start. A lap
+covers `[start_time, end_time)`, so its last frame, whose interval leaves the
+lap, is labeled "other", and each window is exactly its lap: 0–4 s and
+6–9.5 s. Pass `valid=` to leave out frames with lost tracking.
 [Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs)
 uses these windows to compare rate maps between conditions.
+
+### Joined Recordings
+
+Sessions are often analyzed as several recordings joined on one clock, for
+example two runs on the same track with the animal carried back to the start
+in between. If the clock has no pause at the join, nothing in `times` tells
+the detectors that the recordings are separate: a trial that ends one
+recording seems to finish at wherever the animal was put down for the next.
+Mark the first sample of each later recording with `break_before`, and the
+region, run, lap and trial detectors analyze each recording on its own:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from shapely.geometry import box
+
+from neurospatial import Environment, Regions
+from neurospatial.behavior import detect_region_visits, segment_trials
+
+# A 100 cm linear track with a home zone and a reward zone at its ends
+track = np.c_[np.linspace(0.0, 100.0, 101), np.zeros(101)]
+env = Environment.from_samples(track, bin_size=5.0).with_metadata(units="cm")
+regions = Regions(env.regions.values())
+regions.add("home", polygon=box(-1, -5, 10, 5))
+regions.add("reward", polygon=box(90, -5, 101, 5))
+env = env.with_regions(regions)
+
+# Recording 1 ends halfway down the track. Recording 2 starts with the
+# animal placed at the reward well. Both are on one 30 Hz clock.
+x = np.r_[np.linspace(5.0, 50.0, 90), np.full(60, 95.0)]
+positions = np.c_[x, np.zeros_like(x)]
+times = np.arange(x.size) / 30  # seconds, no time between the recordings
+new_recording = np.arange(x.size) == 90  # first sample of recording 2
+position_bins = env.bin_at(positions)
+
+trial_options = {"start_region": "home", "end_regions": ["reward"], "min_duration": 0.5}
+joined = segment_trials(position_bins, times, env, **trial_options)
+split = segment_trials(
+    position_bins, times, env, break_before=new_recording, **trial_options
+)
+print(f"without break_before: success={joined[0].success}, ends at {joined[0].end_time:.2f} s")
+print(f"with break_before:    success={split[0].success}, ends at {split[0].end_time:.2f} s")
+
+(visit,) = detect_region_visits(
+    position_bins, times, env, region_names=["reward"], break_before=new_recording
+)
+print(f"reward visit entry observed: {visit.entry_observed}")
+assert joined[0].success and not split[0].success
+assert split[0].end_time == times[89]
+assert not visit.entry_observed
+```
+
+Without `break_before` the trial "succeeds" at 3.00 s, the moment the animal
+was placed at the reward well. With it, the trial ends unfinished at 2.97 s,
+the last sample of the first recording, and the reward visit that opens the
+second recording has no observed entry: the animal was already there when the
+recording started. A declared break has the same effect as a gap in the clock
+longer than `max_gap`; it does not need the clock to pause.
+
+Build `break_before` from your recording or epoch IDs, for example
+`np.r_[False, recording_id[1:] != recording_id[:-1]]`, and pass the same array
+to every call. The region, run, velocity, lap and trial detectors on this page
+take it, as do `compute_home_range`, the goal-directed metrics,
+`heading_direction_labels`, `Environment.occupancy`, `Environment.bin_sequence`,
+`Environment.bin_sequence_with_runs` and `Environment.transitions`. Passing each
+recording's `[start, stop)` as `epochs` does not do this: windows that touch
+merge into one.
 
 ---
 

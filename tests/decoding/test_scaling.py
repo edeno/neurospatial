@@ -136,10 +136,10 @@ def test_session_summary_streams_binning_under_full_matrix(small_2d_env):
     tracemalloc.start()
     tracemalloc.reset_peak()
     counts, centers = bin_spikes_in_time(
-        spike_times, dt, t_start=times.min(), t_stop=times.max()
+        spike_times, dt=dt, t_start=times.min(), t_stop=times.max()
     )
     ref = decode_position_summary(
-        env, counts, encoding_models, dt, times=centers, time_chunk=512
+        env, counts, encoding_models, dt=dt, times=centers, time_chunk=512
     )
     _, reference_peak = tracemalloc.get_traced_memory()
     del counts, centers, ref

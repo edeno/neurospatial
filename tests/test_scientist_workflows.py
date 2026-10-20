@@ -51,9 +51,11 @@ def test_unsupported_space_never_becomes_evidence_of_silence(partial_recording):
         np.testing.assert_array_equal(summary.map_position, result.map_position)
         np.testing.assert_allclose(summary.posterior_entropy, 0.0, atol=1e-12)
     for chunk in (None, 7):
-        result = decode_position(env, np.zeros((10, 1)), rates, 0.1, time_chunk=chunk)
+        result = decode_position(
+            env, np.zeros((10, 1)), rates, dt=0.1, time_chunk=chunk
+        )
         np.testing.assert_array_equal(result.posterior[:, 1:], 0.0)
-    summary = decode_position_summary(env, np.zeros((10, 1)), rates, 0.1)
+    summary = decode_position_summary(env, np.zeros((10, 1)), rates, dt=0.1)
     np.testing.assert_array_equal(summary.map_position, 5.0)
 
 
@@ -98,7 +100,7 @@ def test_low_occupancy_support_survives_zero_filling(partial_recording):
     assert 0 < rates.occupancy[1] < 0.5
     assert rates.firing_rates[0, 1] == 0.0
     assert not rates.spatial_support[1]
-    decoded = decode_position(env, np.zeros((3, 1)), rates, 0.1)
+    decoded = decode_position(env, np.zeros((3, 1)), rates, dt=0.1)
     np.testing.assert_array_equal(decoded.posterior[:, 1:], 0.0)
     unsupported = compute_spatial_rates(
         env, spikes, times, positions, min_occupancy=100, fill_value=0.0
@@ -114,11 +116,11 @@ def test_editing_settings_cannot_change_supported_training_bins(partial_recordin
     rates = compute_spatial_rates(
         env, spikes, times, positions, min_occupancy=0.5, fill_value=0.0
     )
-    before = decode_position(env, np.zeros((1, 1)), rates, 0.1)
+    before = decode_position(env, np.zeros((1, 1)), rates, dt=0.1)
     settings = rates.analysis_settings
     settings["min_occupancy"] = 0.0
     settings["observed_intervals"][0][0] = -10.0
-    after = decode_position(env, np.zeros((1, 1)), rates, 0.1)
+    after = decode_position(env, np.zeros((1, 1)), rates, dt=0.1)
 
     assert rates.analysis_settings["min_occupancy"] == 0.5
     assert not rates.spatial_support[1]
@@ -144,7 +146,7 @@ def test_absent_pre_decision_evidence_cannot_label_deliberation(entry):
         times,
         np.c_[times, np.zeros(len(times))],
         entry,
-        1.0,
+        window_duration=1.0,
         min_speed=5.0,
     )
     assert not result.is_valid
@@ -156,7 +158,7 @@ def test_absent_pre_decision_evidence_cannot_label_deliberation(entry):
 def test_stationary_tracking_is_not_head_scanning():
     times = np.arange(21) / 10
     result = compute_pre_decision_metrics(
-        times, np.ones((21, 2)), 2.0, 1.0, min_speed=5.0
+        times, np.ones((21, 2)), 2.0, window_duration=1.0, min_speed=5.0
     )
     assert result.mean_speed == 0.0
     assert not result.is_valid
@@ -199,8 +201,11 @@ def test_epoch_workflow_preserves_excluded_time():
         kept_times, kept_positions = restrict(times, positions, epochs=epochs)
     full = env.occupancy(times, positions, epochs=epochs)
     kept = env.occupancy(kept_times, kept_positions, epochs=epochs)
+    # The original arrays with epochs= are exact: [0, 0.3) and [0.4, 0.8).
     np.testing.assert_allclose(full, [0.7])
-    np.testing.assert_allclose(kept, full)
+    # Slicing drops the samples on each stop (0.3 s, 0.8 s), so each window's
+    # last 0.1 s interval is lost, which is why restrict() warns.
+    np.testing.assert_allclose(kept, [0.5])
     train = in_epochs(times, (0.0, 0.3), closed="left")
     test = in_epochs(times, (0.3, 0.8), closed="left")
     assert not np.any(train & test)

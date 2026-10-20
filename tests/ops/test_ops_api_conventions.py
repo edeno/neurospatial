@@ -44,29 +44,30 @@ def test_basis_rng_keyword_deterministic(simple_2d_env):
         assert "random_state" not in sig.parameters, fn.__name__
         assert sig.parameters["rng"].kind is inspect.Parameter.KEYWORD_ONLY, fn.__name__
 
-    # `method` is keyword-only on select_basis_centers (n_centers is the only
-    # positional-or-keyword argument after env).
+    # `n_centers` and `method` are keyword-only on select_basis_centers (env is
+    # the only positional argument).
     sig = inspect.signature(select_basis_centers)
+    assert sig.parameters["n_centers"].kind is inspect.Parameter.KEYWORD_ONLY
     assert sig.parameters["method"].kind is inspect.Parameter.KEYWORD_ONLY
 
     # Reproducible across two calls with the same seed.
-    c1 = select_basis_centers(simple_2d_env, 8, rng=0)
-    c2 = select_basis_centers(simple_2d_env, 8, rng=0)
+    c1 = select_basis_centers(simple_2d_env, n_centers=8, rng=0)
+    c2 = select_basis_centers(simple_2d_env, n_centers=8, rng=0)
     np.testing.assert_array_equal(c1, c2)
 
     b1 = geodesic_rbf_basis(simple_2d_env, n_centers=8, rng=0)
     b2 = geodesic_rbf_basis(simple_2d_env, n_centers=8, rng=0)
     np.testing.assert_array_equal(b1, b2)
 
-    # `method`/`rng` cannot be passed positionally any more.
+    # `n_centers`/`method`/`rng` cannot be passed positionally any more.
     with pytest.raises(TypeError):
-        select_basis_centers(simple_2d_env, 8, "kmeans")
+        select_basis_centers(simple_2d_env, 8)
     with pytest.raises(TypeError):
         select_basis_centers(simple_2d_env, 8, "kmeans", 0)
 
     # The removed keyword raises TypeError.
     with pytest.raises(TypeError):
-        select_basis_centers(simple_2d_env, 8, random_state=0)
+        select_basis_centers(simple_2d_env, n_centers=8, random_state=0)
 
 
 def test_dir_surfaces_lazily_exported_names():

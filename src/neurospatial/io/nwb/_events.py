@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
 if TYPE_CHECKING:
@@ -38,8 +39,10 @@ PREDEFINED_EPOCHS: str = "epochs"
 PREDEFINED_INVALID_TIMES: str = "invalid_times"
 
 
+@keyword_hint("table_name", "processing_module")
 def read_events(
     nwbfile: NWBFile,
+    *,
     table_name: str,
     processing_module: str = DEFAULT_PROCESSING_MODULE,
 ) -> pd.DataFrame:
@@ -77,7 +80,7 @@ def read_events(
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     laps = read_events(nwbfile, "laps")
+    ...     laps = read_events(nwbfile, table_name="laps")
     ...     print(f"Found {len(laps)} lap events")
     """
     from neurospatial.io.nwb._core import _require_ndx_events, logger
@@ -120,8 +123,10 @@ def read_events(
     return events_table_to_dataframe(events_table, table_name=table_name)
 
 
+@keyword_hint("interval_name")
 def read_intervals(
     nwbfile: NWBFile,
+    *,
     interval_name: str,
 ) -> pd.DataFrame:
     """
@@ -162,7 +167,7 @@ def read_intervals(
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
-    ...     trials = read_intervals(nwbfile, "trials")
+    ...     trials = read_intervals(nwbfile, interval_name="trials")
     ...     print(f"Found {len(trials)} trials")
     """
     from neurospatial.io.nwb._core import _require_pynwb, logger
@@ -204,12 +209,13 @@ def read_intervals(
     )
 
 
+@keyword_hint("description")
 def write_laps(
     nwbfile: NWBFile,
     lap_times: NDArray[np.float64],
     lap_types: NDArray[np.int_] | None = None,
-    description: str = "Detected lap events",
     *,
+    description: str = "Detected lap events",
     start_regions: Sequence[str] | None = None,
     end_regions: Sequence[str] | None = None,
     stop_times: NDArray[np.float64] | None = None,
@@ -411,13 +417,14 @@ def write_laps(
     logger.debug("Wrote EventsTable '%s' with %d lap events", name, n_laps)
 
 
+@keyword_hint("description")
 def write_region_crossings(
     nwbfile: NWBFile,
     crossing_times: NDArray[np.float64],
     region_names: NDArray[np.str_],
     event_types: NDArray[np.str_],
-    description: str = "Region crossing events",
     *,
+    description: str = "Region crossing events",
     name: str = DEFAULT_REGION_CROSSINGS_NAME,
     overwrite: bool = False,
 ) -> None:
@@ -896,11 +903,13 @@ def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
     write_trials : Write trials to NWB file.
     read_intervals : Read generic TimeIntervals.
     """
-    return read_intervals(nwbfile, "trials")
+    return read_intervals(nwbfile, interval_name="trials")
 
 
+@keyword_hint("name", "description")
 def dataframe_to_events_table(
     df: pd.DataFrame,
+    *,
     name: str,
     description: str = "Events",
 ) -> ndx_events.EventsTable:
@@ -943,7 +952,7 @@ def dataframe_to_events_table(
     ...         "label": ["a", "b", "c"],
     ...     }
     ... )
-    >>> events_table = dataframe_to_events_table(df, "my_events")  # doctest: +SKIP
+    >>> events_table = dataframe_to_events_table(df, name="my_events")  # doctest: +SKIP
     """
     from neurospatial.io.nwb._core import _require_ndx_events
 
@@ -1005,11 +1014,12 @@ def dataframe_to_events_table(
     return events_table
 
 
+@keyword_hint("name")
 def write_events(
     nwbfile: NWBFile,
     events: pd.DataFrame,
-    name: str,
     *,
+    name: str,
     description: str = "Event data",
     processing_module: str = DEFAULT_PROCESSING_MODULE,
     overwrite: bool = False,

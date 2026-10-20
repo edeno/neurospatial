@@ -93,14 +93,14 @@ def test_rate_result_rejects_different_environment(
     with pytest.raises(
         IncompatibleEnvironmentError, match=r"encoding result.*environment"
     ):
-        decode(env, np.array([[0], [1]]), small_rates, 0.1, validate=validate)
+        decode(env, np.array([[0], [1]]), small_rates, dt=0.1, validate=validate)
 
 
 @pytest.mark.parametrize("decode", [decode_position, decode_position_summary])
 def test_rate_result_accepts_equivalent_copied_environment(small_rates, decode) -> None:
     counts = np.array([[0], [1]])
-    reference = decode(small_rates.env, counts, small_rates, 0.1)
-    copied = decode(small_rates.env.with_metadata(), counts, small_rates, 0.1)
+    reference = decode(small_rates.env, counts, small_rates, dt=0.1)
+    copied = decode(small_rates.env.with_metadata(), counts, small_rates, dt=0.1)
     np.testing.assert_array_equal(copied.map_position, reference.map_position)
     np.testing.assert_array_equal(copied.posterior_entropy, reference.posterior_entropy)
 
@@ -123,9 +123,9 @@ def _setup() -> tuple[Environment, np.ndarray, object, float]:
 def test_decode_position_accepts_result_object() -> None:
     env, spike_counts, rates_result, dt = _setup()
 
-    from_result = decode_position(env, spike_counts, rates_result, dt)
+    from_result = decode_position(env, spike_counts, rates_result, dt=dt)
     from_array = decode_position(
-        env, spike_counts, np.asarray(rates_result.firing_rates), dt
+        env, spike_counts, np.asarray(rates_result.firing_rates), dt=dt
     )
 
     np.testing.assert_allclose(
@@ -143,7 +143,7 @@ def test_decode_position_none_firing_rates_clear_error() -> None:
     """A result whose .firing_rates is None raises a clear ValueError (I2)."""
     env, spike_counts, _rates_result, dt = _setup()
     with pytest.raises(ValueError, match=r"\.firing_rates.*2-D.*None"):
-        decode_position(env, spike_counts, _BadRates(firing_rates=None), dt)
+        decode_position(env, spike_counts, _BadRates(firing_rates=None), dt=dt)
 
 
 def test_decode_position_dict_firing_rates_clear_error() -> None:
@@ -151,7 +151,7 @@ def test_decode_position_dict_firing_rates_clear_error() -> None:
     env, spike_counts, _rates_result, dt = _setup()
     bad = _BadRates(firing_rates={"north": np.zeros(5), "south": np.zeros(5)})
     with pytest.raises(ValueError, match=r"\.firing_rates.*2-D"):
-        decode_position(env, spike_counts, bad, dt)
+        decode_position(env, spike_counts, bad, dt=dt)
 
 
 def test_decode_position_1d_firing_rates_clear_error() -> None:
@@ -159,7 +159,7 @@ def test_decode_position_1d_firing_rates_clear_error() -> None:
     env, spike_counts, _rates_result, dt = _setup()
     bad = _BadRates(firing_rates=np.zeros(5))
     with pytest.raises(ValueError, match=r"\.firing_rates.*2-D"):
-        decode_position(env, spike_counts, bad, dt)
+        decode_position(env, spike_counts, bad, dt=dt)
 
 
 def _capture_model_dtype(env, spike_counts, encoding_models, dt):
@@ -177,7 +177,7 @@ def _capture_model_dtype(env, spike_counts, encoding_models, dt):
 
     posterior_mod._prepare_decode_inputs = spy  # type: ignore[assignment]
     try:
-        decode_position(env, spike_counts, encoding_models, dt)
+        decode_position(env, spike_counts, encoding_models, dt=dt)
     finally:
         posterior_mod._prepare_decode_inputs = real  # type: ignore[assignment]
     return captured["dtype"]

@@ -841,7 +841,7 @@ def test_pre_decision_window_starts_at_declared_break(eastward_path):
     break_before = np.zeros(30, dtype=bool)
     break_before[18] = True
     window_times, window_positions = extract_pre_decision_window(
-        times, positions, 2.0, 1.0, break_before=break_before
+        times, positions, 2.0, window_duration=1.0, break_before=break_before
     )
     np.testing.assert_array_equal(window_times, times[18:20])
     np.testing.assert_array_equal(window_positions, positions[18:20])
@@ -855,7 +855,7 @@ def test_pre_decision_window_keeps_missing_row(eastward_path):
     positions = positions.copy()
     positions[15] = np.nan
     window_times, window_positions = extract_pre_decision_window(
-        times, positions, 2.0, 1.0
+        times, positions, 2.0, window_duration=1.0
     )
     np.testing.assert_array_equal(window_times, times[10:20])
     assert np.isnan(window_positions[5]).all()
@@ -1016,14 +1016,14 @@ def _repeated_clock_calls():
 
     return {
         "extract_pre_decision_window": lambda env, t, p: extract_pre_decision_window(
-            t, p, 0.5, 1.0
+            t, p, 0.5, window_duration=1.0
         ),
         "pre_decision_speed_stats": lambda env, t, p: pre_decision_speed_stats(t, p),
         "pre_decision_heading_stats": lambda env, t, p: pre_decision_heading_stats(
             t, p, min_speed=1.0
         ),
         "compute_pre_decision_metrics": lambda env, t, p: compute_pre_decision_metrics(
-            t, p, 0.5, 1.0, min_speed=1.0
+            t, p, 0.5, window_duration=1.0, min_speed=1.0
         ),
         "detect_boundary_crossings": lambda env, t, p: detect_boundary_crossings(
             np.zeros(len(t), dtype=np.int64), np.array([0]), t
@@ -1102,7 +1102,7 @@ def test_decision_functions_one_dimensional_positions_raise(
     times = np.arange(n_samples) / 10
     calls = {
         "compute_pre_decision_metrics": lambda p: compute_pre_decision_metrics(
-            times, p, 2.0, 1.0, min_speed=1.0
+            times, p, 2.0, window_duration=1.0, min_speed=1.0
         ),
         "compute_decision_analysis": lambda p: compute_decision_analysis(
             t_maze_environment,

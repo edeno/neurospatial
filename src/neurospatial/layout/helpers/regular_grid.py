@@ -432,7 +432,8 @@ def _build_grid_structure(
     data_for_bins = samples if samples is not None else np.zeros((1, n_dims))
     # Convert bin_sizes to list to match get_n_bins signature
     bin_sizes_list: list[float] = bin_sizes.tolist()
-    n_bins = get_n_bins(data_for_bins, bin_sizes_list, ranges)  # ensures at least 1
+    # ensures at least 1
+    n_bins = get_n_bins(data_for_bins, bin_size=bin_sizes_list, dimension_range=ranges)
 
     # 4a) Preflight the FULL grid size before allocating anything. get_n_bins
     #     validates each AXIS against the int64 limit, but np.histogramdd and

@@ -51,8 +51,8 @@ import numpy as np
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.behavior import compute_speed
-from neurospatial.ops import heading_from_velocity, nearest_boundary, sample_spatial_features
+from neurospatial.behavior import compute_speed, heading_from_velocity
+from neurospatial.ops import nearest_boundary, sample_spatial_features
 
 rng = np.random.default_rng(0)
 
@@ -394,7 +394,9 @@ change in which events you are averaging.
 - **Joined recordings.** If you concatenate recordings on one clock, mark the
   first frame of each later recording with `break_before`, and pass it to
   `compute_speed`, `heading_from_velocity`,
-  `compute_movement_angular_velocity` and `align_continuous_to_events`.
+  `compute_movement_angular_velocity`, `align_continuous_to_events` and
+  `add_positions`, and to the rate maps and decoders you run on the same
+  recording (see [Recordings joined on one clock](workflows.md#recordings-joined-on-one-clock)).
   Nothing is then smoothed, filled, interpolated or averaged across the join,
   and a jump in position between the recordings is not read as running.
   Passing each recording's `[start, stop)` as `epochs` does not do this:
@@ -422,9 +424,13 @@ to the simulated session as if it were two recordings joined at 60 s.
 
 <!-- docs-test: run setup=docs_behavior_around_reward -->
 ```python
-from neurospatial.behavior import compute_movement_angular_velocity, compute_speed
+from neurospatial.behavior import (
+    compute_movement_angular_velocity,
+    compute_speed,
+    heading_from_velocity,
+)
 from neurospatial.events import align_continuous_to_events
-from neurospatial.ops import heading_from_velocity, nearest_boundary
+from neurospatial.ops import nearest_boundary
 
 
 def behavior_around_events(env, times, positions, recording_id, event_times, window, dt):

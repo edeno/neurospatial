@@ -279,7 +279,7 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
         times,
         positions,
         entry,
-        duration,
+        window_duration=duration,
         max_gap=None,
         min_speed=5.0,
     )
@@ -287,7 +287,7 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
     assert metrics.min_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
     trial = compute_vte_trial(
-        times, positions, entry, duration, max_gap=None, min_speed=5.0
+        times, positions, entry, window_duration=duration, max_gap=None, min_speed=5.0
     )
     assert trial.mean_speed == expected_mean
     expected_sweep = head_sweep_from_positions(

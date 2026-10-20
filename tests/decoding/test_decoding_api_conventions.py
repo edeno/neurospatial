@@ -20,17 +20,17 @@ from neurospatial.decoding.trajectory import fit_isotonic_trajectory
 
 @pytest.fixture
 def assembly_spike_counts() -> np.ndarray:
-    """Population spike-count matrix, shape (n_neurons, n_time_bins).
+    """Population spike-count matrix, shape (n_time_bins, n_neurons).
 
     Two distinct co-activating assemblies (neurons 0-2 and 5-7) so that
     detection finds multiple components and ICA initialization (and hence
     the seed) affects the recovered patterns.
     """
     rng = np.random.default_rng(7)
-    n_neurons, n_time_bins = 10, 600
-    counts = rng.poisson(2.0, (n_neurons, n_time_bins)).astype(np.float64)
-    counts[:3] += rng.poisson(4.0, n_time_bins).astype(np.float64)
-    counts[5:8] += rng.poisson(4.0, n_time_bins).astype(np.float64)
+    n_time_bins, n_neurons = 600, 10
+    counts = rng.poisson(2.0, (n_time_bins, n_neurons)).astype(np.float64)
+    counts[:, :3] += rng.poisson(4.0, (n_time_bins, 1)).astype(np.float64)
+    counts[:, 5:8] += rng.poisson(4.0, (n_time_bins, 1)).astype(np.float64)
     return counts
 
 

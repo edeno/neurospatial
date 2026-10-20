@@ -80,8 +80,8 @@ class TestAlignSpikesToEvents:
 
     # --- Window boundary handling ---
 
-    def test_window_inclusive_boundaries(self):
-        """Spikes at exact window boundaries are included."""
+    def test_window_is_half_open(self):
+        """A spike at the window start is kept; one at the stop is not."""
         from neurospatial.events.alignment import align_spikes_to_events
 
         spike_times = np.array([9.0, 10.0, 12.0])  # At -1.0, 0.0, +2.0
@@ -90,7 +90,7 @@ class TestAlignSpikesToEvents:
 
         result = align_spikes_to_events(spike_times, event_times, window)
 
-        assert_array_almost_equal(result[0], [-1.0, 0.0, 2.0])
+        assert_array_almost_equal(result[0], [-1.0, 0.0])
 
     def test_spikes_outside_window_excluded(self):
         """Spikes outside window are not included."""
@@ -197,7 +197,7 @@ class TestAlignSpikesToEvents:
         event_times = np.array([10.0])
         window = (1.0, -1.0)  # Inverted
 
-        with pytest.raises(ValueError, match=r"start.*end"):
+        with pytest.raises(ValueError, match=r"start.*stop"):
             align_spikes_to_events(spike_times, event_times, window)
 
     def test_invalid_spike_times_nan(self):
@@ -335,17 +335,15 @@ class TestAlignSpikesToEvents:
                 assert arr.min() >= window[0]
                 assert arr.max() <= window[1]
 
-    def test_zero_width_window(self):
-        """Zero-width window only captures exact matches."""
+    def test_zero_width_window_is_refused(self):
+        """A half-open window with stop == start holds no time."""
         from neurospatial.events.alignment import align_spikes_to_events
 
         spike_times = np.array([9.9, 10.0, 10.1])
         event_times = np.array([10.0])
-        window = (0.0, 0.0)  # Zero width
 
-        result = align_spikes_to_events(spike_times, event_times, window)
-
-        assert_array_almost_equal(result[0], [0.0])  # Only exact match
+        with pytest.raises(ValueError, match="before its stop"):
+            align_spikes_to_events(spike_times, event_times, (0.0, 0.0))
 
 
 class TestPeriEventHistogram:
@@ -563,7 +561,7 @@ class TestPeriEventHistogram:
         event_times = np.array([10.0])
         window = (0.5, -0.5)  # Inverted
 
-        with pytest.raises(ValueError, match=r"start.*end"):
+        with pytest.raises(ValueError, match=r"start.*stop"):
             peri_event_histogram(spike_times, event_times, window)
 
     def test_invalid_bin_size_zero(self):
@@ -1079,8 +1077,8 @@ class TestAlignEvents:
 
         assert len(result) == 0
 
-    def test_event_at_window_boundary_included(self):
-        """Events at exact window boundaries are included."""
+    def test_window_is_half_open(self):
+        """An event at the window start is kept; one at the stop is not."""
         import pandas as pd
 
         from neurospatial.events.alignment import align_events
@@ -1091,8 +1089,8 @@ class TestAlignEvents:
 
         result = align_events(events, reference, window)
 
-        assert len(result) == 2
-        assert_array_almost_equal(result["relative_time"].values, [-1.0, 2.0])
+        assert len(result) == 1
+        assert_array_almost_equal(result["relative_time"].values, [-1.0])
 
     # --- Custom column names ---
 
@@ -1155,7 +1153,7 @@ class TestAlignEvents:
         reference = pd.DataFrame({"timestamp": [10.0]})
         window = (1.0, -1.0)  # Inverted
 
-        with pytest.raises(ValueError, match=r"start.*end"):
+        with pytest.raises(ValueError, match=r"start.*stop"):
             align_events(events, reference, window)
 
     # --- Typical use case ---

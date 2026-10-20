@@ -494,7 +494,7 @@ def head_sweep_from_positions(
     as a separate recording; no velocity or heading spans a pause.
 
     Heading is the direction of the smoothed velocity (as in
-    :func:`neurospatial.ops.egocentric.heading_from_velocity`) and is NaN
+    :func:`neurospatial.behavior.heading_from_velocity`) and is NaN
     where the animal is slower than ``min_speed`` or still. The result sums
     :func:`head_sweep_magnitude` over runs, without connecting the last
     heading of one run to the first of the next; runs without a head sweep
@@ -519,7 +519,7 @@ def head_sweep_from_positions(
     >>> head_sweep_from_positions(times, still, min_speed=1.0)
     nan
     """
-    from neurospatial.ops.egocentric import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import _validate_velocity_positions
 
     raw_positions = positions
     times, positions, support = validated_observations(
@@ -543,7 +543,7 @@ def _head_sweep(
     min_speed: float,
 ) -> float:
     """IdPhi summed over runs of usable intervals; NaN when no run has one."""
-    from neurospatial.ops.egocentric import _movement_heading_and_speed
+    from neurospatial.behavior._kinematics import _movement_heading_and_speed
 
     if not interval_mask.any():
         return np.nan
@@ -750,8 +750,8 @@ def compute_vte_trial(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     entry_time: float,
-    window_duration: float,
     *,
+    window_duration: float,
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
@@ -857,8 +857,8 @@ def compute_vte_trial(
     >>> result.mean_speed, result.head_sweep_magnitude
     (nan, nan)
     """
+    from neurospatial.behavior._kinematics import _validate_velocity_positions
     from neurospatial.behavior.decisions import _pre_decision_window
-    from neurospatial.ops.egocentric import _validate_velocity_positions
 
     raw_positions = positions
     times, positions, support = validated_observations(
@@ -1091,12 +1091,14 @@ def compute_vte_session(
         operation="compute_vte_session()",
         argument="decision_region",
     )
-    from neurospatial.behavior._kinematics import resolve_min_speed
+    from neurospatial.behavior._kinematics import (
+        _validate_velocity_positions,
+        resolve_min_speed,
+    )
     from neurospatial.behavior.decisions import (
         _pre_decision_window,
         decision_region_entry_time,
     )
-    from neurospatial.ops.egocentric import _validate_velocity_positions
 
     _validate_velocity_positions(raw_positions)
     min_speed = resolve_min_speed(env, min_speed, call="compute_vte_session()")

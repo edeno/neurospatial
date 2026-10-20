@@ -63,7 +63,7 @@ def _validate_encoding_environment(
     from neurospatial.environment import _environment_differences
 
     _validate_env_argument(
-        env, context=context, arguments="spike_counts, encoding_models, dt"
+        env, context=context, arguments="spike_counts, encoding_models, dt=dt"
     )
     bins, topology = _environment_differences(source, env)
     mismatch = bins or topology
@@ -522,8 +522,8 @@ def decode_position(
     env: Environment,
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64] | SpatialRatesLike,
-    dt: float,
     *,
+    dt: float,
     prior: NDArray[np.float64] | None = None,
     method: Literal["poisson"] = "poisson",
     times: NDArray[np.float64] | None = None,
@@ -1001,7 +1001,7 @@ def _prepare_decode_inputs(
     from neurospatial.encoding import _validate_env_argument
 
     _validate_env_argument(
-        env, context=context, arguments="spike_counts, encoding_models, dt"
+        env, context=context, arguments="spike_counts, encoding_models, dt=dt"
     )
 
     # Validate method
@@ -1350,8 +1350,8 @@ def decode_position_summary(
     env: Environment,
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64] | SpatialRatesLike,
-    dt: float,
     *,
+    dt: float,
     prior: NDArray[np.float64] | None = None,
     method: Literal["poisson"] = "poisson",
     times: NDArray[np.float64] | None = None,

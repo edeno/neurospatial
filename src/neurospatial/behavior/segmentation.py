@@ -76,7 +76,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import networkx as nx
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
@@ -86,6 +86,7 @@ from neurospatial._intervals import (
     observed_runs,
     run_sample_bounds,
 )
+from neurospatial._observation import validate_break_before
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._validation import validate_finite
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
@@ -190,18 +191,20 @@ def _interval_labels(
 
     Allocates an object array of length ``len(times)`` filled with ``default``
     and, for each ``(start_time, end_time, label)`` interval, assigns ``label``
-    to every sample with ``start_time <= times <= end_time``. This is the shared
+    to every sample with ``start_time <= times < end_time``. This is the shared
     primitive behind the trial/lap/run direction-label helpers (so the
-    inclusive-endpoint, last-writer-wins semantics live in one place). Later
-    intervals overwrite earlier ones on any overlap.
+    half-open, last-writer-wins semantics live in one place). A sample's label
+    describes the interval that starts at it, so the last sample of a lap or
+    run, whose interval leaves it, is not given its label. Later intervals
+    overwrite earlier ones on any overlap.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds).
     intervals : iterable of (float, float, object)
-        ``(start_time, end_time, label)`` tuples. Endpoints are inclusive on
-        both sides.
+        ``(start_time, end_time, label)`` tuples, half-open
+        ``[start_time, end_time)``.
     default : object, optional
         Value for samples outside every interval. Default is ``"other"`` (the
         sentinel ``compute_directional_place_fields`` excludes from results).
@@ -215,7 +218,7 @@ def _interval_labels(
     labels: NDArray[np.object_] = np.full(len(times), default, dtype=object)
 
     for start_time, end_time, label in intervals:
-        mask = (times >= start_time) & (times <= end_time)
+        mask = (times >= start_time) & (times < end_time)
         labels[mask] = label
 
     return labels
@@ -343,6 +346,7 @@ def detect_region_crossings(
     direction: Literal["both", "entry", "exit"] = "both",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> list[Crossing]:
     """Detect region entry and exit events in a trajectory.
 
@@ -377,6 +381,10 @@ def detect_region_crossings(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -390,6 +398,8 @@ def detect_region_crossings(
         If region_name not in env.regions.
     ValueError
         If position_bins and times have different lengths.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
     --------
@@ -398,8 +408,9 @@ def detect_region_crossings(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no segment spans a pause.
 
     A crossing is detected when the trajectory transitions from outside to inside
     the region (entry) or inside to outside (exit). The crossing time is assigned
@@ -450,8 +461,13 @@ def detect_region_crossings(
 
     position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times, dtype=np.float64)
+    breaks = validate_break_before(
+        break_before, len(times), call="detect_region_crossings"
+    )
     results: list[Crossing] = []
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+    for run in observed_runs(
+        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+    ):
         results.extend(
             _detect_region_crossings_contiguous(
                 position_bins[run],
@@ -527,6 +543,7 @@ def detect_runs_between_regions(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> list[Run]:
     """Detect runs from source region to target region.
 
@@ -570,6 +587,10 @@ def detect_runs_between_regions(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -593,6 +614,8 @@ def detect_runs_between_regions(
     CartesianOnlyError
         If ``min_speed`` is given and ``env`` is polar: run speed comes from
         Cartesian distances between bin centers.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
     --------
@@ -605,8 +628,9 @@ def detect_runs_between_regions(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no segment spans a pause.
 
     A run in progress when a recording ends is emitted there with
     success=False, as at the end of a complete recording.
@@ -683,8 +707,13 @@ def detect_runs_between_regions(
 
     position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times, dtype=np.float64)
+    breaks = validate_break_before(
+        break_before, len(times), call="detect_runs_between_regions"
+    )
     results: list[Run] = []
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+    for run in observed_runs(
+        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+    ):
         results.extend(
             _detect_runs_between_regions_contiguous(
                 position_bins[run],
@@ -819,13 +848,14 @@ def _detect_runs_between_regions_contiguous(
 def segment_by_velocity(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    min_speed: float,
     *,
+    min_speed: float,
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> list[Run]:
     """Segment trajectory into movement and rest periods based on velocity.
 
@@ -865,6 +895,10 @@ def segment_by_velocity(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -886,6 +920,8 @@ def segment_by_velocity(
     ValueError
         If times contains non-finite values, or is not strictly increasing
         (duplicate or out-of-order timestamps would yield ``inf`` velocities).
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
     --------
@@ -894,8 +930,9 @@ def segment_by_velocity(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no segment spans a pause.
 
     Smoothing and hysteresis are applied separately within each recording.
     A movement epoch in progress at its end is truncated there.
@@ -950,9 +987,12 @@ def segment_by_velocity(
 
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
+    breaks = validate_break_before(break_before, len(times), call="segment_by_velocity")
 
     results: list[Run] = []
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+    for run in observed_runs(
+        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+    ):
         results.extend(
             _segment_by_velocity_contiguous(
                 positions[run],
@@ -1129,6 +1169,7 @@ def detect_laps(
     start_region: str | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> list[Lap]:
     """Detect laps in a circular track trajectory.
 
@@ -1171,6 +1212,10 @@ def detect_laps(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -1191,6 +1236,8 @@ def detect_laps(
     CartesianOnlyError
         If ``env`` is polar: each lap's clockwise or counter-clockwise
         direction is the signed area of Cartesian bin centers.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
     --------
@@ -1201,8 +1248,9 @@ def detect_laps(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no segment spans a pause.
 
     Region entries are paired within each recording. Reference and auto
     searches stay within it. The auto template still uses the first 10%
@@ -1369,7 +1417,8 @@ def detect_laps(
         )
     position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times, dtype=np.float64)
-    runs = observed_runs(times, max_gap=max_gap, epochs=epochs)
+    breaks = validate_break_before(break_before, len(times), call="detect_laps")
+    runs = observed_runs(times, max_gap=max_gap, epochs=epochs, break_before=breaks)
     laps: list[Lap] = []
     if method == "region":
         assert start_region is not None
@@ -1533,7 +1582,7 @@ def laps_to_direction_labels(
     ----------
     laps : list[Lap]
         Laps from :func:`detect_laps`. Each contributes its ``[start_time,
-        end_time]`` interval (inclusive endpoints) and ``direction``.
+        end_time)`` interval (half-open) and ``direction``.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds). The output has this length.
     unknown_label : object, optional
@@ -1573,8 +1622,8 @@ def laps_to_direction_labels(
     ...     Lap(6.0, 10.0, "counter-clockwise", 1.0),
     ... ]
     >>> labels = laps_to_direction_labels(laps, times)
-    >>> labels[0], labels[5], labels[-1]
-    ('clockwise', 'other', 'counter-clockwise')
+    >>> labels[0], labels[5], labels[9], labels[-1]
+    ('clockwise', 'other', 'counter-clockwise', 'other')
     """
     intervals = [
         (
@@ -1607,7 +1656,7 @@ def runs_to_direction_labels(
     ----------
     runs : list[Run]
         Runs from a run detector. Each contributes its ``[start_time,
-        end_time]`` interval (inclusive endpoints).
+        end_time)`` interval (half-open).
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds). The output has this length.
     labels : object or sequence of object, optional
@@ -1658,8 +1707,8 @@ def runs_to_direction_labels(
     ...     Run(6.0, 10.0, empty, True),
     ... ]
     >>> labels = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
-    >>> labels[0], labels[5], labels[-1]
-    ('outbound', 'other', 'inbound')
+    >>> labels[0], labels[5], labels[9], labels[-1]
+    ('outbound', 'other', 'inbound', 'other')
     """
     if isinstance(labels, (Sequence, np.ndarray)) and not isinstance(
         labels, (str, bytes)
@@ -1694,6 +1743,7 @@ def running_direction_labels(
     successful_only: bool = True,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.object_]:
     """Label per-timepoint inbound/outbound running direction on a linear track.
 
@@ -1747,6 +1797,10 @@ def running_direction_labels(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -1760,6 +1814,8 @@ def running_direction_labels(
         If ``start_region`` or any end region is not in ``env.regions``
         (raised by :func:`detect_runs_between_regions`), or if
         ``position_bins`` and ``times`` have different lengths.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
     --------
@@ -1769,8 +1825,9 @@ def running_direction_labels(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no segment spans a pause.
 
     Outbound and inbound runs are detected independently per end region (start
     -> end and end -> start). Where intervals overlap, inbound labels are
@@ -1828,6 +1885,9 @@ def running_direction_labels(
             argument="end_regions",
             in_list=not isinstance(end_regions, str),
         )
+    breaks = validate_break_before(
+        break_before, len(times), call="running_direction_labels"
+    )
 
     intervals: list[tuple[float, float, object]] = []
     for end_region in end_region_names:
@@ -1842,6 +1902,7 @@ def running_direction_labels(
             min_speed=min_speed,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=breaks,
         )
         inbound_runs = detect_runs_between_regions(
             position_bins,
@@ -1854,6 +1915,7 @@ def running_direction_labels(
             min_speed=min_speed,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=breaks,
         )
         for run in outbound_runs:
             if successful_only and not run.success:
@@ -1883,6 +1945,7 @@ def segment_trials(
     max_duration: float = 15.0,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> list[Trial]:
     """Segment trajectory into behavioral trials.
 
@@ -1932,6 +1995,10 @@ def segment_trials(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -1955,6 +2022,8 @@ def segment_trials(
         If min_duration is not positive.
     ValueError
         If max_duration < min_duration.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
     --------
@@ -1963,8 +2032,9 @@ def segment_trials(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no segment spans a pause.
 
     A trial in progress when a recording ends is emitted there with
     success=False, as at the end of a complete recording.
@@ -2113,8 +2183,11 @@ def segment_trials(
 
     position_bins = np.asarray(position_bins)
     times = np.asarray(times, dtype=np.float64)
+    breaks = validate_break_before(break_before, len(times), call="segment_trials")
     results: list[Trial] = []
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+    for run in observed_runs(
+        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+    ):
         results.extend(
             _segment_trials_contiguous(
                 position_bins[run],
@@ -2585,6 +2658,7 @@ def detect_goal_directed_runs(
     min_progress: float = 20.0,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> list[Run]:
     """Detect goal-directed runs in a trajectory.
 
@@ -2617,6 +2691,10 @@ def detect_goal_directed_runs(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -2635,6 +2713,8 @@ def detect_goal_directed_runs(
         not in [0, 1].
     ValueError
         If min_progress is negative.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     See Also
     --------
@@ -2643,8 +2723,9 @@ def detect_goal_directed_runs(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause. A sample
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no segment spans a pause. A sample
     outside the environment (bin ``-1``) also ends a recording, since the
     animal's path to the goal is unknown there.
 
@@ -2742,6 +2823,9 @@ def detect_goal_directed_runs(
         allow_missing=True,
     )
     times = np.asarray(times, dtype=np.float64)
+    breaks = validate_break_before(
+        break_before, len(times), call="detect_goal_directed_runs"
+    )
 
     from neurospatial.ops.distance import distance_field
     from neurospatial.ops.mapping import regions_to_mask
@@ -2760,7 +2844,9 @@ def detect_goal_directed_runs(
     # environment.
     in_environment = position_bins >= 0
     interval_mask = (
-        observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+        observed_interval_mask(
+            times, max_gap=max_gap, epochs=epochs, break_before=breaks
+        )
         & in_environment[:-1]
         & in_environment[1:]
     )

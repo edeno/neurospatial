@@ -1078,7 +1078,7 @@ class TestEgocentricRateConvention:
     @pytest.fixture(scope="class")
     def trajectory(self):
         from neurospatial import Environment
-        from neurospatial.ops.egocentric import heading_from_velocity
+        from neurospatial.behavior import heading_from_velocity
         from neurospatial.simulation import simulate_trajectory_ou
 
         samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
@@ -1164,7 +1164,7 @@ class TestEgocentricRateNaNHandling:
     @pytest.fixture(scope="class")
     def session(self):
         from neurospatial import Environment
-        from neurospatial.ops.egocentric import heading_from_velocity
+        from neurospatial.behavior import heading_from_velocity
         from neurospatial.simulation import (
             generate_poisson_spikes,
             simulate_trajectory_ou,

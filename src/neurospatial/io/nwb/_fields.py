@@ -52,6 +52,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import as_intervals
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._core import (
     _get_or_create_processing_module,
     _require_pynwb,
@@ -224,13 +225,14 @@ def _ensure_bin_centers(nwbfile: NWBFile, env: Environment) -> None:
         logger.debug("Stored bin_centers with shape %s", env.bin_centers.shape)
 
 
+@keyword_hint("name", "description")
 def write_place_field(
     nwbfile: NWBFile,
     env: Environment,
     field: NDArray[np.float64],
+    *,
     name: str = DEFAULT_PLACE_FIELD_NAME,
     description: str = "",
-    *,
     unit: str = DEFAULT_FIELD_UNIT,
     timestamps: NDArray[np.float64] | None = None,
     overwrite: bool = False,
@@ -377,13 +379,14 @@ def write_place_field(
     logger.debug("Wrote place field '%s' with shape %s", name, field.shape)
 
 
+@keyword_hint("name", "description")
 def write_occupancy(
     nwbfile: NWBFile,
     env: Environment,
     occupancy: NDArray[np.float64],
+    *,
     name: str = DEFAULT_OCCUPANCY_NAME,
     description: str = "",
-    *,
     unit: str = DEFAULT_OCCUPANCY_UNIT,
     overwrite: bool = False,
 ) -> None:

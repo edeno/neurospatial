@@ -129,8 +129,8 @@ __all__ = [
 
 def select_basis_centers(
     env: BasisCentersConsumer,
-    n_centers: int,
     *,
+    n_centers: int,
     method: Literal["kmeans", "farthest_point", "random", "grid"] = "kmeans",
     rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.int_]:
@@ -524,7 +524,9 @@ def geodesic_rbf_basis(
                 "\n"
                 "See select_basis_centers() for manual center selection."
             )
-        centers = select_basis_centers(env, n_centers, method=center_method, rng=rng)
+        centers = select_basis_centers(
+            env, n_centers=n_centers, method=center_method, rng=rng
+        )
     centers = np.asarray(centers, dtype=np.int_)
 
     # Handle sigma and validate
@@ -744,7 +746,9 @@ def heat_kernel_wavelet_basis(
                 "\n"
                 "See select_basis_centers() for manual center selection."
             )
-        centers = select_basis_centers(env, n_centers, method=center_method, rng=rng)
+        centers = select_basis_centers(
+            env, n_centers=n_centers, method=center_method, rng=rng
+        )
     centers = np.asarray(centers, dtype=np.int_)
 
     # Validate scales
@@ -943,7 +947,9 @@ def chebyshev_filter_basis(
                 "\n"
                 "See select_basis_centers() for manual center selection."
             )
-        centers = select_basis_centers(env, n_centers, method=center_method, rng=rng)
+        centers = select_basis_centers(
+            env, n_centers=n_centers, method=center_method, rng=rng
+        )
     centers = np.asarray(centers, dtype=np.int_)
 
     # Validate max_degree
@@ -1188,6 +1194,7 @@ def spatial_basis(
 def plot_basis_functions(
     env: FieldPlotConsumer,
     basis: NDArray[np.float64],
+    *,
     indices: list[int] | None = None,
     n_examples: int = 6,
     figsize: tuple[float, float] = (12, 8),

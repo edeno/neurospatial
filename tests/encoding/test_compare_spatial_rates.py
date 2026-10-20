@@ -26,6 +26,7 @@ from neurospatial.encoding import (
 )
 from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.environment import _environment_differences
+from neurospatial.ops.transforms import AffineND
 
 F = [1.0, 2.0, 3.0, 4.0, 5.0]
 G = [5.0, 1.0, 4.0, 2.0, 3.0]
@@ -789,6 +790,91 @@ def test_a_subset_of_polygon_cells_maps_onto_its_parent(make) -> None:
 
     assert result.analysis_settings["topology_differs"] is True
     np.testing.assert_allclose(result.correlation, [1.0])
+
+
+def _clipped_session():
+    """Binned maps of one session on a sampled grid and on a clip of it.
+
+    The grid's edges are not round numbers, so the centroids of the cells
+    the clip kept whole differ from the grid's centers by rounding.
+    """
+    rng = np.random.default_rng(5)
+    times = np.arange(9000) / 30.0
+    positions = rng.uniform(0.0, 40.0, size=(len(times), 2))
+    spike_rng = np.random.default_rng(6)
+    spike_times = [
+        np.sort(spike_rng.choice(times, n, replace=False)) for n in (800, 300)
+    ]
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    clipped = env.clip(box(0.0, 0.0, 21.0, 40.0))
+    maps = [
+        compute_spatial_rates(
+            where,
+            spike_times,
+            times,
+            positions,
+            method="binned",
+            bandwidth=0.0,
+            unit_ids=[1, 2],
+        )
+        for where in (env, clipped)
+    ]
+    return env, clipped, *maps
+
+
+def test_cells_a_clip_kept_whole_map_onto_their_parent() -> None:
+    env, clipped, full_rates, clipped_rates = _clipped_session()
+    pairs = clipped.bin_mapping_from(env).pairs
+    parent_bins, child_bins = pairs.T
+    # Rounding-level centroid differences are accepted as the same cell.
+    assert np.any(env.bin_centers[parent_bins] != clipped.bin_centers[child_bins])
+
+    result = compare_spatial_rates(
+        full_rates, clipped_rates, bin_mapping=pairs, topology="may_differ"
+    )
+
+    np.testing.assert_array_equal(result.bins_a, parent_bins)
+    np.testing.assert_array_equal(result.bins_b, child_bins)
+    # The same score as correlating the uncut cells' rates directly.
+    for row in range(2):
+        a = full_rates.firing_rates[row, parent_bins]
+        b = clipped_rates.firing_rates[row, child_bins]
+        support = (
+            np.isfinite(a)
+            & np.isfinite(b)
+            & (full_rates.occupancy[parent_bins] > 0)
+            & (clipped_rates.occupancy[child_bins] > 0)
+        )
+        assert result.n_common_bins[row] == support.sum()
+        np.testing.assert_allclose(
+            result.correlation[row],
+            stats.pearsonr(a[support], b[support]).statistic,
+            rtol=1e-12,
+        )
+
+
+def test_a_cell_moved_by_more_than_rounding_is_refused_by_both() -> None:
+    env, clipped, full_rates, _ = _clipped_session()
+    pairs = clipped.bin_mapping_from(env).pairs
+    # A shift of 1e-7 cm is far above rounding at 40 cm (about 1e-12 cm).
+    moved = clipped.apply_transform(
+        AffineND(np.array([[1.0, 0.0, 1e-7], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+    )
+    moved_rates = SpatialRatesResult(
+        firing_rates=np.ones((2, moved.n_bins)),
+        occupancy=np.ones(moved.n_bins),
+        env=moved,
+        method="binned",
+        bandwidth=0.0,
+        unit_ids=[1, 2],
+    )
+
+    with pytest.raises(ValueError, match="no bin of this environment"):
+        moved.bin_mapping_from(env)
+    with pytest.raises(IncompatibleEnvironmentError, match="bin coordinates"):
+        compare_spatial_rates(
+            full_rates, moved_rates, bin_mapping=pairs, topology="may_differ"
+        )
 
 
 @pytest.mark.parametrize(

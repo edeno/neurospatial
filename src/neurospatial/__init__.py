@@ -43,11 +43,12 @@ decoding : Neural decoding
     >>> from neurospatial.decoding import decode_position, DecodingResult
 
 behavior : Behavioral analysis
-    Trajectory metrics, segmentation (laps, trials), navigation metrics,
-    decision analysis (VTE), reward fields.
+    Speed and heading, trajectory metrics, segmentation (laps, trials),
+    navigation metrics, decision analysis (VTE), reward fields.
 
     >>> from neurospatial.behavior import segmentation, navigation, trajectory
     >>> from neurospatial.behavior.segmentation import detect_laps, segment_trials
+    >>> from neurospatial.behavior import compute_speed, heading_from_velocity
 
 events : Peri-event analysis
     PSTH, event alignment, GLM regressors.
@@ -58,11 +59,7 @@ ops : Low-level operations
     Binning, distance, smoothing, graph operations, calculus (gradient/divergence),
     transforms, alignment, egocentric reference frames, visibility, basis functions.
 
-    >>> from neurospatial.ops import (
-    ...     distance_field,
-    ...     normalize_field,
-    ...     heading_from_velocity,
-    ... )
+    >>> from neurospatial.ops import distance_field, normalize_field
 
 stats : Statistical methods
     Circular statistics, shuffle controls, surrogate generation.
@@ -111,6 +108,7 @@ Use domain imports for specialized analyses::
     from neurospatial.decoding import decode_position
 
     # Behavioral analysis
+    from neurospatial.behavior import heading_from_velocity
     from neurospatial.behavior.segmentation import detect_laps
     from neurospatial.behavior.navigation import compute_path_efficiency
 
@@ -119,7 +117,7 @@ Use domain imports for specialized analyses::
 
     # Operations
     from neurospatial.ops.distance import distance_field
-    from neurospatial.ops.egocentric import heading_from_velocity
+    from neurospatial.ops.egocentric import allocentric_to_egocentric
 
     # I/O
     from neurospatial.io import to_file, from_file

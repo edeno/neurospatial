@@ -139,7 +139,7 @@ from neurospatial.behavior import compute_speed, in_epochs
 speed = compute_speed(times, positions)  # cm/s; NaN where tracking was lost
 coverage = {}
 for label in conditions:
-    inside = in_epochs(times, conditions[label], closed="left")
+    inside = in_epochs(times, conditions[label])
     coverage[label] = {
         "duration_s": round(conditions.durations[label], 2),
         "occupied_bins": int(maps[label].spatial_support.sum()),
@@ -369,7 +369,9 @@ comparison.summary_table()
 - Build `valid` from your tracking quality, for example
   `np.isfinite(positions).all(axis=1)` plus your likelihood threshold.
 - When you join several recordings on one clock, pass `break_before`, True at
-  the first frame of each later recording, so no epoch spans the join.
+  the first frame of each later recording, to `labels_to_epochs` so no epoch
+  spans the join, and to `compute_spatial_rates` so the interval across the
+  join adds no occupancy or spikes.
 - Use the same `max_gap`, environment and estimator settings for every
   condition. `compare_spatial_rates` warns when the estimator settings differ.
 - Pass `spike_window=` to `compute_spatial_rates` when spike sorting and
@@ -677,8 +679,8 @@ print(summary.map_position)  # (n_time, n_dims) MAP estimate
 `DecodingSummary` carrying per-time MAP / mean / entropy / peak via
 `.to_dataframe()` and `.summary()` (plus `.map_position`) — **without ever
 materializing the full posterior**. If you already have binned spike counts and
-encoding models, `decode_position_summary(env, spike_counts, encoding_models,
-dt, *, time_chunk=...)` is the array-level equivalent.
+encoding models, `decode_position_summary(env, spike_counts, encoding_models, *,
+dt, time_chunk=...)` is the array-level equivalent.
 
 ### When to reach for the manual path
 
@@ -727,7 +729,7 @@ result = decoder.predict(
 counts, centers = bin_spikes_in_time(
     spike_times, dt=dt, epochs=(test[0], min(test[1], times[-1])),
 )
-array_result = decode_position(env, counts, rates.firing_rates, dt, times=centers,
+array_result = decode_position(env, counts, rates.firing_rates, dt=dt, times=centers,
     prior=rates.spatial_support.astype(float))
 np.testing.assert_array_equal(result.times, array_result.times)
 np.testing.assert_array_equal(result.posterior, array_result.posterior)
@@ -745,6 +747,60 @@ prediction recording's observation windows explicitly to `predict`.
 The count-array route has already applied its time selection upstream. For
 multiple recording runs, bin each run independently and retain the corresponding
 centers; a single start/stop grid would span the pauses.
+
+### Recordings joined on one clock
+
+When several recordings are concatenated with no pause on the clock, `max_gap`
+cannot see where one ends and the next begins. Declare each join with
+`break_before`, True at the first frame of each later recording. Rate maps,
+decoders and `error_against` take the same array: the interval across the join
+adds no occupancy or spikes, no decode bin spans it, and ground truth is not
+interpolated across it.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment, compute_spatial_rates
+from neurospatial.decoding import decode_session
+
+# Two 10 s recordings joined on one clock with no pause between them.
+times = np.arange(600) / 30
+recording_id = np.repeat([0, 1], 300)
+positions = 10 + 5 * np.c_[np.sin(times), np.cos(times)]
+positions[300:] = positions[300:][::-1]  # the animal is put back elsewhere
+env = Environment.from_samples(positions, bin_size=2.0)
+spike_times = [times[::10], times[::15]]
+new_recording = np.r_[False, recording_id[1:] != recording_id[:-1]]
+
+rates = compute_spatial_rates(
+    env, spike_times, times, positions, break_before=new_recording
+)
+joined = compute_spatial_rates(env, spike_times, times, positions)
+print("Break at", rates.analysis_settings["break_times"], "s")
+print(f"Occupancy removed: {joined.occupancy.sum() - rates.occupancy.sum():.4f} s")
+
+dt = 0.1
+result = decode_session(
+    env, spike_times, times, positions, dt=dt, break_before=new_recording
+)
+start = times[new_recording][0]
+first = result.times < start
+print(f"Decode bins: {first.sum()} in recording 1, {(~first).sum()} in recording 2")
+assert np.all(result.times[first] + dt / 2 <= times[299] + 1e-9)
+assert np.all(result.times[~first] - dt / 2 >= start - 1e-9)
+errors = result.error_against(times, positions, break_before=new_recording)
+```
+
+Only the 1/30 s step between the recordings is removed, and the result records
+the break time in `analysis_settings["break_times"]`. Without `break_before`,
+that step is an ordinary sampling interval: its time and spikes count toward
+the bin where the first recording ended, the decode bin from 9.9 to 10.0 s
+covers it, and a speed derived for `min_speed` reads the jump between the two
+places as running. With your own
+data, build the array from your recording or epoch IDs,
+`np.r_[False, recording_id[1:] != recording_id[:-1]]`, and pass it to every
+call. `BayesianDecoder.fit`, `predict`, `predict_summary` and `score` take it
+too.
 
 ## Workflow 3: Region-Based Analysis
 
@@ -1129,7 +1185,7 @@ windows = {"control": (0.0, 60.0), "template": (60.0, 120.0), "match": (120.0, 1
 counts, centers_by_period = {}, {}
 for period, (start, stop) in windows.items():
     counts[period], centers_by_period[period] = bin_spikes_in_time(
-        trains, dt, t_start=start, t_stop=stop
+        trains, dt=dt, t_start=start, t_stop=stop
     )
 # Select once across every period, preserving original unit order.
 keep = np.logical_and.reduce([np.var(matrix, axis=0) > 0 for matrix in counts.values()])
@@ -1154,19 +1210,27 @@ rates = compute_spatial_rates(
 np.testing.assert_array_equal(rates.unit_ids, selected_ids)
 # Branch 1: maps + count columns in the same selected order.
 decoded = decode_position(
-    env, counts["match"], rates, dt, times=centers_by_period["match"]
+    env, counts["match"], rates, dt=dt, times=centers_by_period["match"]
 )
 assert decoded.posterior.shape == (len(centers_by_period["match"]), env.n_bins)
 np.testing.assert_allclose(decoded.posterior.sum(axis=1), 1.0)
 # Branch 2: counts, not the decoded posterior.
-assemblies = detect_assemblies(counts["template"], algorithm="pca", rng=0)
+assemblies = detect_assemblies(
+    counts["template"], algorithm="pca", unit_ids=selected_ids, rng=0
+)
 print("Retained unit IDs:", selected_ids.tolist())
 print("Dimensions above Marchenko-Pastur reference:", assemblies.n_significant)
 for pattern in assemblies.patterns:
-    print("Thresholded core member IDs:", selected_ids[pattern.member_indices].tolist())
-    activation = assembly_activation(counts["match"], pattern)
+    print("Thresholded core member IDs:", pattern.member_unit_ids.tolist())
+    activation = assembly_activation(counts["match"], pattern, unit_ids=selected_ids)
     assert len(activation) == len(centers_by_period["match"])
-    strength = reactivation_strength(counts["template"], counts["match"], pattern)
+    strength = reactivation_strength(
+        counts["template"],
+        counts["match"],
+        pattern,
+        template_unit_ids=selected_ids,
+        match_unit_ids=selected_ids,
+    )
     print("Standardized activation mean/SD:", activation.mean(), activation.std())
     print("Activation magnitude ratio (effect size):", strength)
 correlations = {
@@ -1176,6 +1240,9 @@ reactivation = explained_variance_reactivation(
     correlations["template"],
     correlations["match"],
     control_correlations=correlations["control"],
+    template_unit_ids=selected_ids,
+    match_unit_ids=selected_ids,
+    control_unit_ids=selected_ids,
 )
 print(
     "EV, controlled REV (effect sizes):",
@@ -1190,8 +1257,12 @@ assert np.isfinite(reactivation.explained_variance) and np.isfinite(
 `n_significant` counts dimensions above a random-matrix reference, not neurons
 with calibrated p-values. If no dimension passes, the algorithm may still
 return an exploratory pattern. Pattern `member_indices` are positions in the
-selected unit order; mapping them through `selected_ids` recovers the original
-labels. A pattern can have no core members at the default absolute-weight
+selected unit order; `member_unit_ids` gives the original labels, and passing
+`unit_ids=` to `assembly_activation`, or `template_unit_ids=` and
+`match_unit_ids=` to `reactivation_strength`, matches the count columns to the
+pattern's weights by label. The same per-period labels given to
+`explained_variance_reactivation` match each pair correlation to the same two
+cells in every period. A pattern can have no core members at the default absolute-weight
 z-score cutoff, even when its dimension passes the reference.
 
 `assembly_activation` standardizes the projection within each period,
@@ -1264,11 +1335,11 @@ assert regressors["event_count"].dtype == np.int64
 assert regressors["event_present"].dtype == np.bool_
 print(table.to_string(index=False))
 
-# Raster and PSTH share half-open bins; regressors keep their own edge rules.
+# Raster, PSTH and regressors all use half-open [start, stop) windows.
 assert psth.histogram.sum() == 2.0  # Average of two spikes per event.
 assert event_count_in_window(
     np.array([4.0, 6.0]), np.array([5.0]), window=window,
-).tolist() == [1, 1]  # Both adjacent windows include the boundary event.
+).tolist() == [0, 1]  # [3, 5) and [5, 7): the event at 5 counts once.
 plt.close(raster_ax.figure)
 ```
 
@@ -1276,9 +1347,9 @@ plt.close(raster_ax.figure)
 complete-bin range for both panels. Spikes on the right edge and in a trailing
 partial bin are excluded from both views. Supply the original event array and
 the spike train belonging to the selected unit. The low-level
-`align_spikes_to_events` retains its inclusive stop-edge convention for custom
-alignment. Event-count and indicator windows also include both edges, so
-neighboring sample windows can count the same boundary event twice. Regressors
+`align_spikes_to_events` uses the same half-open `[start, stop)` window as
+the histogram. Event-count and indicator windows are half-open too, so
+neighboring sample windows never count the same boundary event twice. Regressors
 describe the selected events at each sample; restrict their sample rows to your
 modeling epochs when fitting a model.
 

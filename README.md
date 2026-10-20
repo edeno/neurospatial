@@ -269,7 +269,7 @@ path is
 `from neurospatial.decoding import decode_session` runs the whole encode → bin →
 decode pipeline and returns a `DecodingResult`. With precomputed count matrices
 and population rate maps, use
-`decode_position(env, spike_counts, encoding_models, dt)`. Pauses in tracking
+`decode_position(env, spike_counts, encoding_models, dt=dt)`. Pauses in tracking
 are never decoded: time bins are formed only within recorded stretches, and
 `epochs=`/`spike_window=` restrict them further. See
 [the position-decoding tutorial](https://github.com/edeno/neurospatial/blob/main/examples/06_position_decoding.ipynb)

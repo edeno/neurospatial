@@ -173,6 +173,17 @@ def _unrecorded_lattice() -> dict[str, Any]:
     return {"env": Environment.from_bins(bins, arena=grid.arena)}
 
 
+def _refined() -> dict[str, Any]:
+    """A grid and the finer grid rebinned from it, with the trajectory."""
+    parent = _grid()
+    return {
+        "env": parent.rebin(bin_size=2.0),
+        "parent": parent,
+        "times": _TIMES,
+        "positions": _POSITIONS,
+    }
+
+
 def _with_regions() -> dict[str, Any]:
     regions = Regions()
     regions.add("reward", point=(50.0, 50.0))
@@ -476,6 +487,17 @@ CASES: dict[str, Case] = {
         _with_regions,
         lambda n: n["env"].region_membership(["reward"]),
         "env.region_mask(['reward'])",
+    ),
+    # exact bin correspondence
+    "bin_mapping_from a coarser grid, the other direction": Case(
+        _refined,
+        lambda n: n["env"].bin_mapping_from(n["parent"]),
+        "parent.bin_mapping_from(env)",
+    ),
+    "bin_mapping_from a coarser grid, occupancy instead": Case(
+        _refined,
+        lambda n: n["env"].bin_mapping_from(n["parent"]),
+        "env.occupancy(times, positions)",
     ),
 }
 

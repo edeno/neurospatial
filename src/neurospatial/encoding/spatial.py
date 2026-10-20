@@ -54,6 +54,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._observation import validate_break_before
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -118,7 +119,7 @@ PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
 
 
 @dataclass(frozen=True, repr=False)
-class PlaceFieldsResult(ResultMixin):
+class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
 
     Returned by :func:`detect_place_fields`. Distinguishes "this map
@@ -151,9 +152,20 @@ class PlaceFieldsResult(ResultMixin):
     or ``len(detect_place_fields(...))`` keep working.
     """
 
-    fields: list[NDArray[np.int64]]
+    fields: Sequence[NDArray[np.int64]]
     excluded_reason: str | None = None
     n_excluded: int = 0
+
+    def __post_init__(self) -> None:
+        """Own each field's bins and prevent replacing fields."""
+        object.__setattr__(
+            self, "fields", tuple(read_only_copy(bins) for bins in self.fields)
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore owned field arrays after copying."""
+        super().__setstate__(state)
+        self.__post_init__()
 
     def __len__(self) -> int:
         return len(self.fields)
@@ -2967,6 +2979,7 @@ def _prepare_spatial_support(
     min_speed: float | None,
     max_gap: float | None,
     epochs: Any,
+    break_before: NDArray[np.bool_] | None,
     spike_window: Any,
     warn_on_drop: bool,
     time_allocation: Literal["start", "linear"],
@@ -2995,6 +3008,9 @@ def _prepare_spatial_support(
         Speed gate and maximum timestamp gap in seconds.
     epochs, spike_window
         Recording windows as passed by the caller.
+    break_before : ndarray of bool, shape (n_time,), or None
+        Validated declared recording breaks, applied to the speed smoothing
+        and the interval gate and recorded in the provenance.
     warn_on_drop : bool
         Whether to warn when support is dropped.
     time_allocation : {"start", "linear"}
@@ -3029,7 +3045,9 @@ def _prepare_spatial_support(
     # spike numerator and the occupancy denominator (numerator/denominator
     # alignment by construction). When min_speed is None this returns None and
     # nothing speed-related changes downstream (byte-for-byte unchanged).
-    resolved_speed = resolve_speed(times, positions, speed, min_speed, max_gap=max_gap)
+    resolved_speed = resolve_speed(
+        times, positions, speed, min_speed, max_gap=max_gap, break_before=break_before
+    )
 
     linear_intervals = (
         prepare_linear_spatial_intervals(
@@ -3041,6 +3059,7 @@ def _prepare_spatial_support(
             max_gap=max_gap,
             epochs=epochs,
             spike_window=spike_window,
+            break_before=break_before,
         )
         if time_allocation == "linear"
         else None
@@ -3058,6 +3077,7 @@ def _prepare_spatial_support(
         warn_on_drop=warn_on_drop,
         time_allocation=time_allocation,
         linear_intervals=linear_intervals,
+        break_before=break_before,
     )
 
     settings = rate_analysis_settings(
@@ -3100,6 +3120,7 @@ def compute_spatial_rate(
     max_gap: float | None = 0.5,
     time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
@@ -3252,6 +3273,14 @@ default="diffusion_kde"
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``, and the speed derived for ``min_speed`` is not
+        smoothed across it. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -3415,6 +3444,9 @@ default="diffusion_kde"
         times, positions=positions, context="compute_spatial_rate", n_dims=env.n_dims
     )
     validate_spike_times(spike_times, context="compute_spatial_rate")
+    breaks = validate_break_before(
+        break_before, len(times), call="compute_spatial_rate"
+    )
 
     support = _prepare_spatial_support(
         env,
@@ -3424,6 +3456,7 @@ default="diffusion_kde"
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=breaks,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
         time_allocation=time_allocation,
@@ -3582,6 +3615,7 @@ def compute_spatial_rates(
     max_gap: float | None = 0.5,
     time_allocation: Literal["start", "linear"] = "start",
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -3712,6 +3746,14 @@ default="diffusion_kde"
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``, and the speed derived for ``min_speed`` is not
+        smoothed across it. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -3968,6 +4010,9 @@ default="diffusion_kde"
         times, positions=positions, context="compute_spatial_rates", n_dims=env.n_dims
     )
     validate_spike_trains(spike_times_list, context="compute_spatial_rates")
+    breaks = validate_break_before(
+        break_before, len(times), call="compute_spatial_rates"
+    )
 
     # The speed gate is resolved once for the population, so a gate that
     # excludes every interval warns once rather than per neuron.
@@ -3979,6 +4024,7 @@ default="diffusion_kde"
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=breaks,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
         time_allocation=time_allocation,
@@ -4005,6 +4051,7 @@ default="diffusion_kde"
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=breaks,
     )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
@@ -4632,6 +4679,7 @@ def compute_directional_place_fields(
     min_occupancy: float = 0.0,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
 ) -> DirectionalPlaceFields:
     """Compute place fields conditioned on movement direction or trial type.
@@ -4674,6 +4722,12 @@ def compute_directional_place_fields(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_timepoints,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -4756,6 +4810,9 @@ def compute_directional_place_fields(
             f"direction_labels must have same length as times, "
             f"got {len(direction_labels)} and {len(times)}"
         )
+    breaks = validate_break_before(
+        break_before, len(times), call="compute_directional_place_fields"
+    )
 
     # Label code of each interval (the label at its start sample). "other",
     # None and NaN are missing (-1); consecutive intervals with one code form
@@ -4805,6 +4862,7 @@ def compute_directional_place_fields(
             min_occupancy=min_occupancy,
             max_gap=max_gap,
             epochs=windows,
+            break_before=breaks,
             spike_window=resolved_spike_window,
         )
         firing_rates_dict[str(label)] = np.asarray(single.firing_rate, dtype=np.float64)
@@ -5024,6 +5082,7 @@ def has_place_field(
     bandwidth: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     threshold: float = 0.2,
     min_size: int | None = None,
@@ -5073,6 +5132,13 @@ def has_place_field(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``, and the speed derived for ``min_speed`` is not
+        smoothed across it.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -5230,6 +5296,9 @@ def has_place_field(
         bandwidth=bandwidth,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=validate_break_before(
+            break_before, len(times), call="has_place_field"
+        ),
         spike_window=spike_window,
         min_occupancy=min_occupancy,
         fill_value=fill_value,
@@ -5273,6 +5342,7 @@ def is_place_cell(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
@@ -5422,6 +5492,13 @@ def is_place_cell(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``, and the speed derived for ``min_speed`` is not
+        smoothed across it.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -5524,6 +5601,7 @@ def is_place_cell(
         },
         call="is_place_cell",
     )
+    breaks = validate_break_before(break_before, len(times), call="is_place_cell")
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
@@ -5546,6 +5624,7 @@ def is_place_cell(
             min_speed=min_speed,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=breaks,
             spike_window=spike_window,
             backend=backend,
             warn_on_drop=warn_on_drop,
@@ -5570,6 +5649,7 @@ def is_place_cell(
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=breaks,
         spike_window=spike_window,
         backend=backend,
         warn_on_drop=warn_on_drop,
@@ -5719,6 +5799,7 @@ def place_cell_significance(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -5837,6 +5918,13 @@ def place_cell_significance(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``, and the speed derived for ``min_speed`` is not
+        smoothed across it.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -6005,8 +6093,17 @@ def place_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="place_cell_significance")
+    breaks = validate_break_before(
+        break_before, len(times), call="place_cell_significance"
+    )
+    options["break_before"] = breaks
     resolved_speed = resolve_speed(
-        times, positions, options["speed"], min_speed, max_gap=max_gap
+        times,
+        positions,
+        options["speed"],
+        min_speed,
+        max_gap=max_gap,
+        break_before=options["break_before"],
     )
     positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
     mask = _spatial_interval_mask(
@@ -6018,6 +6115,7 @@ def place_cell_significance(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=options["break_before"],
     )
     windows = run_time_bounds(times, mask)
 

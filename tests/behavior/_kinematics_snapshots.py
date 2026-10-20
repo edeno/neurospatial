@@ -23,7 +23,7 @@ def load_kinematic_recording(recording):
 
 def capture_kinematics_outputs(recording, *, legacy_heading=False):
     """Exercise all kinematic entry points using the same recording inputs."""
-    from neurospatial.behavior import Trial
+    from neurospatial.behavior import Trial, heading_from_velocity
     from neurospatial.behavior.decisions import (
         compute_pre_decision_metrics,
         pre_decision_heading_stats,
@@ -47,7 +47,6 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         head_sweep_from_positions,
     )
     from neurospatial.events import add_positions
-    from neurospatial.ops.egocentric import heading_from_velocity
 
     r = recording
     goal = r.positions[-1]

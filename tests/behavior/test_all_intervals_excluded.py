@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from neurospatial import Environment, Regions
+from neurospatial.behavior import heading_from_velocity
 from neurospatial.behavior.decisions import (
     compute_decision_analysis,
     extract_pre_decision_window,
@@ -28,7 +29,6 @@ from neurospatial.behavior.vte import (
     head_sweep_from_positions,
 )
 from neurospatial.events import add_positions
-from neurospatial.ops.egocentric import heading_from_velocity
 
 
 @pytest.fixture(scope="module")
@@ -80,14 +80,14 @@ CALLS = {
         env.bin_at(p), t, env, region_name="mid_area", **kw
     ),
     "segment_by_velocity": lambda env, t, p, **kw: segment_by_velocity(
-        t, p, 1.0, min_duration=0.0, **kw
+        t, p, min_speed=1.0, min_duration=0.0, **kw
     ),
     "heading_from_velocity": lambda env, t, p, **kw: heading_from_velocity(t, p, **kw),
     "goal_bias": lambda env, t, p, **kw: goal_bias(
         t, p, np.array([100.0, 5.0]), min_speed=0.0, **kw
     ),
     "extract_pre_decision_window": lambda env, t, p, **kw: (
-        extract_pre_decision_window(t, p, 50.0, 10.0, **kw)
+        extract_pre_decision_window(t, p, 50.0, window_duration=10.0, **kw)
     ),
     "compute_decision_analysis": lambda env, t, p, **kw: compute_decision_analysis(
         env,
@@ -102,7 +102,7 @@ CALLS = {
         t, p, min_speed=1.0, **kw
     ),
     "compute_vte_trial": lambda env, t, p, **kw: compute_vte_trial(
-        t, p, 50.0, 10.0, min_speed=1.0, **kw
+        t, p, 50.0, window_duration=10.0, min_speed=1.0, **kw
     ),
     "compute_vte_session": lambda env, t, p, **kw: _vte_session(env, t, p, **kw),
     "add_positions": lambda env, t, p, **kw: add_positions(
@@ -148,7 +148,9 @@ def test_detect_region_crossings_recovers_crossings_without_gap_gate(coarse_trac
 def test_epochs_on_the_wrong_clock_name_epochs(coarse_track):
     _, times, positions = coarse_track
     with pytest.warns(UserWarning, match=r"excluded ALL.*epochs") as record:
-        segment_by_velocity(times, positions, 1.0, max_gap=None, epochs=[(1e4, 6e4)])
+        segment_by_velocity(
+            times, positions, min_speed=1.0, max_gap=None, epochs=[(1e4, 6e4)]
+        )
     message = str(next(w for w in record if "excluded ALL" in str(w.message)).message)
     assert "max_gap=" not in message
 
@@ -158,10 +160,10 @@ def test_partial_exclusion_is_silent():
     positions = np.column_stack([times, np.zeros_like(times)])
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*excluded ALL.*")
-        segment_by_velocity(times, positions, 0.5)
+        segment_by_velocity(times, positions, min_speed=0.5)
 
 
 def test_fewer_than_two_samples_is_silent():
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*excluded ALL.*")
-        segment_by_velocity(np.array([0.0]), np.array([[0.0, 0.0]]), 1.0)
+        segment_by_velocity(np.array([0.0]), np.array([[0.0, 0.0]]), min_speed=1.0)

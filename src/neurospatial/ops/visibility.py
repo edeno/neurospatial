@@ -82,11 +82,12 @@ neurospatial.spatial_view_field : Spatial view field computation
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
     CallIndexes,
     batch_line_of_sight_clear,
@@ -386,7 +387,7 @@ class FieldOfView:
 
 
 @dataclass(frozen=True)
-class ViewshedResult:
+class ViewshedResult(ReadOnlyArraysMixin):
     """Result of viewshed analysis from a single observer position.
 
     Attributes
@@ -425,6 +426,10 @@ class ViewshedResult:
     cue_bearings: NDArray[np.float64]
     occlusion_map: NDArray[np.float64]
     _total_bins: int = field(default=0)
+
+    def __post_init__(self) -> None:
+        """Own the arrays as read-only copies."""
+        self._own_arrays()
 
     @property
     def n_visible_bins(self) -> int:
@@ -712,6 +717,47 @@ def compute_viewshed(
     )
 
 
+def _angular_range(
+    fov: FieldOfView | float | None,
+) -> tuple[float, float, FieldOfView | None, bool]:
+    """Egocentric ray range ``(min, max)``, the FieldOfView, and full circle.
+
+    A number is the total field-of-view angle in radians.
+    """
+    if fov is None:
+        return -np.pi, np.pi, None, True
+    if isinstance(fov, (int, float)):
+        half_angle = float(fov) / 2
+        return -half_angle, half_angle, FieldOfView.symmetric(half_angle), False
+    return fov.right_angle, fov.left_angle, fov, False
+
+
+def _check_n_rays(n_rays: int) -> None:
+    """Raise ValueError unless ``n_rays`` is a positive integer."""
+    if (
+        isinstance(n_rays, (bool, np.bool_))
+        or not isinstance(n_rays, (int, np.integer))
+        or n_rays < 1
+    ):
+        raise ValueError("n_rays must be a positive integer.")
+
+
+def _check_viewshed_options(
+    binning: Binning,
+    arena: Arena,
+    *,
+    fov: FieldOfView | float | None,
+    n_rays: int,
+    boundary_source: Literal["physical", "analysis"],
+) -> None:
+    """Raise the errors `_viewshed` raises for these options, in its order."""
+    from neurospatial.geometry import boundary_geometry
+
+    _angular_range(fov)
+    _check_n_rays(n_rays)
+    boundary_geometry(binning, arena, boundary_source)
+
+
 def _viewshed(
     binning: Binning,
     arena: Arena,
@@ -735,22 +781,9 @@ def _viewshed(
     n_bins = binning.bins.n_bins
     indexes = CallIndexes() if indexes is None else indexes
 
-    # Determine angular range
-    full_circle = False
-    if fov is None:
-        min_angle = -np.pi
-        max_angle = np.pi
-        fov_obj = None
-        full_circle = True
-    elif isinstance(fov, (int, float)):
-        half_angle = float(fov) / 2
-        min_angle = -half_angle
-        max_angle = half_angle
-        fov_obj = FieldOfView.symmetric(half_angle)
-    else:
-        min_angle = fov.right_angle
-        max_angle = fov.left_angle
-        fov_obj = fov
+    min_angle, max_angle, fov_obj, full_circle = _angular_range(fov)
+    # Before np.linspace, which raises a bare TypeError for a non-integer.
+    _check_n_rays(n_rays)
 
     # Generate ray angles (in egocentric coordinates).
     # For the full circle, -pi and +pi are the same direction (behind), so
@@ -772,12 +805,6 @@ def _viewshed(
     walls = boundary_geometry(binning, arena, boundary_source)
     if position.shape != (2,):
         raise ValueError("position must have shape (2,).")
-    if (
-        isinstance(n_rays, (bool, np.bool_))
-        or not isinstance(n_rays, (int, np.integer))
-        or n_rays < 1
-    ):
-        raise ValueError("n_rays must be a positive integer.")
     if (
         not np.isfinite(heading)
         or not valid_observers(
@@ -1161,19 +1188,30 @@ def visibility_occupancy(
     fov: FieldOfView | float | None = None,
     n_rays: int = 360,
     boundary_source: Literal["physical", "analysis"] = "physical",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Compute time each bin was visible during trajectory.
+
+    Each sampling interval ``[times[k], times[k + 1])`` adds its duration to
+    every bin visible from sample ``k`` (its position and heading), the same
+    start-sample rule :meth:`Environment.occupancy` uses. The last sample has
+    no interval and adds no time.
 
     Parameters
     ----------
     env : Environment
         The environment.
     times : NDArray[np.float64], shape (n_time,)
-        Timestamps for each position.
+        Timestamps in seconds for each position; finite and non-decreasing.
     positions : NDArray[np.float64], shape (n_time, 2)
-        Positions along trajectory.
+        Positions along trajectory. A row with a NaN coordinate is a missing
+        sample (a lost tracking frame); intervals that start or end at it add
+        no time.
     headings : NDArray[np.float64], shape (n_time,)
-        Headings at each position.
+        Allocentric headings in radians at each position. A NaN heading is a
+        missing sample, like a NaN position.
     fov : FieldOfView, float, or None, default None
         Field of view constraint.
     n_rays : int, default 360
@@ -1183,31 +1221,135 @@ def visibility_occupancy(
         Declared physical walls, or explicitly requested analysis-cell boundaries.
         Physical mode requires exact supported wall geometry; missing analysis
         bins do not occlude a physical ray. Fixed-distance gaze ignores this.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) add no
+        viewing time. ``None`` disables the gap check.
+        A ``UserWarning`` names the cause when every interval is excluded,
+        or when the median sampling interval exceeds ``max_gap`` (usually
+        ``times`` that are not in seconds).
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_time,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     NDArray[np.float64], shape (n_bins,)
-        Total time (seconds) each bin was visible.
+        Total time (seconds) each bin was visible. A bin visible from every
+        sample receives the total usable time, which equals
+        ``env.occupancy(times, positions, max_gap=..., epochs=...,
+        break_before=...).sum()`` when every sample is inside the environment
+        and no heading is missing.
+
+    Raises
+    ------
+    ValueError
+        If ``times`` and ``positions`` are misaligned, ``times`` is not finite
+        and non-decreasing, ``positions`` is not ``(n_time, 2)``, ``headings``
+        is not ``(n_time,)``, ``max_gap`` is not positive, or ``epochs`` or
+        ``break_before`` is malformed.
+
+    Warns
+    -----
+    UserWarning
+        When every interval is excluded (by ``max_gap``, ``epochs``,
+        ``break_before`` or missing samples), or when the median sampling
+        interval exceeds ``max_gap``.
+
+    Notes
+    -----
+    Interval ``k`` adds time only when it passes ``max_gap``, lies inside
+    ``epochs``, is not crossed by a declared break, and both of its samples
+    have a finite position and heading. A tracking pause or the join between
+    two recordings is therefore not counted as viewing time. Viewsheds are
+    computed only for samples that start such an interval.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.ops import visibility_occupancy
+    >>> x, y = np.meshgrid(np.arange(0.0, 20.0), np.arange(0.0, 20.0))
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=5.0)
+    >>> times = np.array([0.0, 0.1, 0.2, 5.0, 5.1])  # a 4.8 s tracking pause
+    >>> positions = np.full((5, 2), 10.0)
+    >>> headings = np.zeros(5)
+    >>> seen = visibility_occupancy(
+    ...     env, times, positions, headings, n_rays=36, boundary_source="analysis"
+    ... )
+    >>> round(float(seen.max()), 6)  # 0.2 s before the pause + 0.1 s after
+    0.3
     """
+    from neurospatial._exceptions import _format_error
+    from neurospatial._intervals import (
+        as_intervals,
+        interval_valid_mask,
+        warn_excluded_intervals,
+    )
+    from neurospatial._observation import validate_break_before, validate_max_gap
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(
         times, positions, call="visibility_occupancy"
     )
     headings = np.asarray(headings, dtype=np.float64)
-
     n_time = len(times)
+    if positions.shape != (n_time, 2):
+        raise ValueError(
+            _format_error(
+                "visibility_occupancy() needs positions of shape (n_time, 2); "
+                f"got {positions.shape}.",
+                why="Why: each viewshed is cast from a 2-D (x, y) position.",
+                fix="pass one (x, y) row per timestamp",
+            )
+        )
+    if headings.shape != (n_time,):
+        raise ValueError(
+            _format_error(
+                "visibility_occupancy() needs one heading per timestamp, shape "
+                f"({n_time},); got {headings.shape}.",
+                why="Why: each sample's field of view is centered on its heading.",
+                fix="pass headings with the same length as times (NaN marks a "
+                "missing heading)",
+            )
+        )
+    validate_max_gap(max_gap)
+    breaks = validate_break_before(break_before, n_time, call="visibility_occupancy")
+    resolved_epochs = as_intervals(epochs, name="epochs")
+
     binning, arena = env.binning, env.arena
-    indexes = CallIndexes()
+    # Checked here because no viewshed is computed when no interval is usable.
+    _check_viewshed_options(
+        binning, arena, fov=fov, n_rays=n_rays, boundary_source=boundary_source
+    )
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
+    if n_time < 2:
+        return occupancy
 
-    # Compute dt for each frame
+    observed = np.isfinite(positions).all(axis=1) & np.isfinite(headings)
+    usable = interval_valid_mask(
+        times, max_gap=max_gap, epochs=resolved_epochs, break_before=breaks
+    )
+    usable &= observed[:-1] & observed[1:]
+    warn_excluded_intervals(
+        times,
+        usable,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        start_bin_gate=not bool(observed.all()),
+        break_before=breaks,
+        result="no bin received viewing time",
+    )
+
     dt = np.diff(times)
-    dt = np.append(dt, dt[-1] if len(dt) > 0 else 0.0)  # Repeat last dt
-
-    # Loop over frames (viewshed computation is inherently per-frame)
-    # Use np.add.at for safe accumulation with repeated indices
-    for i in range(n_time):
+    indexes = CallIndexes()
+    # Viewsheds are per-frame; compute them only for frames that add time.
+    for i in np.flatnonzero(usable & (dt > 0)):
         result = _viewshed(
             binning,
             arena,

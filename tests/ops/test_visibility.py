@@ -775,7 +775,7 @@ class TestVisibilityOccupancy:
             ]
         )
         headings = np.zeros(3)
-        times = np.array([0.0, 1.0, 2.0])
+        times = np.array([0.0, 0.1, 0.2])
 
         occupancy = visibility_occupancy(
             env, times, trajectory, headings, boundary_source="analysis"
@@ -809,6 +809,191 @@ class TestVisibilityOccupancy:
         # Visible bins should have occupancy close to 10 seconds
         # (accounting for frame duration)
         assert np.max(occupancy) > 9.0
+
+
+class TestVisibilityOccupancySupport:
+    """Viewing time follows the shared observation-support rules.
+
+    In a small open square every bin is visible from every position with a
+    full field of view, so each bin's viewing time must equal the total
+    usable time that ``Environment.occupancy`` reports for the same samples.
+    """
+
+    @pytest.fixture(scope="class")
+    def open_square(self):
+        from neurospatial import Environment
+
+        x, y = np.meshgrid(np.arange(0.5, 20.0), np.arange(0.5, 20.0))
+        return Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=5.0)
+
+    @pytest.fixture(scope="class")
+    def walk(self):
+        rng = np.random.default_rng(3)
+        n = 40
+        times = np.cumsum(np.r_[0.0, rng.uniform(0.02, 0.05, n - 1)])
+        positions = rng.uniform(2.0, 18.0, (n, 2))
+        headings = rng.uniform(-np.pi, np.pi, n)
+        return times, positions, headings
+
+    @staticmethod
+    def _seen(env, times, positions, headings, **kwargs):
+        from neurospatial.ops.visibility import visibility_occupancy
+
+        return visibility_occupancy(
+            env,
+            times,
+            positions,
+            headings,
+            n_rays=36,
+            boundary_source="analysis",
+            **kwargs,
+        )
+
+    def test_every_visible_bin_gets_the_total_usable_time(self, open_square, walk):
+        times, positions, headings = walk
+        times = times.copy()
+        times[20:] += 2.0  # a 2 s tracking pause between samples 19 and 20
+        positions = positions.copy()
+        positions[7] = np.nan  # a lost frame
+        breaks = np.zeros(len(times), dtype=bool)
+        breaks[30] = True  # a second recording joined on the same clock
+        epochs = [(times[2], times[36])]
+        gates = {"max_gap": 0.5, "epochs": epochs, "break_before": breaks}
+
+        seen = self._seen(open_square, times, positions, headings, **gates)
+        total = open_square.occupancy(times, positions, **gates).sum()
+
+        assert total > 0
+        assert_allclose(seen, np.full(open_square.n_bins, total), rtol=1e-12)
+
+    def test_a_pause_longer_than_max_gap_adds_no_time(self, open_square, walk):
+        times, positions, headings = walk
+        paused = times.copy()
+        paused[10:] += 60.0  # the animal is untracked for a minute
+
+        seen = self._seen(open_square, paused, positions, headings)
+
+        expected = np.diff(times).sum() - np.diff(times)[9]
+        assert_allclose(seen, expected, rtol=1e-12)
+
+    def test_declared_break_equals_a_gap_past_max_gap(self, open_square, walk):
+        times, positions, headings = walk
+        breaks = np.zeros(len(times), dtype=bool)
+        breaks[[12, 25]] = True
+        shifted = times.copy()
+        shifted[12:] += 1.0
+        shifted[25:] += 1.0
+
+        declared = self._seen(
+            open_square, times, positions, headings, break_before=breaks
+        )
+        gapped = self._seen(open_square, shifted, positions, headings)
+
+        assert_allclose(declared, gapped, rtol=1e-12)
+        assert (
+            declared.max() < self._seen(open_square, times, positions, headings).max()
+        )
+
+    @pytest.mark.parametrize("missing", ["position", "heading"])
+    def test_a_missing_sample_adds_nothing(self, open_square, walk, missing):
+        times, positions, headings = walk
+        positions, headings = positions.copy(), headings.copy()
+        if missing == "position":
+            positions[15, 1] = np.nan
+        else:
+            headings[15] = np.nan
+
+        seen = self._seen(open_square, times, positions, headings)
+
+        dt = np.diff(times)
+        # Both intervals that touch sample 15 are unobserved.
+        assert_allclose(seen, dt.sum() - dt[14] - dt[15], rtol=1e-12)
+
+    def test_the_last_sample_adds_no_time(self, open_square, walk):
+        times, positions, headings = walk
+        seen = self._seen(open_square, times, positions, headings)
+        moved = positions.copy()
+        moved[-1] = [100.0, 100.0]  # outside the arena: views nothing
+
+        assert_allclose(seen, np.diff(times).sum(), rtol=1e-12)
+        assert_allclose(self._seen(open_square, times, moved, headings), seen)
+        one = self._seen(open_square, times[:1], positions[:1], headings[:1])
+        assert np.array_equal(one, np.zeros(open_square.n_bins))
+
+    def test_viewsheds_are_only_computed_for_samples_that_add_time(
+        self, open_square, walk
+    ):
+        from neurospatial.ops import visibility
+
+        times, positions, headings = walk
+        times = times.copy()
+        times[20:] += 5.0
+        calls: list[int] = []
+        original = visibility._viewshed
+
+        def counted(*args, **kwargs):
+            calls.append(1)
+            return original(*args, **kwargs)
+
+        with patch.object(visibility, "_viewshed", counted):
+            self._seen(open_square, times, positions, headings)
+
+        # 40 samples: 39 intervals, minus the pause between samples 19 and 20.
+        assert len(calls) == 38
+
+    def test_all_intervals_excluded_warns(self, open_square, walk):
+        times, positions, headings = walk
+        with pytest.warns(UserWarning, match=r"excluded ALL[\s\S]*viewing time"):
+            seen = self._seen(
+                open_square, times, positions, headings, epochs=[(100.0, 200.0)]
+            )
+        assert not seen.any()
+
+    def test_invalid_break_before_raises_the_shared_error(self, open_square, walk):
+        times, positions, headings = walk
+        with pytest.raises(ValueError, match=r"break_before to be a Boolean array"):
+            self._seen(
+                open_square,
+                times,
+                positions,
+                headings,
+                break_before=np.zeros(len(times), dtype=int),
+            )
+
+    def test_headings_must_match_times(self, open_square, walk):
+        times, positions, headings = walk
+        with pytest.raises(ValueError, match=r"one heading per timestamp"):
+            self._seen(open_square, times, positions, headings[:-1])
+
+    @pytest.mark.parametrize(
+        "options",
+        [
+            {"n_rays": 0},
+            {"n_rays": 2.5},
+            {"boundary_source": "nope"},
+            {"boundary_source": "physical"},  # no declared walls
+            {"fov": -1.0},
+        ],
+    )
+    @pytest.mark.parametrize("data", ["all_excluded", "single_sample"])
+    def test_invalid_viewshed_options_raise_without_usable_intervals(
+        self, open_square, walk, options, data
+    ):
+        """The errors match compute_viewshed's, even when no viewshed is needed."""
+        from neurospatial.ops.visibility import compute_viewshed, visibility_occupancy
+
+        times, positions, headings = walk
+        kwargs = {"n_rays": 36, "boundary_source": "analysis", **options}
+        with pytest.raises(Exception) as expected:
+            compute_viewshed(open_square, positions[0], headings[0], **kwargs)
+
+        if data == "all_excluded":
+            times, positions, headings = times * 100.0, positions, headings
+        else:
+            times, positions, headings = times[:1], positions[:1], headings[:1]
+        with pytest.raises(expected.type) as raised:
+            visibility_occupancy(open_square, times, positions, headings, **kwargs)
+        assert str(raised.value) == str(expected.value)
 
 
 class TestLineOfSightClear:
@@ -879,7 +1064,7 @@ def test_trajectory_viewsheds_build_the_mesh_lookup_once(call, monkeypatch):
 
     monkeypatch.setattr(_locators, "_triangle_index", counted)
     n_frames = 4
-    times = np.arange(n_frames, dtype=float)
+    times = np.arange(n_frames) * 0.1
     positions = np.column_stack((np.linspace(5, 15, n_frames), np.full(n_frames, 10.0)))
     headings = np.zeros(n_frames)
 

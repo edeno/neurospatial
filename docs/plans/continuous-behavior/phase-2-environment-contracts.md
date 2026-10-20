@@ -4,7 +4,18 @@
 
 **Committed:** 2026-10-14
 
-**Status:** Not started
+**Status:** Partially implemented. The representation phases are complete
+(PR #67). Slice 2D's physical walls came through arena stages A and D
+(#68, #73, #74). The others are partial: 2A has `Environment.bin_sources` (#71),
+the validated caller `bin_mapping` in `compare_spatial_rates` (#119) and exact
+derivation correspondences from `Environment.bin_mapping_from` (#121); 2B has
+measure dimensions (#67, #101) and affine measures (#76); 2C has
+zero-conductance path-only bridges (#71); 2E has containment-gated feature
+sampling (#118). 2F interval states, optional external `bin_ids`, directed
+movement operators and the feature persistence payload have not started.
+Evidence is in [TASKS.md](TASKS.md).
+
+**Status reviewed:** 2026-10-20
 
 [← PLAN.md](PLAN.md) · [shared contracts](shared-contracts.md) ·
 [environment representation plan](../environment-representation/PLAN.md)

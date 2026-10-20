@@ -84,7 +84,7 @@ class TestWriteEvents:
         write_events(nwbfile, basic_events_df, name="test_events")
 
         # Verify written
-        result = read_events(nwbfile, "test_events")
+        result = read_events(nwbfile, table_name="test_events")
         assert len(result) == 4
         assert_array_almost_equal(
             result["timestamp"].values, basic_events_df["timestamp"].values
@@ -96,7 +96,7 @@ class TestWriteEvents:
 
         write_events(nwbfile, events_with_labels_df, name="labeled_events")
 
-        result = read_events(nwbfile, "labeled_events")
+        result = read_events(nwbfile, table_name="labeled_events")
         assert len(result) == 4
         assert "label" in result.columns
         assert_array_equal(
@@ -109,7 +109,7 @@ class TestWriteEvents:
 
         write_events(nwbfile, events_with_spatial_df, name="spatial_events")
 
-        result = read_events(nwbfile, "spatial_events")
+        result = read_events(nwbfile, table_name="spatial_events")
         assert len(result) == 3
         assert "x" in result.columns
         assert "y" in result.columns
@@ -126,7 +126,7 @@ class TestWriteEvents:
 
         write_events(nwbfile, events_with_value_df, name="value_events")
 
-        result = read_events(nwbfile, "value_events")
+        result = read_events(nwbfile, table_name="value_events")
         assert len(result) == 3
         assert "value" in result.columns
         assert_array_almost_equal(
@@ -146,7 +146,9 @@ class TestWriteEvents:
 
         # Verify it's in the custom module
         assert "analysis" in nwbfile.processing
-        result = read_events(nwbfile, "custom_events", processing_module="analysis")
+        result = read_events(
+            nwbfile, table_name="custom_events", processing_module="analysis"
+        )
         assert len(result) == 4
 
     def test_overwrite_false_raises(self, nwbfile, basic_events_df):
@@ -169,7 +171,7 @@ class TestWriteEvents:
         new_events = pd.DataFrame({"timestamp": [10.0, 20.0]})
         write_events(nwbfile, new_events, name="replace_events", overwrite=True)
 
-        result = read_events(nwbfile, "replace_events")
+        result = read_events(nwbfile, table_name="replace_events")
         assert len(result) == 2
         assert_array_almost_equal(result["timestamp"].values, [10.0, 20.0])
 
@@ -180,7 +182,7 @@ class TestWriteEvents:
         empty_df = pd.DataFrame({"timestamp": []})
         write_events(nwbfile, empty_df, name="empty_events")
 
-        result = read_events(nwbfile, "empty_events")
+        result = read_events(nwbfile, table_name="empty_events")
         assert len(result) == 0
 
     def test_invalid_not_dataframe(self, nwbfile):
@@ -236,7 +238,7 @@ class TestWriteEvents:
         )
         write_events(nwbfile, df, name="multi_col_events")
 
-        result = read_events(nwbfile, "multi_col_events")
+        result = read_events(nwbfile, table_name="multi_col_events")
         assert "reward_amount" in result.columns
         assert "trial_id" in result.columns
         assert "region" in result.columns
@@ -255,7 +257,7 @@ class TestWriteEvents:
         )
         write_events(nwbfile, df, name="order_events")
 
-        result = read_events(nwbfile, "order_events")
+        result = read_events(nwbfile, table_name="order_events")
         # Note: timestamp is always first in EventsTable
         assert "timestamp" in result.columns
         assert "col_a" in result.columns
@@ -275,7 +277,7 @@ class TestRoundTrip:
         from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, basic_events_df, name="roundtrip")
-        result = read_events(nwbfile, "roundtrip")
+        result = read_events(nwbfile, table_name="roundtrip")
 
         assert_array_almost_equal(
             result["timestamp"].values, basic_events_df["timestamp"].values
@@ -286,7 +288,7 @@ class TestRoundTrip:
         from neurospatial.io.nwb import read_events, write_events
 
         write_events(nwbfile, events_with_spatial_df, name="spatial_roundtrip")
-        result = read_events(nwbfile, "spatial_roundtrip")
+        result = read_events(nwbfile, table_name="spatial_roundtrip")
 
         assert_array_almost_equal(
             result["x"].values, events_with_spatial_df["x"].values
@@ -312,7 +314,7 @@ class TestRoundTrip:
             }
         )
         write_events(nwbfile, df, name="mixed_roundtrip")
-        result = read_events(nwbfile, "mixed_roundtrip")
+        result = read_events(nwbfile, table_name="mixed_roundtrip")
 
         assert_array_almost_equal(result["timestamp"].values, df["timestamp"].values)
         # Note: bool may be converted to int/str depending on NWB storage
@@ -341,7 +343,7 @@ class TestIntegrationWithEventsModule:
         write_events(nwbfile, events_with_pos, name="positioned_events")
 
         # Read back
-        result = read_events(nwbfile, "positioned_events")
+        result = read_events(nwbfile, table_name="positioned_events")
         assert "x" in result.columns
         assert "y" in result.columns
         assert len(result) == 3
@@ -364,5 +366,5 @@ class TestIntegrationWithEventsModule:
         write_events(nwbfile, filtered, name="filtered_events")
 
         # Read back
-        result = read_events(nwbfile, "filtered_events")
+        result = read_events(nwbfile, table_name="filtered_events")
         assert len(result) == 4  # Events at 1.0, 2.0, 5.0, 8.0

@@ -624,6 +624,7 @@ def calibrate_from_landmarks(
     landmarks_px: NDArray[np.float64],
     landmarks_cm: NDArray[np.float64],
     frame_size_px: tuple[int, int],
+    *,
     kind: str = "similarity",
 ) -> Affine2D:
     """Build pixel→cm transform from corresponding landmark pairs.
@@ -1010,7 +1011,7 @@ def from_rotation_matrix(
     return AffineND(A)
 
 
-def identity_nd(n_dims: int = 2) -> AffineND:
+def identity_nd(*, n_dims: int = 2) -> AffineND:
     """Return the N-dimensional identity transform.
 
     Parameters
@@ -1075,6 +1076,7 @@ def flip_y_data(
 def convert_to_cm(
     data_px: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
+    *,
     cm_per_px: float = 1.0,
 ) -> NDArray[np.float64]:
     """Convert pixel coordinates to centimeter coordinates.
@@ -1105,6 +1107,7 @@ def convert_to_cm(
 def convert_to_pixels(
     data_cm: NDArray[np.float64] | tuple | list,
     frame_size_px: tuple[float, float],
+    *,
     cm_per_px: float = 1.0,
 ) -> NDArray[np.float64]:
     """Convert centimeter coordinates to pixel coordinates with y-flip.
@@ -1138,6 +1141,7 @@ def convert_to_pixels(
 def estimate_transform(
     src: NDArray[np.float64],
     dst: NDArray[np.float64],
+    *,
     kind: str = "rigid",
 ) -> AffineND:
     """Estimate transformation from point correspondences (2D or 3D).

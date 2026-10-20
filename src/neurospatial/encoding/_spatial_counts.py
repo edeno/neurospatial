@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -86,6 +86,7 @@ def prepare_linear_spatial_intervals(
     epochs: Any = None,
     spike_window: Any = None,
     interval_mask: NDArray[np.bool_] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> LinearSpatialIntervals:
     """Resolve exact planar dwell and half-open spike support once.
 
@@ -110,6 +111,9 @@ def prepare_linear_spatial_intervals(
         Windows that must contain each complete observation interval.
     interval_mask : ndarray of bool, shape (n_samples - 1,), or None
         Optional precomputed observation validity, before geometric bounds.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared recording breaks; recorded in the support
+        and, without ``interval_mask``, applied as a gate.
 
     Returns
     -------
@@ -146,6 +150,7 @@ def prepare_linear_spatial_intervals(
             max_gap=max_gap,
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
+            break_before=break_before,
         )
     else:
         mask = np.array(interval_mask, dtype=bool, copy=True)
@@ -193,10 +198,9 @@ def prepare_linear_spatial_intervals(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         max_gap=max_gap,
+        break_before=break_before,
     )
-    support = TimeSupport(
-        support.mask, run_array, support.epochs, support.spike_window, support.max_gap
-    )
+    support = replace(support, runs=run_array)
     return LinearSpatialIntervals(support, pieces, occupancy)
 
 
@@ -207,6 +211,7 @@ def resolve_speed(
     min_speed: float | None,
     *,
     max_gap: float | None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float64] | None:
     """Resolve the speed array used for the shared speed gate.
 
@@ -257,6 +262,9 @@ def resolve_speed(
     max_gap : float or None
         Longest sampling interval treated as continuous; the derived speed is
         smoothed separately within each run between longer gaps.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared recording breaks; the derived speed is
+        never smoothed across one.
 
     Notes
     -----
@@ -302,7 +310,9 @@ def resolve_speed(
         # No intervals: speed is undefined; return zeros so a min_speed gate
         # consistently excludes the (non-existent) intervals on both sides.
         return np.zeros(len(times), dtype=np.float64)
-    mask = interval_valid_mask(times, max_gap=max_gap, epochs=None)
+    mask = interval_valid_mask(
+        times, max_gap=max_gap, epochs=None, break_before=break_before
+    )
     return smoothed_speed(times, positions, mask, smooth_window=DEFAULT_SPEED_SMOOTHING)
 
 
@@ -499,6 +509,7 @@ class FrameBinning:
     frame_bins: NDArray[np.intp]
     n_bins: int
     support: TimeSupport
+    break_before: NDArray[np.bool_] | None = None
 
     def count(
         self, spike_times: Sequence[NDArray[np.float64]], *, n_jobs: int = 1
@@ -516,11 +527,13 @@ def prepare_frame_binning(
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
     interval_mask: NDArray[np.bool_] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> FrameBinning:
     """Resolve frame support once for counting and result provenance.
 
-    A supplied ``interval_mask`` already includes temporal and bin validity;
-    geometry consumers can share that gate without evaluating windows again.
+    A supplied ``interval_mask`` already includes temporal and bin validity
+    (including ``break_before``); geometry consumers can share that gate
+    without evaluating windows again. ``break_before`` is already validated.
     """
     if interval_mask is None:
         mask = interval_valid_mask(
@@ -529,14 +542,20 @@ def prepare_frame_binning(
             max_gap=max_gap,
             epochs=epochs,
             spike_window=spike_window,
+            break_before=break_before,
         )
     else:
         # Geometry consumers may already have resolved the shared gate.
         mask = interval_mask
     support = TimeSupport.from_mask(
-        times, mask, epochs=epochs, spike_window=spike_window, max_gap=max_gap
+        times,
+        mask,
+        epochs=epochs,
+        spike_window=spike_window,
+        max_gap=max_gap,
+        break_before=break_before,
     )
-    return FrameBinning(times, frame_bins, n_bins, support)
+    return FrameBinning(times, frame_bins, n_bins, support, break_before)
 
 
 def count_frames_and_occupancy(
@@ -556,6 +575,7 @@ def count_frames_and_occupancy(
         epochs=support.epochs,
         spike_window=support.spike_window,
         start_bin_gate=True,
+        break_before=prepared.break_before,
         result="the rate map is empty",
     )
     if len(times):
@@ -602,6 +622,7 @@ def _spatial_interval_mask(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.bool_]:
     """Compute the per-interval validity mask once for a whole trajectory.
 
@@ -633,6 +654,9 @@ def _spatial_interval_mask(
     epochs, spike_window : ndarray, shape (n_windows, 2), or None
         Normalized analysis and acquisition windows applied to each complete
         trajectory interval.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared recording breaks; the interval ending at
+        each break is dropped.
 
     Returns
     -------
@@ -652,6 +676,7 @@ def _spatial_interval_mask(
         start_bin=sample_bins,
         epochs=epochs,
         spike_window=spike_window,
+        break_before=break_before,
     )
     # Complete-case rule: spikes are placed by interpolating between an
     # interval's two samples, so an interval counts only when both samples are
@@ -674,8 +699,13 @@ def _resolve_spatial_time_support(
     warn_on_drop: bool,
     time_allocation: Literal["start", "linear"] = "start",
     linear_intervals: LinearSpatialIntervals | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> TimeSupport:
-    """Resolve training support shared by counting, occupancy and provenance."""
+    """Resolve training support shared by counting, occupancy and provenance.
+
+    ``break_before`` is already validated and drops the interval ending at
+    each declared recording break.
+    """
     _validate_time_allocation(time_allocation)
     if time_allocation == "linear":
         if linear_intervals is None:
@@ -688,6 +718,7 @@ def _resolve_spatial_time_support(
                 max_gap=max_gap,
                 epochs=epochs,
                 spike_window=spike_window,
+                break_before=break_before,
             )
         support = linear_intervals.support
         if warn_on_drop:
@@ -709,6 +740,7 @@ def _resolve_spatial_time_support(
                     spike_window=support.spike_window,
                     min_speed=min_speed,
                     start_bin_gate=True,
+                    break_before=break_before,
                     result="the rate map is empty",
                     suppress_hint=_WARN_ON_DROP_HINT,
                 )
@@ -723,6 +755,7 @@ def _resolve_spatial_time_support(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=break_before,
     )
     if warn_on_drop:
         warn_excluded_intervals(
@@ -733,6 +766,7 @@ def _resolve_spatial_time_support(
             spike_window=resolved_spike_window,
             min_speed=min_speed,
             start_bin_gate=True,
+            break_before=break_before,
             result="the rate map is empty",
             suppress_hint=_WARN_ON_DROP_HINT,
         )
@@ -742,6 +776,7 @@ def _resolve_spatial_time_support(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         max_gap=max_gap,
+        break_before=break_before,
     )
 
 
@@ -756,13 +791,15 @@ def _warn_if_population_silent(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> None:
     """Warn once if every unit is silent for >= 60 s of tracked time.
 
     Skipped when the caller passed ``spike_window`` (recording coverage is then
     explicit), for populations below ``_SILENCE_MIN_UNITS`` and for recordings
     shorter than ``_SILENCE_MIN_SECONDS``. Otherwise silence is measured over
-    the maximal runs of intervals passing the max_gap and epochs gates
+    the maximal runs of intervals passing the max_gap, epochs and
+    break_before gates
     (``run_time_bounds``), independently of speed or frame-bin validity: inside
     a single run, from the run start to the first spike, between consecutive
     spikes of the merged train, and from the last spike to the run end, so a
@@ -776,7 +813,10 @@ def _warn_if_population_silent(
     ):
         return
     observed_runs = run_time_bounds(
-        times, interval_valid_mask(times, max_gap=max_gap, epochs=epochs)
+        times,
+        interval_valid_mask(
+            times, max_gap=max_gap, epochs=epochs, break_before=break_before
+        ),
     )
     if observed_runs.shape[0] == 0:
         return

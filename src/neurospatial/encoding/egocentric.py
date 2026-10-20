@@ -56,6 +56,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
     run_time_bounds,
 )
+from neurospatial._observation import validate_break_before
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._polar_results import _PolarRateMixin, polar_summary_frame
@@ -1409,6 +1410,7 @@ def compute_egocentric_rate(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -1474,6 +1476,13 @@ def compute_egocentric_rate(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -1622,6 +1631,7 @@ def compute_egocentric_rate(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -1644,6 +1654,7 @@ def compute_object_vector_rate(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -1703,6 +1714,13 @@ def compute_object_vector_rate(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -1824,6 +1842,7 @@ def compute_object_vector_rate(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -1925,6 +1944,7 @@ def _count_object_vectors(
     n_jobs: int = 1,
     frame_bins: NDArray[np.int64] | None = None,
     polar_env: PolarEnvironment | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> _ObjectVectorCounts:
     """Bin egocentric coordinates, count spikes and build provenance.
 
@@ -1956,6 +1976,8 @@ def _count_object_vectors(
         Parallel jobs for spike counting.
     frame_bins, polar_env : optional
         Trajectory-only geometry reused from an earlier call.
+    break_before : ndarray of bool, shape (n_time,), or None
+        Validated declared recording breaks.
 
     Returns
     -------
@@ -1987,6 +2009,7 @@ def _count_object_vectors(
         env=env,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         frame_bins=frame_bins,
         polar_env=polar_env,
@@ -2030,6 +2053,7 @@ def _object_vector_rate(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -2084,6 +2108,7 @@ def _object_vector_rate(
         spike_times,
         context=context,
     )
+    breaks = validate_break_before(break_before, len(times), call=context)
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
@@ -2106,6 +2131,7 @@ def _object_vector_rate(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
+        break_before=breaks,
     )
     spike_counts = counts.spike_counts[0]
 
@@ -2155,6 +2181,7 @@ def compute_egocentric_rates(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -2232,6 +2259,13 @@ def compute_egocentric_rates(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -2432,6 +2466,7 @@ def compute_egocentric_rates(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -2456,6 +2491,7 @@ def compute_object_vector_rates(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -2527,6 +2563,13 @@ def compute_object_vector_rates(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -2669,6 +2712,7 @@ def compute_object_vector_rates(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -2694,6 +2738,7 @@ def _object_vector_rates(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -2762,6 +2807,7 @@ def _object_vector_rates(
         object_positions, env=env, positions=positions, metric=metric
     )
     validate_spike_trains(spike_times_list, context=context)
+    breaks = validate_break_before(break_before, len(times), call=context)
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
     _warn_if_population_silent(
@@ -2770,6 +2816,7 @@ def _object_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=breaks,
     )
 
     # Retain the exact binning support for result provenance.
@@ -2795,6 +2842,7 @@ def _object_vector_rates(
         n_jobs=n_jobs,
         frame_bins=frame_bins,
         polar_env=polar_env,
+        break_before=breaks,
     )
 
     # Compute firing rates. The "binned" method uses the raw bin rate (no graph
@@ -3007,6 +3055,7 @@ def is_object_vector_cell(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -3061,6 +3110,12 @@ def is_object_vector_cell(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -3170,6 +3225,9 @@ def is_object_vector_cell(
         },
         call="is_object_vector_cell",
     )
+    break_before = validate_break_before(
+        break_before, len(times), call="is_object_vector_cell"
+    )
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
@@ -3188,6 +3246,7 @@ def is_object_vector_cell(
             metric=metric,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
             spike_window=spike_window,
             method=method,
             bandwidth=bandwidth,
@@ -3208,6 +3267,7 @@ def is_object_vector_cell(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -3238,6 +3298,7 @@ def is_egocentric_object_vector_cell(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -3298,6 +3359,12 @@ def is_egocentric_object_vector_cell(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -3412,6 +3479,9 @@ def is_egocentric_object_vector_cell(
         },
         call="is_egocentric_object_vector_cell",
     )
+    break_before = validate_break_before(
+        break_before, len(times), call="is_egocentric_object_vector_cell"
+    )
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
@@ -3431,6 +3501,7 @@ def is_egocentric_object_vector_cell(
             metric=metric,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
             spike_window=spike_window,
             method=method,
             bandwidth=bandwidth,
@@ -3452,6 +3523,7 @@ def is_egocentric_object_vector_cell(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -3588,6 +3660,7 @@ def _object_vector_significance(
     metric: Literal["euclidean", "geodesic"],
     max_gap: float | None,
     epochs: Any,
+    break_before: ArrayLike | None,
     spike_window: Any,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float | None,
@@ -3684,6 +3757,8 @@ def _object_vector_significance(
     validate_trajectory(times, positions=positions, headings=headings, context=context)
     for train in trains:
         validate_spike_times(train, context=context)
+    breaks = validate_break_before(break_before, len(times), call=context)
+    options["break_before"] = breaks
     _validate_object_vector_metric(env, metric, context=context)
     object_positions, _ = resolve_object_positions(
         object_positions, env=env, positions=positions, metric=metric
@@ -3704,6 +3779,7 @@ def _object_vector_significance(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=options["break_before"],
     )
     windows = run_time_bounds(times, mask)
 
@@ -3756,6 +3832,7 @@ def object_vector_cell_significance(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -3829,6 +3906,12 @@ def object_vector_cell_significance(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -3926,6 +4009,7 @@ def object_vector_cell_significance(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -3953,6 +4037,7 @@ def egocentric_object_vector_cell_significance(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -4032,6 +4117,12 @@ def egocentric_object_vector_cell_significance(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -4129,6 +4220,7 @@ def egocentric_object_vector_cell_significance(
         metric=metric,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,

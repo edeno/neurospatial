@@ -775,8 +775,8 @@ Get recommended napari settings based on session size:
 from neurospatial.animation import large_session_napari_config
 
 # Returns recommended playback/cache settings for napari
-config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
-# {'fps': 30, 'chunk_size': 1000, 'max_chunks': 50}
+config = large_session_napari_config(n_frames=500_000)
+# {'chunk_size': 1000, 'max_chunks': 50}
 
 env.animate_fields(fields, frame_times=frame_times, backend="napari", **config)
 ```
@@ -822,7 +822,7 @@ vmin, vmax = estimate_colormap_range_from_subset(fields, seed=42)
 print(f"Colormap range: [{vmin:.2f}, {vmax:.2f}]")
 
 # STEP 2: Get recommended napari settings
-config = large_session_napari_config(n_frames, sample_rate_hz=250)
+config = large_session_napari_config(n_frames)
 print(f"Config: {config}")
 
 # STEP 3: Launch napari with optimized settings

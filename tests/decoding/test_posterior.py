@@ -1427,7 +1427,7 @@ class TestPosteriorClosedForm:
         spike_counts = np.array([[2]], dtype=np.int64)  # (n_time=1, n_neurons=1)
         encoding_models = np.array([[5.0, 10.0]])  # (n_neurons=1, n_bins=2)
         dt = 0.1
-        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt)
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
         posterior = normalize_to_posterior(log_likelihood, prior=np.array([0.5, 0.5]))
 
         # Closed-form Bayes posterior from the Poisson pmf. The omitted -log(n!)
@@ -1445,7 +1445,7 @@ class TestPosteriorClosedForm:
         # so the posterior must equal the (normalized) prior exactly.
         encoding_models = np.array([[7.0, 7.0, 7.0]])
         log_likelihood = log_poisson_likelihood(
-            np.array([[3]], dtype=np.int64), encoding_models, 0.1
+            np.array([[3]], dtype=np.int64), encoding_models, dt=0.1
         )
         prior = np.array([0.2, 0.3, 0.5])
         posterior = normalize_to_posterior(log_likelihood, prior=prior)
@@ -1458,7 +1458,7 @@ class TestPosteriorClosedForm:
         # A zero-prior bin carries exactly zero posterior mass.
         encoding_models = np.array([[5.0, 10.0, 8.0]])
         log_likelihood = log_poisson_likelihood(
-            np.array([[2]], dtype=np.int64), encoding_models, 0.1
+            np.array([[2]], dtype=np.int64), encoding_models, dt=0.1
         )
         posterior = normalize_to_posterior(
             log_likelihood, prior=np.array([0.5, 0.5, 0.0])
@@ -1497,7 +1497,7 @@ class TestZeroPriorSupport:
             env,
             np.array([[10]], dtype=np.int64),
             np.array([[1.0, 100.0]]),
-            0.1,
+            dt=0.1,
             prior=np.array([1.0, 0.0]),
         )
         assert_array_equal(result.posterior, np.array([[1.0, 0.0]]))
@@ -1556,7 +1556,7 @@ class TestLongTrajectoryStability:
             encoding_models.mean(axis=1)[None, :] * dt, (n_time, n_neurons)
         ).astype(np.int64)
 
-        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt)
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
         posterior = normalize_to_posterior(log_likelihood)
 
         assert np.isfinite(posterior).all()

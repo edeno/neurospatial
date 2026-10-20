@@ -68,6 +68,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
     run_time_bounds,
 )
+from neurospatial._observation import validate_break_before
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._significance import (
@@ -1874,6 +1875,7 @@ def _count_directional(
     spike_window: Any,
     backend: str,
     n_jobs: int = 1,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> _DirectionalCounts:
     """Bin headings, count spikes and build provenance for directional rates.
 
@@ -1900,6 +1902,8 @@ def _count_directional(
         Resolved backend recorded in the provenance.
     n_jobs : int, default=1
         Parallel jobs for spike counting.
+    break_before : ndarray of bool, shape (n_time,), or None
+        Validated declared recording breaks.
 
     Returns
     -------
@@ -1921,6 +1925,7 @@ def _count_directional(
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        break_before=break_before,
     )
     spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
 
@@ -1964,6 +1969,7 @@ def compute_directional_rate(
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> DirectionalRateResult:
@@ -2003,7 +2009,7 @@ def compute_directional_rate(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
@@ -2029,6 +2035,13 @@ def compute_directional_rate(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -2139,6 +2152,9 @@ def compute_directional_rate(
 
     validate_trajectory(times, headings=headings, context="compute_directional_rate")
     validate_spike_times(spike_times, context="compute_directional_rate")
+    breaks = validate_break_before(
+        break_before, len(times), call="compute_directional_rate"
+    )
 
     counts = _count_directional(
         [spike_times],
@@ -2151,6 +2167,7 @@ def compute_directional_rate(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         backend=resolved_backend,
+        break_before=breaks,
     )
     spike_counts = counts.spike_counts[0]
     occupancy = counts.occupancy
@@ -2214,6 +2231,7 @@ def compute_directional_rates(
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2262,7 +2280,7 @@ def compute_directional_rates(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
@@ -2288,6 +2306,13 @@ def compute_directional_rates(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -2424,6 +2449,9 @@ def compute_directional_rates(
 
     validate_trajectory(times, headings=headings, context="compute_directional_rates")
     validate_spike_trains(spike_times_list, context="compute_directional_rates")
+    breaks = validate_break_before(
+        break_before, len(times), call="compute_directional_rates"
+    )
 
     # Recording coverage uses tracked runs, independently of speed or frame bins.
     _warn_if_population_silent(
@@ -2432,6 +2460,7 @@ def compute_directional_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=breaks,
     )
 
     counts = _count_directional(
@@ -2446,6 +2475,7 @@ def compute_directional_rates(
         spike_window=resolved_spike_window,
         backend=resolved_backend,
         n_jobs=n_jobs,
+        break_before=breaks,
     )
     spike_counts_batch = counts.spike_counts
     occupancy = counts.occupancy
@@ -2569,6 +2599,7 @@ def is_head_direction_cell(
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> bool:
@@ -2590,7 +2621,7 @@ def is_head_direction_cell(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
@@ -2616,6 +2647,12 @@ def is_head_direction_cell(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -2709,6 +2746,9 @@ def is_head_direction_cell(
         },
         call="is_head_direction_cell",
     )
+    breaks = validate_break_before(
+        break_before, len(times), call="is_head_direction_cell"
+    )
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
         level = HEAD_DIRECTION_THRESHOLDS["alpha"] if alpha is None else alpha
@@ -2724,6 +2764,7 @@ def is_head_direction_cell(
             angle_unit=angle_unit,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=breaks,
             spike_window=spike_window,
             backend=backend,
         )[label]
@@ -2739,6 +2780,7 @@ def is_head_direction_cell(
         angle_unit=angle_unit,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=breaks,
         spike_window=spike_window,
         backend=backend,
     )
@@ -2913,6 +2955,7 @@ def head_direction_cell_significance(
     angle_unit: Literal["rad", "deg"] = "rad",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -2954,7 +2997,7 @@ def head_direction_cell_significance(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
@@ -2979,6 +3022,12 @@ def head_direction_cell_significance(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -3092,6 +3141,10 @@ def head_direction_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="head_direction_cell_significance")
+    breaks = validate_break_before(
+        break_before, len(times), call="head_direction_cell_significance"
+    )
+    options["break_before"] = breaks
     frame_bins, _ = directional_frame_bins(headings, bin_size, angle_unit=angle_unit)
     mask = interval_valid_mask(
         times,
@@ -3099,6 +3152,7 @@ def head_direction_cell_significance(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=options["break_before"],
     )
     windows = run_time_bounds(times, mask)
 

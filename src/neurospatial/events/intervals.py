@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 def intervals_to_events(
     intervals: pd.DataFrame,
-    which: Literal["start", "stop", "both"] = "start",
     *,
+    which: Literal["start", "stop", "both"] = "start",
     start_column: str = "start_time",
     stop_column: str = "stop_time",
     preserve_columns: list[str] | None = None,
@@ -445,7 +445,8 @@ def filter_by_intervals(
     intervals : pd.DataFrame
         Intervals DataFrame with start and stop time columns.
     include : bool, default=True
-        If True, keep events within intervals (inclusive filtering).
+        If True, keep events within intervals, half-open
+        ``[start, stop)``: an event exactly at a stop is outside.
         If False, keep events outside intervals (exclusive filtering).
     timestamp_column : str, default="timestamp"
         Name of timestamp column in events.
@@ -468,6 +469,10 @@ def filter_by_intervals(
     --------
     intervals_to_events : Convert intervals to point events.
     events_to_intervals : Pair start/stop events into intervals.
+    neurospatial.behavior.restrict : Restrict time arrays and aligned arrays
+        (positions, speed) to epochs.
+    neurospatial.behavior.in_epochs : Boolean mask of the timestamps inside
+        epochs.
 
     Examples
     --------
@@ -542,7 +547,7 @@ def filter_by_intervals(
     # For each event, check if it's within any interval
     # Shape: (n_events, n_intervals)
     within_intervals = (timestamps[:, np.newaxis] >= starts) & (
-        timestamps[:, np.newaxis] <= stops
+        timestamps[:, np.newaxis] < stops
     )
 
     # Event is "in an interval" if it's within any interval

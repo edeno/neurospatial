@@ -298,9 +298,9 @@ start/stop arrays are rejected: convert them with `np.column_stack([starts, stop
     `restrict()` warns when aligned arrays would join separate windows. Passing
     those arrays to an analysis without `epochs=` can reintroduce excluded time.
     Prefer the original arrays with `epochs=`; if using sliced arrays, pass the
-    windows again. Point selection defaults to inclusive endpoints; use
-    `closed="left"` when dividing spikes or events into adjacent train/test
-    cohorts. Analysis windows always use `[start, stop)`.
+    windows again. Point selection uses the same `[start, stop)` windows as
+    the analyses, so adjacent train/test windows never share a spike or
+    event; pass `closed="both"` to match pynapple's inclusive `restrict`.
 
 ## Analysis settings and exports
 
@@ -466,7 +466,7 @@ with NWBHDF5IO("session.nwb", "r") as io:
     file = io.read()
     units = read_units(file)  # Or unit_ids=[7, 11] to select table labels.
     pos = read_position(file)
-    epoch_table = read_intervals(file, "epochs")
+    epoch_table = read_intervals(file, interval_name="epochs")
     chosen = epoch_table["tags"].map(lambda tags: "run" in tags)
     epochs = epoch_table.loc[chosen, ["start_time", "stop_time"]].to_numpy(dtype=float)
 

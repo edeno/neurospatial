@@ -409,7 +409,7 @@ class TestLongTrajectoryStability:
             encoding_models.mean(axis=1)[None, :] * dt, (n_time, n_neurons)
         ).astype(np.int64)
 
-        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt)
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
 
         assert log_likelihood.shape == (n_time, n_bins)
         assert np.isfinite(log_likelihood).all()
@@ -421,7 +421,7 @@ class TestLongTrajectoryStability:
         # where a naive Poisson pmf overflows. The log-space form must not.
         encoding_models = np.array([[2000.0, 100.0]])
         spike_counts = np.array([[5]], dtype=np.int64)
-        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, 0.1)
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt=0.1)
 
         assert np.isfinite(log_likelihood).all()
 

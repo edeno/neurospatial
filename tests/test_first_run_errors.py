@@ -91,8 +91,8 @@ def test_egocentric_population_reports_length_and_dimensions_together(recording)
 @pytest.mark.parametrize(
     "name,arguments",
     [
-        ("decode_position", "spike_counts, encoding_models, dt"),
-        ("decode_position_summary", "spike_counts, encoding_models, dt"),
+        ("decode_position", "spike_counts, encoding_models, dt=dt"),
+        ("decode_position_summary", "spike_counts, encoding_models, dt=dt"),
         ("compute_view_rate", "spike_times, times, positions, headings"),
         ("compute_view_rates", "spike_times, times, positions, headings"),
         (
@@ -110,9 +110,11 @@ def test_missing_environment_shows_the_complete_call(recording, name, arguments)
     import neurospatial.encoding as encoding
 
     r = recording
+    kwargs = {}
     if name.startswith("decode_"):
         function = getattr(decoding, name)
-        args = (r.spike_times, np.ones((2, 1)), np.ones((r.env.n_bins, 1)), 0.1)
+        args = (r.spike_times, np.ones((2, 1)), np.ones((r.env.n_bins, 1)))
+        kwargs = {"dt": 0.1}
     else:
         function = getattr(encoding, name)
         spikes = [r.spike_times] if name.endswith("rates") else r.spike_times
@@ -120,7 +122,7 @@ def test_missing_environment_shows_the_complete_call(recording, name, arguments)
         if "egocentric" in name:
             args += (np.array([[50.0, 50.0]]),)
     with pytest.raises(TypeError, match="expects an Environment") as caught:
-        function(*args)
+        function(*args, **kwargs)
     assert f"{name}(env, {arguments})" in str(caught.value).splitlines()[-1]
 
 
@@ -285,13 +287,13 @@ def test_rewritten_sites_teach(site, recording, tmp_path):
             [1], n_units=2, context="compute_spatial_rates"
         ),
         "decoder_units": lambda: decode_position(
-            env, np.ones((3, 1), dtype=int), models, 0.1
+            env, np.ones((3, 1), dtype=int), models, dt=0.1
         ),
         "likelihood_units": lambda: log_poisson_likelihood(
-            np.ones((3, 1), dtype=int), models, 0.1
+            np.ones((3, 1), dtype=int), models, dt=0.1
         ),
         "decoder_bins": lambda: decode_position(
-            env, np.ones((3, 2), dtype=int), np.ones((2, env.n_bins + 1)), 0.1
+            env, np.ones((3, 2), dtype=int), np.ones((2, env.n_bins + 1)), dt=0.1
         ),
         "degenerate_posterior": lambda: normalize_to_posterior(
             np.full((2, 3), -np.inf), handle_degenerate="raise"
@@ -380,9 +382,9 @@ def test_segmentation_unknown_region(site, recording):
         detect_laps,
         detect_region_crossings,
         detect_runs_between_regions,
+        distance_to_boundary,
         segment_trials,
     )
-    from neurospatial.events import distance_to_boundary
 
     r = recording
     env = r.env

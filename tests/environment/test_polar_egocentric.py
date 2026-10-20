@@ -1323,6 +1323,9 @@ _POLAR_INHERITED_MEMBERS = {
         "smooth",
         "transitions",
     },
+    "exact bin pairs between (distance, angle) grids drawn on one lattice": {
+        "bin_mapping_from",
+    },
     "read-only geometry views in (distance, angle) coordinates": {
         "binning",
         "coordinate_system",

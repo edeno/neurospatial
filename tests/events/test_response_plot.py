@@ -73,8 +73,8 @@ def test_exact_left_edge_is_included_and_right_edge_is_excluded():
         assert row[0] == -0.5
         assert row[-1] < 0.5
     assert result.histogram.sum() == 3
-    # The low-level aligner's existing inclusive stop behavior is unchanged.
-    assert len(align_spikes_to_events(spikes, events[:1], (-0.5, 0.5))[0]) == 4
+    # The low-level aligner uses the same half-open window as the histogram.
+    assert len(align_spikes_to_events(spikes, events[:1], (-0.5, 0.5))[0]) == 3
 
 
 def test_trailing_partial_bin_is_omitted_from_raster_and_axes():

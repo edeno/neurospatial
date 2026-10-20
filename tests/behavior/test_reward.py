@@ -33,7 +33,9 @@ class TestRegionRewardField:
         env = env.with_regions(region_builder)  # Create polygon around point
 
         # Generate constant reward field
-        reward = region_reward_field(env, "goal", reward_value=1.0, decay="constant")
+        reward = region_reward_field(
+            env, region_name="goal", reward_value=1.0, decay="constant"
+        )
 
         # Check shape
         assert reward.shape == (env.n_bins,)
@@ -67,7 +69,7 @@ class TestRegionRewardField:
 
         reward_value = 10.0
         reward = region_reward_field(
-            env, "goal", reward_value=reward_value, decay="constant"
+            env, region_name="goal", reward_value=reward_value, decay="constant"
         )
 
         from neurospatial.ops import regions_to_mask
@@ -94,7 +96,9 @@ class TestRegionRewardField:
         env = env.with_regions(region_builder)  # Create polygon around point
 
         # Generate linear decay reward field
-        reward = region_reward_field(env, "goal", reward_value=1.0, decay="linear")
+        reward = region_reward_field(
+            env, region_name="goal", reward_value=1.0, decay="linear"
+        )
 
         # Check shape
         assert reward.shape == (env.n_bins,)
@@ -133,7 +137,11 @@ class TestRegionRewardField:
         # Generate Gaussian reward field
         bandwidth = 10.0
         reward = region_reward_field(
-            env, "goal", reward_value=1.0, decay="gaussian", bandwidth=bandwidth
+            env,
+            region_name="goal",
+            reward_value=1.0,
+            decay="gaussian",
+            bandwidth=bandwidth,
         )
 
         # Check shape
@@ -174,7 +182,9 @@ class TestRegionRewardField:
 
         # Should raise ValueError when bandwidth not provided for Gaussian
         with pytest.raises(ValueError, match=r"bandwidth.*required.*gaussian|Gaussian"):
-            region_reward_field(env, "goal", decay="gaussian", bandwidth=None)
+            region_reward_field(
+                env, region_name="goal", decay="gaussian", bandwidth=None
+            )
 
     def test_region_reward_field_invalid_region_error(self):
         """Test that non-existent region raises KeyError."""
@@ -188,7 +198,7 @@ class TestRegionRewardField:
 
         # No regions added
         with pytest.raises(KeyError, match="nonexistent"):
-            region_reward_field(env, "nonexistent", decay="constant")
+            region_reward_field(env, region_name="nonexistent", decay="constant")
 
 
 class TestGoalRewardField:

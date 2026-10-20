@@ -29,11 +29,12 @@ DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
 COL_METADATA = "metadata"
 
 
+@keyword_hint("name")
 def write_environment(
     nwbfile: NWBFile,
     env: Environment,
-    name: str = DEFAULT_ENVIRONMENT_NAME,
     *,
+    name: str = DEFAULT_ENVIRONMENT_NAME,
     overwrite: bool = False,
 ) -> None:
     """Store complete bins and Arena using NWB environment schema 3.0.
@@ -155,8 +156,10 @@ def _missing_environment_message(nwbfile: NWBFile, name: str) -> str:
     )
 
 
+@keyword_hint("name")
 def read_environment(
     nwbfile: NWBFile,
+    *,
     name: str = DEFAULT_ENVIRONMENT_NAME,
 ) -> Environment[Any]:
     """Decode a saved NWB binning and Arena record without a layout builder.

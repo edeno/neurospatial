@@ -19,11 +19,11 @@ from neurospatial.behavior import (
     detect_region_crossings,
     detect_region_visits,
     detect_runs_between_regions,
+    distance_to_boundary,
     region_reward_field,
     running_direction_labels,
     segment_trials,
 )
-from neurospatial.events import distance_to_boundary
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +81,9 @@ CALLS = {
         decision_region=empty,
         trials=segment_trials(b, t, env, start_region="left", end_regions=["right"]),
     ),
-    "region_reward_field": lambda env, t, p, b, empty: region_reward_field(env, empty),
+    "region_reward_field": lambda env, t, p, b, empty: region_reward_field(
+        env, region_name=empty
+    ),
     "distance_to_boundary": lambda env, t, p, b, empty: distance_to_boundary(
         env, p, boundary_type="region", region_name=empty
     ),

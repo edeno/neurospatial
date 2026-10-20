@@ -734,14 +734,14 @@ class TestAddModulation:
         spike_times = np.linspace(0, 5, 100)
 
         with pytest.raises(ValueError, match="modulation_depth must be in range"):
-            add_modulation(spike_times, 8.0, modulation_depth=1.5)
+            add_modulation(spike_times, modulation_freq=8.0, modulation_depth=1.5)
 
     def test_invalid_modulation_depth_negative(self):
         """Test that negative modulation depth raises ValueError."""
         spike_times = np.linspace(0, 5, 100)
 
         with pytest.raises(ValueError, match="modulation_depth must be in range"):
-            add_modulation(spike_times, 8.0, modulation_depth=-0.1)
+            add_modulation(spike_times, modulation_freq=8.0, modulation_depth=-0.1)
 
     def test_invalid_modulation_freq_negative(self):
         """Test that negative frequency raises ValueError."""
@@ -761,7 +761,9 @@ class TestAddModulation:
         """Test modulation with single spike."""
         spike_times = np.array([1.0])
 
-        modulated = add_modulation(spike_times, 8.0, modulation_depth=0.5, seed=42)
+        modulated = add_modulation(
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
+        )
 
         # Should return either 1 spike or 0 spikes
         assert len(modulated) in [0, 1]
@@ -773,7 +775,9 @@ class TestAddModulation:
         spike_times = np.linspace(0, 1, 1000)
 
         # 100 Hz modulation (many cycles in 1 second)
-        modulated = add_modulation(spike_times, 100.0, modulation_depth=0.5, seed=42)
+        modulated = add_modulation(
+            spike_times, modulation_freq=100.0, modulation_depth=0.5, seed=42
+        )
 
         # Should modulate spikes (not keep all or remove all)
         assert len(modulated) < len(spike_times)

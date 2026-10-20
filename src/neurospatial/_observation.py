@@ -70,7 +70,11 @@ class ObservationSupport(ReadOnlyArraysMixin):
 def validate_break_before(
     break_before: Any, n_samples: int, *, call: str
 ) -> NDArray[np.bool_] | None:
-    """Return ``break_before`` as a Boolean array, or None when not given."""
+    """Return an owned copy of ``break_before`` as a Boolean array, or None.
+
+    The copy means a result or a shuffle null holding it cannot change when
+    the caller edits their array.
+    """
     if break_before is None:
         return None
     flags = np.asarray(break_before)
@@ -86,7 +90,8 @@ def validate_break_before(
                 ),
             )
         )
-    return flags
+    owned: NDArray[np.bool_] = flags.copy()
+    return owned
 
 
 def validate_max_gap(max_gap: float | None) -> float | None:
@@ -97,25 +102,6 @@ def validate_max_gap(max_gap: float | None) -> float | None:
             f"(None keeps every interval, however long); got {max_gap!r}."
         )
     return max_gap
-
-
-def _interval_gates(
-    times: NDArray[np.float64],
-    *,
-    max_gap: float | None,
-    epochs: Any,
-    break_before: NDArray[np.bool_] | None,
-    result: str,
-) -> NDArray[np.bool_]:
-    """Return the sample-independent usable-interval gates, shape (n_samples - 1,).
-
-    Combines ``max_gap``, ``epochs`` and declared breaks. Emits the shared
-    excluded-interval warning at most once.
-    """
-    gates = observed_interval_mask(times, max_gap=max_gap, epochs=epochs, result=result)
-    if break_before is not None:
-        gates = gates & ~break_before[1:]
-    return gates
 
 
 def _support_from_gates(
@@ -218,7 +204,7 @@ def resolve_sample_support(
     >>> support.interval_mask
     array([ True, False, False,  True])
     """
-    gates = _interval_gates(
+    gates = observed_interval_mask(
         times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
     )
     return _support_from_gates(times, sample_valid, gates)
@@ -495,7 +481,7 @@ def validated_signals(
     sample_valid = np.isfinite(sig)
     if flags is not None:
         sample_valid = sample_valid & flags
-    gates = _interval_gates(
+    gates = observed_interval_mask(
         t, max_gap=max_gap, epochs=epochs, break_before=breaks, result=result
     )
     supports = tuple(

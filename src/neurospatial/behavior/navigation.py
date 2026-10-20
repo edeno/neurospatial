@@ -4,7 +4,7 @@ This module provides comprehensive tools for analyzing goal-directed navigation
 and path efficiency in spatial environments. It combines:
 
 - **Path progress and distance metrics**: Compute progress toward goals, distances
-  to regions, and cost-aware navigation
+  to regions, boundaries and rewards, and cost-aware navigation
 - **Path efficiency**: Compare actual vs. optimal paths (geodesic or Euclidean)
 - **Goal-directed metrics**: Measure how directly animals navigate toward goals
 - **Direction labeling**: Generate per-timepoint direction labels for directional
@@ -18,6 +18,8 @@ All navigation functions are importable from ``behavior.navigation``::
         # Path progress and distance (from behavioral.py)
         path_progress,
         distance_to_region,
+        distance_to_boundary,
+        distance_to_reward,
         cost_to_goal,
         time_to_goal,
         trials_to_region_arrays,
@@ -116,6 +118,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import (
+    break_sample_times,
+    intervals_contain,
+    recording_index,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.geometry import require_cartesian
@@ -130,7 +137,9 @@ if TYPE_CHECKING:
 __all__ = [  # noqa: RUF022
     # Path progress and distance (from behavioral.py)
     "cost_to_goal",
+    "distance_to_boundary",
     "distance_to_region",
+    "distance_to_reward",
     "goal_pair_direction_labels",
     "graph_turn_sequence",
     "heading_direction_labels",
@@ -747,6 +756,10 @@ def distance_to_region(
     --------
     path_progress : Normalized progress along path
     cost_to_goal : Distance with terrain/learned cost
+    distance_to_boundary : Distance to the environment's edge, obstacles or a
+        region's boundary
+    distance_to_reward : Distance to the reward location at each sample
+    neurospatial.ops.nearest_boundary : Exact distance and direction to walls
     """
     if metric == "euclidean":
         require_cartesian(
@@ -815,6 +828,848 @@ def distance_to_region(
         distances[invalid_mask] = np.nan
 
         return distances
+
+
+def distance_to_reward(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    reward_times: NDArray[np.float64],
+    reward_positions: NDArray[np.float64] | None = None,
+    *,
+    metric: Literal["geodesic", "euclidean"] = "geodesic",
+    mode: Literal["nearest", "last", "next"] = "nearest",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+) -> NDArray[np.float64]:
+    """
+    Compute distance to reward location at each sample.
+
+    For each sample, computes the distance from current position to the
+    reward location. The reward location is determined by the ``mode``:
+
+    - "nearest": Uses the closest reward in time (before or after)
+    - "last": Uses the most recent reward before current time
+    - "next": Uses the next upcoming reward after current time
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment.
+    times : NDArray[np.float64], shape (n_samples,)
+        Sample timestamps (seconds).
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates at each sample time. Must match environment
+        dimensionality (e.g., 2D for grid environments). A row with a NaN
+        coordinate is a missing sample (a lost tracking frame): its distance
+        is NaN.
+    reward_times : NDArray[np.float64], shape (n_events,)
+        Reward event timestamps (seconds).
+    reward_positions : NDArray[np.float64], shape (n_events, n_dims), optional
+        Reward locations in environment coordinates. If None, each reward
+        location is read from the tracked positions at its reward time (see
+        Notes); a reward whose location cannot be read that way has an
+        unknown location.
+    metric : {'geodesic', 'euclidean'}, default='geodesic'
+        Distance metric:
+
+        - 'geodesic': Shortest-path distance respecting environment geometry
+          (walls, obstacles). Uses graph-based distances.
+        - 'euclidean': Straight-line L2 distance. Ignores obstacles.
+    mode : {'nearest', 'last', 'next'}, default='nearest'
+        Which reward to use for distance computation:
+
+        - 'nearest': Distance to temporally closest reward (before or after).
+        - 'last': Distance to most recent reward. NaN before first reward.
+        - 'next': Distance to next upcoming reward. NaN after last reward.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        A reward location is never interpolated across a longer interval
+        (dropped frames, pauses between sessions). ``None`` disables the gap
+        check. It does not change which reward a sample uses.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). Samples outside every window get NaN.
+        ``None`` (default) means unrestricted. Epochs do not change which
+        reward a sample uses or where an inferred reward is: rewards are often
+        delivered while the animal is still, outside running epochs, and their
+        locations are still read from the tracked positions.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. A sample only uses rewards from its own
+        recording, and no reward location is interpolated across a break.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples,)
+        Distance from current position to the reward location at each
+        sample. Units match environment coordinates (e.g., cm).
+        Returns NaN when:
+
+        - No relevant reward exists (e.g., mode="last" before first reward,
+          or no reward in the sample's own recording)
+        - Position is missing (NaN) or outside environment (invalid bin)
+        - The sample lies outside ``epochs``
+        - Reward position is unknown or outside environment
+
+    Raises
+    ------
+    ValueError
+        If positions and times have different lengths.
+        If reward_positions provided but doesn't match reward_times length.
+        If positions dimensionality doesn't match environment.
+        If ``times`` or ``reward_times`` contain non-finite values, or
+        ``positions`` contains an infinite value.
+        If ``times`` is not ascending when reward positions are inferred
+        (no ``reward_positions`` given) or ``break_before`` is given.
+        If ``max_gap`` is not positive, or ``epochs`` or ``break_before`` is
+        malformed.
+
+    Warns
+    -----
+    UserWarning
+        When some reward locations cannot be inferred from ``positions``,
+        naming how many and why (outside the recorded span, in a gap longer
+        than ``max_gap``, across a declared break or at missing positions).
+
+    Notes
+    -----
+    **Inferred reward locations**:
+
+    When ``reward_positions`` is not provided, a reward exactly at an
+    observed sample time uses that sample's position. Otherwise the position
+    is linearly interpolated between the two samples around the reward
+    time, but only when that interval is usable: no longer than ``max_gap``,
+    not crossed by a declared break, and observed at both ends. ``epochs``
+    play no part here. A reward in a tracking gap, across a recording join, next to a
+    missing sample or outside the recorded span has an unknown location, and
+    the samples that select it get NaN. They never fall back to another
+    reward or to the nearest recorded position. Provide explicit
+    ``reward_positions`` (for example the reward port's coordinates) when the
+    tracked position at the reward time is not reliable.
+
+    **Reward selection**:
+
+    Without ``break_before`` every reward is eligible for every sample.
+    With it, each recording spans from the first sample after a declared
+    break to the next break (``-inf``/``+inf`` at the ends), and a sample only
+    selects rewards whose times fall in its own recording's span. Gaps longer
+    than ``max_gap`` do not restrict selection: a tracking dropout does not
+    change the task.
+
+    **Performance**:
+
+    This function computes distance fields for each unique reward location,
+    which is O(V log V + E) per location using Dijkstra's algorithm. For
+    many unique reward locations, consider caching or using Euclidean
+    distances.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import distance_to_reward
+    >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
+    >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=1.0)
+    >>> times = np.arange(6) * 0.1  # seconds
+    >>> positions = np.c_[np.arange(6.0), np.full(6, 5.0)]  # running along y = 5
+    >>> reward_times = np.array([0.3])  # the reward is at sample 3, x = 3
+    >>> distance_to_reward(env, times, positions, reward_times, metric="euclidean")
+    array([3., 2., 1., 0., 1., 2.])
+
+    A lost tracking frame has no distance:
+
+    >>> positions[4] = np.nan
+    >>> distance_to_reward(env, times, positions, reward_times, metric="euclidean")
+    array([ 3.,  2.,  1.,  0., nan,  2.])
+
+    If a second recording starts at sample 4, its samples have no "last"
+    reward:
+
+    >>> new_recording = np.array([False, False, False, False, True, False])
+    >>> distance_to_reward(
+    ...     env,
+    ...     times,
+    ...     positions,
+    ...     reward_times,
+    ...     metric="euclidean",
+    ...     mode="last",
+    ...     break_before=new_recording,
+    ... )
+    array([nan, nan, nan,  0., nan, nan])
+
+    As a GLM regressor next to the time to the nearest reward:
+
+    >>> from neurospatial.events import time_to_nearest_event
+    >>> X = np.column_stack(  # doctest: +SKIP
+    ...     [
+    ...         time_to_nearest_event(times, reward_times, max_time=5.0),
+    ...         distance_to_reward(env, times, positions, reward_times),
+    ...     ]
+    ... )
+
+    See Also
+    --------
+    neurospatial.events.time_to_nearest_event : Temporal distance to events
+    distance_to_boundary : Distance to environment boundaries
+    distance_to_region : Distance to a target bin or region
+    neurospatial.ops.nearest_boundary : Exact distance and direction to walls
+    """
+    from neurospatial._intervals import as_intervals
+    from neurospatial._observation import validate_break_before, validate_max_gap
+    from neurospatial._validation import validate_finite
+    from neurospatial.ops.distance import distance_field
+
+    require_cartesian(
+        env.coordinate_system,
+        "distance_to_reward()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
+
+    # A non-finite time silently corrupts interpolation and searchsorted
+    # ordering; a NaN position is a missing sample and gives NaN distance.
+    times = validate_finite(times, name="times")
+    reward_times = validate_finite(reward_times, name="reward_times")
+    if reward_times.ndim != 1:
+        raise ValueError(
+            f"reward_times must be 1-D (n_events,), got shape {reward_times.shape}."
+        )
+    positions = validate_finite(
+        np.asarray(positions, dtype=np.float64), name="positions", allow_nan=True
+    )
+    if positions.ndim == 1:
+        positions = positions.reshape(-1, 1)
+
+    n_samples = len(times)
+
+    if len(positions) != n_samples:
+        raise ValueError(
+            f"positions and times must have same length. "
+            f"Got positions: {len(positions)}, times: {n_samples}."
+        )
+    validate_max_gap(max_gap)
+    breaks = validate_break_before(break_before, n_samples, call="distance_to_reward")
+    resolved_epochs = as_intervals(epochs, name="epochs")
+
+    # Handle empty inputs
+    if n_samples == 0:
+        return np.array([], dtype=np.float64)
+
+    if len(reward_times) == 0:
+        return np.full(n_samples, np.nan, dtype=np.float64)
+
+    if (reward_positions is None or breaks is not None) and np.any(np.diff(times) < 0):
+        raise ValueError(
+            "times must be sorted in ascending order to interpolate "
+            "reward positions or to assign rewards to recordings.\n"
+            "  WHY: reward locations are interpolated between neighbouring "
+            "samples and break_before splits the samples in time order; "
+            "unsorted times yield wrong reward positions and a corrupted "
+            "distance regressor.\n"
+            "  Fix: sort (times, positions) by time before calling, or "
+            "pass explicit reward_positions (without break_before) to skip "
+            "interpolation."
+        )
+
+    # Samples outside epochs have no distance, as they have no speed in
+    # compute_speed. Each sample is tested as the instant [t, t + ulp).
+    if resolved_epochs is None:
+        sample_in_epochs = np.ones(n_samples, dtype=bool)
+    else:
+        sample_in_epochs = intervals_contain(
+            resolved_epochs, times, np.nextafter(times, np.inf)
+        )
+
+    # Get or interpolate reward positions
+    if reward_positions is not None:
+        reward_positions = np.asarray(reward_positions, dtype=np.float64)
+        if len(reward_positions) != len(reward_times):
+            raise ValueError(
+                f"reward_positions and reward_times must have same length. "
+                f"Got reward_positions: {len(reward_positions)}, "
+                f"reward_times: {len(reward_times)}."
+            )
+    else:
+        reward_positions = _infer_reward_positions(
+            times,
+            positions,
+            reward_times,
+            max_gap=max_gap,
+            break_before=breaks,
+        )
+
+    # Map positions to bins (NaN rows are -1)
+    position_bins = env.bin_at(positions)
+
+    # Map reward positions to bins (unknown, NaN locations are -1)
+    reward_bins = env.bin_at(reward_positions)
+
+    # Sort rewards by time for efficient lookup
+    sorted_idx = np.argsort(reward_times)
+    sorted_reward_times = reward_times[sorted_idx]
+    sorted_reward_bins = reward_bins[sorted_idx]
+    n_rewards = len(sorted_reward_times)
+
+    # Recording of each sample (by declared breaks) and of each reward (by
+    # time). Without declared breaks every reward is eligible.
+    recordings = None
+    if breaks is not None:
+        recordings = (
+            recording_index(breaks),
+            np.searchsorted(
+                break_sample_times(times, breaks), sorted_reward_times, side="right"
+            ),
+        )
+
+    # Find relevant reward for each sample based on mode
+    if mode == "nearest":
+        # Find nearest reward in time (before or after)
+        # Use searchsorted to find insertion points
+        idx_right = np.searchsorted(sorted_reward_times, times, side="left")
+        idx_left = idx_right - 1
+
+        has_left = idx_left >= 0
+        has_right = idx_right < n_rewards
+        if recordings is not None:
+            has_left &= _same_recording(idx_left, *recordings)
+            has_right &= _same_recording(idx_right, *recordings)
+
+        # Compute time distances to left and right rewards
+        dist_left = np.full(n_samples, np.inf)
+        dist_right = np.full(n_samples, np.inf)
+        dist_left[has_left] = times[has_left] - sorted_reward_times[idx_left[has_left]]
+        dist_right[has_right] = (
+            sorted_reward_times[idx_right[has_right]] - times[has_right]
+        )
+
+        # Select nearest
+        use_left = dist_left <= dist_right
+        relevant_reward_idx = np.where(use_left, idx_left, idx_right)
+
+        # No eligible reward on either side
+        no_reward = ~has_left & ~has_right
+        relevant_reward_idx = np.clip(relevant_reward_idx, 0, n_rewards - 1)
+
+    elif mode == "last":
+        # Find most recent reward before each sample
+        # searchsorted gives index of first reward > time, so idx-1 is last reward <= time
+        idx = np.searchsorted(sorted_reward_times, times, side="right") - 1
+        relevant_reward_idx = idx
+        no_reward = idx < 0
+        if recordings is not None:
+            no_reward |= ~_same_recording(idx, *recordings)
+
+    elif mode == "next":
+        # Find next upcoming reward after each sample
+        # searchsorted gives index of first reward >= time
+        idx = np.searchsorted(sorted_reward_times, times, side="left")
+        relevant_reward_idx = idx
+        no_reward = idx >= n_rewards
+        if recordings is not None:
+            no_reward |= ~_same_recording(idx, *recordings)
+
+    else:
+        raise ValueError(f"mode must be 'nearest', 'last', or 'next', got '{mode}'.")
+
+    # Clip indices to valid range for array access
+    relevant_reward_idx = np.clip(relevant_reward_idx, 0, len(sorted_reward_bins) - 1)
+
+    # Get reward bins for each sample
+    target_bins = sorted_reward_bins[relevant_reward_idx]
+
+    # Compute distances
+    # Find unique target bins to minimize distance field computations
+    unique_targets = np.unique(target_bins[~no_reward])
+    unique_targets = unique_targets[unique_targets >= 0]  # Filter invalid bins
+
+    # Initialize distances
+    distances = np.full(n_samples, np.nan, dtype=np.float64)
+
+    # Compute distance field for each unique target
+    for target_bin in unique_targets:
+        # Find samples with this target
+        mask = (target_bins == target_bin) & ~no_reward
+
+        if not np.any(mask):
+            continue
+
+        # Compute distance field from this reward location
+        dist_field = distance_field(
+            env.connectivity,
+            [int(target_bin)],
+            metric=metric,
+            bin_centers=env.bin_centers if metric == "euclidean" else None,
+        )
+
+        # Look up distances for trajectory bins
+        sample_bins = position_bins[mask]
+        valid_bins = sample_bins >= 0
+        distances[mask] = np.where(
+            valid_bins,
+            dist_field[np.clip(sample_bins, 0, len(dist_field) - 1)],
+            np.nan,
+        )
+
+    # Set NaN for samples with no relevant reward
+    distances[no_reward] = np.nan
+
+    # Set NaN for invalid trajectory bins
+    distances[position_bins < 0] = np.nan
+
+    # Set NaN for invalid or unknown reward bins
+    invalid_reward_mask = target_bins < 0
+    distances[invalid_reward_mask & ~no_reward] = np.nan
+
+    # Set NaN for samples outside epochs
+    distances[~sample_in_epochs] = np.nan
+
+    return distances
+
+
+def _same_recording(
+    reward_idx: NDArray[np.intp],
+    sample_recording: NDArray[np.intp],
+    reward_recording: NDArray[np.intp],
+) -> NDArray[np.bool_]:
+    """Whether each sample's candidate reward exists and is in its recording.
+
+    Parameters
+    ----------
+    reward_idx : ndarray of intp, shape (n_samples,)
+        Candidate index into the time-sorted rewards; may be out of range.
+    sample_recording : ndarray of intp, shape (n_samples,)
+        Recording of each sample.
+    reward_recording : ndarray of intp, shape (n_rewards,)
+        Recording of each time-sorted reward.
+    """
+    n_rewards = len(reward_recording)
+    in_range = (reward_idx >= 0) & (reward_idx < n_rewards)
+    clipped = np.clip(reward_idx, 0, n_rewards - 1)
+    same: NDArray[np.bool_] = in_range & (reward_recording[clipped] == sample_recording)
+    return same
+
+
+def _infer_reward_positions(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    reward_times: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    break_before: NDArray[np.bool_] | None,
+) -> NDArray[np.float64]:
+    """Read each reward location from the tracked positions at its time.
+
+    A reward exactly at an observed sample time uses that sample. Otherwise
+    it is interpolated within the sampling interval around it, only when that
+    interval passes ``max_gap`` and ``break_before`` and both its samples are
+    observed; ``epochs`` restrict the analyzed samples, not where a reward
+    was. Any other reward has an unknown (NaN) location, and one
+    ``UserWarning`` says how many and why.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Finite, non-decreasing sample times in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Positions; NaN rows are missing samples.
+    reward_times : ndarray, shape (n_rewards,)
+        Finite reward times in seconds.
+    max_gap, break_before
+        The validated gap threshold and declared breaks.
+
+    Returns
+    -------
+    ndarray, shape (n_rewards, n_dims)
+        Reward locations; NaN rows are unknown.
+    """
+    import warnings
+
+    from neurospatial._intervals import interval_valid_mask
+    from neurospatial._stacklevel import _external_stacklevel
+
+    n_samples, n_dims = positions.shape
+    observed: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
+    in_span = (reward_times >= times[0]) & (reward_times <= times[-1])
+    # Last sample at or before each reward; the interval it starts holds the
+    # reward when the reward is not exactly on it.
+    k = np.clip(np.searchsorted(times, reward_times, side="right") - 1, 0, None)
+    exact = in_span & (times[k] == reward_times)
+    interior = in_span & ~exact
+    known = exact & observed[k]
+    reasons = {
+        "outside the recorded span": ~in_span,
+        "at a missing (NaN) position": exact & ~observed[k],
+    }
+    if n_samples > 1:
+        gates = interval_valid_mask(times, max_gap=max_gap, break_before=break_before)
+        usable = gates & observed[:-1] & observed[1:]
+        j = np.clip(k, 0, n_samples - 2)
+        known |= interior & usable[j]
+        crossed = (
+            np.zeros(len(j), dtype=bool)
+            if break_before is None
+            else break_before[j + 1]
+        )
+        long_gap = (
+            np.zeros(len(j), dtype=bool)
+            if max_gap is None
+            else np.diff(times)[j] > max_gap
+        )
+        blocked = interior & ~usable[j]
+        reasons["across a declared break"] = blocked & crossed
+        reasons[f"in a gap longer than max_gap={max_gap} s"] = (
+            blocked & ~crossed & long_gap
+        )
+        reasons["next to a missing (NaN) position"] = blocked & ~crossed & ~long_gap
+
+    located = np.full((len(reward_times), n_dims), np.nan)
+    located[known] = np.column_stack(
+        [
+            np.interp(reward_times[known], times, positions[:, dim])
+            for dim in range(n_dims)
+        ]
+    )
+    on_sample = known & exact
+    located[on_sample] = positions[k[on_sample]]
+
+    n_unknown = int(np.count_nonzero(~known))
+    if n_unknown:
+        counts = ", ".join(
+            f"{int(mask.sum())} {reason}"
+            for reason, mask in reasons.items()
+            if mask.any()
+        )
+        warnings.warn(
+            f"{n_unknown} of {len(reward_times)} reward locations could not be "
+            f"inferred from positions ({counts}; recorded span "
+            f"[{times[0]:g}, {times[-1]:g}] s), so samples whose selected "
+            "reward is one of them get NaN distance. A reward location is "
+            "read from the sample at the reward time, or interpolated only "
+            "within a sampling interval no longer than max_gap, not crossed "
+            "by a declared break and observed at both ends. Fix: pass reward_positions explicitly (for example the "
+            "reward port's coordinates); check that reward_times are on the "
+            "same clock as times; if the long intervals are continuous "
+            "tracking, raise max_gap.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+    return located
+
+
+def distance_to_boundary(
+    env: Environment,
+    positions: NDArray[np.float64],
+    *,
+    boundary_type: Literal["edge", "obstacle", "region"] = "edge",
+    region_name: str | None = None,
+    metric: Literal["geodesic", "euclidean"] = "geodesic",
+) -> NDArray[np.float64]:
+    """
+    Compute distance to environment boundary at each position.
+
+    Measures the instantaneous distance from trajectory positions to various
+    types of boundaries: environment edges, obstacles, or named regions.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment.
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
+        Position coordinates at each sample. Must match environment
+        dimensionality.
+    boundary_type : {'edge', 'obstacle', 'region'}, default='edge'
+        Type of boundary to compute distance to:
+
+        - 'edge': Distance to the edge of the environment's bins: bins
+          next to unoccupied space, including unvisited areas and holes.
+          This is not the distance to the arena's walls; for that use
+          :func:`neurospatial.ops.nearest_boundary`.
+        - 'obstacle': Distance to obstacle regions. Requires environment
+          to have regions with ``obstacle=True`` attribute.
+        - 'region': Distance to boundary of a specific named region.
+          Requires ``region_name`` parameter.
+    region_name : str, optional
+        Name of region for boundary_type='region'. Required when
+        boundary_type='region', ignored otherwise.
+    metric : {'geodesic', 'euclidean'}, default='geodesic'
+        Distance metric:
+
+        - 'geodesic': Shortest-path distance respecting environment geometry.
+        - 'euclidean': Straight-line L2 distance.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples,)
+        Distance from each position to the center of the nearest boundary
+        bin, so it is quantized to bin centers.
+        Units match environment coordinates (e.g., cm).
+        Returns NaN for positions outside the environment.
+
+    Raises
+    ------
+    ValueError
+        If boundary_type='region' but region_name is not provided.
+        If region_name is provided but region doesn't exist.
+        If no boundary bins found for the specified boundary_type.
+
+    Notes
+    -----
+    **Boundary detection**:
+
+    - **edge**: Finds bins adjacent to unoccupied space. A bin is an edge
+      bin if any of its graph neighbors are not in the environment.
+    - **obstacle**: Finds bins adjacent to obstacle regions. Obstacles
+      are regions marked with ``obstacle=True`` during annotation.
+    - **region**: Finds bins at the boundary of the named region. Boundary
+      bins are region bins adjacent to non-region bins.
+
+    **Performance**:
+
+    The distance field is computed once and cached for the duration of the
+    call. For repeated queries with different positions but the same
+    boundary, consider caching the distance field manually using
+    ``distance_field(env.connectivity, boundary_bins)``.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import distance_to_boundary
+    >>> # Distance to environment walls
+    >>> dist_wall = distance_to_boundary(
+    ...     env, positions, boundary_type="edge"
+    ... )  # doctest: +SKIP
+    >>>
+    >>> # Distance to obstacle
+    >>> dist_obstacle = distance_to_boundary(
+    ...     env, positions, boundary_type="obstacle"
+    ... )  # doctest: +SKIP
+    >>>
+    >>> # Distance to goal region boundary
+    >>> dist_goal = distance_to_boundary(  # doctest: +SKIP
+    ...     env, positions, boundary_type="region", region_name="goal"
+    ... )
+    >>>
+    >>> # GLM design matrix with multiple boundary features
+    >>> X = np.column_stack(  # doctest: +SKIP
+    ...     [
+    ...         distance_to_boundary(env, positions, boundary_type="edge"),
+    ...         distance_to_boundary(
+    ...             env, positions, boundary_type="region", region_name="goal"
+    ...         ),
+    ...     ]
+    ... )
+
+    See Also
+    --------
+    distance_to_reward : Distance to reward locations
+    distance_to_region : Distance to a target bin or region
+    neurospatial.events.time_to_nearest_event : Temporal distance to events
+    neurospatial.ops.nearest_boundary : Exact distance and direction to walls
+    neurospatial.ops.compute_boundary_distances : Distance to walls along
+        each direction
+    """
+    from neurospatial.ops.distance import distance_field
+    from neurospatial.ops.mapping import _require_region_mask
+
+    require_cartesian(
+        env.coordinate_system,
+        "distance_to_boundary()",
+        why="It reads positions as the animal's allocentric positions, located "
+        "in the environment's bins.",
+        fix="use the allocentric environment the positions were recorded in",
+    )
+
+    # Input validation
+    positions = np.asarray(positions, dtype=np.float64)
+    n_samples = len(positions)
+
+    if n_samples == 0:
+        return np.array([], dtype=np.float64)
+
+    if boundary_type == "region" and region_name is None:
+        raise ValueError(
+            "region_name is required when boundary_type='region'. "
+            "Provide the name of the region to compute distance to."
+        )
+
+    # Find boundary bins based on boundary_type
+    if boundary_type == "edge":
+        # Edge bins: bins adjacent to unoccupied space
+        # A bin is an edge bin if it has fewer neighbors than expected
+        # for a fully-surrounded bin
+        boundary_bins = _find_edge_bins(env)
+
+    elif boundary_type == "obstacle":
+        # Obstacle bins: bins adjacent to obstacle regions
+        boundary_bins = _find_obstacle_boundary_bins(env)
+
+    elif boundary_type == "region":
+        # Region boundary bins: boundary of the named region
+        # region_name is already validated as not None by the earlier check
+        assert region_name is not None  # for type checker
+        _require_region_mask(
+            env,
+            region_name,
+            operation="distance_to_boundary()",
+            argument="region_name",
+        )
+        boundary_bins = _find_region_boundary_bins(env, region_name)
+
+    else:
+        raise ValueError(
+            f"boundary_type must be 'edge', 'obstacle', or 'region', "
+            f"got '{boundary_type}'."
+        )
+
+    if len(boundary_bins) == 0:
+        raise ValueError(
+            f"No boundary bins found for boundary_type='{boundary_type}'"
+            + (f", region_name='{region_name}'" if region_name else "")
+            + ". Check that the environment has valid boundaries."
+        )
+
+    # Compute distance field from boundary bins
+    dist_field = distance_field(
+        env.connectivity,
+        list(boundary_bins),
+        metric=metric,
+        bin_centers=env.bin_centers if metric == "euclidean" else None,
+    )
+
+    # Map positions to bins
+    position_bins = env.bin_at(positions)
+
+    # Look up distances
+    distances = np.full(n_samples, np.nan, dtype=np.float64)
+    valid_bins = position_bins >= 0
+    distances[valid_bins] = dist_field[position_bins[valid_bins]]
+
+    return distances
+
+
+def _find_edge_bins(env: Environment) -> list[int]:
+    """Find bins at the edge of the environment.
+
+    A bin is an edge bin if it has fewer than the maximum number of
+    neighbors, i.e. it is adjacent to unoccupied space (the outer rim, the
+    rim of an interior hole, etc.).
+
+    The notion of "edge" is layout-dependent and falls out naturally from
+    the connectivity graph:
+
+    - **1D linearized track** (a path graph): interior bins have degree 2
+      and the two end bins have degree 1, so the edge bins are exactly the
+      two ends of the track. This is the meaningful boundary of a 1D track.
+    - **Masked / holed 2D grids**: bins flanking a masked-out region have
+      fewer neighbors than a fully surrounded interior bin and are flagged,
+      so both the outer rim and any inner-hole rim are returned.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment.
+
+    Returns
+    -------
+    list[int]
+        Bin (node) indices at the environment boundary. Empty if the graph
+        has no nodes.
+
+    Notes
+    -----
+    The degree scan is vectorized over nodes: degrees are pulled from the
+    NetworkX ``DegreeView`` into arrays and the comparison is done with
+    NumPy rather than a per-node Python loop.
+    """
+    graph = env.connectivity
+    n_nodes = graph.number_of_nodes()
+    if n_nodes == 0:
+        return []
+
+    # Pull (node, degree) pairs once and compare vectorized. Node ids are
+    # arbitrary hashables in general, but Environment connectivity uses
+    # integer bin indices, so an int64 array is safe here.
+    degree_view = graph.degree()
+    nodes = np.fromiter((n for n, _ in degree_view), dtype=np.int64, count=n_nodes)
+    degrees = np.fromiter((d for _, d in graph.degree()), dtype=np.int64, count=n_nodes)
+
+    max_degree = int(degrees.max())
+
+    # A bin is an edge bin if it has fewer neighbors than a fully-surrounded
+    # bin in this layout (i.e., it borders unoccupied space).
+    edge_nodes = nodes[degrees < max_degree]
+    edge_bins: list[int] = edge_nodes.tolist()
+    return edge_bins
+
+
+def _find_obstacle_boundary_bins(env: Environment) -> list[int]:
+    """Find bins adjacent to obstacle regions.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment with obstacle regions.
+
+    Returns
+    -------
+    list[int]
+        Bin indices at obstacle boundaries.
+    """
+    # Find all obstacle regions
+    obstacle_regions = [
+        name
+        for name, region in env.regions.items()
+        if hasattr(region, "obstacle") and region.obstacle
+    ]
+
+    if not obstacle_regions:
+        # No obstacle regions defined - return empty
+        return []
+
+    # For environments with obstacle regions, bins adjacent to obstacles
+    # are typically edge bins (they have fewer neighbors because the
+    # obstacle removes connectivity). This is currently a simplification.
+    # A more complete implementation would require the environment to
+    # explicitly track which bins were removed due to obstacles.
+    return _find_edge_bins(env)
+
+
+def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
+    """Find bins at the boundary of a named region.
+
+    A bin is a region boundary bin if it's in the region AND has at least
+    one neighbor outside the region.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment.
+    region_name : str
+        Name of the region.
+
+    Returns
+    -------
+    list[int]
+        Bin indices at the region boundary.
+    """
+    graph = env.connectivity
+    region_bins = set(env.bins_in_region(region_name))
+
+    if not region_bins:
+        return []
+
+    boundary_bins = []
+    for bin_idx in region_bins:
+        neighbors = set(graph.neighbors(bin_idx))
+        # Check if any neighbor is outside the region
+        if not neighbors.issubset(region_bins):
+            boundary_bins.append(bin_idx)
+
+    return boundary_bins
 
 
 def cost_to_goal(
@@ -1186,6 +2041,7 @@ def heading_direction_labels(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from heading angle.
 
@@ -1217,6 +2073,10 @@ def heading_direction_labels(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -1225,14 +2085,15 @@ def heading_direction_labels(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     In trajectory mode, speed and heading come from the Gaussian-smoothed
     velocity of :func:`compute_speed`, so tracking jitter at rest is
     "stationary"; a sample in no observed run is "stationary" too.
     Precomputed speed/heading inputs retain their existing behavior without a
-    time gate.
+    time gate, and refuse ``break_before``.
 
     Examples
     --------
@@ -1276,6 +2137,19 @@ def heading_direction_labels(
                 f"Speed and heading arrays must have the same length. "
                 f"Got speed: {len(speed_arr)}, heading: {len(heading_arr)}."
             )
+        if break_before is not None:
+            raise ValueError(
+                _format_error(
+                    "heading_direction_labels() got break_before with "
+                    "precomputed speed and heading.",
+                    why="Recording breaks apply to the velocity computed from "
+                    "times and positions; precomputed speed and heading are "
+                    "labeled as given.",
+                    fix="pass times and positions with break_before instead of "
+                    "speed and heading, or compute them with break_before "
+                    "(e.g. compute_speed(times, positions, break_before=...)).",
+                )
+            )
 
         n_samples = len(speed_arr)
 
@@ -1294,10 +2168,14 @@ def heading_direction_labels(
         n_samples = len(times_arr)
 
         from neurospatial._intervals import observed_interval_mask
-        from neurospatial.ops import _velocity_heading_and_speed
+        from neurospatial._observation import validate_break_before
+        from neurospatial.behavior._kinematics import _velocity_heading_and_speed
 
+        breaks = validate_break_before(
+            break_before, n_samples, call="heading_direction_labels"
+        )
         interval_mask = observed_interval_mask(
-            times_arr, max_gap=max_gap, epochs=epochs
+            times_arr, max_gap=max_gap, epochs=epochs, break_before=breaks
         )
         if n_samples == 0:
             return np.array([], dtype=object)
@@ -2060,6 +2938,7 @@ def instantaneous_goal_alignment(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Compute instantaneous alignment between movement and goal direction.
 
@@ -2084,6 +2963,10 @@ def instantaneous_goal_alignment(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -2093,8 +2976,9 @@ def instantaneous_goal_alignment(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     Samples in no observed run and samples below ``min_speed`` have NaN
     alignment. Each run's last sample repeats its previous interval's
@@ -2114,13 +2998,19 @@ def instantaneous_goal_alignment(
     times, positions = validate_times_positions(
         times, positions, call="instantaneous_goal_alignment"
     )
-    from neurospatial.ops import _velocity_heading_and_speed
+    from neurospatial.behavior._kinematics import _velocity_heading_and_speed
 
     goal = np.asarray(goal)
 
     from neurospatial._intervals import observed_interval_mask
+    from neurospatial._observation import validate_break_before
 
-    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    breaks = validate_break_before(
+        break_before, len(times), call="instantaneous_goal_alignment"
+    )
+    interval_mask = observed_interval_mask(
+        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+    )
     if len(positions) < 2:
         return np.full(len(positions), np.nan)
 
@@ -2146,6 +3036,7 @@ def goal_bias(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> float:
     """Compute mean alignment toward goal over trajectory.
 
@@ -2171,6 +3062,10 @@ def goal_bias(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -2180,8 +3075,9 @@ def goal_bias(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     Interpretation:
     - > 0.5: Strong goal-directed navigation
@@ -2196,11 +3092,19 @@ def goal_bias(
     >>> goal_bias(times, positions, goal, min_speed=0.0) > 0.8
     True
     """
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(times, positions, call="goal_bias")
+    breaks = validate_break_before(break_before, len(times), call="goal_bias")
     alignment = instantaneous_goal_alignment(
-        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+        times,
+        positions,
+        goal,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
     )
 
     valid_alignment = alignment[~np.isnan(alignment)]
@@ -2362,6 +3266,7 @@ def compute_goal_directed_metrics(
     goal_radius: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> GoalDirectedMetrics:
     """Compute comprehensive goal-directed navigation metrics.
 
@@ -2392,6 +3297,10 @@ def compute_goal_directed_metrics(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -2402,11 +3311,14 @@ def compute_goal_directed_metrics(
     ------
     ValueError
         If positions and times have different lengths.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     Heading alignment and approach-rate averages use observed intervals.
     Time-to-goal remains wall-clock time, which is known across a pause.
@@ -2418,10 +3330,14 @@ def compute_goal_directed_metrics(
     ... )  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(
         times, positions, call="compute_goal_directed_metrics"
+    )
+    breaks = validate_break_before(
+        break_before, len(times), call="compute_goal_directed_metrics"
     )
     goal = np.asarray(goal)
 
@@ -2431,11 +3347,24 @@ def compute_goal_directed_metrics(
         env, min_speed, call="compute_goal_directed_metrics()"
     )
     bias = goal_bias(
-        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+        times,
+        positions,
+        goal,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
     )
 
     rates = approach_rate(
-        times, positions, goal, metric=metric, env=env, max_gap=max_gap, epochs=epochs
+        times,
+        positions,
+        goal,
+        metric=metric,
+        env=env,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
     )
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 

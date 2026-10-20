@@ -23,6 +23,7 @@ from typing_extensions import Self
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.environment._affine import _apply_transform
+from neurospatial.environment._bin_mapping import BinMapping, _bin_mapping_from
 from neurospatial.environment._cache import (
     BIN_ATTRIBUTES,
     BOUNDARY_BINS,
@@ -1800,6 +1801,7 @@ class Environment(Generic[_C]):
         min_speed: float | None = None,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
         bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
@@ -1844,6 +1846,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
         bandwidth : float, optional
             If provided, apply diffusion kernel smoothing with this bandwidth
             (in physical units). Uses mode='transition' to preserve total mass.
@@ -1888,6 +1894,8 @@ class Environment(Generic[_C]):
             environment is a track built without ``track_width``.
         CartesianOnlyError
             If ``time_allocation='linear'`` on a polar environment.
+        ValueError
+            If ``break_before`` is not a Boolean array with one entry per sample.
 
         See Also
         --------
@@ -1920,6 +1928,7 @@ class Environment(Generic[_C]):
         where valid intervals satisfy:
         - Δt ≤ max_gap (if max_gap is not None)
         - speed[k] ≥ min_speed (if min_speed is not None)
+        - no break is declared before sample k + 1 (``break_before[k + 1]``)
         - positions[k] and positions[k + 1] are inside the environment
           (``time_allocation='start'``)
 
@@ -1960,6 +1969,16 @@ class Environment(Generic[_C]):
         ...     max_gap=None,
         ... )
 
+        If a second recording starts at sample 2 on the same clock, declare
+        the break; the interval across the join then adds no time:
+
+        >>> new_recording = np.array([False, False, True, False])
+        >>> occ = env.occupancy(
+        ...     times, positions, max_gap=None, break_before=new_recording
+        ... )
+        >>> float(occ.sum())
+        2.0
+
         """
         return _occupancy(
             times,
@@ -1972,6 +1991,7 @@ class Environment(Generic[_C]):
             min_speed=min_speed,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
             bandwidth=bandwidth,
             time_allocation=time_allocation,
             return_seconds=return_seconds,
@@ -1986,6 +2006,7 @@ class Environment(Generic[_C]):
         outside_value: int | None = -1,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
     ) -> NDArray[np.intp]:
         """Map trajectory to sequence of bin indices.
 
@@ -2021,6 +2042,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
 
         Returns
         -------
@@ -2035,6 +2060,8 @@ class Environment(Generic[_C]):
             If times and positions have different lengths, if positions
             have wrong number of dimensions, or if timestamps are not
             monotonically increasing (non-decreasing).
+        ValueError
+            If ``break_before`` is not a Boolean array with one entry per sample.
 
         See Also
         --------
@@ -2044,8 +2071,9 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+        not crossing a ``break_before``) is analyzed as a separate recording;
+        no segment spans a pause.
 
         Samples that touch no valid interval are dropped, including singleton
         inputs. Deduplication never merges samples across an invalid interval.
@@ -2085,6 +2113,7 @@ class Environment(Generic[_C]):
             gap_splits_runs=False,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
         )
         return result.bins
 
@@ -2096,6 +2125,7 @@ class Environment(Generic[_C]):
         outside_value: int | None = -1,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
     ) -> BinSequenceWithRuns:
         """Map trajectory to bin sequence plus per-run boundaries.
 
@@ -2128,6 +2158,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
 
         Returns
         -------
@@ -2142,8 +2176,9 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+        not crossing a ``break_before``) is analyzed as a separate recording;
+        no segment spans a pause.
 
         Samples that touch no valid interval are dropped, including singleton
         inputs. Invalid intervals split runs even if the bins match. Run
@@ -2180,6 +2215,7 @@ class Environment(Generic[_C]):
             gap_splits_runs=True,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
         )
 
     @cartesian_only(
@@ -2365,16 +2401,20 @@ class Environment(Generic[_C]):
 
         See Also
         --------
+        bin_mapping_from : Carry counts, occupancy and labels to the new bins
+            exactly.
         smooth : Apply diffusion kernel smoothing to fields.
         subset : Extract spatial subset of environment.
-        bin_at : Assign retained original bin centers to coarsened bins.
 
         Notes
         -----
         **Geometry only**: This method only coarsens the grid structure. To
         aggregate field values (occupancy, spike counts, etc.) from the original
-        grid to the coarsened grid, map the original bin centers to coarse
-        bins and sum within each one, as the last example below shows.
+        grid to the coarsened grid, use ``coarse.bin_mapping_from(env)``: it
+        pairs each original bin with the new bin that wholly contains it, and
+        its ``sum`` adds counts and occupancy, as the last example below
+        shows. Pool rates from counts and occupancy with its ``rates``, never
+        by averaging, and re-estimate smoothed maps on the new bins.
 
         **Factor mode**: Integer coarsening requires uniform rectangular cells
         with native grid connections and straight center-to-center navigation
@@ -2454,15 +2494,10 @@ class Environment(Generic[_C]):
         Aggregate a field to the coarsened grid:
 
         >>> occupancy = np.random.default_rng(0).random(env.n_bins) * 100
-        >>> coarse_indices = coarse.bin_at(env.bin_centers)
-        >>> retained = coarse_indices >= 0
-        >>> coarse_occupancy = np.bincount(
-        ...     coarse_indices[retained],
-        ...     weights=occupancy[retained],
-        ...     minlength=coarse.n_bins,
-        ... )
-        >>> # The total over retained source-bin centers is preserved
-        >>> bool(np.isclose(occupancy[retained].sum(), coarse_occupancy.sum()))
+        >>> mapping = coarse.bin_mapping_from(env)  # each fine bin's coarse bin
+        >>> coarse_occupancy = mapping.sum(occupancy)
+        >>> # Every fine bin lies in a coarse bin, so the total is preserved
+        >>> bool(np.isclose(occupancy.sum(), coarse_occupancy.sum()))
         True
 
         """
@@ -2569,6 +2604,7 @@ class Environment(Generic[_C]):
 
         See Also
         --------
+        bin_mapping_from : Pair the kept bins with this environment's bins.
         rebin : Coarsen grid resolution (grid-only).
         components : Find connected components.
 
@@ -2655,10 +2691,104 @@ class Environment(Generic[_C]):
             If geometry is invalid, unavailable, unsupported, or has no
             positive-area intersection. Track, polar and 3-D cells are not
             Cartesian planar area cells.
+
+        See Also
+        --------
+        bin_mapping_from : Pair the cells the clip kept whole with this
+            environment's bins, and list the cells it cut.
+        subset : Keep whole bins without cutting them.
         """
         return publish_derived(
             self, _clip(self._binning, self._arena, polygon), name=name
         )
+
+    def bin_mapping_from(self, parent: Environment) -> BinMapping:
+        """Pair this environment's bins with the bins of ``parent`` they contain.
+
+        Use it to carry values computed on ``parent`` to this environment
+        exactly: compare a map on a subset with the full map, or coarsen
+        counts and occupancy after ``rebin``. The pairs come from the bins'
+        geometry, so the mapping works on environments read from files, and
+        only pairs that can be proven are reported:
+
+        - a bin that is the same cell as a parent bin (same center, measure,
+          cell shape and boundary ownership): a ``subset``, the cells a
+          ``clip`` did not cut, an identical rebuild;
+        - parent cells that lie wholly inside one cell of a coarser grid drawn
+          on the same lattice: ``rebin(factor)``, and ``rebin(bin_size=...)``
+          when the new cell edges fall on the old ones. Edges count as equal
+          within a billionth of a cell width, the tolerance rebinning uses.
+
+        A parent cell divided between bins (cut by a clip) is reported in
+        ``split_parent_bins`` and never paired: its count cannot be divided
+        without knowing where in the cell each observation fell.
+
+        Parameters
+        ----------
+        parent : Environment
+            The environment the values were computed on, usually the one this
+            environment was made from.
+
+        Returns
+        -------
+        BinMapping
+            Rows of ``(bin in parent, bin in this environment)`` in ``pairs``,
+            the parent bins left out or split, the bins of this environment
+            covered by no parent bin, and methods that carry values: ``sum``
+            for counts and occupancy, ``rates`` for rates pooled from counts
+            and occupancy, ``category`` for labels.
+
+        Raises
+        ------
+        IncompatibleEnvironmentError
+            If the two environments differ in coordinate system, units or
+            frame.
+        ValueError
+            If no bin can be paired exactly, such as for a finer grid, a
+            rotated or offset lattice, or an independently built
+            environment.
+        TypeError
+            If ``parent`` is not an Environment.
+
+        See Also
+        --------
+        subset, clip, rebin : Make the environments this maps between.
+        neurospatial.ops.map_probabilities : Approximate transfer by nearest
+            bin center, for environments with no exact correspondence.
+
+        Notes
+        -----
+        ``apply_transform`` needs no mapping: transforms keep bin IDs, so bin
+        ``i`` of the transformed environment is bin ``i`` of the original.
+
+        Same-cell pairs meet the check ``compare_spatial_rates(bin_mapping=...)``
+        applies, so ``pairs`` of a subset, a clip or an identical rebuild can be
+        passed to it. Polygon cells kept whole by a clip have the parent's
+        polygon exactly and own the same boundary points; their centers and
+        areas are recomputed from the polygon and may differ from the
+        parent's by rounding only.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> grid_edges = (np.arange(0.0, 41.0, 10.0),) * 2  # 40 x 40 cm, 10 cm cells
+        >>> env = Environment.from_grid_mask(np.ones((4, 4), dtype=bool), grid_edges)
+        >>> left = env.subset(mask=env.bin_centers[:, 0] < 20)
+        >>> mapping = left.bin_mapping_from(env)
+        >>> mapping.kind, len(mapping.pairs)
+        ('one_to_one', 8)
+        >>> bool(np.array_equal(mapping.pairs[:, 1], np.arange(left.n_bins)))
+        True
+
+        Merge 2 x 2 blocks of bins and add up the time spent in them:
+
+        >>> coarse = env.rebin(2)
+        >>> occupancy = np.arange(16.0)
+        >>> coarse.bin_mapping_from(env).sum(occupancy).tolist()
+        [10.0, 18.0, 42.0, 50.0]
+        """
+        return _bin_mapping_from(self, parent)
 
     @cartesian_only(
         why="An affine map moves Cartesian positions; it has no meaning for "
@@ -7017,6 +7147,7 @@ class Environment(Generic[_C]):
         normalize: bool = True,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
     ) -> scipy.sparse.csr_matrix:
         """Compute transition matrix (empirical or model-based).
 
@@ -7075,6 +7206,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
 
         Returns
         -------
@@ -7097,6 +7232,9 @@ class Environment(Generic[_C]):
             If method='diffusion' but normalize=False (not supported).
             If bins contains invalid indices outside [0, n_bins).
             If lag is not positive (empirical mode).
+        ValueError
+            If ``break_before`` is not a Boolean array with one entry per sample
+            (or per bin of ``bins``), or is given with ``method``.
 
         See Also
         --------
@@ -7106,13 +7244,15 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+        not crossing a ``break_before``) is analyzed as a separate recording;
+        no segment spans a pause.
 
         When times are supplied, a pair (k, k + lag) counts only if every
         interval from k through k + lag - 1 is valid and samples k and
-        k + lag are both inside the environment. Raw bin-only inputs and
-        model-based transitions have no time gate.
+        k + lag are both inside the environment. Raw bin-only inputs have no
+        time gate, but a ``break_before`` with one entry per bin still drops
+        every pair it separates. Model-based transitions take neither.
 
         **Empirical mode**: Counts observed transitions from trajectory data.
         When allow_teleports=False, filters out non-adjacent transitions using
@@ -7186,6 +7326,7 @@ class Environment(Generic[_C]):
             normalize=normalize,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
         )
 
 

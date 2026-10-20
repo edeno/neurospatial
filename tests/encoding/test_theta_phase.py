@@ -54,7 +54,7 @@ class TestThetaPhase:
 
         frequency = 8.0
         lfp, _ = _theta_sinusoid(frequency, sampling_rate, duration=5.0)
-        phase = theta_phase(lfp, sampling_rate, band=(6, 10))
+        phase = theta_phase(lfp, sampling_rate=sampling_rate, band=(6, 10))
 
         assert np.all(np.isfinite(phase))
         t = np.arange(lfp.size) / sampling_rate
@@ -77,7 +77,7 @@ class TestThetaPhase:
         sampling_rate = 1000.0
         lfp, _ = _theta_sinusoid(frequency, sampling_rate, duration=5.0)
 
-        phase = theta_phase(lfp, sampling_rate, band=(6, 10))
+        phase = theta_phase(lfp, sampling_rate=sampling_rate, band=(6, 10))
 
         # Shape and range: one value per sample, wrapped to [0, 2*pi).
         assert phase.shape == lfp.shape
@@ -103,7 +103,7 @@ class TestThetaPhase:
 
         sampling_rate = 1000.0
         lfp, _ = _theta_sinusoid(8.0, sampling_rate, duration=2.0)
-        phase = theta_phase(lfp, sampling_rate)
+        phase = theta_phase(lfp, sampling_rate=sampling_rate)
 
         positions = np.linspace(0.0, 50.0, phase.size)
         result = compute_phase_precession(positions, phase, rng=0)
@@ -119,13 +119,13 @@ class TestThetaPhase:
         lfp, sr = _theta_sinusoid()
 
         with pytest.raises(ValueError, match="1-D"):
-            theta_phase(lfp.reshape(-1, 1), sr)
+            theta_phase(lfp.reshape(-1, 1), sampling_rate=sr)
         with pytest.raises(ValueError, match="positive"):
-            theta_phase(lfp, -1.0)
+            theta_phase(lfp, sampling_rate=-1.0)
         with pytest.raises(ValueError, match="low < high"):
-            theta_phase(lfp, sr, band=(10.0, 6.0))
+            theta_phase(lfp, sampling_rate=sr, band=(10.0, 6.0))
         with pytest.raises(ValueError, match="Nyquist"):
-            theta_phase(lfp, sr, band=(6.0, sr))
+            theta_phase(lfp, sampling_rate=sr, band=(6.0, sr))
 
     def test_theta_phase_rejects_nonfinite_lfp(self) -> None:
         """NaN or Inf in lfp raises (else filtfilt silently returns all-NaN)."""
@@ -136,12 +136,12 @@ class TestThetaPhase:
         lfp_nan = lfp.copy()
         lfp_nan[100] = np.nan
         with pytest.raises(ValueError, match="non-finite"):
-            theta_phase(lfp_nan, sr)
+            theta_phase(lfp_nan, sampling_rate=sr)
 
         lfp_inf = lfp.copy()
         lfp_inf[100] = np.inf
         with pytest.raises(ValueError, match="non-finite"):
-            theta_phase(lfp_inf, sr)
+            theta_phase(lfp_inf, sampling_rate=sr)
 
     def test_theta_phase_rejects_too_short_lfp(self) -> None:
         """An lfp shorter than the filter padlen raises a clear ValueError.
@@ -155,7 +155,7 @@ class TestThetaPhase:
         # 4th-order Butterworth bandpass -> len(b)=len(a)=9, padlen=27.
         short_lfp = np.sin(2 * np.pi * 8.0 * np.arange(20) / sampling_rate)
         with pytest.raises(ValueError, match="too short"):
-            theta_phase(short_lfp, sampling_rate)
+            theta_phase(short_lfp, sampling_rate=sampling_rate)
 
 
 class TestRippleDetectionScopeOut:

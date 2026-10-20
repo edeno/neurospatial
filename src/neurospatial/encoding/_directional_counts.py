@@ -344,8 +344,13 @@ def prepare_directional_binning(
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> tuple[FrameBinning, NDArray[np.float64]]:
-    """Prepare geometry and exact temporal support before counting spikes."""
+    """Prepare geometry and exact temporal support before counting spikes.
+
+    ``break_before`` is already validated; the interval ending at each
+    declared recording break is dropped from counts and occupancy.
+    """
     times = np.asarray(times, dtype=np.float64).ravel()
     headings = np.asarray(headings, dtype=np.float64).ravel()
     _validate_directional_samples(times, headings)
@@ -360,6 +365,7 @@ def prepare_directional_binning(
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        break_before=break_before,
     )
     return prepared, bin_centers
 

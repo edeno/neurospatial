@@ -61,10 +61,15 @@ def _view_observation_mask(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.bool_]:
     """Resolve selected exposure before requiring bins at physical wall hits."""
     mask = interval_valid_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=break_before,
     )
     mask &= np.diff(times) > 0
     return mask
@@ -543,8 +548,13 @@ def prepare_view_binning(
     spike_window: NDArray[np.float64] | None = None,
     view_bins: NDArray[np.intp] | None = None,
     boundary_source: Literal["physical", "analysis"] = "physical",
+    break_before: NDArray[np.bool_] | None = None,
 ) -> FrameBinning:
-    """Prepare geometry and exact temporal support before counting spikes."""
+    """Prepare geometry and exact temporal support before counting spikes.
+
+    ``break_before`` is already validated; the interval ending at each
+    declared recording break is dropped from counts and occupancy.
+    """
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
@@ -556,7 +566,11 @@ def prepare_view_binning(
     # already holds them for these exact samples and gaze settings.
     # This is the expensive computation - computed once instead of per-neuron
     mask = _view_observation_mask(
-        times, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=break_before,
     )
     if view_bins is None:
         view_bins = _precompute_view_bins(
@@ -580,6 +594,7 @@ def prepare_view_binning(
         epochs=epochs,
         spike_window=spike_window,
         interval_mask=mask,
+        break_before=break_before,
     )
     return prepared
 

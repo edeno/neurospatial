@@ -585,7 +585,7 @@ def test_analyses_reuse_the_environment_kdtree(env, monkeypatch):
     for mode in ("nearest", "inverse-distance-weighted"):
         mapped = map_probabilities(env, env, probs, mode=mode, n_neighbors=3)
         assert np.isclose(mapped.sum(), 1.0)
-    select_basis_centers(env, 4, method="kmeans", rng=0)
+    select_basis_centers(env, n_centers=4, method="kmeans", rng=0)
     heat_kernel_wavelet_basis(env, centers=np.array([0, 5]))
     env.nearest_bin(env.bin_centers)
 

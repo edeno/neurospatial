@@ -115,6 +115,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import chi2
 
+from neurospatial._results import ReadOnlyArraysMixin
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
@@ -1229,8 +1231,8 @@ def wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
 # =============================================================================
 
 
-@dataclass
-class CircularBasisResult:
+@dataclass(frozen=True)
+class CircularBasisResult(ReadOnlyArraysMixin):
     """
     Result from circular_basis() function.
 
@@ -1264,6 +1266,14 @@ class CircularBasisResult:
     sin_component: NDArray[np.float64]
     cos_component: NDArray[np.float64]
     angles: NDArray[np.float64]
+
+    def __post_init__(self) -> None:
+        """Own the components and angles as read-only float64 copies."""
+        for name in ("sin_component", "cos_component", "angles"):
+            object.__setattr__(
+                self, name, np.asarray(getattr(self, name), dtype=np.float64)
+            )
+        self._own_arrays()
 
     @property
     def design_matrix(self) -> NDArray[np.float64]:

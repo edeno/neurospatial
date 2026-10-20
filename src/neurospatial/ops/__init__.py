@@ -16,7 +16,7 @@ calculus : Spatial gradient, divergence
 transforms : Affine transforms, calibration
 alignment : Probability mapping, similarity transforms
 boundary_vectors : Distance and direction to the arena's walls
-egocentric : Heading computation, allocentric/egocentric transforms
+egocentric : Allocentric/egocentric transforms
 feature_sampling : Feature-map values at positions, by bin containment
 visibility : Viewshed, gaze, line-of-sight
 basis : GLM spatial basis functions
@@ -115,11 +115,6 @@ from neurospatial.ops.egocentric import (
     compute_egocentric_bearing,
     compute_egocentric_distance,
     egocentric_to_allocentric,
-    heading_from_body_orientation,
-    heading_from_velocity,
-)
-from neurospatial.ops.egocentric import (
-    _velocity_heading_and_speed as _velocity_heading_and_speed,
 )
 from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 
@@ -225,8 +220,6 @@ __all__ = [
     "compute_egocentric_bearing",
     "compute_egocentric_distance",
     "egocentric_to_allocentric",
-    "heading_from_body_orientation",
-    "heading_from_velocity",
     # Feature sampling
     "SpatialFeatureResult",
     "sample_egocentric_features",

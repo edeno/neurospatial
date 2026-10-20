@@ -2,7 +2,10 @@
 
 **Created:** 2026-10-14
 **Committed:** 2026-10-14
-**Status:** Not started
+**Status:** Not started. No `behavior/paths.py`, path-match result or
+repertoire comparison exists. Its phase 1 inputs (run bounds,
+`resample_by_distance`) are available from PR #112.
+**Status reviewed:** 2026-10-20
 
 [Back to PLAN.md](PLAN.md) · [Shared contracts](shared-contracts.md) ·
 [Environment representation plan](../environment-representation/PLAN.md)

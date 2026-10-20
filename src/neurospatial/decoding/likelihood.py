@@ -40,8 +40,8 @@ from neurospatial.decoding._time_bins import validate_dt
 def log_poisson_likelihood(
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64],
-    dt: float,
     *,
+    dt: float,
     min_rate: float = 1e-10,
 ) -> NDArray[np.float64]:
     """Compute log Poisson likelihood (numerically stable).

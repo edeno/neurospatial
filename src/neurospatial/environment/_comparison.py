@@ -16,10 +16,12 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import networkx as nx
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 from shapely.ops import unary_union
 
 from neurospatial.geometry import (
+    ClippedLocator,
     HexagonShapes,
     PolygonCells,
     SubsetLocator,
@@ -84,7 +86,9 @@ def _environment_differences(
     whenever both environments record them (polygon cells, triangles,
     hexagons, or grid boxes, axis-aligned or in an affine frame). When
     either environment records no cells, such as explicit point bins or
-    track bins, the bins are compared by center and measure only.
+    track bins, the bins are compared by center and measure only. Each pair
+    of bins is compared by ``_paired_cell_differences``, the one definition
+    of the same cell that bin mappings use too.
 
     Smoothing passes a field between neighbors through conductances (face
     area over distance), which the connectivity graph does not hold: two
@@ -94,12 +98,7 @@ def _environment_differences(
     """
     if first is second:
         return _EnvironmentDifferences(None, None)
-    if first.coordinate_system != second.coordinate_system:
-        labels = "coordinate systems"
-    elif first.units != second.units or first.frame != second.frame:
-        labels = "units or coordinate frames"
-    else:
-        labels = None
+    labels = _label_difference(first, second)
     if first._geometry is second._geometry:
         return _EnvironmentDifferences(labels, None)
     return _EnvironmentDifferences(
@@ -107,12 +106,30 @@ def _environment_differences(
     )
 
 
+def _label_difference(first: Environment, second: Environment) -> str | None:
+    """The first difference in coordinate labels, or None.
+
+    Returns
+    -------
+    str or None
+        ``"coordinate systems"`` or ``"units or coordinate frames"``. No
+        pairing of bins can bridge either: the same numbers mean different
+        places.
+    """
+    if first.coordinate_system != second.coordinate_system:
+        return "coordinate systems"
+    if first.units != second.units or first.frame != second.frame:
+        return "units or coordinate frames"
+    return None
+
+
 def _bin_difference(first: Environment, second: Environment) -> str | None:
     """Return the first difference between published bins with equal labels."""
-    if not np.array_equal(first.bin_centers, second.bin_centers):
+    if first.n_bins != second.n_bins:
         return "bin coordinates or ordering"
     bins = np.arange(first.n_bins)
-    return _paired_cell_difference(first._binning, second._binning, bins, bins)
+    reason = _mapped_bin_difference(first, second, np.column_stack([bins, bins]))
+    return "bin coordinates or ordering" if reason == "bin coordinates" else reason
 
 
 def _mapped_bin_difference(
@@ -131,49 +148,152 @@ def _mapped_bin_difference(
     Returns
     -------
     str or None
-        The first difference between paired bins: ``"bin coordinates"``,
-        ``"bin measures"``, ``"polygon cell geometry"``,
-        ``"bin-boundary ownership"`` or ``"cell shapes"``; None when every
-        pair is the same cell. The identity pairing of two environments with
-        equal bin centers gives the same answer as ``_environment_differences``.
+        The first difference between paired bins, in the order of
+        ``_CELL_DIFFERENCES``: ``"bin coordinates"``, ``"bin measures"``,
+        ``"polygon cell geometry"``, ``"bin-boundary ownership"`` or
+        ``"cell shapes"``; None when every pair is the same cell (see
+        ``_paired_cell_differences``). The identity pairing of two
+        environments with the same bins gives the answer of
+        ``_environment_differences``.
     """
-    rows_first, rows_second = bin_pairs[:, 0], bin_pairs[:, 1]
-    if not np.array_equal(
-        first.bin_centers[rows_first], second.bin_centers[rows_second]
-    ):
-        return "bin coordinates"
-    return _paired_cell_difference(
-        first._binning, second._binning, rows_first, rows_second
+    codes = _paired_cell_differences(first, second, bin_pairs[:, 0], bin_pairs[:, 1])
+    failed = codes[codes >= 0]
+    return _CELL_DIFFERENCES[int(failed.min())] if failed.size else None
+
+
+# What can differ between two bins meant to be the same cell, in the order
+# they are checked and reported.
+_CELL_DIFFERENCES = (
+    "bin coordinates",
+    "bin measures",
+    "polygon cell geometry",
+    "bin-boundary ownership",
+    "cell shapes",
+)
+# A polygon cell's center and area are computed from its polygon, so the same
+# polygon can give centers and areas that differ by this relative rounding.
+_ROUNDING = 64 * np.finfo(np.float64).eps
+
+
+def _compares_polygons(first: Binning, second: Binning) -> bool:
+    """Whether paired bins are compared as exact polygon cells."""
+    return (
+        _records_cells(first)
+        and _records_cells(second)
+        and (
+            isinstance(first.shapes, PolygonCells)
+            or isinstance(second.shapes, PolygonCells)
+        )
     )
 
 
-def _paired_cell_difference(
-    first: Binning,
-    second: Binning,
+def _paired_cell_differences(
+    first: Environment,
+    second: Environment,
     rows_first: NDArray[np.integer],
     rows_second: NDArray[np.integer],
-) -> str | None:
-    """Compare the measures, then the cells, of paired bins with equal centers."""
-    first_bins, second_bins = first.bins, second.bins
-    if not (
-        np.array_equal(first_bins.sizes[rows_first], second_bins.sizes[rows_second])
-        and np.array_equal(
-            first_bins.measure_dims[rows_first], second_bins.measure_dims[rows_second]
+) -> NDArray[np.intp]:
+    """The first difference between each pair of bins, or -1 for the same cell.
+
+    This is the package's one definition of "the same cell". Two bins are the
+    same cell when they have the same center and measure, and, where both
+    environments record cells, the same cell:
+
+    - Grid boxes, triangles and hexagons: exactly equal centers, measures and
+      corners.
+    - Polygon cells (either environment clipped or built from polygons):
+      exactly the same polygon, owning the same boundary points (see
+      ``_ownership_keys``). Their centers and areas are computed from the
+      polygon, so they may differ from the other bin's by rounding: within
+      ``_ROUNDING`` of the coordinates' magnitude plus the cell's width for
+      centers, and of the area for measures.
+    - Bins without recorded cells, such as track or point bins: exactly
+      equal centers and measures.
+
+    Parameters
+    ----------
+    first, second : Environment
+        The environments of each pair's bins.
+    rows_first, rows_second : ndarray of int, shape (n_pairs,)
+        The paired bins of ``first`` and of ``second``.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_pairs,)
+        Index into ``_CELL_DIFFERENCES`` of each pair's first difference, or
+        -1 when the bins are the same cell.
+    """
+    first_binning, second_binning = first._binning, second._binning
+    first_bins, second_bins = first_binning.bins, second_binning.bins
+    codes = np.full(len(rows_first), -1, dtype=np.intp)
+
+    def mark(code: int, differs: NDArray[np.bool_]) -> None:
+        codes[(codes < 0) & differs] = code
+
+    if first_bins.centers.shape[1] != second_bins.centers.shape[1]:
+        # Coordinates of different widths are different places; comparing
+        # them elementwise would broadcast a 1-D center against each axis.
+        codes[:] = 0
+        return codes
+    first_centers = first_bins.centers[rows_first]
+    second_centers = second_bins.centers[rows_second]
+    first_sizes = first_bins.sizes[rows_first]
+    second_sizes = second_bins.sizes[rows_second]
+    exact_centers = np.all(first_centers == second_centers, axis=1)
+    exact_sizes = first_sizes == second_sizes
+    same_dims = (
+        first_bins.measure_dims[rows_first] == second_bins.measure_dims[rows_second]
+    )
+    if _compares_polygons(first_binning, second_binning):
+        first_cells = _cell_array(first_binning)[rows_first]
+        second_cells = _cell_array(second_binning)[rows_second]
+        same_polygon = np.asarray(shapely.equals(first_cells, second_cells), bool)
+        allowance = _ROUNDING * (
+            np.maximum(np.abs(first_centers), np.abs(second_centers))
+            + np.sqrt(np.abs(first_sizes))[:, np.newaxis]
         )
-    ):
-        return "bin measures"
-    if not (_records_cells(first) and _records_cells(second)):
-        return None
-    if isinstance(first.shapes, PolygonCells) or isinstance(
-        second.shapes, PolygonCells
-    ):
-        return _polygon_cell_difference(first, second, rows_first, rows_second)
-    first_corners, second_corners = _cell_corners(first), _cell_corners(second)
+        close_centers = np.all(
+            np.abs(first_centers - second_centers) <= allowance, axis=1
+        )
+        close_sizes = np.abs(first_sizes - second_sizes) <= _ROUNDING * np.abs(
+            first_sizes
+        )
+        mark(0, ~(exact_centers | (same_polygon & close_centers)))
+        mark(1, ~same_dims | ~(exact_sizes | (same_polygon & close_sizes)))
+        mark(2, ~same_polygon)
+        rows = np.flatnonzero(codes < 0)
+        owned = _same_ownership(
+            first_binning.locator,
+            second_binning.locator,
+            np.asarray(rows_first)[rows],
+            np.asarray(rows_second)[rows],
+        )
+        codes[rows[~owned]] = 3
+        return codes
+    mark(0, ~exact_centers)
+    mark(1, ~(exact_sizes & same_dims))
+    if not (_records_cells(first_binning) and _records_cells(second_binning)):
+        return codes
+    first_corners = _cell_corners(first_binning)
+    second_corners = _cell_corners(second_binning)
     if first_corners is None or second_corners is None:
-        return None
-    if not np.array_equal(first_corners[rows_first], second_corners[rows_second]):
-        return "cell shapes"
-    return None
+        return codes
+    if first_corners.shape[1:] != second_corners.shape[1:]:
+        mark(4, np.ones(len(codes), dtype=bool))
+        return codes
+    mark(
+        4,
+        ~np.all(first_corners[rows_first] == second_corners[rows_second], axis=(1, 2)),
+    )
+    return codes
+
+
+def _cell_array(binning: Binning) -> NDArray[np.object_]:
+    """Each bin's polygon, as an object array for vectorized shapely calls."""
+    cells = materialize_cells(binning)
+    array = np.empty(len(cells), dtype=object)
+    array[:] = cells
+    return array
 
 
 def _records_cells(binning: Binning) -> bool:
@@ -236,57 +356,83 @@ def _box_corners(grid: RectilinearGrid) -> NDArray[np.float64]:
     return corners
 
 
-def _polygon_cell_difference(
-    first: Binning,
-    second: Binning,
+def _ownership_keys(
+    locator: Locator, rows: NDArray[np.integer]
+) -> tuple[NDArray[np.object_], NDArray[np.intp]]:
+    """The locator that decides each bin's boundary points, and its bin there.
+
+    A subset gives a point to the kept bin whose parent owned it, and to no
+    bin when that parent was dropped, so its bins own their parents' points.
+    A clip gives a point to the piece of the parent bin that owned it, so a
+    parent bin's only piece owns the parent's points inside that piece.
+    Callers compare keys only for bins whose polygons are already known to be
+    equal, so a piece and a whole cell with the same key own the same points.
+    Pieces of a cell split in several are kept at their clip, whose lookup
+    breaks ties between them.
+    """
+    keys: NDArray[np.intp] = np.array(rows, dtype=np.intp)
+    roots = np.empty(len(keys), dtype=object)
+    active = np.ones(len(keys), dtype=bool)
+    while np.any(active):
+        if isinstance(locator, SubsetLocator):
+            parent_to_child = locator.parent_to_child
+            kept = np.flatnonzero(parent_to_child >= 0)
+            child_to_parent = np.empty(kept.size, dtype=np.intp)
+            child_to_parent[parent_to_child[kept]] = kept
+            keys[active] = child_to_parent[keys[active]]
+            locator = locator.base
+        elif isinstance(locator, ClippedLocator):
+            sources = locator.mapping.parent_bin_indices
+            pieces = np.bincount(sources, minlength=locator.mapping.n_parent_bins)
+            only_piece = active.copy()
+            only_piece[active] = pieces[sources[keys[active]]] == 1
+            roots[active & ~only_piece] = locator
+            active = only_piece
+            keys[active] = sources[keys[active]]
+            locator = locator.base
+        else:
+            roots[active] = locator
+            break
+    return roots, keys
+
+
+def _same_ownership(
+    first: Locator,
+    second: Locator,
     rows_first: NDArray[np.integer],
     rows_second: NDArray[np.integer],
-) -> str | None:
-    """Compare paired exact polygon cells, then which bin owns each boundary."""
-    first_cells, second_cells = materialize_cells(first), materialize_cells(second)
-    if any(
-        not first_cells[i].equals(second_cells[j])
-        for i, j in zip(rows_first.tolist(), rows_second.tolist(), strict=True)
-    ):
-        return "polygon cell geometry"
-    first_root, first_owners = _ownership_root(first.locator, rows_first)
-    second_root, second_owners = _ownership_root(second.locator, rows_second)
+) -> NDArray[np.bool_]:
+    """Whether each pair's bins own the same boundary points."""
+    first_roots, first_keys = _ownership_keys(first, rows_first)
+    second_roots, second_keys = _ownership_keys(second, rows_second)
+    same: NDArray[np.bool_] = np.asarray(first_keys == second_keys, dtype=bool)
+    verdicts: dict[tuple[int, int], bool] = {}
+    for row in np.flatnonzero(same):
+        first_root, second_root = first_roots[row], second_roots[row]
+        key = (id(first_root), id(second_root))
+        if key not in verdicts:
+            verdicts[key] = _same_locator(first_root, second_root)
+        same[row] = verdicts[key]
+    return same
+
+
+def _same_locator(first: Locator, second: Locator) -> bool:
+    """Whether two locators are the same, as their saved records compare."""
+    if first is second:
+        return True
     try:
-        first_meta, first_arrays = encode(first_root, "locator")
-        second_meta, second_arrays = encode(second_root, "locator")
+        first_meta, first_arrays = encode(first, "locator")
+        second_meta, second_arrays = encode(second, "locator")
     except ValueError:
-        return "bin-boundary ownership"
-    if (
-        first_meta != second_meta
-        or first_arrays.keys() != second_arrays.keys()
-        or any(
-            not np.array_equal(value, second_arrays[key])
+        return False
+    return (
+        first_meta == second_meta
+        and first_arrays.keys() == second_arrays.keys()
+        and all(
+            np.array_equal(value, second_arrays[key])
             for key, value in first_arrays.items()
         )
-        or not np.array_equal(first_owners, second_owners)
-    ):
-        return "bin-boundary ownership"
-    return None
-
-
-def _ownership_root(
-    locator: Locator, rows: NDArray[np.integer]
-) -> tuple[Locator, NDArray[np.integer]]:
-    """The locator below any subset layers, and the bin of it behind each row.
-
-    A subset's locator gives a point to the kept bin whose parent owned it,
-    and to no bin when that parent was dropped. Two locators therefore give
-    paired bins the same boundaries when, below their subset layers, they are
-    the same locator and each pair comes from the same bin of it.
-    """
-    while isinstance(locator, SubsetLocator):
-        parent_to_child = locator.parent_to_child
-        parents = np.flatnonzero(parent_to_child >= 0)
-        child_to_parent = np.empty(parents.size, dtype=np.intp)
-        child_to_parent[parent_to_child[parents]] = parents
-        rows = child_to_parent[rows]
-        locator = locator.base
-    return locator, rows
+    )
 
 
 def _topology_difference(first: Environment, second: Environment) -> str | None:

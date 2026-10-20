@@ -4,6 +4,108 @@
 
 ### Breaking
 
+- Options of public free functions are keyword-only, as `Environment`
+  method options already were; data stays positional, and a test rejects any
+  new positional option. This covers defaulted options (levels, kinds,
+  calibration scales, NWB names and descriptions, seeds, plot settings) and
+  required ones (bin widths `dt` and `bin_size`, sampling rates, durations,
+  thresholds such as `min_speed`, counts, radii and NWB table names). An NWB
+  reader or writer given a former positional option raises a `TypeError`
+  that shows the corrected call. `large_session_napari_config` no longer
+  takes `sample_rate_hz`, which it ignored.
+
+  ```python
+  # before
+  decode_position(env, counts, models, 0.025)
+  bin_spikes_in_time(spike_times, 0.025)
+  segment_by_velocity(times, positions, 5.0)
+  credible_region(env, posterior, 0.9)
+  read_position(nwbfile, "behavior", "xy")
+  open_field_session(60.0)
+  # after
+  decode_position(env, counts, models, dt=0.025)
+  bin_spikes_in_time(spike_times, dt=0.025)
+  segment_by_velocity(times, positions, min_speed=5.0)
+  credible_region(env, posterior, level=0.9)
+  read_position(nwbfile, processing_module="behavior", position_name="xy")
+  open_field_session(duration=60.0)
+  ```
+
+- Every time window is half-open, `[start, stop)`, the convention analysis
+  `epochs=` and `labels_to_epochs` already used, so adjacent windows never
+  share a spike or event:
+  - `in_epochs`, `restrict` and `restrict_spike_trains` default to
+    `closed="left"` (was `"both"`); pass `closed="both"` to match pynapple's
+    inclusive `restrict`.
+  - `align_spikes_to_events` and `align_events` leave out a spike or event
+    exactly at `event + stop`, so the raster agrees with the peri-event
+    histogram, which already did. `event_count_in_window`, `event_indicator`
+    and `filter_by_intervals` do the same at the window or interval stop.
+  - A window with `stop <= start` is refused, since it holds no time.
+    `event_indicator` therefore needs an explicit `window=` (its default
+    `(0.0, 0.0)` matched only exact float equality); `window=(-bin_size / 2,
+    bin_size / 2)` marks each event at exactly one sample.
+  - `laps_to_direction_labels`, `runs_to_direction_labels`,
+    `running_direction_labels` and `goal_pair_direction_labels` label
+    `[start_time, end_time)`: a lap's last sample starts the interval that
+    leaves the lap, so it is now `"other"`, and `labels_to_epochs` gives
+    windows that match the laps exactly.
+
+  ```python
+  # before: a spike at t = 1.0 was in both halves
+  first, second = restrict(spikes, epochs=(0, 1)), restrict(spikes, epochs=(1, 2))
+  # after: it is in `second` only; for the old behavior pass closed="both"
+  event_indicator(times, rewards)                       # before
+  event_indicator(times, rewards, window=(-dt / 2, dt / 2))  # after
+  ```
+
+- `ops.visibility_occupancy` counts viewing time only over usable sampling
+  intervals. It takes `max_gap` (default 0.5 s), `epochs` and
+  `break_before`, so a tracking pause or the join between two recordings no
+  longer counts as viewing time. An interval adds time only when both its
+  samples have a finite position and heading; NaN positions or headings mark
+  missing samples instead of raising. The last sample used to repeat the
+  previous interval's duration and now adds no time: for gap-free data each
+  bin visible from the last sample loses exactly `times[-1] - times[-2]`.
+  `fov`, `n_rays` and `boundary_source` are checked even when no interval is
+  usable, a non-integer `n_rays` raises `ValueError` (was `TypeError`), and
+  headings need one entry per timestamp.
+- `behavior.distance_to_reward` takes `max_gap` (default 0.5 s), `epochs` and
+  `break_before`. NaN positions give NaN distance instead of raising. Without
+  `reward_positions`, a reward location is read from the sample at the reward
+  time or interpolated only within an observed interval that passes
+  `max_gap` and `break_before`; epochs do not restrict this, because rewards
+  often come while the animal is still. A reward in a gap, across a break,
+  next to a missing sample or outside the recording now has an unknown
+  location, so samples that select it get NaN with a warning; before, it was
+  interpolated across the gap or clipped to the session edge. With
+  `break_before`, a sample selects only rewards from its own recording, and
+  samples outside `epochs` are NaN. Gap-free tracking with rewards inside the
+  recording gives identical results.
+
+- Per-sample behavioral covariates have one home, `neurospatial.behavior`.
+  `heading_from_velocity` and `heading_from_body_orientation` move from
+  `neurospatial.ops` next to `compute_speed`, and `distance_to_reward` and
+  `distance_to_boundary` move from `neurospatial.events` next to
+  `distance_to_region`. Signatures and results are unchanged; there are no
+  aliases, so the old imports raise `ImportError`. `ops` keeps the egocentric
+  frame conversions, and `events` keeps the time-based regressors
+  (`time_to_nearest_event`, `event_count_in_window`, `event_indicator`) and
+  its event-table utilities.
+
+  ```python
+  # before
+  from neurospatial.ops import heading_from_body_orientation, heading_from_velocity
+  from neurospatial.events import distance_to_boundary, distance_to_reward
+  # after
+  from neurospatial.behavior import (
+      distance_to_boundary,
+      distance_to_reward,
+      heading_from_body_orientation,
+      heading_from_velocity,
+  )
+  ```
+
 - The simulated mazes in `neurospatial.simulation.mazes` now match the real
   apparatus. Their layouts follow Figure 1 of Wijnen et al. 2024 and their
   sizes come from the papers that describe each maze, cited in each factory's
@@ -1096,6 +1198,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- More results own their arrays as read-only copies that survive pickle and
+  `copy.deepcopy`, like the other analysis results: `ShuffleTestResult`
+  (its `null_scores` became writable again after copying),
+  `CircularBasisResult` (which kept the caller's `angles` array, so editing
+  it changed the stored angles but not the sine and cosine; it is now also
+  frozen), `ViewshedResult`, `PlaceFieldsResult` and
+  `PopulationCoverageResult`. `PlaceFieldsResult.fields` and
+  `PopulationCoverageResult.place_fields` are now tuples, so fields cannot be
+  appended to or replaced; copy with `list(...)` to edit.
+
 - `compute_directional_place_fields` leaves out frames labeled `None` or
   `NaN`, as it does frames labeled `"other"`. Before, such labels raised
   `TypeError`.
@@ -1610,18 +1722,104 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 ### Added
 
 - `neurospatial.encoding.population_vector_correlation(firing_rates_1,
-  firing_rates_2, *, spatial_support=None)` returns the population-vector
-  correlation at each location between two conditions, the remapping measure
-  of Leutgeb et al. (2005): one value per bin, the Pearson correlation across
-  cells of the rates at that bin. A location is NaN, never 0, when a rate is
-  NaN in either map, the bin is outside `spatial_support` (pass it for
-  zero-filled maps), or every cell has exactly the same rate there. Summarize
-  with the median over defined locations and report how many were undefined.
+  firing_rates_2, *, spatial_support, unit_selection, bin_mapping, topology)`
+  returns the population-vector correlation at each location between two
+  conditions, the remapping measure of Leutgeb et al. (2005): one value per
+  bin, the Pearson correlation across cells of the rates at that bin. Pass
+  the two `SpatialRatesResult`: units are paired by `unit_ids`
+  (`unit_selection="intersection"` or `"exact"`, as in
+  `compare_spatial_rates`), generated row-position ids are refused, bins are
+  paired by place (different environments need `bin_mapping=`, and
+  `topology=` is checked), and only bins observed in both conditions are
+  compared. It warns, like `compare_spatial_rates`, when the conditions were
+  estimated with different `method`, `bandwidth` or `min_occupancy`. Plain
+  `(n_units, n_bins)` arrays are also accepted; then the rows must be the same
+  units in the same order, and `spatial_support` must be passed, because
+  smoothed maps have finite rates in bins the animal never visited. A
+  location is NaN, never 0, when a rate is NaN in either map, the bin is not
+  supported, or every cell has exactly the same rate there. Summarize with
+  the median over defined locations and report how many were undefined.
 
   ```python
-  pv = population_vector_correlation(before.firing_rates, after.firing_rates)
+  pv = population_vector_correlation(before, after)  # two SpatialRatesResult
   defined = np.isfinite(pv)
   print(np.median(pv[defined]), (~defined).sum())
+  ```
+
+- `break_before` (True at the first sample of each later recording) is
+  accepted wherever `max_gap` is: rate maps (`compute_spatial_rate(s)`,
+  `compute_directional_rate(s)`, `compute_view_rate(s)`,
+  `compute_object_vector_rate(s)`, `compute_egocentric_rate(s)`,
+  `compute_boundary_vector_rate(s)`, `compute_directional_place_fields`),
+  `has_place_field`, the `is_*_cell` predicates and `*_cell_significance`
+  tests, `decode_session`, `decode_session_summary`,
+  `BayesianDecoder.fit`/`predict`/`predict_summary`/`score`,
+  `DecodingResult.error_against`/`plot`, the behavior segmentation, visit and
+  goal functions (`detect_region_crossings`, `detect_region_visits`,
+  `detect_runs_between_regions`, `detect_laps`, `segment_trials`,
+  `segment_by_velocity`, `running_direction_labels`,
+  `heading_direction_labels`, `detect_goal_directed_runs`, `goal_bias`,
+  `instantaneous_goal_alignment`, `compute_goal_directed_metrics`,
+  `compute_home_range`), `Environment.occupancy`, `bin_sequence`,
+  `bin_sequence_with_runs` and `transitions`,
+  `neurospatial.events.add_positions` and
+  `neurospatial.simulation.generate_population_spikes`. A declared break is
+  treated exactly like a gap longer than `max_gap`, even when the clock does
+  not pause: the interval across it adds no occupancy or spikes, speed and
+  heading are not smoothed across it, shuffle nulls respect it, no trial,
+  run, lap, visit, transition or decode bin spans it, and positions are not
+  interpolated across it. Recordings joined on one clock no longer need to be
+  converted to `epochs` by hand (touching windows merge, so that never worked
+  anyway). Rate results and fitted decoders record the break times in
+  `analysis_settings["break_times"]` (`None` when not given).
+
+  ```python
+  new_recording = np.diff(recording_ids, prepend=recording_ids[0]) != 0
+  rates = compute_spatial_rates(
+      env, spike_times, times, positions, break_before=new_recording
+  )
+  ```
+
+- `detect_assemblies(..., unit_ids=)` stores unit labels on the result and on
+  each `AssemblyPattern`, and `pattern.member_unit_ids` names the core
+  members. `assembly_activation(..., unit_ids=)` and
+  `reactivation_strength(..., template_unit_ids=, match_unit_ids=)` match the
+  columns of new spike counts to the pattern by label, so each period may list
+  its units in its own order.
+  `explained_variance_reactivation(..., template_unit_ids=, match_unit_ids=,
+  control_unit_ids=)` takes the column labels of the counts each period's
+  `pairwise_correlations` came from, and compares the correlations of the
+  same two cells in every period. A label missing on either side raises and
+  is named, and labels given for only some periods raise. Without labels,
+  pairing stays positional, as before.
+- `Environment.bin_mapping_from(parent)` returns a `BinMapping`
+  (`neurospatial.environment`) of exact bin pairs between an environment and
+  the one it was derived from: identical cells (subsets, cells a clip did not
+  cut, identical rebuilds) and whole fine cells inside coarser cells on the
+  same lattice (`rebin`). Cut cells, and grid cells whose boundary points the
+  coarser grid gives to another cell, are reported as split instead of paired,
+  and the child bins they touch get NaN in transfers;
+  refinements, offset or rotated lattices and different units or frames are
+  refused. `sum` carries counts, occupancy and probability mass with NaN kept
+  as missing, `rates` pools rates from summed counts and occupancy (rates are
+  never averaged), and `category` keeps a label only where all merged bins
+  share it. `mapping.pairs` is the `bin_mapping=` that
+  `compare_spatial_rates` and `population_vector_correlation` take. These
+  functions and `bin_mapping_from` now share one definition of the same cell:
+  polygon cells (for example the cells a clip kept whole) are the same cell
+  when their polygons are equal and their centers and areas agree to
+  rounding. Before, clip cells whose centroids differed in the last digits
+  were refused as different places; this also applies wherever two
+  environments are checked for the same bins, such as decoding with rates
+  estimated on another environment and reading fields from NWB.
+
+  ```python
+  part = env.subset(mask=in_center)
+  mapping = part.bin_mapping_from(env)
+  compare_spatial_rates(full_rates, part_rates, bin_mapping=mapping.pairs)
+
+  coarse = env.rebin(2)
+  coarse_counts = coarse.bin_mapping_from(env).sum(fine_counts)
   ```
 
 - `neurospatial.behavior.labels_to_epochs(times, labels, *, valid, break_before,

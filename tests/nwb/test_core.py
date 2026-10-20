@@ -341,7 +341,7 @@ def _read_pose(nwbfile):
 def _read_events(nwbfile):
     from neurospatial.io.nwb import read_events
 
-    return read_events(nwbfile, "laps")
+    return read_events(nwbfile, table_name="laps")
 
 
 _EXTENSIONS = pytest.mark.parametrize(

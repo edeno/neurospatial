@@ -602,7 +602,7 @@ def _decode_small(env, **kwargs):
     counts = rng.poisson(1.0, size=(20, 3)).astype(np.int64)
     models = rng.uniform(1.0, 10.0, size=(3, env.n_bins))
     return decode_position(
-        env, counts, models, 0.1, times=np.arange(20) * 0.1, **kwargs
+        env, counts, models, dt=0.1, times=np.arange(20) * 0.1, **kwargs
     )
 
 

@@ -241,8 +241,8 @@ def generate_inhomogeneous_poisson_surrogates(
 
 def generate_jittered_spikes(
     spike_times: NDArray[np.float64],
-    jitter_std: float,
     *,
+    jitter_std: float,
     n_surrogates: int = 1000,
     rng: np.random.Generator | int | None = None,
     window: tuple[float, float] | None = None,

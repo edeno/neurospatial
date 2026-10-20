@@ -98,8 +98,8 @@ def test_streamed_summary_matches_full_decode(polar):
     rng = np.random.default_rng(0)
     rates = rng.uniform(0.5, 20.0, size=(5, polar.n_bins))
     counts = rng.poisson(rates[:, :1].T * 0.2, size=(40, 5))
-    full = decode_position(polar, counts, rates, 0.2)
-    summary = decode_position_summary(polar, counts, rates, 0.2, time_chunk=7)
+    full = decode_position(polar, counts, rates, dt=0.2)
+    summary = decode_position_summary(polar, counts, rates, dt=0.2, time_chunk=7)
     np.testing.assert_allclose(
         summary.mean_position, mean_position(polar, full.posterior), atol=1e-10
     )

@@ -25,9 +25,13 @@ from neurospatial.decoding.assemblies import AssemblyDetectionResult, AssemblyPa
 from neurospatial.decoding.trajectory import IsotonicFitResult, RadonDetectionResult
 from neurospatial.encoding import RateComparisonResult
 from neurospatial.encoding._metrics import BatchScoresResult
-from neurospatial.encoding.spatial import DirectionalPlaceFields
+from neurospatial.encoding.population import PopulationCoverageResult
+from neurospatial.encoding.spatial import DirectionalPlaceFields, PlaceFieldsResult
 from neurospatial.events import ContinuousEventResult
 from neurospatial.ops import SpatialFeatureResult
+from neurospatial.ops.visibility import ViewshedResult
+from neurospatial.stats.circular import CircularBasisResult
+from neurospatial.stats.shuffle import ShuffleTestResult
 
 
 @pytest.fixture(scope="module")
@@ -121,6 +125,7 @@ CASES = [
             "weights": np.ones(2),
             "member_indices": np.array([0, 1]),
             "explained_variance_ratio": 1.0,
+            "unit_ids": np.array([5, 9]),
         },
     ),
     (
@@ -132,6 +137,7 @@ CASES = [
             "n_significant": 2,
             "eigenvalues": np.ones(2),
             "threshold": 0.5,
+            "unit_ids": np.array([5, 9]),
         },
     ),
     (
@@ -254,6 +260,50 @@ CASES = [
             "query_positions": np.array([[[5.0, 0.0]], [[50.0, 0.0]]]),
         },
     ),
+    (
+        ShuffleTestResult,
+        {
+            "observed_score": 1.0,
+            "null_scores": np.array([0.1, 0.5, 2.0]),
+            "p_value": 0.5,
+            "z_score": 0.2,
+            "shuffle_type": "time_bins",
+            "n_shuffles": 3,
+        },
+    ),
+    (
+        CircularBasisResult,
+        {
+            "sin_component": np.sin([0.0, 1.0]),
+            "cos_component": np.cos([0.0, 1.0]),
+            "angles": np.array([0.0, 1.0]),
+        },
+    ),
+    (
+        ViewshedResult,
+        {
+            "visible_bins": np.array([0, 2], dtype=np.intp),
+            "visible_cues": np.array([1], dtype=np.intp),
+            "cue_distances": np.array([3.0]),
+            "cue_bearings": np.array([0.5]),
+            "occlusion_map": np.array([0.0, 1.0]),
+        },
+    ),
+    (
+        PopulationCoverageResult,
+        {
+            "coverage_fraction": 0.5,
+            "is_covered": np.array([True, False]),
+            "field_count": np.array([1, 0]),
+            "covered_bins": np.array([0], dtype=np.intp),
+            "uncovered_bins": np.array([1], dtype=np.intp),
+            "uncovered_positions": np.array([[5.0, 0.0]]),
+            "n_neurons": 1,
+            "n_place_cells": 1,
+            "n_fields": 1,
+            "place_fields": [],
+        },
+    ),
 ]
 
 
@@ -323,6 +373,38 @@ def test_directional_maps_are_owned_and_read_only(env, how):
         with pytest.raises(TypeError):
             mapping["forward"] = np.zeros(env.n_bins)
     assert not result.spike_window.flags.writeable
+
+
+@pytest.mark.parametrize("how", ["original", "pickle", "deepcopy"])
+def test_place_field_bins_are_owned_and_read_only(how):
+    bins = np.array([0, 1, 2])
+    given = [bins]
+    result = PlaceFieldsResult(fields=given)
+    coverage = PopulationCoverageResult(
+        coverage_fraction=1.0,
+        is_covered=np.ones(3, dtype=bool),
+        field_count=np.ones(3, dtype=int),
+        covered_bins=np.arange(3),
+        uncovered_bins=np.zeros(0, dtype=np.intp),
+        uncovered_positions=np.zeros((0, 2)),
+        n_neurons=1,
+        n_place_cells=1,
+        n_fields=1,
+        place_fields=[result],
+    )
+    if how == "pickle":
+        result, coverage = pickle.loads(pickle.dumps((result, coverage)))
+    elif how == "deepcopy":
+        result, coverage = copy.deepcopy((result, coverage))
+    bins[:] = 9
+    given.clear()
+    for owned in (result, coverage.place_fields[0]):
+        assert len(owned) == 1
+        np.testing.assert_array_equal(owned[0], [0, 1, 2])
+        with pytest.raises(ValueError, match="read-only"):
+            owned[0][0] = 5
+    assert isinstance(result.fields, tuple)
+    assert isinstance(coverage.place_fields, tuple)
 
 
 def test_summary_xarray_export_is_editable_and_independent(env):

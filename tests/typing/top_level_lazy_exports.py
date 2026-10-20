@@ -47,7 +47,7 @@ if TYPE_CHECKING:
         compute_spatial_rates(env, [spikes, spikes], times, positions),
         ConcreteSpatialRatesResult,
     )
-    assert_type(decode_position(env, counts, maps, 0.025), ConcreteDecodingResult)
+    assert_type(decode_position(env, counts, maps, dt=0.025), ConcreteDecodingResult)
     assert_type(
         peri_event_histogram(spikes, events, (-0.5, 0.5)), ConcretePeriEventResult
     )

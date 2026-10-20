@@ -237,8 +237,8 @@ def test_create_and_connectivity_for_3d_grid():
     # Confirm get_n_bins returns [1,1,1] given points at the exact endpoints
     n_bins = get_n_bins(
         cube_pts,
-        np.array([1.0, 1.0, 1.0]),
-        [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
+        bin_size=np.array([1.0, 1.0, 1.0]),
+        dimension_range=[(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)],
     )
     assert np.array_equal(n_bins, np.array([1, 1, 1], dtype=int))
 
