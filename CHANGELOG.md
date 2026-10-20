@@ -3210,6 +3210,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Documentation
 
+- Add a [simulated mazes page](https://edeno.github.io/neurospatial/user-guide/simulated-mazes/) that shows every maze in `neurospatial.simulation.mazes` at true scale, drawn from the package at each docs build, with each maze's source, default size and named ports and boxes.
 - Add a [population analysis guide](https://edeno.github.io/neurospatial/user-guide/population-analysis/) organized by scientific question: place-field coverage and place-cell screens, remapping between conditions, cell assemblies and their reactivation during rest, and pointers to decoding. It maps each question to its module, since coverage and remapping tools live in `neurospatial.encoding` while assembly and reactivation tools live in `neurospatial.decoding`. Its examples run as tests on simulated recordings with planted answers.
 - `compute_turn_angles` and `compute_trajectory_curvature` describe what
   they compute for positions with more than two columns: the cross product
