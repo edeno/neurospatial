@@ -1665,7 +1665,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`neurospatial.environment`) of exact bin pairs between an environment and
   the one it was derived from: identical cells (subsets, cells a clip did not
   cut, identical rebuilds) and whole fine cells inside coarser cells on the
-  same lattice (`rebin`). Cut cells are reported as split instead of paired;
+  same lattice (`rebin`). Cut cells, and grid cells whose boundary points the
+  coarser grid gives to another cell, are reported as split instead of paired,
+  and the child bins they touch get NaN in transfers;
   refinements, offset or rotated lattices and different units or frames are
   refused. `sum` carries counts, occupancy and probability mass with NaN kept
   as missing, `rates` pools rates from summed counts and occupancy (rates are

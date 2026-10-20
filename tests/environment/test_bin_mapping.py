@@ -643,6 +643,71 @@ def _explicit_points(centers) -> Environment:
     )
 
 
+def test_a_boundary_point_given_to_another_coarse_cell_splits_its_fine_cell():
+    # Fine bin 1 owns x = 2 because its right neighbor is empty; the coarse
+    # grid gives x = 2 to coarse bin 1. Carrying fine bin 1 into coarse bin 0
+    # would put a sample at x = 2 in the wrong coarse bin.
+    fine = Environment.from_grid_mask(
+        np.array([True, True, False, True, True, True]), (np.arange(7.0),)
+    )
+    coarse = fine.rebin(2)
+    assert fine.bin_at(np.array([[2.0]])) == [1]
+    assert coarse.bin_at(np.array([[2.0]])) == [1]
+
+    mapping = coarse.bin_mapping_from(fine)
+
+    np.testing.assert_array_equal(mapping.split_parent_bins, [1])
+    assert 1 not in mapping.pairs[:, 0]
+    np.testing.assert_array_equal(mapping.uncovered_child_bins, [0, 1])
+    times, positions = np.array([0.0, 0.1, 0.2]), np.full((3, 1), 2.0)
+    carried = mapping.sum(fine.occupancy(times, positions))
+    direct = coarse.occupancy(times, positions)
+    assert np.isnan(carried[:2]).all()  # unknown, never the wrong bin
+    np.testing.assert_array_equal(carried[2:], direct[2:])
+    assert mapping.summary()["n_uncovered_child_bins"] == 2
+    assert mapping.summary()["n_partly_covered_child_bins"] == 0
+
+
+def test_carried_occupancy_matches_the_coarse_grid_for_samples_on_cell_edges():
+    # Worst case for ownership: samples on every corner and edge midpoint of
+    # every fine cell of an irregular arena, where empty neighbors give
+    # boundary points to the cells beside them.
+    rng = np.random.default_rng(0)
+    trajectory = (
+        50
+        + 40
+        * np.column_stack(
+            [np.sin(np.linspace(0, 40, 6000)), np.cos(np.linspace(0, 26, 6000))]
+        )
+        + rng.normal(0, 2, (6000, 2))
+    )
+    env = Environment.from_samples(trajectory, bin_size=5.0)
+    edges = env.binning.rectilinear.edges
+    ix, iy = np.nonzero(env.binning.rectilinear.active_mask)
+    xs = np.stack(
+        [edges[0][ix], (edges[0][ix] + edges[0][ix + 1]) / 2, edges[0][ix + 1]], 1
+    )
+    ys = np.stack(
+        [edges[1][iy], (edges[1][iy] + edges[1][iy + 1]) / 2, edges[1][iy + 1]], 1
+    )
+    positions = np.column_stack(
+        [np.repeat(xs, 3, axis=1).ravel(), np.tile(ys, (1, 3)).ravel()]
+    )
+    times = np.arange(len(positions)) * 0.01
+    coarse = env.rebin(2)
+    mapping = coarse.bin_mapping_from(env)
+    assert len(mapping.split_parent_bins) > 0  # the arena has such boundaries
+    # Positions in fine bins the coarse grid dropped are left out of both.
+    positions[np.isin(env.bin_at(positions), mapping.unmapped_parent_bins)] = np.nan
+
+    carried = mapping.sum(_quiet(lambda: env.occupancy(times, positions)))
+    direct = _quiet(lambda: coarse.occupancy(times, positions))
+
+    known = np.isfinite(carried)
+    assert known.sum() == coarse.n_bins - len(mapping.uncovered_child_bins)
+    np.testing.assert_allclose(carried[known], direct[known])
+
+
 @pytest.mark.parametrize(
     ("first", "second"),
     [

@@ -877,7 +877,12 @@ The mapping never guesses. Missing values stay missing: a coarse bin with any
 NaN fine bin is NaN. A clip's cut cells are listed in `split_parent_bins` and
 their pieces in `uncovered_child_bins`, which get NaN, because a count cannot
 be divided between pieces without knowing where in the cell each observation
-fell. A finer grid, a rotated or offset lattice, or an independently built
+fell. The same holds at the edge of an arena with holes: a fine bin next to an
+empty bin owns the boundary they share, and when the coarse grid gives that
+boundary to a different coarse bin, the fine bin is split and both coarse bins
+are uncovered, since a binned count cannot say how many samples lay exactly on
+the boundary. Estimate on the coarse environment when you need those bins. A
+finer grid, a rotated or offset lattice, or an independently built
 environment raises `ValueError`; re-estimate on the new environment from the
 original observations, or use `neurospatial.ops.map_probabilities` and
 `ops.resample_field`, which assign bins by nearest center and are

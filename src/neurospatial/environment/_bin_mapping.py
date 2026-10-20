@@ -68,11 +68,16 @@ class BinMapping(ReadOnlyArraysMixin):
         a truncated rebin, or in a coarse cell whose center fell outside the
         arena. Their values are not carried to the child.
     split_parent_bins : ndarray of intp, shape (n_split,)
-        Parent bins whose cell is divided between child bins, such as cells
-        a clip cut. They are in no pair, and their values are not carried.
+        Parent bins whose points are divided between child bins: cells a clip
+        cut, and grid cells that own a boundary point (next to an empty
+        neighbor) which the child grid gives to another cell. They are in no
+        pair, and their values are not carried.
     uncovered_child_bins : ndarray of intp, shape (n_uncovered,)
-        Child bins that contain no whole parent bin, such as the pieces of a
-        cut cell. Transfers give them NaN (or ``missing``).
+        Child bins whose value cannot be carried exactly: those that contain
+        no whole parent bin, such as the pieces of a cut cell, and those that
+        own points of a split parent bin. Transfers give them NaN (or
+        ``missing``), because a binned value cannot say how much of it lay on
+        the shared boundary.
     child_coverage : ndarray of float64, shape (n_child_bins,)
         Fraction of each child bin's area (or length, volume) covered by its
         mapped parent bins: 1 for an identical cell or a coarse cell made of
@@ -162,10 +167,9 @@ class BinMapping(ReadOnlyArraysMixin):
         totals: NDArray[np.float64] = np.full(
             (*array.shape[:-1], self.n_child_bins), np.nan
         )
-        covered, starts = self._groups()
-        totals[..., covered] = np.add.reduceat(
-            array[..., self.pairs[:, 0]], starts, axis=-1
-        )
+        children, starts, covered = self._groups()
+        reduced = np.add.reduceat(array[..., self.pairs[:, 0]], starts, axis=-1)
+        totals[..., children[covered]] = reduced[..., covered]
         return totals
 
     def rates(self, counts: ArrayLike, occupancy: ArrayLike) -> NDArray[np.float64]:
@@ -290,7 +294,7 @@ class BinMapping(ReadOnlyArraysMixin):
             missing,
             dtype=_category_dtype(array.dtype, missing),
         )
-        covered, starts = self._groups()
+        children, starts, covered = self._groups()
         mapped = array[..., self.pairs[:, 0]]
         first = mapped[..., starts]
         sizes = np.diff(np.append(starts, len(self.pairs)))
@@ -299,9 +303,10 @@ class BinMapping(ReadOnlyArraysMixin):
             starts,
             axis=-1,
         )
-        kept = result[..., covered]
-        kept[agree] = first[agree]
-        result[..., covered] = kept
+        keep = agree & covered
+        kept = result[..., children]
+        kept[keep] = first[keep]
+        result[..., children] = kept
         return result
 
     def summary(self) -> dict[str, Any]:
@@ -315,6 +320,9 @@ class BinMapping(ReadOnlyArraysMixin):
             ``n_split_parent_bins``, ``n_fully_covered_child_bins``,
             ``n_partly_covered_child_bins`` and ``n_uncovered_child_bins``.
         """
+        covered = np.ones(self.n_child_bins, dtype=bool)
+        covered[self.uncovered_child_bins] = False
+        coverage = self.child_coverage[covered]
         return {
             "kind": self.kind,
             "n_parent_bins": self.n_parent_bins,
@@ -323,11 +331,9 @@ class BinMapping(ReadOnlyArraysMixin):
             "n_mapped_parent_bins": len(self.pairs),
             "n_unmapped_parent_bins": len(self.unmapped_parent_bins),
             "n_split_parent_bins": len(self.split_parent_bins),
-            "n_fully_covered_child_bins": int(
-                np.count_nonzero(self.child_coverage == 1)
-            ),
+            "n_fully_covered_child_bins": int(np.count_nonzero(coverage == 1)),
             "n_partly_covered_child_bins": int(
-                np.count_nonzero((self.child_coverage > 0) & (self.child_coverage < 1))
+                np.count_nonzero((coverage > 0) & (coverage < 1))
             ),
             "n_uncovered_child_bins": len(self.uncovered_child_bins),
         }
@@ -345,11 +351,15 @@ class BinMapping(ReadOnlyArraysMixin):
             f"{counts['n_uncovered_child_bins']} uncovered)"
         )
 
-    def _groups(self) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
-        """Covered child bins and the row of ``pairs`` where each one starts."""
+    def _groups(
+        self,
+    ) -> tuple[NDArray[np.intp], NDArray[np.intp], NDArray[np.bool_]]:
+        """Paired child bins, the row of ``pairs`` where each starts, and
+        which of them are covered (not in ``uncovered_child_bins``)."""
         children = self.pairs[:, 1]
         starts = np.flatnonzero(np.r_[True, children[1:] != children[:-1]])
-        return children[starts], starts
+        covered = ~np.isin(children[starts], self.uncovered_child_bins)
+        return children[starts], starts, covered
 
     def _parent_array(self, values: ArrayLike, name: str, method: str) -> NDArray[Any]:
         """``values`` as an array with parent bins on its last axis."""
@@ -420,6 +430,7 @@ def _bin_mapping_from(child: Environment, parent: Environment) -> BinMapping:
     _refuse_dimensions(child, parent)
     parent_bins, child_bins = parent._binning, child._binning
     lattices = _shared_lattice(parent_bins, child_bins)
+    incomplete = np.zeros(0, dtype=np.intp)
     if isinstance(lattices, tuple):
         parent_grid, child_grid = lattices
         nested = _nested_pairs(parent_grid, child_grid, parent_bins, child_bins)
@@ -431,7 +442,10 @@ def _bin_mapping_from(child: Environment, parent: Environment) -> BinMapping:
                 finer=_nests(child_grid, parent_grid) is not None,
             )
         pairs, coverage = nested
-        split = np.zeros(0, dtype=np.intp)
+        split, incomplete = _ownership_splits(child, parent, parent_grid, pairs)
+        if len(split):
+            pairs = pairs[~np.isin(pairs[:, 0], split)]
+            coverage = _nested_coverage(pairs, parent_bins, child_bins)
         reason = "every parent bin lies outside this environment's bins"
     else:
         pairs, split = _identity_pairs(parent, child)
@@ -445,7 +459,7 @@ def _bin_mapping_from(child: Environment, parent: Environment) -> BinMapping:
         )
     if len(pairs) == 0:
         raise _no_pairs_error(child, parent, reason, finer=False)
-    return _assemble(pairs, split, coverage, parent.n_bins, child.n_bins)
+    return _assemble(pairs, split, coverage, parent.n_bins, child.n_bins, incomplete)
 
 
 def _assemble(
@@ -454,8 +468,14 @@ def _assemble(
     coverage: NDArray[np.float64],
     n_parent: int,
     n_child: int,
+    incomplete: NDArray[np.intp] | None = None,
 ) -> BinMapping:
-    """Sort the pairs and sort every bin into its category."""
+    """Sort the pairs and sort every bin into its category.
+
+    ``incomplete`` lists child bins that own boundary points of a split
+    parent bin; they keep their pairs but are uncovered, so transfers give
+    them NaN.
+    """
     pairs = pairs[np.lexsort((pairs[:, 0], pairs[:, 1]))]
     per_child = np.bincount(pairs[:, 1], minlength=n_child)
     mapped = np.zeros(n_parent, dtype=bool)
@@ -470,7 +490,10 @@ def _assemble(
         n_child_bins=n_child,
         unmapped_parent_bins=np.flatnonzero(unmapped).astype(np.intp),
         split_parent_bins=split.astype(np.intp),
-        uncovered_child_bins=np.flatnonzero(per_child == 0).astype(np.intp),
+        uncovered_child_bins=np.union1d(
+            np.flatnonzero(per_child == 0),
+            np.zeros(0, dtype=np.intp) if incomplete is None else incomplete,
+        ).astype(np.intp),
         child_coverage=coverage,
     )
 
@@ -578,6 +601,70 @@ def _refuse_dimensions(child: Environment, parent: Environment) -> None:
     )
 
 
+def _ownership_splits(
+    child: Environment,
+    parent: Environment,
+    parent_grid: RectilinearGrid,
+    pairs: NDArray[np.intp],
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+    """Parent cells whose owned points the child gives to another cell.
+
+    A grid cell next to an empty neighbor owns the boundary they share, and
+    the child grid may give that boundary to a different cell. Each cell's
+    interior, faces, edges and corners are probed once with both
+    environments' own point lookup: ownership is constant within each, since
+    every child edge is a parent edge.
+
+    Returns
+    -------
+    split : ndarray of intp
+        Paired parent bins with a point that the child gives to a bin other
+        than their pair, or to no bin. Unpaired parent bins are not checked:
+        their values are not carried, whichever child bin owns their edges.
+    incomplete : ndarray of intp
+        Child bins that own a point of a split parent bin, or are its pair.
+    """
+    owner = np.full(parent.n_bins, -1, dtype=np.intp)
+    owner[pairs[:, 0]] = pairs[:, 1]
+    cells = np.nonzero(parent_grid.active_mask)
+    per_axis = []
+    for axis, edges in enumerate(parent_grid.edges):
+        low, high = edges[cells[axis]], edges[cells[axis] + 1]
+        per_axis.append(np.stack([low, (low + high) / 2, high], axis=1))
+    offsets = np.array(np.meshgrid(*[range(3)] * len(per_axis), indexing="ij"))
+    offsets = offsets.reshape(len(per_axis), -1)
+    probes = np.stack(
+        [values[:, offsets[axis]] for axis, values in enumerate(per_axis)], axis=-1
+    ).reshape(-1, len(per_axis))
+    forward = _lattice(parent._binning)
+    assert forward is not None
+    probes = probes @ forward[0][:-1, :-1].T + forward[0][:-1, -1]
+    by_parent = parent.bin_at(probes)
+    by_child = child.bin_at(probes)
+    expected = np.where(by_parent >= 0, owner[np.maximum(by_parent, 0)], -1)
+    bad = (expected >= 0) & (by_child != expected)
+    split = np.unique(by_parent[bad]).astype(np.intp)
+    touched = np.concatenate([by_child[bad], owner[split]])
+    return split, np.unique(touched[touched >= 0]).astype(np.intp)
+
+
+def _nested_coverage(
+    pairs: NDArray[np.intp], parent: Binning, child: Binning
+) -> NDArray[np.float64]:
+    """Fraction of each child cell's measure covered by its paired parent cells."""
+    covered = np.bincount(
+        pairs[:, 1],
+        weights=parent.bins.sizes[pairs[:, 0]],
+        minlength=child.bins.n_bins,
+    )
+    ratio = covered / child.bins.sizes
+    # Edges that coincide within the tolerance leave gaps of that size; a
+    # cell made of whole parent cells is fully covered.
+    complete = np.abs(ratio - 1) <= 2 * child.bins.n_dims * _EDGE_RTOL
+    coverage: NDArray[np.float64] = np.where(complete, 1.0, np.minimum(ratio, 1.0))
+    return coverage
+
+
 def _lattice(binning: Binning) -> tuple[NDArray[np.float64], RectilinearGrid] | None:
     """The grid's map from lattice to environment coordinates, and its cells."""
     n_dims = binning.bins.n_dims
@@ -676,17 +763,7 @@ def _nested_pairs(
     owner[inside] = child_of_cell[tuple(positions[:, inside])]
     parents = np.flatnonzero(owner >= 0)
     pairs = np.column_stack([parents, owner[parents]]).astype(np.intp)
-    covered = np.bincount(
-        owner[parents],
-        weights=parent.bins.sizes[parents],
-        minlength=child.bins.n_bins,
-    )
-    ratio = covered / child.bins.sizes
-    # Edges that coincide within the tolerance leave gaps of that size; a
-    # cell made of whole parent cells is fully covered.
-    complete = np.abs(ratio - 1) <= 2 * len(positions) * _EDGE_RTOL
-    coverage = np.where(complete, 1.0, np.minimum(ratio, 1.0))
-    return pairs, coverage
+    return pairs, _nested_coverage(pairs, parent, child)
 
 
 def _lattice_reason(parent: RectilinearGrid, child: RectilinearGrid) -> str:
