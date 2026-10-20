@@ -201,8 +201,11 @@ def test_epoch_workflow_preserves_excluded_time():
         kept_times, kept_positions = restrict(times, positions, epochs=epochs)
     full = env.occupancy(times, positions, epochs=epochs)
     kept = env.occupancy(kept_times, kept_positions, epochs=epochs)
+    # The original arrays with epochs= are exact: [0, 0.3) and [0.4, 0.8).
     np.testing.assert_allclose(full, [0.7])
-    np.testing.assert_allclose(kept, full)
+    # Slicing drops the samples on each stop (0.3 s, 0.8 s), so each window's
+    # last 0.1 s interval is lost, which is why restrict() warns.
+    np.testing.assert_allclose(kept, [0.5])
     train = in_epochs(times, (0.0, 0.3), closed="left")
     test = in_epochs(times, (0.3, 0.8), closed="left")
     assert not np.any(train & test)

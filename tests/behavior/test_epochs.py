@@ -388,3 +388,18 @@ def test_as_intervals_bad_shape_raises() -> None:
     """An (n, 3) array is not a valid interval array."""
     with pytest.raises(ValueError, match=r"shape"):
         as_intervals(np.zeros((4, 3)), name="epochs")
+
+
+def test_restrict_warns_when_a_window_stop_closes_its_last_interval() -> None:
+    """One window, no bridging: the sample on its stop still bounds an interval."""
+    times = np.arange(6) / 10  # exact tenths, so a sample sits on the stop
+    positions = times[:, None]
+    with pytest.warns(UserWarning, match="ends at a window's stop"):
+        kept, _ = restrict(times, positions, epochs=(0.0, 0.3))
+    np.testing.assert_array_equal(kept, times[:3])
+    # A stop between samples closes no kept interval, so there is no warning.
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        restrict(times, positions, epochs=(0.0, 0.25))
