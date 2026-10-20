@@ -976,9 +976,9 @@ def compare_spatial_rates(
     ['scored', 'scored', 'scored']
     """
     population = _check_pair(rates_a, rates_b)
-    _check_choice("method", method, _METHODS)
-    _check_choice("unit_selection", unit_selection, _UNIT_SELECTIONS)
-    _check_choice("topology", topology, _TOPOLOGIES)
+    _check_choice("method", method, _METHODS, _COMPARE)
+    _check_choice("unit_selection", unit_selection, _UNIT_SELECTIONS, _COMPARE)
+    _check_choice("topology", topology, _TOPOLOGIES, _COMPARE)
     _check_min_common_bins(min_common_bins)
 
     if population:
@@ -986,6 +986,7 @@ def compare_spatial_rates(
             cast("SpatialRatesResult", rates_a),
             cast("SpatialRatesResult", rates_b),
             unit_selection,
+            _COMPARE,
         )
     else:
         label = _single_unit_label(
@@ -996,7 +997,7 @@ def compare_spatial_rates(
         only_a = only_b = unit_ids[:0]
 
     env_a, env_b = rates_a.env, rates_b.env
-    pairs, topology_differs = _bin_pairs(env_a, env_b, bin_mapping, topology)
+    pairs, topology_differs = _bin_pairs(env_a, env_b, bin_mapping, topology, _COMPARE)
     selected = None
     if bins is not None:
         selected = _validate_target_bins(
@@ -1020,7 +1021,7 @@ def compare_spatial_rates(
     )
 
     estimator_a, estimator_b = _estimator(rates_a), _estimator(rates_b)
-    _warn_on_estimator_differences(estimator_a, estimator_b)
+    _warn_on_estimator_differences(estimator_a, estimator_b, _COMPARE)
     settings = {
         "method": method,
         "unit_selection": unit_selection,
@@ -1159,7 +1160,7 @@ def _estimator(rates: SpatialRatesResult | SpatialRateResult) -> dict[str, Any]:
 def _warn_on_estimator_differences(
     estimator_a: dict[str, Any],
     estimator_b: dict[str, Any],
-    caller: _Caller = _COMPARE,
+    caller: _Caller,
     *,
     stacklevel: int = 3,
 ) -> None:

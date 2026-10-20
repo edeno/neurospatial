@@ -29,8 +29,6 @@ from neurospatial.environment import (
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
-_OPERATION = "compare_spatial_rates()"
-
 
 @dataclass(frozen=True)
 class _Caller:
@@ -46,13 +44,19 @@ class _Caller:
         What ``unit_selection='intersection'`` does, for the ``'exact'`` fix.
     """
 
-    operation: str = _OPERATION
-    first: str = "rates_a"
-    second: str = "rates_b"
-    intersection_effect: str = "compare the shared units and report the others"
+    operation: str
+    first: str
+    second: str
+    intersection_effect: str
 
 
-_COMPARE = _Caller()
+_COMPARE = _Caller(
+    operation="compare_spatial_rates()",
+    first="rates_a",
+    second="rates_b",
+    intersection_effect="compare the shared units and report the others",
+)
+_OPERATION = _COMPARE.operation
 # Bin differences in coordinate labels, which no bin_mapping can bridge.
 _LABEL_REASONS = ("coordinate systems", "units or coordinate frames")
 _MERGED_RATE_EXAMPLE = (
@@ -97,7 +101,7 @@ def _check_choice(
     argument: str,
     value: object,
     allowed: tuple[str, ...],
-    caller: _Caller = _COMPARE,
+    caller: _Caller,
 ) -> None:
     """Refuse an option outside its allowed values."""
     if value not in allowed:
@@ -137,7 +141,7 @@ def _match_units(
     rates_a: SpatialRatesResult,
     rates_b: SpatialRatesResult,
     unit_selection: str,
-    caller: _Caller = _COMPARE,
+    caller: _Caller,
 ) -> tuple[
     NDArray[Any], NDArray[np.intp], NDArray[np.intp], NDArray[Any], NDArray[Any]
 ]:
@@ -211,7 +215,7 @@ def _bin_pairs(
     env_b: Environment,
     bin_mapping: ArrayLike | None,
     topology: str,
-    caller: _Caller = _COMPARE,
+    caller: _Caller,
 ) -> tuple[NDArray[np.intp], bool]:
     """Pair bins that are the same place; return pairs and topology_differs.
 
@@ -261,7 +265,7 @@ def _validate_bin_mapping(
     env_a: Environment,
     env_b: Environment,
     differences: _EnvironmentDifferences,
-    caller: _Caller = _COMPARE,
+    caller: _Caller,
 ) -> NDArray[np.intp]:
     """Validate a one-to-one ``(n_pairs, 2)`` mapping between identical bins.
 
@@ -328,7 +332,7 @@ def _bin_refusal(
     reason: str,
     env_a: Environment,
     env_b: Environment,
-    caller: _Caller = _COMPARE,
+    caller: _Caller,
 ) -> tuple[str, str]:
     """The reason with what differs named, and the fix that reason needs.
 
@@ -369,7 +373,7 @@ def _bin_refusal(
     )
 
 
-def _refuse_repeats(mapping: NDArray[np.integer], caller: _Caller = _COMPARE) -> None:
+def _refuse_repeats(mapping: NDArray[np.integer], caller: _Caller) -> None:
     """Refuse many-to-one merges, then one-to-many splits."""
     for column, kind in ((1, "merge"), (0, "split")):
         values, counts = np.unique(mapping[:, column], return_counts=True)
