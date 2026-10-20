@@ -110,14 +110,38 @@ an analysis score. Export refuses existing files unless `overwrite=True`.
 
 A scene view also provides `seek(time)`, `select_time(start, stop)`, `export(path)`
 and `close()`. Times are recording seconds and selected windows are half-open.
-`view.native` exposes the underlying viewer. GPU viewing is available with
-`scene.show(backend="fastplotlib")`; export retains scene panels and scales, but
-does not capture camera changes or custom graphics added to the native viewer.
-Native adapters require a shared color scale; notebook scenes support an
-independent colormap and range for each named field.
-Scenes currently support 1-D and 2-D environments. Napari and 3-D viewing remain
-available through `env.animate_fields`; the scene interface rejects napari
-because that adapter cannot yet retain independent stream clocks.
+`view.native` exposes the underlying viewer. Choose
+`scene.show(backend="fastplotlib")` for GPU viewing or
+`scene.show(backend="napari")` for napari layers and volume viewing. Each field
+keeps its own recording clock, colormap, range and label in all three views.
+Napari uses a recording-time control to synchronize layers with signal,
+raster, epoch and projected-track panels.
+
+`view.export()` captures the current scientific view, including camera edits,
+layer styling and custom graphics. It excludes application controls and restores
+the recording time and playback state when it finishes, including after an
+encoding failure. Resize the native viewer before exporting to set the output
+size. Use `view.export(..., render="scene", dpi=150)` for the standard scene
+layout, or `scene.export(...)` without opening a viewer.
+
+<!-- docs-test: skip Requires a live GPU viewer and writes a video -->
+```python
+view = scene.show(backend="fastplotlib")
+view.seek(100.08)
+view.select_time(100.04, 100.12)
+# Camera and custom-graphic edits made through view.native appear in this clip.
+view.export("inspection.mp4", fps=30, speed=0.1)
+view.close()  # scene remains available
+```
+
+Scenes support 1-D, 2-D and 3-D environments; napari scenes require 2-D or 3-D.
+Regular 3-D cells retain their physical geometry in scene exports and become
+volumes in napari; layouts without cell geometry show values at bin centers.
+Three-dimensional headings require vectors, not planar angles, and point
+regions keep their full coordinates. Planar video, polygon regions and scale
+bars require a 2-D scene. In napari, named fields use
+separate layers; `layout="horizontal"` separates fields when no overlays are
+present. Omit `layout` when overlays must stay registered with the fields.
 
 For streams on different clocks, use
 `Animation(env, {"posterior": AnimationField(posterior, decode_times),
@@ -186,14 +210,16 @@ Choose the right backend for your workflow:
 | Interface | Position / pose / heading / events | Video | Time series | Spikes / epochs / object vectors | Multiple fields |
 |-----------|-----------------------------------|-------|-------------|----------------------------------|-----------------|
 | `Animation` notebook / export | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `Animation` napari | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Direct napari | ✓ | ✓ | ✓ | Warns and skips | ✓ |
 | Direct video / widget | ✓ | ✓ | ✓ | Warns and skips | — |
 | Direct HTML | ✓ | Warns and skips | Warns and skips | Warns and skips | — |
 | Fastplotlib | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-All interfaces draw regions. Scene preflight rejects an unsupported overlay
-instead of producing an incomplete view. The direct dispatcher retains its
-warning-and-skip behavior.
+All interfaces draw planar regions. Napari scenes reject polygon regions with
+holes; use the notebook view or standard scene export for those regions.
+Scene preflight rejects an unsupported overlay instead of producing an
+incomplete view. The direct dispatcher retains its warning-and-skip behavior.
 
 See [Animation Overlays](../animation_overlays.md) for detailed overlay documentation including VideoOverlay calibration.
 

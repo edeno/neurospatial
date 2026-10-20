@@ -21,9 +21,11 @@ Implement the animation review in an isolated worktree, retaining
 
 - `AnimationView` exposes recording-time `seek`, half-open `select_time`,
   `export`, `close`, and the native viewer.
-- Notebook scene viewing and export share the same renderer, scales and panels.
-  GPU views retain their native controls; exports preserve scene data and panels,
-  rather than arbitrary native camera changes or added graphics.
+- Notebook, fastplotlib and napari views preserve independent stream clocks and
+  scales. View exports capture the current scientific canvas and panels,
+  including native camera edits and custom graphics. `render="scene"` selects
+  the standard scene layout. Both paths use the same physical export clock and
+  atomic writer, restoring view time and playback even after encoding failures.
 - `EventInspector` retains separate identified event rows, even when intervals
   overlap. Metadata and annotations survive filtering, selection and table
   export. Selected event intervals drive the same scene export.
@@ -46,37 +48,63 @@ from headless rendering results.
 
 - Shared observed-interval sampling and gap-aware trails across renderers.
 - Unit/environment adapters and calibrated crop/resize transformations.
-- Reusable named scenes, native-clock sources, notebook/GPU view handles,
+- Reusable named scenes, native-clock sources, notebook/GPU/napari view handles,
   complete MP4/GIF export and projected track panels.
+- Three-dimensional scene rendering with physical cells or explicit bin-center
+  fallback, native napari volumes, and preserved spatial overlay coordinates.
+- Independent per-field scales and labels in spatial and projected-track panels.
+- Neutral video I/O for annotation and animation, with legacy import/pickle
+  compatibility; shared styling and track geometry without renderer dependencies.
 - Identified event filtering, selection, annotations and typed table export.
 - Backend repairs and explicit capability diagnostics.
 - Worked examples, changelog, public API snapshot and regression tests.
 
-The scene interface covers 1-D/2-D scenes and notebook/fastplotlib views.
-Napari's existing direct interface remains available; its scene adapter is
-explicitly refused until independent stream clocks can be preserved.
+The scene interface covers 1-D/2-D/3-D scenes and notebook/fastplotlib views,
+plus 2-D/3-D napari views. Native capture includes custom graphics and camera
+edits, with scientific dock panels included when visible.
 
-Validation includes pixel-identical notebook/export frames, a real MP4 checked
-with ffprobe (10 fps, three frames, 0.3 seconds), Ruff and mypy across all 297
-source files. GPU drawing is unavailable in this environment. Qt tests that
-construct a real viewer require a functioning display; the unmarked playback
-controller integration module and time-series dock class are excluded from the
-headless run. Napari's affine, layer data and support calculations are tested
-without constructing a viewer. Test imports were verified against this worktree.
+Initial validation included pixel-identical notebook/export frames, a real MP4
+checked with ffprobe (10 fps, three frames, 0.3 seconds), Ruff and mypy across
+all 297 source files. Test imports were verified against this worktree.
 
-Final animation, environment integration and public API run: **1,338 passed,
+Initial animation, environment integration and public API run: **1,338 passed,
 7 skipped, 174 deselected**. Executable animation documentation and the 33-test
 NWB overlay suite also pass.
 
-## Remaining architectural recommendations
+## Architectural follow-up
 
-- Extend the common scene/view interface to napari and 3-D scenes.
-- Support independent field color scales in the fastplotlib scene adapter.
-- Carry native viewer edits into export if exact native-view capture is needed;
-  current exports reproduce the scene, not native camera or custom graphics.
-- Move the video reader used by annotation into a shared video-I/O module, and
-  move pure styling helpers out of the Matplotlib parallel-rendering module.
-- Complete live GPU/Qt validation on a machine with the required display/GPU.
+The five remaining recommendations are implemented: napari/3-D scene adapters,
+independent fastplotlib scales, native-view capture, shared dependency
+extraction, and live GPU/Qt validation. Native tests use the Apple Metal adapter
+and Cocoa Qt/OpenGL outside the sandbox; offscreen Qt does not provide an
+OpenGL context on this machine.
+
+Follow-up validation:
+
+- Broad animation, environment integration and API suite: **1,340 passed,
+  6 skipped, 176 deselected**. Final scene/view/API checks after integration:
+  **57 passed, 3 deselected**.
+- Actual Metal rendering/capture and worker lifecycle suite: **67 passed**.
+  A 3-D view exports a real GIF with independent stream clocks, native camera
+  edits and custom graphics; decoded pixels match the captured canvas.
+- Actual Cocoa napari suite: **136 passed**; playback/dock integration and
+  window-close cleanup: **19 passed**.
+- Shared video/annotation, styling and projection checks pass, including
+  fresh-process import boundaries and cropped/prefetched reader pickles.
+- Executable animation documentation, Ruff/formatting, and mypy across all
+  **302 source files** pass.
+
+Export frames that are within floating-point roundoff of an observation are
+snapped to that stream's exact clock. This prevents `100.1 + 0.1` from holding
+the sample before `100.2`; genuinely intermediate times and half-open stops
+retain their meaning.
+
+Explicit limits remain where the data does not define a spatial embedding:
+3-D scenes reject planar video, polygon regions, scale bars and angle-only
+headings; point regions retain all three coordinates.
+Napari scenes require 2-D/3-D coordinates, reject polygon regions with holes,
+and refuse grid layout with overlays because napari separates individual
+layers. These restrictions are documented with supported alternatives.
 
 Legacy backend overlay coverage still differs. The capability checks make
 omissions explicit; complete scene rendering is available through the new

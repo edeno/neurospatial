@@ -17,7 +17,8 @@ and landmarks.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from itertools import pairwise
@@ -27,12 +28,30 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial.animation._parallel import (
+from neurospatial.animation._sampling import sample_at_times
+from neurospatial.animation._style import (
     _TRAIL_MAX_ALPHA,
     _event_visibility,
     _head_direction_color,
 )
-from neurospatial.animation._sampling import sample_at_times
+from neurospatial.animation._tracks import (
+    _checked_track as _checked_track,
+)
+from neurospatial.animation._tracks import (
+    _project as _project,
+)
+from neurospatial.animation._tracks import (
+    _projection as _projection,
+)
+from neurospatial.animation._tracks import (
+    track_extents as track_extents,
+)
+from neurospatial.animation._tracks import (
+    track_position as track_position,
+)
+from neurospatial.animation._tracks import (
+    track_segments as track_segments,
+)
 from neurospatial.animation.overlays import _OWN_SAMPLE_TYPES
 from neurospatial.environment._fastplotlib import (
     COLORBAR_WIDTH,
@@ -40,7 +59,6 @@ from neurospatial.environment._fastplotlib import (
     FieldGraphic,
     _fans,
     _rectangles,
-    bin_spacing,
     camera_options,
     draw_colorbar,
     draw_layers,
@@ -51,7 +69,6 @@ from neurospatial.environment._fastplotlib import (
     plot_title,
     xyz,
 )
-from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
@@ -277,6 +294,17 @@ class _Position:
             window = np.full((self._trail_points, self.data.data.shape[1]), np.nan)
             if row >= 0:
                 shown = self.clock.recent(row, self.frames)
+                if self.clock.times is not None:
+                    # Measure the trail from the actual display time. The
+                    # most recent observation can precede it by a sample.
+                    first = int(
+                        np.searchsorted(
+                            self.clock.times,
+                            time - self.frames * self.clock.frame_interval,
+                            side="left",
+                        )
+                    )
+                    shown = slice(first, row + 1)
                 recent = self.data.data[shown].copy()
                 if self.data.sample_valid is not None:
                     recent[~self.data.sample_valid[shown]] = np.nan
@@ -569,58 +597,6 @@ def video_to_env(data: VideoData, width: int, height: int) -> NDArray[np.float64
     return np.array(
         [[sx, 0.0, xmin + sx / 2], [0.0, -sy, ymax - sy / 2], [0.0, 0.0, 1.0]]
     )
-
-
-def track_extents(
-    env: Environment,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
-    """Where each bin starts and ends along a track; None off a track.
-
-    Linearized tracks (``linear_track``, ``from_graph``) measure distance
-    along the track, with the spacing between segments left empty; 1-D
-    environments use their own coordinate.
-    """
-    if env.is_linearized_track:
-        linearization = env._binning.linearization
-        assert linearization is not None
-        edges = np.asarray(linearization.grid_edges[0], dtype=np.float64)
-        active = linearization.active_mask
-        return edges[:-1][active], edges[1:][active]
-    if env.n_dims == 1:
-        centers, half = env.bin_centers[:, 0], env.bin_sizes / 2
-        return centers - half, centers + half
-    return None
-
-
-def track_segments(env: Environment) -> list[tuple[str, float, float]]:
-    """Each segment of a linearized track: its name, start and stop along it.
-
-    A segment is named by its nodes, such as ``"center–left"``, and spans
-    its bins. Empty off a linearized track.
-    """
-    from neurospatial.geometry._graph import _track_cell_segments
-
-    linearization = env._binning.linearization
-    cells = None if linearization is None else _track_cell_segments(linearization)
-    if linearization is None or cells is None:
-        return []
-    edges = np.asarray(linearization.grid_edges[0], dtype=np.float64)
-    segments = []
-    for u, v in linearization.edge_order:
-        own = np.flatnonzero(cells == linearization.graph.edges[u, v]["edge_id"])
-        segments.append(
-            (f"{u}\u2013{v}", float(edges[own[0]]), float(edges[own[-1] + 1]))
-        )
-    return segments
-
-
-def track_position(
-    env: Environment, positions: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Positions as distances along the track, shape (n,); NaN stays NaN."""
-    if env.is_linearized_track:
-        return np.asarray(env.to_linear(positions), dtype=np.float64)
-    return np.asarray(positions, dtype=np.float64)[:, 0]
 
 
 class _TimeWindow:
@@ -1108,66 +1084,6 @@ def _segment_joints(
         subplot.add_inf_line(joints, axis=axis, colors=_SEGMENT_COLOR, thickness=1.0)
 
 
-def _checked_track(env: Environment, track: Environment) -> Environment:
-    """``track``, if a 2-D environment's fields can be drawn along it."""
-    if not track.is_linearized_track:
-        raise ValueError(
-            "track must be a linearized track (Environment.from_graph or "
-            "linear_track): its bins give position along the maze. Why: the "
-            "2-D fields are drawn against position along it."
-        )
-    if env.is_linearized_track or env.n_dims != 2 or track.n_dims != 2:
-        raise ValueError(
-            "track= draws a 2-D environment's fields along a track of the same "
-            f"maze; the environment has {env.n_dims} dimensions"
-            + (" and is a track itself" if env.is_linearized_track else "")
-            + ". Fix: animate a 2-D environment, or leave track out."
-        )
-    require_cartesian(
-        env.coordinate_system,
-        "animate_fields(track=...)",
-        why="each bin's probability goes to the track bin nearest its center, "
-        "a distance in Cartesian coordinates",
-        fix="animate an allocentric 2-D environment, or leave track out",
-    )
-    return track
-
-
-def _projection(env: Environment, track: Environment) -> Any:
-    """Sparse matrix, shape (env.n_bins, track.n_bins), sending each of
-    ``env``'s bins to the track bin nearest its center.
-
-    Warns when many track bins receive no 2-D bin, as when the track's bins
-    are finer than the 2-D ones: those bins are drawn as missing.
-    """
-    from scipy.sparse import csr_matrix
-
-    _, nearest = track.bin_center_tree().query(env.bin_centers)
-    empty = 1.0 - len(np.unique(nearest)) / track.n_bins
-    if empty > 0.1:
-        warnings.warn(
-            f"{empty:.0%} of the track's bins are nearest to no 2-D bin, so "
-            "they are drawn as missing along the track. Why: each 2-D bin's "
-            "probability goes to one track bin. Fix: build the track with a "
-            f"bin_size of at least the 2-D bins' ({bin_spacing(env):.3g}).",
-            UserWarning,
-            stacklevel=_external_stacklevel(),
-        )
-    ones = np.ones(env.n_bins)
-    return csr_matrix(
-        (ones, (np.arange(env.n_bins), nearest)), shape=(env.n_bins, track.n_bins)
-    )
-
-
-def _project(rows: NDArray[np.float64], projection: Any) -> NDArray[np.float64]:
-    """Each row summed into the track bins; NaN where no finite value maps."""
-    finite = np.isfinite(rows)
-    total = np.asarray(np.where(finite, rows, 0.0) @ projection)
-    seen = np.asarray(finite.astype(np.float64) @ projection)
-    result: NDArray[np.float64] = np.where(seen > 0, total, np.nan)
-    return result
-
-
 def _field_stacks(
     fields: Sequence[Any] | NDArray[np.float64] | Mapping[str, Any],
     names: Sequence[str] | None,
@@ -1470,6 +1386,7 @@ def _frames_graphic(
             self._graphic = graphic
             self._reader = ThreadPoolExecutor(max_workers=1)
             self._closed = False
+            self._generation = 0
 
         @property
         def slicer(self) -> Any:
@@ -1492,10 +1409,16 @@ def _frames_graphic(
             time = at["time"]
             if self._closed:
                 return
+            generation = self._generation
             result = await run_in_thread_pool(self._reader, read, time)
-            if not self._closed:
+            if not self._closed and generation == self._generation:
                 show(time, result)
                 self._last_indices = at
+
+        def synchronize(self) -> None:
+            """Invalidate pending writes and finish any read already on the worker."""
+            self._generation += 1
+            self._reader.submit(lambda: None).result()
 
         def close(self) -> None:
             if self._closed:
@@ -1640,6 +1563,7 @@ class FastplotlibAnimation:
         colorbar_label: str = "",
         track: Environment | None = None,
         _field_at_time: Callable[[float], list[NDArray[np.float64]]] | None = None,
+        _field_styles: Sequence[Mapping[str, Any]] | None = None,
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -1659,6 +1583,8 @@ class FastplotlibAnimation:
             if getattr(video, "_owns_reader", False)
         ]
         stacks, names = _field_stacks(fields, layer_names)
+        if _field_styles is not None and len(_field_styles) != len(stacks):
+            raise ValueError("_field_styles must contain one style per field.")
         self._stacks = stacks
         self.n_frames = len(stacks[0])
         frame_times = np.asarray(frame_times, dtype=np.float64)
@@ -1765,38 +1691,64 @@ class FastplotlibAnimation:
         below = overlay_data is not None and any(
             item.z_order == "below" for item in overlay_data.videos
         )
-        # One color scale for every field, so they can be compared; each
-        # frame is read once for both the limits and the typical peak.
-        lows, highs = np.empty(0), np.empty(0)
-        if vmin is None or vmax is None or below:
-            extremes = [frame_extremes(stack) for stack in stacks]
-            lows = np.concatenate([frame_lows for frame_lows, _ in extremes])
-            highs = np.concatenate([frame_highs for _, frame_highs in extremes])
-        robust = robust_limits(lows, highs)
-        low = robust[0] if vmin is None else vmin
-        high = robust[1] if vmax is None else vmax
-        opaque_from = typical_peak(highs) if below else None
-        scale = ColorScale(cmap, low, high, "lightgray", opaque_from=opaque_from)
-        track_scale = scale
-        if self._projection is not None:
-            # Robust limits of every field summed along the track, from up to
-            # 2,000 frames of each spread over the recording.
-            sample = np.unique(np.linspace(0, self.n_frames - 1, 2_000).astype(int))
-            projected = np.concatenate(
-                [
-                    _project(
-                        np.stack([np.asarray(stack[i], dtype=float) for i in sample]),
-                        self._projection,
-                    )
-                    for stack in stacks
-                ]
+        # Legacy calls compare fields on one shared scale. Scene fields carry
+        # their own units and therefore get their own scales and colorbars.
+        styles = (
+            list(_field_styles)
+            if _field_styles is not None
+            else [{"cmap": cmap, "vmin": vmin, "vmax": vmax, "label": colorbar_label}]
+        )
+        scale_groups = (
+            [[stack] for stack in stacks] if _field_styles is not None else [stacks]
+        )
+        scales, labels, extensions, track_scales = [], [], [], []
+        for group, style in zip(scale_groups, styles, strict=True):
+            low, high = style.get("vmin", vmin), style.get("vmax", vmax)
+            lows, highs = np.empty(0), np.empty(0)
+            if low is None or high is None or (below and "opaque_from" not in style):
+                extremes = [frame_extremes(stack) for stack in group]
+                lows = np.concatenate([item[0] for item in extremes])
+                highs = np.concatenate([item[1] for item in extremes])
+            limits = robust_limits(lows, highs)
+            floor = limits[0] if low is None else low
+            ceiling = limits[1] if high is None else high
+            colormap = style.get("cmap", cmap)
+            opaque = style.get("opaque_from", typical_peak(highs)) if below else None
+            scale = ColorScale(
+                colormap, floor, ceiling, "lightgray", opaque_from=opaque
             )
-            track_scale = ColorScale(
-                cmap, *animation_colormap_range(projected, None, None), "lightgray"
-            )
-        # Computed limits leave about 1% of frames beyond each, a zero bottom
-        # none below it.
-        beyond = (vmin is None and low != 0.0, vmax is None)
+            scales.append(scale)
+            labels.append(style.get("label", colorbar_label))
+            extensions.append((low is None and floor != 0.0, high is None))
+            track_scale = scale
+            if self._projection is not None:
+                # Projection sums bins, so its units keep the field's label
+                # but need limits derived from that field's projected values.
+                sample = np.unique(np.linspace(0, self.n_frames - 1, 2_000).astype(int))
+                projected = np.concatenate(
+                    [
+                        _project(
+                            np.stack(
+                                [np.asarray(stack[i], dtype=float) for i in sample]
+                            ),
+                            self._projection,
+                        )
+                        for stack in group
+                    ]
+                )
+                track_scale = ColorScale(
+                    colormap,
+                    *animation_colormap_range(projected, None, None),
+                    "lightgray",
+                )
+            track_scales.append(track_scale)
+        if _field_styles is None:
+            scales *= len(stacks)
+            track_scales *= len(stacks)
+            labels *= len(stacks)
+            extensions *= len(stacks)
+        self._field_scales = scales
+        self._track_scales = track_scales
 
         def clock(times: NDArray[np.float64] | None) -> _Samples:
             return _Samples(times, self._frame_of, typical)
@@ -1823,7 +1775,9 @@ class FastplotlibAnimation:
         # No field panels on a 1-D environment.
         for i, (plot, stack) in enumerate(zip(self._plots, stacks, strict=False)):
             plot.camera.maintain_aspect = env._plot_labels().coordinates.equal_aspect
-            field = FieldGraphic(plot, env, np.asarray(stack[0], dtype=float), scale)
+            field = FieldGraphic(
+                plot, env, np.asarray(stack[0], dtype=float), scales[i]
+            )
             self._field_graphics.append(field)
             if overlay_data is not None and overlay_data.videos:
                 # Depth orders the field, the videos and everything else (at
@@ -1846,8 +1800,8 @@ class FastplotlibAnimation:
                 show_regions=show_regions,
                 region_alpha=region_alpha,
             )
-            if i == 0:
-                draw_colorbar(plot, scale, colorbar_label, beyond=beyond)
+            if i == 0 or _field_styles is not None:
+                draw_colorbar(plot, scales[i], labels[i], beyond=extensions[i])
             else:  # the same room, so the fields are drawn the same size
                 plot.docks["right"].size = COLORBAR_WIDTH
             if overlay_data is not None:
@@ -1863,12 +1817,12 @@ class FastplotlibAnimation:
         self.status = ""
         self._tracks: list[_PositionTime] = []
         if extents_along_track is not None:
-            for name, label in zip(track_names, names, strict=True):
+            for i, (name, label) in enumerate(zip(track_names, names, strict=True)):
                 panel = _PositionTime(
                     self.figure[name],
                     track_env,
                     extents_along_track,
-                    track_scale,
+                    track_scales[i],
                     self._clock,
                     window_seconds,
                     positions,
@@ -1880,12 +1834,17 @@ class FastplotlibAnimation:
                 self._tracks.append(panel)
         if self._projection is not None:
             # Summed along the track, a posterior is on its own scale.
-            for name in track_names:
+            for i, name in enumerate(track_names):
                 draw_colorbar(
-                    self.figure[name], track_scale, colorbar_label, beyond=(False, True)
+                    self.figure[name], track_scales[i], labels[i], beyond=(False, True)
                 )
-        elif not with_fields:  # the colorbar goes on the first track
-            draw_colorbar(self._plot, scale, colorbar_label, beyond=beyond)
+        elif not with_fields:
+            # Independent units need a labeled scale on every track panel.
+            for i, name in enumerate(track_names):
+                if i == 0 or _field_styles is not None:
+                    draw_colorbar(
+                        self.figure[name], scales[i], labels[i], beyond=extensions[i]
+                    )
         if self._projection is not None or not with_fields:
             # Every time panel keeps a colorbar's room, so their axes line up.
             for name in time_panels:
@@ -2138,6 +2097,87 @@ class FastplotlibAnimation:
             "time": float(np.clip(time - self._start, 0, self._clock[-1]))
         }
 
+    @contextmanager
+    def capture_session(self) -> Iterator[Callable[[float], NDArray[np.uint8]]]:
+        """Capture the native figure synchronously, then restore viewer state.
+
+        The yielded callable takes absolute recording times and returns RGB
+        pixels at the existing canvas size. Camera edits, added graphics and
+        the selected unit's rate map remain part of the rendered figure.
+        Playback and asynchronous field reads stay suspended until exit.
+        """
+        from fastplotlib.widgets.nd_widget._async import run_sync
+
+        if self._closed:
+            raise RuntimeError(
+                "This animation is closed. Create a new view before exporting."
+            )
+        self.show()
+        original_time = float(self.widget.indices["time"])
+        playing = self.widget.ui_sliders._playing
+        original_playing = dict(playing)
+        graphics = list(self.widget.ndgraphics)
+        paused = [graphic.pause for graphic in graphics]
+        cameras = [(plot.camera, plot.camera.get_state()) for plot in self.figure]
+
+        def update(time: float) -> None:
+            self.widget.indices = {"time": time}
+            self._show(time, self._read(time))
+            self._frames._last_indices = {"time": time}
+            for graphic, was_paused in zip(graphics, paused, strict=True):
+                if graphic is not self._frames and not was_paused:
+                    run_sync(graphic._set_indices_())
+
+        def capture(absolute_time: float) -> NDArray[np.uint8]:
+            if not np.isfinite(absolute_time):
+                raise ValueError("time must be a finite recording time in seconds.")
+            time = float(np.clip(absolute_time - self._start, 0, self._clock[-1]))
+            update(time)
+            # force_draw works on GUI, notebook and offscreen canvases. It
+            # submits all updated GPU buffers before the snapshot reads back.
+            self.figure.canvas.force_draw()
+            return np.ascontiguousarray(
+                self.figure.export_numpy(rgb=True), dtype=np.uint8
+            )
+
+        synchronized = False
+        try:
+            for dimension in playing:
+                playing[dimension] = False
+            for graphic in graphics:
+                graphic.pause = True
+            # Reads queued before export must never overwrite captured frames
+            # or the restored viewer when their callbacks resume afterward.
+            indices = self.widget.indices
+            revisions = getattr(indices, "_fetch_rev", {})
+            for graphic in graphics:
+                revisions[graphic] = revisions.get(graphic, 0) + 1
+            self._frames.synchronize()
+            synchronized = True
+            yield capture
+        finally:
+            try:
+                if synchronized:
+                    try:
+                        self._frames.synchronize()
+                    finally:
+                        update(original_time)
+            finally:
+                try:
+                    for camera, state in cameras:
+                        camera.set_state(state)
+                    if synchronized:
+                        self.figure.canvas.force_draw()
+                finally:
+                    for graphic, pause in zip(graphics, paused, strict=True):
+                        graphic.pause = pause
+                    playing.update(original_playing)
+
+    def capture_frame(self, time: float) -> NDArray[np.uint8]:
+        """Return the native figure's RGB pixels at an absolute recording time."""
+        with self.capture_session() as capture:
+            return capture(time)
+
     def close(self) -> None:
         """Stop worker reads and release the viewer and owned video files."""
         if self._closed:
@@ -2182,6 +2222,11 @@ class FastplotlibAnimation:
         """
         if self._canvas is None:
             self._canvas = self.widget.show(autoscale=False, **kwargs)
+            if self._canvas is None:
+                # fastplotlib's offscreen show initializes layout but returns
+                # None; retain its actual canvas for capture and cleanup.
+                self._canvas = self.figure.canvas
+                self.figure._output = self._canvas
             # fastplotlib turns y downward in every subplot with an image (a
             # video under each field); environments keep y up.
             for plot in self._plots:
@@ -2196,6 +2241,22 @@ class FastplotlibAnimation:
 
 # The most datapoints a series draws in its window before it thins them.
 _MAX_SERIES_POINTS = 100_000
+
+
+def _guard_series_updates(series: Any) -> None:
+    """Keep an older async series read from replacing the current time window."""
+    from concurrent.futures import CancelledError
+
+    update = series._update_graphic
+
+    def update_current(features: Any, indices: Mapping[str, Any]) -> None:
+        if dict(indices) != dict(series.indices):
+            # The NDWidget scheduler handles this as a superseded fetch.
+            # Cancel before it also records these indices as displayed.
+            raise CancelledError
+        update(features, indices)
+
+    series._update_graphic = update_current
 
 
 def _add_series(
@@ -2261,6 +2322,7 @@ def _add_series(
             thickness=item.linewidth,
             name=item.label,
         )
+        _guard_series_updates(series)
         drawn.append((series, float(rate)))
     subplot.title = "  |  ".join(item.label for item in group)
     subplot.camera.maintain_aspect = False

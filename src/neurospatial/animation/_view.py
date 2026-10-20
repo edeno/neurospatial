@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,14 +15,19 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.animation.scene import Animation, AnimationField
 
+_CaptureSession = Callable[
+    [], AbstractContextManager[Callable[[float], NDArray[np.uint8]]]
+]
+
 
 class AnimationView:
     """A scene's viewer and its selected recording interval.
 
     Use :meth:`Animation.show` to create a view. ``native`` exposes the
     backend's viewer. Times are absolute recording times in seconds.
-    Exports retain the scene's fields, overlays and scales; native camera
-    edits and graphics added directly to ``native`` are not exported.
+    Exports capture the current view, including native camera edits, layer
+    styling and custom graphics. Pass ``render="scene"`` to export the scene's
+    standard layout instead. Export restores the recording time and playback.
     Closing a view leaves its scene available for other views and exports.
     """
 
@@ -33,12 +39,14 @@ class AnimationView:
         seek: Callable[[float], None],
         close: Callable[[], None],
         read_time: Callable[[], float] | None = None,
+        capture_session: _CaptureSession | None = None,
     ) -> None:
         self.animation = animation
         self.native = native
         self._seek_native = seek
         self._close_native = close
         self._read_native_time = read_time
+        self._capture_session = capture_session
         self._closed = False
         self._time = float(animation.frame_times[0])
         self._selection = (
@@ -85,14 +93,46 @@ class AnimationView:
         self._selection = (float(start), float(stop))
         return self
 
-    def export(self, path: str | Path, **kwargs: Any) -> Path:
-        """Export the selected interval with the scene's panels and scales."""
+    def export(
+        self,
+        path: str | Path,
+        *,
+        render: Literal["view", "scene"] = "view",
+        **kwargs: Any,
+    ) -> Path:
+        """Export the selected interval with the current view or scene layout.
+
+        ``render="view"`` captures the visible scientific panels at their current
+        size and preserves native camera, styling and custom graphics. Export
+        pauses playback and restores the time/playback state even if encoding
+        fails. ``render="scene"`` uses the standard scene renderer and accepts
+        ``dpi`` and ``figsize``.
+        """
         self._require_open()
+        if render not in {"view", "scene"}:
+            raise ValueError("render must be 'view' or 'scene'.")
         kwargs.setdefault(
             "time_range",
             self._selection if self._selection[0] < self._selection[1] else None,
         )
-        return self.animation.export(path, **kwargs)
+        if render == "scene" or self._capture_session is None:
+            return self.animation.export(path, **kwargs)
+
+        from neurospatial.animation._export import prepare_export
+
+        if "dpi" in kwargs or "figsize" in kwargs:
+            raise TypeError(
+                "View capture uses the current viewer size. Resize the viewer "
+                "first, or use render='scene' with dpi/figsize."
+            )
+        plan = prepare_export(
+            path,
+            self.animation.frame_times,
+            sample_times=(field.times for field in self.animation.fields.values()),
+            **kwargs,
+        )
+        with self._capture_session() as capture:
+            return plan.write(capture)
 
     def close(self) -> None:
         """Release this view's controls and rendering resources, once."""
@@ -127,6 +167,7 @@ class _FieldFrames:
         self.field, self.times = field, times
         self.shape = (len(times), len(np.asarray(field.values[0])))
         self.ndim = 2
+        self.dtype = np.dtype(np.float64)
 
     def __len__(self) -> int:
         return len(self.times)
@@ -230,12 +271,37 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
             widget.close()
         close_container()
 
+    @contextmanager
+    def capture_session() -> Iterator[Callable[[float], NDArray[np.uint8]]]:
+        # Controls are outside the scientific image; the exported frames use
+        # precisely the resolution and panels currently displayed.
+        from PIL import Image
+
+        time, playing = view.time, play.playing
+        play.playing = False
+
+        def capture(time: float) -> NDArray[np.uint8]:
+            view.seek(time)
+            frame: NDArray[np.uint8] = np.asarray(
+                Image.open(io.BytesIO(image.value)).convert("RGB"), dtype=np.uint8
+            ).copy()
+            return frame
+
+        try:
+            yield capture
+        finally:
+            try:
+                view.seek(time)
+            finally:
+                play.playing = playing
+
     view = AnimationView(
         animation,
         container,
         seek=seek,
         close=close,
         read_time=lambda: float(slider.value),
+        capture_session=capture_session,
     )
     container.close = view.close
     slider.observe(changed, names="value")
@@ -255,14 +321,19 @@ def show_animation(
     if backend == "widget":
         return _notebook_view(animation, **kwargs)
     if backend == "napari":
-        raise NotImplementedError(
-            "The napari scene adapter cannot yet preserve independent source clocks "
-            "and recording-time playback. Use backend='widget' or 'fastplotlib' "
-            "for Animation.show(); frame-based napari animation remains available "
-            "through Environment.animate_fields()."
+        from neurospatial.animation.backends._napari_scene import build_napari_scene
+
+        handle = build_napari_scene(animation, **kwargs)
+        return AnimationView(
+            animation,
+            handle.viewer,
+            seek=handle.seek,
+            close=handle.close,
+            read_time=lambda: handle.time,
+            capture_session=handle.capture_session,
         )
     if backend != "fastplotlib":
-        raise ValueError("Use backend='widget' or 'fastplotlib'.")
+        raise ValueError("Use backend='widget', 'napari', or 'fastplotlib'.")
     if kwargs.get("dry_run", False):
         raise ValueError("Animation.show() creates a view; dry_run is not supported.")
 
@@ -276,13 +347,6 @@ def show_animation(
     )
     fields = list(animation.fields.values())
     first = fields[0]
-    scales = {(str(field.cmap), *field.color_limits()) for field in fields}
-    if len(scales) > 1:
-        raise ValueError(
-            f"The {backend} scene adapter uses one shared color scale. "
-            "Give the fields identical cmap/vmin/vmax, or use backend='widget' "
-            "to retain independent field scales."
-        )
     sources = {
         name: _FieldFrames(field, animation.frame_times)
         for name, field in animation.fields.items()
@@ -307,10 +371,25 @@ def show_animation(
         frame_times=animation.frame_times,
         overlay_data=data,
         _field_at_time=lambda time: list(animation.sample_fields(time).values()),
+        _field_styles=[
+            {
+                "cmap": kwargs.get("cmap", field.cmap),
+                "vmin": kwargs.get("vmin", field.color_limits()[0]),
+                "vmax": kwargs.get("vmax", field.color_limits()[1]),
+                "label": kwargs.get("colorbar_label", field.label or name),
+                "opaque_from": field._typical_peak(),
+            }
+            for name, field in animation.fields.items()
+        ],
         **options,
     )
     if native is None:
         raise ValueError("Animation.show() creates a view; dry_run is not supported.")
+    try:
+        native.show()
+    except Exception:
+        native.close()
+        raise
     return AnimationView(
         animation,
         native,
@@ -318,4 +397,5 @@ def show_animation(
         close=native.close,
         read_time=lambda: float(animation.frame_times[0])
         + float(native.widget.indices["time"]),
+        capture_session=native.capture_session,
     )

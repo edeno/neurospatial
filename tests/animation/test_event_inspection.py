@@ -246,7 +246,11 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
     data = OverlayData(videos=[video])
     monkeypatch.setattr(recording, "overlay_data", lambda **kwargs: data)
     native = SimpleNamespace(
-        widget=SimpleNamespace(indices={"time": 0.0}), seek=Mock(), close=Mock()
+        widget=SimpleNamespace(indices={"time": 0.0}),
+        show=Mock(),
+        seek=Mock(),
+        close=Mock(),
+        capture_session=Mock(),
     )
     render = Mock(return_value=native)
     monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
@@ -272,14 +276,24 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
     assert view.time == pytest.approx(10.35)
 
 
-def test_napari_scene_view_refuses_an_inaccurate_clock_adapter(recording, monkeypatch):
-    from neurospatial.animation.backends import napari_backend
+def test_napari_scene_view_uses_physical_clock_adapter(recording, monkeypatch):
+    from neurospatial.animation.backends import _napari_scene
 
-    render = Mock()
-    monkeypatch.setattr(napari_backend, "render_napari", render)
-    with pytest.raises(NotImplementedError, match="independent source clocks"):
-        recording.show(backend="napari")
-    render.assert_not_called()
+    handle = SimpleNamespace(
+        viewer=object(), time=10.2, seek=Mock(), close=Mock(), capture_session=Mock()
+    )
+    build = Mock(return_value=handle)
+    monkeypatch.setattr(_napari_scene, "build_napari_scene", build)
+    view = recording.show(backend="napari", show=False)
+    try:
+        build.assert_called_once_with(recording, show=False)
+        assert view.native is handle.viewer
+        assert view.time == 10.2
+        view.seek(10.35)
+        handle.seek.assert_called_once_with(10.35)
+    finally:
+        view.close()
+    handle.close.assert_called_once()
 
 
 def test_widget_playback_advances_physical_seconds_on_an_irregular_clock(recording):

@@ -35,6 +35,7 @@ _CAPABILITIES = MappingProxyType(
             _SPATIAL | {"videos", "timeseries"}, True, frozenset({2, 3}), True
         ),
         "fastplotlib": _BackendCapabilities(_ALL, True, frozenset({1, 2, 3}), True),
+        "napari_scene": _BackendCapabilities(_ALL, True, frozenset({2, 3}), True),
         "video": _BackendCapabilities(
             _SPATIAL | {"videos", "timeseries"}, False, frozenset({1, 2}), False
         ),
@@ -43,7 +44,7 @@ _CAPABILITIES = MappingProxyType(
         ),
         "html": _BackendCapabilities(_SPATIAL, False, frozenset({1, 2}), False),
         # Animation's notebook and export paths use the same complete renderer.
-        "scene": _BackendCapabilities(_ALL, True, frozenset({1, 2}), True),
+        "scene": _BackendCapabilities(_ALL, True, frozenset({1, 2, 3}), True),
     }
 )
 _OVERLAY_NAMES = {

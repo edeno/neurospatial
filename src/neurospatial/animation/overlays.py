@@ -42,7 +42,7 @@ from neurospatial.animation._sampling import observation_support, sample_at_time
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
-    from neurospatial.animation._video_io import VideoReaderProtocol
+    from neurospatial._video_io import VideoReaderProtocol
     from neurospatial.animation.skeleton import Skeleton
     from neurospatial.encoding.spatial import SpatialRatesResult
     from neurospatial.ops.transforms import Affine2D, VideoCalibration
@@ -2848,7 +2848,7 @@ class VideoOverlay:
             processed_size = (reader.shape[2], reader.shape[1])
         else:
             # File path - create _VideoReader
-            from neurospatial.animation._video_io import _VideoReader
+            from neurospatial._video_io import _VideoReader
 
             reader = _VideoReader(
                 self.source,

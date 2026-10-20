@@ -208,7 +208,7 @@ def annotate_track_graph(
 
     # 3. Load background image
     if video_path is not None:
-        from neurospatial.animation import _VideoReader
+        from neurospatial._video_io import _VideoReader
 
         video_path = Path(video_path)
         if not video_path.exists():

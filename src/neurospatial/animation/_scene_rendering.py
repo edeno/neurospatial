@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import copy
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -31,7 +29,7 @@ class SceneRenderer:
                 ("group", signal.group) if signal.group is not None else ("signal", i),
                 [],
             ).append(signal)
-        from neurospatial.animation.backends.fastplotlib_backend import (
+        from neurospatial.animation._tracks import (
             _projection,
             track_extents,
         )
@@ -58,7 +56,7 @@ class SceneRenderer:
         }
         self.track_limits = dict(self.limits)
         if self.projection is not None:
-            from neurospatial.animation.backends.fastplotlib_backend import _project
+            from neurospatial.animation._tracks import _project
             from neurospatial.animation.rendering import animation_colormap_range
 
             for name, field in scene.fields.items():
@@ -112,7 +110,9 @@ class SceneRenderer:
             height_ratios=[4] + [1] * self.panel_count,
         )
         for column, (name, field) in enumerate(scene.fields.items()):
-            ax = self.figure.add_subplot(grid[0, column])
+            ax = self.figure.add_subplot(
+                grid[0, column], projection="3d" if scene.env.n_dims == 3 else None
+            )
             low, high = self.limits[name]
             cmap = field.cmap
             below_video = any(
@@ -130,17 +130,20 @@ class SceneRenderer:
                 values = np.linspace(low, high, 256)
                 colors[:, 3] *= np.clip(values / field._typical_peak(), 0, 1)
                 cmap = ListedColormap(colors)
-            scene.env.plot_field(
-                field.sample(time),
-                ax=ax,
-                cmap=cmap,
-                nan_color=None if below_video else "lightgray",
-                vmin=low,
-                vmax=high,
-                colorbar=False,
-                scale_bar=scene.scale_bar or False,
-            )
-            if scene.env.n_dims == 2:
+            if scene.env.n_dims == 3:
+                self._field3d(ax, field.sample(time), cmap, low, high)
+            else:
+                scene.env.plot_field(
+                    field.sample(time),
+                    ax=ax,
+                    cmap=cmap,
+                    nan_color=None if below_video else "lightgray",
+                    vmin=low,
+                    vmax=high,
+                    colorbar=False,
+                    scale_bar=scene.scale_bar or False,
+                )
+            if scene.env.n_dims in (2, 3):
                 from matplotlib.cm import ScalarMappable
                 from matplotlib.colors import Normalize
 
@@ -201,6 +204,83 @@ class SceneRenderer:
         self.canvas.draw()
         return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())
 
+    def _field3d(
+        self, ax: Any, values: np.ndarray, cmap: Any, low: float, high: float
+    ) -> None:
+        """Draw actual grid cells, or explicitly labelled centers without cell geometry."""
+        from matplotlib import colormaps
+        from matplotlib.colors import Normalize
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+        env = self.scene.env
+        frame = env.binning.grid_frame
+        grid = frame.source if frame is not None else env.binning.rectilinear
+        colors = colormaps.get_cmap(cmap)(
+            Normalize(low, high)(np.nan_to_num(values, nan=low))
+        )
+        colors[~np.isfinite(values)] = (0.75, 0.75, 0.75, 0.4)
+        if grid is not None:
+            # All six faces of each active cell, including transformed grids.
+            corners = np.array(
+                [
+                    [0, 0, 0],
+                    [1, 0, 0],
+                    [1, 1, 0],
+                    [0, 1, 0],
+                    [0, 0, 1],
+                    [1, 0, 1],
+                    [1, 1, 1],
+                    [0, 1, 1],
+                ]
+            )
+            faces = np.array(
+                [
+                    [0, 1, 2, 3],
+                    [4, 5, 6, 7],
+                    [0, 1, 5, 4],
+                    [2, 3, 7, 6],
+                    [1, 2, 6, 5],
+                    [0, 3, 7, 4],
+                ]
+            )
+            indices = np.argwhere(grid.active_mask)
+            starts = np.column_stack(
+                [edge[indices[:, d]] for d, edge in enumerate(grid.edges)]
+            )
+            stops = np.column_stack(
+                [edge[indices[:, d] + 1] for d, edge in enumerate(grid.edges)]
+            )
+            vertices = (
+                starts[:, None, :] + corners[None, :, :] * (stops - starts)[:, None, :]
+            )
+            if frame is not None:
+                vertices = vertices @ frame.forward[:3, :3].T + frame.forward[:3, 3]
+            collection = Poly3DCollection(
+                vertices[:, faces, :].reshape(-1, 4, 3),
+                facecolors=np.repeat(colors, 6, axis=0),
+                edgecolors=(0.2, 0.2, 0.2, 0.15),
+                linewidths=0.2,
+            )
+            ax.add_collection3d(collection)
+        else:
+            ax.scatter(*env.bin_centers.T, c=colors, marker="s", s=35)
+            ax.text2D(
+                0.02,
+                0.02,
+                "Values at bin centers (cell geometry unavailable)",
+                transform=ax.transAxes,
+                fontsize=8,
+            )
+        ranges = np.asarray(env.dimension_ranges)
+        ax.set_xlim(*ranges[0])
+        ax.set_ylim(*ranges[1])
+        ax.set_zlim(*ranges[2])
+        ax.set_box_aspect(np.maximum(np.ptp(ranges, axis=1), np.finfo(float).eps))
+        for letter, setter in zip(
+            "xyz", (ax.set_xlabel, ax.set_ylabel, ax.set_zlabel), strict=True
+        ):
+            setter(f"{letter} ({env.units or 'units'})")
+
     def _time_panel(self, ax: Any, time: float) -> None:
         ax.set_facecolor("#20252b")
         ax.set_xlim(
@@ -236,12 +316,14 @@ class SceneRenderer:
         ax.set_ylim(low, high)
         self._time_panel(ax, time)
 
-    def _track(self, ax: Any, name: str, field: Any, time: float) -> None:
+    def _track(
+        self, ax: Any, name: str, field: Any, time: float, *, colorbar: bool = True
+    ) -> None:
         """Position-by-time cells respect the source's exact interval support."""
         from matplotlib.collections import PolyCollection
         from matplotlib.colors import Normalize
 
-        from neurospatial.animation.backends.fastplotlib_backend import (
+        from neurospatial.animation._tracks import (
             _project,
             track_position,
         )
@@ -271,7 +353,7 @@ class SceneRenderer:
         )
         collection.set_array(np.asarray(colors))
         ax.add_collection(collection)
-        if self.projection is not None:
+        if self.projection is not None and colorbar:
             self.figure.colorbar(
                 collection,
                 ax=ax,
@@ -301,10 +383,8 @@ class SceneRenderer:
     def _spatial(self, ax: Any, time: float) -> None:
         from matplotlib import colormaps
 
-        from neurospatial.animation._parallel import (
-            _event_visibility,
-            _render_regions_matplotlib,
-        )
+        from neurospatial.animation._parallel import _render_regions_matplotlib
+        from neurospatial.animation._style import _event_visibility
 
         scene = self.scene
         data = scene._overlay_data
@@ -312,7 +392,7 @@ class SceneRenderer:
         # Spatial overlays use environment coordinates. A native 1-D field has
         # physical position on x and field amplitude on y.
         def xy(point: np.ndarray) -> Any:
-            return point[:2] if len(point) > 1 else (point[0], 0)
+            return point if len(point) > 1 else (point[0], 0)
 
         spatial_xlim, spatial_ylim = ax.get_xlim(), ax.get_ylim()
         for video in data.videos:
@@ -345,10 +425,18 @@ class SceneRenderer:
                 )
         ax.set_xlim(spatial_xlim)
         ax.set_ylim(spatial_ylim)
-        if scene.show_regions and scene.env.n_dims == 2:
-            _render_regions_matplotlib(
-                ax, scene.env, scene.show_regions, scene.region_alpha
-            )
+        if scene.show_regions:
+            if scene.env.n_dims == 2:
+                _render_regions_matplotlib(
+                    ax, scene.env, scene.show_regions, scene.region_alpha
+                )
+            elif scene.env.n_dims == 3:
+                from neurospatial.animation._region_names import shown_region_names
+
+                for name in shown_region_names(scene.env, scene.show_regions):
+                    point = scene.env.regions[name].data
+                    ax.scatter(*point, color="white", alpha=scene.region_alpha, s=50)
+                    ax.text(*point, name)
         for position in data.positions:
             point = self._sample(position, position.data, time)
             if np.isfinite(point).all():
@@ -361,13 +449,12 @@ class SceneRenderer:
                     stop = int(np.searchsorted(times, time, side="right"))
                     start = max(0, stop - position.trail_length)
                     valid = position.interval_valid
-                    if position.data.shape[1] == 2:
+                    if position.data.shape[1] in (2, 3):
                         for index in range(start, stop - 1):
                             if valid is None or valid[index]:
                                 pair = position.data[index : index + 2]
                                 ax.plot(
-                                    pair[:, 0],
-                                    pair[:, 1],
+                                    *pair.T,
                                     color=position.color,
                                     alpha=0.6,
                                     zorder=100,
@@ -394,8 +481,8 @@ class SceneRenderer:
             if body.skeleton is not None:
                 for first, second in body.skeleton.edges:
                     pair = np.array([points[first], points[second]])
-                    if pair.shape[1] == 2 and np.isfinite(pair).all():
-                        ax.plot(pair[:, 0], pair[:, 1], color="white", zorder=100)
+                    if pair.shape[1] in (2, 3) and np.isfinite(pair).all():
+                        ax.plot(*pair.T, color="white", zorder=100)
         for heading in data.head_directions:
             sampled_heading = self._sample(
                 heading, heading.data, time, circular=heading.data.ndim == 1
@@ -408,7 +495,7 @@ class SceneRenderer:
             if (
                 np.isfinite(sampled_heading).all()
                 and np.isfinite(point).all()
-                and len(point) == 2
+                and len(point) in (2, 3)
             ):
                 angle = (
                     float(sampled_heading)
@@ -420,15 +507,25 @@ class SceneRenderer:
                     if heading.color in colormaps
                     else heading.color
                 )
-                ax.arrow(
-                    *point,
-                    heading.length * np.cos(angle),
-                    heading.length * np.sin(angle),
-                    color=color,
-                    width=heading.width,
-                    length_includes_head=True,
-                    zorder=103,
-                )
+                if len(point) == 3:
+                    norm = float(np.linalg.norm(sampled_heading))
+                    if norm > 0:
+                        ax.quiver(
+                            *point,
+                            *(heading.length * sampled_heading / norm),
+                            color=color,
+                            linewidth=heading.width,
+                        )
+                else:
+                    ax.arrow(
+                        *point,
+                        heading.length * np.cos(angle),
+                        heading.length * np.sin(angle),
+                        color=color,
+                        width=heading.width,
+                        length_includes_head=True,
+                        zorder=103,
+                    )
         for vectors in data.object_vectors:
             animal = self._sample(vectors, vectors.animal_positions, time)
             # Static object coordinates have no time axis.
@@ -456,10 +553,9 @@ class SceneRenderer:
                         s=vectors.object_size**2,
                         zorder=103,
                     )
-                if np.isfinite(animal).all() and len(animal) == 2:
+                if np.isfinite(animal).all() and len(animal) in (2, 3):
                     ax.plot(
-                        [animal[0], point[0]],
-                        [animal[1], point[1]],
+                        *np.array([animal, point]).T,
                         color=vectors.color,
                         linewidth=vectors.linewidth,
                         alpha=opacity,
@@ -512,67 +608,20 @@ def export_scene(
     codec: str | None,
 ) -> Path:
     """Stream complete scene frames to a file, replacing only on success."""
-    if not np.isfinite(fps) or fps <= 0 or not np.isfinite(speed) or speed <= 0:
-        raise ValueError("fps and speed must be positive finite numbers.")
-    if path.suffix.lower() not in (".mp4", ".gif"):
-        raise ValueError("Animation.export supports .mp4 and .gif paths.")
-    if path.exists() and not overwrite:
-        raise FileExistsError(
-            f"{path} already exists; pass overwrite=True to replace it."
-        )
-    bounds = np.asarray(
-        (scene.frame_times[0], scene.frame_times[-1])
-        if time_range is None
-        else time_range,
-        dtype=float,
-    )
-    if (
-        bounds.shape != (2,)
-        or not np.isfinite(bounds).all()
-        or bounds[1] < bounds[0]
-        or (time_range is not None and bounds[1] == bounds[0])
-    ):
-        raise ValueError(
-            "time_range must be a finite half-open (start, stop) pair with start < stop."
-        )
-    if bounds[0] < scene.frame_times[0] or bounds[1] > scene.frame_times[-1]:
-        raise ValueError("time_range must lie inside the scene's physical clock.")
-    steps = float((bounds[1] - bounds[0]) * fps / speed)
-    # Decimal recording clocks can leave 3.000000000000007 steps after
-    # subtraction. Snap only roundoff near an integer, then keep [start, stop).
-    nearest = round(steps)
-    if np.isclose(steps, nearest, rtol=1e-12, atol=1e-12):
-        steps = float(nearest)
-    count = max(1, int(np.ceil(steps)))
-    times = bounds[0] + np.arange(count) * speed / fps
-    if bounds[1] > bounds[0]:
-        times = times[times < bounds[1]]
-    try:
-        import imageio.v2 as imageio
-    except ImportError as exc:
-        raise ImportError(
-            "Animation.export requires imageio. Install video support with: pip install 'neurospatial[video]'."
-        ) from exc
+    from neurospatial.animation._export import prepare_export
 
-    renderer = SceneRenderer(scene, dpi=dpi, figsize=figsize)
-    descriptor, temporary = tempfile.mkstemp(
-        suffix=path.suffix, prefix=".animation-", dir=path.parent
+    plan = prepare_export(
+        path,
+        scene.frame_times,
+        time_range=time_range,
+        fps=fps,
+        speed=speed,
+        overwrite=overwrite,
+        codec=codec,
+        sample_times=(field.times for field in scene.fields.values()),
     )
-    os.close(descriptor)
+    renderer = SceneRenderer(scene, dpi=dpi, figsize=figsize)
     try:
-        options: dict[str, Any] = (
-            {"mode": "I", "duration": 1000 / fps, "loop": 0}
-            if path.suffix.lower() == ".gif"
-            else {"fps": fps, "codec": codec or "libx264", "macro_block_size": 2}
-        )
-        with cast("Any", imageio.get_writer(temporary, **options)) as writer:
-            for time in times:
-                writer.append_data(renderer.render(float(time)))
-        if overwrite:
-            Path(temporary).replace(path)
-        else:
-            path.hardlink_to(temporary)
+        return plan.write(renderer.render)
     finally:
         renderer.close()
-        Path(temporary).unlink(missing_ok=True)
-    return path

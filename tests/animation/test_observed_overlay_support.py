@@ -200,7 +200,7 @@ def test_infinity_is_not_missing_tracking(env, overlay):
 
 
 def test_file_video_processing_uses_actual_resized_dimensions(env, monkeypatch):
-    from neurospatial.animation import _video_io
+    from neurospatial import _video_io
 
     class Reader:
         n_frames = 2

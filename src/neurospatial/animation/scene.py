@@ -190,13 +190,15 @@ class Animation:
     ) -> None:
         self._closed = False
         if track is not None:
-            from neurospatial.animation.backends.fastplotlib_backend import (
+            from neurospatial.animation._tracks import (
                 _checked_track,
             )
 
             track = _checked_track(env, track)
-        if env.n_dims not in (1, 2):
-            raise ValueError("Animation supports one- or two-dimensional environments.")
+        if env.n_dims not in (1, 2, 3):
+            raise ValueError(
+                "Animation supports one-, two- or three-dimensional environments."
+            )
         if not np.isfinite(window_seconds) or window_seconds <= 0:
             raise ValueError("window_seconds must be positive finite seconds.")
         if not np.isfinite(region_alpha) or not 0 <= region_alpha <= 1:
@@ -249,6 +251,29 @@ class Animation:
         # Validate overlays once on the scene clock. Keep converted video readers
         # for repeated frame inspection rather than reopening the source.
         self._overlay_data = self.overlay_data(own_samples=True)
+        if env.n_dims == 3:
+            if any(item.data.ndim == 1 for item in self._overlay_data.head_directions):
+                self.close()
+                raise ValueError(
+                    "3D head directions require (n_samples, 3) unit vectors; "
+                    "angles alone do not specify a direction in 3D."
+                )
+            from neurospatial.animation._region_names import shown_region_names
+
+            planar_regions = any(
+                env.regions[name].kind != "point"
+                or np.asarray(env.regions[name].data).shape != (3,)
+                for name in (
+                    shown_region_names(env, show_regions) if show_regions else []
+                )
+            )
+            if planar_regions or scale_bar:
+                self.close()
+                raise ValueError(
+                    "3D Animation cannot place planar regions or a 2D scale bar "
+                    "unambiguously. Use 3D point regions and omit scale_bar; the 3D axes "
+                    "show physical coordinates and units."
+                )
 
     def _snapshot_overlay(self, overlay: Any) -> Any:
         result = copy.copy(overlay)

@@ -9,6 +9,18 @@
   export. `Animation.from_decoding` retains the result's environment and times.
   `AnimationView` adds recording-time seeking, interval selection and export,
   with native viewers available through `native`.
+- Extend scenes to 3-D and napari, preserving independent field clocks and
+  scales. Napari combines native layers with synchronized signal, raster,
+  epoch and projected-track panels; fastplotlib now supports a separate
+  colormap, range and label for each field.
+- `AnimationView.export()` captures the current native view, including camera
+  edits and custom graphics, and restores time and playback after success or
+  failure. Use `render="scene"` for the standard scene layout. Both paths use
+  the same half-open export clock and publish output files only after encoding
+  succeeds.
+- Move shared video reading out of animation so annotation can load frames
+  without importing rendering modules. Extract styling and track geometry into
+  lightweight shared helpers; existing reader imports and pickles remain usable.
 - `EventInspector` preserves overlapping event IDs and analysis metadata during
   filtering, selection and annotation, and exports selected event clips and
   typed review tables. Scene exports include multiple fields, spike rasters,

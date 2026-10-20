@@ -24,7 +24,7 @@ EventOverlay, TimeSeriesOverlay, VideoOverlay : class
     Discrete events, scalar signals and calibrated video overlays.
 SpikeRasterOverlay, EpochOverlay : class
     Spikes of many units as a raster, and intervals such as ripples, on the
-    animation's clock (fastplotlib).
+    animation's clock (scene views/export and fastplotlib).
 FastplotlibAnimation : class
     The interactive animation ``animate_fields(backend="fastplotlib")`` returns.
 ScaleBarConfig : class

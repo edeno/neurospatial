@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import CancelledError
 from itertools import pairwise
+from threading import Event
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import numpy as np
 import pytest
@@ -203,3 +206,102 @@ def test_custom_native_graphic_closes_both_worker_executors():
     for executor in (reader, slicer_executor):
         with pytest.raises(RuntimeError, match="shutdown"):
             executor.submit(lambda: None)
+
+
+def test_capture_synchronization_discards_an_in_flight_worker_read():
+    pytest.importorskip("fastplotlib.widgets.nd_widget")
+    started, release = Event(), Event()
+    show = Mock()
+
+    def read(time):
+        started.set()
+        assert release.wait(timeout=5)
+        return time
+
+    graphic = backend._frames_graphic(
+        SimpleNamespace(),
+        {"time": 0.0},
+        np.zeros((2, 3)),
+        lambda time: int(time),
+        read,
+        show,
+        SimpleNamespace(),
+    )
+
+    async def verify():
+        pending = asyncio.create_task(graphic._set_indices_({"time": 0.5}))
+        assert await asyncio.to_thread(started.wait, 5)
+        synchronizing = asyncio.create_task(asyncio.to_thread(graphic.synchronize))
+        # Synchronization invalidates writes before waiting for the worker.
+        while graphic._generation == 0:
+            await asyncio.sleep(0)
+        release.set()
+        await synchronizing
+        await pending
+        show.assert_not_called()
+        await graphic._set_indices_({"time": 0.75})
+        show.assert_called_once_with(0.75, 0.75)
+
+    try:
+        asyncio.run(asyncio.wait_for(verify(), timeout=10))
+    finally:
+        release.set()
+        graphic.close()
+
+
+def test_stale_time_series_read_cannot_overwrite_restored_viewer():
+    update = Mock()
+    series = SimpleNamespace(indices={"time": 0.25}, _update_graphic=update)
+    backend._guard_series_updates(series)
+    with pytest.raises(CancelledError):
+        series._update_graphic({"data": "old window"}, {"time": 0.75})
+    update.assert_not_called()
+    series._update_graphic({"data": "restored window"}, {"time": 0.25})
+    update.assert_called_once_with({"data": "restored window"}, {"time": 0.25})
+
+
+def _capture_view():
+    animation = object.__new__(backend.FastplotlibAnimation)
+    animation._closed = False
+    animation.show = Mock()
+    animation._frames = Mock(pause=False)
+    other = Mock(pause=True)
+    animation.widget = SimpleNamespace(
+        indices={"time": 0.25},
+        ui_sliders=SimpleNamespace(_playing={"time": True}),
+        ndgraphics=[animation._frames, other],
+    )
+    camera = Mock()
+    camera.get_state.return_value = {"width": 12.0}
+    animation.figure = MagicMock()
+    animation.figure.__iter__.return_value = [SimpleNamespace(camera=camera)]
+    return animation, camera, other
+
+
+def test_initial_capture_synchronization_failure_restores_controls():
+    pytest.importorskip("fastplotlib.widgets.nd_widget")
+    animation, camera, other = _capture_view()
+    animation._frames.synchronize.side_effect = RuntimeError("worker failed")
+    with (
+        pytest.raises(RuntimeError, match="worker failed"),
+        animation.capture_session(),
+    ):
+        pytest.fail("A failed setup must never yield the capture callable")
+    assert animation.widget.indices["time"] == 0.25
+    assert animation.widget.ui_sliders._playing["time"]
+    assert animation._frames.pause is False
+    assert other.pause is True
+    camera.set_state.assert_called_once_with({"width": 12.0})
+
+
+def test_failed_time_restore_still_restores_cameras_and_playback():
+    pytest.importorskip("fastplotlib.widgets.nd_widget")
+    animation, camera, other = _capture_view()
+    animation._read = Mock(side_effect=RuntimeError("read failed"))
+    with pytest.raises(RuntimeError, match="read failed"), animation.capture_session():
+        animation.widget.indices["time"] = 0.8
+    assert animation.widget.indices["time"] == 0.25
+    assert animation.widget.ui_sliders._playing["time"]
+    assert animation._frames.pause is False
+    assert other.pause is True
+    camera.set_state.assert_called_once_with({"width": 12.0})
