@@ -12,6 +12,16 @@ Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x, Fig. 1a.
 Y-maze sizes vary between labs; the 50 cm arms and 10 cm width are
 figure-consistent defaults, not a published apparatus.
 
+The maze has no landmarks. Wijnen et al. (2024) write that "the Y-maze is
+most often used for experiments on continuous SAB [spontaneous alternation
+behaviour]", "meaning that the animal is not removed from the maze after it
+has visited one arm but instead is able to continue visiting the other arms
+without interference of an experimenter". They trace spontaneous
+alternation to "the animals' innate explorative nature", so the task needs
+no reward: the arms have no reward ports, there is no start box, and the arm
+ends are plain regions. Add a reward-port landmark at an arm end for a
+rewarded Y-maze task.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_y_maze, YMazeDims

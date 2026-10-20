@@ -139,6 +139,20 @@ class TestMakeYMaze:
                 maze.env_track.regions[name].data, region.data, atol=1e-9
             )
 
+    def test_spontaneous_alternation_maze_has_no_reward_ports(self):
+        """The unrewarded Y-maze has no landmarks; arm ends stay regions."""
+        from neurospatial.simulation.mazes.y_maze import make_y_maze
+
+        maze = make_y_maze()
+        assert len(maze.env_2d.landmarks) == 0
+        assert len(maze.env_track.landmarks) == 0
+        assert list(maze.env_2d.regions) == [
+            "center",
+            "arm1_end",
+            "arm2_end",
+            "arm3_end",
+        ]
+
     def test_arm_angles_are_120_degrees_apart(self):
         """Arms should be separated by 120° angles."""
         from neurospatial.simulation.mazes.y_maze import YMazeDims, make_y_maze
