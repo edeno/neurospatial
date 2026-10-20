@@ -69,9 +69,9 @@ def validate_dt(dt: float) -> float:
 def bin_spikes_in_time(
     spike_times: Sequence[NDArray[np.float64]],
     dt: float,
+    *,
     t_start: float | None = None,
     t_stop: float | None = None,
-    *,
     epochs: Any = None,
     orient: Literal["time_x_neuron", "neuron_x_time"] = "time_x_neuron",
 ) -> tuple[NDArray[np.int64], NDArray[np.float64]]:

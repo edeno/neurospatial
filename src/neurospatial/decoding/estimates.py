@@ -319,6 +319,7 @@ def posterior_entropy(
 def credible_region(
     env: Environment,
     posterior: NDArray[np.float64],
+    *,
     level: float = 0.95,
 ) -> list[NDArray[np.int64]]:
     """Highest posterior density region containing specified probability mass.

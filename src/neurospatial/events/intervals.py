@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 def intervals_to_events(
     intervals: pd.DataFrame,
-    which: Literal["start", "stop", "both"] = "start",
     *,
+    which: Literal["start", "stop", "both"] = "start",
     start_column: str = "start_time",
     stop_column: str = "stop_time",
     preserve_columns: list[str] | None = None,
