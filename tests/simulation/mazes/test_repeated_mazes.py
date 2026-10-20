@@ -85,73 +85,21 @@ class TestRepeatedMazesSpecificBehavior:
         assert dims.n_junctions == 4
 
     def test_repeated_t_has_default_dimensions(self):
-        """Repeated T-maze should have default dimensions."""
+        """Repeated T-maze uses Tolman & Nyswander's (1927) Fig. 5 numbers."""
         dims = RepeatedTDims()
-        # RepeatedTDims has stem_spacing (not t_spacing/n_t_junctions)
-        assert dims.stem_spacing == 40.0
-        assert dims.stem_length == 60.0
-        assert dims.arm_length == 15.0
-        assert dims.top_spur_length == 20.0
-        assert dims.upper_lower_gap == 30.0
-        assert dims.width == 10.0
+        assert dims.width == pytest.approx(10.16)
+        assert dims.arm_length == pytest.approx(40.64)
+        assert dims.long_arm_length == pytest.approx(45.72)
 
-    def test_repeated_t_has_junction_regions(self):
-        """Repeated T-maze should have junction regions for each T."""
-        maze = make_repeated_t_maze(bin_size=3.0)
-        junction_regions = [r for r in maze.env_2d.regions if r.endswith("_junction")]
-        # Has 4 junction regions: upper_junction, lower_left_junction,
-        # lower_center_junction, upper_right_junction
-        assert len(junction_regions) == 4
-        expected = {
-            "upper_junction",
-            "lower_left_junction",
-            "lower_center_junction",
-            "upper_right_junction",
-        }
-        assert set(junction_regions) == expected
-
-    def test_repeated_t_has_t_arm_regions(self):
-        """Repeated T-maze should have arm regions extending from stems."""
-        maze = make_repeated_t_maze(bin_size=3.0)
-        # The maze has lower arm endpoints (lower_left_arm, lower_center_left_arm)
-        # Upper arms terminate at start/goal regions, not separate arm regions
-        arm_regions = [r for r in maze.env_2d.regions if "_arm" in r]
-        assert len(arm_regions) == 2
-        expected = {"lower_left_arm", "lower_center_left_arm"}
-        assert set(arm_regions) == expected
-
-    def test_repeated_t_has_zigzag_connections(self):
-        """Repeated T-maze should have multi-level connections.
-
-        This test verifies the alternating level pattern by checking that
-        junctions exist at both upper and lower horizontal levels.
-        """
-        import networkx as nx
-
-        maze = make_repeated_t_maze(bin_size=3.0)
-
-        # Verify junction regions exist at both levels
-        assert "upper_junction" in maze.env_2d.regions
-        assert "upper_right_junction" in maze.env_2d.regions
-        assert "lower_left_junction" in maze.env_2d.regions
-        assert "lower_center_junction" in maze.env_2d.regions
-
-        # Upper junctions should be at higher y than lower junctions
-        upper_y = maze.env_2d.regions["upper_junction"].data[1]
-        upper_right_y = maze.env_2d.regions["upper_right_junction"].data[1]
-        lower_left_y = maze.env_2d.regions["lower_left_junction"].data[1]
-        lower_center_y = maze.env_2d.regions["lower_center_junction"].data[1]
-
-        # Upper level junctions should be higher than lower level junctions
-        assert upper_y > lower_left_y
-        assert upper_y > lower_center_y
-        # Both upper junctions at same height
-        assert upper_y == upper_right_y
-        # Both lower junctions at same height
-        assert lower_left_y == lower_center_y
-
-        # The track graph should be connected
-        assert nx.is_connected(maze.env_track.connectivity)
+    def test_repeated_t_has_six_choice_and_blind_regions(self):
+        """Repeated T-maze names its six choice points and six blind alleys."""
+        regions = make_repeated_t_maze().env_2d.regions
+        assert [r for r in regions if r.startswith("choice_")] == [
+            f"choice_{k}" for k in range(1, 7)
+        ]
+        assert [r for r in regions if r.startswith("blind_")] == [
+            f"blind_{k}" for k in range(1, 7)
+        ]
 
     def test_hampton_court_has_goal(self):
         """Hampton Court maze should have a goal region."""
@@ -178,7 +126,7 @@ class TestRepeatedMazesComplexity:
     def test_hampton_court_is_most_complex(self):
         """Hampton Court should be the most complex repeated maze."""
         hampton = make_hampton_court_maze()
-        repeated_t = make_repeated_t_maze(bin_size=3.0)
+        repeated_t = make_repeated_t_maze()
         repeated_y = make_repeated_y_maze(bin_size=3.0)
 
         hampton_edges = hampton.env_track.connectivity.number_of_edges()
