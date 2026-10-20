@@ -712,6 +712,47 @@ def compute_viewshed(
     )
 
 
+def _angular_range(
+    fov: FieldOfView | float | None,
+) -> tuple[float, float, FieldOfView | None, bool]:
+    """Egocentric ray range ``(min, max)``, the FieldOfView, and full circle.
+
+    A number is the total field-of-view angle in radians.
+    """
+    if fov is None:
+        return -np.pi, np.pi, None, True
+    if isinstance(fov, (int, float)):
+        half_angle = float(fov) / 2
+        return -half_angle, half_angle, FieldOfView.symmetric(half_angle), False
+    return fov.right_angle, fov.left_angle, fov, False
+
+
+def _check_n_rays(n_rays: int) -> None:
+    """Raise ValueError unless ``n_rays`` is a positive integer."""
+    if (
+        isinstance(n_rays, (bool, np.bool_))
+        or not isinstance(n_rays, (int, np.integer))
+        or n_rays < 1
+    ):
+        raise ValueError("n_rays must be a positive integer.")
+
+
+def _check_viewshed_options(
+    binning: Binning,
+    arena: Arena,
+    *,
+    fov: FieldOfView | float | None,
+    n_rays: int,
+    boundary_source: Literal["physical", "analysis"],
+) -> None:
+    """Raise the errors `_viewshed` raises for these options, in its order."""
+    from neurospatial.geometry import boundary_geometry
+
+    _angular_range(fov)
+    _check_n_rays(n_rays)
+    boundary_geometry(binning, arena, boundary_source)
+
+
 def _viewshed(
     binning: Binning,
     arena: Arena,
@@ -735,22 +776,9 @@ def _viewshed(
     n_bins = binning.bins.n_bins
     indexes = CallIndexes() if indexes is None else indexes
 
-    # Determine angular range
-    full_circle = False
-    if fov is None:
-        min_angle = -np.pi
-        max_angle = np.pi
-        fov_obj = None
-        full_circle = True
-    elif isinstance(fov, (int, float)):
-        half_angle = float(fov) / 2
-        min_angle = -half_angle
-        max_angle = half_angle
-        fov_obj = FieldOfView.symmetric(half_angle)
-    else:
-        min_angle = fov.right_angle
-        max_angle = fov.left_angle
-        fov_obj = fov
+    min_angle, max_angle, fov_obj, full_circle = _angular_range(fov)
+    # Before np.linspace, which raises a bare TypeError for a non-integer.
+    _check_n_rays(n_rays)
 
     # Generate ray angles (in egocentric coordinates).
     # For the full circle, -pi and +pi are the same direction (behind), so
@@ -772,12 +800,6 @@ def _viewshed(
     walls = boundary_geometry(binning, arena, boundary_source)
     if position.shape != (2,):
         raise ValueError("position must have shape (2,).")
-    if (
-        isinstance(n_rays, (bool, np.bool_))
-        or not isinstance(n_rays, (int, np.integer))
-        or n_rays < 1
-    ):
-        raise ValueError("n_rays must be a positive integer.")
     if (
         not np.isfinite(heading)
         or not valid_observers(
@@ -1296,6 +1318,10 @@ def visibility_occupancy(
     resolved_epochs = as_intervals(epochs, name="epochs")
 
     binning, arena = env.binning, env.arena
+    # Checked here because no viewshed is computed when no interval is usable.
+    _check_viewshed_options(
+        binning, arena, fov=fov, n_rays=n_rays, boundary_source=boundary_source
+    )
     occupancy = np.zeros(binning.bins.n_bins, dtype=np.float64)
     if n_time < 2:
         return occupancy

@@ -965,6 +965,36 @@ class TestVisibilityOccupancySupport:
         with pytest.raises(ValueError, match=r"one heading per timestamp"):
             self._seen(open_square, times, positions, headings[:-1])
 
+    @pytest.mark.parametrize(
+        "options",
+        [
+            {"n_rays": 0},
+            {"n_rays": 2.5},
+            {"boundary_source": "nope"},
+            {"boundary_source": "physical"},  # no declared walls
+            {"fov": -1.0},
+        ],
+    )
+    @pytest.mark.parametrize("data", ["all_excluded", "single_sample"])
+    def test_invalid_viewshed_options_raise_without_usable_intervals(
+        self, open_square, walk, options, data
+    ):
+        """The errors match compute_viewshed's, even when no viewshed is needed."""
+        from neurospatial.ops.visibility import compute_viewshed, visibility_occupancy
+
+        times, positions, headings = walk
+        kwargs = {"n_rays": 36, "boundary_source": "analysis", **options}
+        with pytest.raises(Exception) as expected:
+            compute_viewshed(open_square, positions[0], headings[0], **kwargs)
+
+        if data == "all_excluded":
+            times, positions, headings = times * 100.0, positions, headings
+        else:
+            times, positions, headings = times[:1], positions[:1], headings[:1]
+        with pytest.raises(expected.type) as raised:
+            visibility_occupancy(open_square, times, positions, headings, **kwargs)
+        assert str(raised.value) == str(expected.value)
+
 
 class TestLineOfSightClear:
     """Tests for line_of_sight_clear helper function."""
