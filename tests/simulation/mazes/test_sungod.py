@@ -115,3 +115,18 @@ class TestMakeSungodMaze:
 
         assert with_track.env_track is not None
         assert without_track.env_track is None
+
+    def test_track_lies_on_the_maze_floor(self):
+        """Every track bin is on the 2-D floor, so 1-D and 2-D positions agree.
+
+        Each arm's track runs along the middle of the arm, not on a straight
+        line from the box center that would cut across the walls between arms.
+        """
+        from neurospatial.simulation.mazes.sungod import make_sungod_maze
+
+        for bin_size in (1.0, 2.0, 3.0):
+            maze = make_sungod_maze(bin_size=bin_size)
+            track = maze.env_track
+            assert track is not None
+            off = track.bin_centers[~maze.env_2d.contains(track.bin_centers)]
+            assert len(off) == 0, f"bin_size={bin_size}: off-floor bins {off[:5]}"

@@ -1,20 +1,20 @@
 """Sungod Maze environment for spatial navigation research.
 
-The Sungod Maze is a radial arm maze consisting of a central platform (box)
-with 8 radiating arms. Animals navigate from the center to arm endpoints
-to retrieve rewards. The maze design is optimized for studying spatial
-memory and decision-making.
+The Sungod Maze (Gillespie et al. 2021) is a central box with 8 radiating
+arms. "The maze was roughly 1 m x 1 m, surrounded by 16” external walls
+with transparent internal walls of the same height between arms", and "The
+maze environment contained 11 ports (home port, 2 center ports, and 8 arm
+ports)". The two center ports "were approximately 7.5 cm apart".
 
-This implementation is based on CVAT annotations of the actual Sungod maze,
-providing accurate geometry for simulation and analysis.
+This implementation traces the box, arms and ports from CVAT annotations of
+a video frame of the maze, scaled so the maze spans about 1 m.
 
-The maze has:
-- Central box platform (~20 cm x 35 cm)
-- 8 radiating arms at various angles
-- 11 reward wells (home port, 2 center ports, 8 arm ports)
+The geometry has:
 
-Reference: "The maze was roughly 1 m x 1 m, surrounded by 16'' external walls
-with transparent internal walls of the same height between arms."
+- a central box whose outline spans about 39 x 58 cm
+- 8 arms, 4.5-7.7 cm wide, fanning out from one side of the box
+- 11 reward wells: the home port, 2 center ports (6.9 cm apart) and 8 arm
+  ports
 
 Examples
 --------
@@ -24,6 +24,14 @@ Examples
 'cm'
 >>> maze.env_2d.n_bins > 0
 True
+
+References
+----------
+Gillespie, A. K., Astudillo Maya, D. A., Denovellis, E. L., Liu, D. F.,
+Kastner, D. B., Coulter, M. E., Roumis, D. K., Eden, U. T., & Frank, L. M.
+(2021). Hippocampal replay reflects specific past experiences rather than a
+plan for subsequent choice. Neuron, 109(19), 3149-3163.e6.
+https://doi.org/10.1016/j.neuron.2021.07.029
 """
 
 from __future__ import annotations
@@ -159,8 +167,8 @@ def make_sungod_maze(
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
         Whether to create linearized track graph (default: True).
-        The track graph uses a star topology with the center connected
-        to each arm endpoint.
+        The track joins the box center to each arm where it meets the box,
+        then runs along the middle of the arm to its far end.
 
     Returns
     -------
@@ -188,8 +196,9 @@ def make_sungod_maze(
     - center: Point region at box centroid
 
     Track Graph Topology:
-    - Star graph with center node connected to each arm endpoint
-    - center -> arm_0_end through center -> arm_7_end
+    - center -> arm_i_start: across the box to the middle of arm i's end at
+      the box
+    - arm_i_start -> arm_i_end: along the middle of arm i to its far end
 
     Examples
     --------
@@ -300,6 +309,34 @@ def make_sungod_maze(
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
+def _arm_centerline(
+    arm: Polygon, box_center: np.ndarray
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Midpoints of an arm's two ends, the one at the box first.
+
+    Parameters
+    ----------
+    arm : Polygon
+        Four-sided arm outline in cm: two long walls joined by two short ends.
+    box_center : np.ndarray, shape (2,)
+        Center of the box in cm.
+
+    Returns
+    -------
+    start, end : tuple[float, float]
+        Midpoint of the end at the box, and of the far end.
+    """
+    corners = np.asarray(arm.exterior.coords)[:-1]
+    sides = [(corners[k], corners[(k + 1) % len(corners)]) for k in range(len(corners))]
+    ends = sorted(sides, key=lambda side: np.linalg.norm(side[1] - side[0]))[:2]
+    midpoints = sorted(
+        ((a + b) / 2 for a, b in ends),
+        key=lambda p: np.linalg.norm(p - box_center),
+    )
+    start, end = midpoints
+    return (float(start[0]), float(start[1])), (float(end[0]), float(end[1]))
+
+
 def _create_sungod_track_graph(
     box_center: tuple[float, float],
     arm_polygons: list[Polygon],
@@ -309,8 +346,9 @@ def _create_sungod_track_graph(
 ) -> Environment:
     """Create the 1D linearized track graph for Sungod Maze.
 
-    The track graph uses a star topology with the center connected to
-    each arm endpoint (the furthest reward well in each arm direction).
+    Each arm is a path from the box center to the middle of the arm's end at
+    the box, then along the middle of the arm to its far end, so the whole
+    track lies on the maze floor.
 
     Parameters
     ----------
@@ -331,37 +369,27 @@ def _create_sungod_track_graph(
         1D linearized environment representing the maze track.
     """
     graph = nx.Graph()
-
-    # Add center node
     graph.add_node("center", pos=box_center)
 
-    # Find arm endpoints (furthest point from center for each arm)
-    arm_endpoints = []
+    # Each arm runs from the midpoint of its end at the box to the midpoint of
+    # its far end; the center joins each arm where it meets the box.
+    center = np.asarray(box_center)
+    edge_order = []
     for i, arm in enumerate(arm_polygons):
-        # Get all vertices of the arm polygon
-        vertices = list(arm.exterior.coords)[:-1]  # Exclude closing vertex
-
-        # Find the vertex furthest from center
-        max_dist = 0
-        endpoint = vertices[0]
-        for v in vertices:
-            dist = np.sqrt((v[0] - box_center[0]) ** 2 + (v[1] - box_center[1]) ** 2)
-            if dist > max_dist:
-                max_dist = dist
-                endpoint = v
-
-        arm_endpoints.append(endpoint)
-        graph.add_node(f"arm_{i}_end", pos=endpoint)
-
-    # Connect center to each arm endpoint
-    for i, endpoint in enumerate(arm_endpoints):
-        dist = np.sqrt(
-            (endpoint[0] - box_center[0]) ** 2 + (endpoint[1] - box_center[1]) ** 2
-        )
-        graph.add_edge("center", f"arm_{i}_end", distance=dist)
-
-    # Edge order for linearization
-    edge_order = [("center", f"arm_{i}_end") for i in range(len(arm_endpoints))]
+        start, end = _arm_centerline(arm, center)
+        graph.add_node(f"arm_{i}_start", pos=start)
+        graph.add_node(f"arm_{i}_end", pos=end)
+        for u, v in [("center", f"arm_{i}_start"), (f"arm_{i}_start", f"arm_{i}_end")]:
+            graph.add_edge(
+                u,
+                v,
+                distance=float(
+                    np.linalg.norm(
+                        np.subtract(graph.nodes[u]["pos"], graph.nodes[v]["pos"])
+                    )
+                ),
+            )
+            edge_order.append((u, v))
 
     # Create the 1D environment. The arms differ in width, so the track takes
     # the widest one: a sample within half that width of the centerline is
