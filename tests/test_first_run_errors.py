@@ -380,9 +380,9 @@ def test_segmentation_unknown_region(site, recording):
         detect_laps,
         detect_region_crossings,
         detect_runs_between_regions,
+        distance_to_boundary,
         segment_trials,
     )
-    from neurospatial.events import distance_to_boundary
 
     r = recording
     env = r.env

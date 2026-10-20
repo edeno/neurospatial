@@ -13,7 +13,8 @@ trajectory : Speed, movement and body heading, step lengths, turn angles,
 epochs : Restrict times / arrays / spike trains to time intervals (epochs);
     convert per-sample labels to epochs
 segmentation : Laps, trials, region crossings, runs
-navigation : Path efficiency, goal-directed metrics, path progress
+navigation : Path efficiency, goal-directed metrics, path progress,
+    distance to regions, boundaries and rewards
 decisions : Decision analysis, choice points, Voronoi boundaries
 vte : VTE (Vicarious Trial and Error) detection, head sweeping
 reward : Reward field computations
@@ -51,7 +52,9 @@ from neurospatial.behavior.navigation import (
     compute_goal_directed_metrics,
     compute_path_efficiency,
     cost_to_goal,
+    distance_to_boundary,
     distance_to_region,
+    distance_to_reward,
     goal_bias,
     goal_direction,
     goal_pair_direction_labels,
@@ -163,7 +166,9 @@ __all__ = [  # noqa: RUF022
     "compute_goal_directed_metrics",
     "compute_path_efficiency",
     "cost_to_goal",
+    "distance_to_boundary",
     "distance_to_region",
+    "distance_to_reward",
     "goal_bias",
     "goal_direction",
     "goal_pair_direction_labels",

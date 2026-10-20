@@ -168,6 +168,9 @@ Behavioral analysis built on trajectory + environment.
 - `behavior.resampling`: Distance resampling of observed runs
 - `behavior.navigation`: Path efficiency, goal-directed metrics,
   graph turn sequences
+- `distance_to_region()`, `distance_to_boundary()`, `distance_to_reward()`:
+  Per-sample distance to a goal, the environment's edge or the reward
+  location (GLM covariates)
 - `behavior.segmentation`: Laps, trials, region crossings,
   velocity-based segmentation
 - `detect_region_visits()`, `region_transitions()`: Observed visits and
@@ -188,7 +191,8 @@ Peri-event spike alignment and GLM regressors.
 - `align_spikes_to_events()`: Per-trial spike rasters
 - `align_continuous_to_events()`: Speed, heading or zone sampled around events
   only where observed, with per-kind means and category counts
-- `time_to_nearest_event()`, `distance_to_reward()`: GLM regressors
+- `time_to_nearest_event()`, `event_count_in_window()`, `event_indicator()`:
+  Time-based GLM regressors
 
 ### [neurospatial.ops.egocentric](neurospatial/ops/egocentric.md)
 

@@ -23,7 +23,9 @@ from neurospatial.behavior import (
     compute_vte_session,
     detect_laps,
     detect_runs_between_regions,
+    distance_to_boundary,
     distance_to_region,
+    distance_to_reward,
     graph_turn_sequence,
     mean_square_displacement,
     path_progress,
@@ -42,7 +44,6 @@ from neurospatial.encoding import (
     rate_map_centroid,
     spatial_autocorrelation,
 )
-from neurospatial.events import distance_to_boundary, distance_to_reward
 from neurospatial.ops import (
     compute_egocentric_distance,
     geodesic_rbf_basis,
