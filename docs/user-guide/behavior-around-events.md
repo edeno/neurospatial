@@ -394,7 +394,8 @@ change in which events you are averaging.
 - **Joined recordings.** If you concatenate recordings on one clock, mark the
   first frame of each later recording with `break_before`, and pass it to
   `compute_speed`, `heading_from_velocity`,
-  `compute_movement_angular_velocity` and `align_continuous_to_events`.
+  `compute_movement_angular_velocity`, `align_continuous_to_events` and
+  `add_positions`.
   Nothing is then smoothed, filled, interpolated or averaged across the join,
   and a jump in position between the recordings is not read as running.
   Passing each recording's `[start, stop)` as `epochs` does not do this:
