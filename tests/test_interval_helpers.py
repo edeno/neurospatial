@@ -237,3 +237,44 @@ def test_run_bounds(mask, expected):
     np.testing.assert_array_equal(run_sample_bounds(mask), expected)
     times = 100 + np.arange(mask.size + 1) / 10
     np.testing.assert_array_equal(run_time_bounds(times, mask), times[expected])
+
+
+def test_break_before_drops_only_the_interval_it_starts():
+    from neurospatial._intervals import interval_valid_mask, observed_runs
+
+    times = np.arange(6) * 0.1
+    breaks = np.array([True, False, False, True, False, False])
+
+    # Entry 0 is ignored; the break at sample 3 drops interval (2, 3) only.
+    mask = interval_valid_mask(times, max_gap=0.5, break_before=breaks)
+    np.testing.assert_array_equal(mask, [True, True, False, True, True])
+    runs = observed_runs(times, max_gap=0.5, epochs=None, break_before=breaks)
+    assert runs == [slice(0, 3), slice(3, 6)]
+
+
+def test_break_before_matches_an_equivalent_gap():
+    from neurospatial._intervals import interval_valid_mask
+
+    # A declared break and a gap longer than max_gap exclude the same interval.
+    regular = np.arange(6) * 0.1
+    gapped = np.r_[regular[:3], regular[3:] + 10.0]
+    breaks = np.zeros(6, dtype=bool)
+    breaks[3] = True
+    np.testing.assert_array_equal(
+        interval_valid_mask(regular, max_gap=0.5, break_before=breaks),
+        interval_valid_mask(gapped, max_gap=0.5),
+    )
+
+
+def test_all_excluding_breaks_are_named_in_the_warning():
+    from neurospatial._intervals import observed_interval_mask
+
+    times = np.arange(3) * 0.1
+    with pytest.warns(UserWarning, match="break_before"):
+        mask = observed_interval_mask(
+            times,
+            max_gap=0.5,
+            epochs=None,
+            break_before=np.array([False, True, True]),
+        )
+    assert not mask.any()

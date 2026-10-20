@@ -112,10 +112,9 @@ def _interval_gates(
     Combines ``max_gap``, ``epochs`` and declared breaks. Emits the shared
     excluded-interval warning at most once.
     """
-    gates = observed_interval_mask(times, max_gap=max_gap, epochs=epochs, result=result)
-    if break_before is not None:
-        gates = gates & ~break_before[1:]
-    return gates
+    return observed_interval_mask(
+        times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
+    )
 
 
 def _support_from_gates(

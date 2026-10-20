@@ -344,6 +344,7 @@ def interval_valid_mask(
     start_bin: NDArray[np.intp] | None = None,
     epochs: NDArray[np.float64] | None = None,
     spike_window: NDArray[np.float64] | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.bool_]:
     """Compute the per-interval validity mask shared by spikes and occupancy.
 
@@ -369,6 +370,8 @@ def interval_valid_mask(
         ([t_k, t_{k+1}) \\subseteq \\text{epochs})
         \\;\\wedge\\;
         ([t_k, t_{k+1}) \\subseteq \\text{spike\\_window})
+        \\;\\wedge\\;
+        \\neg\\,\\text{break\\_before}_{k+1}
 
     where ``start_bin = env.bin_at(positions)`` and ``\\Delta t = diff(times)``.
     Bounds are checked only when ``start_bin`` or ``env`` is supplied; speed
@@ -407,6 +410,9 @@ def interval_valid_mask(
         Already normalized, sorted and merged half-open windows in seconds.
         Each kept interval must lie wholly inside one row of each supplied
         window set.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared recording breaks: True at sample ``k + 1``
+        drops interval ``k``. Entry 0 is ignored.
 
     Returns
     -------
@@ -444,6 +450,8 @@ def interval_valid_mask(
     for windows in (epochs, spike_window):
         if windows is not None:
             valid_mask &= intervals_contain(windows, times[:-1], times[1:])
+    if break_before is not None:
+        valid_mask &= ~np.asarray(break_before, dtype=bool)[1:]
 
     return valid_mask
 
@@ -488,12 +496,14 @@ def observed_interval_mask(
     *,
     max_gap: float | None,
     epochs: Any,
+    break_before: NDArray[np.bool_] | None = None,
     result: str = "the result is empty or NaN rather than a measurement",
 ) -> NDArray[np.bool_]:
-    """Per-interval validity for position-only analyses (gap and epochs gates).
+    """Per-interval validity for position-only analyses (gap, epochs, breaks).
 
     ``epochs`` is the raw user argument; it is normalized here with
-    ``as_intervals(epochs, name="epochs")``. ``result`` names what an empty
+    ``as_intervals(epochs, name="epochs")``. ``break_before`` is already
+    validated (``validate_break_before``). ``result`` names what an empty
     selection produces in the warning, as in `warn_excluded_intervals`.
 
     Returns
@@ -502,9 +512,16 @@ def observed_interval_mask(
     """
     times = np.asarray(times, dtype=np.float64)
     resolved_epochs = as_intervals(epochs, name="epochs")
-    mask = interval_valid_mask(times, max_gap=max_gap, epochs=resolved_epochs)
+    mask = interval_valid_mask(
+        times, max_gap=max_gap, epochs=resolved_epochs, break_before=break_before
+    )
     warn_excluded_intervals(
-        times, mask, max_gap=max_gap, epochs=resolved_epochs, result=result
+        times,
+        mask,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        break_before=break_before,
+        result=result,
     )
     return mask
 
@@ -518,6 +535,7 @@ def warn_excluded_intervals(
     spike_window: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     start_bin_gate: bool = False,
+    break_before: NDArray[np.bool_] | None = None,
     result: str = "the result is empty or NaN rather than a measurement",
     suppress_hint: str = "",
 ) -> None:
@@ -549,6 +567,8 @@ def warn_excluded_intervals(
     start_bin_gate : bool, default=False
         Whether the mask also drops intervals at samples outside the
         environment or at NaN positions.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Declared recording breaks, named when any is set.
     result : str
         What an all-excluded mask leaves, e.g. ``"the rate map is empty"``.
     suppress_hint : str, optional
@@ -604,6 +624,12 @@ def warn_excluded_intervals(
         fixes.append(
             f"check that {'/'.join(windows)} overlap `times` (same clock, seconds)"
         )
+    if break_before is not None and np.any(np.asarray(break_before)[1:]):
+        gates.append("break_before")
+        fixes.append(
+            "check that break_before is True only at the first sample of each "
+            "new recording"
+        )
     if start_bin_gate:
         gates.append("samples out of bounds or at NaN positions")
         fixes.append("check that positions use the environment's coordinates")
@@ -616,8 +642,14 @@ def warn_excluded_intervals(
 
 
 def observed_runs(
-    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
+    times: NDArray[np.float64],
+    *,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> list[slice]:
     """One sample slice per maximal run of valid intervals, in time order."""
-    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    mask = observed_interval_mask(
+        times, max_gap=max_gap, epochs=epochs, break_before=break_before
+    )
     return [slice(int(a), int(b) + 1) for a, b in run_sample_bounds(mask)]
