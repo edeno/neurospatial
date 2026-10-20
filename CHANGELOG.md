@@ -4,6 +4,33 @@
 
 ### Breaking
 
+- Options of public free functions are keyword-only, as `Environment`
+  method options already were; data stays positional, and a test rejects any
+  new positional option. This covers defaulted options (levels, kinds,
+  calibration scales, NWB names and descriptions, seeds, plot settings) and
+  required ones (bin widths `dt` and `bin_size`, sampling rates, durations,
+  thresholds such as `min_speed`, counts, radii and NWB table names). An NWB
+  reader or writer given a former positional option raises a `TypeError`
+  that shows the corrected call. `large_session_napari_config` no longer
+  takes `sample_rate_hz`, which it ignored.
+
+  ```python
+  # before
+  decode_position(env, counts, models, 0.025)
+  bin_spikes_in_time(spike_times, 0.025)
+  segment_by_velocity(times, positions, 5.0)
+  credible_region(env, posterior, 0.9)
+  read_position(nwbfile, "behavior", "xy")
+  open_field_session(60.0)
+  # after
+  decode_position(env, counts, models, dt=0.025)
+  bin_spikes_in_time(spike_times, dt=0.025)
+  segment_by_velocity(times, positions, min_speed=5.0)
+  credible_region(env, posterior, level=0.9)
+  read_position(nwbfile, processing_module="behavior", position_name="xy")
+  open_field_session(duration=60.0)
+  ```
+
 - Every time window is half-open, `[start, stop)`, the convention analysis
   `epochs=` and `labels_to_epochs` already used, so adjacent windows never
   share a spike or event:
