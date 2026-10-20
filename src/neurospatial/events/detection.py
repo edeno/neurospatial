@@ -16,13 +16,14 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import (
     as_intervals,
     observed_interval_mask,
     run_time_bounds,
 )
+from neurospatial._observation import validate_break_before
 
 
 def add_positions(
@@ -33,6 +34,7 @@ def add_positions(
     timestamp_column: str = "timestamp",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> pd.DataFrame:
     """
     Add spatial coordinates to events by interpolating from trajectory.
@@ -63,6 +65,10 @@ def add_positions(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -82,11 +88,13 @@ def add_positions(
         If the trajectory has fewer than 2 samples.
         If all trajectory ``times`` are identical.
         If trajectory ``times`` contain non-finite values.
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     Positions are available only within each run's closed sample span
     ``[times[first], times[last]]``. Events exactly at either endpoint get
@@ -104,7 +112,9 @@ def add_positions(
 
     Events with NaN timestamps will have NaN positions.
 
-    If trajectory times are unsorted, they will be sorted internally.
+    If trajectory times are unsorted, they will be sorted internally. A
+    ``break_before`` refers to the input order: after sorting, samples that
+    came from different recordings are never interpolated between.
 
     Examples
     --------
@@ -167,6 +177,7 @@ def add_positions(
             "  WHY: Each position sample must have a corresponding timestamp.\n"
             "  Fix: Ensure positions.shape[0] == times.shape[0]."
         )
+    breaks = validate_break_before(break_before, len(times), call="add_positions")
 
     # Ensure positions is 2D
     if positions.ndim == 1:
@@ -223,6 +234,12 @@ def add_positions(
     sort_idx = np.argsort(times)
     sorted_times = times[sort_idx]
     sorted_positions = positions[sort_idx]
+    sorted_breaks = None
+    if breaks is not None:
+        # A break separates recordings in the input order. After sorting, a
+        # break falls wherever neighbouring samples come from different ones.
+        recording = np.cumsum(np.r_[False, breaks[1:]])[sort_idx]
+        sorted_breaks = np.r_[False, recording[1:] != recording[:-1]]
 
     # Interpolate positions at event times
     # Preserve linear interpolation only inside the tracked span.
@@ -241,7 +258,9 @@ def add_positions(
 
     runs = run_time_bounds(
         sorted_times,
-        observed_interval_mask(sorted_times, max_gap=max_gap, epochs=epochs),
+        observed_interval_mask(
+            sorted_times, max_gap=max_gap, epochs=epochs, break_before=sorted_breaks
+        ),
     )
     observed = np.zeros(len(event_times), dtype=bool)
     if len(runs):
