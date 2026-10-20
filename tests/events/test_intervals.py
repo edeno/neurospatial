@@ -563,8 +563,8 @@ class TestFilterByIntervals:
         assert len(result) == 3  # Events at 1.0, 5.0, 7.0
         assert_allclose(result["timestamp"].values, [1.0, 5.0, 7.0])
 
-    def test_event_at_interval_boundary_included(self):
-        """Test events at exact interval boundaries are included."""
+    def test_interval_is_half_open(self):
+        """An event at the interval start is kept; one at the stop is not."""
         from neurospatial.events.intervals import filter_by_intervals
 
         events = pd.DataFrame(
@@ -581,7 +581,8 @@ class TestFilterByIntervals:
 
         result = filter_by_intervals(events, intervals, include=True)
 
-        assert len(result) == 2  # Both boundary events included
+        # Half-open [start, stop): the event at the start is in, the one at the stop out.
+        assert_allclose(result["timestamp"].values, [2.0])
 
     def test_overlapping_intervals(self):
         """Test filtering with overlapping intervals."""
@@ -601,9 +602,8 @@ class TestFilterByIntervals:
 
         result = filter_by_intervals(events, intervals, include=True)
 
-        # Events at 3.0, 5.0, 7.0 are within at least one interval
-        assert len(result) == 3
-        assert_allclose(result["timestamp"].values, [3.0, 5.0, 7.0])
+        # Events at 3.0 and 5.0 are within [2, 5) or [4, 7); 7.0 is a stop.
+        assert_allclose(result["timestamp"].values, [3.0, 5.0])
 
     def test_empty_intervals_with_include(self):
         """Test empty intervals with include=True returns empty."""
@@ -786,7 +786,7 @@ class TestFilterByIntervals:
         # Check no spikes in artifact periods
         for _, row in artifacts.iterrows():
             mask = (clean_spikes["timestamp"] >= row["start_time"]) & (
-                clean_spikes["timestamp"] <= row["stop_time"]
+                clean_spikes["timestamp"] < row["stop_time"]
             )
             assert not mask.any()
 

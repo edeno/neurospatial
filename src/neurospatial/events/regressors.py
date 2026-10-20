@@ -237,7 +237,7 @@ def event_count_in_window(
         E.g., (-1.0, 0.0) counts events in previous 1 second.
         E.g., (0.0, 1.0) counts events in next 1 second.
         E.g., (-0.5, 0.5) counts events within +/- 0.5 seconds.
-        Window boundaries are inclusive.
+        Half-open: ``[sample_time + start, sample_time + stop)``.
 
     Returns
     -------
@@ -249,7 +249,7 @@ def event_count_in_window(
     ------
     ValueError
         If sample_times or event_times contain NaN or Inf values.
-        If window start > window end.
+        If window start >= window stop.
 
     Notes
     -----
@@ -259,8 +259,11 @@ def event_count_in_window(
     - Count licks before reward: ``window=(-1.0, 0.0)``
     - Count spikes around event: ``window=(-0.5, 0.5)``
 
-    Window boundaries are inclusive on both ends, so an event exactly
-    at ``sample_time + window[0]`` or ``sample_time + window[1]`` is counted.
+    Windows are half-open, ``[sample_time + start, sample_time + stop)``: an
+    event exactly at the start is counted and one exactly at the stop is not.
+    Windows of samples ``bin_size`` apart with ``window=(-bin_size / 2,
+    bin_size / 2)`` therefore tile time, and each event counts at exactly one
+    sample.
 
     Examples
     --------
@@ -315,11 +318,14 @@ def event_count_in_window(
 
     # Validate window
     window_start, window_end = window
-    if window_start > window_end:
+    if window_start >= window_end:
         raise ValueError(
-            f"window start ({window_start}) must be <= window end ({window_end}).\n"
-            "  WHY: Window defines a time range [start, end] relative to sample.\n"
-            "  Fix: Use window=(start, end) where start <= end."
+            f"window start ({window_start}) must be before its stop ({window_end}).\n"
+            "  WHY: Window is the half-open range [start, stop) relative to each "
+            "sample, so a window with stop <= start holds no time.\n"
+            "  Fix: Use window=(start, stop) with start < stop, e.g. "
+            "window=(-bin_size / 2, bin_size / 2) to count each event at the "
+            "sample nearest it."
         )
 
     # Handle empty sample_times
@@ -342,7 +348,7 @@ def event_count_in_window(
     # left_indices: first event >= window_start
     # right_indices: first event > window_end (so count = right - left)
     left_indices = np.searchsorted(sorted_events, window_starts, side="left")
-    right_indices = np.searchsorted(sorted_events, window_ends, side="right")
+    right_indices = np.searchsorted(sorted_events, window_ends, side="left")
 
     # Count = number of events in [window_start, window_end]
     counts = right_indices - left_indices
@@ -354,7 +360,7 @@ def event_indicator(
     sample_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
     *,
-    window: tuple[float, float] = (0.0, 0.0),
+    window: tuple[float, float],
 ) -> NDArray[np.bool_]:
     """
     Binary indicator of whether an event occurs near each sample time.
@@ -369,13 +375,12 @@ def event_indicator(
         Sample timestamps.
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps.
-    window : tuple[float, float], default=(0.0, 0.0)
-        Time window (start, end) relative to sample_time (seconds).
-        Creates a window [sample_time + start, sample_time + end].
-        If (0.0, 0.0), only exact matches count (sample_time == event_time).
-        E.g., (-0.5, 0.5) matches events within +/- 0.5 seconds.
-        E.g., (-1.0, 0.0) matches events in the previous 1 second.
-        Window boundaries are inclusive.
+    window : tuple[float, float]
+        Time window (start, stop) relative to sample_time (seconds), half-open
+        ``[sample_time + start, sample_time + stop)``. Required: no window is
+        right for every sampling rate. For time-binned samples ``bin_size``
+        apart, ``(-bin_size / 2, bin_size / 2)`` marks each event at exactly
+        one sample. E.g., (-1.0, 0.0) matches events in the previous 1 second.
 
     Returns
     -------
@@ -386,19 +391,18 @@ def event_indicator(
     ------
     ValueError
         If sample_times or event_times contain NaN or Inf values.
-        If window start > window end.
+        If window start >= window stop.
 
     Notes
     -----
     Common use cases:
 
-    - Binary event regressor: ``window=(0.0, 0.0)`` for impulse at event time
-    - Smoothed indicator: ``window=(-bin_size/2, bin_size/2)`` for time-binned data
+    - Impulse regressor for time-binned data: ``window=(-bin_size/2, bin_size/2)``
+      marks each event at the one sample whose bin holds it
     - Event presence detection: ``window=(-0.1, 0.1)`` for events within 100ms
 
-    Window boundaries are inclusive, so events exactly at
-    ``sample_time + start`` or ``sample_time + end`` are included
-    (returns True).
+    Windows are half-open, so an event exactly at ``sample_time + start`` is
+    included and one exactly at ``sample_time + stop`` is not.
 
     This function is semantically clearer than ``event_count_in_window() > 0``
     for creating binary indicators and returns bool dtype directly. It shares
@@ -410,15 +414,10 @@ def event_indicator(
     >>> import numpy as np
     >>> from neurospatial.events import event_indicator
 
-    Check for exact event occurrence:
+    Mark each event at the sample whose 1 s bin holds it:
 
     >>> sample_times = np.array([0.0, 1.0, 2.0, 3.0])
     >>> event_times = np.array([1.0, 3.0])
-    >>> event_indicator(sample_times, event_times)
-    array([False,  True, False,  True])
-
-    Check for events within window:
-
     >>> event_indicator(sample_times, event_times, window=(-0.5, 0.5))
     array([False,  True, False,  True])
 
@@ -463,11 +462,14 @@ def event_indicator(
 
     # Validate window
     window_start, window_end = window
-    if window_start > window_end:
+    if window_start >= window_end:
         raise ValueError(
-            f"window start ({window_start}) must be <= window end ({window_end}).\n"
-            "  WHY: Window defines a time range [start, end] relative to sample.\n"
-            "  Fix: Use window=(start, end) where start <= end."
+            f"window start ({window_start}) must be before its stop ({window_end}).\n"
+            "  WHY: Window is the half-open range [start, stop) relative to each "
+            "sample, so a window with stop <= start holds no time.\n"
+            "  Fix: Use window=(start, stop) with start < stop, e.g. "
+            "window=(-bin_size / 2, bin_size / 2) to count each event at the "
+            "sample nearest it."
         )
 
     # Handle empty sample_times
@@ -490,7 +492,7 @@ def event_indicator(
     # left_indices: first event >= window_start
     # right_indices: first event > window_end
     left_indices = np.searchsorted(sorted_events, window_starts, side="left")
-    right_indices = np.searchsorted(sorted_events, window_ends, side="right")
+    right_indices = np.searchsorted(sorted_events, window_ends, side="left")
 
     # If right > left, there's at least one event in the window
     result = right_indices > left_indices

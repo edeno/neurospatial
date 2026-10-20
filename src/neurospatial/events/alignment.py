@@ -55,12 +55,13 @@ def _validate_window(window: tuple[float, float], *, context: str) -> None:
                 fix="pass window=(-0.5, 1.0)",
             )
         )
-    if window[0] > window[1]:
+    if window[0] >= window[1]:
         raise ValueError(
             _format_error(
-                f"{context}: Window start ({window[0]}) must be <= end ({window[1]}).",
-                why="Why: a peri-event window defines a valid range relative to each event.",
-                fix="pass window=(-0.5, 1.0), with start <= stop, in seconds",
+                f"{context}: Window start ({window[0]}) must be before its stop ({window[1]}).",
+                why="Why: a peri-event window is the half-open range [start, stop) "
+                "relative to each event, so a window with stop <= start holds no time.",
+                fix="pass window=(-0.5, 1.0), with start < stop, in seconds",
             )
         )
     if bounds[1] - bounds[0] > 60:
@@ -131,8 +132,10 @@ def align_spikes_to_events(
     event_times : NDArray[np.float64], shape (n_events,)
         Event times (e.g., stimulus onset) in seconds.
     window : tuple[float, float]
-        Time window (start, end) relative to each event. For example,
-        ``(-0.5, 1.0)`` captures 500ms before to 1s after each event.
+        Time window (start, stop) relative to each event, half-open
+        ``[start, stop)``: a spike exactly at ``event + stop`` is left out.
+        For example, ``(-0.5, 1.0)`` captures 500 ms before to 1 s after each
+        event.
 
     Returns
     -------
@@ -144,7 +147,7 @@ def align_spikes_to_events(
     Raises
     ------
     ValueError
-        If window start > end, or if spike/event times contain NaN or Inf.
+        If window start >= stop, or if spike/event times contain NaN or Inf.
 
     See Also
     --------
@@ -229,7 +232,7 @@ def align_spikes_to_events(
         # searchsorted with side='left' gives first index where value could be inserted
         # searchsorted with side='right' gives last index + 1
         idx_start = np.searchsorted(sorted_spikes, t_start, side="left")
-        idx_end = np.searchsorted(sorted_spikes, t_end, side="right")
+        idx_end = np.searchsorted(sorted_spikes, t_end, side="left")
 
         # Extract spikes in window and compute relative times
         spikes_in_window = sorted_spikes[idx_start:idx_end]
@@ -341,8 +344,10 @@ def peri_event_histogram(
     event_times : NDArray[np.float64], shape (n_events,)
         Event times (e.g., stimulus onset) in seconds.
     window : tuple[float, float]
-        Time window (start, end) relative to each event. For example,
-        ``(-0.5, 1.0)`` captures 500ms before to 1s after each event.
+        Time window (start, stop) relative to each event, half-open
+        ``[start, stop)``: a spike exactly at ``event + stop`` is left out.
+        For example, ``(-0.5, 1.0)`` captures 500 ms before to 1 s after each
+        event.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
@@ -711,7 +716,8 @@ def align_events(
     reference_events : pd.DataFrame
         Reference events to align to. Must have timestamp column.
     window : tuple[float, float]
-        Time window (start, end) relative to each reference event.
+        Time window (start, stop) relative to each reference event, half-open
+        ``[start, stop)``.
     event_column : str, default="timestamp"
         Name of timestamp column in events.
     reference_column : str, default="timestamp"
@@ -803,7 +809,7 @@ def align_events(
 
         # Find events within window using binary search
         idx_start = np.searchsorted(sorted_event_times, t_start, side="left")
-        idx_end = np.searchsorted(sorted_event_times, t_end, side="right")
+        idx_end = np.searchsorted(sorted_event_times, t_end, side="left")
 
         # Get original indices of events in window
         event_indices = sorted_idx[idx_start:idx_end]

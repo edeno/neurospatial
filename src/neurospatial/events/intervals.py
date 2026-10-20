@@ -445,7 +445,8 @@ def filter_by_intervals(
     intervals : pd.DataFrame
         Intervals DataFrame with start and stop time columns.
     include : bool, default=True
-        If True, keep events within intervals (inclusive filtering).
+        If True, keep events within intervals, half-open
+        ``[start, stop)``: an event exactly at a stop is outside.
         If False, keep events outside intervals (exclusive filtering).
     timestamp_column : str, default="timestamp"
         Name of timestamp column in events.
@@ -546,7 +547,7 @@ def filter_by_intervals(
     # For each event, check if it's within any interval
     # Shape: (n_events, n_intervals)
     within_intervals = (timestamps[:, np.newaxis] >= starts) & (
-        timestamps[:, np.newaxis] <= stops
+        timestamps[:, np.newaxis] < stops
     )
 
     # Event is "in an interval" if it's within any interval

@@ -139,7 +139,7 @@ from neurospatial.behavior import compute_speed, in_epochs
 speed = compute_speed(times, positions)  # cm/s; NaN where tracking was lost
 coverage = {}
 for label in conditions:
-    inside = in_epochs(times, conditions[label], closed="left")
+    inside = in_epochs(times, conditions[label])
     coverage[label] = {
         "duration_s": round(conditions.durations[label], 2),
         "occupied_bins": int(maps[label].spatial_support.sum()),
@@ -1335,11 +1335,11 @@ assert regressors["event_count"].dtype == np.int64
 assert regressors["event_present"].dtype == np.bool_
 print(table.to_string(index=False))
 
-# Raster and PSTH share half-open bins; regressors keep their own edge rules.
+# Raster, PSTH and regressors all use half-open [start, stop) windows.
 assert psth.histogram.sum() == 2.0  # Average of two spikes per event.
 assert event_count_in_window(
     np.array([4.0, 6.0]), np.array([5.0]), window=window,
-).tolist() == [1, 1]  # Both adjacent windows include the boundary event.
+).tolist() == [0, 1]  # [3, 5) and [5, 7): the event at 5 counts once.
 plt.close(raster_ax.figure)
 ```
 
@@ -1347,9 +1347,9 @@ plt.close(raster_ax.figure)
 complete-bin range for both panels. Spikes on the right edge and in a trailing
 partial bin are excluded from both views. Supply the original event array and
 the spike train belonging to the selected unit. The low-level
-`align_spikes_to_events` retains its inclusive stop-edge convention for custom
-alignment. Event-count and indicator windows also include both edges, so
-neighboring sample windows can count the same boundary event twice. Regressors
+`align_spikes_to_events` uses the same half-open `[start, stop)` window as
+the histogram. Event-count and indicator windows are half-open too, so
+neighboring sample windows never count the same boundary event twice. Regressors
 describe the selected events at each sample; restrict their sample rows to your
 modeling epochs when fitting a model.
 

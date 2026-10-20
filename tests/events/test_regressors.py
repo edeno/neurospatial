@@ -305,17 +305,17 @@ class TestEventCountInWindow:
 
         result = event_count_in_window(sample_times, event_times, window=window)
 
-        # t=0.0: window [-2, 0], no events
+        # t=0.0: window [-2, 0), no events
         assert result[0] == 0
-        # t=1.0: window [-1, 1], event at 1.0 is at boundary (included)
-        assert result[1] == 1
-        # t=2.0: window [0, 2], event at 1.0 is at start (included)
+        # t=1.0: window [-1, 1), the event at 1.0 is the stop (excluded)
+        assert result[1] == 0
+        # t=2.0: window [0, 2), event at 1.0 included
         assert result[2] == 1
-        # t=3.0: window [1, 3], events at 1.0, 2.5 both included
+        # t=3.0: window [1, 3), events at 1.0 (the start) and 2.5 included
         assert result[3] == 2
-        # t=4.0: window [2, 4], event at 2.5 included
+        # t=4.0: window [2, 4), event at 2.5 included
         assert result[4] == 1
-        # t=5.0: window [3, 5], no events in [3, 5]
+        # t=5.0: window [3, 5), no events
         assert result[5] == 0
 
     def test_basic_forward_window(self):
@@ -328,15 +328,15 @@ class TestEventCountInWindow:
 
         result = event_count_in_window(sample_times, event_times, window=window)
 
-        # t=0.0: window [0, 2], event at 2.0 at boundary (included)
-        assert result[0] == 1
-        # t=1.0: window [1, 3], event at 2.0 included
+        # t=0.0: window [0, 2), the event at 2.0 is the stop (excluded)
+        assert result[0] == 0
+        # t=1.0: window [1, 3), event at 2.0 included
         assert result[1] == 1
-        # t=2.0: window [2, 4], events at 2.0, 3.5 both included
+        # t=2.0: window [2, 4), events at 2.0 (the start) and 3.5 included
         assert result[2] == 2
-        # t=3.0: window [3, 5], event at 3.5 included
+        # t=3.0: window [3, 5), event at 3.5 included
         assert result[3] == 1
-        # t=4.0: window [4, 6], no events
+        # t=4.0: window [4, 6), no events
         assert result[4] == 0
 
     def test_symmetric_window(self):
@@ -405,8 +405,8 @@ class TestEventCountInWindow:
         # t=2.0: window [1.5, 2.5], no events
         assert result[2] == 0
 
-    def test_event_at_window_boundary_included(self):
-        """Test events exactly at window boundaries are included."""
+    def test_window_is_half_open(self):
+        """An event at the window start is counted; one at the stop is not."""
         from neurospatial.events.regressors import event_count_in_window
 
         sample_times = np.array([2.0])
@@ -415,8 +415,23 @@ class TestEventCountInWindow:
 
         result = event_count_in_window(sample_times, event_times, window=window)
 
-        # window [1.0, 3.0], both boundary events included
-        assert result[0] == 2
+        # window [1.0, 3.0): the start is in, the stop out
+        assert result[0] == 1
+
+    def test_bin_centered_windows_count_each_event_once(self):
+        """Half-open windows tile time, so no event is counted at two samples."""
+        from neurospatial.events.regressors import event_count_in_window
+
+        dt = 0.25
+        sample_times = np.arange(41) * dt
+        # Events on bin edges (sample +/- dt/2) and between them.
+        event_times = np.r_[np.arange(1, 40) * dt - dt / 2, [1.1, 3.3, 7.9]]
+
+        counts = event_count_in_window(
+            sample_times, event_times, window=(-dt / 2, dt / 2)
+        )
+
+        assert counts.sum() == len(event_times)
 
     def test_unsorted_events_handled(self):
         """Test unsorted event times are handled correctly."""
@@ -483,44 +498,37 @@ class TestEventCountInWindow:
         event_times = np.array([1.0])
         window = (1.0, -1.0)  # Inverted
 
-        with pytest.raises(ValueError, match=r"window.*start.*end"):
+        with pytest.raises(ValueError, match=r"window.*start.*stop"):
             event_count_in_window(sample_times, event_times, window=window)
 
-    def test_zero_width_window(self):
-        """Test zero-width window only counts exact matches."""
+    def test_zero_width_window_is_refused(self):
+        """A half-open window with stop == start holds no time."""
         from neurospatial.events.regressors import event_count_in_window
 
-        sample_times = np.array([0.0, 1.0, 2.0])
-        event_times = np.array([1.0, 1.5])
-        window = (0.0, 0.0)  # Zero width
-
-        result = event_count_in_window(sample_times, event_times, window=window)
-
-        # Only exact matches counted
-        assert result[0] == 0  # t=0, no event at exactly 0
-        assert result[1] == 1  # t=1, event at exactly 1
-        assert result[2] == 0  # t=2, no event at exactly 2
+        with pytest.raises(ValueError, match="before its stop"):
+            event_count_in_window(
+                np.array([0.0, 1.0, 2.0]), np.array([1.0, 1.5]), window=(0.0, 0.0)
+            )
 
     def test_dense_events(self):
         """Test with many closely spaced events."""
         from neurospatial.events.regressors import event_count_in_window
 
         sample_times = np.array([5.0])
-        event_times = np.linspace(0, 10, 101)  # Events every 0.1s
+        event_times = np.arange(101) / 10  # Events every 0.1 s, exact tenths
         window = (-1.0, 1.0)  # 2s total window
 
         result = event_count_in_window(sample_times, event_times, window=window)
 
-        # t=5.0: window [4.0, 6.0], should have ~21 events (4.0 to 6.0 inclusive)
-        # 4.0, 4.1, ..., 5.9, 6.0 = 21 events
-        assert result[0] == 21
+        # t=5.0: window [4.0, 6.0): 4.0, 4.1, ..., 5.9 = 20 events
+        assert result[0] == 20
 
     def test_typical_spike_counting_use_case(self):
         """Test typical use case: counting spikes in recent history."""
         from neurospatial.events.regressors import event_count_in_window
 
-        # Continuous time at 100 Hz
-        sample_times = np.arange(0, 5, 0.01)
+        # Continuous time at 100 Hz, on exact hundredths
+        sample_times = np.arange(500) / 100
         # Reward events at 1s and 3s
         event_times = np.array([1.0, 3.0])
         # Count rewards in last 0.5s
@@ -532,16 +540,19 @@ class TestEventCountInWindow:
         assert result[0] == 0  # t=0.0
         assert result[50] == 0  # t=0.5
 
-        # Just after first reward
-        assert result[100] == 1  # t=1.0, reward at boundary
+        # The reward at 1.0 is in the past from the next sample on
+        assert result[100] == 0  # t=1.0, window [0.5, 1.0) ends at the reward
+        assert result[101] == 1  # t=1.01
         assert result[110] == 1  # t=1.1, reward within 0.5s window
-        assert result[150] == 1  # t=1.5, reward at edge of window
+        assert result[150] == 1  # t=1.5, window [1.0, 1.5) starts at the reward
 
         # After first reward fades from window
-        assert result[160] == 0  # t=1.6, reward at 1.0 is 0.6s ago (outside window)
+        assert result[151] == 0  # t=1.51, reward at 1.0 is outside [1.01, 1.51)
+        assert result[160] == 0  # t=1.6
 
-        # At second reward
-        assert result[300] == 1  # t=3.0
+        # Second reward
+        assert result[300] == 0  # t=3.0, the reward is now, not in the past
+        assert result[301] == 1  # t=3.01
 
     def test_non_negative_counts(self):
         """Test that counts are always non-negative."""
@@ -565,16 +576,15 @@ class TestEventCountInWindow:
 class TestEventIndicator:
     """Tests for event_indicator function."""
 
-    def test_basic_exact_match(self):
-        """Test event_indicator returns True only at exact event times (window=0)."""
+    def test_bin_centered_window_marks_each_event_once(self):
+        """With window=(-dt/2, dt/2), each event marks the sample whose bin holds it."""
         from neurospatial.events.regressors import event_indicator
 
         sample_times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         event_times = np.array([1.0, 3.0])
 
-        result = event_indicator(sample_times, event_times)
+        result = event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
-        # Only exact matches when window=0 (default)
         assert result[0] is np.False_  # t=0.0, no event
         assert result[1] is np.True_  # t=1.0, event here
         assert result[2] is np.False_  # t=2.0, no event
@@ -591,16 +601,12 @@ class TestEventIndicator:
 
         result = event_indicator(sample_times, event_times, window=window)
 
-        # t=0.0: |0.0 - 1.5| = 1.5 > 0.5, False
-        assert not result[0]
-        # t=0.5: |0.5 - 1.5| = 1.0 > 0.5, False
-        assert not result[1]
-        # t=1.0: |1.0 - 1.5| = 0.5 <= 0.5, True
-        assert result[2]
-        # t=1.5: |1.5 - 1.5| = 0.0 <= 0.5, True
-        assert result[3]
-        # t=2.0: |2.0 - 1.5| = 0.5 <= 0.5, True
-        assert result[4]
+        # The event at 1.5 is in [t - 0.5, t + 0.5) for t in (1.0, 2.0].
+        assert not result[0]  # t=0.0
+        assert not result[1]  # t=0.5
+        assert not result[2]  # t=1.0: window [0.5, 1.5) stops at the event
+        assert result[3]  # t=1.5
+        assert result[4]  # t=2.0: window [1.5, 2.5) starts at the event
         # t=2.5: |2.5 - 1.5| = 1.0 > 0.5, False
         assert not result[5]
         # t=3.0: |3.0 - 1.5| = 1.5 > 0.5, False
@@ -632,7 +638,7 @@ class TestEventIndicator:
         sample_times = np.array([0.0, 1.0, 2.0])
         event_times = np.array([])
 
-        result = event_indicator(sample_times, event_times)
+        result = event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
         assert np.all(~result)  # All False
         assert len(result) == 3
@@ -665,7 +671,7 @@ class TestEventIndicator:
         sample_times = np.array([0.0, 1.0, 2.0])
         event_times = np.array([1.0])
 
-        result = event_indicator(sample_times, event_times)
+        result = event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
         assert result.dtype == np.bool_
 
@@ -675,7 +681,7 @@ class TestEventIndicator:
 
         sample_times = np.array([0.0, 1.0, 2.0, 3.0])
         event_times = np.array([3.0, 1.0])  # Unsorted
-        window = (0.0, 0.0)
+        window = (-0.5, 0.5)
 
         result = event_indicator(sample_times, event_times, window=window)
 
@@ -692,7 +698,7 @@ class TestEventIndicator:
         sample_times = np.array([0.0, 1.0, 2.0])
         event_times = np.array([1.0, 1.0, 1.0])  # Three events at same time
 
-        result = event_indicator(sample_times, event_times)
+        result = event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
         # Should behave same as single event at 1.0
         assert not result[0]
@@ -707,7 +713,7 @@ class TestEventIndicator:
         event_times = np.array([1.0])
 
         with pytest.raises(ValueError, match=r"sample_times.*NaN"):
-            event_indicator(sample_times, event_times)
+            event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
     def test_nan_in_event_times_raises(self):
         """Test NaN in event_times raises ValueError."""
@@ -717,7 +723,7 @@ class TestEventIndicator:
         event_times = np.array([1.0, np.nan])
 
         with pytest.raises(ValueError, match=r"event_times.*NaN"):
-            event_indicator(sample_times, event_times)
+            event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
     def test_inf_in_sample_times_raises(self):
         """Test Inf in sample_times raises ValueError."""
@@ -727,7 +733,7 @@ class TestEventIndicator:
         event_times = np.array([1.0])
 
         with pytest.raises(ValueError, match=r"sample_times.*inf"):
-            event_indicator(sample_times, event_times)
+            event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
     def test_inf_in_event_times_raises(self):
         """Test Inf in event_times raises ValueError."""
@@ -737,7 +743,7 @@ class TestEventIndicator:
         event_times = np.array([1.0, np.inf])
 
         with pytest.raises(ValueError, match=r"event_times.*inf"):
-            event_indicator(sample_times, event_times)
+            event_indicator(sample_times, event_times, window=(-0.5, 0.5))
 
     def test_inverted_window_raises(self):
         """Test window with start > end raises ValueError."""
@@ -746,22 +752,15 @@ class TestEventIndicator:
         sample_times = np.array([0.0, 1.0, 2.0])
         event_times = np.array([1.0])
 
-        with pytest.raises(ValueError, match=r"window.*start.*end"):
+        with pytest.raises(ValueError, match=r"window.*start.*stop"):
             event_indicator(sample_times, event_times, window=(0.5, -0.5))
 
-    def test_zero_window_exact_match_only(self):
-        """Test window=0.0 requires exact match."""
+    def test_zero_width_window_is_refused(self):
+        """A half-open window with stop == start holds no time."""
         from neurospatial.events.regressors import event_indicator
 
-        sample_times = np.array([0.9, 1.0, 1.1])
-        event_times = np.array([1.0])
-        window = (0.0, 0.0)
-
-        result = event_indicator(sample_times, event_times, window=window)
-
-        assert not result[0]  # 0.9 != 1.0
-        assert result[1]  # 1.0 == 1.0
-        assert not result[2]  # 1.1 != 1.0
+        with pytest.raises(ValueError, match="before its stop"):
+            event_indicator(np.array([0.9, 1.0]), np.array([1.0]), window=(0.0, 0.0))
 
     def test_large_window_includes_all(self):
         """Test large window includes all samples near any event."""
@@ -776,8 +775,8 @@ class TestEventIndicator:
         # All samples within 10s of event at t=2.0
         assert np.all(result)
 
-    def test_boundary_inclusion(self):
-        """Test samples exactly at window boundary are included."""
+    def test_window_is_half_open(self):
+        """An event at the window start counts; one at the stop does not."""
         from neurospatial.events.regressors import event_indicator
 
         sample_times = np.array([0.5, 1.0, 1.5])
@@ -786,17 +785,16 @@ class TestEventIndicator:
 
         result = event_indicator(sample_times, event_times, window=window)
 
-        # All samples are exactly within or at boundary
-        assert result[0]  # |0.5 - 1.0| = 0.5 <= 0.5, included
-        assert result[1]  # |1.0 - 1.0| = 0.0 <= 0.5, included
-        assert result[2]  # |1.5 - 1.0| = 0.5 <= 0.5, included
+        assert not result[0]  # window [0.0, 1.0) stops at the event
+        assert result[1]  # window [0.5, 1.5)
+        assert result[2]  # window [1.0, 2.0) starts at the event
 
     def test_typical_time_bin_use_case(self):
         """Test typical use case: marking time bins with events."""
         from neurospatial.events.regressors import event_indicator
 
-        # Time bins at 10ms resolution
-        sample_times = np.arange(0, 1.0, 0.01)
+        # Time bins at 10ms resolution, on exact hundredths
+        sample_times = np.arange(100) / 100
         # Events at 200ms, 500ms, 800ms
         event_times = np.array([0.2, 0.5, 0.8])
         # Window of +/- 50ms (one time bin)
@@ -805,10 +803,11 @@ class TestEventIndicator:
         result = event_indicator(sample_times, event_times, window=window)
 
         # Check around 200ms
-        assert not result[14]  # t=140ms, too far
-        assert result[15]  # t=150ms, within window of 200ms
+        # The event at 200 ms is in [t - 50 ms, t + 50 ms) for t in (150, 250] ms.
+        assert not result[15]  # t=150ms: window stops at the event
+        assert result[16]  # t=160ms
         assert result[20]  # t=200ms, at event
-        assert result[25]  # t=250ms, within window
+        assert result[25]  # t=250ms: window starts at the event
         assert not result[26]  # t=260ms, too far
 
         # Total True values: ~6 per event * 3 events
@@ -848,7 +847,7 @@ class TestWindowContract:
     """Pin the unified (start, end) keyword-only window contract."""
 
     def test_event_indicator_window_tuple(self):
-        """event_indicator takes window=(start, end); start>end raises."""
+        """event_indicator takes a required window=(start, stop); start>=stop raises."""
         import inspect
 
         from neurospatial.events.regressors import event_indicator
@@ -859,27 +858,17 @@ class TestWindowContract:
         # A symmetric (-w, w) tuple reproduces the old scalar half-width=w.
         tuple_result = event_indicator(sample_times, event_times, window=(-0.5, 0.5))
         expected = np.array(
-            [False, False, True, True, True, False, False], dtype=np.bool_
+            [False, False, False, True, True, False, False], dtype=np.bool_
         )
         np.testing.assert_array_equal(tuple_result, expected)
 
-        # (0.0, 0.0) reproduces the exact-match impulse.
-        impulse = event_indicator(
-            np.array([0.9, 1.0, 1.1]),
-            np.array([1.0]),
-            window=(0.0, 0.0),
-        )
-        np.testing.assert_array_equal(
-            impulse, np.array([False, True, False], dtype=np.bool_)
-        )
-
-        # window is keyword-only.
+        # window is keyword-only and required: no window suits every rate.
         sig = inspect.signature(event_indicator)
         assert sig.parameters["window"].kind is inspect.Parameter.KEYWORD_ONLY
-        assert sig.parameters["window"].default == (0.0, 0.0)
+        assert sig.parameters["window"].default is inspect.Parameter.empty
 
         # start > end raises ValueError.
-        with pytest.raises(ValueError, match=r"window.*start.*end"):
+        with pytest.raises(ValueError, match=r"window.*start.*stop"):
             event_indicator(sample_times, event_times, window=(0.5, -0.5))
 
     def test_event_count_in_window_keyword_only(self):
