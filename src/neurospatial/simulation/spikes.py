@@ -579,6 +579,7 @@ def _held_movement_heading(
 def add_modulation(
     spike_times: NDArray[np.float64],
     modulation_freq: float,
+    *,
     modulation_depth: float = 0.5,
     modulation_phase: float = 0.0,
     seed: int | None = None,
