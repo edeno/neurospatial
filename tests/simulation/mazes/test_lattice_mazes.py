@@ -82,26 +82,26 @@ class TestCrosswordMaze:
         assert dims.corridor_width == 5.0
         assert dims.box_size == 16.0
 
-    def test_has_five_reward_site_regions(self):
-        """Crossword has a reward site at each of its five protruding tracks."""
+    def test_has_five_cap_regions(self):
+        """Crossword has a plastic cap at each of its five protruding tracks."""
         maze = make_crossword_maze(bin_size=3.0)
-        reward_regions = [r for r in maze.env_2d.regions if r.startswith("reward_")]
-        assert len(reward_regions) == 5
+        cap_regions = [r for r in maze.env_2d.regions if r.startswith("cap_")]
+        assert len(cap_regions) == 5
 
-    def test_has_four_box_regions(self):
-        """Crossword should have 4 corner box regions (polygons)."""
+    def test_has_four_start_box_regions(self):
+        """Crossword should have 4 start box regions (polygons)."""
         maze = make_crossword_maze(bin_size=3.0)
-        box_regions = [r for r in maze.env_2d.regions if r.startswith("box_")]
+        box_regions = [r for r in maze.env_2d.regions if r.startswith("start_box_")]
         assert len(box_regions) == 4
 
-    def test_box_regions_are_polygons(self):
-        """All box regions should be polygon type."""
+    def test_start_box_regions_are_polygons(self):
+        """All start box regions should be polygon type."""
         maze = make_crossword_maze(bin_size=3.0)
         for name in [
-            "box_top_left",
-            "box_top_right",
-            "box_bottom_left",
-            "box_bottom_right",
+            "start_box_top_left",
+            "start_box_top_right",
+            "start_box_bottom_left",
+            "start_box_bottom_right",
         ]:
             assert maze.env_2d.regions[name].kind == "polygon"
 

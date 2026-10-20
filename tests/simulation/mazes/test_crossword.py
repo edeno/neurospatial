@@ -17,14 +17,13 @@ from shapely.geometry import LineString, Point
 
 from neurospatial.simulation.mazes.crossword import CrosswordDims, make_crossword_maze
 
-BOXES = ["box_top_left", "box_top_right", "box_bottom_left", "box_bottom_right"]
-REWARD_SITES = [
-    "reward_west",
-    "reward_east",
-    "reward_north",
-    "reward_south_left",
-    "reward_south_right",
+BOXES = [
+    "start_box_top_left",
+    "start_box_top_right",
+    "start_box_bottom_left",
+    "start_box_bottom_right",
 ]
+CAPS = ["cap_west", "cap_east", "cap_north", "cap_south_left", "cap_south_right"]
 
 
 @pytest.fixture(scope="module")
@@ -74,7 +73,7 @@ class TestPublishedGeometry:
 
     def test_dead_ends_are_boxes_and_five_protruding_tracks(self, track_graph):
         dead_ends = {n for n, d in track_graph.degree() if d == 1}
-        assert dead_ends == set(BOXES) | set(REWARD_SITES)
+        assert dead_ends == set(BOXES) | set(CAPS)
 
     def test_ninety_five_cm_square_excluding_boxes_centred(self, maze):
         boxes = [maze.env_2d.regions[name].data for name in BOXES]
@@ -89,13 +88,13 @@ class TestPublishedGeometry:
         assert (y0 + y1) / 2 == pytest.approx(0.0)
 
     def test_protruding_tracks_reach_the_square_edge(self, track_graph):
-        ends = np.array([track_graph.nodes[n]["pos"] for n in REWARD_SITES])
+        ends = np.array([track_graph.nodes[n]["pos"] for n in CAPS])
         assert np.all(np.isclose(np.abs(ends).max(axis=1), 47.5))
 
     def test_scales_with_grid_spacing(self):
         maze = make_crossword_maze(CrosswordDims(grid_spacing=30.0), bin_size=3.0)
         graph = maze.env_track._binning.linearization.graph
-        ends = np.array([graph.nodes[n]["pos"] for n in REWARD_SITES])
+        ends = np.array([graph.nodes[n]["pos"] for n in CAPS])
         assert np.all(np.isclose(np.abs(ends).max(axis=1), 75.0))
 
 
@@ -130,14 +129,18 @@ class TestFootprint:
 
 
 class TestRegions:
-    def test_start_boxes_are_square_polygons(self, maze):
+    def test_start_boxes_are_square_polygons(self, maze, track_graph):
         for name in BOXES:
             region = maze.env_2d.regions[name]
             assert region.kind == "polygon"
             assert region.data.area == pytest.approx(16.0**2)
+            # The box is centred on the end of its track.
+            centre = region.data.centroid.coords[0]
+            np.testing.assert_allclose(centre, track_graph.nodes[name]["pos"])
+            assert len(maze.env_2d.bins_in_region(name)) > 0
 
-    def test_reward_sites_at_protruding_track_ends(self, maze, track_graph):
-        for name in REWARD_SITES:
+    def test_caps_at_protruding_track_ends(self, maze, track_graph):
+        for name in CAPS:
             region = maze.env_2d.regions[name]
             assert region.kind == "point"
             end = np.asarray(track_graph.nodes[name]["pos"])
@@ -146,7 +149,33 @@ class TestRegions:
             assert len(maze.env_2d.bins_in_region(name)) > 0
 
     def test_region_names(self, maze):
-        assert list(maze.env_2d.regions) == BOXES + REWARD_SITES
+        assert list(maze.env_2d.regions) == BOXES + CAPS
+
+
+class TestLandmarks:
+    def test_start_boxes_and_caps_are_landmarks(self, maze):
+        landmarks = maze.env_2d.landmarks
+        assert list(landmarks) == BOXES + CAPS
+        roles = {name: lm.metadata["role"] for name, lm in landmarks.items()}
+        assert roles == dict.fromkeys(BOXES, "start_box") | dict.fromkeys(
+            CAPS, "reward_port"
+        )
+
+    def test_start_box_landmarks_at_the_box_centres(self, maze):
+        expected = {
+            "start_box_top_left": (-28.5, 28.5),
+            "start_box_top_right": (47.5, 28.5),
+            "start_box_bottom_left": (-28.5, -28.5),
+            "start_box_bottom_right": (47.5, -28.5),
+        }
+        for name, centre in expected.items():
+            np.testing.assert_allclose(maze.env_2d.landmarks[name].data, centre)
+
+    def test_cap_landmarks_are_the_cap_regions(self, maze):
+        for name in CAPS:
+            np.testing.assert_allclose(
+                maze.env_2d.landmarks[name].data, maze.env_2d.regions[name].data
+            )
 
 
 class TestEnvironments:

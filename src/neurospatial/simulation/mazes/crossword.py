@@ -9,9 +9,19 @@ The geometry follows McNamara et al. (2014), Online Methods ("Crossword maze"):
 the maze "consisted of four start boxes and eight intersecting open tracks
 forming fourteen intersections"; "The width of each track was 5 cm with a
 1.5 cm high rim along the edges"; "The entire maze measured 95 cm square
-excluding start boxes"; and the reward sat "at the end of one of the five
-tracks protruding from the maze". The track layout is read from Wijnen et al.
-(2024), Fig. 1d.
+excluding start boxes". The track layout is read from Wijnen et al. (2024),
+Fig. 1d.
+
+Each day "two start boxes and one food reward location (at the end of one of
+the five tracks protruding from the maze) were selected as in use for that
+day". The reward "was 4 μl of condensed milk diluted 30% in water and was
+placed on a plastic cap at the goal location. A similar plastic cap (without
+reward) was placed in each of the other 4 tracks protruding from the maze."
+The maze names the four start boxes and the five caps as landmarks. The start
+box and cap sizes are not published: the boxes are squares estimated from the
+figure, and each cap is a point region. "Distal cue cards were placed on the
+curtain surrounding the maze", with no published placement, so they are not
+landmarks.
 
 References
 ----------
@@ -33,10 +43,12 @@ Examples
 >>> maze = make_crossword_maze()
 >>> maze.env_2d.units
 'cm'
->>> "box_top_left" in maze.env_2d.regions
+>>> "start_box_top_left" in maze.env_2d.regions
 True
->>> "reward_north" in maze.env_2d.regions
+>>> "cap_north" in maze.env_2d.regions
 True
+>>> maze.env_2d.landmarks["cap_north"].metadata["role"]
+'reward_port'
 """
 
 from __future__ import annotations
@@ -48,6 +60,7 @@ import networkx as nx
 from shapely.geometry import box as shapely_box
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
@@ -62,19 +75,19 @@ from neurospatial.simulation.mazes._geometry import (
 _ROWS = ((4, 1, 5), (3, 0, 4), (2, 1, 5), (1, 2, 5))  # (y, x_start, x_end)
 _COLUMNS = ((1, 1, 3), (2, 0, 4), (3, 1, 5), (4, 0, 4))  # (x, y_start, y_end)
 _BOXES = {
-    "box_top_left": (1, 4),
-    "box_top_right": (5, 4),
-    "box_bottom_left": (1, 1),
-    "box_bottom_right": (5, 1),
+    "start_box_top_left": (1, 4),
+    "start_box_top_right": (5, 4),
+    "start_box_bottom_left": (1, 1),
+    "start_box_bottom_right": (5, 1),
 }
-# Free ends of the five tracks that protrude from the maze, where the reward
-# and the empty caps sit.
-_REWARD_SITES = {
-    "reward_west": (0, 3),
-    "reward_east": (5, 2),
-    "reward_north": (3, 5),
-    "reward_south_left": (2, 0),
-    "reward_south_right": (4, 0),
+# Free ends of the five tracks that protrude from the maze, where a plastic
+# cap sits; the day's reward is on one of them.
+_CAP_SITES = {
+    "cap_west": (0, 3),
+    "cap_east": (5, 2),
+    "cap_north": (3, 5),
+    "cap_south_left": (2, 0),
+    "cap_south_right": (4, 0),
 }
 _HALF_EXTENT = 2.5  # the square spans 5 grid units; recentre on its middle
 
@@ -124,8 +137,8 @@ def make_crossword_maze(
 
     Builds the published lattice: four horizontal and four vertical tracks
     that cross at fourteen intersections, four start boxes at track ends and
-    five free track ends that protrude from the maze, where the reward can
-    be placed.
+    five free track ends that protrude from the maze, each with a plastic
+    cap where the reward can be placed.
 
     Parameters
     ----------
@@ -151,29 +164,35 @@ def make_crossword_maze(
     ``5 * grid_spacing`` (95 cm by default) in x and y; the right-hand boxes
     extend half a box beyond that square.
 
-    Layout (viewed from above; ``B`` start box, ``R`` reward site, ``+`` an
+    Layout (viewed from above; ``B`` start box, ``C`` cap, ``+`` an
     intersection)::
 
-                          R
+                          C
                           |
               B-----+-----+-----+-----B
                     |     |     |
-        R-----+-----+-----+-----+
+        C-----+-----+-----+-----+
               |     |     |     |
-              +-----+-----+-----+-----R
+              +-----+-----+-----+-----C
               |     |     |     |
               B     +-----+-----+-----B
                     |           |
-                    R           R
+                    C           C
 
-    Regions:
-    - box_top_left, box_top_right, box_bottom_left, box_bottom_right:
-      Square polygon regions, the start boxes
-    - reward_west, reward_east, reward_north, reward_south_left,
-      reward_south_right: Point regions at the end of each protruding track
+    Landmarks and regions of the same name:
+
+    - start_box_top_left, start_box_top_right, start_box_bottom_left,
+      start_box_bottom_right: the start boxes (role ``"start_box"``). Each
+      landmark is the box's centre; each region is the square box, its size
+      an estimate.
+    - cap_west, cap_east, cap_north, cap_south_left, cap_south_right: the
+      plastic caps at the ends of the five protruding tracks, one of which
+      holds the day's reward (role ``"reward_port"``). Each region is a point
+      half a track width back from the track's end; the cap size is not
+      published.
 
     Track Graph Topology:
-    - 23 nodes: 14 intersections, 4 start boxes and 5 reward sites
+    - 23 nodes: 14 intersections, 4 start boxes and 5 caps
     - 29 edges: each track split at the intersections along it
 
     Examples
@@ -190,7 +209,7 @@ def make_crossword_maze(
 
     >>> dims = CrosswordDims(grid_spacing=40.0, corridor_width=12.0, box_size=20.0)
     >>> maze = make_crossword_maze(dims=dims, bin_size=3.0)
-    >>> "box_top_left" in maze.env_2d.regions
+    >>> "start_box_top_left" in maze.env_2d.regions
     True
 
     Skip track graph creation:
@@ -225,11 +244,15 @@ def make_crossword_maze(
     env_2d = env_2d.with_metadata(units="cm")
 
     region_builder = Regions()
+    landmarks = []
     for name, box in boxes.items():
         region_builder.add(name, polygon=box)
-    for name, site in _reward_sites(dims).items():
+        center = box.centroid.coords[0]
+        landmarks.append(Landmark(name, "point", center, {"role": "start_box"}))
+    for name, site in _cap_sites(dims).items():
         region_builder.add(name, point=site)
-    env_2d = env_2d.with_regions(region_builder)
+        landmarks.append(Landmark(name, "point", site, {"role": "reward_port"}))
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks(landmarks))
 
     env_track = None
     if include_track:
@@ -253,10 +276,10 @@ def _tracks(
     return [(_to_cm(a, dims), _to_cm(b, dims)) for a, b in rows + columns]
 
 
-def _reward_sites(dims: CrosswordDims) -> dict[str, tuple[float, float]]:
+def _cap_sites(dims: CrosswordDims) -> dict[str, tuple[float, float]]:
     """Center of each protruding track's end square, where its cap sits."""
     sites = {}
-    for name, grid_end in _REWARD_SITES.items():
+    for name, grid_end in _CAP_SITES.items():
         end = _to_cm(grid_end, dims)
         track = next(t for t in _tracks(dims) if end in t)
         start = track[0] if track[1] == end else track[1]
@@ -287,7 +310,7 @@ def _create_crossword_track_graph(
         1D linearized environment representing the Crossword maze track.
     """
     names = {_to_cm(xy, dims): name for name, xy in _BOXES.items()}
-    names |= {_to_cm(xy, dims): name for name, xy in _REWARD_SITES.items()}
+    names |= {_to_cm(xy, dims): name for name, xy in _CAP_SITES.items()}
     for y, x0, x1 in _ROWS:
         for x, y0, y1 in _COLUMNS:
             if x0 <= x <= x1 and y0 <= y <= y1:
