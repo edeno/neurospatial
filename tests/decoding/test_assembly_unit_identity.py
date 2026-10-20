@@ -183,10 +183,94 @@ def test_reactivation_strength_is_invariant_to_column_order_with_labels(
     assert expected > 1.0  # the members burst more strongly at rest
 
     strength = reactivation_strength(
-        run_counts[:, order], rest_counts[:, order], pattern, unit_ids=LABELS[order]
+        run_counts[:, order],
+        rest_counts[:, order],
+        pattern,
+        template_unit_ids=LABELS[order],
+        match_unit_ids=LABELS[order],
     )
 
     assert strength == pytest.approx(expected, rel=1e-12)
+
+
+def test_reactivation_strength_matches_each_period_by_its_own_labels(
+    labelled, run_counts, rest_counts
+) -> None:
+    """Periods sorted or binned in different unit orders give the same ratio."""
+    pattern = labelled.patterns[0]
+    expected = reactivation_strength(run_counts, rest_counts, pattern)
+    run_order, rest_order = ORDERS
+
+    strength = reactivation_strength(
+        run_counts[:, run_order],
+        rest_counts[:, rest_order],
+        pattern,
+        template_unit_ids=LABELS[run_order],
+        match_unit_ids=LABELS[rest_order],
+    )
+
+    assert strength == pytest.approx(expected, rel=1e-12)
+    # Why identity matters: by position, the rest period's members meet the
+    # weights and normalization of other cells, and the burst disappears.
+    wrong = reactivation_strength(
+        run_counts[:, run_order],
+        rest_counts[:, rest_order],
+        _relabelled(pattern, run_order),
+    )
+    assert wrong < 1.0 < expected
+
+
+def _relabelled(pattern: AssemblyPattern, order: np.ndarray) -> AssemblyPattern:
+    """The pattern with its weights in ``order``, as if detected on reordered counts."""
+    return AssemblyPattern(
+        pattern.weights[order],
+        np.flatnonzero(np.isin(order, pattern.member_indices)),
+        pattern.explained_variance_ratio,
+        unit_ids=pattern.unit_ids[order],
+    )
+
+
+@pytest.mark.parametrize("given", ["template_unit_ids", "match_unit_ids"])
+def test_reactivation_strength_refuses_labels_for_one_period(
+    labelled, run_counts, rest_counts, given
+) -> None:
+    missing = ({"template_unit_ids", "match_unit_ids"} - {given}).pop()
+    with pytest.raises(
+        ValueError, match=re.escape(f"got {given}= but not {missing}=")
+    ) as caught:
+        reactivation_strength(
+            run_counts, rest_counts, labelled.patterns[0], **{given: LABELS}
+        )
+    assert "or neither to pair columns by position" in str(caught.value)
+
+
+def test_reactivation_strength_names_missing_labels_of_each_period(
+    labelled, run_counts, rest_counts
+) -> None:
+    pattern = labelled.patterns[0]
+    labels = LABELS.copy()
+    labels[3] = 100  # unit 7 replaced by 100
+    with pytest.raises(
+        ValueError,
+        match=re.escape("only in the pattern: [7], only in match_counts: [100]"),
+    ) as caught:
+        reactivation_strength(
+            run_counts,
+            rest_counts,
+            pattern,
+            template_unit_ids=LABELS,
+            match_unit_ids=labels,
+        )
+    assert "np.isin(match_unit_ids, pattern.unit_ids)" in str(caught.value)
+    with pytest.raises(ValueError, match="unique") as caught:
+        reactivation_strength(
+            run_counts,
+            rest_counts,
+            pattern,
+            template_unit_ids=np.r_[LABELS[:-1], LABELS[0]],
+            match_unit_ids=LABELS,
+        )
+    assert "for template_counts" in str(caught.value)
 
 
 def test_missing_and_extra_labels_are_named(labelled, rest_counts) -> None:
@@ -217,7 +301,13 @@ def test_reactivation_strength_names_the_period_with_wrong_labels(
 ) -> None:
     pattern = labelled.patterns[0]
     with pytest.raises(ValueError, match="for match_counts") as caught:
-        reactivation_strength(run_counts, rest_counts[:, :-1], pattern, unit_ids=LABELS)
+        reactivation_strength(
+            run_counts,
+            rest_counts[:, :-1],
+            pattern,
+            template_unit_ids=LABELS,
+            match_unit_ids=LABELS,
+        )
     assert "length mismatch" in str(caught.value)
 
 
@@ -229,7 +319,11 @@ def test_labels_against_a_pattern_without_labels_are_refused(
     assert "unit_ids= to detect_assemblies()" in str(caught.value)
     with pytest.raises(ValueError, match="the pattern has no unit_ids"):
         reactivation_strength(
-            rest_counts, rest_counts, unlabelled.patterns[0], unit_ids=LABELS
+            rest_counts,
+            rest_counts,
+            unlabelled.patterns[0],
+            template_unit_ids=LABELS,
+            match_unit_ids=LABELS,
         )
 
 
@@ -252,5 +346,9 @@ def test_string_labels_match_across_periods() -> None:
 def test_labelled_counts_must_be_two_dimensional(labelled, rest_counts) -> None:
     with pytest.raises(ValueError, match="must be 2D"):
         reactivation_strength(
-            rest_counts, rest_counts[:, 0], labelled.patterns[0], unit_ids=LABELS
+            rest_counts,
+            rest_counts[:, 0],
+            labelled.patterns[0],
+            template_unit_ids=LABELS,
+            match_unit_ids=LABELS,
         )

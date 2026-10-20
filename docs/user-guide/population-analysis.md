@@ -473,10 +473,12 @@ for k, pattern in enumerate(assemblies.patterns):
     centers = bin_times["post_rest"][:, None]
     in_event = ((centers >= starts) & (centers < starts + 0.1)).any(axis=1)
     strength_pre = reactivation_strength(
-        counts["run"], counts["pre_rest"], pattern, unit_ids=unit_ids
+        counts["run"], counts["pre_rest"], pattern,
+        template_unit_ids=unit_ids, match_unit_ids=unit_ids,
     )
     strength_post = reactivation_strength(
-        counts["run"], counts["post_rest"], pattern, unit_ids=unit_ids
+        counts["run"], counts["post_rest"], pattern,
+        template_unit_ids=unit_ids, match_unit_ids=unit_ids,
     )
     print(f"Pattern {k}: activation {activation[in_event].mean():.1f} during "
           f"its events vs {activation[~in_event].mean():.1f} otherwise; "
@@ -514,7 +516,10 @@ higher after the task (1.07-1.13) than before (1.05-1.07), because the members
 burst together, and nearly the same in both rest periods, because the cells fire at
 the same rates in both. The ratio measures how strongly the pattern is
 expressed, not whether its cells fire together, so a change in overall rate
-between rest and running also changes it.
+between rest and running also changes it. Each period's column labels go to
+their own argument, `template_unit_ids=` for running and `match_unit_ids=` for
+rest; here both periods were binned from one list of spike trains, so they get
+the same labels. Pass both or neither: labels for only one period raise.
 
 The explained-variance measure asks whether the whole correlation structure of
 running returns during rest. It correlates the pairwise correlations of
@@ -631,9 +636,10 @@ Checks before you interpret the numbers:
   through `t_start`/`t_stop` or `epochs=` of `bin_spikes_in_time`.
 - **One unit selection.** Remove silent or constant units once across all
   periods and keep `unit_ids` with every result; a different selection per
-  period compares different cells. Pass the same labels as `unit_ids=` to
-  `compute_spatial_rates`, `detect_assemblies`, `assembly_activation` and
-  `reactivation_strength` so cells are matched by label. Pairwise
+  period compares different cells. Pass the labels as `unit_ids=` to
+  `compute_spatial_rates`, `detect_assemblies` and `assembly_activation`, and
+  as `template_unit_ids=` and `match_unit_ids=` to `reactivation_strength`, so
+  cells are matched by label. Pairwise
   correlations and EV pair cells by column position, so their count
   matrices must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
