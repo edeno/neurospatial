@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestMakeBarnesMaze:
@@ -99,26 +100,46 @@ class TestMakeBarnesMaze:
         # hole_12 should not exist
         assert "hole_12" not in maze.env_2d.regions
 
-    def test_holes_on_perimeter(self):
-        """Holes should be positioned on the perimeter of the platform."""
+    def test_default_is_the_original_barnes_apparatus(self):
+        """Barnes (1979) via Gawel et al. (2018): 122 cm, 18 holes of 9.5 cm."""
         from neurospatial.simulation.mazes.barnes import BarnesDims, make_barnes_maze
 
-        dims = BarnesDims(diameter=120.0, n_holes=18, hole_radius=2.5)
+        dims = BarnesDims()
+        assert dims.diameter == 122.0
+        assert dims.n_holes == 18
+        assert 2 * dims.hole_radius == 9.5
+        # Estimated from Wijnen et al. (2024) Fig. 1c: centres at ~0.8 R.
+        assert dims.hole_inset == 12.0
+
+        x_min, y_min, x_max, y_max = make_barnes_maze().env_2d.arena.polygon.bounds
+        assert x_max - x_min == pytest.approx(122.0)
+        assert y_max - y_min == pytest.approx(122.0)
+
+    def test_holes_on_perimeter(self):
+        """Hole centres lie on a ring hole_inset in from the rim."""
+        from neurospatial.simulation.mazes.barnes import BarnesDims, make_barnes_maze
+
+        dims = BarnesDims()
         maze = make_barnes_maze(dims=dims)
 
         radius = dims.diameter / 2.0
-        expected_hole_radius = radius - dims.hole_radius
+        ring_radius = radius - dims.hole_inset
+        assert ring_radius / radius == pytest.approx(0.8, abs=0.01)
 
-        # Check each hole is at the expected radius from origin
         for i in range(dims.n_holes):
             hole = maze.env_2d.regions[f"hole_{i}"]
             assert hole.kind == "point"
+            assert np.hypot(*hole.data) == pytest.approx(ring_radius)
+            # The whole 9.5 cm hole fits on the platform.
+            assert np.hypot(*hole.data) + dims.hole_radius < radius
 
-            # Distance from origin
-            dist = np.sqrt(hole.data[0] ** 2 + hole.data[1] ** 2)
+    def test_hole_inset_sets_the_ring_radius(self):
+        """A custom hole_inset moves the holes along the radius."""
+        from neurospatial.simulation.mazes.barnes import BarnesDims, make_barnes_maze
 
-            # Should be close to expected_hole_radius
-            assert abs(dist - expected_hole_radius) < 0.1
+        dims = BarnesDims(diameter=120.0, hole_inset=5.0)
+        hole = make_barnes_maze(dims=dims).env_2d.regions["hole_0"]
+        np.testing.assert_allclose(hole.data, [55.0, 0.0], atol=1e-9)
 
     def test_holes_evenly_distributed(self):
         """Holes should be evenly distributed around perimeter."""
@@ -216,8 +237,8 @@ class TestMakeBarnesMaze:
         x_extent = bin_centers[:, 0].max() - bin_centers[:, 0].min()
         y_extent = bin_centers[:, 1].max() - bin_centers[:, 1].min()
 
-        # Should be larger than default (120 cm)
-        assert x_extent > 140  # Larger than 120
+        # Should be larger than the 122 cm default
+        assert x_extent > 140
         assert y_extent > 140
 
         # Should have 24 holes
