@@ -65,6 +65,104 @@ def test_env_is_first():
     assert not offenders, sorted(offenders)
 
 
+# Defaulted arguments a public function may take by position: data that an
+# analysis can do without or derive, never an option. Every other defaulted
+# argument is an option and must be keyword-only, so that a value passed by
+# position cannot be bound to the wrong option silently.
+FREE_FUNCTION_OPTIONAL_DATA = {
+    # Heading samples; needed only when distances are measured in the
+    # animal's frame.
+    ("compute_boundary_distances", "headings"),
+    ("compute_boundary_vector_rate", "headings"),
+    ("compute_boundary_vector_rates", "headings"),
+    # Reward locations; read from the tracked positions at the reward times
+    # when absent.
+    ("distance_to_reward", "reward_positions"),
+    # The trajectory, which the caller can replace by speed= and heading=.
+    ("heading_direction_labels", "times"),
+    ("heading_direction_labels", "positions"),
+    # Retired argument kept by position so the former call
+    # mutual_information(rates, occupancy) raises with migration guidance.
+    ("mutual_information", "occupancy"),
+    # Per-time-bin weights of the correlation.
+    ("decoding_correlation", "weights"),
+    # Center bins of the basis functions; selected with n_centers= and
+    # center_method= when absent.
+    ("chebyshev_filter_basis", "centers"),
+    ("geodesic_rbf_basis", "centers"),
+    ("heat_kernel_wavelet_basis", "centers"),
+    # The components of the transform being built.
+    ("from_rotation_matrix", "translation"),
+    ("scale_2d", "sx"),
+    ("scale_2d", "sy"),
+    ("scale_3d", "sx"),
+    ("scale_3d", "sy"),
+    ("scale_3d", "sz"),
+    ("simple_scale", "offset_px"),
+    ("translate", "tx"),
+    ("translate", "ty"),
+    ("translate_3d", "tx"),
+    ("translate_3d", "ty"),
+    ("translate_3d", "tz"),
+    # Covariance of the fitted coefficients, for the Wald test.
+    ("circular_basis_metrics", "cov_matrix"),
+    # Observations and fits drawn over the tuning curve or scatter.
+    ("plot_circular_basis_tuning", "angles"),
+    ("plot_circular_basis_tuning", "rates"),
+    ("plot_phase_precession", "result"),
+    # Values sampled at the times being converted.
+    ("to_pynapple", "values"),
+    # Records written to the file.
+    ("write_laps", "lap_types"),
+    ("write_trials", "trials"),
+    # The video or region the annotation works on.
+    ("annotate_track_graph", "video_path"),
+    ("validate_annotations", "boundary"),
+    # The Axes to draw on, as in result.plot(ax) and Environment.plot(ax).
+    ("plot_circular_basis_tuning", "ax"),
+    ("plot_head_direction_tuning", "ax"),
+    ("plot_object_vector_tuning", "ax"),
+    ("plot_phase_precession", "ax"),
+}
+
+
+def _defaulted_positional(parameters):
+    return [
+        p.name
+        for p in parameters.values()
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        and p.default is not p.empty
+    ]
+
+
+def test_free_function_options_are_keyword_only():
+    """Public functions take data positionally and every option by keyword.
+
+    A positional option with a default would let ``credible_region(env, p, 0.5)``
+    or ``convert_to_cm(xy, frame, 0.1)`` bind a value to an option the caller
+    did not mean. Only the optional data listed above may be passed by position.
+    """
+    offenders = [
+        f"{function.__name__}({name}=)"
+        for function, parameters in public_functions()
+        for name in _defaulted_positional(parameters)
+        if (function.__name__, name) not in FREE_FUNCTION_OPTIONAL_DATA
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_free_function_optional_data_list_is_current():
+    """Each listed argument still exists and is still a defaulted positional."""
+    present = {
+        (function.__name__, name)
+        for function, parameters in public_functions()
+        for name in _defaulted_positional(parameters)
+    }
+    assert not FREE_FUNCTION_OPTIONAL_DATA - present, sorted(
+        FREE_FUNCTION_OPTIONAL_DATA - present
+    )
+
+
 @pytest.mark.parametrize(
     ("name", "data", "option", "value"),
     [
