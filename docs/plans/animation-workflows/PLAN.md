@@ -67,3 +67,18 @@ without constructing a viewer. Test imports were verified against this worktree.
 Final animation, environment integration and public API run: **1,338 passed,
 7 skipped, 174 deselected**. Executable animation documentation and the 33-test
 NWB overlay suite also pass.
+
+## Remaining architectural recommendations
+
+- Extend the common scene/view interface to napari and 3-D scenes.
+- Support independent field color scales in the fastplotlib scene adapter.
+- Carry native viewer edits into export if exact native-view capture is needed;
+  current exports reproduce the scene, not native camera or custom graphics.
+- Move the video reader used by annotation into a shared video-I/O module, and
+  move pure styling helpers out of the Matplotlib parallel-rendering module.
+- Complete live GPU/Qt validation on a machine with the required display/GPU.
+
+Legacy backend overlay coverage still differs. The capability checks make
+omissions explicit; complete scene rendering is available through the new
+notebook/export workflow. The direct HTML object-vector warning was corrected
+in a follow-up audit to recommend supported viewing/export paths.

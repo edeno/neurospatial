@@ -674,7 +674,8 @@ def render_html(
         if overlay_data.object_vectors:
             warnings.warn(
                 "HTML backend does not support object-vector overlays. "
-                "They will be skipped. Use the napari backend for these overlays.",
+                "They will be skipped. Use backend='fastplotlib' to view these "
+                "overlays, or Animation.export() to include them in an export.",
                 UserWarning,
                 stacklevel=2,
             )
