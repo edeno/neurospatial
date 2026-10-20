@@ -14,15 +14,14 @@ Rat T-maze sizes vary from lab to lab and there is no canonical apparatus. The
 defaults here are consistent with the T-maze drawn in Wijnen et al. (2024)
 Fig. 1a, whose crossbar spans about the 1 m scale bar.
 
-The maze has no landmarks. Deacon & Rawlins (2006), Nat Protoc 1:7-12,
-doi:10.1038/nprot.2006.2, run both spontaneous and rewarded alternation on
-it: "Animals are started from the base of the T and allowed to choose one of
-the goal arms", and the alternation "can be reinforced by making the animal
-hungry and rewarding it with a preferred food if it alternates". Spontaneous
-alternation uses no reward. Where the food sits in a goal arm, how large its
-well is, and whether the stem base is a closed start box could not be
-verified, so ``start``, ``left_end`` and ``right_end`` are plain regions.
-Add a reward-port landmark at a goal-arm end for your own apparatus.
+Deacon & Rawlins (2006), Nat Protoc 1:7-12, doi:10.1038/nprot.2006.2, run
+both spontaneous and rewarded alternation on it: "Animals are started from
+the base of the T and allowed to choose one of the goal arms", and the
+alternation "can be reinforced by making the animal hungry and rewarding it
+with a preferred food if it alternates". Each goal arm ends in a food well,
+``well_left`` and ``well_right``: reward-port landmarks with point regions of
+the same name, centred in the end square of their arm. For spontaneous
+alternation, ignore the wells.
 
 Examples
 --------
@@ -41,6 +40,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
@@ -132,13 +132,15 @@ def make_t_maze(
 
     - start: Point at stem base (0, -stem_length/2 + width/2)
     - junction: Point at T-junction (0, +stem_length/2)
-    - left_end: Point at left arm end (-arm_length + width/2, +stem_length/2)
-    - right_end: Point at right arm end (+arm_length - width/2, +stem_length/2)
+    - well_left: Food well at the left arm end (-arm_length + width/2,
+      +stem_length/2), also a reward-port landmark
+    - well_right: Food well at the right arm end (+arm_length - width/2,
+      +stem_length/2), also a reward-port landmark
 
     Track Graph Topology:
     - start -> junction: Vertical edge along stem
-    - junction -> left_end: Horizontal edge along left arm
-    - junction -> right_end: Horizontal edge along right arm
+    - junction -> well_left: Horizontal edge along left arm
+    - junction -> well_right: Horizontal edge along right arm
 
     Examples
     --------
@@ -221,13 +223,26 @@ def make_t_maze(
         "start", point=corridor_end_point(junction_pos, start_pos, dims.width)
     )
     region_builder.add("junction", point=junction_pos)
-    region_builder.add(
-        "left_end", point=corridor_end_point(junction_pos, left_end_pos, dims.width)
-    )
-    region_builder.add(
-        "right_end", point=corridor_end_point(junction_pos, right_end_pos, dims.width)
-    )
+    wells = {
+        "well_left": corridor_end_point(junction_pos, left_end_pos, dims.width),
+        "well_right": corridor_end_point(junction_pos, right_end_pos, dims.width),
+    }
+    for name, point in wells.items():
+        region_builder.add(name, point=point)
     env_2d = env_2d.with_regions(region_builder)
+    env_2d = env_2d.with_landmarks(
+        Landmarks(
+            [
+                Landmark(
+                    name,
+                    "point",
+                    point,
+                    {"role": "reward_port", "port_type": "food_well"},
+                )
+                for name, point in wells.items()
+            ]
+        )
+    )
 
     # Create track graph if requested
     env_track = None
@@ -245,8 +260,8 @@ def _create_t_maze_track_graph(
 
     The track graph represents the T-maze topology with three edges:
     - start -> junction (stem)
-    - junction -> left_end (left arm)
-    - junction -> right_end (right arm)
+    - junction -> well_left (left arm)
+    - junction -> well_right (right arm)
 
     Parameters
     ----------
@@ -268,8 +283,8 @@ def _create_t_maze_track_graph(
         node_positions={
             "start": (0.0, -half_stem),
             "junction": (0.0, half_stem),
-            "left_end": (-dims.arm_length, half_stem),
-            "right_end": (dims.arm_length, half_stem),
+            "well_left": (-dims.arm_length, half_stem),
+            "well_right": (dims.arm_length, half_stem),
         },
         bin_size=bin_size,
         track_width=dims.width,

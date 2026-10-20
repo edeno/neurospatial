@@ -45,13 +45,14 @@
     extent where the source publishes one (Barnes holes, watermaze platform,
     radial-arm food cups, crossword and Hamlet boxes); otherwise the region
     stays a point. The watermaze quadrants are quarter-disc regions. Mazes
-    whose source fixes no port or box (T, Y, plus, honeycomb, rat HexMaze)
+    whose source fixes no port or box (Y, plus, honeycomb, rat HexMaze)
     declare none and say why. Renamed regions and track nodes:
 
     | Maze | Before | Now |
     | --- | --- | --- |
     | linear track | `reward_left`, `reward_right` | `well_left`, `well_right` |
     | W-maze (track nodes) | `well_1_top`..`well_3_top` | `well_1`..`well_3` |
+    | T-maze | `left_end`, `right_end` | `well_left`, `well_right` (food wells) |
     | radial arm | `arm_0`..`arm_7` | `food_cup_0`..`food_cup_7` |
     | Barnes | `hole_k` and `escape_hole` at the same hole | `escape_hole` only; new `start_box` |
     | cheeseboard | `reward_i_j` | `well_i_j` |
