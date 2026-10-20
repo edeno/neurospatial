@@ -62,6 +62,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals
+from neurospatial._results import ReadOnlyArraysMixin
 
 # Import internal utilities from canonical location
 from neurospatial.stats._utils import _ensure_rng
@@ -957,7 +958,7 @@ def shuffle_posterior_weighted_circular(
 
 
 @dataclass(frozen=True)
-class ShuffleTestResult:
+class ShuffleTestResult(ReadOnlyArraysMixin):
     """Result container for shuffle-based significance testing.
 
     A frozen dataclass containing the observed score, null distribution,
@@ -1020,10 +1021,11 @@ class ShuffleTestResult:
     n_shuffles: int
 
     def __post_init__(self) -> None:
-        """Own the null distribution as a read-only copy."""
-        null = np.array(self.null_scores, dtype=np.float64, copy=True)
-        null.flags.writeable = False
-        object.__setattr__(self, "null_scores", null)
+        """Own the null distribution as a read-only float64 copy."""
+        object.__setattr__(
+            self, "null_scores", np.asarray(self.null_scores, dtype=np.float64)
+        )
+        self._own_arrays()
 
     @property
     def is_significant(self) -> bool:

@@ -18,6 +18,7 @@ References
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -28,7 +29,7 @@ from matplotlib.colors import ListedColormap
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import ResultMixin
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.encoding._comparison import (
     _TOPOLOGIES,
     _UNIT_SELECTIONS,
@@ -59,8 +60,8 @@ _PV = _Caller(
 )
 
 
-@dataclass(frozen=True, slots=True, repr=False)
-class PopulationCoverageResult(ResultMixin):
+@dataclass(frozen=True, repr=False)
+class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
     """Results from population coverage analysis.
 
     Attributes
@@ -109,7 +110,12 @@ class PopulationCoverageResult(ResultMixin):
     # for backwards-compatible len/iter access, and exposes
     # excluded_reason / n_excluded for population-level map-mean
     # accounting.
-    place_fields: list[PlaceFieldsResult]
+    place_fields: Sequence[PlaceFieldsResult]
+
+    def __post_init__(self) -> None:
+        """Own the arrays and prevent replacing per-unit fields."""
+        object.__setattr__(self, "place_fields", tuple(self.place_fields))
+        self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""

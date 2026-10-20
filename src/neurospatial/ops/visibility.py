@@ -87,6 +87,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.geometry import (
     CallIndexes,
     batch_line_of_sight_clear,
@@ -386,7 +387,7 @@ class FieldOfView:
 
 
 @dataclass(frozen=True)
-class ViewshedResult:
+class ViewshedResult(ReadOnlyArraysMixin):
     """Result of viewshed analysis from a single observer position.
 
     Attributes
@@ -425,6 +426,10 @@ class ViewshedResult:
     cue_bearings: NDArray[np.float64]
     occlusion_map: NDArray[np.float64]
     _total_bins: int = field(default=0)
+
+    def __post_init__(self) -> None:
+        """Own the arrays as read-only copies."""
+        self._own_arrays()
 
     @property
     def n_visible_bins(self) -> int:

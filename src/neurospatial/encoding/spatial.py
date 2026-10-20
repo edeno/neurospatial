@@ -119,7 +119,7 @@ PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
 
 
 @dataclass(frozen=True, repr=False)
-class PlaceFieldsResult(ResultMixin):
+class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
 
     Returned by :func:`detect_place_fields`. Distinguishes "this map
@@ -152,9 +152,20 @@ class PlaceFieldsResult(ResultMixin):
     or ``len(detect_place_fields(...))`` keep working.
     """
 
-    fields: list[NDArray[np.int64]]
+    fields: Sequence[NDArray[np.int64]]
     excluded_reason: str | None = None
     n_excluded: int = 0
+
+    def __post_init__(self) -> None:
+        """Own each field's bins and prevent replacing fields."""
+        object.__setattr__(
+            self, "fields", tuple(read_only_copy(bins) for bins in self.fields)
+        )
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore owned field arrays after copying."""
+        super().__setstate__(state)
+        self.__post_init__()
 
     def __len__(self) -> int:
         return len(self.fields)

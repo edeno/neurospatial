@@ -1077,6 +1077,16 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- More results own their arrays as read-only copies that survive pickle and
+  `copy.deepcopy`, like the other analysis results: `ShuffleTestResult`
+  (its `null_scores` became writable again after copying),
+  `CircularBasisResult` (which kept the caller's `angles` array, so editing
+  it changed the stored angles but not the sine and cosine; it is now also
+  frozen), `ViewshedResult`, `PlaceFieldsResult` and
+  `PopulationCoverageResult`. `PlaceFieldsResult.fields` and
+  `PopulationCoverageResult.place_fields` are now tuples, so fields cannot be
+  appended to or replaced; copy with `list(...)` to edit.
+
 - `compute_directional_place_fields` leaves out frames labeled `None` or
   `NaN`, as it does frames labeled `"other"`. Before, such labels raised
   `TypeError`.
