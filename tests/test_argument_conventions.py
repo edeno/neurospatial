@@ -171,12 +171,14 @@ def test_free_function_optional_data_list_is_current():
         ("read_position", 1, "processing_module", "behavior"),
         ("read_head_direction", 1, "processing_module", "behavior"),
         ("read_pose", 1, "pose_estimation_name", "dlc"),
-        ("read_events", 2, "processing_module", "behavior"),
+        ("read_events", 1, "table_name", "laps"),
+        ("read_intervals", 1, "interval_name", "trials"),
+        ("write_events", 2, "name", "rewards"),
         ("write_place_field", 3, "name", "cell_1"),
         ("write_occupancy", 3, "name", "occupancy_1"),
         ("write_laps", 3, "description", "laps"),
         ("write_region_crossings", 4, "description", "crossings"),
-        ("dataframe_to_events_table", 2, "description", "rewards"),
+        ("dataframe_to_events_table", 1, "name", "rewards"),
     ],
 )
 def test_nwb_option_passed_by_position_names_its_keyword(name, data, option, value):
