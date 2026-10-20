@@ -60,8 +60,8 @@ def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
 
 def simulate_trajectory_ou(
     env: Environment,
-    duration: float,
     *,
+    duration: float,
     speed_units: str,
     dt: float = 0.01,
     start_position: NDArray[np.float64] | None = None,
@@ -441,8 +441,8 @@ def _nearest_bin_center(
 
 def simulate_trajectory_sinusoidal(
     env: Environment,
-    duration: float,
     *,
+    duration: float,
     sampling_frequency: float = 500.0,
     speed: float = 10.0,
     period: float | None = None,
@@ -583,8 +583,8 @@ def simulate_trajectory_sinusoidal(
 
 def simulate_trajectory_laps(
     env: Environment,
-    n_laps: int,
     *,
+    n_laps: int,
     speed_mean: float = 0.1,
     speed_std: float = 0.02,
     outbound_path: list[int] | None = None,

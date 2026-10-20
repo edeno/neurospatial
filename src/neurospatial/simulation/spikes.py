@@ -578,8 +578,8 @@ def _held_movement_heading(
 
 def add_modulation(
     spike_times: NDArray[np.float64],
-    modulation_freq: float,
     *,
+    modulation_freq: float,
     modulation_depth: float = 0.5,
     modulation_phase: float = 0.0,
     seed: int | None = None,
@@ -689,10 +689,14 @@ def add_modulation(
     Compare modulation depths:
 
     >>> spike_times = np.linspace(0, 10, 500)  # Uniform spike train
-    >>> no_mod = add_modulation(spike_times, 8.0, modulation_depth=0.0, seed=42)
+    >>> no_mod = add_modulation(
+    ...     spike_times, modulation_freq=8.0, modulation_depth=0.0, seed=42
+    ... )
     >>> len(no_mod) == len(spike_times)  # No modulation keeps all spikes
     True
-    >>> strong_mod = add_modulation(spike_times, 8.0, modulation_depth=0.9, seed=42)
+    >>> strong_mod = add_modulation(
+    ...     spike_times, modulation_freq=8.0, modulation_depth=0.9, seed=42
+    ... )
     >>> len(strong_mod) < len(no_mod)  # Strong modulation removes spikes
     True
 
