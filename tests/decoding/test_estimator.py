@@ -922,6 +922,7 @@ def test_positions_required_where_used(sim):
         "spike_times",
         "times",
         "epochs",
+        "break_before",
         "spike_window",
     ]
     assert list(inspect.signature(BayesianDecoder.predict_summary).parameters) == [
@@ -929,6 +930,7 @@ def test_positions_required_where_used(sim):
         "spike_times",
         "times",
         "epochs",
+        "break_before",
         "spike_window",
         "time_chunk",
     ]

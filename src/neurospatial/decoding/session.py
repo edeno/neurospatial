@@ -17,6 +17,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import resolve_time_windows
+from neurospatial._observation import validate_break_before
 from neurospatial._time_bins import _count_spikes_in_time_bins
 
 # Warn when more than this fraction of spikes fall outside the decode window.
@@ -110,6 +111,7 @@ def decode_session(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -184,6 +186,13 @@ def decode_session(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_frames,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from encoding and decoding, as for a gap longer than
+        ``max_gap``: no decode time bin spans it and spikes inside it are not
+        counted.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -342,6 +351,7 @@ def decode_session(
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=resolved_epochs,
+        break_before=break_before,
         spike_window=resolved_spike_window,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
@@ -354,6 +364,7 @@ def decode_session(
         dt=dt,
         max_gap=max_gap,
         epochs=resolved_epochs,
+        break_before=break_before,
         spike_window=resolved_spike_window,
         warn_on_drop=False,
         dtype=dtype,
@@ -397,6 +408,7 @@ def _prepare_session_decode(
     dt: float,
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
+    break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -407,7 +419,11 @@ def _prepare_session_decode(
     NDArray[np.float64],
     NDArray[np.float64],
 ]:
-    """Normalize spike inputs/models and tile bins inside observed runs."""
+    """Normalize spike inputs/models and tile bins inside observed runs.
+
+    ``break_before`` is validated here (naming ``context``); no decode bin
+    spans a declared break.
+    """
     from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.decoding._time_bins import validate_dt
     from neurospatial.encoding import _validate_times
@@ -434,6 +450,7 @@ def _prepare_session_decode(
         )
     # Require finite, sorted timestamps before constructing observed runs.
     _validate_times(times_arr, context=context)
+    breaks = validate_break_before(break_before, times_arr.size, call=context)
 
     # Decode window — computed ONCE and reused for both the out-of-window drop
     # check and the time-grid construction so they agree exactly.
@@ -452,10 +469,19 @@ def _prepare_session_decode(
     # ENCODING step, so periods of immobility (for example replay) are still
     # decoded.
     observed = interval_valid_mask(
-        times_arr, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+        times_arr,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+        break_before=breaks,
     )
     recording_support = TimeSupport.from_mask(
-        times_arr, observed, epochs=epochs, spike_window=spike_window, max_gap=max_gap
+        times_arr,
+        observed,
+        epochs=epochs,
+        spike_window=spike_window,
+        max_gap=max_gap,
+        break_before=breaks,
     )
     runs = recording_support.runs
     bin_left, bin_right = _time_bins_in_windows(runs, dt)
@@ -465,7 +491,8 @@ def _prepare_session_decode(
             f"No decode time bin fits: the {runs.shape[0]} observed recording "
             f"run(s) are at most {longest:.3g} s long, shorter than dt={dt}. "
             f"\nWhy: time bins are formed only inside runs of samples with gaps "
-            f"<= max_gap={max_gap} s that lie inside epochs and spike_window. "
+            f"<= max_gap={max_gap} s that lie inside epochs and spike_window "
+            f"and do not cross a declared break_before. "
             f"\nFix: use a smaller dt, widen epochs/spike_window, or pass a larger "
             f"max_gap (max_gap=None decodes across gaps)."
         )
@@ -488,6 +515,7 @@ def _fit_encoding_model(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
+    break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -503,6 +531,7 @@ def _fit_encoding_model(
     from neurospatial.encoding.spatial import compute_spatial_rates
 
     times_arr, positions = validate_times_positions(times, positions, call=context)
+    breaks = validate_break_before(break_before, times_arr.size, call=context)
     dtype = _validate_session_dtype(dtype)
     trains, _ = _as_spike_trains_with_ids(spike_times)
     # Mirror the encoder's method-specific validation (mutual exclusivity +
@@ -546,6 +575,7 @@ def _fit_encoding_model(
         warn_on_drop=warn_on_drop,
         dtype=dtype,
         epochs=epochs,
+        break_before=breaks,
         spike_window=spike_window,
     )
     # compute_spatial_rates already stores the result in `dtype`; the cast
@@ -565,9 +595,9 @@ def _fit_encoding_model(
                 f"{context}: the encoding model has no occupied bin, so every "
                 f"decode time bin would get a uniform posterior.",
                 why=(
-                    "Why: the gates (max_gap, min_speed, epochs, spike_window "
-                    "and min_occupancy) left no training interval with time "
-                    "in any kept bin."
+                    "Why: the gates (max_gap, min_speed, epochs, break_before, "
+                    "spike_window and min_occupancy) left no training interval "
+                    "with time in any kept bin."
                 ),
                 fix=(
                     "check that times, epochs and spike_window share one "
@@ -595,6 +625,7 @@ def _build_encoding_model(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: NDArray[np.float64] | None = None,
+    break_before: ArrayLike | None = None,
     spike_window: NDArray[np.float64] | None = None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -624,6 +655,7 @@ def _build_encoding_model(
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
@@ -636,6 +668,7 @@ def _build_encoding_model(
         dt=dt,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         warn_on_drop=False,
         dtype=dtype,
@@ -653,10 +686,12 @@ def _decode_with_models(
     dt: float = 0.025,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
+    context: str = "decode_session",
     **decode_kwargs: Any,
 ) -> DecodingResult:
     """Decode existing models on the per-run recording clock."""
@@ -670,9 +705,11 @@ def _decode_with_models(
         dt=dt,
         max_gap=max_gap,
         epochs=resolved_epochs,
+        break_before=break_before,
         spike_window=resolved_spike_window,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
+        context=context,
     )
     from neurospatial.decoding._support import models_on_support, supported_prior
 
@@ -713,6 +750,7 @@ def decode_session_summary(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -756,6 +794,13 @@ warn_on_drop, dtype
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_frames,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from encoding and decoding, as for a gap longer than
+        ``max_gap``: no decode time bin spans it and spikes inside it are not
+        counted.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -842,6 +887,7 @@ warn_on_drop, dtype
         min_speed=min_speed,
         max_gap=max_gap,
         epochs=resolved_epochs,
+        break_before=break_before,
         spike_window=resolved_spike_window,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
@@ -855,6 +901,7 @@ warn_on_drop, dtype
         dt=dt,
         max_gap=max_gap,
         epochs=resolved_epochs,
+        break_before=break_before,
         spike_window=resolved_spike_window,
         warn_on_drop=False,
         dtype=dtype,
@@ -872,10 +919,12 @@ def _decode_with_models_summary(
     dt: float = 0.025,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     spatial_support: NDArray[np.bool_] | None = None,
+    context: str = "decode_session_summary",
     **decode_kwargs: Any,
 ) -> DecodingSummary:
     """Stream reductions over existing models and per-run time bins."""
@@ -915,10 +964,11 @@ def _decode_with_models_summary(
         dt=dt,
         max_gap=max_gap,
         epochs=resolved_epochs,
+        break_before=break_before,
         spike_window=resolved_spike_window,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
-        context="decode_session_summary",
+        context=context,
     )
 
     from neurospatial.decoding._support import models_on_support, supported_prior

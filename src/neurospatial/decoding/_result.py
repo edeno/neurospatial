@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import pandas as pd
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import (
@@ -47,6 +47,8 @@ def _align_true_positions(
     *,
     n_dims: int,
     max_gap: float | None,
+    break_before: ArrayLike | None = None,
+    call: str = "DecodingResult.error_against",
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Interpolate ground truth only between finite, continuously observed samples.
 
@@ -62,6 +64,11 @@ def _align_true_positions(
     max_gap : float or None
         Largest source interval in seconds over which interpolation is allowed.
         Exact finite source samples remain observed even beside a gap.
+    break_before : array-like of bool, shape (n_true,), or None
+        Declared breaks in the source track: True at sample ``k`` forbids
+        interpolating between source samples ``k - 1`` and ``k``.
+    call : str
+        Public method named in the ``break_before`` validation error.
 
     Returns
     -------
@@ -94,12 +101,17 @@ def _align_true_positions(
         raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
     if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
         raise ValueError("max_gap must be a finite positive number of seconds or None.")
+    from neurospatial._observation import validate_break_before
+
+    breaks = validate_break_before(break_before, true_times.size, call=call)
 
     aligned = np.full((times.size, n_dims), np.nan, dtype=np.float64)
     finite = np.all(np.isfinite(true_positions), axis=1)
     continuous = finite[:-1] & finite[1:]
     if max_gap is not None:
         continuous &= np.diff(true_times) <= max_gap
+    if breaks is not None:
+        continuous &= ~breaks[1:]
     source_runs = np.cumsum(np.r_[False, ~continuous], dtype=np.intp)
     run_ids = np.full(times.size, -1, dtype=np.intp)
     right = np.searchsorted(true_times, times, side="left")
@@ -119,6 +131,8 @@ def _align_true_positions(
     observed = finite[lower] & finite[upper]
     if max_gap is not None:
         observed &= widths <= max_gap
+    if breaks is not None:
+        observed &= ~breaks[upper]
     query, lower, upper, widths = (
         values[observed] for values in (query, lower, upper, widths)
     )
@@ -451,6 +465,7 @@ class DecodingResult(ResultMixin):
         true_times: NDArray[np.float64] | None = None,
         true_positions: NDArray[np.float64] | None = None,
         max_gap: float | None = 0.5,
+        break_before: ArrayLike | None = None,
         colorbar: bool = False,
         show_map: bool = False,
         cmap: str = "viridis",
@@ -476,6 +491,12 @@ class DecodingResult(ResultMixin):
             Maximum ground-truth sampling interval, in seconds, over which to
             interpolate. Missing tracking, longer gaps and times outside the
             tracked span remain missing. ``None`` disables only the gap limit.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored. Indexes ``true_times``. Ground truth is never
+            interpolated across a break, as for a gap longer than ``max_gap``;
+            exact samples on either side stay observed.
         colorbar : bool, default=False
             If True, add a colorbar showing probability scale.
         show_map : bool, default=False
@@ -572,6 +593,8 @@ class DecodingResult(ResultMixin):
                 true_positions,
                 n_dims=self.env.n_dims,
                 max_gap=max_gap,
+                break_before=break_before,
+                call="DecodingResult.plot",
             )
 
         if ax is None:
@@ -953,6 +976,7 @@ class DecodingResult(ResultMixin):
         *,
         metric: Literal["euclidean", "geodesic"] = "geodesic",
         max_gap: float | None = 0.5,
+        break_before: ArrayLike | None = None,
     ) -> NDArray[np.float64]:
         """Per-time-bin decode error against externally sampled ground truth.
 
@@ -979,6 +1003,12 @@ class DecodingResult(ResultMixin):
             Largest ground-truth sampling interval (seconds) over which to
             interpolate. Longer gaps, NaN tracking and times outside the tracked
             span produce NaN errors. ``None`` disables only the gap limit.
+        break_before : ArrayLike of bool, shape (n_true,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored. Indexes ``true_times``. Ground truth is never
+            interpolated across a break, as for a gap longer than ``max_gap``;
+            exact samples on either side stay observed.
 
         Returns
         -------
@@ -998,12 +1028,15 @@ class DecodingResult(ResultMixin):
             resolves duplicate x-values arbitrarily), if ``true_positions``
             does not have shape ``(len(true_times), n_dims)``, or if :attr:`times`,
             ``true_times`` contain NaN or Inf, if ``true_positions`` contains
-            Inf, or if ``max_gap`` is not finite and positive (or None).
+            Inf, if ``max_gap`` is not finite and positive (or None), or if
+            ``break_before`` is not a Boolean array with one entry per
+            ``true_times`` sample.
 
         Notes
         -----
         Alignment interpolates each ground-truth coordinate only between finite
-        samples separated by at most ``max_gap``. It does not interpolate over
+        samples separated by at most ``max_gap`` and not by a declared
+        ``break_before``. It does not interpolate over
         missing tracking or extrapolate outside the tracked span. Exact finite
         source samples remain available even beside a gap. The decoded position is the MAP estimate
         (:attr:`map_position`); the aligned ground truth is compared against it
@@ -1052,6 +1085,8 @@ class DecodingResult(ResultMixin):
             true_positions,
             n_dims=self.env.n_dims,
             max_gap=max_gap,
+            break_before=break_before,
+            call="DecodingResult.error_against",
         )
 
         errors = decoding_error(self.env, self.map_position, aligned, metric=metric)

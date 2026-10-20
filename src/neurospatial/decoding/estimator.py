@@ -582,6 +582,7 @@ warn_on_drop
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
         spike_window: Any = None,
     ) -> BayesianDecoder:
         """Build encoding models from training data; return a new fitted decoder.
@@ -624,6 +625,15 @@ warn_on_drop
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_frames,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+            is excluded from the encoding models' occupancy and spike counts, as
+            for a gap longer than ``max_gap``, and the speed derived for
+            ``min_speed`` is not smoothed across it.
+            ``analysis_settings["break_times"]`` records ``times[k]`` of each
+            break.
         spike_window : same forms as ``epochs``, or None
             When the electrophysiology was recording. Intervals outside it are
             excluded from occupancy (and their spikes are not counted). ``None``
@@ -692,6 +702,7 @@ warn_on_drop
             dtype=self.dtype,
             context="BayesianDecoder.fit",
             epochs=resolved_epochs,
+            break_before=break_before,
             spike_window=resolved_spike_window,
         )
         return replace(
@@ -760,6 +771,7 @@ warn_on_drop
         times: ArrayLike,
         *,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
         spike_window: Any = None,
     ) -> DecodingResult:
         """Decode the full posterior for new spikes against the fitted models.
@@ -783,6 +795,12 @@ warn_on_drop
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_frames,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+            is excluded from decoding, as for a gap longer than ``max_gap``: no
+            decode time bin spans it and spikes inside it are not counted.
         spike_window : same forms as ``epochs``, or None
             When the electrophysiology was recording. Intervals outside it are
             excluded from occupancy (and their spikes are not counted). ``None``
@@ -829,7 +847,9 @@ warn_on_drop
             dtype=self.dtype,
             max_gap=self.max_gap,
             epochs=epochs,
+            break_before=break_before,
             spike_window=spike_window,
+            context="BayesianDecoder.predict",
         )
 
     def predict_summary(
@@ -838,6 +858,7 @@ warn_on_drop
         times: ArrayLike,
         *,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
         spike_window: Any = None,
         time_chunk: int = 1024,
     ) -> DecodingSummary:
@@ -867,6 +888,12 @@ warn_on_drop
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_frames,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+            is excluded from decoding, as for a gap longer than ``max_gap``: no
+            decode time bin spans it and spikes inside it are not counted.
         spike_window : same forms as ``epochs``, or None
             When the electrophysiology was recording. Intervals outside it are
             excluded from occupancy (and their spikes are not counted). ``None``
@@ -913,7 +940,9 @@ warn_on_drop
             dtype=self.dtype,
             max_gap=self.max_gap,
             epochs=epochs,
+            break_before=break_before,
             spike_window=spike_window,
+            context="BayesianDecoder.predict_summary",
             time_chunk=time_chunk,
         )
 
@@ -924,6 +953,7 @@ warn_on_drop
         positions: NDArray[np.float64],
         *,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
         spike_window: Any = None,
         metric: str = "median_error",
         distance: str = "geodesic",
@@ -974,6 +1004,13 @@ warn_on_drop
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_frames,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+            is excluded from decoding, as for a gap longer than ``max_gap``: no
+            decode time bin spans it and spikes inside it are not counted. Ground
+            truth is never interpolated across a break.
         spike_window : same forms as ``epochs``, or None
             When the electrophysiology was recording. Intervals outside it are
             excluded from occupancy (and their spikes are not counted). ``None``
@@ -1010,6 +1047,7 @@ warn_on_drop
         ``spike_window``; no bin spans a pause, and spikes between runs are not
         counted. ``result.times`` may therefore be non-contiguous.
         """
+        from neurospatial._observation import validate_break_before
         from neurospatial._validation import validate_times_positions
 
         # Validate the reduction (`metric`) and error metric (`distance`) up
@@ -1031,9 +1069,16 @@ warn_on_drop
         times_arr, positions_arr = validate_times_positions(
             times, positions, call="BayesianDecoder.score"
         )
+        breaks = validate_break_before(
+            break_before, times_arr.size, call="BayesianDecoder.score"
+        )
 
         result = self.predict(
-            spike_times, times_arr, epochs=epochs, spike_window=spike_window
+            spike_times,
+            times_arr,
+            epochs=epochs,
+            break_before=breaks,
+            spike_window=spike_window,
         )
         # `distance` is validated above, so narrowing it to the Literal the
         # DecodingResult expects is safe.
@@ -1042,6 +1087,7 @@ warn_on_drop
             positions_arr,
             metric=cast("Literal['euclidean', 'geodesic']", distance),
             max_gap=self.max_gap,
+            break_before=breaks,
         )
 
         # Guard against silently reducing over dropped bins. error_against stamps
