@@ -502,8 +502,8 @@ def pairwise_distances(
 def neighbors_within(
     G: nx.Graph,
     centers: list[int] | NDArray[np.int_],
-    radius: float,
     *,
+    radius: float,
     metric: str = "geodesic",
     bin_centers: NDArray[np.float64] | None = None,
     weight: str = "distance",

@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 
 def get_n_bins(
     positions: NDArray[np.float64],
-    bin_size: float | Sequence[float],
     *,
+    bin_size: float | Sequence[float],
     dimension_range: Sequence[tuple[float, float]] | None = None,
 ) -> NDArray[np.int_]:
     """Calculate the number of bins needed for each dimension of a dataset.
