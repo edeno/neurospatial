@@ -303,6 +303,12 @@ class EventInspector:
             container,
         ]
         self._refresh = refresh
+
+        def view_closed() -> None:
+            if self._view is shown_view:
+                self.close()
+
+        shown_view._add_close_callback(view_closed)
         try:
             refresh()
             if self._selected is not None:
@@ -318,13 +324,25 @@ class EventInspector:
 
     def close(self) -> None:
         """Close this inspector's view and controls; keep the scene available."""
+        from neurospatial.animation._resources import _cleanup_error
+
         self._refresh = None
         view, self._view = self._view, None
         controls, self._controls = self._controls, []
         observers, self._observers = self._observers, []
+        failures: list[BaseException] = []
         for control, callback in observers:
-            control.unobserve(callback, names="value")
-        if view is not None:
-            view.close()
-        for control in controls:
-            control.close()
+            try:
+                control.unobserve(callback, names="value")
+            except BaseException as error:
+                failures.append(error)
+        cleanup = ([] if view is None else [view.close]) + [
+            control.close for control in controls
+        ]
+        for close in cleanup:
+            try:
+                close()
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise _cleanup_error("Event inspector cleanup failed.", failures)

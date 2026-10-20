@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial.animation._resources import _add_cleanup_note
 
 if TYPE_CHECKING:
     from neurospatial.animation.scene import Animation, AnimationField
@@ -20,6 +22,7 @@ from neurospatial.animation._backend_view import (
 from neurospatial.animation._backend_view import (
     _BackendView,
     _CallbackBackendView,
+    _close_after_error,
     _NativeBackendView,
 )
 
@@ -70,11 +73,18 @@ class AnimationView:
         self._backend = backend
         self.native = backend.native
         self._closed = False
+        self._close_callbacks: list[Callable[[], None]] = []
         self._time = float(animation.frame_times[0])
         self._selection = (
             float(animation.frame_times[0]),
             float(animation.frame_times[-1]),
         )
+        try:
+            animation._register_view(self)
+        except BaseException as error:
+            self._closed = True
+            _close_after_error(backend.close, error)
+            raise
 
     @property
     def time(self) -> float:
@@ -156,14 +166,40 @@ class AnimationView:
         with self._backend.capture_session() as capture:
             return plan.write(capture)
 
+    def _add_close_callback(self, callback: Callable[[], None]) -> None:
+        if self._closed:
+            callback()
+        else:
+            self._close_callbacks.append(callback)
+
     def close(self) -> None:
         """Release this view's controls and rendering resources, once."""
-        if not self._closed:
-            self._time = self.time
-            self._closed = True
-            self._backend.close()
+        if self._closed:
+            return
+        from neurospatial.animation._resources import _cleanup_error
+
+        failures: list[BaseException] = []
+        try:
+            # A native window may already have disposed its time controls.
+            with suppress(Exception):
+                self._time = float(self._backend.time)
+        except BaseException as error:
+            failures.append(error)
+        self._closed = True
+        callbacks, self._close_callbacks = self._close_callbacks, []
+        try:
+            for close in (self._backend.close, *callbacks):
+                try:
+                    close()
+                except BaseException as error:
+                    failures.append(error)
+        finally:
+            self.animation._unregister_view(self)
+        if failures:
+            raise _cleanup_error("Animation view cleanup failed.", failures)
 
     def _require_open(self) -> None:
+        self.animation._ensure_view_allowed()
         if self._closed:
             raise RuntimeError(
                 "This view is closed. Call Animation.show() for a new view."
@@ -174,7 +210,13 @@ class AnimationView:
         return self
 
     def __exit__(self, *args: Any) -> None:
-        self.close()
+        try:
+            self.close()
+        except BaseException as cleanup:
+            if len(args) > 1 and isinstance(args[1], BaseException):
+                _add_cleanup_note(args[1], f"View cleanup also failed: {cleanup!r}")
+            else:
+                raise
 
     def _ipython_display_(self) -> None:
         from IPython.display import display
@@ -312,10 +354,13 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
         try:
             yield capture
         finally:
-            try:
-                view.seek(time)
-            finally:
-                play.playing = playing
+            if view._closed or animation._closed or animation._closing:
+                play.playing = False
+            else:
+                try:
+                    view.seek(time)
+                finally:
+                    play.playing = playing
 
     view = AnimationView._from_backend(
         animation,
@@ -333,8 +378,8 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
     play.observe(played, names="value")
     try:
         view.seek(start)
-    except Exception:
-        view.close()
+    except BaseException as error:
+        _close_after_error(view.close, error)
         raise
     return view
 
@@ -345,6 +390,7 @@ def show_animation(
     """Create a view after checking that all requested data can be drawn."""
     from neurospatial.animation._capabilities import require_scene_view
 
+    animation._ensure_view_allowed()
     require_scene_view(animation, backend, kwargs)
     if backend == "widget":
         return _notebook_view(animation, **kwargs)
@@ -399,7 +445,7 @@ def show_animation(
         raise ValueError("Animation.show() creates a view; dry_run is not supported.")
     try:
         native.show()
-    except Exception:
-        native.close()
+    except BaseException as error:
+        _close_after_error(native.close, error)
         raise
     return AnimationView._from_backend(animation, _NativeBackendView(native, native))

@@ -191,3 +191,40 @@ Follow-up validation:
 - Ruff and formatting pass; mypy passes across all **305 source files**.
 - Fresh-process preparation, including track projection, imports neither
   `matplotlib.pyplot` nor an Agg canvas.
+
+## Sampling and lifetime review
+
+The remaining five findings are addressed at shared boundaries:
+
+- Prepared spatial overlays resolve inherited `frame_times` explicitly.
+  Fastplotlib and scene consumers share one sampler for interpolation, exact
+  sample masks and interval support, including custom adapters.
+- Scenes retain their views and close playback, workers and event-inspection
+  controls before releasing readers. Closing one view unregisters it and keeps
+  the scene reusable; caller-supplied napari viewers retain unrelated content.
+- A separate reader owner handles legacy dispatch failures, completed exports
+  and interactive closure. Pure validation precedes acquisition; consumers
+  borrow readers, and cleanup attempts every resource while preserving primary
+  errors. Native construction failures also drain acquired consumers.
+- Constant signal normalization preserves missing NaNs. Prepared signal values
+  are final and are not normalized again by individual renderers.
+- Object vectors prepare one finite recording-wide rate peak and use a shared
+  bounded opacity calculation. Resampling and selected windows retain that
+  scale without rescanning the recording on each frame.
+
+The coordinate guide now documents original and processed pixel centers,
+canonical centimeter calibration, environment units and backend-specific
+display transforms, including the separate legacy napari raster convention.
+
+Validation:
+
+- Broad animation, environment integration, public API and argument contracts:
+  **1,556 passed, 6 skipped, 186 deselected**.
+- Actual Metal rendering, capture, observation/field support and lifecycle:
+  **99 passed**, including native canvas closure and failed construction after
+  worker allocation.
+- Actual Cocoa napari suite: **145 passed**; playback/dock integration:
+  **18 passed**. A live supplied viewer retains its caller layers and controls
+  while the closed scene, view and controller can be garbage-collected.
+- NWB overlays and all executable documentation: **64 passed**.
+- Ruff and formatting pass; mypy passes across all **306 source files**.

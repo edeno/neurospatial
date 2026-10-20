@@ -30,10 +30,11 @@ _SUPPLIED = {
         "max_playback_fps",
         "frame_times",
         "overlay_data",
+        "_on_close",
     },
     "video": {"fps", "frame_times", "overlay_data"},
     "html": {"fps", "overlay_data"},
-    "widget": {"fps", "frame_times", "overlay_data"},
+    "widget": {"fps", "frame_times", "overlay_data", "_on_close"},
 }
 
 

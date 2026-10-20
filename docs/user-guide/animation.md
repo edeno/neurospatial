@@ -101,7 +101,7 @@ inspector.export_events("review.json")  # IDs, intervals, scores, annotations
 # Save only the selected row:
 inspector.export_events("selected.csv", selected_only=True)
 inspector.close()                      # controls; the scene is still reusable
-scene.close()                          # figures and readers opened by the scene
+scene.close()                          # all views, controls, figures and owned readers
 ```
 
 `pd.read_json("review.json", orient="table")` restores the typed event table.
@@ -134,6 +134,12 @@ view.export("inspection.mp4", fps=30, speed=0.1)
 view.close()  # scene remains available
 ```
 
+`scene.close()` also closes its views and event-inspection controls, stops
+playback and waits for pending frame reads before releasing owned readers.
+Use `with Animation(...) as scene:` to give these resources a shared lifetime.
+Closing one view leaves the scene available for another view or export. A
+caller-supplied napari viewer keeps its unrelated layers and controls.
+
 Scenes support 1-D, 2-D and 3-D environments; napari scenes require 2-D or 3-D.
 Regular 3-D cells retain their physical geometry in scene exports and become
 volumes in napari; layouts without cell geometry show values at bin centers.
@@ -164,6 +170,8 @@ support. Neither a wider requested window nor `max_gap=None` fills a known
 recording gap.
 
 Position, pose, heading and object-vector overlays preserve NaN observations.
+When an overlay omits `times`, its samples inherit `frame_times` and retain
+the same gap and missing-sample rules as an explicit clock.
 Their default `max_gap=0.5` seconds and optional `break_before` match analysis
 support: interpolation stays inside observed intervals, with no extrapolation.
 Set `max_gap=None` deliberately for sparsely sampled continuous observations.
@@ -175,6 +183,9 @@ against the environment and asks for an explicit transform when it differs.
 NWB position adapters forward units. `SpikeRasterOverlay(rates=rate_result)`
 validates the environment and aligns maps by `unit_ids`.
 Mixed unit identifiers, such as integer `1` and string `"1"`, remain distinct.
+Normalizing a constant `TimeSeriesOverlay` maps finite samples to zero while
+preserving NaNs. Object-vector rate opacity uses the finite peak over the
+prepared recording, keeping its scale stable when a view selects a window.
 
 For `track=...`, the environment and track must use the same units and
 Cartesian coordinate frame. Unit spelling aliases are accepted; convert or
@@ -185,7 +196,10 @@ a declaration on only one side is insufficient.
 The scene owns video readers it opens. `scene.overlay_data()` returns borrowed
 views of those readers, including when requesting another clock within the
 scene's bounds. Keep the scene open while using them; `scene.close()` releases
-the readers. Failed scene preparation also releases readers already acquired.
+the readers after closing its views. Failed scene preparation also releases
+readers already acquired. The legacy `env.animate_fields` entry point releases
+owned readers after export or failure; interactive views retain them until
+their window or widget is closed.
 Custom overlay adapters are converted once. Their prepared data retains its
 native clock and source-frame mapping; adapters may be frozen objects.
 

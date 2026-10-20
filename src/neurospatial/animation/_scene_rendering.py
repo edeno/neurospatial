@@ -9,6 +9,7 @@ from typing import Any, cast
 import numpy as np
 
 from neurospatial.animation._prepared import PreparedScene
+from neurospatial.animation._style import _rate_opacity
 
 
 class SceneRenderer:
@@ -418,13 +419,7 @@ class SceneRenderer:
             opacity = 1.0
             if vectors.firing_rates is not None:
                 rate = self._sample(vectors, vectors.firing_rates, time)
-                finite_rates = vectors.firing_rates[np.isfinite(vectors.firing_rates)]
-                peak = float(np.max(finite_rates, initial=0)) or 1.0
-                opacity = (
-                    float(np.clip(0.1 + 0.9 * float(rate) / peak, 0, 1))
-                    if np.isfinite(rate)
-                    else 0.0
-                )
+                opacity = _rate_opacity(float(rate), vectors._rate_peak or 1.0)
             for point in np.atleast_2d(objects):
                 if not np.isfinite(point).all():
                     continue

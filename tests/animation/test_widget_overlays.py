@@ -147,7 +147,7 @@ def test_render_widget_accepts_overlay_data_parameter(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # This should not raise an error
     render_widget(
@@ -174,7 +174,7 @@ def test_render_widget_accepts_show_regions_parameter(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # This should not raise an error
     render_widget(
@@ -201,7 +201,7 @@ def test_render_widget_accepts_region_alpha_parameter(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # This should not raise an error
     render_widget(
@@ -233,7 +233,7 @@ def test_render_widget_without_overlays_still_works(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Should work without overlay parameters
     render_widget(simple_env, simple_fields, initial_cache_size=5)
@@ -268,7 +268,7 @@ def test_position_overlay_renders_correctly(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Mock render function to return fake PNG bytes
     mock_render_func.return_value = b"fake_png_data"
@@ -308,7 +308,7 @@ def test_bodypart_overlay_renders_correctly(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Mock render function to return fake PNG bytes
     mock_render_func.return_value = b"fake_png_data"
@@ -347,7 +347,7 @@ def test_head_direction_overlay_renders_correctly(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Mock render function to return fake PNG bytes
     mock_render_func.return_value = b"fake_png_data"
@@ -386,7 +386,7 @@ def test_all_overlays_render_correctly(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Mock render function to return fake PNG bytes
     mock_render_func.return_value = b"fake_png_data"
@@ -425,7 +425,7 @@ def test_show_regions_passed_to_render_function(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Mock render function to return fake PNG bytes
     mock_render_func.return_value = b"fake_png_data"
@@ -458,7 +458,7 @@ def test_region_alpha_passed_to_render_function(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Mock render function to return fake PNG bytes
     mock_render_func.return_value = b"fake_png_data"
@@ -615,7 +615,7 @@ def test_multiple_position_overlays(
     mock_ipywidgets.Play = MagicMock
     mock_ipywidgets.VBox = MagicMock
     mock_ipywidgets.HBox = MagicMock
-    mock_ipywidgets.jslink = MagicMock
+    mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
     # Mock render function
     mock_render_func.return_value = b"fake_png_data"

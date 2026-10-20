@@ -169,7 +169,9 @@ def test_native_close_releases_graphics_canvas_and_owned_readers_once():
     animation.figure = SimpleNamespace(renderer=Mock())
     canvas = animation._canvas = Mock()
     reader = Mock()
-    animation._owned_video_readers = [reader, reader]
+    from neurospatial.animation._resources import _OwnedReaders
+
+    animation._reader_owner = _OwnedReaders([reader, reader])
     animation.close()
     animation.close()
     animation._frames.close.assert_called_once()

@@ -40,6 +40,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._units import normalize_position_units as _normalize_position_units
 from neurospatial.animation._region_names import shown_region_names
+from neurospatial.animation._resources import _OwnedReaders
 from neurospatial.animation._sampling import observation_support, sample_at_times
 from neurospatial.geometry import require_cartesian
 
@@ -1596,7 +1597,8 @@ class TimeSeriesOverlay:
     normalize : bool, optional
         If True, normalize to 0-1 range for overlaying variables with
         different scales. Only meaningful when group is set.
-        **Note**: Constant data (min == max) is normalized to all zeros.
+        **Note**: Constant finite data (min == max) is normalized to zero;
+        missing values remain NaN.
         Default is False.
     show_cursor : bool, optional
         Show vertical line at current time. Default is True.
@@ -1958,7 +1960,9 @@ class TimeSeriesOverlay:
             if range_val > 0:
                 output_data = (self.data - global_vmin) / range_val
             else:
-                output_data = np.zeros_like(self.data)  # Constant data -> 0
+                # Constant finite observations normalize to zero; missing
+                # observations remain absent from the signal and its plots.
+                output_data = np.where(finite_mask, 0.0, np.nan)
             # After normalization, limits become [0, 1]
             global_vmin, global_vmax = 0.0, 1.0
 
@@ -3598,6 +3602,15 @@ class ObjectVectorData:
     sample_valid: NDArray[np.bool_] | None = None
     interval_valid: NDArray[np.bool_] | None = None
 
+    _rate_peak: float | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Keep one finite full-recording rate summary through resampling."""
+        if self._rate_peak is None:
+            from neurospatial.animation._style import _finite_rate_peak
+
+            self._rate_peak = _finite_rate_peak(self.firing_rates)
+
 
 @dataclass
 class OverlayData:
@@ -4893,7 +4906,9 @@ def _convert_overlays_to_data(
         video overlay that has ``times``, with those times in the data's
         ``times``, instead of aligning them to ``frame_times``; for a backend
         that shows each overlay at its own sampling rate. Every overlay is
-        still checked against ``frame_times``.
+        still checked against ``frame_times``. Sampled outputs with no explicit
+        source clock inherit the actual ``frame_times`` clock, including its
+        nonuniform intervals; every sampled output has explicit ``times``.
 
     Returns
     -------
@@ -4921,7 +4936,7 @@ def _convert_overlays_to_data(
     Temporal alignment behavior:
 
     - If overlay.times is None, assumes overlay data is already aligned to
-      frame_times (same length and uniform spacing)
+      frame_times (same length, including nonuniform frame intervals)
     - If overlay.times is provided, uses interpolation to align (controlled by
       overlay.interp parameter)
     - Extrapolation outside overlay time range produces NaN values
@@ -4983,14 +4998,12 @@ def _convert_overlays_to_data(
     object_vector_data_list: list[ObjectVectorData] = []
 
     with ExitStack() as cleanup:
-        owned_readers: set[int] = set()
+        owned_readers = _OwnedReaders()
+        cleanup.callback(owned_readers.close)
 
         def register_reader(data: VideoData) -> None:
-            if data._owns_reader and id(data.reader) not in owned_readers:
-                close = getattr(data.reader, "close", None)
-                if close is not None:
-                    cleanup.callback(close)
-                owned_readers.add(id(data.reader))
+            if data._owns_reader:
+                owned_readers.add(data.reader)
 
         # Process each overlay using protocol dispatch
         for overlay in overlays:
@@ -5027,7 +5040,7 @@ def _convert_overlays_to_data(
             if isinstance(internal_data, VideoData):
                 register_reader(internal_data)
             if isinstance(internal_data, _OWN_SAMPLE_TYPES):
-                if native_clock and internal_data.times is None:
+                if own_samples and internal_data.times is None:
                     internal_data = replace(
                         internal_data, times=conversion_times.copy()
                     )

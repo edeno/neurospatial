@@ -336,7 +336,7 @@ class TestRenderWidgetImageFormat:
         mock_ipywidgets.Play = MagicMock
         mock_ipywidgets.VBox = MagicMock
         mock_ipywidgets.HBox = MagicMock
-        mock_ipywidgets.jslink = MagicMock
+        mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
         # Should not raise
         render_widget(
@@ -374,7 +374,7 @@ class TestRenderWidgetImageFormat:
         mock_ipywidgets.Play = MagicMock
         mock_ipywidgets.VBox = MagicMock
         mock_ipywidgets.HBox = MagicMock
-        mock_ipywidgets.jslink = MagicMock
+        mock_ipywidgets.jslink = MagicMock(return_value=MagicMock(spec=["unlink"]))
 
         mock_render.return_value = b"fake_jpeg_data"
 

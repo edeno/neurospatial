@@ -7,6 +7,7 @@ for working with large-scale time series data.
 from __future__ import annotations
 
 import logging
+import sys
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -18,6 +19,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._region_names import shown_region_names
+from neurospatial.animation._resources import _add_cleanup_note, _OwnedReaders
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
@@ -669,35 +671,6 @@ def animate_fields(
             stacklevel=2,
         )
 
-    # Convert overlays to internal OverlayData if provided
-    overlay_data = None
-    if overlays is not None:
-        from neurospatial.animation.overlays import _convert_overlays_to_data
-
-        # frame_times is guaranteed to be set by _build_frame_times above
-        assert frame_times is not None, "frame_times should be built before conversion"
-        overlay_data = _convert_overlays_to_data(
-            overlays=overlays,
-            frame_times=frame_times,
-            n_frames=n_frames,
-            env=env,
-            # fastplotlib shows each overlay at its own rate.
-            own_samples=backend == "fastplotlib",
-        )
-
-        # Validate pickle-ability for parallel rendering (applies to video backend)
-        # Check n_workers from kwargs to determine if parallel rendering will be used
-        n_workers = kwargs.get("n_workers")
-        if n_workers and n_workers > 1:
-            from neurospatial.animation.overlays import _validate_pickle_ability
-
-            _validate_pickle_ability(overlay_data, n_workers=n_workers)
-
-    if overlay_data and backend in _BACKEND_OPTIONS:
-        from neurospatial.animation._capabilities import warn_unsupported_overlays
-
-        overlay_data = warn_unsupported_overlays(backend, overlay_data)
-
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)
     # Other backends expect list semantics for per-frame iteration
@@ -748,48 +721,17 @@ def animate_fields(
         auto_reason=auto_reason,
     )
 
-    # Route to backend with early validation
-    if backend == "napari":
-        from neurospatial.animation.backends.napari_backend import render_napari
+    # Fail pure preflight before acquiring any overlay decoder.
+    if backend == "video":
+        from neurospatial.animation.backends.video_backend import check_ffmpeg_available
 
-        return render_napari(
-            env,
-            fields,
-            overlay_data=overlay_data,
-            # Forward frame_times explicitly: it is a named animate_fields
-            # parameter (not in **kwargs), so the PlaybackController gets the
-            # user's timestamps even when there are no overlays.
-            frame_times=frame_times,
-            fps=playback_fps,
-            sample_rate_hz=sample_rate_hz,
-            speed=speed,
-            max_playback_fps=max_playback_fps,
-            **options,
-        )
-
-    elif backend == "video":
-        from neurospatial.animation.backends.video_backend import (
-            check_ffmpeg_available,
-            render_video,
-        )
-
-        # Early validation: fail fast before expensive setup if ffmpeg missing
         if not check_ffmpeg_available():
             raise RuntimeError(
-                "WHAT: ffmpeg is not installed or not found in PATH.\n\n"
-                "WHY: Video export requires ffmpeg for encoding frames into video.\n\n"
-                "Fix: Install ffmpeg:\n"
-                "  macOS:   brew install ffmpeg\n"
-                "  Ubuntu:  sudo apt install ffmpeg\n"
-                "  Windows: Download from https://ffmpeg.org/download.html\n\n"
-                "Or use a different backend:\n"
-                "  backend='napari' - Interactive viewer (no dependencies)\n"
-                "  backend='html'   - Standalone HTML file (no dependencies)\n"
-                "  backend='widget' - Jupyter notebook widget"
+                "ffmpeg is not installed or not found in PATH. Video export requires ffmpeg. Fix: install ffmpeg "
+                "(macOS: brew install ffmpeg; Ubuntu: sudo apt install ffmpeg), "
+                "or select backend='html', 'widget', or 'napari'."
             )
-
-        video_path = options.pop("save_path", None)
-        if video_path is None:
+        if options.get("save_path") is None:
             raise ValueError(
                 _format_error(
                     "save_path required for video backend, got None",
@@ -797,70 +739,162 @@ def animate_fields(
                     why="Why: the video backend writes to an output file.",
                 )
             )
-
-        if "crf" in options and "bitrate" in options:
-            warnings.warn(
-                f"bitrate={options['bitrate']!r} and crf={options['crf']!r} were "
-                "both passed; the video is encoded at the constant bitrate, so "
-                "crf is ignored. Pass only crf= for constant quality, or only "
-                "bitrate= for a fixed bitrate.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-
-        # Validate environment pickle-ability for parallel rendering
         n_workers = options.get("n_workers")
         if n_workers and n_workers > 1:
             _validate_env_pickleable(env)
 
-        return render_video(
-            env,
-            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            video_path,
-            overlay_data=overlay_data,
-            frame_times=frame_times,
-            fps=playback_fps,
-            **options,
-        )
+    owner = _OwnedReaders()
+    transferred = False
+    try:
+        # Convert overlays to internal OverlayData if provided
+        overlay_data = None
+        if overlays is not None:
+            from neurospatial.animation.overlays import _convert_overlays_to_data
 
-    elif backend == "html":
-        from neurospatial.animation.backends.html_backend import render_html
+            # frame_times is guaranteed to be set by _build_frame_times above
+            assert frame_times is not None, (
+                "frame_times should be built before conversion"
+            )
+            overlay_data = _convert_overlays_to_data(
+                overlays=overlays,
+                frame_times=frame_times,
+                n_frames=n_frames,
+                env=env,
+                # fastplotlib shows each overlay at its own rate.
+                own_samples=backend == "fastplotlib",
+            )
 
-        return render_html(
-            env,
-            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            options.pop("save_path", None),
-            overlay_data=overlay_data,
-            fps=playback_fps,
-            **options,
-        )
+            owner.add_data(overlay_data)
+            from dataclasses import replace
 
-    elif backend == "fastplotlib":
-        from neurospatial.animation.backends.fastplotlib_backend import (
-            render_fastplotlib,
-        )
+            # The owner retains every acquired reader, including overlays later
+            # omitted by capability filtering. Every consumer borrows them.
+            if overlay_data.videos:
+                overlay_data = replace(
+                    overlay_data,
+                    videos=[
+                        replace(video, _owns_reader=False)
+                        for video in overlay_data.videos
+                    ],
+                )
 
-        return render_fastplotlib(
-            env,
-            fields,
-            overlay_data=overlay_data,
-            frame_times=frame_times,
-            speed=speed,
-            max_playback_fps=max_playback_fps,
-            **options,
-        )
+            # Validate before dispatch when a backend will use worker processes.
+            n_workers = options.get("n_workers")
+            if n_workers and n_workers > 1:
+                from neurospatial.animation.overlays import _validate_pickle_ability
 
-    else:
-        from neurospatial.animation.backends.widget_backend import render_widget
+                _validate_pickle_ability(overlay_data, n_workers=n_workers)
 
-        return render_widget(
-            env,
-            fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
-            overlay_data=overlay_data,
-            frame_times=frame_times,
-            fps=playback_fps,
-            **options,
-        )
+        if overlay_data and backend in _BACKEND_OPTIONS:
+            from neurospatial.animation._capabilities import warn_unsupported_overlays
+
+            overlay_data = warn_unsupported_overlays(backend, overlay_data)
+
+        # Route to backend with transactional resource cleanup
+        if backend == "napari":
+            from neurospatial.animation.backends.napari_backend import render_napari
+
+            result = render_napari(
+                env,
+                fields,
+                overlay_data=overlay_data,
+                _on_close=owner.close,
+                # Forward frame_times explicitly: it is a named animate_fields
+                # parameter (not in **kwargs), so the PlaybackController gets the
+                # user's timestamps even when there are no overlays.
+                frame_times=frame_times,
+                fps=playback_fps,
+                sample_rate_hz=sample_rate_hz,
+                speed=speed,
+                max_playback_fps=max_playback_fps,
+                **options,
+            )
+            transferred = result is not None and not options.get("dry_run", False)
+            return result
+
+        elif backend == "video":
+            from neurospatial.animation.backends.video_backend import render_video
+
+            video_path = options.pop("save_path")
+
+            if "crf" in options and "bitrate" in options:
+                warnings.warn(
+                    f"bitrate={options['bitrate']!r} and crf={options['crf']!r} were "
+                    "both passed; the video is encoded at the constant bitrate, so "
+                    "crf is ignored. Pass only crf= for constant quality, or only "
+                    "bitrate= for a fixed bitrate.",
+                    UserWarning,
+                    stacklevel=_external_stacklevel(),
+                )
+
+            return render_video(
+                env,
+                fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
+                video_path,
+                overlay_data=overlay_data,
+                frame_times=frame_times,
+                fps=playback_fps,
+                **options,
+            )
+
+        elif backend == "html":
+            from neurospatial.animation.backends.html_backend import render_html
+
+            return render_html(
+                env,
+                fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
+                options.pop("save_path", None),
+                overlay_data=overlay_data,
+                fps=playback_fps,
+                **options,
+            )
+
+        elif backend == "fastplotlib":
+            from neurospatial.animation.backends.fastplotlib_backend import (
+                render_fastplotlib,
+            )
+
+            result = render_fastplotlib(
+                env,
+                fields,
+                overlay_data=overlay_data,
+                _reader_owner=owner,
+                frame_times=frame_times,
+                speed=speed,
+                max_playback_fps=max_playback_fps,
+                **options,
+            )
+
+            transferred = result is not None and not options.get("dry_run", False)
+            return result
+
+        else:
+            from neurospatial.animation.backends.widget_backend import render_widget
+
+            result = render_widget(
+                env,
+                fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
+                overlay_data=overlay_data,
+                _on_close=owner.close,
+                frame_times=frame_times,
+                fps=playback_fps,
+                **options,
+            )
+
+            # The widget displays its container even when the caller requests None.
+            transferred = not options.get("dry_run", False)
+            return result
+    finally:
+        if not transferred:
+            original_error = sys.exc_info()[1]
+            try:
+                owner.close()
+            except BaseException as cleanup:
+                if original_error is None:
+                    raise
+                _add_cleanup_note(
+                    original_error, f"Resource cleanup also failed: {cleanup!r}"
+                )
 
 
 def _select_backend(

@@ -135,3 +135,21 @@ def _head_direction_color(
             hue = 0.0
         return colormaps[color](hue)
     return to_rgba(color)
+
+
+def _finite_rate_peak(rates: NDArray[np.float64] | None) -> float:
+    """A finite positive peak computed once for a prepared source recording."""
+    if rates is None:
+        return 1.0
+    finite = np.asarray(rates)[np.isfinite(rates)]
+    peak = float(np.max(finite, initial=0.0))
+    return peak if peak > 0 else 1.0
+
+
+def _rate_opacity(rate: float, peak: float) -> float:
+    """Rate-modulated opacity: zero activity is faint and missing is hidden."""
+    if not np.isfinite(rate):
+        return 0.0
+    # The prepared peak is positive. Clamp callers' changed or negative values
+    # so every backend receives a valid alpha with the same interpretation.
+    return float(np.clip(0.1 + 0.9 * rate / peak, 0.0, 1.0))

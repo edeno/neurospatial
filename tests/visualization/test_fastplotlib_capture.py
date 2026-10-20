@@ -296,3 +296,79 @@ def test_scene_view_exports_native_3d_camera_and_independent_streams(tmp_path):
         np.testing.assert_allclose(native._field_graphics[1].values, 0.4)
         assert "Hz" in labels(native.figure["field 0"])
         assert "probability" in labels(native.figure["field 1"])
+
+
+def test_native_canvas_close_drains_workers_and_releases_owner(env):
+    from unittest.mock import Mock
+
+    from neurospatial.animation._resources import _OwnedReaders
+
+    reader = Mock()
+    native = FastplotlibAnimation(
+        env,
+        np.ones((2, env.n_bins)),
+        frame_times=np.array([0.0, 0.1]),
+        _reader_owner=_OwnedReaders([reader]),
+    )
+    native.show()
+    native.figure.canvas.close()
+    assert native._closed
+    assert not any(native.widget.ui_sliders._playing.values())
+    reader.close.assert_called_once()
+    with pytest.raises(RuntimeError, match="shutdown"):
+        native._frames._reader.submit(lambda: None)
+    native.close()
+    reader.close.assert_called_once()
+
+
+def test_native_constructor_failure_drains_allocated_workers_before_owner(
+    env, monkeypatch
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from unittest.mock import Mock
+
+    from neurospatial.animation._resources import _OwnedReaders
+
+    allocated = []
+    cleanup_order = []
+
+    def fail_initial_show(self, time, frame):
+        allocated.append(self)
+        original_close = self._frames.close
+
+        def drain():
+            original_close()
+            cleanup_order.append("workers")
+
+        self._frames.close = drain
+        original_canvas_close = self.figure.canvas.close
+
+        def close_canvas():
+            original_canvas_close()
+            cleanup_order.append("canvas")
+
+        monkeypatch.setattr(self.figure.canvas, "close", close_canvas)
+        # Start a real read executor so the assertion verifies shutdown.
+        self._frames._reader.submit(lambda: None).result()
+        raise RuntimeError("Initial source read failed")
+
+    monkeypatch.setattr(FastplotlibAnimation, "_show", fail_initial_show)
+    reader = Mock()
+    reader.close.side_effect = lambda: cleanup_order.append("reader")
+    with pytest.raises(RuntimeError, match="Initial source read failed"):
+        FastplotlibAnimation(
+            env,
+            np.ones((2, env.n_bins)),
+            frame_times=np.array([0.0, 0.1]),
+            _reader_owner=_OwnedReaders([reader]),
+        )
+    native = allocated[0]
+    assert native._closed
+    assert cleanup_order == ["workers", "canvas", "reader"]
+    assert native.figure.canvas.get_closed()
+    assert isinstance(native._frames._reader, ThreadPoolExecutor)
+    with pytest.raises(RuntimeError, match="shutdown"):
+        native._frames._reader.submit(lambda: None)
+    with pytest.raises(RuntimeError, match="shutdown"):
+        native._frames.slicer._executor.submit(lambda: None)
+    reader.close.assert_called_once()

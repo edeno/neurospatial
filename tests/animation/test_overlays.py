@@ -2246,7 +2246,7 @@ def test_own_samples_keep_an_overlays_times_and_check_it_against_frames():
     (aligned,) = _convert_overlays_to_data(
         overlays[1:], frame_times, 40, env, own_samples=True
     ).positions
-    assert aligned.times is None
+    assert_array_equal(aligned.times, frame_times)
     (aligned,) = _convert_overlays_to_data(overlays[:1], frame_times, 40, env).positions
     assert aligned.times is None and len(aligned.data) == 40
 

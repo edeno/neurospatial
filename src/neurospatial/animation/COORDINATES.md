@@ -1,226 +1,144 @@
-# Video Overlay Coordinate Systems
+# Video overlay coordinate contracts
 
-**Internal Developer Documentation**
+Internal developer reference for calibration, preparation and rendering.
+All matrices below use homogeneous column vectors; the rightmost transform
+acts first.
 
-This document describes the coordinate systems used in the video overlay feature
-and the transformations between them. Understanding these is critical for debugging
-spatial alignment issues.
+## Pixel centers and physical units
 
----
+A video frame is an array of shape `(height, width, 3)`. Array indices are
+`(row, column)`, while calibration coordinates are `(column, row)`. Pixel
+centers run from `(0, 0)` to `(width - 1, height - 1)`; the image's outer edges
+are at `-0.5`, `width - 0.5` and `height - 0.5`. `frame_size_px` is
+`(width, height)`.
 
-## Three Coordinate Spaces
+`VideoCalibration.transform_px_to_cm`, defined in `neurospatial.ops.transforms`,
+maps original video pixel centers into centimeters. It includes the fitted
+translation, rotation, scaling and any reflection. Scale-bar calibration
+composes `scale_2d(cm_per_px) @ flip_y_transform(frame_height)`: the pixel-space
+reflection acts before scaling its translation into centimeters. Landmark
+calibration fits the supplied correspondence; do not assume every calibration
+has a particular reflection or an origin at an environment corner.
 
-### 1. Video Pixel Space
+Environment coordinates use the environment's declared units and coordinate
+frame. They are not necessarily centimeters or anchored at the bottom-left
+corner. `VideoOverlay.convert_to_data` produces a complete
+`VideoData.transform_to_env` in those units. Metric declarations such as `m`,
+`cm` and `mm` are converted; absent units retain the historical centimeter
+convention. Calibrated video rejects unknown units and pixel units.
+`calibrate_video(..., landmarks_env=...)` accepts environment units and converts
+them before fitting the canonical centimeter calibration. Scale-bar lengths
+and `cm_per_px` remain in centimeters.
 
-```
-Origin: Top-left of video frame
-Axes:
-  - x_px (column): Increases rightward (0 to width-1)
-  - y_px (row): Increases downward (0 to height-1)
+## Preparation owns crop, resize and unit conversion
 
-    (0,0) ─────────────────► x_px (column)
-      │
-      │    ┌──────────────────────┐
-      │    │                      │
-      │    │   VIDEO FRAME        │
-      │    │                      │
-      ▼    │                      │
-    y_px   └──────────────────────┘
-    (row)                     (width-1, height-1)
-```
+The reader applies crop and downsampling before a renderer sees the image.
+For crop origin `(crop_x, crop_y)`, cropped dimensions `(crop_w, crop_h)` and
+processed dimensions `(width, height)`, define:
 
-**Array Convention**: NumPy arrays from VideoReader have shape `(height, width, 3)`.
-The tuple `frame_size_px` uses `(width, height)` to match video metadata convention.
+```text
+sx = crop_w / width
+sy = crop_h / height
 
-### 2. Environment Space (cm)
+P = [[sx,  0, crop_x + (sx - 1) / 2],
+     [ 0, sy, crop_y + (sy - 1) / 2],
+     [ 0,  0,                    1]]
 
-```
-Origin: Bottom-left of environment
-Axes:
-  - x_cm: Increases rightward
-  - y_cm: Increases upward (opposite of video!)
-
-    y_cm
-      ▲
-      │                (x_max, y_max)
-      │    ┌──────────────────────┐
-      │    │                      │
-      │    │   ENVIRONMENT        │
-      │    │                      │
-      │    └──────────────────────┘
-      │  (x_min, y_min)
-      └────────────────────────────► x_cm
+T = U @ C @ P
 ```
 
-**Key Difference**: Y-axis is inverted relative to video coordinates.
-This is the standard scientific convention (y increases upward).
+`P` maps processed pixel centers to original pixel centers, matching the
+resize rule `original = (processed + 0.5) * scale - 0.5` plus crop translation.
+Use actual dimensions, since integer rounding can make `sx` and `sy` differ
+from the requested downsample factor. Without a crop, use zero offsets and
+original dimensions. `C` is `transform_px_to_cm`; `U` scales centimeters
+to environment units, for example `0.01` for meters or `10` for millimeters.
+The resulting `T` is `VideoData.transform_to_env.A`.
 
-### 3. Napari World Space (pixels)
+Backends consume this prepared transform. They must not reapply crop,
+downsampling, centimeter conversion or a presumed camera reflection.
 
-```
-Origin: Top-left (like video)
-Axes:
-  - col: Increases rightward (maps to environment x)
-  - row: Increases downward (maps to inverted environment y)
+## Backend display coordinates
 
-    (0,0) ─────────────────► col
-      │
-      │    ┌──────────────────────┐
-      │    │                      │
-      │    │   NAPARI DISPLAY     │
-      │    │   (row 0 = max y)    │
-      │    │                      │
-      ▼    └──────────────────────┘
-    row                      (n_x-1, n_y-1)
-```
+The display adapter accounts for its own array ordering and field geometry.
+There is no universal napari pixel space or universal `imshow` origin.
 
-**Note**: Napari uses (row, col) ordering for coordinates, while environment
-uses (x, y). The transformation swaps these axes AND inverts y.
+### Matplotlib scenes and legacy exports/widgets
 
----
+Calibrated images use `origin="upper"` with the raw-pixel extent
+`(-0.5, width - 0.5, height - 0.5, -0.5)` and the artist transform
+`Affine2D(T) + ax.transData`. Together, this places array pixel `[row, col]`
+at raw coordinate `(col, row)` before applying calibration. `origin="upper"`
+does not introduce a second calibration reflection in this arrangement.
+Axes limits and other overlays stay in environment coordinates.
 
-## Transform Chain
+The shared legacy implementation is `_parallel._video_image_geometry`;
+the scene renderer uses the same calibrated convention.
 
-The full transform chain for video overlay is:
+### Fastplotlib
 
-```
-video_px ──► env_cm ──► napari_px
-         │          │
-         │          └── build_env_to_napari_matrix()
-         │              [from animation/transforms.py]
-         │
-         └── VideoCalibration.transform_px_to_cm
-             [from neurospatial/transforms.py]
-```
+`backends.fastplotlib_backend.video_to_env` returns `T` directly for calibrated
+video. The renderer embeds this 2-D affine in its native 4-D transform; depth
+controls whether video lies above or below fields. Pixel centers and spatial
+overlays retain environment coordinates.
 
-### Step 1: Video Pixel → Environment (cm)
+### Napari scenes
 
-**Where**: `VideoCalibration.transform_px_to_cm` (Affine2D)
+`backends._napari_scene` uses physical environment coordinates with reversed
+axis order: `(y, x)` in 2-D and `(z, y, x)` in 3-D. Regular field images are
+transposed into napari's array order, and their affine includes grid cell
+centers, cell sizes and any environment frame transform.
 
-**What it does**:
-1. **Y-flip**: Converts top-left origin to bottom-left origin
-2. **Scale**: Converts pixels to centimeters
-3. **Optional translate/rotate**: For landmark-based calibration
+For 2-D video, let `S` swap the first two coordinates of a homogeneous vector.
+The video layer's affine is `S @ T @ S`: the input swap converts napari
+`(row, column)` to calibration `(column, row)`, and the output swap converts
+environment `(x, y)` to native `(y, x)`. This path does not use the legacy
+field-raster transform or apply a fixed vertical reflection.
 
-```python
-# Typical construction for scale bar calibration:
-transform_px_to_cm = flip_y(frame_height) @ scale_2d(cm_per_px, cm_per_px)
-```
+### Legacy napari field rasters
 
-**Y-FLIP POLICY**: The Y-flip happens ONCE, here in the calibration transform.
-All downstream code uses `origin="lower"` in matplotlib to preserve this.
-Do NOT add another Y-flip elsewhere.
+`backends.napari_backend._build_video_napari_affine` aligns video with the
+legacy field raster, whose first row represents the greatest environment y.
+`EnvScale` uses the full grid edges, including inactive cells. Its
+`build_env_to_napari_matrix` maps environment `(x, y)` into raster indices:
 
-### Step 2: Environment (cm) → Napari (pixels)
-
-**Where**: `build_env_to_napari_matrix()` in `animation/transforms.py`
-
-**What it does**:
-1. **Swap axes**: (x, y) → (row, col)
-2. **Invert Y**: row 0 = max y (napari top = environment top after field flip)
-3. **Scale**: cm → pixels based on grid shape
-
-```python
-# From the matrix form:
-col = (x - x_min) * x_scale           # X maps to column
-row = (n_y - 1) - (y - y_min) * y_scale  # Y maps to row (inverted)
+```text
+col = (x - x_min) * x_scale - 0.5
+row = (n_y - 0.5) - (y - y_min) * y_scale
 ```
 
-### Combined Transform (for napari affine parameter)
+Call this matrix `R`. The field layer scales raster indices into physical
+viewer distances with `D = diag(pixel_height, pixel_width, 1)`. The calibrated
+video affine is therefore `D @ R @ T @ S`. Omitting `D` misaligns video whenever
+grid cell sizes differ from one. Omitting `S` swaps camera axes. Legacy
+`EnvScale` cannot represent framed grids; the scene adapter handles their
+physical geometry directly.
 
-```python
-# In _build_video_napari_affine():
-video_to_env = video_data.transform_to_env.A    # 3x3 matrix
-env_to_napari = build_env_to_napari_matrix(scale)  # 3x3 matrix
-combined = env_to_napari @ video_to_env          # napari affine
-```
+## Uncalibrated fallback
 
----
+Without calibration, renderers fit video to `env_bounds` and preparation warns
+that alignment may be inaccurate. Scene Matplotlib, scene napari and
+fastplotlib place the first row at the top; fastplotlib and scene napari use
+half-pixel offsets so image edges coincide with the bounds. Legacy Matplotlib
+uses `origin="lower"`, and legacy napari retains its raster-fitting convention.
+These fallback conventions are not a calibrated coordinate contract. Supply a
+calibration when physical registration or consistent orientation across all
+entry points matters.
 
-## Y-Flip Summary
+## Verification
 
-| Location | Y-Flip? | Reason |
-|----------|---------|--------|
-| `calibrate_from_scale_bar()` | YES | Video origin (top-left) → env origin (bottom-left) |
-| `calibrate_from_landmarks()` | YES | Same - composed into calibration transform |
-| `VideoCalibration.transform_px_to_cm` | YES | This IS where the flip happens |
-| `_build_video_napari_affine()` | YES | Env y-up → napari y-down (built into env_to_napari matrix) |
-| matplotlib `imshow()` | NO | Uses `origin="lower"` to preserve env orientation |
-| napari `add_image()` | NO | Uses affine parameter that includes the flip |
+Check asymmetric landmarks and known pixel centers, including a nonzero crop,
+rounded resize dimensions, non-centimeter environment units and nonsquare grid
+cells. Distinguish the last pixel center `(width - 1, height - 1)` from the
+outer edge `(width - 0.5, height - 0.5)`. Verify rendered pixels as well as
+matrices; an array transpose or image extent can defeat a correct affine.
 
-**Total Y-flips**: 2 (one in video→env, one in env→napari)
-These compose correctly: video y-down → env y-up → napari y-down (displayed correctly)
+Relevant implementation boundaries:
 
----
-
-## Common Bugs and How to Avoid Them
-
-### Bug: Video appears upside-down
-
-**Cause**: Double Y-flip (e.g., using `origin="upper"` after calibration already flipped)
-
-**Fix**: Always use `origin="lower"` with calibrated video. The calibration transform
-already handles the video→env Y-flip.
-
-### Bug: Video appears mirrored left-right
-
-**Cause**: Incorrect axis swap in env→napari transform
-
-**Fix**: Check that `build_env_to_napari_matrix()` correctly maps x→col and y→row.
-The matrix should have x_scale in position [1,0] and -y_scale in position [0,1].
-
-### Bug: Video offset from expected position
-
-**Cause**: Missing crop offset in transform chain
-
-**Fix**: When video is cropped, compose crop translation BEFORE calibration:
-```python
-effective_transform = calibration.transform_px_to_cm @ translate(crop_x, crop_y)
-```
-
-### Bug: Video and field don't align at corners
-
-**Cause**: Mismatch between calibration landmarks and actual video corners
-
-**Fix**: Verify calibration landmarks are in ORIGINAL pixel coordinates (before crop/downsample).
-The VideoReader's `crop_offset_px` must be composed into the transform.
-
----
-
-## Testing Coordinate Transforms
-
-### Unit Test Strategy
-
-```python
-def test_video_field_corner_alignment():
-    """Video corners align with environment corners after transform."""
-    # 1. Create environment with known bounds
-    env = Environment.from_samples(positions, bin_size=5.0)
-
-    # 2. Create calibration that maps video corners to env corners
-    video_corners_px = np.array([[0, 0], [w, 0], [w, h], [0, h]])
-    env_corners = np.array([
-        [env.dimension_ranges[0][0], env.dimension_ranges[1][1]],  # top-left
-        [env.dimension_ranges[0][1], env.dimension_ranges[1][1]],  # top-right
-        [env.dimension_ranges[0][1], env.dimension_ranges[1][0]],  # bottom-right
-        [env.dimension_ranges[0][0], env.dimension_ranges[1][0]],  # bottom-left
-    ])
-
-    # 3. Transform video corners through full chain
-    calibration = calibrate_from_landmarks(video_corners_px, env_corners, (w, h))
-    env_coords = calibration.transform_px_to_cm(video_corners_px)
-    napari_coords = transform_coords_for_napari(env_coords, env)
-
-    # 4. Verify napari corners match expected grid positions
-    assert napari_coords[0] == [0, 0]  # top-left → row 0, col 0
-    assert napari_coords[1] == [0, n_x-1]  # top-right → row 0, col n_x-1
-    # etc.
-```
-
----
-
-## References
-
-- `src/neurospatial/transforms.py`: `calibrate_from_scale_bar()`, `calibrate_from_landmarks()`, `VideoCalibration`
-- `src/neurospatial/animation/transforms.py`: `build_env_to_napari_matrix()`, `transform_coords_for_napari()`
-- `src/neurospatial/animation/backends/napari_backend.py`: `_build_video_napari_affine()`, `_add_video_layer()`
+- `neurospatial.ops.transforms`: canonical calibration and affine composition.
+- `neurospatial._video_io`: decoded frames, crop and resize geometry.
+- `animation.calibration` and `animation.overlays`: environment-unit conversion
+  and the prepared `VideoData` contract.
+- `animation.transforms`: legacy field-raster coordinate conversion.
+- `animation._parallel`, `animation._scene_rendering` and `animation.backends`:
+  display-specific array ordering and placement.

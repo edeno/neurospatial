@@ -7,6 +7,7 @@ import io
 import logging
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -810,6 +811,7 @@ def render_widget(
     frame_times: NDArray[np.float64] | None = None,
     dry_run: bool = False,
     return_container: bool = False,
+    _on_close: Callable[[], None] | None = None,
 ) -> Any | None:
     """Create interactive Jupyter widget with slider control.
 
@@ -1026,129 +1028,197 @@ def render_widget(
     # Create persistent figure renderer for efficient on-demand rendering
     # Only create when overlays are present (main optimization target for cache misses)
     persistent_renderer: PersistentFigureRenderer | None = None
-    if overlay_data is not None or show_regions:
-        persistent_renderer = PersistentFigureRenderer(
-            env=env,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            dpi=dpi,
-            image_format=image_format,
-            frame_times=frame_times,
-        )
+    with ExitStack() as setup:
 
-    # On-demand rendering with LRU cache
-    def get_frame_bytes(idx: int) -> bytes:
-        """Get PNG bytes for frame, using cache or rendering on-demand."""
-        if idx in cached_frames:
-            # Move to end (mark as recently used)
-            cached_frames.move_to_end(idx)
-            return cached_frames[idx]
-        else:
-            # Render on-demand
-            if persistent_renderer is not None:
-                # Use persistent figure renderer for efficient overlay rendering
-                png_bytes = persistent_renderer.render(
-                    fields[idx],
-                    frame_idx=idx,
-                    overlay_data=overlay_data,
-                    show_regions=show_regions,
-                    region_alpha=region_alpha,
+        def close_on_error(widget: Any) -> None:
+            close_widget = getattr(widget, "close", None)
+            if callable(close_widget):
+                setup.callback(close_widget)
+
+        try:
+            if overlay_data is not None or show_regions:
+                persistent_renderer = PersistentFigureRenderer(
+                    env=env,
+                    cmap=cmap,
+                    vmin=vmin,
+                    vmax=vmax,
+                    dpi=dpi,
+                    image_format=image_format,
+                    frame_times=frame_times,
                 )
-            else:
-                png_bytes = render_plain_frame(idx)
-            cache_put(idx, png_bytes)
-            return png_bytes
+                setup.callback(persistent_renderer.close)
 
-    # Create persistent Image widget (updated in-place, not re-displayed)
-    # Use image format (lowercase)
-    image_widget = ipywidgets.Image(format=image_format.lower(), width=800)
+            # On-demand rendering with LRU cache
+            def get_frame_bytes(idx: int) -> bytes:
+                """Get PNG bytes for frame, using cache or rendering on-demand."""
+                if idx in cached_frames:
+                    # Move to end (mark as recently used)
+                    cached_frames.move_to_end(idx)
+                    return cached_frames[idx]
+                else:
+                    # Render on-demand
+                    if persistent_renderer is not None:
+                        # Use persistent figure renderer for efficient overlay rendering
+                        png_bytes = persistent_renderer.render(
+                            fields[idx],
+                            frame_idx=idx,
+                            overlay_data=overlay_data,
+                            show_regions=show_regions,
+                            region_alpha=region_alpha,
+                        )
+                    else:
+                        png_bytes = render_plain_frame(idx)
+                    cache_put(idx, png_bytes)
+                    return png_bytes
 
-    # Create persistent HTML widget for frame label
-    title_widget = ipywidgets.HTML()
+            # Create persistent Image widget (updated in-place, not re-displayed)
+            # Use image format (lowercase)
+            image_widget = ipywidgets.Image(format=image_format.lower(), width=800)
+            close_on_error(image_widget)
 
-    # Update function that mutates persistent widgets (no display() calls)
-    def show_frame(frame_idx: int) -> None:
-        """Update frame display by mutating persistent widgets."""
-        png_bytes = get_frame_bytes(frame_idx)
-        # Set bytes directly to Image widget (no encoding/decoding needed)
-        image_widget.value = png_bytes
-        # Update title HTML
-        title_widget.value = (
-            f"<h3 style='text-align: center; margin: 0;'>{frame_labels[frame_idx]}</h3>"
-        )
+            # Create persistent HTML widget for frame label
+            title_widget = ipywidgets.HTML()
+            close_on_error(title_widget)
 
-    # Create slider control
-    slider = ipywidgets.IntSlider(
-        min=0,
-        max=len(fields) - 1,
-        step=1,
-        value=0,
-        description="Frame:",
-        continuous_update=True,  # Update while dragging for smooth scrubbing
-        readout=True,
-    )
+            # Update function that mutates persistent widgets (no display() calls)
+            def show_frame(frame_idx: int) -> None:
+                """Update frame display by mutating persistent widgets."""
+                png_bytes = get_frame_bytes(frame_idx)
+                # Set bytes directly to Image widget (no encoding/decoding needed)
+                image_widget.value = png_bytes
+                # Update title HTML
+                title_widget.value = f"<h3 style='text-align: center; margin: 0;'>{frame_labels[frame_idx]}</h3>"
 
-    # Create play button
-    play = ipywidgets.Play(
-        interval=int(1000 / max(1, fps)),  # Convert fps to milliseconds
-        min=0,
-        max=len(fields) - 1,
-        step=1,
-        value=0,
-    )
+            # Create slider control
+            slider = ipywidgets.IntSlider(
+                min=0,
+                max=len(fields) - 1,
+                step=1,
+                value=0,
+                description="Frame:",
+                continuous_update=True,  # Update while dragging for smooth scrubbing
+                readout=True,
+            )
 
-    # Link play button to slider (JavaScript-level linking for performance)
-    # Store reference to prevent garbage collection
-    link = ipywidgets.jslink((play, "value"), (slider, "value"))
+            close_on_error(slider)
 
-    # Keep the most recent slider request and flush it on the notebook loop.
-    throttle = _FrameUpdateThrottle(show_frame)
+            # Create play button
+            play = ipywidgets.Play(
+                interval=int(1000 / max(1, fps)),  # Convert fps to milliseconds
+                min=0,
+                max=len(fields) - 1,
+                step=1,
+                value=0,
+            )
 
-    def on_slider_change(change: dict[str, Any]) -> None:
-        if change["name"] == "value":
-            throttle.request(int(change["new"]))
+            close_on_error(play)
+            setup.callback(setattr, play, "playing", False)
 
-    slider.observe(on_slider_change, names="value")
+            # Link play button to slider (JavaScript-level linking for performance)
+            # Store reference to prevent garbage collection
+            link = ipywidgets.jslink((play, "value"), (slider, "value"))
+            setup.callback(link.unlink)
 
-    # Initialize with first frame
-    show_frame(0)
+            # Keep the most recent slider request and flush it on the notebook loop.
+            throttle = _FrameUpdateThrottle(show_frame)
+            setup.callback(throttle.close)
 
-    # Create container with all widgets
-    container = ipywidgets.VBox(
-        [
-            ipywidgets.HBox([play, slider]),
-            title_widget,
-            image_widget,
-        ]
-    )
+            def on_slider_change(change: dict[str, Any]) -> None:
+                if change["name"] == "value":
+                    throttle.request(int(change["new"]))
 
-    # Own the observer, timer, renderer, and widget link for the display lifetime.
-    container._links = [link]
-    original_close = getattr(container, "close", None)
-    closed = False
+            slider.observe(on_slider_change, names="value")
+            unobserve_on_error = getattr(slider, "unobserve", None)
+            if callable(unobserve_on_error):
+                setup.callback(unobserve_on_error, on_slider_change, names="value")
 
-    def close() -> None:
-        nonlocal closed
-        if closed:
-            return
-        closed = True
-        throttle.close()
-        unobserve = getattr(slider, "unobserve", None)
-        if unobserve is not None:
-            unobserve(on_slider_change, names="value")
-        link.unlink()
-        if persistent_renderer is not None:
-            persistent_renderer.close()
-        cached_frames.clear()
-        for widget in (play, slider, title_widget, image_widget, container.children[0]):
-            widget_close = getattr(widget, "close", None)
-            if widget_close is not None:
-                widget_close()
-        if original_close is not None:
-            original_close()
+            # Initialize with first frame
+            show_frame(0)
 
-    container.close = close
-    display(container)
+            # Create container with all widgets
+            controls = ipywidgets.HBox([play, slider])
+            close_on_error(controls)
+            container = ipywidgets.VBox(
+                [
+                    controls,
+                    title_widget,
+                    image_widget,
+                ]
+            )
 
-    return container if return_container else None
+            close_on_error(container)
+
+            # Own the observer, timer, renderer, and widget link for the display lifetime.
+            container._links = [link]
+            original_close = getattr(container, "close", None)
+            closed = False
+
+            def close() -> None:
+                nonlocal closed
+                if closed:
+                    return
+                closed = True
+                from neurospatial.animation._resources import _raise_cleanup_errors
+
+                failures: list[BaseException] = []
+
+                def attempt(
+                    operation: Callable[..., Any], *args: Any, **kwargs: Any
+                ) -> None:
+                    try:
+                        operation(*args, **kwargs)
+                    except BaseException as exc:
+                        failures.append(exc)
+
+                attempt(setattr, play, "playing", False)
+                attempt(throttle.close)
+                unobserve = getattr(slider, "unobserve", None)
+                if unobserve is not None:
+                    attempt(unobserve, on_slider_change, names="value")
+                attempt(link.unlink)
+                if persistent_renderer is not None:
+                    attempt(persistent_renderer.close)
+                cached_frames.clear()
+                for widget in (
+                    play,
+                    slider,
+                    title_widget,
+                    image_widget,
+                    container.children[0],
+                ):
+                    widget_close = getattr(widget, "close", None)
+                    if widget_close is not None:
+                        attempt(widget_close)
+                if original_close is not None:
+                    attempt(original_close)
+                _raise_cleanup_errors("Failed to close the animation widget.", failures)
+
+            container.close = close
+            if _on_close is not None:
+                from neurospatial.animation._resources import _bind_cleanup
+
+                _bind_cleanup(container, _on_close)
+            # The complete container now closes all setup resources in dependency order.
+            setup.pop_all()
+            try:
+                display(container)
+            except BaseException as error:
+                from neurospatial.animation._resources import _add_cleanup_note
+
+                try:
+                    container.close()
+                except BaseException as cleanup:
+                    _add_cleanup_note(error, f"Widget cleanup also failed: {cleanup!r}")
+                raise
+
+            return container if return_container else None
+        except BaseException as error:
+            from neurospatial.animation._resources import _add_cleanup_note
+
+            try:
+                setup.close()
+            except BaseException as cleanup:
+                _add_cleanup_note(
+                    error, f"Partial widget cleanup also failed: {cleanup!r}"
+                )
+            raise

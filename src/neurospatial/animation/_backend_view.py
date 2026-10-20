@@ -9,6 +9,8 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.animation._resources import _add_cleanup_note
+
 FrameCapture = Callable[[float], NDArray[np.uint8]]
 CaptureSession = Callable[[], AbstractContextManager[FrameCapture]]
 
@@ -93,3 +95,11 @@ class _CallbackBackendView:
 
     def close(self) -> None:
         self._close()
+
+
+def _close_after_error(close: Callable[[], None], error: BaseException) -> None:
+    """Preserve a construction/capture failure while still attempting cleanup."""
+    try:
+        close()
+    except BaseException as cleanup:
+        _add_cleanup_note(error, f"View cleanup also failed: {cleanup!r}")

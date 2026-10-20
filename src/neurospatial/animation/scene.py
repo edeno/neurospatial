@@ -7,8 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
+from threading import RLock
 from types import MappingProxyType
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -19,6 +20,9 @@ from neurospatial._observation import (
     validate_break_before,
     validate_max_gap,
 )
+
+if TYPE_CHECKING:
+    from neurospatial.animation._view import AnimationView
 
 
 def _readonly(value: Any, dtype: Any = None) -> np.ndarray:
@@ -271,6 +275,9 @@ class Animation:
         track: Any = None,
     ) -> None:
         self._closed = False
+        self._closing = False
+        self._view_lock = RLock()
+        self._views: set[AnimationView] = set()
         if track is not None:
             from neurospatial.animation._tracks import (
                 _checked_track,
@@ -351,6 +358,9 @@ class Animation:
             self.show_regions,
             own_samples=True,
         )
+        from neurospatial.animation._resources import _OwnedReaders
+
+        self._owned_readers = _OwnedReaders.from_overlay_data(self._overlay_data)
         if env.n_dims == 3:
             if any(item.data.ndim == 1 for item in self._overlay_data.head_directions):
                 self.close()
@@ -575,7 +585,7 @@ class Animation:
         """Open an interactive view of this scene."""
         from neurospatial.animation._view import show_animation
 
-        self._ensure_open()
+        self._ensure_view_allowed()
         return show_animation(self, backend=backend, **kwargs)
 
     def inspect_events(self, events: Any, **kwargs: Any) -> Any:
@@ -585,24 +595,58 @@ class Animation:
         self._ensure_open()
         return EventInspector(self, events, **kwargs)
 
+    def _register_view(self, view: AnimationView) -> None:
+        with self._view_lock:
+            self._ensure_view_allowed()
+            self._views.add(view)
+
+    def _unregister_view(self, view: AnimationView) -> None:
+        with self._view_lock:
+            self._views.discard(view)
+
+    def _ensure_view_allowed(self) -> None:
+        with self._view_lock:
+            self._ensure_open()
+            if self._closing:
+                raise RuntimeError(
+                    "Animation is closing. Create a new scene to open a view."
+                )
+
     def close(self) -> None:
-        """Close figures and video readers owned by the scene."""
-        if self._closed:
-            return
-        self._closed = True
-        if self._renderer is not None:
-            self._renderer.close()
-            self._renderer = None
-        closed_readers: set[int] = set()
-        for video in self._overlay_data.videos:
-            close = getattr(video.reader, "close", None)
-            if (
-                close is not None
-                and getattr(video, "_owns_reader", False)
-                and id(video.reader) not in closed_readers
-            ):
-                closed_readers.add(id(video.reader))
-                close()
+        """Stop and drain all views, then release owned figures and readers."""
+        with self._view_lock:
+            if self._closed or self._closing:
+                return
+            self._closing = True
+            views = tuple(self._views)
+        from neurospatial.animation._resources import _cleanup_error
+
+        failures: list[BaseException] = []
+        try:
+            # Keep sources open while native controls stop and pending reads drain.
+            for view in views:
+                try:
+                    view.close()
+                except BaseException as error:
+                    failures.append(error)
+            with self._view_lock:
+                self._views.clear()
+            if self._renderer is not None:
+                renderer, self._renderer = self._renderer, None
+                try:
+                    renderer.close()
+                except BaseException as error:
+                    failures.append(error)
+            try:
+                self._owned_readers.close()
+            except BaseException as error:
+                failures.append(error)
+        finally:
+            with self._view_lock:
+                self._closed = True
+                self._closing = False
+        if failures:
+            raise _cleanup_error("Animation cleanup failed.", failures)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -615,4 +659,12 @@ class Animation:
         return self
 
     def __exit__(self, *exc: Any) -> None:
-        self.close()
+        try:
+            self.close()
+        except BaseException as cleanup:
+            if len(exc) > 1 and isinstance(exc[1], BaseException):
+                from neurospatial.animation._resources import _add_cleanup_note
+
+                _add_cleanup_note(exc[1], f"Animation cleanup also failed: {cleanup!r}")
+            else:
+                raise

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import numpy as np
 
-from neurospatial.animation._sampling import sample_at_times
+from neurospatial.animation._sampling import sample_observation
 from neurospatial.animation._tracks import (
     _project,
     _projection,
@@ -97,22 +97,8 @@ class PreparedScene:
         name: str | None = None,
     ) -> np.ndarray:
         """Sample a prepared stream using its existing clock and support masks."""
-        valid = getattr(item, "sample_valid", None)
-        intervals = getattr(item, "interval_valid", None)
-        if name is not None:
-            valid = None if valid is None else valid.get(name)
-            intervals = None if intervals is None else intervals.get(name)
-        return cast(
-            "np.ndarray",
-            sample_at_times(
-                self.clock(item),
-                values,
-                np.array([time]),
-                interp=getattr(item, "interp", "linear"),
-                sample_valid=valid,
-                interval_valid=intervals,
-                circular=circular,
-            )[0],
+        return sample_observation(
+            item, self.clock(item), values, time, circular=circular, name=name
         )
 
     def video_frame(self, video: Any, time: float) -> np.ndarray | None:
@@ -140,11 +126,9 @@ class PreparedScene:
             np.searchsorted(clock, left, side="left"),
             np.searchsorted(clock, right, side="right"),
         )
-        values = signal.data[keep]
-        if signal.normalize:
-            span = signal.global_vmax - signal.global_vmin
-            values = (values - signal.global_vmin) / (span or 1)
-        return clock[keep], values
+        # Conversion owns normalization; prepared values are final for every
+        # consumer, including custom adapters with separate display metadata.
+        return clock[keep], signal.data[keep]
 
     def raster_window(self, raster: Any, row: int, time: float) -> np.ndarray:
         """One unit's spike times in the current window, preserving unit order."""

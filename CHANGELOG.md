@@ -4,6 +4,16 @@
 
 ### Animation workflows
 
+- Apply observation masks and gap rules to overlays that inherit `frame_times`,
+  including fastplotlib sampling between frames. Preserve NaNs when normalizing
+  constant signals and share finite, bounded object-vector rate opacity across
+  scene renderers without changing its scale for selected windows.
+- Close scene-owned views, playback and inspection controls before releasing
+  video readers. Legacy animation dispatch now cleans up readers on failures,
+  completed exports and interactive window/widget closure, while retaining
+  caller ownership of borrowed resources.
+- Correct the internal coordinate guide to distinguish prepared environment
+  units, pixel centers and each backend's display transform.
 - Preserve decoding recording windows through `Animation.from_decoding` and
   expose half-open `AnimationField(epochs=...)` support. Unsupported exact
   samples and intervals remain missing in spatial and track views.

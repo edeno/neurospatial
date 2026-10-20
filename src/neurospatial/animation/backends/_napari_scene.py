@@ -7,14 +7,17 @@ Sources and video readers remain owned by the scene, not this view.
 
 from __future__ import annotations
 
+import logging
+import weakref
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any, cast
 
 import numpy as np
 
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._scene_rendering import draw_track_panel
+from neurospatial.animation._style import _rate_opacity
 
 
 def _native_grid(env: Any) -> tuple[Any, np.ndarray] | None:
@@ -272,7 +275,7 @@ class NapariScene:
                     "grid": (-1, -1),
                 }[layout]
             self.viewer.dims.axis_labels = tuple(reversed("xyz"[: scene.env.n_dims]))
-            controls = QWidget()
+            controls = self._controls = QWidget()
             row = QHBoxLayout(controls)
             self.play_button = QPushButton("Play")
             self.time_control = QDoubleSpinBox()
@@ -301,25 +304,48 @@ class NapariScene:
             self.seek(self._time)
             from qtpy.QtCore import QEvent, QObject
 
-            handle, window = self, self.viewer.window._qt_window
+            window = self.viewer.window._qt_window
+            handle_ref, window_ref = weakref.ref(self), weakref.ref(window)
 
             class WindowLifecycle(QObject):
                 def eventFilter(self, obj: Any, event: Any) -> bool:  # noqa: N802
                     if event.type() == QEvent.Type.Close:
 
                         def after_close() -> None:
-                            if not window.isVisible():
-                                handle._release_resources()
+                            handle, native_window = handle_ref(), window_ref()
+                            if handle is None:
+                                return
+                            visible = False
+                            if native_window is not None:
+                                # Native deletion can precede this deferred callback.
+                                with suppress(RuntimeError):
+                                    visible = native_window.isVisible()
+                            if not visible:
+                                try:
+                                    handle._release_resources()
+                                except Exception:
+                                    # Exceptions escaping a Qt callback can abort
+                                    # the process; keep full cleanup diagnostics.
+                                    logging.getLogger(__name__).exception(
+                                        "Failed to release closed napari scene resources."
+                                    )
 
                         QTimer.singleShot(0, after_close)
                     return False
 
-            self._lifecycle = WindowLifecycle(window)
+            self._lifecycle: Any = WindowLifecycle(window)
             window.installEventFilter(self._lifecycle)
             if not self._owns_viewer and "show" in options:
                 window.setVisible(options["show"])
-        except BaseException:
-            self.close()
+        except BaseException as error:
+            from neurospatial.animation._resources import _add_cleanup_note
+
+            try:
+                self.close()
+            except BaseException as cleanup:
+                _add_cleanup_note(
+                    error, f"Native napari cleanup also failed: {cleanup!r}"
+                )
             raise
 
     @property
@@ -605,15 +631,7 @@ class NapariScene:
                 )
                 if v.firing_rates is not None:
                     rate = sample(v, v.firing_rates, time)
-                    peak = (
-                        np.max(v.firing_rates[np.isfinite(v.firing_rates)], initial=0)
-                        or 1
-                    )
-                    layer.opacity = (
-                        float(np.clip(0.1 + 0.9 * float(rate) / peak, 0, 1))
-                        if np.isfinite(rate)
-                        else 0
-                    )
+                    layer.opacity = _rate_opacity(float(rate), v._rate_peak or 1.0)
 
             self._updates.append(update_vectors)
         for i, events in enumerate(data.events):
@@ -802,6 +820,12 @@ class NapariScene:
         return {"time": self.time, "playing": self.timer.isActive()}
 
     def restore_state(self, state: dict[str, Any]) -> None:
+        if (
+            self._closed
+            or getattr(self.scene, "_closed", False)
+            or getattr(self.scene, "_closing", False)
+        ):
+            return
         self.seek(state["time"])
         if state["playing"]:
             self.timer.start()
@@ -809,6 +833,8 @@ class NapariScene:
 
     @contextmanager
     def capture_session(self) -> Iterator[Any]:
+        if self._closed:
+            raise RuntimeError("This napari view is closed.")
         state = self.capture_state()
         self.timer.stop()
         try:
@@ -836,24 +862,80 @@ class NapariScene:
         if self._closed:
             return
         self._closed = True
-        if hasattr(self, "timer"):
-            self.timer.stop()
+        from neurospatial.animation._resources import _raise_cleanup_errors
+
+        failures: list[BaseException] = []
+
+        def release(action: Any) -> None:
+            try:
+                action()
+            except RuntimeError as exc:
+                # Native window closure can already have destroyed Qt children.
+                if "deleted" not in str(exc):
+                    failures.append(exc)
+            except Exception as exc:
+                failures.append(exc)
+
+        timer = getattr(self, "timer", None)
+        if timer is not None:
+            release(timer.stop)
+        for control, signal_name, callback in (
+            (timer, "timeout", self._tick),
+            (getattr(self, "play_button", None), "clicked", self._toggle_play),
+            (getattr(self, "time_control", None), "valueChanged", self.seek),
+        ):
+            if control is not None:
+
+                def disconnect(
+                    control: Any = control,
+                    signal_name: str = signal_name,
+                    callback: Any = callback,
+                ) -> None:
+                    # Partial construction may not have connected this signal.
+                    with suppress(TypeError):
+                        getattr(control, signal_name).disconnect(callback)
+
+                release(disconnect)
+        native_window = getattr(self.viewer.window, "_qt_window", None)
+        lifecycle = getattr(self, "_lifecycle", None)
+        if lifecycle is not None:
+            if native_window is not None:
+                release(lambda: native_window.removeEventFilter(lifecycle))
+            release(lambda: lifecycle.setParent(None))
+            release(lifecycle.deleteLater)
+            self._lifecycle = None
         if self._panels is not None:
-            self._panels.figure.clear()
+            release(self._panels.figure.clear)
+        for layer in self._layers:
+            if layer in self.viewer.layers:
+                release(lambda layer=layer: self.viewer.layers.remove(layer))
+        for attr in ("_dock", "_panel_dock"):
+            dock = getattr(self, attr, None)
+            if dock is not None and native_window is not None:
+                release(lambda dock=dock: self.viewer.window.remove_dock_widget(dock))
+        for widget in (
+            getattr(self, "_controls", None),
+            self._panels.canvas if self._panels is not None else None,
+        ):
+            if widget is not None:
+                release(lambda widget=widget: widget.setParent(None))
+                release(widget.deleteLater)
+        self._updates.clear()
+        self._layers.clear()
+        self.field_layers.clear()
+        _raise_cleanup_errors(
+            "Failed to release native napari scene resources.", failures
+        )
 
     def close(self) -> None:
         if self._closed:
             return
-        self._release_resources()
-        if self._owns_viewer:
-            self.viewer.close()
-        else:
-            for layer in self._layers:
-                if layer in self.viewer.layers:
-                    self.viewer.layers.remove(layer)
-            for attr in ("_dock", "_panel_dock"):
-                if hasattr(self, attr):
-                    self.viewer.window.remove_dock_widget(getattr(self, attr))
+        # Releasing scientific controls must not close a caller's viewer.
+        try:
+            self._release_resources()
+        finally:
+            if self._owns_viewer:
+                self.viewer.close()
 
 
 def build_napari_scene(animation: Any, **options: Any) -> NapariScene:

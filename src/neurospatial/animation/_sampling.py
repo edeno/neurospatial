@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -98,3 +98,30 @@ def sample_at_times(
         weight = fraction.reshape((-1,) + (1,) * (values.ndim - 1))
         result[rows] = (1 - weight) * values[left] + weight * values[r]
     return result
+
+
+def sample_observation(
+    item: Any,
+    times: NDArray[np.float64],
+    values: NDArray[np.float64],
+    time: float,
+    *,
+    name: str | None = None,
+    circular: bool = False,
+) -> NDArray[np.float64]:
+    """Sample prepared native or inherited rows through their existing support."""
+    sample_valid = getattr(item, "sample_valid", None)
+    interval_valid = getattr(item, "interval_valid", None)
+    if name is not None:
+        sample_valid = None if sample_valid is None else sample_valid.get(name)
+        interval_valid = None if interval_valid is None else interval_valid.get(name)
+    sampled = sample_at_times(
+        times,
+        values,
+        np.array([time]),
+        interp=getattr(item, "interp", "linear"),
+        sample_valid=sample_valid,
+        interval_valid=interval_valid,
+        circular=circular,
+    )
+    return np.asarray(sampled[0], dtype=np.float64)

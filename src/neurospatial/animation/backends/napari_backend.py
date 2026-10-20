@@ -7,6 +7,7 @@ import os
 import warnings
 from collections import OrderedDict
 from collections.abc import Callable
+from contextlib import ExitStack
 from threading import Lock
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -2737,6 +2738,7 @@ def render_napari(
     max_playback_fps: int = MAX_PLAYBACK_FPS,
     frame_times: NDArray[np.float64] | None = None,
     dry_run: bool = False,
+    _on_close: Callable[[], None] | None = None,
 ) -> napari.Viewer | None:
     """Launch Napari viewer with lazy-loaded field animation.
 
@@ -3036,6 +3038,7 @@ def render_napari(
             max_playback_fps=max_playback_fps,
             frame_times=frame_times,
             dry_run=dry_run,
+            _on_close=_on_close,
         )
 
     if dry_run:
@@ -3073,186 +3076,217 @@ def render_napari(
 
     # Create napari viewer
     viewer = napari.Viewer(title=title)
-    _register_windowed_manager_cleanup(viewer)
+    with ExitStack() as setup:
+        # Resolve close at cleanup time, including manager hooks installed below.
+        setup.callback(lambda: viewer.close())
+        try:
+            _register_windowed_manager_cleanup(viewer)
 
-    # Compute scale for napari (converts pixels to environment units)
-    # This enables the scale bar to show correct physical units (e.g., "10 cm")
-    # Scale is (time, y, x) for shape (time, height, width, channels)
-    layer_scale: tuple[float, float, float] | None = None
-    # The image has one pixel per cell of the full grid (grid_edges and
-    # grid_shape), not of the active cells' extent (dimension_ranges).
-    pixel_grid = _EnvScale.from_env(env)
-    if pixel_grid is not None:
-        # Scale for (time, height, width): time=1 (no scaling)
-        layer_scale = (1.0, *pixel_grid.pixel_size)
+            # Compute scale for napari (converts pixels to environment units)
+            # This enables the scale bar to show correct physical units (e.g., "10 cm")
+            # Scale is (time, y, x) for shape (time, height, width, channels)
+            layer_scale: tuple[float, float, float] | None = None
+            # The image has one pixel per cell of the full grid (grid_edges and
+            # grid_shape), not of the active cells' extent (dimension_ranges).
+            pixel_grid = _EnvScale.from_env(env)
+            if pixel_grid is not None:
+                # Scale for (time, height, width): time=1 (no scaling)
+                layer_scale = (1.0, *pixel_grid.pixel_size)
 
-    # Add image layer (RGB - no contrast_limits needed)
-    viewer.add_image(
-        lazy_frames,
-        name="Spatial Fields",
-        rgb=True,  # Already RGB
-        scale=layer_scale,  # Physical units scale (enables correct scale bar)
-        multiscale=False,  # Disable pyramid computation for large datasets
-        # Don't pass contrast_limits for RGB images - they're already [0, 255]
-    )
+            # Add image layer (RGB - no contrast_limits needed)
+            viewer.add_image(
+                lazy_frames,
+                name="Spatial Fields",
+                rgb=True,  # Already RGB
+                scale=layer_scale,  # Physical units scale (enables correct scale bar)
+                multiscale=False,  # Disable pyramid computation for large datasets
+                # Don't pass contrast_limits for RGB images - they're already [0, 255]
+            )
 
-    # Configure playback controls
-    # 1. Set initial frame to 0 (start at beginning, not middle)
-    viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
+            # Configure playback controls
+            # 1. Set initial frame to 0 (start at beginning, not middle)
+            viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
 
-    # 2. Configure which dimensions to display
-    # For RGB images with shape (time, height, width, 3):
-    # - Dimension 0 (time): slider (not displayed)
-    # - Dimensions 1, 2 (height, width): displayed in 2D view
-    # This ensures only the time slider appears, not height/width sliders
-    viewer.dims.ndisplay = 2  # Display 2 spatial dimensions
-    if viewer.dims.ndim >= 3:
-        # Set displayed order: show dimensions 1 and 2 (height, width)
-        viewer.dims.order = tuple(range(viewer.dims.ndim))
+            # 2. Configure which dimensions to display
+            # For RGB images with shape (time, height, width, 3):
+            # - Dimension 0 (time): slider (not displayed)
+            # - Dimensions 1, 2 (height, width): displayed in 2D view
+            # This ensures only the time slider appears, not height/width sliders
+            viewer.dims.ndisplay = 2  # Display 2 spatial dimensions
+            if viewer.dims.ndim >= 3:
+                # Set displayed order: show dimensions 1 and 2 (height, width)
+                viewer.dims.order = tuple(range(viewer.dims.ndim))
 
-    # 3. Configure FPS via napari settings (avoids deprecated qt_viewer access)
-    try:
-        from napari.settings import get_settings
+            # 3. Configure FPS via napari settings (avoids deprecated qt_viewer access)
+            try:
+                from napari.settings import get_settings
 
-        settings = get_settings()
-        settings.application.playback_fps = fps
+                settings = get_settings()
+                settings.application.playback_fps = fps
 
-        # 4. Add interactive speed control widget (if magicgui available)
-        # The widget also adds spacebar keyboard shortcut (synced with button)
-        _add_speed_control_widget(
-            viewer,
-            frame_labels=frame_labels,
-            initial_speed=speed,
-            sample_rate_hz=sample_rate_hz if sample_rate_hz is not None else 30.0,
-            max_playback_fps=max_playback_fps,
-        )
-    except ImportError:
-        # Fallback: Add spacebar shortcut without widget (magicgui not available)
-        @viewer.bind_key("Space")
-        def toggle_playback(viewer: napari.Viewer) -> None:
-            """Toggle animation playback with spacebar."""
-            viewer.window._toggle_play()
-
-    # Create PlaybackController for centralized playback control
-    # Compute n_frames from fields (type ignore needed for union-attr on shape)
-    n_frames = (
-        fields.shape[0]  # type: ignore[union-attr]
-        if fields_is_array
-        else len(fields)
-    )
-
-    # Resolve frame_times: prefer the explicit argument (forwarded by
-    # animate_fields, present even without overlays), then fall back to
-    # overlay_data.frame_times for callers that only set it there.
-    if frame_times is None and overlay_data is not None:
-        frame_times = overlay_data.frame_times
-
-    # Create controller and store as viewer attribute
-    # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer
-    # which doesn't allow arbitrary attribute assignment
-    controller = PlaybackController(
-        viewer=viewer,
-        n_frames=n_frames,
-        fps=float(fps),
-        frame_times=frame_times,
-        allow_frame_skip=True,  # Enable frame skipping by default
-    )
-    object.__setattr__(viewer, "playback_controller", controller)
-
-    # Render overlay data if provided
-    if overlay_data is not None:
-        # Extract overlay scale from layer_scale (y_scale, x_scale)
-        # This aligns overlays with the scaled field image layer
-        overlay_scale = (layer_scale[1], layer_scale[2]) if layer_scale else None
-
-        # Render video overlays (z_order="below" first, then field, then "above")
-        n_frames = len(fields)
-        video_layers_needing_callback: list[Layer] = []
-        for idx, video_data in enumerate(overlay_data.videos):
-            suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
-            name = f"Video{suffix}"
-            if video_data.z_order == "below":
-                # Add video layer below field - it will appear under the field
-                # We need to reorder layers after adding
-                video_layer, uses_native_time = _add_video_layer(
-                    viewer, video_data, env, n_frames, name=name
+                # 4. Add interactive speed control widget (if magicgui available)
+                # The widget also adds spacebar keyboard shortcut (synced with button)
+                _add_speed_control_widget(
+                    viewer,
+                    frame_labels=frame_labels,
+                    initial_speed=speed,
+                    sample_rate_hz=sample_rate_hz
+                    if sample_rate_hz is not None
+                    else 30.0,
+                    max_playback_fps=max_playback_fps,
                 )
-                # Move video layer to bottom of stack (index 0)
-                viewer.layers.move(viewer.layers.index(video_layer), 0)
-                if not uses_native_time:
-                    video_layers_needing_callback.append(video_layer)
-            else:
-                # Add video layer above field (default position - on top)
-                video_layer, uses_native_time = _add_video_layer(
-                    viewer, video_data, env, n_frames, name=name
-                )
-                if not uses_native_time:
-                    video_layers_needing_callback.append(video_layer)
+            except ImportError:
+                # Fallback: Add spacebar shortcut without widget (magicgui not available)
+                @viewer.bind_key("Space")
+                def toggle_playback(viewer: napari.Viewer) -> None:
+                    """Toggle animation playback with spacebar."""
+                    viewer.window._toggle_play()
 
-        # Register callback only for file-based videos (not in-memory with native time)
-        _make_video_frame_callback(viewer, video_layers_needing_callback)
-
-        # Render event overlays FIRST (spike events, region crossings, etc.)
-        # Events are background context, rendered below position/bodypart overlays
-        for idx, event_data in enumerate(overlay_data.events):
-            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
-            _render_event_overlay(
-                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
+            # Create PlaybackController for centralized playback control
+            # Compute n_frames from fields (type ignore needed for union-attr on shape)
+            n_frames = (
+                fields.shape[0]  # type: ignore[union-attr]
+                if fields_is_array
+                else len(fields)
             )
 
-        # Render position overlays (tracks + points) - above events
-        for idx, pos_data in enumerate(overlay_data.positions):
-            suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
-            _render_position_overlay(
-                viewer, pos_data, env, name_suffix=suffix, scale=overlay_scale
-            )
+            # Resolve frame_times: prefer the explicit argument (forwarded by
+            # animate_fields, present even without overlays), then fall back to
+            # overlay_data.frame_times for callers that only set it there.
+            if frame_times is None and overlay_data is not None:
+                frame_times = overlay_data.frame_times
 
-        # Render bodypart overlays (points + skeleton)
-        for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
-            suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
-            _render_bodypart_overlay(
-                viewer, bodypart_data, env, name_suffix=suffix, scale=overlay_scale
-            )
-
-        # Render head direction overlays (vectors) - on top
-        # Auto-pair with position overlay when there's exactly one position
-        paired_position = (
-            overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
-        )
-        for idx, head_dir_data in enumerate(overlay_data.head_directions):
-            suffix = f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
-            _render_head_direction_overlay(
-                viewer,
-                head_dir_data,
-                env,
-                name_suffix=suffix,
-                position_data=paired_position,
-                scale=overlay_scale,
-            )
-
-        # Add time series dock widget if present
-        if overlay_data.timeseries and overlay_data.frame_times is not None:
-            _add_timeseries_dock(
+            # Create controller and store as viewer attribute
+            # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer
+            # which doesn't allow arbitrary attribute assignment
+            controller = PlaybackController(
                 viewer=viewer,
-                timeseries_data=overlay_data.timeseries,
-                frame_times=overlay_data.frame_times,
+                n_frames=n_frames,
+                fps=float(fps),
+                frame_times=frame_times,
+                allow_frame_skip=True,  # Enable frame skipping by default
             )
+            object.__setattr__(viewer, "playback_controller", controller)
 
-    # Render regions if requested
-    if show_regions:
-        _render_regions(viewer, env, show_regions, region_alpha)
+            # Render overlay data if provided
+            if overlay_data is not None:
+                # Extract overlay scale from layer_scale (y_scale, x_scale)
+                # This aligns overlays with the scaled field image layer
+                overlay_scale = (
+                    (layer_scale[1], layer_scale[2]) if layer_scale else None
+                )
 
-    # Configure napari's native scale bar if requested
-    if scale_bar:
-        from neurospatial.animation.config import (
-            ScaleBarConfig,
-            configure_napari_scale_bar,
-        )
+                # Render video overlays (z_order="below" first, then field, then "above")
+                n_frames = len(fields)
+                video_layers_needing_callback: list[Layer] = []
+                for idx, video_data in enumerate(overlay_data.videos):
+                    suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
+                    name = f"Video{suffix}"
+                    if video_data.z_order == "below":
+                        # Add video layer below field - it will appear under the field
+                        # We need to reorder layers after adding
+                        video_layer, uses_native_time = _add_video_layer(
+                            viewer, video_data, env, n_frames, name=name
+                        )
+                        # Move video layer to bottom of stack (index 0)
+                        viewer.layers.move(viewer.layers.index(video_layer), 0)
+                        if not uses_native_time:
+                            video_layers_needing_callback.append(video_layer)
+                    else:
+                        # Add video layer above field (default position - on top)
+                        video_layer, uses_native_time = _add_video_layer(
+                            viewer, video_data, env, n_frames, name=name
+                        )
+                        if not uses_native_time:
+                            video_layers_needing_callback.append(video_layer)
 
-        config = scale_bar if isinstance(scale_bar, ScaleBarConfig) else None
-        configure_napari_scale_bar(viewer, units=env.units, config=config)
+                # Register callback only for file-based videos (not in-memory with native time)
+                _make_video_frame_callback(viewer, video_layers_needing_callback)
 
-    return viewer
+                # Render event overlays FIRST (spike events, region crossings, etc.)
+                # Events are background context, rendered below position/bodypart overlays
+                for idx, event_data in enumerate(overlay_data.events):
+                    suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
+                    _render_event_overlay(
+                        viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
+                    )
+
+                # Render position overlays (tracks + points) - above events
+                for idx, pos_data in enumerate(overlay_data.positions):
+                    suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
+                    _render_position_overlay(
+                        viewer, pos_data, env, name_suffix=suffix, scale=overlay_scale
+                    )
+
+                # Render bodypart overlays (points + skeleton)
+                for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
+                    suffix = (
+                        f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
+                    )
+                    _render_bodypart_overlay(
+                        viewer,
+                        bodypart_data,
+                        env,
+                        name_suffix=suffix,
+                        scale=overlay_scale,
+                    )
+
+                # Render head direction overlays (vectors) - on top
+                # Auto-pair with position overlay when there's exactly one position
+                paired_position = (
+                    overlay_data.positions[0]
+                    if len(overlay_data.positions) == 1
+                    else None
+                )
+                for idx, head_dir_data in enumerate(overlay_data.head_directions):
+                    suffix = (
+                        f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
+                    )
+                    _render_head_direction_overlay(
+                        viewer,
+                        head_dir_data,
+                        env,
+                        name_suffix=suffix,
+                        position_data=paired_position,
+                        scale=overlay_scale,
+                    )
+
+                # Add time series dock widget if present
+                if overlay_data.timeseries and overlay_data.frame_times is not None:
+                    _add_timeseries_dock(
+                        viewer=viewer,
+                        timeseries_data=overlay_data.timeseries,
+                        frame_times=overlay_data.frame_times,
+                    )
+
+            # Render regions if requested
+            if show_regions:
+                _render_regions(viewer, env, show_regions, region_alpha)
+
+            # Configure napari's native scale bar if requested
+            if scale_bar:
+                from neurospatial.animation.config import (
+                    ScaleBarConfig,
+                    configure_napari_scale_bar,
+                )
+
+                config = scale_bar if isinstance(scale_bar, ScaleBarConfig) else None
+                configure_napari_scale_bar(viewer, units=env.units, config=config)
+
+            if _on_close is not None:
+                _bind_napari_cleanup(viewer, _on_close)
+            setup.pop_all()
+            return viewer
+        except BaseException as error:
+            from neurospatial.animation._resources import _add_cleanup_note
+
+            try:
+                setup.close()
+            except BaseException as cleanup:
+                _add_cleanup_note(
+                    error, f"Partial napari cleanup also failed: {cleanup!r}"
+                )
+            raise
 
 
 def _report_napari_dry_run(n_frames: int, fps: int) -> None:
@@ -3287,6 +3321,7 @@ def _render_multi_field_napari(
     max_playback_fps: int = MAX_PLAYBACK_FPS,
     frame_times: NDArray[np.float64] | None = None,
     dry_run: bool = False,
+    _on_close: Callable[[], None] | None = None,
 ) -> napari.Viewer | None:
     """Render multiple field sequences in a single napari viewer.
 
@@ -3407,190 +3442,221 @@ def _render_multi_field_napari(
 
     # Create napari viewer
     viewer = napari.Viewer(title=title)
-    _register_windowed_manager_cleanup(viewer)
+    with ExitStack() as setup:
+        # Resolve close at cleanup time, including manager hooks installed below.
+        setup.callback(lambda: viewer.close())
+        try:
+            _register_windowed_manager_cleanup(viewer)
 
-    # Compute scale for napari (converts pixels to environment units)
-    # This enables the scale bar to show correct physical units (e.g., "10 cm")
-    layer_scale: tuple[float, float, float] | None = None
-    # The image has one pixel per cell of the full grid (grid_edges and
-    # grid_shape), not of the active cells' extent (dimension_ranges).
-    pixel_grid = _EnvScale.from_env(env)
-    if pixel_grid is not None:
-        # Scale for (time, height, width): time=1 (no scaling)
-        layer_scale = (1.0, *pixel_grid.pixel_size)
+            # Compute scale for napari (converts pixels to environment units)
+            # This enables the scale bar to show correct physical units (e.g., "10 cm")
+            layer_scale: tuple[float, float, float] | None = None
+            # The image has one pixel per cell of the full grid (grid_edges and
+            # grid_shape), not of the active cells' extent (dimension_ranges).
+            pixel_grid = _EnvScale.from_env(env)
+            if pixel_grid is not None:
+                # Scale for (time, height, width): time=1 (no scaling)
+                layer_scale = (1.0, *pixel_grid.pixel_size)
 
-    # Add image layers
-    for renderer, name in zip(lazy_renderers, layer_names, strict=True):
-        viewer.add_image(
-            renderer,
-            name=name,
-            rgb=True,
-            scale=layer_scale,  # Physical units scale (enables correct scale bar)
-            multiscale=False,  # Disable pyramid computation for large datasets
-        )
-
-    # Configure grid mode based on layout parameter
-    # Napari's grid mode arranges layers in a 2D grid for side-by-side viewing
-    if n_sequences > 1:
-        viewer.grid.enabled = True
-        if layout == "horizontal":
-            # Side-by-side: single row with n_sequences columns
-            viewer.grid.shape = (1, n_sequences)
-            viewer.grid.stride = 1
-        elif layout == "vertical":
-            # Stacked: n_sequences rows with single column
-            viewer.grid.shape = (n_sequences, 1)
-            # stride=-1 reverses layer order so first layer appears at top
-            viewer.grid.stride = -1
-        elif layout == "grid":
-            # Auto-grid: napari determines optimal arrangement
-            # Use -1 for automatic sizing based on number of layers
-            viewer.grid.shape = (-1, -1)
-            viewer.grid.stride = 1
-
-    # Configure playback controls
-    viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
-    viewer.dims.ndisplay = 2
-
-    if viewer.dims.ndim >= 3:
-        viewer.dims.order = tuple(range(viewer.dims.ndim))
-
-    # Configure FPS and add playback widget
-    try:
-        from napari.settings import get_settings
-
-        settings = get_settings()
-        settings.application.playback_fps = fps
-
-        _add_speed_control_widget(
-            viewer,
-            frame_labels=frame_labels,
-            initial_speed=speed,
-            sample_rate_hz=sample_rate_hz if sample_rate_hz is not None else 30.0,
-            max_playback_fps=max_playback_fps,
-        )
-    except ImportError:
-
-        @viewer.bind_key("Space")
-        def toggle_playback(viewer: napari.Viewer) -> None:
-            """Toggle animation playback with spacebar."""
-            viewer.window._toggle_play()
-
-    # Create PlaybackController for centralized playback control
-    # Compute n_frames from field sequences
-    n_frames = len(field_sequences[0]) if field_sequences else 0
-
-    # Resolve frame_times: prefer the explicit argument (forwarded by
-    # animate_fields, present even without overlays), then fall back to
-    # overlay_data.frame_times for callers that only set it there.
-    if frame_times is None and overlay_data is not None:
-        frame_times = overlay_data.frame_times
-
-    # Create controller and store as viewer attribute
-    # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer
-    # which doesn't allow arbitrary attribute assignment
-    controller = PlaybackController(
-        viewer=viewer,
-        n_frames=n_frames,
-        fps=float(fps),
-        frame_times=frame_times,
-        allow_frame_skip=True,  # Enable frame skipping by default
-    )
-    object.__setattr__(viewer, "playback_controller", controller)
-
-    # Render overlay data if provided
-    if overlay_data is not None:
-        # Extract overlay scale from layer_scale (y_scale, x_scale)
-        # This aligns overlays with the scaled field image layer
-        overlay_scale = (layer_scale[1], layer_scale[2]) if layer_scale else None
-
-        # Render video overlays (z_order="below" first, then field, then "above")
-        # n_frames already computed above
-        video_layers_needing_callback: list[Layer] = []
-        for idx, video_data in enumerate(overlay_data.videos):
-            suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
-            name = f"Video{suffix}"
-            if video_data.z_order == "below":
-                # Add video layer below field - it will appear under the field
-                video_layer, uses_native_time = _add_video_layer(
-                    viewer, video_data, env, n_frames, name=name
+            # Add image layers
+            for renderer, name in zip(lazy_renderers, layer_names, strict=True):
+                viewer.add_image(
+                    renderer,
+                    name=name,
+                    rgb=True,
+                    scale=layer_scale,  # Physical units scale (enables correct scale bar)
+                    multiscale=False,  # Disable pyramid computation for large datasets
                 )
-                # Move video layer to bottom of stack (index 0)
-                viewer.layers.move(viewer.layers.index(video_layer), 0)
-                if not uses_native_time:
-                    video_layers_needing_callback.append(video_layer)
-            else:
-                # Add video layer above field (default position - on top)
-                video_layer, uses_native_time = _add_video_layer(
-                    viewer, video_data, env, n_frames, name=name
+
+            # Configure grid mode based on layout parameter
+            # Napari's grid mode arranges layers in a 2D grid for side-by-side viewing
+            if n_sequences > 1:
+                viewer.grid.enabled = True
+                if layout == "horizontal":
+                    # Side-by-side: single row with n_sequences columns
+                    viewer.grid.shape = (1, n_sequences)
+                    viewer.grid.stride = 1
+                elif layout == "vertical":
+                    # Stacked: n_sequences rows with single column
+                    viewer.grid.shape = (n_sequences, 1)
+                    # stride=-1 reverses layer order so first layer appears at top
+                    viewer.grid.stride = -1
+                elif layout == "grid":
+                    # Auto-grid: napari determines optimal arrangement
+                    # Use -1 for automatic sizing based on number of layers
+                    viewer.grid.shape = (-1, -1)
+                    viewer.grid.stride = 1
+
+            # Configure playback controls
+            viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
+            viewer.dims.ndisplay = 2
+
+            if viewer.dims.ndim >= 3:
+                viewer.dims.order = tuple(range(viewer.dims.ndim))
+
+            # Configure FPS and add playback widget
+            try:
+                from napari.settings import get_settings
+
+                settings = get_settings()
+                settings.application.playback_fps = fps
+
+                _add_speed_control_widget(
+                    viewer,
+                    frame_labels=frame_labels,
+                    initial_speed=speed,
+                    sample_rate_hz=sample_rate_hz
+                    if sample_rate_hz is not None
+                    else 30.0,
+                    max_playback_fps=max_playback_fps,
                 )
-                if not uses_native_time:
-                    video_layers_needing_callback.append(video_layer)
+            except ImportError:
 
-        # Register callback only for file-based videos (not in-memory with native time)
-        _make_video_frame_callback(viewer, video_layers_needing_callback)
+                @viewer.bind_key("Space")
+                def toggle_playback(viewer: napari.Viewer) -> None:
+                    """Toggle animation playback with spacebar."""
+                    viewer.window._toggle_play()
 
-        # Render event overlays FIRST (spike events, region crossings, etc.)
-        # Events are background context, rendered below position/bodypart overlays
-        for idx, event_data in enumerate(overlay_data.events):
-            suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
-            _render_event_overlay(
-                viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
-            )
+            # Create PlaybackController for centralized playback control
+            # Compute n_frames from field sequences
+            n_frames = len(field_sequences[0]) if field_sequences else 0
 
-        # Render position overlays (tracks + points) - above events
-        for idx, pos_data in enumerate(overlay_data.positions):
-            suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
-            _render_position_overlay(
-                viewer, pos_data, env, name_suffix=suffix, scale=overlay_scale
-            )
+            # Resolve frame_times: prefer the explicit argument (forwarded by
+            # animate_fields, present even without overlays), then fall back to
+            # overlay_data.frame_times for callers that only set it there.
+            if frame_times is None and overlay_data is not None:
+                frame_times = overlay_data.frame_times
 
-        # Render bodypart overlays (points + skeleton)
-        for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
-            suffix = f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
-            _render_bodypart_overlay(
-                viewer, bodypart_data, env, name_suffix=suffix, scale=overlay_scale
-            )
-
-        # Render head direction overlays (vectors) - on top
-        # Auto-pair with position overlay when there's exactly one position
-        paired_position = (
-            overlay_data.positions[0] if len(overlay_data.positions) == 1 else None
-        )
-        for idx, head_dir_data in enumerate(overlay_data.head_directions):
-            suffix = f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
-            _render_head_direction_overlay(
-                viewer,
-                head_dir_data,
-                env,
-                name_suffix=suffix,
-                position_data=paired_position,
-                scale=overlay_scale,
-            )
-
-        # Add time series dock widget if present
-        if overlay_data.timeseries and overlay_data.frame_times is not None:
-            _add_timeseries_dock(
+            # Create controller and store as viewer attribute
+            # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer
+            # which doesn't allow arbitrary attribute assignment
+            controller = PlaybackController(
                 viewer=viewer,
-                timeseries_data=overlay_data.timeseries,
-                frame_times=overlay_data.frame_times,
+                n_frames=n_frames,
+                fps=float(fps),
+                frame_times=frame_times,
+                allow_frame_skip=True,  # Enable frame skipping by default
             )
+            object.__setattr__(viewer, "playback_controller", controller)
 
-    # Render regions if requested
-    if show_regions:
-        _render_regions(viewer, env, show_regions, region_alpha)
+            # Render overlay data if provided
+            if overlay_data is not None:
+                # Extract overlay scale from layer_scale (y_scale, x_scale)
+                # This aligns overlays with the scaled field image layer
+                overlay_scale = (
+                    (layer_scale[1], layer_scale[2]) if layer_scale else None
+                )
 
-    # Configure napari's native scale bar if requested
-    if scale_bar:
-        from neurospatial.animation.config import (
-            ScaleBarConfig,
-            configure_napari_scale_bar,
-        )
+                # Render video overlays (z_order="below" first, then field, then "above")
+                # n_frames already computed above
+                video_layers_needing_callback: list[Layer] = []
+                for idx, video_data in enumerate(overlay_data.videos):
+                    suffix = f" {idx + 1}" if len(overlay_data.videos) > 1 else ""
+                    name = f"Video{suffix}"
+                    if video_data.z_order == "below":
+                        # Add video layer below field - it will appear under the field
+                        video_layer, uses_native_time = _add_video_layer(
+                            viewer, video_data, env, n_frames, name=name
+                        )
+                        # Move video layer to bottom of stack (index 0)
+                        viewer.layers.move(viewer.layers.index(video_layer), 0)
+                        if not uses_native_time:
+                            video_layers_needing_callback.append(video_layer)
+                    else:
+                        # Add video layer above field (default position - on top)
+                        video_layer, uses_native_time = _add_video_layer(
+                            viewer, video_data, env, n_frames, name=name
+                        )
+                        if not uses_native_time:
+                            video_layers_needing_callback.append(video_layer)
 
-        config = scale_bar if isinstance(scale_bar, ScaleBarConfig) else None
-        configure_napari_scale_bar(viewer, units=env.units, config=config)
+                # Register callback only for file-based videos (not in-memory with native time)
+                _make_video_frame_callback(viewer, video_layers_needing_callback)
 
-    return viewer
+                # Render event overlays FIRST (spike events, region crossings, etc.)
+                # Events are background context, rendered below position/bodypart overlays
+                for idx, event_data in enumerate(overlay_data.events):
+                    suffix = f" {idx + 1}" if len(overlay_data.events) > 1 else ""
+                    _render_event_overlay(
+                        viewer, event_data, env, name_suffix=suffix, scale=overlay_scale
+                    )
+
+                # Render position overlays (tracks + points) - above events
+                for idx, pos_data in enumerate(overlay_data.positions):
+                    suffix = f" {idx + 1}" if len(overlay_data.positions) > 1 else ""
+                    _render_position_overlay(
+                        viewer, pos_data, env, name_suffix=suffix, scale=overlay_scale
+                    )
+
+                # Render bodypart overlays (points + skeleton)
+                for idx, bodypart_data in enumerate(overlay_data.bodypart_sets):
+                    suffix = (
+                        f" {idx + 1}" if len(overlay_data.bodypart_sets) > 1 else ""
+                    )
+                    _render_bodypart_overlay(
+                        viewer,
+                        bodypart_data,
+                        env,
+                        name_suffix=suffix,
+                        scale=overlay_scale,
+                    )
+
+                # Render head direction overlays (vectors) - on top
+                # Auto-pair with position overlay when there's exactly one position
+                paired_position = (
+                    overlay_data.positions[0]
+                    if len(overlay_data.positions) == 1
+                    else None
+                )
+                for idx, head_dir_data in enumerate(overlay_data.head_directions):
+                    suffix = (
+                        f" {idx + 1}" if len(overlay_data.head_directions) > 1 else ""
+                    )
+                    _render_head_direction_overlay(
+                        viewer,
+                        head_dir_data,
+                        env,
+                        name_suffix=suffix,
+                        position_data=paired_position,
+                        scale=overlay_scale,
+                    )
+
+                # Add time series dock widget if present
+                if overlay_data.timeseries and overlay_data.frame_times is not None:
+                    _add_timeseries_dock(
+                        viewer=viewer,
+                        timeseries_data=overlay_data.timeseries,
+                        frame_times=overlay_data.frame_times,
+                    )
+
+            # Render regions if requested
+            if show_regions:
+                _render_regions(viewer, env, show_regions, region_alpha)
+
+            # Configure napari's native scale bar if requested
+            if scale_bar:
+                from neurospatial.animation.config import (
+                    ScaleBarConfig,
+                    configure_napari_scale_bar,
+                )
+
+                config = scale_bar if isinstance(scale_bar, ScaleBarConfig) else None
+                configure_napari_scale_bar(viewer, units=env.units, config=config)
+
+            if _on_close is not None:
+                _bind_napari_cleanup(viewer, _on_close)
+            setup.pop_all()
+            return viewer
+        except BaseException as error:
+            from neurospatial.animation._resources import _add_cleanup_note
+
+            try:
+                setup.close()
+            except BaseException as cleanup:
+                _add_cleanup_note(
+                    error, f"Partial napari cleanup also failed: {cleanup!r}"
+                )
+            raise
 
 
 def _create_lazy_field_renderer(
@@ -4187,3 +4253,21 @@ class ChunkedLazyFieldRenderer:
         return {
             chunk_idx: len(frames) for chunk_idx, frames in self._chunk_cache.items()
         }
+
+
+def _bind_napari_cleanup(viewer: Any, cleanup: Callable[[], None]) -> None:
+    """Release readers after either programmatic or accepted window closure."""
+    from neurospatial.animation._resources import _bind_cleanup
+
+    _bind_cleanup(viewer, cleanup)
+    window = getattr(getattr(viewer, "window", None), "_qt_window", None)
+    if window is None:
+        return
+    original_close_event = window.closeEvent
+
+    def close_event(event: Any) -> None:
+        original_close_event(event)
+        if event.isAccepted():
+            cleanup()
+
+    window.closeEvent = close_event
