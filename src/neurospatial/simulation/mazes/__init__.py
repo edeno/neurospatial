@@ -1,34 +1,39 @@
 """Standard maze environments for spatial navigation research.
 
-Based on Wijnen et al. 2024 (Brain Structure & Function), Figure 1.
-All dimensions in centimeters. Coordinate origin at maze center.
+The layouts follow Figure 1 of Wijnen et al. 2024 (Brain Structure &
+Function, doi:10.1007/s00429-024-02771-x). The dimensions come from the
+papers that describe each apparatus, cited in each factory's docstring, and
+estimates are marked there. All dimensions in centimeters.
 
 This module provides factory functions to create common maze environments:
 
 Simple Corridor Mazes (Panel a):
-- Linear Track: Basic straight corridor for place cell studies
 - T-Maze: Single binary decision with perpendicular arms
 - Y-Maze: Three symmetric arms at 120 degree angles
-- W-Maze: Three parallel wells connected at base
-
-Open-Field Mazes (Panel c):
-- Radial Arm Maze: Central platform with radiating arms
-- Barnes Maze: Circular platform with perimeter holes
-- Cheeseboard Maze: Circular platform with surface wells
-- Watermaze: Circular pool with hidden platform
+- W-Maze: Frank-lab W-track, three parallel arms joined at the base
+- Small Hex Maze: Berke-lab triangular hex maze with movable barriers
 
 Repeated Alleyway Mazes (Panel b):
 - Repeated Y-Maze: Sequential Y-junctions with Warner-Warden design
-- Repeated T-Maze: Spine with perpendicular T-arms (comb shape)
-- Hampton Court Maze: Complex labyrinth with dead ends
+- Repeated T-Maze: Tolman & Nyswander six-unit T maze
+- Hampton Court Maze: Small's (1901) rat version of the hedge maze
+
+Open-Field Mazes (Panel c):
+- Radial Arm Maze: Central platform with eight radiating arms
+- Barnes Maze: Circular platform with perimeter holes
+- Cheeseboard Maze: Circular board with 177 food wells
+- Watermaze: Circular pool with hidden platform
 
 Structured Lattices (Panel d):
-- Crossword Maze: 4x4 Manhattan-style grid
-- Honeycomb Maze: Hexagonal platform array
-- Hamlet Maze: Pentagon ring with branching arms
+- Crossword Maze: Eight intersecting tracks with four start boxes
+- Honeycomb Maze: 37 hexagonal platforms
+- Hamlet Maze: Pentagonal ring with alleys that split toward five houses
 
 Complex (Panel e):
-- Rat HexMaze: Large-scale 120 degree corridor network
+- Rat HexMaze: Four HexMaze modules joined by five bridges
+
+Not in the figure:
+- Linear Track, Plus Maze, Square Maze (rest box), Sungod Maze
 
 Examples
 --------

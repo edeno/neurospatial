@@ -4,6 +4,48 @@
 
 ### Breaking
 
+- The simulated mazes in `neurospatial.simulation.mazes` now match the real
+  apparatus. Their layouts follow Figure 1 of Wijnen et al. 2024 and their
+  sizes come from the papers that describe each maze, cited in each factory's
+  docstring; sizes no paper gives are marked as estimates there. Positions,
+  bins, regions and track graphs of the default mazes all change.
+  - Rebuilt layouts. The rat HexMaze is four 24-node HexMaze modules joined by
+    five bridges (96 junctions, about 9 x 5 m); it was three open hexagonal
+    fields. The small hex maze is the Berke-lab 49-hex triangle with 1.30 m
+    sides and a valid set of 9 barriers. The crossword maze has the 8 tracks,
+    14 crossings, 5 reward arms and 4 start boxes of McNamara et al. 2014.
+    The honeycomb's 37 platforms are tiled side to side (1 cm gaps) and no
+    longer fill the gaps around them. The Hamlet maze is a pentagonal ring
+    whose five alleys split toward the five houses, with no spokes to the
+    centre. Hampton Court follows Small's 1901 plan (8 x 6 ft, 4 in
+    galleries) and the repeated T-maze Tolman & Nyswander's six-unit maze.
+  - New sizes: W-maze 76 x 76 cm with 7 cm track (Frank lab); Barnes 122 cm
+    with 9.5 cm holes; cheeseboard 120 cm with 177 wells 7.5 cm apart;
+    radial arm maze with a 35.5 cm centre and 76 x 9 cm arms; watermaze
+    platform 15 cm across, halfway between the pool centre and the wall;
+    repeated Y-maze 10.16 cm corridors.
+  - Tracks stay on the floor: the Hampton Court and Sungod tracks crossed
+    walls, and the W-maze track had two dead-end stubs at its base. Arm-end,
+    well and reward regions sit inside their corridors instead of on the
+    wall, and the Y-maze's single arm points down.
+  - Changed dimension fields: `RatHexmazeDims(node_spacing, corridor_width,
+    bridge_length, n_modules)`; `SmallHexDims(hex_side, barriers)`;
+    `HoneycombDims(platform_side, gap, n_rings)`; `HamletDims(ring_radius,
+    split_radius, house_radius, corridor_width, house_size, n_arms)`;
+    `HamptonCourtDims(width, height, corridor_width)`;
+    `RepeatedTDims(width, arm_length, long_arm_length, wall_thickness,
+    start_stem_length, start_box_width, start_box_depth)`; new
+    `BarnesDims.hole_inset` and `CheeseboardDims.rim_margin`. The small hex
+    maze's wells are now `port_A`, `port_B` and `port_C`, and an invalid
+    barrier set raises `ValueError` naming the cut-off hexes.
+
+  ```python
+  # before
+  make_rat_hexmaze(RatHexmazeDims(module_width=90.0, n_modules=3))
+  # after: n_modules=1 is the mouse HexMaze of Alonso et al. 2021
+  make_rat_hexmaze(RatHexmazeDims(n_modules=1, node_spacing=36.3))
+  ```
+
 - `population_vector_correlation` is now `rate_map_correlations`. It always
   returned the correlation between every pair of rate maps (rows), not the
   per-location population-vector correlation of remapping studies. The
