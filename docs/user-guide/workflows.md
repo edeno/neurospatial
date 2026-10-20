@@ -369,7 +369,9 @@ comparison.summary_table()
 - Build `valid` from your tracking quality, for example
   `np.isfinite(positions).all(axis=1)` plus your likelihood threshold.
 - When you join several recordings on one clock, pass `break_before`, True at
-  the first frame of each later recording, so no epoch spans the join.
+  the first frame of each later recording, to `labels_to_epochs` so no epoch
+  spans the join, and to `compute_spatial_rates` so the interval across the
+  join adds no occupancy or spikes.
 - Use the same `max_gap`, environment and estimator settings for every
   condition. `compare_spatial_rates` warns when the estimator settings differ.
 - Pass `spike_window=` to `compute_spatial_rates` when spike sorting and
@@ -745,6 +747,60 @@ prediction recording's observation windows explicitly to `predict`.
 The count-array route has already applied its time selection upstream. For
 multiple recording runs, bin each run independently and retain the corresponding
 centers; a single start/stop grid would span the pauses.
+
+### Recordings joined on one clock
+
+When several recordings are concatenated with no pause on the clock, `max_gap`
+cannot see where one ends and the next begins. Declare each join with
+`break_before`, True at the first frame of each later recording. Rate maps,
+decoders and `error_against` take the same array: the interval across the join
+adds no occupancy or spikes, no decode bin spans it, and ground truth is not
+interpolated across it.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment, compute_spatial_rates
+from neurospatial.decoding import decode_session
+
+# Two 10 s recordings joined on one clock with no pause between them.
+times = np.arange(600) / 30
+recording_id = np.repeat([0, 1], 300)
+positions = 10 + 5 * np.c_[np.sin(times), np.cos(times)]
+positions[300:] = positions[300:][::-1]  # the animal is put back elsewhere
+env = Environment.from_samples(positions, bin_size=2.0)
+spike_times = [times[::10], times[::15]]
+new_recording = np.r_[False, recording_id[1:] != recording_id[:-1]]
+
+rates = compute_spatial_rates(
+    env, spike_times, times, positions, break_before=new_recording
+)
+joined = compute_spatial_rates(env, spike_times, times, positions)
+print("Break at", rates.analysis_settings["break_times"], "s")
+print(f"Occupancy removed: {joined.occupancy.sum() - rates.occupancy.sum():.4f} s")
+
+dt = 0.1
+result = decode_session(
+    env, spike_times, times, positions, dt=dt, break_before=new_recording
+)
+start = times[new_recording][0]
+first = result.times < start
+print(f"Decode bins: {first.sum()} in recording 1, {(~first).sum()} in recording 2")
+assert np.all(result.times[first] + dt / 2 <= times[299] + 1e-9)
+assert np.all(result.times[~first] - dt / 2 >= start - 1e-9)
+errors = result.error_against(times, positions, break_before=new_recording)
+```
+
+Only the 1/30 s step between the recordings is removed, and the result records
+the break time in `analysis_settings["break_times"]`. Without `break_before`,
+that step is an ordinary sampling interval: its time and spikes count toward
+the bin where the first recording ended, the decode bin from 9.9 to 10.0 s
+covers it, and a speed derived for `min_speed` reads the jump between the two
+places as running. With your own
+data, build the array from your recording or epoch IDs,
+`np.r_[False, recording_id[1:] != recording_id[:-1]]`, and pass it to every
+call. `BayesianDecoder.fit`, `predict`, `predict_summary` and `score` take it
+too.
 
 ## Workflow 3: Region-Based Analysis
 
