@@ -142,8 +142,10 @@ regions keep their full coordinates. Planar video, polygon regions and scale
 bars require a 2-D scene. In napari, named fields use
 separate layers; `layout="horizontal"` separates fields when no overlays or
 regions are present. Omit `layout` to keep them registered with the fields.
-Scenes reject regions in 1-D environments. Fastplotlib scenes also reject
-scale bars and, in 1-D, pose, heading, object-vector and video overlays.
+Scenes reject regions, headings and video in 1-D environments. Notebook and
+scene-export overlays place 1-D positions, pose and object vectors on the
+spatial axis at zero field amplitude. Fastplotlib scenes also reject scale
+bars and, in 1-D, pose and object-vector overlays.
 
 For streams on different clocks, use
 `Animation(env, {"posterior": AnimationField(posterior, decode_times),
@@ -154,6 +156,12 @@ Field metadata is immutable. To change a field's clock, support or color
 settings, create a new `AnimationField`; scenes snapshot this metadata without
 copying the spatial values. Track panels use each field's own observed
 intervals even when `frame_times` selects a coarser scene clock.
+Use `AnimationField(..., epochs=recording_windows)` to declare half-open
+recording windows. Exact samples outside those windows are missing, and a
+held interval must lie entirely within one window. `Animation.from_decoding`
+preserves the result's `spike_window`; optional `epochs` further restrict that
+support. Neither a wider requested window nor `max_gap=None` fills a known
+recording gap.
 
 Position, pose, heading and object-vector overlays preserve NaN observations.
 Their default `max_gap=0.5` seconds and optional `break_before` match analysis
@@ -166,6 +174,7 @@ is drawn for it. Explicit fixed event locations are unaffected.
 against the environment and asks for an explicit transform when it differs.
 NWB position adapters forward units. `SpikeRasterOverlay(rates=rate_result)`
 validates the environment and aligns maps by `unit_ids`.
+Mixed unit identifiers, such as integer `1` and string `"1"`, remain distinct.
 
 For `track=...`, the environment and track must use the same units and
 Cartesian coordinate frame. Unit spelling aliases are accepted; convert or
@@ -177,6 +186,16 @@ The scene owns video readers it opens. `scene.overlay_data()` returns borrowed
 views of those readers, including when requesting another clock within the
 scene's bounds. Keep the scene open while using them; `scene.close()` releases
 the readers. Failed scene preparation also releases readers already acquired.
+Custom overlay adapters are converted once. Their prepared data retains its
+native clock and source-frame mapping; adapters may be frozen objects.
+
+`VideoCalibration` stores a pixel-to-centimeter transform. Calibrated overlays
+convert those coordinates into the environment's metric units, including after
+crop or downsampling. `calibrate_video(..., landmarks_env=...)` takes landmarks
+in environment units; `cm_per_px` and scale-bar lengths remain in centimeters.
+An environment without units uses the historical centimeter convention.
+Calibrated video requires metric units and rejects unknown units or pixels;
+uncalibrated video can still be fitted to environment bounds.
 
 ## Overwriting existing files
 

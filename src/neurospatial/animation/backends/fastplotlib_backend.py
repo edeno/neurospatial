@@ -1733,11 +1733,24 @@ class FastplotlibAnimation:
             [[stack] for stack in stacks] if _field_styles is not None else [stacks]
         )
         scales, labels, extensions, track_scales = [], [], [], []
-        for group, style in zip(scale_groups, styles, strict=True):
+        for group_index, (group, style) in enumerate(
+            zip(scale_groups, styles, strict=True)
+        ):
+            streams = (
+                None
+                if _field_streams is None
+                else _field_streams
+                if _field_styles is None
+                else (_field_streams[group_index],)
+            )
             low, high = style.get("vmin", vmin), style.get("vmax", vmax)
             lows, highs = np.empty(0), np.empty(0)
             if low is None or high is None or (below and "opaque_from" not in style):
-                extremes = [frame_extremes(stack) for stack in group]
+                extremes = (
+                    [frame_extremes(stack) for stack in group]
+                    if streams is None
+                    else [frame_extremes(field._scale_rows()) for field in streams]
+                )
                 lows = np.concatenate([item[0] for item in extremes])
                 highs = np.concatenate([item[1] for item in extremes])
             limits = robust_limits(lows, highs)
@@ -1755,23 +1768,27 @@ class FastplotlibAnimation:
             if self._projection is not None:
                 # Projection sums bins, so its units keep the field's label
                 # but need limits derived from that field's projected values.
-                sample = np.unique(np.linspace(0, self.n_frames - 1, 2_000).astype(int))
-                projected = np.concatenate(
-                    [
-                        _project(
-                            np.stack(
-                                [np.asarray(stack[i], dtype=float) for i in sample]
-                            ),
-                            self._projection,
-                        )
-                        for stack in group
-                    ]
-                )
-                track_scale = ColorScale(
-                    colormap,
-                    *animation_colormap_range(projected, None, None),
-                    "lightgray",
-                )
+                if streams is None:
+                    sample = np.unique(
+                        np.linspace(0, self.n_frames - 1, 2_000).astype(int)
+                    )
+                    projected = np.concatenate(
+                        [
+                            _project(
+                                np.stack(
+                                    [np.asarray(stack[i], dtype=float) for i in sample]
+                                ),
+                                self._projection,
+                            )
+                            for stack in group
+                        ]
+                    )
+                    projected_limits = animation_colormap_range(projected, None, None)
+                else:
+                    from neurospatial.animation._prepared import projected_field_limits
+
+                    projected_limits = projected_field_limits(streams, self._projection)
+                track_scale = ColorScale(colormap, *projected_limits, "lightgray")
             track_scales.append(track_scale)
         if _field_styles is None:
             scales *= len(stacks)
@@ -2043,6 +2060,8 @@ class FastplotlibAnimation:
         values = (
             self._field_at_time(time + self._start)
             if self._field_at_time is not None
+            else [field.sample(time + self._start) for field in self._field_streams]
+            if self._field_streams is not None
             else [np.asarray(stack[frame], dtype=np.float64) for stack in self._stacks]
         )
         images = [
@@ -2070,12 +2089,16 @@ class FastplotlibAnimation:
             else self._field_streams[index]
         )
         n_bins = self._field_bins
-        head, tail = (
-            self._along_track(
-                np.asarray(stack[part], dtype=np.float64).reshape(-1, n_bins)
-            )
-            for part in parts
-        )
+
+        def read(part: slice) -> NDArray[np.float64]:
+            rows = np.asarray(stack[part], dtype=np.float64).reshape(-1, n_bins)
+            if self._field_streams is not None:
+                rows = np.where(
+                    self._field_streams[index].sample_valid[part, None], rows, np.nan
+                )
+            return self._along_track(rows)
+
+        head, tail = (read(part) for part in parts)
         kept = (
             (last_rows[keep.start - last.start : keep.stop - last.start],)
             if keep

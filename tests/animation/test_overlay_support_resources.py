@@ -9,7 +9,6 @@ from numpy.testing import assert_allclose, assert_array_equal
 
 from neurospatial.animation.overlays import (
     EventOverlay,
-    PositionData,
     PositionOverlay,
     VideoData,
     VideoOverlay,
@@ -195,7 +194,7 @@ def test_own_samples_opens_one_reader_and_realign_borrows_it(env, readers):
     readers[0].close()
 
 
-def test_reconversion_failure_closes_previously_opened_reader(env, readers):
+def test_single_conversion_failure_closes_previously_opened_reader(env, readers):
     class FailsOnOwnClock:
         times = np.arange(3.0)
         interp = "linear"
@@ -203,18 +202,19 @@ def test_reconversion_failure_closes_previously_opened_reader(env, readers):
 
         def convert_to_data(self, frame_times, n_frames, env):
             self.calls += 1
-            if self.calls == 2:
-                raise ValueError("own clock conversion failed")
-            return PositionData(np.ones((n_frames, 2)), "red", 1.0, None)
+            assert_array_equal(frame_times, self.times)
+            raise ValueError("own clock conversion failed")
 
+    failing = FailsOnOwnClock()
     with pytest.raises(ValueError, match="own clock"), pytest.warns(UserWarning):
         _convert_overlays_to_data(
-            [VideoOverlay("test.mp4", times=np.arange(3.0)), FailsOnOwnClock()],
+            [VideoOverlay("test.mp4", times=np.arange(3.0)), failing],
             np.arange(3.0),
             3,
             env,
             own_samples=True,
         )
+    assert failing.calls == 1
     assert len(readers) == 1
     assert readers[0].close_count == 1
 

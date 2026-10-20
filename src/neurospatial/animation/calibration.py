@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._units import units_per_centimeter
 from neurospatial.ops.transforms import (
     VideoCalibration,
     calibrate_from_landmarks,
@@ -40,7 +41,8 @@ def calibrate_video(
     """Calibrate video coordinates to environment space.
 
     Creates a VideoCalibration object that maps video pixel coordinates to
-    environment centimeter coordinates. Supports three calibration methods:
+    centimeters. VideoOverlay converts this canonical transform into the
+    environment's declared metric units. Supports three calibration methods:
     scale bar, landmark correspondences, or direct scale factor.
 
     Parameters
@@ -56,7 +58,8 @@ def calibrate_video(
         Landmark coordinates in video pixels as (x, y) = (column, row).
         Must be provided together with landmarks_env.
     landmarks_env : ndarray of shape (n_points, 2), optional
-        Corresponding landmark coordinates in environment space as (x, y) in cm.
+        Corresponding landmark coordinates as (x, y) in the environment's units.
+        Unspecified environment units are interpreted as centimeters.
         Must be provided together with landmarks_px.
     cm_per_px : float, optional
         Direct scale factor if known (cm per pixel).
@@ -66,15 +69,15 @@ def calibrate_video(
         - ``True`` (default): Environment uses scientific/Cartesian coordinates
           (Y increases upward). This is the common case for tracking data in
           cm or meters from DeepLabCut, SLEAP, etc.
-        - ``False``: Environment uses image/pixel coordinates (Y increases
-          downward). Use this when your environment is already in pixel space.
+        - ``False``: Tracking coordinates increase downward, matching the image
+          convention. Coordinate values still use metric environment units.
 
         This parameter only applies to ``cm_per_px`` and ``scale_bar`` methods.
         For ``landmarks``, the Y-flip is implicit in the correspondences.
 
-        If ``env.units`` is set, the default behavior is inferred:
-        - ``env.units == "pixels"``: Assumes ``flip_y=False`` (warns if True)
-        - Otherwise: Assumes ``flip_y=True`` (scientific convention)
+        Calibrated overlays require metric environment units (or unspecified
+        units, interpreted as centimeters). Pixel and custom units cannot be
+        converted from this centimeter calibration.
 
     Returns
     -------
@@ -86,15 +89,15 @@ def calibrate_video(
     ------
     ValueError
         If no calibration method is specified, multiple methods are specified,
-        or landmark arrays have mismatched lengths.
+        landmark arrays have mismatched lengths, or environment units cannot
+        be converted from centimeters.
     FileNotFoundError
         If video_path does not exist.
 
     Warns
     -----
     UserWarning
-        If environment bounds extend beyond calibrated video coverage, or if
-        ``env.units='pixels'`` but ``cm_per_px`` is provided (unusual combination).
+        If environment bounds extend beyond calibrated video coverage.
 
     Notes
     -----
@@ -150,7 +153,7 @@ def calibrate_video(
     ...     env,
     ...     "session.mp4",
     ...     cm_per_px=0.25,
-    ...     flip_y=False,  # For pixel-space environments
+    ...     flip_y=False,  # When tracking coordinates also increase downward
     ... )
     >>>
     >>> # Use calibration with VideoOverlay
@@ -202,19 +205,7 @@ def calibrate_video(
             f"Fix: Provide exactly one calibration method."
         )
 
-    # Check for unusual env.units='pixels' + cm_per_px combination
-    env_units = getattr(env, "units", None)
-    if env_units == "pixels" and cm_per_px is not None:
-        warnings.warn(
-            f"WHAT: env.units='pixels' but cm_per_px={cm_per_px} provided.\n"
-            f"WHY: This is an unusual combination. If your environment uses pixel "
-            f"coordinates, you typically don't need a scale factor.\n"
-            f"Fix: If converting from pixels to another unit, set env.units to that "
-            f"unit (e.g., 'cm'). Using flip_y=False since pixel coordinates typically "
-            f"use image convention (Y-down).",
-            UserWarning,
-            stacklevel=2,
-        )
+    env_scale = _calibration_units_per_cm(env)
 
     # Build transform based on method
     if scale_bar is not None:
@@ -280,7 +271,7 @@ def calibrate_video(
 
         transform = calibrate_from_landmarks(
             landmarks_px=landmarks_px,
-            landmarks_cm=landmarks_env,
+            landmarks_cm=landmarks_env / env_scale,
             frame_size_px=frame_size_px,
             kind="similarity",  # Default to similarity transform
         )
@@ -402,11 +393,13 @@ def _validate_calibration_coverage(
             [0.0, float(h)],
         ]
     )
-    corners_cm = calibration.transform_px_to_cm(corners_px)
+    corners_env = calibration.transform_px_to_cm(
+        corners_px
+    ) * _calibration_units_per_cm(env)
 
     # Compute video coverage bounds
-    video_x_min, video_x_max = corners_cm[:, 0].min(), corners_cm[:, 0].max()
-    video_y_min, video_y_max = corners_cm[:, 1].min(), corners_cm[:, 1].max()
+    video_x_min, video_x_max = corners_env[:, 0].min(), corners_env[:, 0].max()
+    video_y_min, video_y_max = corners_env[:, 1].min(), corners_env[:, 1].max()
 
     # Get environment bounds
     if env.dimension_ranges is None:
@@ -433,3 +426,19 @@ def _validate_calibration_coverage(
             UserWarning,
             stacklevel=3,  # Point to caller of calibrate_video
         )
+
+
+def _calibration_units_per_cm(env: Environment) -> float:
+    """Resolve the explicit centimeter calibration in environment units."""
+    units = getattr(env, "units", None)
+    if units is None:
+        return 1.0
+    factor = units_per_centimeter(units)
+    if factor is None:
+        raise ValueError(
+            f"Video calibration maps pixels to centimeters, but environment units {units!r} "
+            "have no known conversion from centimeters. Fix: use metric environment "
+            "units (such as 'cm', 'm', or 'mm'), or omit calibration to fit video "
+            "to the environment bounds."
+        )
+    return factor

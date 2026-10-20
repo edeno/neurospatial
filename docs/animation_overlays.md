@@ -193,7 +193,7 @@ calibration = calibrate_video(
     env,
     "session.mp4",
     landmarks_px=arena_corners_px,    # Video pixel coordinates
-    landmarks_env=arena_corners_env,  # Environment cm coordinates
+    landmarks_env=arena_corners_env,  # Coordinates in env.units
 )
 
 # Create video overlay
@@ -482,8 +482,19 @@ Three coordinate systems are involved:
 The calibration transform handles the coordinate conversion, including:
 
 1. **Y-axis flip**: Video origin (top-left) → Environment origin (bottom-left)
-2. **Scale**: Pixels → centimeters
+2. **Scale**: Pixels → centimeters → environment metric units
 3. **Rotation/Translation**: If camera and arena are not perfectly aligned
+
+`VideoCalibration` always stores a pixel-to-centimeter transform. Overlay
+preparation converts it to `env.units`, so the same calibration can be used
+with centimeter, meter or millimeter environments. An environment without
+declared units follows the historical centimeter convention. Calibrated video
+rejects unknown units and pixel units; uncalibrated video can still be fitted
+to environment bounds.
+
+Landmarks passed as `landmarks_env` use the environment's units. The
+`cm_per_px` parameter and scale-bar length always use centimeters, regardless
+of environment units.
 
 ### Calibration Methods
 
@@ -522,7 +533,7 @@ corners_px = np.array([
     [50, 430],   # Bottom-left
 ])
 
-# Same corners in environment coordinates (x_cm, y_cm)
+# Same corners in environment coordinates (this example uses env.units="cm")
 corners_env = np.array([
     [0, 80],     # Environment top-left (high Y)
     [100, 80],   # Environment top-right

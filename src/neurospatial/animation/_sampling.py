@@ -61,8 +61,10 @@ def sample_at_times(
     result = np.full((len(query_times), *values.shape[1:]), np.nan)
     if not len(times):
         return result
-    finite = np.asarray(np.isfinite(values.reshape(len(times), -1)).all(axis=1))
-    sample_valid = finite if sample_valid is None else sample_valid & finite
+    # Prepared masks already describe the stream. Check finiteness only for
+    # queried rows, retaining safety if caller-owned values changed afterward.
+    if sample_valid is None:
+        sample_valid = np.ones(len(times), dtype=bool)
     if interval_valid is None:
         interval_valid = sample_valid[:-1] & sample_valid[1:]
     right = np.searchsorted(times, query_times, side="left")
@@ -70,12 +72,20 @@ def sample_at_times(
         times[np.minimum(right, len(times) - 1)] == query_times
     )
     exact &= sample_valid[np.minimum(right, len(times) - 1)]
-    result[exact] = values[right[exact]]
+    exact_rows = np.flatnonzero(exact)
+    if len(exact_rows):
+        observed = values[right[exact_rows]]
+        valid = np.isfinite(observed.reshape(len(exact_rows), -1)).all(axis=1)
+        result[exact_rows[valid]] = observed[valid]
     inside = (~exact) & (right > 0) & (right < len(times))
     rows = np.flatnonzero(inside)
     r = right[rows]
     keep = interval_valid[r - 1] & sample_valid[r - 1] & sample_valid[r]
     rows, r = rows[keep], r[keep]
+    if len(rows):
+        observed = np.stack([values[r - 1], values[r]], axis=1)
+        valid = np.isfinite(observed.reshape(len(rows), -1)).all(axis=1)
+        rows, r = rows[valid], r[valid]
     left = r - 1
     fraction = (query_times[rows] - times[left]) / (times[r] - times[left])
     if interp == "nearest":

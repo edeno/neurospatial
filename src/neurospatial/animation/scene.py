@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import numpy as np
 
+from neurospatial._intervals import as_intervals, intersect_intervals, intervals_contain
 from neurospatial._observation import (
     _validated_signal_times,
     resolve_sample_support,
@@ -37,7 +38,9 @@ class AnimationField:
     spatial rows. The source is retained without copying or materializing it.
     Samples are held until the next sample only across supported intervals;
     recording gaps, declared breaks and times outside the stream show NaN.
-    Partial NaNs in a spatial row preserve missing spatial observations.
+    A held interval must lie wholly inside one epoch; a pair of samples on
+    opposite sides of an epoch boundary is shown only at its supported exact
+    sample times. Partial NaNs preserve missing spatial observations.
 
     Parameters
     ----------
@@ -53,6 +56,10 @@ class AnimationField:
         Largest supported interval in seconds; None disables this gate.
     break_before : array-like of bool or None
         True at a sample starts a new recording segment.
+    epochs : interval-like or None
+        Half-open ``[start, stop)`` recording windows in seconds. Exact samples
+        at an excluded stop or outside the windows show NaN. Disabling
+        ``max_gap`` does not disable these known recording boundaries.
     label : str or None
         Colorbar label.
     """
@@ -66,6 +73,7 @@ class AnimationField:
     label: str | None
     max_gap: float | None
     break_before: np.ndarray | None
+    epochs: np.ndarray | None
     sample_valid: np.ndarray = dataclass_field(init=False)
     interval_valid: np.ndarray = dataclass_field(init=False)
     _limits: tuple[float, float] | None = dataclass_field(
@@ -85,6 +93,7 @@ class AnimationField:
         vmax: float | None = None,
         max_gap: float | None = 0.5,
         break_before: Any = None,
+        epochs: Any = None,
         label: str | None = None,
     ) -> None:
         object.__setattr__(
@@ -128,16 +137,29 @@ class AnimationField:
         object.__setattr__(
             self, "break_before", None if flags is None else _readonly(flags)
         )
+        windows = as_intervals(epochs, name="epochs")
+        object.__setattr__(
+            self, "epochs", None if windows is None else _readonly(windows)
+        )
+        sample_valid = (
+            np.ones(len(self.times), dtype=bool)
+            if self.epochs is None
+            else intervals_contain(
+                self.epochs, self.times, np.nextafter(self.times, np.inf)
+            )
+        )
         support = resolve_sample_support(
             self.times,
-            np.ones(len(self.times), dtype=bool),
+            sample_valid,
             max_gap=max_gap,
-            epochs=None,
+            epochs=self.epochs,
             break_before=self.break_before,
             result="the animation shows exact samples only",
         )
         object.__setattr__(self, "sample_valid", _readonly(support.sample_valid))
-        object.__setattr__(self, "interval_valid", _readonly(support.interval_mask))
+        # A held [start, stop) row needs no observation at its excluded stop.
+        # Keep canonical interval gates separate from exact-sample membership.
+        object.__setattr__(self, "interval_valid", _readonly(support.interval_gates))
         object.__setattr__(self, "_limits", None)
         object.__setattr__(self, "_peak", None)
 
@@ -154,7 +176,8 @@ class AnimationField:
     def __setstate__(self, state: dict[str, Any]) -> None:
         for name, value in state.items():
             if (
-                name in {"times", "break_before", "sample_valid", "interval_valid"}
+                name
+                in {"times", "break_before", "epochs", "sample_valid", "interval_valid"}
                 and value is not None
             ):
                 value = _readonly(value)
@@ -180,9 +203,13 @@ class AnimationField:
         if not np.isfinite(time):
             raise ValueError("time must be finite seconds.")
         index = int(np.searchsorted(self.times, time, side="right")) - 1
-        if index >= 0 and (
-            self.times[index] == time
-            or (index < len(self.times) - 1 and self.interval_valid[index])
+        if (
+            index >= 0
+            and self.sample_valid[index]
+            and (
+                self.times[index] == time
+                or (index < len(self.times) - 1 and self.interval_valid[index])
+            )
         ):
             return cast("np.ndarray", self[index])
         return np.full(self.n_bins, np.nan)
@@ -192,33 +219,29 @@ class AnimationField:
         if self._limits is None and self.vmin is not None and self.vmax is not None:
             object.__setattr__(self, "_limits", (self.vmin, self.vmax))
         if self._limits is None:
-            from neurospatial.animation.rendering import animation_colormap_range
+            from neurospatial.animation._field_stats import animation_colormap_range
 
-            rows = [
-                self[int(i)]
-                for i in np.unique(
-                    np.linspace(0, len(self) - 1, min(len(self), 100), dtype=int)
-                )
-            ]
+            rows = self._scale_rows()
             object.__setattr__(
                 self, "_limits", animation_colormap_range(rows, self.vmin, self.vmax)
             )
-            from neurospatial.animation.rendering import frame_extremes, typical_peak
+            from neurospatial.animation._field_stats import frame_extremes, typical_peak
 
             object.__setattr__(self, "_peak", typical_peak(frame_extremes(rows)[1]))
         assert self._limits is not None
         return self._limits
 
+    def _scale_rows(self) -> list[np.ndarray]:
+        indices = np.flatnonzero(self.sample_valid)
+        if len(indices) > 100:
+            indices = indices[np.linspace(0, len(indices) - 1, 100, dtype=int)]
+        return [self[int(index)] for index in indices]
+
     def _typical_peak(self) -> float:
         if self._peak is None:
-            from neurospatial.animation.rendering import frame_extremes, typical_peak
+            from neurospatial.animation._field_stats import frame_extremes, typical_peak
 
-            rows = [
-                self[int(i)]
-                for i in np.unique(
-                    np.linspace(0, len(self) - 1, min(len(self), 100), dtype=int)
-                )
-            ]
+            rows = self._scale_rows()
             object.__setattr__(self, "_peak", typical_peak(frame_extremes(rows)[1]))
         assert self._peak is not None
         return self._peak if self._peak > 0 else 1.0
@@ -353,6 +376,33 @@ class Animation:
                 )
 
     def _snapshot_overlay(self, overlay: Any) -> Any:
+        from neurospatial.animation.overlays import (
+            BodypartOverlay,
+            EpochOverlay,
+            EventOverlay,
+            HeadDirectionOverlay,
+            ObjectVectorOverlay,
+            PositionOverlay,
+            SpikeRasterOverlay,
+            TimeSeriesOverlay,
+            VideoOverlay,
+        )
+
+        if type(overlay) not in {
+            PositionOverlay,
+            BodypartOverlay,
+            HeadDirectionOverlay,
+            VideoOverlay,
+            ObjectVectorOverlay,
+            EventOverlay,
+            SpikeRasterOverlay,
+            EpochOverlay,
+            TimeSeriesOverlay,
+        }:
+            # An adapter may be frozen, expose read-only properties, or own
+            # native resources that cannot be copied. Only its converted data
+            # is snapshotted; renderers never consult the adapter afterward.
+            return overlay
         result = copy.copy(overlay)
         for name in (
             "times",
@@ -365,6 +415,10 @@ class Animation:
         ):
             value = getattr(result, name, None)
             if value is not None:
+                if name == "unit_ids":
+                    from neurospatial._results import as_label_array
+
+                    value = as_label_array(value)
                 setattr(result, name, _readonly(value))
         for name in ("colors", "markers", "skeleton", "calibration", "epochs"):
             if hasattr(result, name):
@@ -379,14 +433,6 @@ class Animation:
         if hasattr(result, "_rows"):
             rows, ids = result._rows
             result._rows = (list(rows), _readonly(ids))
-        from neurospatial.animation.overlays import (
-            BodypartOverlay,
-            HeadDirectionOverlay,
-            ObjectVectorOverlay,
-            PositionOverlay,
-            VideoOverlay,
-        )
-
         if (
             isinstance(
                 result,
@@ -431,16 +477,42 @@ class Animation:
 
     @classmethod
     def from_decoding(cls, result: Any, **kwargs: Any) -> Animation:
-        """Build a probability animation from a decoding result's own clock."""
+        """Build a probability animation on its decoding clock and recording support.
+
+        Known ``result.spike_window`` always intersects ``epochs`` supplied
+        here. Neither wider epochs nor ``max_gap=None`` can fill known
+        recording gaps. Held intervals must fit wholly inside one resulting
+        half-open window; supported isolated samples remain visible exactly.
+        """
         if getattr(result, "times", None) is None:
             raise ValueError(
                 "Decoding result has no times. Decode with times to preserve its physical clock."
             )
         field_options = {
             name: kwargs.pop(name)
-            for name in ("cmap", "vmin", "vmax", "label", "max_gap", "break_before")
+            for name in (
+                "cmap",
+                "vmin",
+                "vmax",
+                "label",
+                "max_gap",
+                "break_before",
+                "epochs",
+            )
             if name in kwargs
         }
+        known = as_intervals(getattr(result, "spike_window", None), name="spike_window")
+        selected = as_intervals(field_options.get("epochs"), name="epochs")
+        if known is not None:
+            selected = (
+                known if selected is None else intersect_intervals(known, selected)
+            )
+            if not len(selected):
+                raise ValueError(
+                    "epochs does not overlap the decoding result's known recording "
+                    "support (spike_window). Select epochs inside that support."
+                )
+        field_options["epochs"] = selected
         field_options.setdefault("label", "Probability")
         field_options.setdefault("max_gap", getattr(result, "max_gap", 0.5))
         field_options.setdefault("break_before", getattr(result, "break_before", None))

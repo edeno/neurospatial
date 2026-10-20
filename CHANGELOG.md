@@ -4,6 +4,19 @@
 
 ### Animation workflows
 
+- Preserve decoding recording windows through `Animation.from_decoding` and
+  expose half-open `AnimationField(epochs=...)` support. Unsupported exact
+  samples and intervals remain missing in spatial and track views.
+- Preserve mixed raster unit identifiers, custom video frame mappings and
+  frozen overlay adapters. Prepare adapters once and snapshot their internal
+  data while retaining explicit video-reader ownership.
+- Convert centimeter video calibrations into environment metric units,
+  including cropped and downsampled video. Landmark calibration accepts
+  environment units; calibrated video rejects unknown units and pixel units.
+- Share scene sampling and scientific-panel preparation independently of
+  Matplotlib canvases. Napari consumes the same prepared data directly.
+  One-dimensional scene views draw positions, pose and object vectors on the
+  spatial axis and reject headings and video before rendering.
 - Preserve each field's native clock and declared gaps in fastplotlib track
   panels and exports, including when the scene uses a coarser output clock.
   Track projection now rejects incompatible units or coordinate frames.

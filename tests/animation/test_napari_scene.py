@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.animation._scene_rendering import SceneRenderer
+from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation.backends._napari_scene import (
     NapariScene,
     _image,
@@ -55,7 +55,7 @@ def model_handle(scene):
     handle.viewer = ModelViewer()
     handle._closed = False
     handle._time = float(scene.frame_times[0])
-    handle._helper = SceneRenderer(scene)
+    handle._helper = PreparedScene(scene)
     handle._panels = None
     handle._layers, handle._updates, handle.field_layers = [], [], {}
     handle.time_control = SimpleNamespace(
@@ -267,12 +267,71 @@ def test_native_window_close_stops_playback_and_releases_helper():
     handle = build_napari_scene(scene, show=True)
     timer_deleted = []
     handle.timer.destroyed.connect(lambda: timer_deleted.append(True))
-    handle._helper.figure.text(0.5, 0.5, "Owned renderer")
+    assert not hasattr(handle._helper, "figure")
     handle.timer.start()
     handle.viewer.close()
     QApplication.processEvents()
     assert handle._closed
     assert timer_deleted or not handle.timer.isActive()
-    assert not handle._helper.figure.texts
+    assert not hasattr(handle._helper, "figure")
     assert not scene._closed
+    scene.close()
+
+
+@pytest.mark.parametrize("mapping", [[2, -1, 0], [-1, 2, 0], [-1, -1, -1]])
+def test_native_video_uses_custom_mapping_and_hides_missing_rows(mapping):
+    from neurospatial.animation.overlays import VideoData
+
+    class MappedVideo:
+        times = np.array([0.0, 0.1, 0.2])
+        interp = "nearest"
+
+        def convert_to_data(self, frame_times, n_frames, env):
+            frames = np.stack(
+                [np.full((2, 2, 3), value, dtype=np.uint8) for value in [20, 100, 200]]
+            )
+            return VideoData(
+                np.array(mapping),
+                frames,
+                None,
+                (0, 2, 0, 2),
+                1,
+                "above",
+                times=self.times,
+            )
+
+    class Layers(list):
+        def move(self, old, new):
+            self.insert(new, self.pop(old))
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    scene = Animation(
+        env, np.ones((2, env.n_bins)), frame_times=[0.0, 0.2], overlays=[MappedVideo()]
+    )
+    handle = NapariScene.__new__(NapariScene)
+    handle.scene = scene
+    handle.viewer = ModelViewer()
+    handle.viewer.layers = Layers()
+    handle._closed = False
+    handle._time = 0.0
+    handle._helper = PreparedScene(scene)
+    handle._panels = None
+    handle._layers, handle._updates, handle.field_layers = [], [], {}
+    handle.time_control = SimpleNamespace(
+        blockSignals=lambda _: None, setValue=lambda _: None
+    )
+    handle._build_fields()
+    handle._build_overlays()
+    video = next(layer for layer in handle.viewer.layers if layer.name == "Video 1")
+    for time, mapped in zip(
+        [0.0, 0.1, 0.2, 0.1, 0.0],
+        [mapping[0], mapping[1], mapping[2], mapping[1], mapping[0]],
+        strict=True,
+    ):
+        handle.seek(time)
+        assert video.visible == (mapped >= 0)
+        if mapped >= 0:
+            assert video.data[0, 0, 0] == [20, 100, 200][mapped]
     scene.close()

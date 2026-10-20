@@ -13,7 +13,8 @@ from typing import Any, cast
 
 import numpy as np
 
-from neurospatial.animation._scene_rendering import SceneRenderer
+from neurospatial.animation._prepared import PreparedScene
+from neurospatial.animation._scene_rendering import draw_track_panel
 
 
 def _native_grid(env: Any) -> tuple[Any, np.ndarray] | None:
@@ -66,7 +67,7 @@ def _rgba(color: Any) -> Any:
 class _ScientificPanels:
     """Persistent Matplotlib artists, so native annotations survive seeking."""
 
-    def __init__(self, scene: Any, helper: SceneRenderer) -> None:
+    def __init__(self, scene: Any, helper: PreparedScene) -> None:
         from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
         from matplotlib.figure import Figure
 
@@ -159,15 +160,10 @@ class _ScientificPanels:
             time + self.scene.window_seconds / 2,
         )
         for line, signal in self.signals:
-            keep = (signal.times >= left) & (signal.times <= right)
-            values = signal.data[keep]
-            if signal.normalize:
-                span = signal.global_vmax - signal.global_vmin
-                values = (values - signal.global_vmin) / (span or 1)
-            line.set_data(signal.times[keep], values)
+            times, values = self.helper.signal_window(signal, time)
+            line.set_data(times, values)
         for artist, raster, row in self.rasters:
-            spikes = raster.spike_times[row]
-            spikes = spikes[(spikes >= left) & (spikes <= right)]
+            spikes = self.helper.raster_window(raster, row, time)
             segments = np.array(
                 [[[t, row - 0.4], [t, row + 0.4]] for t in spikes]
             ).reshape(-1, 2, 2)
@@ -178,7 +174,7 @@ class _ScientificPanels:
         for ax, name, field in self.tracks:
             before = set(ax.get_children())
             # _track also adds a cursor; remove only that managed duplicate.
-            self.helper._track(ax, name, field, time, colorbar=False)
+            draw_track_panel(ax, self.helper, name, field, time, colorbar=False)
             self._track_artists.extend(set(ax.get_children()) - before)
         for ax, cursor in zip(self.axes, self.cursors, strict=True):
             ax.set_xlim(left, right)
@@ -223,20 +219,16 @@ class NapariScene:
         if not np.isfinite([self._speed, fps]).all() or self._speed <= 0 or fps <= 0:
             raise ValueError("fps and speed must be positive finite numbers.")
         self._step = self._speed / fps
-        self._helper = SceneRenderer(scene)
+        self._helper = PreparedScene(scene)
         self._panels: _ScientificPanels | None = None
         self.viewer: Any = options.get("viewer")
         self._owns_viewer = self.viewer is None
         if self.viewer is None:
-            try:
-                self.viewer = napari.Viewer(
-                    title=options.get("title", scene.title or "Animation"),
-                    ndisplay=options.get("ndisplay", scene.env.n_dims),
-                    show=options.get("show", True),
-                )
-            except BaseException:
-                self._helper.close()
-                raise
+            self.viewer = napari.Viewer(
+                title=options.get("title", scene.title or "Animation"),
+                ndisplay=options.get("ndisplay", scene.env.n_dims),
+                show=options.get("show", True),
+            )
         self._layers: list[Any] = []
         self._updates: list[Any] = []
         self.field_layers: dict[str, Any] = {}
@@ -399,7 +391,7 @@ class NapariScene:
         from neurospatial.animation._region_names import shown_region_names
         from neurospatial.animation._style import _event_visibility
 
-        scene, sample = self.scene, self._helper._sample
+        scene, sample = self.scene, self._helper.sample
         data, dims = scene._overlay_data, scene.env.n_dims
         empty = np.empty((0, dims))
 
@@ -667,10 +659,17 @@ class NapariScene:
 
                 self._updates.append(update_events)
         for i, video in enumerate(data.videos):
-            times = video.times if video.times is not None else scene.frame_times
-            image = video.reader[0] if video.times is not None else video.get_frame(0)
+            # A custom map may intentionally begin with a missing frame. Use
+            # the first mapped image only to establish layer geometry; seeking
+            # below decides whether the current observation is visible.
+            available = np.flatnonzero(video.frame_indices >= 0)
+            image = (
+                video.get_frame(int(available[0]))
+                if len(available)
+                else np.zeros((1, 1, 3), dtype=np.uint8)
+            )
             if image is None:
-                raise ValueError("VideoOverlay's first frame could not be read.")
+                raise ValueError("VideoOverlay's first mapped frame could not be read.")
             # Video-to-environment transforms are x,y; napari uses y,x.
             if video.transform_to_env is not None:
                 matrix = video.transform_to_env.A
@@ -717,16 +716,11 @@ class NapariScene:
                 *,
                 v: Any = video,
                 layer: Any = layer,
-                times: Any = times,
             ) -> None:
-                layer.visible = bool(times[0] <= time <= times[-1])
-                if layer.visible:
-                    index = int(np.argmin(abs(times - time)))
-                    image = (
-                        v.reader[index] if v.times is not None else v.get_frame(index)
-                    )
-                    if image is not None:
-                        layer.data = image
+                image = self._helper.video_frame(v, time)
+                layer.visible = image is not None
+                if image is not None:
+                    layer.data = image
 
             self._updates.append(update_video)
         for name in (
@@ -844,7 +838,6 @@ class NapariScene:
         self._closed = True
         if hasattr(self, "timer"):
             self.timer.stop()
-        self._helper.close()
         if self._panels is not None:
             self._panels.figure.clear()
 

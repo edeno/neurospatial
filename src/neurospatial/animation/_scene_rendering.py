@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import numpy as np
 
-from neurospatial.animation._sampling import sample_at_times
+from neurospatial.animation._prepared import PreparedScene
 
 
 class SceneRenderer:
@@ -17,57 +17,26 @@ class SceneRenderer:
     def __init__(
         self, scene: Any, *, dpi: int = 100, figsize: tuple[float, float] | None = None
     ) -> None:
+        # Resolve capabilities and shared interpretation before allocating a canvas.
+        self.prepared = PreparedScene(scene)
         from matplotlib.backends.backend_agg import FigureCanvasAgg
         from matplotlib.figure import Figure
 
         self.scene = scene
         self.settings = (dpi, figsize)
-        data = scene._overlay_data
-        self.signal_groups: dict[tuple[str, str | int], list[Any]] = {}
-        for i, signal in enumerate(data.timeseries):
-            self.signal_groups.setdefault(
-                ("group", signal.group) if signal.group is not None else ("signal", i),
-                [],
-            ).append(signal)
-        from neurospatial.animation._tracks import (
-            _projection,
-            track_extents,
-        )
-
-        self.track_env = scene.env if scene.track is None else scene.track
-        self.track_extents = track_extents(self.track_env)
-        self.projection = (
-            None if scene.track is None else _projection(scene.env, scene.track)
-        )
-        self.panel_count = (
-            len(self.signal_groups)
-            + len(data.spike_rasters)
-            + bool(data.epochs)
-            + (self.track_extents is not None)
-        )
+        self.signal_groups = self.prepared.signal_groups
+        self.track_env = self.prepared.track_env
+        self.track_extents = self.prepared.track_extents
+        self.projection = self.prepared.projection
+        self.panel_count = self.prepared.panel_count
+        self.limits = self.prepared.limits
+        self.track_limits = self.prepared.track_limits
         width = max(6, 5 * len(scene.fields))
         self.figure = Figure(
             figsize=figsize or (width, 5 + 1.5 * self.panel_count), dpi=dpi
         )
         self._subplotpars = copy.copy(self.figure.subplotpars)
         self.canvas = FigureCanvasAgg(self.figure)
-        self.limits = {
-            name: field.color_limits() for name, field in scene.fields.items()
-        }
-        self.track_limits = dict(self.limits)
-        if self.projection is not None:
-            from neurospatial.animation._tracks import _project
-            from neurospatial.animation.rendering import animation_colormap_range
-
-            for name, field in scene.fields.items():
-                indices = np.unique(
-                    np.linspace(0, len(field) - 1, min(len(field), 100), dtype=int)
-                )
-                rows = np.stack([field[int(index)] for index in indices])
-                projected = _project(rows, self.projection)
-                self.track_limits[name] = animation_colormap_range(
-                    projected, None, None
-                )
 
     def close(self) -> None:
         self.figure.clear()
@@ -81,22 +50,7 @@ class SceneRenderer:
         circular: bool = False,
         name: str | None = None,
     ) -> np.ndarray:
-        times = item.times if item.times is not None else self.scene.frame_times
-        valid = getattr(item, "sample_valid", None)
-        intervals = getattr(item, "interval_valid", None)
-        if name is not None:
-            valid = None if valid is None else valid.get(name)
-            intervals = None if intervals is None else intervals.get(name)
-        sampled = sample_at_times(
-            times,
-            values,
-            np.array([time]),
-            interp=getattr(item, "interp", "linear"),
-            sample_valid=valid,
-            interval_valid=intervals,
-            circular=circular,
-        )[0]
-        return cast("np.ndarray", sampled)
+        return self.prepared.sample(item, values, time, circular=circular, name=name)
 
     def render(self, time: float) -> np.ndarray:
         if not np.isfinite(time):
@@ -166,12 +120,9 @@ class SceneRenderer:
             row += 1
         for raster in scene._overlay_data.spike_rasters:
             ax = self.figure.add_subplot(grid[row, :])
-            for unit, spikes in enumerate(raster.spike_times):
-                keep = (spikes >= time - scene.window_seconds / 2) & (
-                    spikes <= time + scene.window_seconds / 2
-                )
+            for unit in range(len(raster.spike_times)):
                 ax.vlines(
-                    spikes[keep],
+                    self.prepared.raster_window(raster, unit, time),
                     unit - 0.4,
                     unit + 0.4,
                     color=raster.color,
@@ -291,15 +242,9 @@ class SceneRenderer:
 
     def _signals(self, ax: Any, signals: list[Any], time: float) -> None:
         for signal in signals:
-            keep = (signal.times >= time - self.scene.window_seconds / 2) & (
-                signal.times <= time + self.scene.window_seconds / 2
-            )
-            values = signal.data[keep]
-            if signal.normalize:
-                span = signal.global_vmax - signal.global_vmin
-                values = (values - signal.global_vmin) / (span if span else 1)
+            times, values = self.prepared.signal_window(signal, time)
             ax.plot(
-                signal.times[keep],
+                times,
                 values,
                 color=signal.color,
                 linewidth=signal.linewidth,
@@ -319,66 +264,8 @@ class SceneRenderer:
     def _track(
         self, ax: Any, name: str, field: Any, time: float, *, colorbar: bool = True
     ) -> None:
-        """Position-by-time cells respect the source's exact interval support."""
-        from matplotlib.collections import PolyCollection
-        from matplotlib.colors import Normalize
-
-        from neurospatial.animation._tracks import (
-            _project,
-            track_position,
-        )
-
-        assert self.track_extents is not None
-        starts, stops = self.track_extents
-        left, right = (
-            time - self.scene.window_seconds / 2,
-            time + self.scene.window_seconds / 2,
-        )
-        selected = np.flatnonzero(
-            (field.times[:-1] < right) & (field.times[1:] > left) & field.interval_valid
-        )
-        polygons, colors = [], []
-        for index in selected:
-            values = field[int(index)]
-            if self.projection is not None:
-                values = _project(values[None, :], self.projection)[0]
-            lo, hi = max(left, field.times[index]), min(right, field.times[index + 1])
-            for first, last, value in zip(starts, stops, values, strict=True):
-                if np.isfinite(value):
-                    polygons.append([(lo, first), (hi, first), (hi, last), (lo, last)])
-                    colors.append(value)
-        low, high = self.track_limits[name]
-        collection = PolyCollection(
-            polygons, cmap=field.cmap, norm=Normalize(low, high), edgecolors="none"
-        )
-        collection.set_array(np.asarray(colors))
-        ax.add_collection(collection)
-        if self.projection is not None and colorbar:
-            self.figure.colorbar(
-                collection,
-                ax=ax,
-                label=f"Projected {field.label or name} (sum per track bin)",
-            )
-        ax.set_ylim(float(np.min(starts)), float(np.max(stops)))
-        ax.set_ylabel(f"Position ({self.track_env.units or 'units'})")
-        ax.set_title(f"{name} along track")
-        for position in self.scene._overlay_data.positions:
-            times = (
-                position.times if position.times is not None else self.scene.frame_times
-            )
-            keep = (times >= left) & (times <= right)
-            distances = track_position(self.track_env, position.data)
-            intervals = position.interval_valid
-            for index in np.flatnonzero(keep[:-1] & keep[1:]):
-                if intervals is None or intervals[index]:
-                    ax.plot(
-                        times[index : index + 2],
-                        distances[index : index + 2],
-                        color=position.color,
-                        linewidth=1,
-                        zorder=3,
-                    )
-        self._time_panel(ax, time)
+        """Draw shared prepared track cells on this renderer's axes."""
+        draw_track_panel(ax, self.prepared, name, field, time, colorbar=colorbar)
 
     def _spatial(self, ax: Any, time: float) -> None:
         from matplotlib import colormaps
@@ -396,15 +283,7 @@ class SceneRenderer:
 
         spatial_xlim, spatial_ylim = ax.get_xlim(), ax.get_ylim()
         for video in data.videos:
-            times = video.times if video.times is not None else scene.frame_times
-            if time < times[0] or time > times[-1]:
-                continue
-            index = int(np.argmin(np.abs(times - time)))
-            image = (
-                video.reader[index]
-                if video.times is not None
-                else video.get_frame(index)
-            )
+            image = self.prepared.video_frame(video, time)
             if image is None:
                 continue
             image_artist = ax.imshow(
@@ -449,16 +328,20 @@ class SceneRenderer:
                     stop = int(np.searchsorted(times, time, side="right"))
                     start = max(0, stop - position.trail_length)
                     valid = position.interval_valid
-                    if position.data.shape[1] in (2, 3):
-                        for index in range(start, stop - 1):
-                            if valid is None or valid[index]:
-                                pair = position.data[index : index + 2]
-                                ax.plot(
-                                    *pair.T,
-                                    color=position.color,
-                                    alpha=0.6,
-                                    zorder=100,
-                                )
+                    for index in range(start, stop - 1):
+                        if valid is None or valid[index]:
+                            pair = np.array(
+                                [
+                                    xy(point)
+                                    for point in position.data[index : index + 2]
+                                ]
+                            )
+                            ax.plot(
+                                *pair.T,
+                                color=position.color,
+                                alpha=0.6,
+                                zorder=100,
+                            )
                 ax.scatter(
                     *xy(point),
                     s=position.size**2,
@@ -480,8 +363,8 @@ class SceneRenderer:
                     )
             if body.skeleton is not None:
                 for first, second in body.skeleton.edges:
-                    pair = np.array([points[first], points[second]])
-                    if pair.shape[1] in (2, 3) and np.isfinite(pair).all():
+                    pair = np.array([xy(points[first]), xy(points[second])])
+                    if np.isfinite(pair).all():
                         ax.plot(*pair.T, color="white", zorder=100)
         for heading in data.head_directions:
             sampled_heading = self._sample(
@@ -547,15 +430,15 @@ class SceneRenderer:
                     continue
                 if vectors.show_objects:
                     ax.scatter(
-                        *point,
+                        *xy(point),
                         color=vectors.color,
                         marker=vectors.object_marker,
                         s=vectors.object_size**2,
                         zorder=103,
                     )
-                if np.isfinite(animal).all() and len(animal) in (2, 3):
+                if np.isfinite(animal).all():
                     ax.plot(
-                        *np.array([animal, point]).T,
+                        *np.array([xy(animal), xy(point)]).T,
                         color=vectors.color,
                         linewidth=vectors.linewidth,
                         alpha=opacity,
@@ -593,6 +476,48 @@ class SceneRenderer:
                             edgecolors=events.border_color,
                             zorder=104,
                         )
+
+
+def draw_track_panel(
+    ax: Any,
+    prepared: PreparedScene,
+    name: str,
+    field: Any,
+    time: float,
+    *,
+    colorbar: bool = True,
+) -> None:
+    """Draw prepared track data; usable by Agg and native scientific docks."""
+    from matplotlib.collections import PolyCollection
+    from matplotlib.colors import Normalize
+
+    window = prepared.track_window(field, time)
+    low, high = prepared.track_limits[name]
+    collection = PolyCollection(
+        window.polygons.tolist(),
+        cmap=field.cmap,
+        norm=Normalize(low, high),
+        edgecolors="none",
+    )
+    collection.set_array(window.values)
+    ax.add_collection(collection)
+    if prepared.projection is not None and colorbar:
+        ax.figure.colorbar(
+            collection,
+            ax=ax,
+            label=f"Projected {field.label or name} (sum per track bin)",
+        )
+    assert prepared.track_extents is not None
+    starts, stops = prepared.track_extents
+    ax.set_ylim(float(np.min(starts)), float(np.max(stops)))
+    ax.set_ylabel(f"Position ({prepared.track_env.units or 'units'})")
+    ax.set_title(f"{name} along track")
+    for segment, color in window.positions:
+        ax.plot(*segment.T, color=color, linewidth=1, zorder=3)
+    ax.set_facecolor("#20252b")
+    ax.set_xlim(*prepared.bounds(time))
+    ax.axvline(time, color="red", linewidth=1)
+    ax.set_xlabel("Time (s)")
 
 
 def export_scene(

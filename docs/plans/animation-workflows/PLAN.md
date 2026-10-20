@@ -150,3 +150,44 @@ Final review validation:
   supplied-viewer options; playback/dock integration: **18 passed**.
 - NWB overlay integration and executable animation documentation: **34 passed**.
 - Ruff and formatting pass; mypy passes across all **303 source files**.
+
+## Prepared-data boundary follow-up
+
+The next review identified six additional contract gaps. The follow-up closes
+them at preparation and sampling boundaries:
+
+- Preserve mixed raster labels through the canonical identity resolver, so
+  integer and string unit IDs cannot select one another's rate maps.
+- Retain decoding `spike_window` as immutable half-open field epochs. User
+  epochs intersect known recording support; widened requests cannot fill gaps.
+- Convert canonical centimeter video calibration into environment metric
+  units, including calibration fitting and coverage diagnostics.
+- Preserve custom video source-index mappings and convert each adapter once.
+  Renderers use the prepared mapping through `VideoData.get_frame`.
+- Draw unambiguous 1-D spatial overlays on the zero-amplitude baseline and
+  refuse unsupported headings and video before allocation.
+- Accept frozen custom adapters without rewriting their attributes. Snapshot
+  prepared data metadata, with explicit ownership of video resources.
+
+Shared sampling, field statistics and scientific-panel preparation live outside
+the Matplotlib scene renderer. Notebook/export and napari consume this prepared
+contract; napari no longer allocates an Agg scene renderer to interpret data.
+
+Native track caches and projected scales also honor exact sample support,
+including recordings whose supported samples fall between coarse scene clock
+entries. Missing custom video mappings hide the corresponding layer instead of
+leaving stale pixels visible.
+
+Follow-up validation:
+
+- Broad animation, environment integration and API suite: **1,468 passed,
+  6 skipped, 181 deselected**. Final focused support/metadata checks:
+  **19 passed**; prepared-data, model-layer and sampling checks: **26 passed**.
+- Actual Metal rendering, capture, field support and missing-event suite:
+  **83 passed**.
+- Actual Cocoa napari suite: **140 passed**; playback/dock integration:
+  **18 passed**.
+- NWB overlay integration and all executable documentation: **64 passed**.
+- Ruff and formatting pass; mypy passes across all **305 source files**.
+- Fresh-process preparation, including track projection, imports neither
+  `matplotlib.pyplot` nor an Agg canvas.

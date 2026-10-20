@@ -66,6 +66,8 @@ def unsupported_overlays(
 ) -> list[str]:
     """Internal data collection names the backend cannot draw."""
     supported = _CAPABILITIES[backend].overlays
+    if backend == "scene" and n_dims == 1:
+        supported -= {"head_directions", "videos"}
     if backend == "fastplotlib" and n_dims == 1:
         supported -= {"bodypart_sets", "head_directions", "object_vectors", "videos"}
     return [
@@ -78,12 +80,31 @@ def require_overlays(
 ) -> None:
     """Refuse a scene view that would omit requested data."""
     missing = unsupported_overlays(backend, data, n_dims=n_dims)
+    if missing and backend == "scene" and n_dims == 1:
+        names = ", ".join(_OVERLAY_NAMES[name] for name in missing)
+        raise ValueError(
+            f"A 1D scene cannot draw {names}: its spatial plot has position "
+            "on x and field amplitude on y, so angular arrows and image "
+            "coordinates have no defined spatial plane. Use a 2D environment "
+            "for spatial headings/video, or TimeSeriesOverlay to show heading "
+            "angles beside the 1D field."
+        )
     if missing:
         names = ", ".join(_OVERLAY_NAMES[name] for name in missing)
         raise ValueError(
             f"The {backend} backend cannot draw {names}. "
             "Use Animation.show(backend='widget') for a complete notebook view "
             "or Animation.export() to render the scene."
+        )
+
+
+def require_scene_rendering(scene: Animation) -> None:
+    """Validate content shared by complete-scene rendering and its widgets."""
+    require_overlays("scene", scene._overlay_data, n_dims=scene.env.n_dims)
+    if scene.env.n_dims == 1 and scene.show_regions:
+        raise ValueError(
+            "1D scene region display is unavailable. Use a 2D environment "
+            "to display regions, or omit show_regions."
         )
 
 
@@ -157,7 +178,10 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
         )
     if len(scene.fields) > 1 and not capabilities.multi_field:
         raise ValueError(f"The {backend} backend cannot draw multiple fields.")
-    require_overlays(capability_name, scene._overlay_data, n_dims=scene.env.n_dims)
+    if capability_name == "scene":
+        require_scene_rendering(scene)
+    else:
+        require_overlays(capability_name, scene._overlay_data, n_dims=scene.env.n_dims)
     layout = options.get("layout")
     if layout is not None and layout not in {"horizontal", "vertical", "grid"}:
         raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")

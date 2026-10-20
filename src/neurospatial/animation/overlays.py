@@ -31,7 +31,7 @@ import warnings
 from contextlib import ExitStack
 from dataclasses import KW_ONLY, dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
 import numpy as np
 from matplotlib import colormaps
@@ -2071,7 +2071,7 @@ class SpikeRasterOverlay:
                 "SpikeRasterOverlay needs the spikes of at least one unit."
             )
         ids = resolve_unit_ids(
-            None if self.unit_ids is None else np.asarray(self.unit_ids),
+            cast("Any", self.unit_ids),
             len(trains),
             context="SpikeRasterOverlay",
             input_ids=carried,
@@ -2091,7 +2091,7 @@ class SpikeRasterOverlay:
         for i, train in enumerate(trains):
             if not np.all(np.isfinite(train)):
                 raise ValueError(
-                    f"Unit {ids[i].item()!r} has spike times that are NaN or infinite. "
+                    f"Unit {ids.tolist()[i]!r} has spike times that are NaN or infinite. "
                     "Why: a spike is drawn at its time. Fix: drop them, e.g. "
                     "train[np.isfinite(train)]."
                 )
@@ -2923,7 +2923,8 @@ class VideoOverlay:
             # Transform from calibration (to be used by backends)
             transform_to_env = None
             if self.calibration is not None:
-                from neurospatial.ops.transforms import Affine2D
+                from neurospatial.animation.calibration import _calibration_units_per_cm
+                from neurospatial.ops.transforms import Affine2D, scale_2d
 
                 # cv2.resize maps output pixel centers to input pixel centers:
                 # old = (new + 0.5) * (input_size / output_size) - 0.5.
@@ -2942,7 +2943,9 @@ class VideoOverlay:
                     )
                 )
                 transform_to_env = (
-                    self.calibration.transform_px_to_cm @ processed_to_original
+                    scale_2d(_calibration_units_per_cm(env))
+                    @ self.calibration.transform_px_to_cm
+                    @ processed_to_original
                 )
 
             result = VideoData(
@@ -3999,7 +4002,7 @@ def _validate_temporal_alignment(
     overlap_start = max(overlay_min, frame_min)
     overlap_end = min(overlay_max, frame_max)
 
-    if overlap_start >= overlap_end:
+    if overlap_start > overlap_end:
         # No overlap at all
         raise ValueError(
             f"WHAT: No temporal overlap between '{name}' and animation frames.\n"
@@ -4017,7 +4020,7 @@ def _validate_temporal_alignment(
     # Calculate overlap percentage relative to frame times
     overlap_duration = overlap_end - overlap_start
     frame_duration = frame_max - frame_min
-    overlap_pct = (overlap_duration / frame_duration) * 100
+    overlap_pct = (overlap_duration / frame_duration) * 100 if frame_duration else 100.0
 
     # Warn if overlap is less than 50%
     if overlap_pct < 50.0:
@@ -4787,6 +4790,69 @@ _OWN_SAMPLE_TYPES = (
 )
 
 
+def _snapshot_internal_overlay(data: Any) -> Any:
+    """Own adapter-produced metadata without duplicating decoder resources."""
+    import copy
+
+    memo = {id(data.reader): data.reader} if isinstance(data, VideoData) else {}
+    return copy.deepcopy(data, memo)
+
+
+def _validate_prepared_samples(
+    data: Any, conversion_times: NDArray[np.float64]
+) -> None:
+    """Check the sample clock and mapping promised by a converted adapter."""
+    times = (
+        conversion_times
+        if data.times is None
+        else np.asarray(data.times, dtype=np.float64)
+    )
+    _validate_monotonic_time(times, name=f"{type(data).__name__}.times")
+    _validate_frame_times(times, len(times))
+    if isinstance(data, VideoData):
+        indices = np.asarray(data.frame_indices)
+        if indices.shape != (len(times),) or not np.issubdtype(
+            indices.dtype, np.integer
+        ):
+            raise ValueError(
+                "VideoData.frame_indices must be a 1-D integer array with one index per sample time."
+            )
+        count = (
+            len(data.reader)
+            if isinstance(data.reader, np.ndarray)
+            else getattr(data.reader, "n_frames", None)
+        )
+        if (indices < -1).any() or (count is not None and (indices >= count).any()):
+            raise ValueError(
+                "VideoData.frame_indices must contain valid reader frame indices or -1 for missing frames."
+            )
+        return
+    if isinstance(data, BodypartData):
+        arrays = data.bodyparts
+    elif isinstance(data, ObjectVectorData):
+        arrays = {"animal_positions": data.animal_positions}
+        if data.firing_rates is not None:
+            arrays["firing_rates"] = data.firing_rates
+    else:
+        arrays = {"data": data.data}
+    for name, values in arrays.items():
+        if np.ndim(values) not in (1, 2) or len(values) != len(times):
+            raise ValueError(
+                f"{type(data).__name__}.{name} must have one row per sample time."
+            )
+        for label, expected in (
+            ("sample_valid", len(times)),
+            ("interval_valid", len(times) - 1),
+        ):
+            mask = getattr(data, label)
+            if isinstance(mask, dict):
+                mask = mask.get(name)
+            if mask is not None and np.shape(mask) != (expected,):
+                raise ValueError(
+                    f"{type(data).__name__}.{label} must have shape ({expected},)."
+                )
+
+
 def _convert_overlays_to_data(
     overlays: list[OverlayProtocol],
     frame_times: NDArray[np.float64],
@@ -4936,37 +5002,64 @@ def _convert_overlays_to_data(
                     f"'convert_to_data()' method."
                 )
 
-            # Delegate to overlay's convert_to_data method
-            internal_data = overlay.convert_to_data(frame_times, n_frames, env)
-            if isinstance(internal_data, VideoData):
-                register_reader(internal_data)
+            # Choose the source clock before acquisition. Custom adapters run
+            # once and own their output mapping, including reordered video rows.
             own_times = overlay.times
-            if (
+            conversion_times = frame_times
+            native_clock = (
                 own_samples
                 and own_times is not None
-                and isinstance(internal_data, _OWN_SAMPLE_TYPES)
-            ):
-                own_times = np.asarray(own_times, dtype=np.float64)
-                if isinstance(internal_data, VideoData):
-                    # Reuse the acquired reader on its source clock.
+                and not isinstance(
+                    overlay,
+                    (EventOverlay, TimeSeriesOverlay, SpikeRasterOverlay, EpochOverlay),
+                )
+            )
+            if native_clock and own_times is not None:
+                own_times = np.array(own_times, dtype=np.float64, copy=True)
+                _validate_monotonic_time(
+                    own_times, name=f"{type(overlay).__name__}.times"
+                )
+                own_times = _validate_frame_times(own_times, len(own_times))
+                conversion_times = own_times
+            internal_data = overlay.convert_to_data(
+                conversion_times, len(conversion_times), env
+            )
+            if isinstance(internal_data, VideoData):
+                register_reader(internal_data)
+            if isinstance(internal_data, _OWN_SAMPLE_TYPES):
+                if native_clock and internal_data.times is None:
                     internal_data = replace(
-                        internal_data,
-                        times=own_times.copy(),
-                        frame_indices=np.arange(len(own_times), dtype=np.int_),
+                        internal_data, times=conversion_times.copy()
                     )
-                else:
-                    with warnings.catch_warnings():
-                        # Checked against the frames above; its own times match.
-                        warnings.simplefilter("ignore")
-                        own = overlay.convert_to_data(own_times, len(own_times), env)
-                    if isinstance(own, VideoData):
-                        register_reader(own)
-                    if not isinstance(own, _OWN_SAMPLE_TYPES):
-                        raise TypeError(
-                            "Overlay conversion changed its internal data type."
+                _validate_prepared_samples(internal_data, conversion_times)
+                if own_samples and internal_data.times is not None:
+                    _validate_temporal_alignment(
+                        np.asarray(internal_data.times, dtype=np.float64),
+                        frame_times,
+                        name=type(overlay).__name__,
+                    )
+            if own_samples:
+                internal_data = _snapshot_internal_overlay(internal_data)
+                # Nonspatial panels retain their own values but index their
+                # windows and event visibility on the complete scene clock.
+                if isinstance(internal_data, TimeSeriesData):
+                    half = internal_data.window_seconds / 2
+                    internal_data.start_indices = np.searchsorted(
+                        internal_data.times, frame_times - half
+                    )
+                    internal_data.end_indices = np.searchsorted(
+                        internal_data.times, frame_times + half
+                    )
+                elif isinstance(internal_data, EventData):
+                    for name, times in internal_data.event_times.items():
+                        keep = (times >= frame_times[0]) & (times <= frame_times[-1])
+                        internal_data.event_times[name] = times[keep].copy()
+                        internal_data.event_positions[name] = (
+                            internal_data.event_positions[name][keep].copy()
                         )
-                    own.times = own_times.copy()
-                    internal_data = own
+                        internal_data.event_frame_indices[name] = np.clip(
+                            np.searchsorted(frame_times, times[keep]), 0, n_frames - 1
+                        ).astype(np.int_)
 
             # Dispatch to appropriate list based on return type
             if isinstance(internal_data, PositionData):

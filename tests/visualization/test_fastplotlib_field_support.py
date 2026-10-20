@@ -142,3 +142,39 @@ def test_isolated_field_samples_have_no_positive_duration_cells(env):
         native.close()
         native.close()
         assert native.figure.canvas.get_closed()
+
+
+def test_native_epoch_masks_and_projected_scales_use_supported_source_rows(env):
+    from neurospatial.animation._prepared import PreparedScene
+
+    track = Environment.linear_track(endpoints=[[0.0, 5], [20.0, 5]], bin_size=10)
+    field = AnimationField(
+        np.repeat(
+            np.array([999.0, 10.0, 20.0, 999.0, 999.0])[:, None], env.n_bins, axis=1
+        ),
+        [0.0, 0.05, 0.1, 0.15, 0.2],
+        epochs=[(0.05, 0.15)],
+        max_gap=None,
+    )
+    scene = Animation(env, {"posterior": field}, frame_times=[0.0, 0.2], track=track)
+    view = scene.show(backend="fastplotlib")
+    try:
+        native = view.native
+        prepared = PreparedScene(scene)
+        expected = prepared.track_limits["posterior"]
+        assert expected[0] > 1  # Neither coarse scene frame observes a valid row.
+        assert (native._track_scales[0].vmin, native._track_scales[0].vmax) == expected
+        data = native._read(0.1)
+        np.testing.assert_array_equal(data.values[0], 20)
+        np.testing.assert_array_equal(data.rows[0][1:3], [[10, 10], [20, 20]])
+        assert np.isnan(data.rows[0][[0, 3, 4]]).all()
+        assert np.isnan(native._last_windows[0][1][[0, 3, 4]]).all()
+        # The excluded stop is missing exactly, while its preceding held cell
+        # remains supported throughout [0.1, 0.15).
+        assert np.isnan(native._read(0.15).values[0]).all()
+        np.testing.assert_array_equal(native._read(0.125).values[0], 20)
+        panel = native._tracks[0]
+        assert panel.ends[2] == pytest.approx(0.15)
+        native.capture_frame(0.125)
+    finally:
+        scene.close()
