@@ -2,7 +2,12 @@
 
 **Created:** 2026-10-14
 **Committed:** 2026-10-14
-**Status:** Not started
+**Status:** Not started. No crossing-record, encounter, coverage,
+first-arrival or revisit code exists. One input fix has landed:
+`Environment.transitions` no longer rejects outside samples (PR #85).
+`break_before` for visits and segmentation is in progress on
+`refactor/api-consistency`.
+**Status reviewed:** 2026-10-20
 
 [Back to PLAN.md](PLAN.md) · [Shared contracts](shared-contracts.md) ·
 [Environment representation plan](../environment-representation/PLAN.md)
@@ -145,6 +150,10 @@ introduces no additional geometry snapshot.
 - [ ] Document existing `env.transitions` as sample-pair transitions. Fix or
   explicitly isolate outside-bin rejection and gap-provenance limitations where
   touched; do not silently change its counts to the new crossing interpretation.
+  *Partial:* outside and NaN samples add no pair and no longer reject the
+  recording (`c77e3833`, #85; `tests/environment/test_missing_data.py`).
+  Sample-pair wording and `break_before` remain, and the latter is in progress
+  (refactor/api-consistency).
 - [ ] Add concentration and paired-edge directionality functions returning
   denominators and selected-edge counts; use algorithm parameters keyword-only.
 - [ ] Add exploration operations in `behavior/exploration.py`: coverage curve,

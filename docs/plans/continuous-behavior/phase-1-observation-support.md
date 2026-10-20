@@ -2,7 +2,11 @@
 
 **Created:** 2026-10-14
 **Committed:** 2026-10-14
-**Status:** Not started
+**Status:** Implemented — all three milestones delivered in PRs #112, #114
+and #120. Extending `break_before` to encoders, segmentation, visits,
+`Environment` trajectory methods, decoders and `events.add_positions` is in
+progress on `refactor/api-consistency`.
+**Status reviewed:** 2026-10-20
 
 [Back to PLAN.md](PLAN.md) · [Shared contracts](shared-contracts.md) ·
 [Environment representation plan](../environment-representation/PLAN.md)
@@ -132,46 +136,70 @@ complete. Use current environment capabilities where needed.
 
 ## Implementation tasks
 
-- [ ] Record existing outputs for the gap-free kinematics fixtures and existing
+- [x] Record existing outputs for the gap-free kinematics fixtures and existing
   spike/occupancy support cases before moving shared logic.
-- [ ] Add a small internal observation-support resolver, using `_intervals.py`
+  `4c3eaf1a` (#112) and `2501a4d9` (#114).
+- [x] Add a small internal observation-support resolver, using `_intervals.py`
   primitives. Resolve finite-coordinate masks, explicit boundaries, gap/epoch
   gates, original-index run bounds, and isolated sample status in one place.
-- [ ] Keep the resolver independent of `Environment`; optional bin validity is
+  `_observation.resolve_observation_support` (`276dfe93`, #112), tested in
+  `tests/test_observation_support.py`. Routing breaks through the shared
+  `_intervals` gate (`1ed27f99`) is in progress (refactor/api-consistency).
+- [x] Keep the resolver independent of `Environment`; optional bin validity is
   a caller gate. Avoid introducing another public interval-set abstraction.
-- [ ] Fix `Environment.transitions(times=..., positions=...)` to exclude
+  `_observation.py` imports only `_intervals`, `_results` and `_validation`.
+- [x] Fix `Environment.transitions(times=..., positions=...)` to exclude
   unsupported/outside-bin pairs without rejecting the entire recording or
   bridging removed samples. Preserve sample-pair/self-transition semantics and
   validate truly malformed indices. Define the separate explicit `bins=`
   sentinel/boundary policy in API review; do not recover lost timestamps by
   guessing from a compressed sequence.
-- [ ] Add optional support/result holders only where several aligned arrays are
+  Inside-to-inside pairs only (`c77e3833`, #85), tested in
+  `tests/environment/test_missing_data.py`. `bins=` with `-1` is still refused.
+  `break_before` for `Environment` trajectory methods is in progress
+  (refactor/api-consistency).
+- [x] Add optional support/result holders only where several aligned arrays are
   returned. Own derived arrays as read-only copies; provide `summary()` and a
   domain-specific `samples_table()` or `support_table()` where useful. Follow
   shared contracts for exports; never add artificial `unit_id` columns.
-- [ ] Implement observed step lengths and cumulative distance in
+  `CumulativeDistanceResult` and `ResampledPathResult` (#112).
+- [x] Implement observed step lengths and cumulative distance in
   `behavior/trajectory.py`, reusing the Euclidean step kernel and support mask.
   Keep interval-aligned and sample-aligned outputs distinguishable.
-- [ ] Extend `traveled_path_length` with a backward-compatible time/support path,
+  `compute_cumulative_distance` (`dad1919e`, #112), tested in
+  `tests/behavior/test_cumulative_distance.py`.
+- [x] Extend `traveled_path_length` with a backward-compatible time/support path,
   or delegate to a new observed-distance function. Existing positions-only calls
   retain their documented meaning for a single continuous path.
-- [ ] Add a distance-resampling function in `behavior/trajectory.py` or a small
+  This shipped as a documented breaking change instead: it now takes
+  `(times, positions)` (`437b153e`, #112), and positions-only calls are gone.
+- [x] Add a distance-resampling function in `behavior/trajectory.py` or a small
   sibling module if that prevents the existing module from becoming unwieldy.
   Data arguments are positional; spacing, endpoint policy, and support controls
   are keyword-only. No multiprocessing or DataFrame requirement.
-- [ ] Use monotone cumulative distance and `searchsorted`/interpolation rather
+  `behavior/resampling.py::resample_by_distance` (`f5dc1087`, #112).
+- [x] Use monotone cumulative distance and `searchsorted`/interpolation rather
   than heuristic index searches. Handle empty, singleton, duplicate-position,
   and stationary paths without division by zero.
-- [ ] Add explicit resampling provenance and a helper/example for recovering
+  `f5dc1087` and `7df37b3a`, tested in `tests/behavior/test_distance_resampling.py`.
+- [x] Add explicit resampling provenance and a helper/example for recovering
   original aligned signals; do not automatically interpolate discrete labels.
-- [ ] Add correctly named planar turning outputs, angular velocity, and planar
+  `ResampledPathResult.interpolate_signal` (`bea3eafb`, #112).
+- [x] Add correctly named planar turning outputs, angular velocity, and planar
   curvature. State derivative and smoothing conventions in docstrings/result
   metadata. Correct legacy N-D descriptions to the mixed-coordinate formula,
   with no numerical change; keep its migration separate.
-- [ ] Audit heading/body-orientation consumers and document per-run invocation
+  `fb109fe3`, `bf097d3f` and `f562ed9c` (#112), tested in
+  `tests/behavior/test_planar_turning.py` and `test_legacy_turning_outputs.py`.
+- [x] Audit heading/body-orientation consumers and document per-run invocation
   or reuse the support resolver where a compatible extension is appropriate.
-- [ ] Export accepted names from `behavior/__init__.py`; update API snapshots,
+  `f562ed9c` (#112); `heading_from_velocity(break_before=)` in `4ec2afc6`
+  (#118); missing and slow samples handled in `14e8a5c3` (#120). Moving
+  `heading_from_velocity`/`heading_from_body_orientation` from `ops` to
+  `behavior` is in progress (refactor/api-consistency).
+- [x] Export accepted names from `behavior/__init__.py`; update API snapshots,
   argument-convention tests, and the trajectory analysis guide.
+  `tests/data/public_api.txt`; `aaddfead` (#112).
 
 ## Scientific invariant validation
 

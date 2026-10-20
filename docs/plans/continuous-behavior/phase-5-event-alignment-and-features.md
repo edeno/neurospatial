@@ -4,7 +4,18 @@
 
 **Committed:** 2026-10-14
 
-**Status:** Not started
+**Status:** Partially implemented (PR #118). Continuous event alignment,
+per-kind reductions, exports, and containment-gated static/egocentric feature
+sampling are delivered. Time-dependent feature/snapshot states and two of the
+three workflow examples remain. The shipped signatures differ from the
+proposals below. In `events.align_continuous_to_events`, `window` is positional
+and `coverage` is `window_coverage`. The feature samplers are
+`ops.sample_spatial_features(env, fields, positions, *, feature_ids=None)` and
+`ops.sample_egocentric_features(env, fields, positions, headings, ego_points,
+*, feature_ids=None)`. `distance_to_boundary`/`distance_to_reward` are moving
+from `events` to `behavior` on `refactor/api-consistency` (in progress).
+
+**Status reviewed:** 2026-10-20
 
 [← PLAN.md](PLAN.md) · [shared contracts](shared-contracts.md)
 
@@ -180,25 +191,44 @@ Expose these choices as parameters and support metadata, not hidden assumptions.
 
 ## Implementation tasks
 
-- [ ] Audit reusable interpolation and cohort-selection helpers; extract only
+- [x] Audit reusable interpolation and cohort-selection helpers; extract only
   the shared support logic needed by continuous and spike event alignment.
-- [ ] Define the continuous result/table exception and add focused API contract
+  `24da2f1f` (#118) resolves per-feature support through the shared gates.
+- [x] Define the continuous result/table exception and add focused API contract
   checks without changing neural `unit_id`, rate, or PSTH conventions.
-- [ ] Implement validated relative query grids and run-bounded linear,
+  `ContinuousEventResult` tables (`bac67ea3`, #118), recorded in
+  `.claude/rules/public-api.md`, tested in `tests/events/test_continuous_exports.py`.
+- [x] Implement validated relative query grids and run-bounded linear,
   previous-sample, and circular sampling with original event indices.
-- [ ] Implement complete and partial coverage explicitly; add summary-only
+  `957c4b34`, `78dcd20d` and `3ac44e16` (#118), tested in
+  `tests/events/test_continuous_sampling.py` and `test_continuous_alignment.py`.
+- [x] Implement complete and partial coverage explicitly; add summary-only
   accumulation with bounded temporary memory and numerical parity checks.
-- [ ] Validate per-feature kinds, interpolation, category labels, and circular
+  `377839ec` and `fe4a668d` (#118), tested in `tests/events/test_continuous_coverage.py`.
+- [x] Validate per-feature kinds, interpolation, category labels, and circular
   resultant thresholds; stream linear sums, circular sums, and category counts.
-- [ ] Implement static containment sampling and safe invalid-bin indexing;
+  `68fc049e`, `377839ec` and `3344bfc9` (#118), tested in
+  `tests/events/test_continuous_features.py`.
+- [x] Implement static containment sampling and safe invalid-bin indexing;
   compose egocentric queries through existing transforms.
+  `ops.sample_spatial_features` (`d217cb34`) and `sample_egocentric_features`
+  (`34c2f9f6`) in #118, tested in `tests/ops/test_feature_sampling.py`. The
+  sampling API has containment only. The proposed nearest mode, per-feature
+  kinds and `times`/support arguments are not part of it.
 - [ ] Add snapshot interval validation, immutable snapshot reuse, and feature
   updates on compatible geometry; record state/query provenance.
-- [ ] Route common feature validity through phase 1; avoid a second interpretation
+  Not started.
+- [x] Route common feature validity through phase 1; avoid a second interpretation
   of epochs, timestamp gaps, or missing coordinates.
-- [ ] Add plots/tables and feature-kind/unit documentation; optional imports
+  `24da2f1f` (#118) uses `_observation`.
+- [x] Add plots/tables and feature-kind/unit documentation; optional imports
   stay at exports, and category counts retain explicit code labels.
+  `ContinuousEventResult.plot` and its tables, with
+  `docs/user-guide/behavior-around-events.md` (`5ebb404b`, #118).
 - [ ] Add examples described below and update API snapshots only after review.
+  *Partial:* the free-foraging reward example with egocentric and texture
+  features is in `behavior-around-events.md`, and the snapshots are updated
+  (#118). The maze turn-event and door/height two-state examples remain.
 
 ## Validation invariants
 

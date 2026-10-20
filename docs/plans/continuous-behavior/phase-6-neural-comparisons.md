@@ -4,7 +4,16 @@
 
 **Committed:** 2026-10-14
 
-**Status:** Not started
+**Status:** Partially implemented (PR #119). Label-to-epoch conversion,
+conditioned estimation, captured estimation context, one-to-one
+`compare_spatial_rates` and held-out decoding are delivered. A heading
+diagnostic, external feature/basis handoff documentation, and the
+free-foraging and door/cue-change workflow examples remain. Only the
+linear-track example exists. The shipped signatures match
+the proposal for `labels_to_epochs`; the comparison is
+`encoding.compare_spatial_rates`.
+
+**Status reviewed:** 2026-10-20
 
 [← PLAN.md](PLAN.md) · [shared contracts](shared-contracts.md)
 
@@ -189,21 +198,41 @@ counts and exposure; it does not become an arbitrary time-covariate GLM here.
 
 ## Implementation tasks
 
-- [ ] Implement label-to-epoch conversion through phase 1 support, with original
+- [x] Implement label-to-epoch conversion through phase 1 support, with original
   interval provenance and no cross-gap merging.
-- [ ] Add examples estimating condition maps with existing estimator semantics;
+  `behavior.labels_to_epochs` (`5f9f3777`, #119), tested in
+  `tests/behavior/test_labels_to_epochs.py`.
+- [x] Add examples estimating condition maps with existing estimator semantics;
   preserve unit IDs and epoch/spike-window settings.
-- [ ] Capture owned estimation-time context in existing rate results and carry
+  `docs/user-guide/workflows.md` (`ad10874f`, #119) and
+  `tests/encoding/test_conditioned_rates.py` (`57efe6e5`).
+- [x] Capture owned estimation-time context in existing rate results and carry
   it through indexing/exports; validate explicit legacy context or refuse it.
-- [ ] Validate unit/bin context and one-to-one mappings; reject aggregation.
-- [ ] Implement common observed support and per-unit numerical field scores;
+  `3f5f599d` (#119), tested in `tests/encoding/test_rate_estimation_context.py`
+  and `tests/nwb/test_fields_roundtrip.py`.
+- [x] Validate unit/bin context and one-to-one mappings; reject aggregation.
+  `compare_spatial_rates` (`8a3e7980`, `718878c7`, `ec1592a9`, #119), tested in
+  `tests/encoding/test_compare_spatial_rates.py`.
+- [x] Implement common observed support and per-unit numerical field scores;
   retain omitted-bin reasons and distinguish insufficient data from zero scores.
-- [ ] Add rate comparison tables/plots following terminal verb contracts.
+  `8a3e7980` (#119); see
+  `test_too_few_common_bins_is_nan_with_a_reason`.
+- [x] Add rate comparison tables/plots following terminal verb contracts.
+  `RateComparisonResult` (`0b0ed9c9`, #119), tested in
+  `tests/encoding/test_rate_comparison_result.py`.
 - [ ] Add condition duration, occupancy, speed, and heading diagnostics using
   existing behavioral operations and numerical summaries.
-- [ ] Demonstrate held-out fit/predict and state transfer without training leakage.
+  *Partial:* duration, occupied bins and mean speed are compared in
+  `workflows.md` (#119). A heading diagnostic remains.
+- [x] Demonstrate held-out fit/predict and state transfer without training leakage.
+  The "Decode held-out laps" section of `workflows.md` is executed (#119), and
+  `test_decoder_reuses_condition_epochs` covers it.
 - [ ] Document external feature/basis handoffs; introduce no general GLM solver.
-- [ ] Review public names, update snapshots/contracts, and add workflow docs.
+  Not started: no handoff documentation was found.
+- [x] Review public names, update snapshots/contracts, and add workflow docs.
+  `tests/data/public_api.txt` and `workflows.md` (#119). Identity-aware
+  `unit_ids` for `population_vector_correlation` (added in `95973398`, #120)
+  and for assembly activation are in progress (refactor/api-consistency).
 
 ## Validation and workflow slice
 
