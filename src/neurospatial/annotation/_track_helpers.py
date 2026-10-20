@@ -64,7 +64,7 @@ def transform_nodes_to_output(
         return []
 
     if calibration is None:
-        return nodes_px
+        return list(nodes_px)
 
     # Convert to numpy array for transform
     nodes_array = np.array(nodes_px, dtype=np.float64)
@@ -136,6 +136,34 @@ def build_track_graph_from_positions(
         return graph
 
 
+def _validate_edge_coverage(
+    edges: list[tuple[int, int]],
+    expected_edges: list[tuple[int, int]],
+    *,
+    name: str,
+) -> None:
+    """Require each undirected graph edge exactly once, retaining orientation."""
+    actual = [frozenset(edge) for edge in edges]
+    expected = {frozenset(edge) for edge in expected_edges}
+    if len(actual) != len(set(actual)) or set(actual) != expected:
+        raise ValueError(
+            f"{name} must contain every track graph edge exactly once "
+            "(no missing, duplicate, or unknown edges). "
+            "Recompute the edge order after changing the graph."
+        )
+
+
+def _validate_edge_spacing(spacing: object, n_edges: int) -> None:
+    """Check spacing before returning or consuming an annotation result."""
+    values = np.asarray(spacing, dtype=np.float64)
+    if values.ndim > 1 or (values.ndim == 1 and len(values) != max(0, n_edges - 1)):
+        raise ValueError(
+            f"edge_spacing must have {max(0, n_edges - 1)} values or be a scalar."
+        )
+    if not np.all(np.isfinite(values)) or np.any(values < 0):
+        raise ValueError("edge_spacing must contain finite, non-negative values.")
+
+
 class TrackGraphResult(NamedTuple):
     """Result from track graph annotation session.
 
@@ -162,6 +190,14 @@ class TrackGraphResult(NamedTuple):
         Designated start node for linearization.
     pixel_positions : list of tuple
         Original node coordinates in pixels (before calibration transform).
+    units : str or None
+        Coordinate units: "cm" when calibrated, "pixels" otherwise. None
+        denotes unspecified units for results constructed manually.
+
+    Notes
+    -----
+    The trailing ``units`` field defaults to None for older manual constructors.
+    Results now contain nine tuple items; positional unpacking must include units.
 
     Examples
     --------
@@ -190,6 +226,7 @@ class TrackGraphResult(NamedTuple):
     node_labels: list[str]
     start_node: int | None
     pixel_positions: list[tuple[float, float]]
+    units: str | None = None
 
     def to_environment(
         self,
@@ -245,8 +282,14 @@ class TrackGraphResult(NamedTuple):
                 "Ensure at least 2 nodes and 1 edge were created.",
             )
 
+        graph_edges = list(self.track_graph.edges)
+        _validate_edge_coverage(self.edges, graph_edges, name="edges")
+        _validate_edge_coverage(self.edge_order, graph_edges, name="edge_order")
+
         # Use provided edge_spacing or fall back to inferred spacing
         spacing = edge_spacing if edge_spacing is not None else self.edge_spacing
+
+        _validate_edge_spacing(spacing, len(self.edge_order))
 
         # Convert numpy array to list for type compatibility with from_graph
         if isinstance(spacing, np.ndarray):
@@ -262,6 +305,7 @@ class TrackGraphResult(NamedTuple):
             edge_spacing=spacing_arg,
             bin_size=bin_size,
             name=name,
+            units=self.units,
         )
 
 
@@ -367,6 +411,11 @@ def build_track_graph_result(
         edge_order = []
         edge_spacing = np.array([], dtype=np.float64)
 
+    if track_graph is not None:
+        _validate_edge_coverage(edges, list(track_graph.edges), name="edges")
+        _validate_edge_coverage(edge_order, list(track_graph.edges), name="edge_order")
+        _validate_edge_spacing(edge_spacing, len(edge_order))
+
     return TrackGraphResult(
         track_graph=track_graph,
         node_positions=node_positions,
@@ -376,4 +425,5 @@ def build_track_graph_result(
         node_labels=node_labels,
         start_node=start_node,
         pixel_positions=pixel_positions,
+        units="cm" if calibration is not None else "pixels",
     )

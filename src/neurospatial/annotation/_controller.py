@@ -218,7 +218,19 @@ class ShapesLayerController:
         assigned_name = ""
 
         # Add entries for new shapes (from prev_count to current_count)
-        for _ in range(delta):
+        for index in range(prev_count, current_count):
+            # Clipboard rows already carry an identity and parent association.
+            # Preserve them so conversion can reject duplicate IDs explicitly.
+            if (
+                "_polygon_id" in self.shapes.features
+                and self.shapes.features["_polygon_id"].iloc[index]
+            ):
+                role = cast("RegionType", str(self.shapes.features["role"].iloc[index]))
+                region_types.append(role)
+                assigned_name = str(self.shapes.features["name"].iloc[index])
+                names.append(assigned_name)
+                self.state.record_shape_added(role)
+                continue
             region_types.append(self.state.region_type)
 
             # Determine name
@@ -239,7 +251,13 @@ class ShapesLayerController:
             self.state.record_shape_added(self.state.region_type)
 
         # Apply updated features
-        self.shapes.features = rebuild_features(region_types, names)
+        updated = rebuild_features(region_types, names)
+        for column in ("_polygon_id", "_parent_id"):
+            if column in self.shapes.features:
+                updated[column] = list(
+                    self.shapes.features[column].iloc[:current_count]
+                )
+        self.shapes.features = updated
         sync_colors_from_features(self.shapes)
 
         # Update layer defaults to match assigned name
@@ -267,6 +285,15 @@ class ShapesLayerController:
         if not indices_to_delete:
             return 0
 
+        if "_parent_id" in self.shapes.features:
+            parent_ids = set(
+                self.shapes.features["_polygon_id"].iloc[list(indices_to_delete)]
+            ) - {""}
+            indices_to_delete = indices_to_delete | {
+                i
+                for i, parent in enumerate(self.shapes.features["_parent_id"])
+                if parent in parent_ids
+            }
         delete_count = len(indices_to_delete)
         indices_to_keep = [
             i for i in range(len(self.shapes.data)) if i not in indices_to_delete
@@ -283,16 +310,11 @@ class ShapesLayerController:
             else:
                 # Keep only non-deleted shapes, with their types, and features
                 new_data = shapes_with_types(self.shapes, indices_to_keep)
-                new_region_types: list[RegionType] = [
-                    cast("RegionType", str(self.shapes.features["role"].iloc[i]))
-                    for i in indices_to_keep
-                ]
-                new_names = [
-                    str(self.shapes.features["name"].iloc[i]) for i in indices_to_keep
-                ]
-
+                features = self.shapes.features.iloc[indices_to_keep].reset_index(
+                    drop=True
+                )
                 self.shapes.data = new_data
-                self.shapes.features = rebuild_features(new_region_types, new_names)
+                self.shapes.features = features
                 sync_colors_from_features(self.shapes)
 
         self.shapes.selected_data = set()

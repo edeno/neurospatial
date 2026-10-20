@@ -94,6 +94,7 @@ class TestTrackGraphResultImport:
             "node_labels",
             "start_node",
             "pixel_positions",
+            "units",
         }
 
         assert set(TrackGraphResult._fields) == expected_fields
@@ -1072,3 +1073,155 @@ class TestInitialEdgeValidation:
             _apply_initial_edges(state, [(0, 1), (1, 2)])
 
         assert state.edges == [(0, 1), (1, 2)]
+
+
+@pytest.mark.gui
+@pytest.mark.parametrize(
+    "edit",
+    [
+        "native_delete",
+        "assignment_delete",
+        "widget_delete",
+        "move",
+        "assignment_move",
+        "add",
+    ],
+)
+def test_native_and_widget_edits_share_atomic_history(monkeypatch, edit):
+    """Public wiring preserves node identity and topology across edits and undo."""
+    napari = pytest.importorskip("napari")
+    from neurospatial.annotation import track_graph as module
+
+    captured = {}
+    create = module.create_track_widget
+
+    def capture(viewer, edges, nodes, state):
+        widget = create(viewer, edges, nodes, state)
+        captured.update(
+            viewer=viewer, edges=edges, nodes=nodes, state=state, widget=widget
+        )
+        return widget
+
+    def run():
+        state = captured["state"]
+        nodes = captured["nodes"]
+        widget = captured["widget"]
+        try:
+            state.set_start_node(4)
+            widget.sync_from_state()
+            before = state._snapshot()
+            depth = len(state.undo_stack)
+            if edit in {"native_delete", "assignment_delete"}:
+                if edit == "native_delete":
+                    nodes.selected_data = {1, 3}
+                    nodes.remove_selected()
+                else:
+                    nodes.data = nodes.data[[0, 2, 4]]
+                assert state.node_labels == ["a", "c", "e"]
+                assert state.edges == [(0, 1), (1, 2)]
+                assert state.start_node == 2
+            elif edit == "widget_delete":
+                widget._node_combo.setCurrentIndex(1)
+                widget._on_delete_node()
+                assert state.node_labels == ["a", "c", "d", "e"]
+                assert state.edges == [(0, 1), (1, 3)]
+                assert state.start_node == 3
+            elif edit == "assignment_move":
+                data = nodes.data.copy()
+                data[2] = [12, 22]
+                nodes.data = data
+                assert state.nodes[2] == (22, 12)
+            elif edit == "move":
+                # Actual napari drag protocol: before event, in-place movement,
+                # and one completed event on mouse release.
+                from napari.layers.base._base_constants import ActionType
+
+                nodes.events.data(action=ActionType.CHANGING, data_indices=(2,))
+                nodes.data[2] = [12, 22]
+                nodes.events.data(action=ActionType.CHANGED, data_indices=(2,))
+                assert state.nodes[2] == (22, 12)
+                assert state.edges == before["edges"]
+            else:
+                nodes.add([[10, 40], [10, 45]])
+                assert len(state.nodes) == 7
+                assert state.node_labels[-2:] == ["", ""]
+            after = state._snapshot()
+            assert len(state.undo_stack) == depth + 1
+            assert state.undo()
+            widget.sync_from_state()
+            assert state._snapshot() == before
+            np.testing.assert_array_equal(nodes.data, np.asarray(state.nodes)[:, ::-1])
+            assert state.redo()
+            widget.sync_from_state()
+            assert state._snapshot() == after
+            # Leave a complete explicit layout for disconnected test graphs.
+            state.set_edge_order(list(state.edges))
+            state.set_edge_spacing([0.0] * max(0, len(state.edges) - 1))
+        finally:
+            captured["viewer"].close()
+
+    monkeypatch.setattr(module, "create_track_widget", capture)
+    monkeypatch.setattr(napari, "run", run)
+    module.annotate_track_graph(
+        image=np.zeros((50, 50, 3), dtype=np.uint8),
+        initial_nodes=np.array([[5, 5], [10, 5], [20, 5], [25, 5], [35, 5]], float),
+        initial_edges=[(0, 2), (2, 4), (1, 3)],
+        initial_node_labels=["a", "b", "c", "d", "e"],
+    )
+
+
+@pytest.mark.gui
+@pytest.mark.parametrize(
+    "edit", ["duplicate_native", "duplicate_assignment", "mixed_assignment"]
+)
+def test_native_duplicate_identity_and_rejected_assignment(monkeypatch, edit):
+    """Ambiguous coordinate assignments cannot corrupt node identities or history."""
+    napari = pytest.importorskip("napari")
+    from neurospatial.annotation import track_graph as module
+
+    captured = {}
+    create = module.create_track_widget
+
+    def capture(viewer, edges, nodes, state):
+        widget = create(viewer, edges, nodes, state)
+        captured.update(viewer=viewer, nodes=nodes, state=state, widget=widget)
+        return widget
+
+    def run():
+        state, nodes = captured["state"], captured["nodes"]
+        try:
+            before = state._snapshot()
+            depth = len(state.undo_stack)
+            if edit == "duplicate_native":
+                nodes.selected_data = {1}
+                nodes.remove_selected()
+                assert state.node_labels == ["first", "last"]
+                assert state.edges == [(0, 1)]
+                assert len(state.undo_stack) == depth + 1
+                state.undo()
+                captured["widget"].sync_from_state()
+                assert state._snapshot() == before
+            else:
+                data = nodes.data[[0, 2]].copy()
+                if edit == "mixed_assignment":
+                    data[1] = [0, 3]
+                with pytest.raises(ValueError, match="remove_selected"):
+                    nodes.data = data
+                assert state._snapshot() == before
+                assert len(state.undo_stack) == depth
+                np.testing.assert_array_equal(
+                    nodes.data, np.asarray(state.nodes)[:, ::-1]
+                )
+            state.set_edge_order(list(state.edges))
+            state.set_edge_spacing([0.0] * (len(state.edges) - 1))
+        finally:
+            captured["viewer"].close()
+
+    monkeypatch.setattr(module, "create_track_widget", capture)
+    monkeypatch.setattr(napari, "run", run)
+    module.annotate_track_graph(
+        image=np.zeros((20, 20, 3), dtype=np.uint8),
+        initial_nodes=np.array([[0, 0], [0, 0], [2, 0]], float),
+        initial_edges=[(0, 2), (1, 2)],
+        initial_node_labels=["first", "duplicate", "last"],
+    )

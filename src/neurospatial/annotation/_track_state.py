@@ -199,8 +199,48 @@ class TrackBuilderState:
         """
         self._save_for_undo()
         self.nodes.append((x, y))
+        self._invalidate_edge_layout_overrides()
         self.node_labels.append(label if label is not None else "")
         return len(self.nodes) - 1
+
+    def _apply_node_edit(
+        self,
+        nodes: list[tuple[float, float]],
+        *,
+        removed_indices: tuple[int, ...] = (),
+    ) -> None:
+        """Apply one native layer edit as one undoable state command.
+
+        Removal indices refer to the old node array. Surviving identities retain
+        their labels, edges and start designation, even at duplicate positions.
+        """
+        if nodes == self.nodes:
+            return
+        self._save_for_undo()
+        old_count = len(self.nodes)
+        removed = set(removed_indices)
+        if removed:
+            surviving = [i for i in range(old_count) if i not in removed]
+            reindex = {old: new for new, old in enumerate(surviving)}
+            self.node_labels = [self.node_labels[i] for i in surviving]
+            self.edges = [
+                (reindex[a], reindex[b])
+                for a, b in self.edges
+                if a in reindex and b in reindex
+            ]
+            self.start_node = (
+                reindex.get(self.start_node) if self.start_node is not None else None
+            )
+            self.edge_start_node = (
+                reindex.get(self.edge_start_node)
+                if self.edge_start_node is not None
+                else None
+            )
+        elif len(nodes) > old_count:
+            self.node_labels.extend([""] * (len(nodes) - old_count))
+        if len(nodes) != old_count:
+            self._invalidate_edge_layout_overrides()
+        self.nodes = list(nodes)
 
     def delete_node(self, idx: int) -> None:
         """Delete a node and all connected edges.
@@ -247,6 +287,13 @@ class TrackBuilderState:
             elif self.start_node > idx:
                 self.start_node -= 1
 
+        self.edge_start_node = (
+            None
+            if self.edge_start_node == idx
+            else self.edge_start_node - 1
+            if self.edge_start_node is not None and self.edge_start_node > idx
+            else self.edge_start_node
+        )
         # A manual edge-order/spacing override is keyed to the old topology.
         self._invalidate_edge_layout_overrides()
 
@@ -353,6 +400,7 @@ class TrackBuilderState:
 
         self._save_for_undo()
         self.edges.append(edge)
+        self._invalidate_edge_layout_overrides()
         return True
 
     def delete_edge(self, edge_idx: int) -> None:

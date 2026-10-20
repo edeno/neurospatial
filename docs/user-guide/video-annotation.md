@@ -80,6 +80,11 @@ When the napari viewer opens:
 
 6. **Press `Escape` or click "Save and Close"** to return results
 
+Saving validates the complete result before closing the viewer. If a boundary
+or region crosses itself or cannot be converted to an environment, the viewer
+stays open and explains what to correct. Edit the affected vertices, then save
+again.
+
 ### Step 3: Use the Results
 
 <!-- docs-test: run setup=docs_video_annotation_use_results -->
@@ -111,6 +116,10 @@ bin_indices = env.bin_sequence(times, positions)
 ## Adding Calibration
 
 Convert pixel coordinates to real-world units (e.g., centimeters):
+
+The resulting environment records `units="cm"` when calibration is supplied,
+or `units="pixels"` otherwise. `bin_size` and `simplify_tolerance` use those
+same units.
 
 ### Using Scale Bar
 
@@ -183,6 +192,9 @@ result = annotate_video(
 
 Higher values produce smoother polygons but may lose detail.
 
+Simplification does not repair self-intersections. Correct intersecting edges
+in the viewer before saving so that the intended area is unambiguous.
+
 ## Annotation Modes
 
 Control what to annotate with the `mode` parameter:
@@ -229,6 +241,14 @@ result = annotate_video(
 ## Editing Existing Regions
 
 Provide existing regions to edit them:
+
+Interior holes are retained when reopening either regions or an initial
+environment boundary. Each hole remains associated with its original polygon;
+a hole in a region does not remove that area from the environment.
+
+Edit these rings directly, or draw new shapes for additional regions.
+Copy/paste of reopened polygon rings is rejected because their parent
+associations would otherwise be ambiguous.
 
 ```python
 from neurospatial.regions import Regions, Region

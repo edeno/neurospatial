@@ -21,9 +21,11 @@ from neurospatial.annotation._helpers import (
     REGION_TYPE_CATEGORIES,
     REGION_TYPE_COLOR_CYCLE,
     REGION_TYPE_COLORS,
-    rebuild_features,
     shapes_with_types,
     sync_colors_from_features,
+)
+from neurospatial.annotation._helpers import (
+    rebuild_features as rebuild_features,
 )
 from neurospatial.annotation._state import AnnotationModeState
 from neurospatial.annotation._types import RegionType
@@ -450,7 +452,7 @@ def create_annotation_widget(
             )
             if reply == QMessageBox.StandardButton.No:
                 return
-        viewer.close()
+        viewer.window._qt_window.close()
 
     # --- Keyboard Shortcuts ---
     @viewer.bind_key("m")
@@ -541,14 +543,18 @@ def create_annotation_widget(
                     # shape(s); each keeps its type
                     n_before = len(shapes.data) - delta
                     kept = [i for i in range(n_before) if i not in env_indices]
-                    new_data = shapes_with_types(
-                        shapes, [*kept, *range(n_before, len(shapes.data))]
+                    kept_indices = [*kept, *range(n_before, len(shapes.data))]
+                    kept_features = shapes.features.iloc[kept_indices].reset_index(
+                        drop=True
                     )
+                    new_data = shapes_with_types(shapes, kept_indices)
                     roles = [r for i, r in enumerate(roles) if i not in env_indices]
                     names = [n for i, n in enumerate(names) if i not in env_indices]
                     # Block data events during assignment to prevent re-triggering
                     with shapes.events.data.blocker():
                         shapes.data = new_data
+                        shapes.features = kept_features
+                    _prev_shape_count[0] = len(kept)
                     current_count = len(shapes.data)
                     viewer.status = "Replaced existing environment boundary"
                 else:
@@ -570,18 +576,9 @@ def create_annotation_widget(
                                 )
                                 # Also truncate features to match data length
                                 if len(shapes.features) > target_count:
-                                    truncated_roles = [
-                                        str(r)
-                                        for r in shapes.features["role"][:target_count]
-                                    ]
-                                    truncated_names = [
-                                        str(n)
-                                        for n in shapes.features["name"][:target_count]
-                                    ]
-                                    shapes.features = rebuild_features(
-                                        cast("list[RegionType]", truncated_roles),
-                                        truncated_names,
-                                    )
+                                    shapes.features = shapes.features.iloc[
+                                        :target_count
+                                    ].reset_index(drop=True)
                                     sync_colors_from_features(shapes)
                             # Update UI to reflect the deletion
                             update_shapes_list()
@@ -632,7 +629,18 @@ def create_annotation_widget(
             name_input.value = last_name
 
         elif delta < 0:
-            # Shape was deleted externally (e.g., via Delete key)
+            # Delete interior handles whose parent was removed with napari's tool.
+            if "_parent_id" in shapes.features:
+                remaining = set(shapes.features["_polygon_id"])
+                orphans = {
+                    i
+                    for i, parent in enumerate(shapes.features["_parent_id"])
+                    if parent and parent not in remaining
+                }
+                controller = get_controller()
+                if orphans and controller is not None:
+                    controller.delete_shapes_by_indices(orphans)
+                    current_count = len(shapes.data)
             update_shapes_list()
             update_annotation_status()
 
@@ -845,44 +853,15 @@ def add_initial_boundary_to_shapes(
     Notes
     -----
     Mirrors the pattern in _add_initial_regions() for consistency.
-    Preserves existing shapes/features and prepends the boundary to front.
+    Preserves existing shapes/features and prepends the boundary's editable rings.
 
     """
-    from shapely import get_coordinates
+    from neurospatial.annotation._draft import add_polygon
 
-    # Preserve existing features before adding new shape
-    existing_roles = list(shapes_layer.features.get("role", []))
-    existing_names = list(shapes_layer.features.get("name", []))
-
-    # Get polygon exterior vertices
-    coords = get_coordinates(boundary.exterior)
-
-    # Transform to pixels if calibration provided
-    # NOTE: transform_cm_to_px handles Y-flip internally - don't double-flip!
-    if calibration is not None:
-        coords = calibration.transform_cm_to_px(coords)
-
-    # Convert to napari (row, col) order
-    coords_rc = coords[:, ::-1]
-
-    # Add to shapes layer (appends to existing shapes)
-    shapes_layer.add([coords_rc], shape_type="polygon")
-
-    # Extend features with the new boundary shape
-    # NOTE: Boundary should be first in the list for proper widget mode handling
-    new_region_types: list[RegionType] = [
-        "environment",
-        *[cast("RegionType", str(r)) for r in existing_roles],
-    ]
-    new_names = ["arena", *[str(n) for n in existing_names]]
-    shapes_layer.features = rebuild_features(new_region_types, new_names)
-
-    # Reorder data so boundary is first (environment boundary should be drawn first)
-    # This ensures the widget's mode logic works correctly
-    if len(existing_roles) > 0:
-        # Move the last shape (just added) to the front, types with shapes
-        last = len(shapes_layer.data) - 1
-        shapes_layer.data = shapes_with_types(shapes_layer, [last, *range(last)])
-
-    # Sync colors from features
+    previous_count = len(shapes_layer.data)
+    add_polygon(shapes_layer, boundary, "arena", "environment", calibration)
+    order = [*range(previous_count, len(shapes_layer.data)), *range(previous_count)]
+    features = shapes_layer.features.iloc[order].reset_index(drop=True)
+    shapes_layer.data = shapes_with_types(shapes_layer, order)
+    shapes_layer.features = features
     sync_colors_from_features(shapes_layer)

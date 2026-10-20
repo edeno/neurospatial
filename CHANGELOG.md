@@ -4,6 +4,11 @@
 
 ### Breaking
 
+- `annotation.TrackGraphResult` has a trailing `units` field. Existing manual
+  constructors still work because it defaults to `None`, but positional tuple
+  unpacking must now include this ninth item. Prefer named attributes such as
+  `result.node_positions` and `result.units`.
+
 - Options of public free functions are keyword-only, as `Environment`
   method options already were; data stays positional, and a test rejects any
   new positional option. This covers defaulted options (levels, kinds,
@@ -2422,6 +2427,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   (`env.edge_pairs`), their order and their distances are unchanged.
 
 ### Fixed
+
+- Annotation editing preserves surviving track edges, node labels and start
+  nodes when deleting points in napari. Native additions, deletions and moves
+  participate in undo/redo without state-to-view feedback corrupting the graph.
+- Track topology edits invalidate manual linearization overrides, and result
+  conversion rejects edge orders that omit, repeat or invent graph edges.
+- Reopening polygon annotations preserves interior rings and their parent
+  polygons. Invalid boundary and region polygons are rejected before the viewer
+  closes, keeping the draft available for correction instead of failing after editing.
+  Simplification no longer implicitly repairs self-intersections.
+  Copy/paste of reopened polygon rings is rejected rather than guessing their
+  parent associations; edit their vertices or draw new shapes instead.
+- Annotation environments retain `"cm"` units when calibrated and `"pixels"`
+  otherwise; track results carry the same units through `to_environment()`.
 
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or

@@ -456,6 +456,7 @@ class TestTrackGraphResult:
             "node_labels",
             "start_node",
             "pixel_positions",
+            "units",
         }
 
         assert set(TrackGraphResult._fields) == expected_fields

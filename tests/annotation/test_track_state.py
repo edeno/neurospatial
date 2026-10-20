@@ -810,3 +810,25 @@ class TestModeHandling:
         state.edge_start_node = None
 
         assert state.edge_start_node is None
+
+
+@pytest.mark.parametrize("topology_edit", ["node", "edge"])
+def test_topology_addition_invalidates_layout_and_undo_restores(topology_edit):
+    """Adding topology cannot retain a manual layout for an older graph."""
+    from neurospatial.annotation._track_state import TrackBuilderState
+
+    state = TrackBuilderState()
+    for x in range(3):
+        state.add_node(x, 0)
+    state.add_edge(0, 1)
+    state.set_edge_order([(0, 1)])
+    state.set_edge_spacing([])
+    if topology_edit == "node":
+        state.add_node(3, 0)
+    else:
+        state.add_edge(1, 2)
+    assert state.edge_order_override is None
+    assert state.edge_spacing_override is None
+    state.undo()
+    assert state.edge_order_override == [(0, 1)]
+    assert state.edge_spacing_override == []

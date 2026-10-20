@@ -194,84 +194,86 @@ def _sync_layers_from_state(
     format by swapping axes: napari uses (y, x) ordering.
 
     """
-    # Convert state nodes (x, y) to napari (row, col) = (y, x)
-    if state.nodes:
-        # Stack as (row, col) = (y, x)
-        node_data = np.array([(y, x) for x, y in state.nodes], dtype=np.float64)
+    # State is authoritative during redraws, including widget edits and undo.
+    with nodes_layer.events.data.blocker():
+        # Convert state nodes (x, y) to napari (row, col) = (y, x)
+        if state.nodes:
+            # Stack as (row, col) = (y, x)
+            node_data = np.array([(y, x) for x, y in state.nodes], dtype=np.float64)
 
-        # Build per-node colors (as RGBA arrays) and sizes
-        n_nodes = len(state.nodes)
-        node_rgba = _hex_to_rgba(NODE_COLOR)
-        start_rgba = _hex_to_rgba(START_NODE_COLOR)
+            # Build per-node colors (as RGBA arrays) and sizes
+            n_nodes = len(state.nodes)
+            node_rgba = _hex_to_rgba(NODE_COLOR)
+            start_rgba = _hex_to_rgba(START_NODE_COLOR)
 
-        # Create color array (n_nodes, 4)
-        face_colors = np.tile(node_rgba, (n_nodes, 1))
-        sizes = np.full(n_nodes, DEFAULT_NODE_SIZE, dtype=np.float64)
+            # Create color array (n_nodes, 4)
+            face_colors = np.tile(node_rgba, (n_nodes, 1))
+            sizes = np.full(n_nodes, DEFAULT_NODE_SIZE, dtype=np.float64)
 
-        # Highlight start node
-        if state.start_node is not None and 0 <= state.start_node < n_nodes:
-            face_colors[state.start_node] = start_rgba
-            sizes[state.start_node] = START_NODE_SIZE
+            # Highlight start node
+            if state.start_node is not None and 0 <= state.start_node < n_nodes:
+                face_colors[state.start_node] = start_rgba
+                sizes[state.start_node] = START_NODE_SIZE
 
-        # Build node labels for hover text
-        node_labels = []
-        for i in range(n_nodes):
-            label = f"Node {i}"
-            if i < len(state.node_labels) and state.node_labels[i]:
-                label += f" ({state.node_labels[i]})"
-            if i == state.start_node:
-                label += " [START]"
-            node_labels.append(label)
+            # Build node labels for hover text
+            node_labels = []
+            for i in range(n_nodes):
+                label = f"Node {i}"
+                if i < len(state.node_labels) and state.node_labels[i]:
+                    label += f" ({state.node_labels[i]})"
+                if i == state.start_node:
+                    label += " [START]"
+                node_labels.append(label)
 
-        # Update nodes layer
-        nodes_layer.data = node_data
-        nodes_layer.face_color = face_colors
-        nodes_layer.size = sizes
-
-        # Set features for hover info (shown in status bar)
-        nodes_layer.features = {"label": node_labels}
-
-        # Set text to show node IDs on the points
-        nodes_layer.text = {
-            "string": "{label}",
-            "size": 10,
-            "color": "white",
-            "anchor": "upper_left",
-        }
-    else:
-        # Clear nodes layer
-        nodes_layer.data = np.empty((0, 2), dtype=np.float64)
-        nodes_layer.features = {}
-        nodes_layer.text = None
-
-    # Convert edges to paths for shapes layer
-    if state.edges and state.nodes:
-        paths = []
-        edge_labels = []
-        for i, (n1, n2) in enumerate(state.edges):
-            if n1 < len(state.nodes) and n2 < len(state.nodes):
-                x1, y1 = state.nodes[n1]
-                x2, y2 = state.nodes[n2]
-                # Convert to napari (row, col) = (y, x)
-                path = np.array([[y1, x1], [y2, x2]], dtype=np.float64)
-                paths.append(path)
-                edge_labels.append(f"Edge {i}: {n1} → {n2}")
-
-        if paths:
-            # Clear and re-add all paths
-            edges_layer.data = []
-            for path in paths:
-                edges_layer.add_paths([path])
+            # Update nodes layer
+            nodes_layer.data = node_data
+            nodes_layer.face_color = face_colors
+            nodes_layer.size = sizes
 
             # Set features for hover info (shown in status bar)
-            edges_layer.features = {"label": edge_labels}
+            nodes_layer.features = {"label": node_labels}
+
+            # Set text to show node IDs on the points
+            nodes_layer.text = {
+                "string": "{label}",
+                "size": 10,
+                "color": "white",
+                "anchor": "upper_left",
+            }
         else:
+            # Clear nodes layer
+            nodes_layer.data = np.empty((0, 2), dtype=np.float64)
+            nodes_layer.features = {}
+            nodes_layer.text = None
+
+        # Convert edges to paths for shapes layer
+        if state.edges and state.nodes:
+            paths = []
+            edge_labels = []
+            for i, (n1, n2) in enumerate(state.edges):
+                if n1 < len(state.nodes) and n2 < len(state.nodes):
+                    x1, y1 = state.nodes[n1]
+                    x2, y2 = state.nodes[n2]
+                    # Convert to napari (row, col) = (y, x)
+                    path = np.array([[y1, x1], [y2, x2]], dtype=np.float64)
+                    paths.append(path)
+                    edge_labels.append(f"Edge {i}: {n1} → {n2}")
+
+            if paths:
+                # Clear and re-add all paths
+                edges_layer.data = []
+                for path in paths:
+                    edges_layer.add_paths([path])
+
+                # Set features for hover info (shown in status bar)
+                edges_layer.features = {"label": edge_labels}
+            else:
+                edges_layer.data = []
+                edges_layer.features = {}
+        else:
+            # Clear edges layer
             edges_layer.data = []
             edges_layer.features = {}
-    else:
-        # Clear edges layer
-        edges_layer.data = []
-        edges_layer.features = {}
 
 
 # =============================================================================
@@ -1170,6 +1172,7 @@ class TrackGraphWidget:
         self._update_status()
 
         # Update node list (block signals to prevent mode changes)
+        selected_node = self._node_combo.currentIndex()
         self._node_combo.blockSignals(True)
         self._node_combo.clear()
         for i, _node in enumerate(self._state.nodes):
@@ -1178,6 +1181,9 @@ class TrackGraphWidget:
                 label = f" ({self._state.node_labels[i]})"
             start_marker = " [START]" if i == self._state.start_node else ""
             self._node_combo.addItem(f"Node {i}{label}{start_marker}")
+        self._node_combo.setCurrentIndex(
+            min(max(selected_node, 0), len(self._state.nodes) - 1)
+        )
         self._node_combo.blockSignals(False)
 
         # Update edge list (block signals to prevent mode changes)

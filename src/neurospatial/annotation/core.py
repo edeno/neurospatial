@@ -266,18 +266,42 @@ def annotate_video(
         calibration,
     )
 
-    # Run napari (blocking until viewer closes)
-    napari.run()
+    # Validate the intact draft before any close route destroys viewer layers.
+    from napari.utils.notifications import show_error
+    from qtpy.QtCore import QEvent, QObject
 
-    # Convert annotations to result
-    return _process_annotation_results(
-        shapes,
-        mode,
-        bin_size,
-        calibration,
-        resolved.simplify_tolerance,
-        resolved.multiple_boundaries,
-    )
+    results: list[AnnotationResult] = []
+
+    class DraftCloseGuard(QObject):
+        def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802 - Qt override
+            if event is not None and event.type() == QEvent.Type.Close:
+                try:
+                    result = _process_annotation_results(
+                        shapes,
+                        mode,
+                        bin_size,
+                        calibration,
+                        resolved.simplify_tolerance,
+                        resolved.multiple_boundaries,
+                    )
+                except Exception as exc:
+                    show_error(f"Cannot save annotations: {exc}")
+                    event.ignore()
+                    return True
+                results[:] = [result]
+            return False
+
+    window = _viewer.window._qt_window
+    guard = DraftCloseGuard(window)
+    window.installEventFilter(guard)
+    try:
+        napari.run()
+    finally:
+        window.removeEventFilter(guard)
+        _viewer.close()
+    if not results:
+        raise RuntimeError("Annotation window closed without a validated result.")
+    return results[0]
 
 
 def _add_initial_regions(
@@ -308,46 +332,18 @@ def _add_initial_regions(
     (points) are silently skipped as they cannot be represented as shapes.
 
     """
-    from shapely import get_coordinates
-
-    from neurospatial.annotation._helpers import (
-        rebuild_features,
-        sync_colors_from_features,
-    )
-
-    data = []
-    names = []
-    roles = []
+    from neurospatial.annotation._draft import add_polygon
 
     for name, region in regions.items():
-        if region.kind != "polygon":
-            continue
-
-        # Get polygon vertices in world coordinates
-        coords = get_coordinates(region.data)
-
-        # Transform to pixels if calibration provided
-        if calibration is not None:
-            coords = calibration.transform_cm_to_px(coords)
-
-        # Convert to napari (row, col) order
-        coords_rc = coords[:, ::-1]
-        data.append(coords_rc)
-        names.append(name)
-        roles.append(region.metadata.get("role", "region"))
-
-    if data:
-        # Add shapes to layer
-        shapes_layer.add(data, shape_type="polygon")
-
-        # Update features DataFrame using centralized builder
-        shapes_layer.features = rebuild_features(roles, names)
-
-        # Sync colors from features
-        sync_colors_from_features(shapes_layer)
-
-        # Note: Don't reset feature_defaults here - let the widget control the mode.
-        # The widget's initial_mode determines what role/name new shapes will have.
+        if region.kind == "polygon":
+            add_polygon(
+                shapes_layer,
+                region.data,
+                name,
+                region.metadata.get("role", "region"),
+                calibration,
+                region.metadata,
+            )
 
 
 def _add_positions_layer(
@@ -738,8 +734,8 @@ def _process_annotation_results(
     """
     from neurospatial.annotation._napari_widget import get_annotation_data
     from neurospatial.annotation.converters import (
+        _drafts_to_regions,
         env_from_boundary_region,
-        shapes_to_regions,
         shapes_to_walls_and_landmarks,
     )
     from neurospatial.landmarks import Landmarks
@@ -766,15 +762,16 @@ def _process_annotation_results(
             environment=None, regions=Regions([]), walls={}, landmarks=Landmarks()
         )
 
+    from neurospatial.annotation._draft import polygon_drafts
+
+    drafts = polygon_drafts(shapes, shapes_data, names, roles)
+
     walls, landmarks = shapes_to_walls_and_landmarks(
         shapes_data, names, roles, shape_types, calibration=calibration
     )
-    areas = [i for i, role in enumerate(roles) if role not in ("wall", "landmark")]
     # Convert the area shapes to regions
-    regions, env_boundary, holes = shapes_to_regions(
-        [shapes_data[i] for i in areas],
-        [names[i] for i in areas],
-        [roles[i] for i in areas],
+    regions, env_boundary, holes = _drafts_to_regions(
+        [draft for draft in drafts if draft.role not in ("wall", "landmark")],
         calibration=calibration,
         simplify_tolerance=simplify_tolerance,
         multiple_boundaries=multiple_boundaries,

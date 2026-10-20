@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
+    from neurospatial.annotation._draft import PolygonDraft
     from neurospatial.environment import Environment
     from neurospatial.landmarks import Landmarks
     from neurospatial.ops.transforms import VideoCalibration
@@ -155,8 +156,9 @@ def shapes_to_regions(
         - "first": Use the first drawn boundary. A warning is emitted.
         - "error": Raise ValueError if multiple boundaries are drawn.
     validate : bool, default=True
-        Whether to validate polygon geometry and emit warnings for issues
-        like self-intersecting polygons or very small areas.
+        Whether to emit advisory warnings about small areas, overlap and
+        regions outside the boundary. Invalid polygon geometry always raises,
+        including when this is False; simplification does not repair it.
     min_area : float, default=1e-6
         Minimum polygon area threshold for validation. Polygons with area
         below this trigger a warning (if validate=True).
@@ -173,8 +175,9 @@ def shapes_to_regions(
     Raises
     ------
     ValueError
-        If ``multiple_boundaries="error"`` and multiple environment boundaries
-        are drawn.
+        If polygon geometry is invalid, or if ``multiple_boundaries="error"``
+        and multiple environment boundaries are drawn. Invalid geometry is
+        rejected even when ``validate=False``; it is never repaired implicitly.
 
     Notes
     -----
@@ -185,6 +188,32 @@ def shapes_to_regions(
     used to create excluded areas within the environment.
 
     """
+    from neurospatial.annotation._draft import PolygonDraft
+
+    drafts = [
+        PolygonDraft(vertices, name, role, [], {})
+        for vertices, name, role in zip(shapes_data, names, region_types, strict=True)
+    ]
+    return _drafts_to_regions(
+        drafts,
+        calibration=calibration,
+        simplify_tolerance=simplify_tolerance,
+        multiple_boundaries=multiple_boundaries,
+        validate=validate,
+        min_area=min_area,
+    )
+
+
+def _drafts_to_regions(
+    drafts: list[PolygonDraft],
+    *,
+    calibration: VideoCalibration | None = None,
+    simplify_tolerance: float | None = None,
+    multiple_boundaries: MultipleBoundaryStrategy = "last",
+    validate: bool = True,
+    min_area: float = 1e-6,
+) -> tuple[Regions, Region | None, list[Region]]:
+    """Convert explicitly grouped polygon drafts without losing interior rings."""
     import warnings
 
     from neurospatial.regions import Region, Regions
@@ -194,12 +223,8 @@ def shapes_to_regions(
     env_boundaries: list[Region] = []
 
     coord_system = "pixels" if calibration is None else "cm"
-    for poly_rc, name, region_type in zip(
-        shapes_data,
-        names,
-        region_types,
-        strict=True,
-    ):
+    for draft in drafts:
+        poly_rc, name, region_type = draft.vertices, draft.name, draft.role
         pts_world = _to_world(poly_rc, calibration)
 
         # Skip degenerate polygons (need ≥3 vertices to form an area), but warn
@@ -213,7 +238,16 @@ def shapes_to_regions(
             )
             continue
 
-        poly = shp.Polygon(pts_world)
+        poly = shp.Polygon(
+            pts_world, [_to_world(ring, calibration) for ring in draft.interiors]
+        )
+        if not poly.is_valid:
+            from shapely.validation import explain_validity
+
+            raise ValueError(
+                f"Polygon '{name}' is invalid: {explain_validity(poly)}. "
+                "Edit its vertices or interior rings before saving."
+            )
 
         # Validate polygon geometry before simplification
         if validate:
@@ -226,9 +260,12 @@ def shapes_to_regions(
             poly = poly.simplify(tolerance=simplify_tolerance, preserve_topology=True)
             # Ensure polygon is still valid after simplification
             if not poly.is_valid:
-                poly = poly.buffer(0)  # Standard fix for self-intersections
+                raise ValueError(
+                    f"Simplified polygon '{name}' is invalid; edit its vertices."
+                )
 
         metadata = {
+            **draft.metadata,
             "source": "napari_annotation",
             "coord_system": coord_system,
             "role": region_type,  # Keep 'role' key for backward compat in metadata
@@ -344,7 +381,9 @@ def subtract_holes_from_boundary(
 
     # Ensure result is valid
     if not result_poly.is_valid:
-        result_poly = result_poly.buffer(0)
+        raise ValueError(
+            "Subtracting environment holes produced invalid geometry; edit the boundary or holes before saving."
+        )
 
     # Create new region with updated polygon
     metadata = dict(boundary.metadata)
@@ -421,6 +460,8 @@ def env_from_boundary_region(
         from_polygon_kwargs["arena"] = OpenArena(
             polygon, walls=segments, wall_names=wall_names
         )
+    if boundary.metadata.get("coord_system") in ("cm", "pixels"):
+        from_polygon_kwargs.setdefault("units", boundary.metadata["coord_system"])
     return Environment.from_polygon(
         polygon=polygon,
         bin_size=bin_size,
