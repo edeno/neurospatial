@@ -1800,6 +1800,7 @@ class Environment(Generic[_C]):
         min_speed: float | None = None,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
         bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
@@ -1844,6 +1845,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
         bandwidth : float, optional
             If provided, apply diffusion kernel smoothing with this bandwidth
             (in physical units). Uses mode='transition' to preserve total mass.
@@ -1888,6 +1893,8 @@ class Environment(Generic[_C]):
             environment is a track built without ``track_width``.
         CartesianOnlyError
             If ``time_allocation='linear'`` on a polar environment.
+        ValueError
+            If ``break_before`` is not a Boolean array with one entry per sample.
 
         See Also
         --------
@@ -1920,6 +1927,7 @@ class Environment(Generic[_C]):
         where valid intervals satisfy:
         - Δt ≤ max_gap (if max_gap is not None)
         - speed[k] ≥ min_speed (if min_speed is not None)
+        - no break is declared before sample k + 1 (``break_before[k + 1]``)
         - positions[k] and positions[k + 1] are inside the environment
           (``time_allocation='start'``)
 
@@ -1960,6 +1968,16 @@ class Environment(Generic[_C]):
         ...     max_gap=None,
         ... )
 
+        If a second recording starts at sample 2 on the same clock, declare
+        the break; the interval across the join then adds no time:
+
+        >>> new_recording = np.array([False, False, True, False])
+        >>> occ = env.occupancy(
+        ...     times, positions, max_gap=None, break_before=new_recording
+        ... )
+        >>> float(occ.sum())
+        2.0
+
         """
         return _occupancy(
             times,
@@ -1972,6 +1990,7 @@ class Environment(Generic[_C]):
             min_speed=min_speed,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
             bandwidth=bandwidth,
             time_allocation=time_allocation,
             return_seconds=return_seconds,
@@ -1986,6 +2005,7 @@ class Environment(Generic[_C]):
         outside_value: int | None = -1,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
     ) -> NDArray[np.intp]:
         """Map trajectory to sequence of bin indices.
 
@@ -2021,6 +2041,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
 
         Returns
         -------
@@ -2035,6 +2059,8 @@ class Environment(Generic[_C]):
             If times and positions have different lengths, if positions
             have wrong number of dimensions, or if timestamps are not
             monotonically increasing (non-decreasing).
+        ValueError
+            If ``break_before`` is not a Boolean array with one entry per sample.
 
         See Also
         --------
@@ -2044,8 +2070,9 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+        not crossing a ``break_before``) is analyzed as a separate recording;
+        no segment spans a pause.
 
         Samples that touch no valid interval are dropped, including singleton
         inputs. Deduplication never merges samples across an invalid interval.
@@ -2085,6 +2112,7 @@ class Environment(Generic[_C]):
             gap_splits_runs=False,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
         )
         return result.bins
 
@@ -2096,6 +2124,7 @@ class Environment(Generic[_C]):
         outside_value: int | None = -1,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
     ) -> BinSequenceWithRuns:
         """Map trajectory to bin sequence plus per-run boundaries.
 
@@ -2128,6 +2157,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
 
         Returns
         -------
@@ -2142,8 +2175,9 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+        not crossing a ``break_before``) is analyzed as a separate recording;
+        no segment spans a pause.
 
         Samples that touch no valid interval are dropped, including singleton
         inputs. Invalid intervals split runs even if the bins match. Run
@@ -2180,6 +2214,7 @@ class Environment(Generic[_C]):
             gap_splits_runs=True,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
         )
 
     @cartesian_only(
@@ -7017,6 +7052,7 @@ class Environment(Generic[_C]):
         normalize: bool = True,
         max_gap: float | None = 0.5,
         epochs: Any = None,
+        break_before: ArrayLike | None = None,
     ) -> scipy.sparse.csr_matrix:
         """Compute transition matrix (empirical or model-based).
 
@@ -7075,6 +7111,10 @@ class Environment(Generic[_C]):
             Restrict the analysis to these half-open [start, stop) windows (seconds,
             same clock as ``times``). An interval counts only if it lies entirely
             inside one window. ``None`` (default) means unrestricted.
+        break_before : ArrayLike of bool, shape (n_samples,), optional
+            ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+            ``k`` (for example where a new recording starts), whatever the elapsed
+            time. Entry 0 is ignored.
 
         Returns
         -------
@@ -7097,6 +7137,9 @@ class Environment(Generic[_C]):
             If method='diffusion' but normalize=False (not supported).
             If bins contains invalid indices outside [0, n_bins).
             If lag is not positive (empirical mode).
+        ValueError
+            If ``break_before`` is not a Boolean array with one entry per sample
+            (or per bin of ``bins``), or is given with ``method``.
 
         See Also
         --------
@@ -7106,13 +7149,15 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-        is analyzed as a separate recording; no segment spans a pause.
+        Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+        not crossing a ``break_before``) is analyzed as a separate recording;
+        no segment spans a pause.
 
         When times are supplied, a pair (k, k + lag) counts only if every
         interval from k through k + lag - 1 is valid and samples k and
-        k + lag are both inside the environment. Raw bin-only inputs and
-        model-based transitions have no time gate.
+        k + lag are both inside the environment. Raw bin-only inputs have no
+        time gate, but a ``break_before`` with one entry per bin still drops
+        every pair it separates. Model-based transitions take neither.
 
         **Empirical mode**: Counts observed transitions from trajectory data.
         When allow_teleports=False, filters out non-adjacent transitions using
@@ -7186,6 +7231,7 @@ class Environment(Generic[_C]):
             normalize=normalize,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
         )
 
 

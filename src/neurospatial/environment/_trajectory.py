@@ -30,6 +30,7 @@ from neurospatial._intervals import (
     start_allocated_occupancy,
     warn_excluded_intervals,
 )
+from neurospatial._observation import validate_break_before
 from neurospatial._validation import validate_times_positions
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._fields import _compute_kernel
@@ -106,6 +107,7 @@ def _occupancy(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: Any = None,
     bandwidth: float | None = None,
     time_allocation: Literal["start", "linear"] = "start",
     return_seconds: bool = True,
@@ -132,6 +134,9 @@ def _occupancy(
                 f"speed and times must have same length. "
                 f"Got speed: {len(speed)}, times: {len(times)}"
             )
+    breaks = validate_break_before(
+        break_before, len(times), call="Environment.occupancy"
+    )
 
     # Validate time_allocation parameter
     if time_allocation not in ("start", "linear"):
@@ -198,6 +203,7 @@ def _occupancy(
         max_gap=max_gap,
         start_bin=None if observation_only else bin_indices,
         epochs=resolved_epochs,
+        break_before=breaks,
     )
     if time_allocation == "start":
         # Complete-case rule, shared with spike binning: the animal's place
@@ -257,6 +263,7 @@ def _occupancy(
         epochs=resolved_epochs,
         min_speed=min_speed,
         start_bin_gate=not observation_only or bool(valid_mask.any()),
+        break_before=breaks,
         result="occupancy is zero in every bin",
     )
 
@@ -285,6 +292,7 @@ def _bin_sequence(
     gap_splits_runs: bool,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: Any = None,
 ) -> BinSequenceWithRuns:
     """Shared implementation for ``bin_sequence`` and
     ``bin_sequence_with_runs``: always computes both bins and runs;
@@ -294,9 +302,14 @@ def _bin_sequence(
     times, positions = validate_times_positions(times, positions, call=call)
     # Before the gap warnings, so wrong positions are reported first.
     require_position_columns(positions, binning.bins.n_dims, call=call)
+    breaks = validate_break_before(break_before, times.size, call=call)
 
     mask = observed_interval_mask(
-        times, max_gap=max_gap, epochs=epochs, result="the bin sequence is empty"
+        times,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        result="the bin sequence is empty",
     )
     sample_valid = np.zeros(times.size, dtype=bool)
     sample_valid[:-1] |= mask
@@ -398,6 +411,7 @@ def _transitions(
     normalize: bool = True,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: Any = None,
 ) -> scipy.sparse.csr_matrix:
     """Compute empirical or model-based transition matrices."""
     # Dispatch based on mode
@@ -422,6 +436,13 @@ def _transitions(
                 f"Parameter 'allow_teleports' is only valid in empirical mode. "
                 f"Got allow_teleports={allow_teleports} with method='{method}'. "
                 f"Remove 'allow_teleports' parameter or set method=None for empirical mode."
+            )
+        if break_before is not None:
+            raise ValueError(
+                f"Parameter 'break_before' is only valid in empirical mode. "
+                f"Got break_before with method='{method}': model transitions "
+                f"come from the graph, not from a recording. "
+                f"Remove 'break_before' or set method=None for empirical mode."
             )
 
         # Validate bandwidth parameter usage
@@ -462,6 +483,7 @@ def _transitions(
             allow_teleports=allow_teleports,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=break_before,
         )
 
 
@@ -478,6 +500,7 @@ def _empirical_transitions(
     allow_teleports: bool = False,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: Any = None,
 ) -> scipy.sparse.csr_matrix:
     """Compute empirical transition matrix from observed trajectory data.
 
@@ -586,10 +609,14 @@ def _empirical_transitions(
             max_gap=None,
             epochs=None,
         ).bins
+        breaks = validate_break_before(
+            break_before, np.asarray(times).size, call="Environment.transitions"
+        )
         mask = observed_interval_mask(
             times,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=breaks,
             result="the transition matrix is empty",
         )
 
@@ -601,6 +628,14 @@ def _empirical_transitions(
             f"Ensure bin indices are integers before calling transitions()."
         )
     bins = bins.astype(np.intp)
+    if bins_provided:
+        # A precomputed sequence has no clock, so only declared breaks apply.
+        breaks = validate_break_before(
+            break_before, bins.size, call="Environment.transitions"
+        )
+        mask = np.ones(max(bins.size - 1, 0), dtype=bool)
+        if breaks is not None:
+            mask = ~breaks[1:]
 
     # Validate lag
     if lag < 1:
@@ -628,13 +663,14 @@ def _empirical_transitions(
     # Extract transition pairs with lag
     source_bins = bins[:-lag]
     target_bins = bins[lag:]
+    # A pair counts when no excluded interval separates its two samples and,
+    # from times/positions, both lie inside the environment (bin -1: outside
+    # or NaN).
+    invalid_before = np.r_[0, np.cumsum(~mask)]
+    pair_ok = invalid_before[lag:] == invalid_before[:-lag]
     if trajectory_provided:
-        # A pair counts when no excluded interval separates its two samples
-        # and both lie inside the environment (bin -1: outside or NaN).
-        invalid_before = np.r_[0, np.cumsum(~mask)]
-        pair_ok = invalid_before[lag:] == invalid_before[:-lag]
         pair_ok &= (source_bins >= 0) & (target_bins >= 0)
-        source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
+    source_bins, target_bins = source_bins[pair_ok], target_bins[pair_ok]
 
     return _count_transitions(
         source_bins,
