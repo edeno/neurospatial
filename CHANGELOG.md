@@ -4,6 +4,27 @@
 
 ### Breaking
 
+- `heading_direction_labels`, `instantaneous_goal_alignment`, `goal_bias` and
+  `compute_goal_directed_metrics` use the movement rule of
+  `heading_from_velocity`: a direction exists only where the smoothed speed
+  is above zero and at least `min_speed`. A missing position (NaN row) is a
+  gap that ends a run instead of an error. `heading_direction_labels` labels
+  an observed animal that is not moving `"stationary"` and a sample with no
+  observed movement (missing position, no usable interval) `None`, which
+  `labels_to_epochs` leaves out; a still animal at `min_speed=0` was labeled
+  `"0–45°"` (East). `goal_bias` of an animal that never moves is `nan`; it
+  was `1.0` when the goal lay East. `compute_goal_directed_metrics` warns
+  once when every interval is excluded (was twice) and reports distances
+  over observed samples. Empty input raises in trajectory mode.
+
+  ```python
+  times, still = np.arange(10) / 10, np.zeros((10, 2))
+  heading_direction_labels(times, still, min_speed=0.0)  # before: ['0–45°', ...]; after: ['stationary', ...]
+  goal_bias(times, still, np.array([100.0, 0.0]), min_speed=0.0)  # before: 1.0; after: nan
+  positions[5] = np.nan
+  goal_bias(times, positions, goal, min_speed=5.0)  # before: ValueError; after: a number
+  ```
+
 - Options of public free functions are keyword-only, as `Environment`
   method options already were; data stays positional, and a test rejects any
   new positional option. This covers defaulted options (levels, kinds,

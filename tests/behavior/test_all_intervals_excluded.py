@@ -17,7 +17,12 @@ from neurospatial.behavior.decisions import (
     compute_decision_analysis,
     extract_pre_decision_window,
 )
-from neurospatial.behavior.navigation import goal_bias
+from neurospatial.behavior.navigation import (
+    compute_goal_directed_metrics,
+    goal_bias,
+    heading_direction_labels,
+    instantaneous_goal_alignment,
+)
 from neurospatial.behavior.segmentation import (
     Trial,
     detect_region_crossings,
@@ -85,6 +90,17 @@ CALLS = {
     "heading_from_velocity": lambda env, t, p, **kw: heading_from_velocity(t, p, **kw),
     "goal_bias": lambda env, t, p, **kw: goal_bias(
         t, p, np.array([100.0, 5.0]), min_speed=0.0, **kw
+    ),
+    "instantaneous_goal_alignment": lambda env, t, p, **kw: (
+        instantaneous_goal_alignment(t, p, np.array([100.0, 5.0]), min_speed=0.0, **kw)
+    ),
+    "compute_goal_directed_metrics": lambda env, t, p, **kw: (
+        compute_goal_directed_metrics(
+            env, t, p, np.array([100.0, 5.0]), min_speed=1.0, **kw
+        )
+    ),
+    "heading_direction_labels": lambda env, t, p, **kw: heading_direction_labels(
+        t, p, min_speed=1.0, **kw
     ),
     "extract_pre_decision_window": lambda env, t, p, **kw: (
         extract_pre_decision_window(t, p, 50.0, window_duration=10.0, **kw)

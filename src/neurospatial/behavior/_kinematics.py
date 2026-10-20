@@ -7,8 +7,6 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
-
 
 def interval_velocity(
     times: NDArray[np.float64],
@@ -110,101 +108,6 @@ def _validate_velocity_positions(
             "np.column_stack([x, y]), with one timestamp per row."
         )
     return positions
-
-
-def _validate_velocity_times(
-    times: NDArray[np.float64], n_samples: int
-) -> NDArray[np.float64]:
-    """Validate the timestamp array before building an interval mask."""
-    try:
-        times = np.asarray(times, dtype=np.float64)
-    except (TypeError, ValueError) as error:
-        raise ValueError(
-            f"times must be numeric timestamps; got {times!r}.\n"
-            "Why: velocities need seconds between consecutive samples.\n"
-            "Fix: pass neurospatial.behavior.heading_from_velocity(times, "
-            "positions) with a numeric 1-D timestamp array, one timestamp per "
-            "position."
-        ) from error
-    problems = []
-    if times.ndim != 1:
-        problems.append(f"times must be 1-D; got shape {times.shape}")
-    else:
-        if len(times) != n_samples:
-            problems.append(
-                f"times and positions must have the same length; got "
-                f"{len(times)} times and {n_samples} positions"
-            )
-        finite = np.isfinite(times)
-        if not finite.all():
-            index = int(np.flatnonzero(~finite)[0])
-            problems.append(
-                f"times must be finite; got {times[index]!r} at index {index}"
-            )
-        elif np.any(np.diff(times) <= 0):
-            index = int(np.flatnonzero(np.diff(times) <= 0)[0])
-            problems.append(
-                f"times must be strictly increasing; got "
-                f"{times[index]!r}, {times[index + 1]!r} at indices "
-                f"{index}, {index + 1}"
-            )
-    if problems:
-        raise ValueError(
-            "; ".join(problems) + ".\n"
-            "Why: each position needs a finite timestamp and a positive "
-            "elapsed interval for velocity.\n"
-            "Fix: pass neurospatial.behavior.heading_from_velocity(times, "
-            "positions) with a 1-D timestamp array of matching length; remove "
-            "non-finite samples and sort/de-duplicate positions and times "
-            "together."
-        )
-    return times
-
-
-def _velocity_heading_and_speed(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    *,
-    interval_mask: NDArray[np.bool_],
-    smooth_window: float = DEFAULT_SPEED_SMOOTHING,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Movement heading and horizontal speed from the smoothed velocity.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_samples,)
-        Finite, strictly increasing timestamps in seconds.
-    positions : ndarray, shape (n_samples, n_dims)
-        Position coordinates in environment units; heading and speed use the
-        first two (x, y).
-    interval_mask : ndarray of bool, shape (n_samples - 1,)
-        Observed intervals supplied by the shared mask helper.
-    smooth_window : float, default=0.1
-        Gaussian standard deviation in seconds applied to each velocity
-        component within each run (:func:`neurospatial.behavior.compute_speed`).
-
-    Returns
-    -------
-    heading, speed : ndarray, shape (n_samples,)
-        Radians and position units per second; samples in no run are NaN.
-    """
-    from neurospatial._validation import validate_finite
-
-    positions = _validate_velocity_positions(positions)
-    times = _validate_velocity_times(times, len(positions))
-    validate_finite(positions, name="positions")
-    if len(positions) < 2:
-        raise ValueError(
-            f"Cannot compute heading: insufficient trajectory data; need at "
-            f"least 2 position samples, got {len(positions)}.\n"
-            "Why: heading needs a position change over time.\n"
-            "Fix: pass at least two aligned position/timestamp samples or "
-            "use neurospatial.behavior.heading_from_body_orientation() for "
-            "single-frame pose data."
-        )
-    return _movement_heading_and_speed(
-        times, positions, interval_mask, smooth_window=smooth_window
-    )
 
 
 def _movement_heading_and_speed(

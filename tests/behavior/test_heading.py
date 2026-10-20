@@ -12,14 +12,14 @@ from numpy.testing import assert_allclose
 def test_velocity_heading_uses_actual_intervals():
     """Unsmoothed velocity is the centered secant over real elapsed times."""
     from neurospatial._intervals import observed_interval_mask
-    from neurospatial.behavior._kinematics import _velocity_heading_and_speed
+    from neurospatial.behavior._kinematics import _movement_heading_and_speed
 
     times = np.array([0.0, 0.1, 0.3])
     positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 4.0]])
-    headings, speed = _velocity_heading_and_speed(
+    headings, speed = _movement_heading_and_speed(
         times,
         positions,
-        interval_mask=observed_interval_mask(times, max_gap=0.5, epochs=None),
+        observed_interval_mask(times, max_gap=0.5, epochs=None),
         smooth_window=0.0,
     )
     velocity = np.array(
@@ -38,14 +38,14 @@ def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
     from scipy.ndimage import gaussian_filter1d
 
     from neurospatial._intervals import observed_interval_mask
-    from neurospatial.behavior._kinematics import _velocity_heading_and_speed
+    from neurospatial.behavior._kinematics import _movement_heading_and_speed
 
     r = two_epoch_recording
-    headings, speed = _velocity_heading_and_speed(
+    headings, speed = _movement_heading_and_speed(
         r.times,
         r.positions,
+        observed_interval_mask(r.times, max_gap=0.5, epochs=None),
         smooth_window=0.04,  # two 50 Hz samples
-        interval_mask=observed_interval_mask(r.times, max_gap=0.5, epochs=None),
     )
     for run in (slice(0, 5000), slice(5000, 10000)):
         velocity = np.gradient(r.positions[run], r.times[run], axis=0)

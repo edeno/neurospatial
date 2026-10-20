@@ -579,19 +579,15 @@ class TestHeadingDirectionLabels:
         assert labels.dtype == object
 
     def test_empty_arrays(self) -> None:
-        """Empty input arrays return empty output array."""
+        """Empty trajectory input raises: there is no observation to label."""
         times = np.array([], dtype=np.float64)
         positions = np.zeros((0, 2), dtype=np.float64)
 
-        labels = heading_direction_labels(
-            positions=positions, times=times, min_speed=5.0
-        )
-
-        assert len(labels) == 0
-        assert labels.dtype == object
+        with pytest.raises(ValueError, match="heading_direction_labels"):
+            heading_direction_labels(positions=positions, times=times, min_speed=5.0)
 
     def test_single_timepoint(self) -> None:
-        """Single timepoint returns 'stationary' (no velocity can be computed)."""
+        """A single timepoint has no observed movement, so its label is None."""
         times = np.array([0.0])
         positions = np.array([[10.0, 20.0]])
 
@@ -599,5 +595,5 @@ class TestHeadingDirectionLabels:
             positions=positions, times=times, min_speed=5.0
         )
 
-        assert len(labels) == 1
-        assert labels[0] == "stationary"  # Can't compute velocity from single point
+        assert labels.dtype == object
+        assert labels.tolist() == [None]
