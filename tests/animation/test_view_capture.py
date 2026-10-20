@@ -194,6 +194,7 @@ def test_scene_bridge_passes_independent_color_scales(scene, monkeypatch):
     from neurospatial.animation.backends import fastplotlib_backend
 
     native = SimpleNamespace(
+        time=100.0,
         widget=SimpleNamespace(indices={"time": 0}),
         show=Mock(),
         seek=Mock(),

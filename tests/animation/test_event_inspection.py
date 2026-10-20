@@ -243,9 +243,15 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
         z_order="below",
         _owns_reader=True,
     )
-    data = OverlayData(videos=[video])
-    monkeypatch.setattr(recording, "overlay_data", lambda **kwargs: data)
-    native = SimpleNamespace(
+    data = OverlayData(videos=[video], frame_times=recording.frame_times)
+    monkeypatch.setattr(recording, "_overlay_data", data)
+
+    class Native(SimpleNamespace):
+        @property
+        def time(self):
+            return recording.frame_times[0] + self.widget.indices["time"]
+
+    native = Native(
         widget=SimpleNamespace(indices={"time": 0.0}),
         show=Mock(),
         seek=Mock(),

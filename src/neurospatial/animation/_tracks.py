@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._units import normalize_position_units
 from neurospatial.geometry._coordinates import require_cartesian
 
 if TYPE_CHECKING:
@@ -93,13 +94,29 @@ def _checked_track(env: Environment, track: Environment) -> Environment:
             + (" and is a track itself" if env.is_linearized_track else "")
             + ". Fix: animate a 2-D environment, or leave track out."
         )
-    require_cartesian(
-        env.coordinate_system,
-        "animate_fields(track=...)",
-        why="each bin's probability goes to the track bin nearest its center, "
-        "a distance in Cartesian coordinates",
-        fix="animate an allocentric 2-D environment, or leave track out",
-    )
+    for coordinates in (env.coordinate_system, track.coordinate_system):
+        require_cartesian(
+            coordinates,
+            "animate_fields(track=...)",
+            why="each bin's probability goes to the track bin nearest its center, "
+            "a distance in shared Cartesian coordinates",
+            fix="use an allocentric Cartesian environment and track",
+        )
+    for name in ("units", "frame"):
+        expected, declared = getattr(env, name), getattr(track, name)
+        if name == "units":
+            expected = None if expected is None else normalize_position_units(expected)
+            declared = None if declared is None else normalize_position_units(declared)
+        # Two unspecified declarations preserve the legacy caller-established
+        # correspondence; one-sided metadata cannot establish correspondence.
+        if expected != declared:
+            raise ValueError(
+                f"track {name} {declared!r} does not match environment {name} "
+                f"{expected!r}. Why: nearest-bin projection requires shared "
+                "Cartesian coordinates. Fix: explicitly convert both environments "
+                "to the same units and frame and declare matching metadata; "
+                "coordinates are never silently rescaled or transformed."
+            )
     return track
 
 

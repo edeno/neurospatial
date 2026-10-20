@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, cast
@@ -20,10 +22,14 @@ from neurospatial._observation import (
 
 def _readonly(value: Any, dtype: Any = None) -> np.ndarray:
     result = np.array(value, dtype=dtype, copy=True)
-    result.flags.writeable = False
-    return result
+    if result.dtype.hasobject:
+        result.flags.writeable = False
+        return result
+    # Immutable backing prevents callers from re-enabling writes on metadata.
+    return np.frombuffer(result.tobytes(), dtype=result.dtype).reshape(result.shape)
 
 
+@dataclass(frozen=True, init=False, eq=False)
 class AnimationField:
     """One spatial field stream on its own clock, in seconds.
 
@@ -51,6 +57,24 @@ class AnimationField:
         Colorbar label.
     """
 
+    values: Any
+    times: np.ndarray
+    n_bins: int = dataclass_field(init=False)
+    cmap: str
+    vmin: float | None
+    vmax: float | None
+    label: str | None
+    max_gap: float | None
+    break_before: np.ndarray | None
+    sample_valid: np.ndarray = dataclass_field(init=False)
+    interval_valid: np.ndarray = dataclass_field(init=False)
+    _limits: tuple[float, float] | None = dataclass_field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _peak: float | None = dataclass_field(
+        default=None, init=False, repr=False, compare=False
+    )
+
     def __init__(
         self,
         values: Any,
@@ -63,7 +87,11 @@ class AnimationField:
         break_before: Any = None,
         label: str | None = None,
     ) -> None:
-        self.times = _readonly(_validated_signal_times(times, call="AnimationField"))
+        object.__setattr__(
+            self,
+            "times",
+            _readonly(_validated_signal_times(times, call="AnimationField")),
+        )
         if not hasattr(values, "__getitem__") or not hasattr(values, "__len__"):
             raise TypeError("values must be an indexable sequence of spatial rows.")
         if len(values) != len(self.times):
@@ -72,26 +100,34 @@ class AnimationField:
         if shape is not None:
             if len(shape) != 2 or shape[1] == 0:
                 raise ValueError("values must have shape (n_samples, n_bins).")
-            self.n_bins = int(shape[1])
+            object.__setattr__(self, "n_bins", int(shape[1]))
         else:
             first = np.asarray(values[0])
             if first.ndim != 1 or first.size == 0:
                 raise ValueError(
                     "Each values row must be a nonempty one-dimensional spatial field."
                 )
-            self.n_bins = first.size
+            object.__setattr__(self, "n_bins", first.size)
         for name, limit in (("vmin", vmin), ("vmax", vmax)):
             if limit is not None and not np.isfinite(limit):
                 raise ValueError(f"{name} must be finite or None.")
         if vmin is not None and vmax is not None and vmin > vmax:
             raise ValueError("vmin must be less than or equal to vmax.")
-        self.values = values
-        self.cmap, self.vmin, self.vmax, self.label = cmap, vmin, vmax, label
-        self.max_gap = validate_max_gap(max_gap)
+        object.__setattr__(self, "values", values)
+        for name, value in (
+            ("cmap", cmap),
+            ("vmin", vmin),
+            ("vmax", vmax),
+            ("label", label),
+        ):
+            object.__setattr__(self, name, value)
+        object.__setattr__(self, "max_gap", validate_max_gap(max_gap))
         flags = validate_break_before(
             break_before, len(self.times), call="AnimationField"
         )
-        self.break_before = None if flags is None else _readonly(flags)
+        object.__setattr__(
+            self, "break_before", None if flags is None else _readonly(flags)
+        )
         support = resolve_sample_support(
             self.times,
             np.ones(len(self.times), dtype=bool),
@@ -100,10 +136,29 @@ class AnimationField:
             break_before=self.break_before,
             result="the animation shows exact samples only",
         )
-        self.sample_valid = support.sample_valid
-        self.interval_valid = support.interval_mask
-        self._limits: tuple[float, float] | None = None
-        self._peak: float | None = None
+        object.__setattr__(self, "sample_valid", _readonly(support.sample_valid))
+        object.__setattr__(self, "interval_valid", _readonly(support.interval_mask))
+        object.__setattr__(self, "_limits", None)
+        object.__setattr__(self, "_peak", None)
+
+    def __copy__(self) -> AnimationField:
+        result = object.__new__(type(self))
+        result.__setstate__(self.__dict__)
+        return result
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> AnimationField:
+        result = self.__copy__()
+        memo[id(self)] = result
+        return result
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        for name, value in state.items():
+            if (
+                name in {"times", "break_before", "sample_valid", "interval_valid"}
+                and value is not None
+            ):
+                value = _readonly(value)
+            object.__setattr__(self, name, value)
 
     def __len__(self) -> int:
         return len(self.times)
@@ -135,7 +190,7 @@ class AnimationField:
     def color_limits(self) -> tuple[float, float]:
         """Return stable display limits, reading at most 100 source rows."""
         if self._limits is None and self.vmin is not None and self.vmax is not None:
-            self._limits = (self.vmin, self.vmax)
+            object.__setattr__(self, "_limits", (self.vmin, self.vmax))
         if self._limits is None:
             from neurospatial.animation.rendering import animation_colormap_range
 
@@ -145,10 +200,13 @@ class AnimationField:
                     np.linspace(0, len(self) - 1, min(len(self), 100), dtype=int)
                 )
             ]
-            self._limits = animation_colormap_range(rows, self.vmin, self.vmax)
+            object.__setattr__(
+                self, "_limits", animation_colormap_range(rows, self.vmin, self.vmax)
+            )
             from neurospatial.animation.rendering import frame_extremes, typical_peak
 
-            self._peak = typical_peak(frame_extremes(rows)[1])
+            object.__setattr__(self, "_peak", typical_peak(frame_extremes(rows)[1]))
+        assert self._limits is not None
         return self._limits
 
     def _typical_peak(self) -> float:
@@ -161,7 +219,8 @@ class AnimationField:
                     np.linspace(0, len(self) - 1, min(len(self), 100), dtype=int)
                 )
             ]
-            self._peak = typical_peak(frame_extremes(rows)[1])
+            object.__setattr__(self, "_peak", typical_peak(frame_extremes(rows)[1]))
+        assert self._peak is not None
         return self._peak if self._peak > 0 else 1.0
 
 
@@ -199,6 +258,14 @@ class Animation:
             raise ValueError(
                 "Animation supports one-, two- or three-dimensional environments."
             )
+        if env.n_dims == 1 and show_regions:
+            from neurospatial.animation._region_names import shown_region_names
+
+            if shown_region_names(env, show_regions):
+                raise ValueError(
+                    "Animation cannot draw regions in a 1D environment. "
+                    "Use a 2D environment for region display, or omit show_regions."
+                )
         if not np.isfinite(window_seconds) or window_seconds <= 0:
             raise ValueError("window_seconds must be positive finite seconds.")
         if not np.isfinite(region_alpha) or not 0 <= region_alpha <= 1:
@@ -223,6 +290,7 @@ class Animation:
                     )
                 field = AnimationField(field, clock)
                 streams[name] = field
+            streams[name] = copy.copy(field)
             if field.n_bins != env.n_bins:
                 raise ValueError(
                     f"Field {name!r} has {field.n_bins} bins; the environment has {env.n_bins}."
@@ -250,7 +318,16 @@ class Animation:
         self._renderer: Any = None
         # Validate overlays once on the scene clock. Keep converted video readers
         # for repeated frame inspection rather than reopening the source.
-        self._overlay_data = self.overlay_data(own_samples=True)
+        from neurospatial.animation.overlays import _convert_overlays_to_data
+
+        self._overlay_data = _convert_overlays_to_data(
+            list(self.overlays),
+            self.frame_times,
+            len(self.frame_times),
+            self.env,
+            self.show_regions,
+            own_samples=True,
+        )
         if env.n_dims == 3:
             if any(item.data.ndim == 1 for item in self._overlay_data.head_directions):
                 self.close()
@@ -330,22 +407,25 @@ class Animation:
         self, frame_times: Any = None, *, own_samples: bool = False
     ) -> Any:
         """Convert overlays on a requested physical clock."""
-        from neurospatial.animation.overlays import _convert_overlays_to_data
+        from neurospatial.animation.overlays import _realign_prepared_overlays
 
         self._ensure_open()
-        if frame_times is None and own_samples and hasattr(self, "_overlay_data"):
-            return self._overlay_data
         clock = (
             self.frame_times
             if frame_times is None
-            else np.asarray(frame_times, dtype=float)
+            else _readonly(
+                _validated_signal_times(frame_times, call="Animation.overlay_data")
+            )
         )
-        return _convert_overlays_to_data(
-            list(self.overlays),
+        if clock[0] < self.frame_times[0] or clock[-1] > self.frame_times[-1]:
+            raise ValueError(
+                "overlay_data frame_times must stay within the scene recording "
+                f"[{self.frame_times[0]:g}, {self.frame_times[-1]:g}] seconds. "
+                "Create a scene with a wider frame_times range to include those times."
+            )
+        return _realign_prepared_overlays(
+            self._overlay_data,
             clock,
-            len(clock),
-            self.env,
-            self.show_regions,
             own_samples=own_samples,
         )
 
@@ -441,9 +521,15 @@ class Animation:
         if self._renderer is not None:
             self._renderer.close()
             self._renderer = None
+        closed_readers: set[int] = set()
         for video in self._overlay_data.videos:
             close = getattr(video.reader, "close", None)
-            if close is not None and getattr(video, "_owns_reader", False):
+            if (
+                close is not None
+                and getattr(video, "_owns_reader", False)
+                and id(video.reader) not in closed_readers
+            ):
+                closed_readers.add(id(video.reader))
                 close()
 
     def _ensure_open(self) -> None:

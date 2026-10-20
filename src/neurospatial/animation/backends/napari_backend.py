@@ -1901,7 +1901,11 @@ def _render_event_overlay(
     all_colors: list[str] = []
 
     for event_type, positions in event_data.event_positions.items():
-        frame_indices = event_data.event_frame_indices[event_type]
+        # Keep unknown events in EventData while giving napari only finite
+        # points, so missing tracking cannot corrupt layer bounds or visibility.
+        located = np.isfinite(positions).all(axis=1)
+        positions = positions[located]
+        frame_indices = event_data.event_frame_indices[event_type][located]
         color = event_data.colors.get(event_type, "#ffffff")
 
         if len(positions) == 0:

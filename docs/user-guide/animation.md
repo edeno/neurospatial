@@ -140,23 +140,43 @@ volumes in napari; layouts without cell geometry show values at bin centers.
 Three-dimensional headings require vectors, not planar angles, and point
 regions keep their full coordinates. Planar video, polygon regions and scale
 bars require a 2-D scene. In napari, named fields use
-separate layers; `layout="horizontal"` separates fields when no overlays are
-present. Omit `layout` when overlays must stay registered with the fields.
+separate layers; `layout="horizontal"` separates fields when no overlays or
+regions are present. Omit `layout` to keep them registered with the fields.
+Scenes reject regions in 1-D environments. Fastplotlib scenes also reject
+scale bars and, in 1-D, pose, heading, object-vector and video overlays.
 
 For streams on different clocks, use
 `Animation(env, {"posterior": AnimationField(posterior, decode_times),
 "likelihood": AnimationField(likelihood, likelihood_times)})`.
 Field sources remain lazy and caller-owned. Do not modify a source while a
 scene is using it; close any caller-opened file after the scene.
+Field metadata is immutable. To change a field's clock, support or color
+settings, create a new `AnimationField`; scenes snapshot this metadata without
+copying the spatial values. Track panels use each field's own observed
+intervals even when `frame_times` selects a coarser scene clock.
 
 Position, pose, heading and object-vector overlays preserve NaN observations.
 Their default `max_gap=0.5` seconds and optional `break_before` match analysis
 support: interpolation stays inside observed intervals, with no extrapolation.
 Set `max_gap=None` deliberately for sparsely sampled continuous observations.
+Trajectory-based `EventOverlay` locations use the same rules. An event inside
+a tracking gap keeps its time but has an unknown position, so no spatial marker
+is drawn for it. Explicit fixed event locations are unaffected.
 `PositionOverlay(units=..., frame=...)` validates supplied coordinate metadata
 against the environment and asks for an explicit transform when it differs.
 NWB position adapters forward units. `SpikeRasterOverlay(rates=rate_result)`
 validates the environment and aligns maps by `unit_ids`.
+
+For `track=...`, the environment and track must use the same units and
+Cartesian coordinate frame. Unit spelling aliases are accepted; convert or
+transform coordinates explicitly before projection.
+Both may omit metadata when the caller has established their correspondence;
+a declaration on only one side is insufficient.
+
+The scene owns video readers it opens. `scene.overlay_data()` returns borrowed
+views of those readers, including when requesting another clock within the
+scene's bounds. Keep the scene open while using them; `scene.close()` releases
+the readers. Failed scene preparation also releases readers already acquired.
 
 ## Overwriting existing files
 

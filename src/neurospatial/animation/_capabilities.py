@@ -11,6 +11,7 @@ from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
+    from neurospatial.animation.scene import Animation
 
 
 @dataclass(frozen=True)
@@ -60,23 +61,29 @@ _OVERLAY_NAMES = {
 }
 
 
-def unsupported_overlays(backend: str, data: OverlayData) -> list[str]:
+def unsupported_overlays(
+    backend: str, data: OverlayData, *, n_dims: int | None = None
+) -> list[str]:
     """Internal data collection names the backend cannot draw."""
     supported = _CAPABILITIES[backend].overlays
+    if backend == "fastplotlib" and n_dims == 1:
+        supported -= {"bodypart_sets", "head_directions", "object_vectors", "videos"}
     return [
         name for name in _OVERLAY_NAMES if getattr(data, name) and name not in supported
     ]
 
 
-def require_overlays(backend: str, data: OverlayData) -> None:
+def require_overlays(
+    backend: str, data: OverlayData, *, n_dims: int | None = None
+) -> None:
     """Refuse a scene view that would omit requested data."""
-    missing = unsupported_overlays(backend, data)
+    missing = unsupported_overlays(backend, data, n_dims=n_dims)
     if missing:
         names = ", ".join(_OVERLAY_NAMES[name] for name in missing)
         raise ValueError(
             f"The {backend} backend cannot draw {names}. "
             "Use Animation.show(backend='widget') for a complete notebook view "
-            "or backend='fastplotlib' for a GPU view."
+            "or Animation.export() to render the scene."
         )
 
 
@@ -101,3 +108,102 @@ def warn_unsupported_overlays(backend: str, data: OverlayData) -> OverlayData:
                 close()
     changes: dict[str, Any] = {name: [] for name in missing}
     return replace(data, **changes)
+
+
+_SCENE_OPTIONS = {
+    "widget": frozenset({"dpi", "figsize", "speed", "max_playback_fps"}),
+    "napari": frozenset(
+        {"viewer", "show", "ndisplay", "title", "fps", "speed", "layout"}
+    ),
+    "fastplotlib": frozenset(
+        {
+            "speed",
+            "max_playback_fps",
+            "cmap",
+            "vmin",
+            "vmax",
+            "frame_labels",
+            "title",
+            "show_regions",
+            "region_alpha",
+            "window_seconds",
+            "layout",
+            "layer_names",
+            "colorbar_label",
+            "track",
+            "dry_run",
+        }
+    ),
+}
+
+
+def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) -> None:
+    """Check the entire request before importing or allocating a native viewer."""
+    if backend not in _SCENE_OPTIONS:
+        raise ValueError("Use backend='widget', 'napari', or 'fastplotlib'.")
+    unknown = set(options) - _SCENE_OPTIONS[backend]
+    if unknown:
+        raise TypeError(
+            f"Unknown {backend} view options: {', '.join(sorted(unknown))}."
+        )
+    capability_name = {"widget": "scene", "napari": "napari_scene"}.get(
+        backend, backend
+    )
+    capabilities = _CAPABILITIES[capability_name]
+    if scene.env.n_dims not in capabilities.dimensions:
+        raise ValueError(
+            f"The {backend} backend cannot draw {scene.env.n_dims}D scenes. "
+            "Use Animation.show(backend='widget') for this environment."
+        )
+    if len(scene.fields) > 1 and not capabilities.multi_field:
+        raise ValueError(f"The {backend} backend cannot draw multiple fields.")
+    require_overlays(capability_name, scene._overlay_data, n_dims=scene.env.n_dims)
+    layout = options.get("layout")
+    if layout is not None and layout not in {"horizontal", "vertical", "grid"}:
+        raise ValueError("layout must be 'horizontal', 'vertical' or 'grid'.")
+    show_regions = options.get("show_regions", scene.show_regions)
+    region_names: list[str] = []
+    if show_regions:
+        from neurospatial.animation._region_names import shown_region_names
+
+        region_names = shown_region_names(scene.env, show_regions)
+    if backend == "napari" and options.get("ndisplay", scene.env.n_dims) not in (2, 3):
+        raise ValueError("ndisplay must be 2 or 3 for a napari scene view.")
+    if backend == "napari" and layout is not None and (scene.overlays or show_regions):
+        raise ValueError(
+            "Napari grid layout separates overlay and region layers from the "
+            "spatial fields. Omit layout to keep overlays and regions registered."
+        )
+    if backend == "fastplotlib":
+        track = options.get("track", scene.track)
+        if track is not None:
+            from neurospatial.animation._tracks import _checked_track
+
+            _checked_track(scene.env, track)
+        if options.get("dry_run", False):
+            raise ValueError(
+                "Animation.show() creates a view; dry_run is not supported."
+            )
+        if scene.scale_bar:
+            raise ValueError(
+                "The fastplotlib scene backend cannot draw scale_bar. "
+                "Use backend='widget' or backend='napari', or omit scale_bar."
+            )
+        if scene.env.n_dims == 1 and show_regions:
+            raise ValueError(
+                "The fastplotlib backend cannot draw regions on a 1D time panel. "
+                "Use a 2D environment for region display, or omit show_regions."
+            )
+    if backend == "napari" and show_regions:
+        for name in region_names:
+            region = scene.env.regions[name]
+            if region.kind not in {"point", "polygon"}:
+                raise ValueError(
+                    f"Napari cannot draw region {name!r} of kind {region.kind!r}. "
+                    "Omit show_regions or use backend='widget'."
+                )
+            if region.kind == "polygon" and region.data.interiors:
+                raise ValueError(
+                    "Napari region polygons with holes require a raster mask; "
+                    "omit show_regions or use backend='widget'."
+                )

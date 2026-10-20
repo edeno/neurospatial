@@ -4,6 +4,17 @@
 
 ### Animation workflows
 
+- Preserve each field's native clock and declared gaps in fastplotlib track
+  panels and exports, including when the scene uses a coarser output clock.
+  Track projection now rejects incompatible units or coordinate frames.
+- Apply the shared observation-support rules to trajectory-based event
+  locations. Events inside tracking gaps retain their timestamps with unknown
+  positions; `max_gap=None` explicitly permits sparse continuous tracking.
+- Freeze field metadata while retaining lazy, caller-owned values. Scene
+  overlay conversions borrow prepared video readers, and failed preparation
+  closes acquired readers deterministically.
+- Use a typed viewer adapter and check scene capabilities before allocating
+  a viewer, including dimensions, overlay combinations and requested options.
 - `Animation` and named `AnimationField` streams retain physical clocks,
   lazy sources and fixed color scales across notebook viewing and MP4/GIF
   export. `Animation.from_decoding` retains the result's environment and times.

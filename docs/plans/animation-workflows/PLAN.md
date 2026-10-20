@@ -110,3 +110,43 @@ Legacy backend overlay coverage still differs. The capability checks make
 omissions explicit; complete scene rendering is available through the new
 notebook/export workflow. The direct HTML object-vector warning was corrected
 in a follow-up audit to recommend supported viewing/export paths.
+
+## Data-contract review
+
+The six findings from the architecture and data-contract review are addressed:
+
+- Fastplotlib track panels consume each field's native timestamps and valid
+  intervals. Independent bounded caches retain overlapping rows without
+  painting across breaks or discarding samples on a coarser scene clock.
+- Trajectory-localized events use shared observed support, including missing
+  samples, `max_gap` and `break_before`. Events without supported tracking keep
+  their timestamps and missing locations.
+- Track projection requires Cartesian coordinates and matching declared units
+  and frames. Both unspecified declarations retain the caller's responsibility
+  for correspondence; one-sided or contradictory metadata fails explicitly.
+- Overlay preparation acquires video readers once and cleans them up
+  transactionally on failure. Requested display clocks reuse prepared data and
+  borrow the scene's readers without transferring ownership.
+- `AnimationField` metadata is frozen and independently snapshotted by a scene.
+  Copies and serialization retain read-only clocks and support; field sources
+  remain lazy and caller-owned.
+- Views consume a typed backend interface for recording time, seeking, capture
+  and cleanup. Scene preflight checks dimensions, overlay coverage, layout and
+  options before native viewer allocation. Unsupported 1-D regions and
+  fastplotlib scale bars fail explicitly; supplied napari viewers honor
+  requested title, dimensions and visibility.
+
+Regression coverage includes native GPU track support and lazy window reads,
+event locations beside gaps and exact observations, conversion failures,
+borrowed reader lifetime, frozen metadata and early capability failures.
+
+Final review validation:
+
+- Broad animation, environment integration and API suite: **1,416 passed,
+  6 skipped, 181 deselected**.
+- Metal rendering, capture, native field support and missing-event tests:
+  **82 passed**.
+- Cocoa napari tests: **140 passed**, including missing-event locations and
+  supplied-viewer options; playback/dock integration: **18 passed**.
+- NWB overlay integration and executable animation documentation: **34 passed**.
+- Ruff and formatting pass; mypy passes across all **303 source files**.

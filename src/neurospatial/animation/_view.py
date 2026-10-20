@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, contextmanager
-from dataclasses import replace
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -15,9 +14,14 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.animation.scene import Animation, AnimationField
 
-_CaptureSession = Callable[
-    [], AbstractContextManager[Callable[[float], NDArray[np.uint8]]]
-]
+from neurospatial.animation._backend_view import (
+    CaptureSession as _CaptureSession,
+)
+from neurospatial.animation._backend_view import (
+    _BackendView,
+    _CallbackBackendView,
+    _NativeBackendView,
+)
 
 
 class AnimationView:
@@ -41,12 +45,30 @@ class AnimationView:
         read_time: Callable[[], float] | None = None,
         capture_session: _CaptureSession | None = None,
     ) -> None:
+        self._initialize(
+            animation,
+            _CallbackBackendView(
+                native,
+                initial_time=float(animation.frame_times[0]),
+                seek=seek,
+                close=close,
+                read_time=read_time,
+                capture_session=capture_session,
+            ),
+        )
+
+    @classmethod
+    def _from_backend(
+        cls, animation: Animation, backend: _BackendView
+    ) -> AnimationView:
+        view = cls.__new__(cls)
+        view._initialize(animation, backend)
+        return view
+
+    def _initialize(self, animation: Animation, backend: _BackendView) -> None:
         self.animation = animation
-        self.native = native
-        self._seek_native = seek
-        self._close_native = close
-        self._read_native_time = read_time
-        self._capture_session = capture_session
+        self._backend = backend
+        self.native = backend.native
         self._closed = False
         self._time = float(animation.frame_times[0])
         self._selection = (
@@ -57,8 +79,8 @@ class AnimationView:
     @property
     def time(self) -> float:
         """The recording time currently shown by the native controls, in seconds."""
-        if not self._closed and self._read_native_time is not None:
-            self._time = float(self._read_native_time())
+        if not self._closed:
+            self._time = float(self._backend.time)
         return self._time
 
     @property
@@ -75,7 +97,7 @@ class AnimationView:
             raise ValueError(
                 f"time must be within the recording [{start:g}, {stop:g}] seconds."
             )
-        self._seek_native(time)
+        self._backend.seek(time)
         self._time = time
 
     def select_time(self, start: float, stop: float) -> AnimationView:
@@ -115,7 +137,7 @@ class AnimationView:
             "time_range",
             self._selection if self._selection[0] < self._selection[1] else None,
         )
-        if render == "scene" or self._capture_session is None:
+        if render == "scene" or self._backend.capture_session is None:
             return self.animation.export(path, **kwargs)
 
         from neurospatial.animation._export import prepare_export
@@ -131,7 +153,7 @@ class AnimationView:
             sample_times=(field.times for field in self.animation.fields.values()),
             **kwargs,
         )
-        with self._capture_session() as capture:
+        with self._backend.capture_session() as capture:
             return plan.write(capture)
 
     def close(self) -> None:
@@ -139,7 +161,7 @@ class AnimationView:
         if not self._closed:
             self._time = self.time
             self._closed = True
-            self._close_native()
+            self._backend.close()
 
     def _require_open(self) -> None:
         if self._closed:
@@ -165,7 +187,7 @@ class _FieldFrames:
 
     def __init__(self, field: AnimationField, times: NDArray[np.float64]) -> None:
         self.field, self.times = field, times
-        self.shape = (len(times), len(np.asarray(field.values[0])))
+        self.shape = (len(times), field.n_bins)
         self.ndim = 2
         self.dtype = np.dtype(np.float64)
 
@@ -295,13 +317,16 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
             finally:
                 play.playing = playing
 
-    view = AnimationView(
+    view = AnimationView._from_backend(
         animation,
-        container,
-        seek=seek,
-        close=close,
-        read_time=lambda: float(slider.value),
-        capture_session=capture_session,
+        _CallbackBackendView(
+            container,
+            initial_time=start,
+            seek=seek,
+            close=close,
+            read_time=lambda: float(slider.value),
+            capture_session=capture_session,
+        ),
     )
     container.close = view.close
     slider.observe(changed, names="value")
@@ -318,33 +343,19 @@ def show_animation(
     animation: Animation, *, backend: str = "widget", **kwargs: Any
 ) -> AnimationView:
     """Create a view after checking that all requested data can be drawn."""
+    from neurospatial.animation._capabilities import require_scene_view
+
+    require_scene_view(animation, backend, kwargs)
     if backend == "widget":
         return _notebook_view(animation, **kwargs)
     if backend == "napari":
         from neurospatial.animation.backends._napari_scene import build_napari_scene
 
         handle = build_napari_scene(animation, **kwargs)
-        return AnimationView(
-            animation,
-            handle.viewer,
-            seek=handle.seek,
-            close=handle.close,
-            read_time=lambda: handle.time,
-            capture_session=handle.capture_session,
+        return AnimationView._from_backend(
+            animation, _NativeBackendView(handle.viewer, handle)
         )
-    if backend != "fastplotlib":
-        raise ValueError("Use backend='widget', 'napari', or 'fastplotlib'.")
-    if kwargs.get("dry_run", False):
-        raise ValueError("Animation.show() creates a view; dry_run is not supported.")
-
-    from neurospatial.animation._capabilities import require_overlays
-
-    data = animation.overlay_data(own_samples=backend == "fastplotlib")
-    require_overlays(backend, data)
-    # The scene owns readers it opened; a viewer only borrows them.
-    data = replace(
-        data, videos=[replace(video, _owns_reader=False) for video in data.videos]
-    )
+    data = animation.overlay_data(own_samples=True)
     fields = list(animation.fields.values())
     first = fields[0]
     sources = {
@@ -370,6 +381,7 @@ def show_animation(
         sources,
         frame_times=animation.frame_times,
         overlay_data=data,
+        _field_streams=tuple(animation.fields.values()),
         _field_at_time=lambda time: list(animation.sample_fields(time).values()),
         _field_styles=[
             {
@@ -390,12 +402,4 @@ def show_animation(
     except Exception:
         native.close()
         raise
-    return AnimationView(
-        animation,
-        native,
-        seek=native.seek,
-        close=native.close,
-        read_time=lambda: float(animation.frame_times[0])
-        + float(native.widget.indices["time"]),
-        capture_session=native.capture_session,
-    )
+    return AnimationView._from_backend(animation, _NativeBackendView(native, native))

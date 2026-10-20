@@ -541,6 +541,7 @@ class TestEventOverlayConvertToData:
             event_times=event_times,
             positions=positions,
             position_times=position_times,
+            max_gap=None,  # This test models a continuous, coarsely sampled path.
         )
 
         frame_times = np.linspace(0.0, 10.0, 11)  # 11 frames, 0-10s
@@ -571,6 +572,7 @@ class TestEventOverlayConvertToData:
             event_times=event_times,
             positions=positions,
             position_times=position_times,
+            max_gap=None,  # This test models a continuous, coarsely sampled path.
             interp="nearest",
         )
 

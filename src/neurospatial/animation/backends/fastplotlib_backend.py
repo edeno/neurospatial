@@ -85,6 +85,7 @@ if TYPE_CHECKING:
         TimeSeriesData,
         VideoData,
     )
+    from neurospatial.animation.scene import AnimationField
     from neurospatial.environment import Environment
 
 # Matplotlib marker codes, as the other backends take them, to pygfx markers.
@@ -462,6 +463,10 @@ class _Events:
         self.data, self.frame_of = data, frame_of
         self.kinds = []
         for name, positions in data.event_positions.items():
+            # Missing tracking preserves event identity in EventData, but NaN
+            # vertices must never enter the scatter's bounds computation.
+            located = np.isfinite(positions).all(axis=1)
+            positions = positions[located]
             if len(positions) == 0:
                 continue
             fill = np.tile(_rgba(data.colors[name]), (len(positions), 1))
@@ -476,7 +481,7 @@ class _Events:
                 edge_width=data.border_width * data.size,  # a fraction of the size
                 alpha_mode="blend",
             )
-            times = data.event_times[name]
+            times = data.event_times[name][located]
             frames = _held_frames(frame_clock, times)
             self.kinds.append((times, frames, fill, border, graphic))
 
@@ -682,10 +687,11 @@ class _Room:
 class _PositionTime:
     """A track's fields over time: a column per frame, a row per bin.
 
-    A column starts at its frame's time and lasts until the next frame, as
-    the field panel holds it, or one typical frame interval across a gap
-    (see ``held_until``), which stays empty. Rows span each bin along the
-    track. Positions are drawn as lines along the track, every sample of
+    A scene field supplies its own sample clock and interval support; an
+    isolated sample has no positive-duration column. Legacy fields hold until
+    the next frame or one typical interval across a gap (``held_until``).
+    Rows span each bin along the track. Positions are drawn as lines,
+    every sample of
     their own, broken where the samples change segment of a maze or leave a
     gap in time, so no line crosses space or time that was not seen.
     """
@@ -701,11 +707,20 @@ class _PositionTime:
         positions: Sequence[tuple[PositionData, _Samples]],
         epochs: Sequence[EpochData],
         move_to: Callable[[float], None],
+        *,
+        interval_valid: NDArray[np.bool_] | None = None,
+        frame_clock: NDArray[np.float64] | None = None,
     ) -> None:
         self.subplot, self.scale, self.clock = subplot, scale, clock
+        self.frame_clock = clock if frame_clock is None else frame_clock
+        self._native_support = interval_valid is not None
         self.lower, self.upper = extents
         self.typical = _typical_interval(clock, 1.0)
         self.ends = held_until(clock, self.typical)
+        if interval_valid is not None:
+            # Exact isolated/final samples have no positive-duration cell.
+            self.ends = clock.copy()
+            self.ends[:-1] = np.where(interval_valid, clock[1:], clock[:-1])
         labels = env._plot_labels()
         self.axis = "position along track" + (
             f" ({labels.units})" if labels.units else ""
@@ -758,7 +773,11 @@ class _PositionTime:
                 self.subplot.delete_graphic(graphic)
         # Columns a window can hold: frames starting less than one hold
         # (at most _GAP times the typical interval) before it, up to its end.
-        self.n_columns = _most_within(self.clock, window + _GAP * self.typical)
+        self.n_columns = (
+            min(len(self.clock), _most_within(self.clock, window) + 1)
+            if self._native_support
+            else _most_within(self.clock, window + _GAP * self.typical)
+        )
         # Each cell's corners, counterclockwise from its start at its bin's
         # lower edge: the bins are fixed, and each frame moves the times.
         n_bins = len(self.lower)
@@ -783,7 +802,7 @@ class _PositionTime:
                     (
                         2
                         * (
-                            self.n_columns
+                            _most_within(self.frame_clock, window) + 1
                             if samples.times is None
                             else _most_within(samples.times, window)
                         ),
@@ -831,7 +850,14 @@ class _PositionTime:
             self.lines, self.positions, strict=True
         ):
             if clock.times is None:
-                shown, times, ends = frames, self.clock[frames], self.ends[frames]
+                shown = np.arange(
+                    np.searchsorted(self.frame_clock, time - half, side="left"),
+                    np.searchsorted(self.frame_clock, time + half, side="right"),
+                )[: len(line.data) // 2]
+                times = self.frame_clock[shown]
+                ends = held_until(
+                    self.frame_clock, _typical_interval(self.frame_clock, 1.0)
+                )[shown]
             else:
                 shown = np.arange(
                     np.searchsorted(clock.times, time - half, side="left"),
@@ -1349,7 +1375,7 @@ class _Frame(NamedTuple):
     frame: int
     values: list[NDArray[np.float64]]  # each field, shape (n_bins,)
     images: list[Any]  # each video's frame, or None
-    first: int  # the first frame of ``rows``
+    first: list[int]  # each track window's first native sample
     rows: list[NDArray[np.float64]]  # each field in a track's window, (n, n_bins)
 
 
@@ -1564,6 +1590,7 @@ class FastplotlibAnimation:
         track: Environment | None = None,
         _field_at_time: Callable[[float], list[NDArray[np.float64]]] | None = None,
         _field_styles: Sequence[Mapping[str, Any]] | None = None,
+        _field_streams: Sequence[AnimationField] | None = None,
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -1585,7 +1612,11 @@ class FastplotlibAnimation:
         stacks, names = _field_stacks(fields, layer_names)
         if _field_styles is not None and len(_field_styles) != len(stacks):
             raise ValueError("_field_styles must contain one style per field.")
+        if _field_streams is not None and len(_field_streams) != len(stacks):
+            raise ValueError("_field_streams must contain one stream per field.")
+        self._field_streams = _field_streams
         self._stacks = stacks
+        self._field_bins = env.n_bins
         self.n_frames = len(stacks[0])
         frame_times = np.asarray(frame_times, dtype=np.float64)
         # The widget's clock: seconds from the first frame. Every overlay is
@@ -1823,11 +1854,17 @@ class FastplotlibAnimation:
                     track_env,
                     extents_along_track,
                     track_scales[i],
-                    self._clock,
+                    self._clock
+                    if _field_streams is None
+                    else _field_streams[i].times - self._start,
                     window_seconds,
                     positions,
                     epochs,
                     self._move_to,
+                    interval_valid=None
+                    if _field_streams is None
+                    else _field_streams[i].interval_valid,
+                    frame_clock=self._clock,
                 )
                 if several:
                     self.figure[name].title = f"{label}: {panel.axis}"
@@ -1894,7 +1931,9 @@ class FastplotlibAnimation:
             frame_view(plot, env)
         self._canvas: Any = None
         self._step = step
-        self._last_window: tuple[slice, list[NDArray[np.float64]]] = (slice(0, 0), [])
+        self._last_windows: list[tuple[slice, NDArray[np.float64]]] = [
+            (slice(0, 0), np.empty((0, len(panel.lower)))) for panel in self._tracks
+        ]
         self.window_seconds = window_seconds
         # The panels drawn against time, each titled with the window it shows.
         self._time_titles = {
@@ -2009,42 +2048,47 @@ class FastplotlibAnimation:
         images = [
             video.data.get_frame(video.clock.nearest(time)) for video in self._videos
         ]
-        if not self._tracks:
-            return _Frame(frame, values, images, 0, [])
-        window = self._tracks[0].frames_at(time)
-        return _Frame(frame, values, images, window.start, self._window_rows(window))
+        windows = [panel.frames_at(time) for panel in self._tracks]
+        return _Frame(
+            frame,
+            values,
+            images,
+            [window.start for window in windows],
+            [self._window_rows(window, k) for k, window in enumerate(windows)],
+        )
 
-    def _window_rows(self, window: slice) -> list[NDArray[np.float64]]:
-        """Each field along the track over ``window``'s frames.
-
-        The rows of the last window read are reused where the two overlap,
-        so a step reads and projects only the frames that came into view.
-        """
-        last, last_rows = self._last_window
+    def _window_rows(self, window: slice, index: int) -> NDArray[np.float64]:
+        """Read one field's native window, reusing overlapping projected rows."""
+        last, last_rows = self._last_windows[index]
         keep = range(max(window.start, last.start), min(window.stop, last.stop))
-        if not keep:  # nothing to reuse: read it all
+        if not keep:
             keep = range(window.stop, window.stop)
         parts = (slice(window.start, keep.start), slice(keep.stop, window.stop))
-        rows = []
-        for k, stack in enumerate(self._stacks):
-            head, tail = (
-                self._along_track(np.asarray(stack[part], dtype=np.float64))
-                for part in parts
+        stack = (
+            self._stacks[index]
+            if self._field_streams is None
+            else self._field_streams[index]
+        )
+        n_bins = self._field_bins
+        head, tail = (
+            self._along_track(
+                np.asarray(stack[part], dtype=np.float64).reshape(-1, n_bins)
             )
-            kept = (
-                (last_rows[k][keep.start - last.start : keep.stop - last.start],)
-                if keep
-                else ()
-            )
-            rows.append(np.concatenate([head, *kept, tail]))
-        # One assignment, so a read on the worker thread never sees half.
-        self._last_window = (window, rows)
+            for part in parts
+        )
+        kept = (
+            (last_rows[keep.start - last.start : keep.stop - last.start],)
+            if keep
+            else ()
+        )
+        rows: NDArray[np.float64] = np.concatenate([head, *kept, tail])
+        self._last_windows[index] = (window, rows)
         return rows
 
     def _show(self, time: float, data: _Frame) -> None:
         frame, images = data.frame, data.images
-        for track, rows in zip(self._tracks, data.rows, strict=False):
-            track.show(time, data.first, rows)
+        for track, first, rows in zip(self._tracks, data.first, data.rows, strict=True):
+            track.show(time, first, rows)
         for raster in self._rasters:
             raster.view.follow(time)
         # No field graphics on a 1-D environment.
@@ -2074,6 +2118,11 @@ class FastplotlibAnimation:
             if index >= 0 and time < data.intervals[index, 1]:
                 names.append(f"{data.label} {index + 1} of {len(data.intervals)}")
         return names
+
+    @property
+    def time(self) -> float:
+        """Current absolute recording time, in seconds."""
+        return float(self.widget.indices["time"]) + self._start
 
     @property
     def frame(self) -> int:
@@ -2193,6 +2242,10 @@ class FastplotlibAnimation:
             if graphic is not self._frames:
                 graphic.slicer.close()
         self.figure.renderer.remove_event_handler(self._key, "key_down")
+        # fastplotlib assigns its output only when shown, but a newly
+        # constructed viewer already owns a canvas that must be closed.
+        if hasattr(self.figure, "_output") and self.figure._output is None:
+            self.figure._output = self.figure.canvas
         self.widget.close()
         if self._canvas is not None:
             if self._canvas is not getattr(self.figure, "_output", None):

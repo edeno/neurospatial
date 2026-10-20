@@ -36,3 +36,25 @@ def units_per_centimeter(units: str | None) -> float | None:
     """
     centimeters = _CENTIMETERS_PER_UNIT.get(str(units or "").lower().strip())
     return None if centimeters is None else 1.0 / centimeters
+
+
+def normalize_position_units(units: str) -> str:
+    """Canonical spelling for matching spatial metadata, without conversion."""
+    aliases = {
+        "meter": "m",
+        "meters": "m",
+        "metre": "m",
+        "metres": "m",
+        "centimeter": "cm",
+        "centimeters": "cm",
+        "centimetre": "cm",
+        "centimetres": "cm",
+        "millimeter": "mm",
+        "millimeters": "mm",
+        "millimetre": "mm",
+        "millimetres": "mm",
+        "pixel": "px",
+        "pixels": "px",
+    }
+    value = units.strip().lower()
+    return aliases.get(value, value)

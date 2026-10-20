@@ -1123,7 +1123,10 @@ def test_a_2d_posterior_is_drawn_along_a_track_of_the_maze(track):
     rng = np.random.default_rng(0)
     along = track.linear_to_nd(rng.uniform(0, 70, 3000))
     plane = Environment.from_samples(
-        along + rng.normal(0, 1, along.shape), bin_size=5.0
+        along + rng.normal(0, 1, along.shape),
+        bin_size=5.0,
+        units=track.units,
+        frame=track.frame,
     )
     times = np.arange(20) * 0.1
     hot = rng.integers(0, plane.n_bins, len(times))
@@ -1153,7 +1156,10 @@ def test_a_2d_posterior_is_drawn_along_a_track_of_the_maze(track):
         )
     # A track finer than the 2-D bins leaves bins without probability.
     fine = Environment.linear_track(
-        node_positions=[[0.0, 0.0], [30.0, 0.0], [30.0, 30.0]], bin_size=1.0
+        node_positions=[[0.0, 0.0], [30.0, 0.0], [30.0, 30.0]],
+        bin_size=1.0,
+        units=track.units,
+        frame=track.frame,
     )
     with pytest.warns(UserWarning, match="bin_size of at least the 2-D bins'"):
         plane.animate_fields(
@@ -1185,7 +1191,10 @@ def test_side_by_side_posteriors_share_the_tracks_color_limits(track):
     rng = np.random.default_rng(0)
     along = track.linear_to_nd(rng.uniform(0, 70, 3000))
     plane = Environment.from_samples(
-        along + rng.normal(0, 1, along.shape), bin_size=10.0
+        along + rng.normal(0, 1, along.shape),
+        bin_size=10.0,
+        units=track.units,
+        frame=track.frame,
     )
     times = np.arange(30) * 0.1
     diffuse = np.full((30, plane.n_bins), 1.0 / plane.n_bins)
@@ -1207,7 +1216,10 @@ def test_a_tracks_window_reuses_rows_read_for_the_last_one(track):
     rng = np.random.default_rng(1)
     along = track.linear_to_nd(rng.uniform(0, 70, 3000))
     plane = Environment.from_samples(
-        along + rng.normal(0, 1, along.shape), bin_size=10.0
+        along + rng.normal(0, 1, along.shape),
+        bin_size=10.0,
+        units=track.units,
+        frame=track.frame,
     )
     fields = rng.random((300, plane.n_bins))
     animation = plane.animate_fields(

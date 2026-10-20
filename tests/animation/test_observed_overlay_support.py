@@ -211,6 +211,9 @@ def test_file_video_processing_uses_actual_resized_dimensions(env, monkeypatch):
             assert kwargs["crop"] == (2, 1, 7, 7)
             assert kwargs["downsample"] == 2
 
+        def close(self):
+            pass
+
     monkeypatch.setattr(_video_io, "_VideoReader", Reader)
     calibration = VideoCalibration(Affine2D(np.eye(3)), (11, 9))
     data = VideoOverlay(

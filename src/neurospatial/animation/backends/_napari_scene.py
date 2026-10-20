@@ -241,6 +241,11 @@ class NapariScene:
         self._updates: list[Any] = []
         self.field_layers: dict[str, Any] = {}
         try:
+            if not self._owns_viewer:
+                if "title" in options:
+                    self.viewer.title = options["title"]
+                if "ndisplay" in options:
+                    self.viewer.dims.ndisplay = options["ndisplay"]
             self._build_fields()
             self._build_overlays()
             if scene.scale_bar:
@@ -319,6 +324,8 @@ class NapariScene:
 
             self._lifecycle = WindowLifecycle(window)
             window.installEventFilter(self._lifecycle)
+            if not self._owns_viewer and "show" in options:
+                window.setVisible(options["show"])
         except BaseException:
             self.close()
             raise
