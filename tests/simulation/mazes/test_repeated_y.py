@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestMakeRepeatedYMaze:
@@ -31,19 +32,45 @@ class TestMakeRepeatedYMaze:
         maze = make_repeated_y_maze()
         assert maze.env_2d.units == "cm"
 
-    def test_env_2d_has_start_region(self):
-        """env_2d should have a 'start' region."""
+    def test_entrance_and_food_boxes_are_landmarks(self):
+        """The entrance and food boxes are landmarks on point regions."""
         from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
 
-        maze = make_repeated_y_maze()
-        assert "start" in maze.env_2d.regions
+        env = make_repeated_y_maze().env_2d
+        roles = {name: lm.metadata["role"] for name, lm in env.landmarks.items()}
+        assert roles == {"entrance_box": "start_box", "food_box": "goal_box"}
+        for name in roles:
+            # Box sizes are not published, so each region is a point.
+            assert env.regions[name].kind == "point"
+            np.testing.assert_allclose(env.landmarks[name].data, env.regions[name].data)
+            assert len(env.bins_in_region(name)) > 0
 
-    def test_env_2d_has_goal_region(self):
-        """env_2d should have a 'goal' region at final endpoint."""
-        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
+    def test_boxes_end_the_first_and_last_arms(self):
+        """The entrance box feeds junction 1; the last junction leads to food."""
+        from neurospatial.simulation.mazes.repeated_y import (
+            RepeatedYDims,
+            make_repeated_y_maze,
+        )
 
-        maze = make_repeated_y_maze()
-        assert "goal" in maze.env_2d.regions
+        dims = RepeatedYDims()
+        maze = make_repeated_y_maze(dims)
+        regions = maze.env_2d.regions
+        graph = maze.env_track._binning.linearization.graph
+        for box, junction in (
+            ("entrance_box", "junction_1"),
+            ("food_box", f"junction_{dims.n_junctions}"),
+        ):
+            assert list(graph.neighbors(box)) == [junction]
+            np.testing.assert_allclose(graph.nodes[box]["pos"], regions[box].data)
+            arm = np.subtract(regions[box].data, regions[junction].data)
+            assert np.linalg.norm(arm) == pytest.approx(dims.arm_length)
+        # The food box lies beyond the last junction, the entrance before the
+        # first.
+        assert regions["entrance_box"].data[0] < regions["junction_1"].data[0]
+        assert (
+            regions["food_box"].data[0]
+            > regions[f"junction_{dims.n_junctions}"].data[0]
+        )
 
     def test_env_2d_has_junction_regions(self):
         """env_2d should have junction regions for each Y-junction."""

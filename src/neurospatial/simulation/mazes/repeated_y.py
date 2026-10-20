@@ -18,8 +18,18 @@ corridor width is an estimate, the alley width typical of rat mazes of the
 period (e.g. Small 1901; Tolman & Nyswander 1927), and the arm lengths are
 placeholders. The origin is the centre of the maze's bounding box.
 
+The rat enters from an entrance box and runs to a food box. Warden's 1929
+papers were not available to check (UNVERIFIED); Warden (1931, pp. 458-462)
+describes the Warner-Warden unit maze with an "entrance compartment" and a
+"food box", separated from the maze by doors, and "whole-wheat bread and milk"
+as food, but gives neither box's size. The two boxes are therefore landmarks
+with point regions at the ends of the first and last arms.
+
 References
 ----------
+Warden, C. J. (1931). Animal Motivation: Experimental Studies on the Albino
+Rat. Columbia University Press. Appendix, pp. 458-462.
+
 Warden, C. J. (1929). A standard unit animal maze for general laboratory use.
 Pedagogical Seminary and Journal of Genetic Psychology, 36(1), 174-176.
 
@@ -42,8 +52,8 @@ Examples
 'cm'
 >>> "junction_1" in maze.env_2d.regions
 True
->>> "goal" in maze.env_2d.regions
-True
+>>> {name: lm.metadata["role"] for name, lm in maze.env_2d.landmarks.items()}
+{'entrance_box': 'start_box', 'food_box': 'goal_box'}
 """
 
 from __future__ import annotations
@@ -55,6 +65,7 @@ import numpy as np
 from shapely.affinity import translate
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_buffered_line, union_polygons
@@ -142,14 +153,19 @@ def make_repeated_y_maze(
     - Junctions connected diagonally creating zigzag backbone
     - Each junction has a terminal arm ending in a small Y-fork
 
-    Regions:
-    - start: Entry point at first junction's stem
+    Landmarks, each with a point region of the same name (box sizes are
+    not published):
+    - entrance_box: the end of the first junction's stem (role
+      ``"start_box"``)
+    - food_box: the end of the last junction's exit arm (role
+      ``"goal_box"``)
+
+    Other regions:
     - junction_1, junction_2, ...: Points at each Y-junction vertex
     - arm_i_fork_left, arm_i_fork_right: Endpoints of fork at each terminal
-    - goal: Exit point at last junction's stem
 
     Track Graph Topology:
-    - start -> junction_1 -> junction_2 -> ... -> junction_N -> goal
+    - entrance_box -> junction_1 -> ... -> junction_N -> food_box
     - Each junction has a terminal branch with forked endpoints
 
     Examples
@@ -266,16 +282,16 @@ def make_repeated_y_maze(
         regions[f"arm_{junction_idx + 1}_fork_left"] = fork_left_end.copy()
         regions[f"arm_{junction_idx + 1}_fork_right"] = fork_right_end.copy()
 
-        # For first junction, arm 1 (210° for up-Y) is the start
+        # For first junction, arm 1 (210° for up-Y) leads from the entrance
         if junction_idx == 0:
-            regions["start"] = arm_ends[1].copy()
+            regions["entrance_box"] = arm_ends[1].copy()
 
-        # For last junction, the forward arm is the goal
+        # For last junction, the forward arm leads to the food box
         if junction_idx == dims.n_junctions - 1:
             if is_up:
-                regions["goal"] = arm_ends[2].copy()  # 330° arm
+                regions["food_box"] = arm_ends[2].copy()  # 330° arm
             else:
-                regions["goal"] = arm_ends[1].copy()  # 30° arm
+                regions["food_box"] = arm_ends[1].copy()  # 30° arm
 
         # Store junction center position
         regions[f"junction_{junction_idx + 1}"] = junction_pos.copy()
@@ -299,7 +315,11 @@ def make_repeated_y_maze(
     region_builder = Regions()
     for region_name, region_pos in regions.items():
         region_builder.add(region_name, point=tuple(region_pos - offset))
-    env_2d = env_2d.with_regions(region_builder)
+    landmarks = Landmarks(
+        Landmark(name, "point", regions[name] - offset, {"role": role})
+        for name, role in (("entrance_box", "start_box"), ("food_box", "goal_box"))
+    )
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(landmarks)
 
     # Create track graph if requested
     env_track = None
@@ -389,15 +409,15 @@ def _create_repeated_y_track_graph(
         graph.add_edge(terminal_tip_name, fork_left_name, distance=dims.fork_length)
         graph.add_edge(terminal_tip_name, fork_right_name, distance=dims.fork_length)
 
-    # Add start and goal nodes
+    # Add the entrance box and food box nodes
     first_pos = junction_positions[0]
     start_angle = up_angles[1]  # 210° for first (up) junction
     start_pos = (
         first_pos[0] + dims.arm_length * np.cos(start_angle),
         first_pos[1] + dims.arm_length * np.sin(start_angle),
     )
-    graph.add_node("start", pos=start_pos)
-    graph.add_edge("start", "junction_1", distance=dims.arm_length)
+    graph.add_node("entrance_box", pos=start_pos)
+    graph.add_edge("entrance_box", "junction_1", distance=dims.arm_length)
 
     last_pos = junction_positions[-1]
     is_last_up = (dims.n_junctions - 1) % 2 == 0
@@ -406,8 +426,8 @@ def _create_repeated_y_track_graph(
         last_pos[0] + dims.arm_length * np.cos(goal_angle),
         last_pos[1] + dims.arm_length * np.sin(goal_angle),
     )
-    graph.add_node("goal", pos=goal_pos)
-    graph.add_edge(f"junction_{dims.n_junctions}", "goal", distance=dims.arm_length)
+    graph.add_node("food_box", pos=goal_pos)
+    graph.add_edge(f"junction_{dims.n_junctions}", "food_box", distance=dims.arm_length)
 
     # Connect consecutive junctions
     for i in range(dims.n_junctions - 1):
@@ -423,11 +443,11 @@ def _create_repeated_y_track_graph(
     # Define edge order for linearization
     edge_order = []
 
-    # Main path: start -> junctions -> goal
-    edge_order.append(("start", "junction_1"))
+    # Main path: entrance box -> junctions -> food box
+    edge_order.append(("entrance_box", "junction_1"))
     for i in range(1, dims.n_junctions):
         edge_order.append((f"junction_{i}", f"junction_{i + 1}"))
-    edge_order.append((f"junction_{dims.n_junctions}", "goal"))
+    edge_order.append((f"junction_{dims.n_junctions}", "food_box"))
 
     # Terminal arms with forks
     for i in range(1, dims.n_junctions + 1):
