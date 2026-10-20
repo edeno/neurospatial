@@ -10,7 +10,26 @@ diagonally.
 This maze is used to study sequential decision-making, working memory across
 multiple choice points, and the ability to learn complex spatial strategies.
 
-Reference: Based on classic alternation maze designs
+The design follows Warden's (1929) repeated Y-mazes (the Warner-Warden maze),
+built from modular units whose dead ends first split into two short corridors,
+so an animal cannot see that a corridor ends before entering it (Wijnen et
+al., 2024). Warden's dimensions are not reproduced here: the 10.16 cm (4 in)
+corridor width is an estimate, the alley width typical of rat mazes of the
+period (e.g. Small 1901; Tolman & Nyswander 1927), and the arm lengths are
+placeholders. The origin is the centre of the maze's bounding box.
+
+References
+----------
+Warden, C. J. (1929). A standard unit animal maze for general laboratory use.
+Pedagogical Seminary and Journal of Genetic Psychology, 36(1), 174-176.
+
+Warden, C. J. (1929). A symmetrical linear maze for use in the analysis of
+animal serial learning. Pedagogical Seminary and Journal of Genetic
+Psychology, 36(1), 177-178.
+
+Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
+following simple rules to complex map learning. Brain Structure and Function,
+229, 823. https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------
@@ -33,6 +52,7 @@ from dataclasses import dataclass
 
 import networkx as nx
 import numpy as np
+from shapely.affinity import translate
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
@@ -58,7 +78,8 @@ class RepeatedYDims(MazeDims):
     fork_length : float
         Length of the small fork arms at each terminal in cm. Default is 12.0.
     width : float
-        Width of all corridors in cm. Default is 8.0.
+        Width of all corridors in cm. Default is 10.16 (4 in; an estimate,
+        since Warden's alley width is not reproduced here).
 
     Examples
     --------
@@ -70,7 +91,7 @@ class RepeatedYDims(MazeDims):
     >>> dims.fork_length
     12.0
     >>> dims.width
-    8.0
+    10.16
 
     >>> custom = RepeatedYDims(n_junctions=6, arm_length=30.0, width=10.0)
     >>> custom.n_junctions
@@ -80,7 +101,7 @@ class RepeatedYDims(MazeDims):
     n_junctions: int = 4
     arm_length: float = 25.0
     fork_length: float = 12.0
-    width: float = 8.0
+    width: float = 10.16
 
 
 def make_repeated_y_maze(
@@ -98,7 +119,7 @@ def make_repeated_y_maze(
     ----------
     dims : RepeatedYDims, optional
         Maze dimensions. If None, uses default dimensions
-        (4 junctions, 25 cm arms, 8 cm width).
+        (4 junctions, 25 cm arms, 10.16 cm width).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
@@ -259,8 +280,11 @@ def make_repeated_y_maze(
         # Store junction center position
         regions[f"junction_{junction_idx + 1}"] = junction_pos.copy()
 
-    # Union all corridors into single polygon
+    # Union all corridors and put the origin at the centre of the bounding box
     maze_polygon = union_polygons(polygons)
+    min_x, min_y, max_x, max_y = maze_polygon.bounds
+    offset = np.array([(min_x + max_x) / 2.0, (min_y + max_y) / 2.0])
+    maze_polygon = translate(maze_polygon, -offset[0], -offset[1])
 
     # Create 2D environment
     env_2d = Environment.from_polygon(
@@ -274,13 +298,13 @@ def make_repeated_y_maze(
     # Add regions
     region_builder = Regions()
     for region_name, region_pos in regions.items():
-        region_builder.add(region_name, point=tuple(region_pos))
+        region_builder.add(region_name, point=tuple(region_pos - offset))
     env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
     env_track = None
     if include_track:
-        env_track = _create_repeated_y_track_graph(dims, bin_size)
+        env_track = _create_repeated_y_track_graph(dims, bin_size, offset)
 
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
@@ -288,6 +312,7 @@ def make_repeated_y_maze(
 def _create_repeated_y_track_graph(
     dims: RepeatedYDims,
     bin_size: float,
+    offset: np.ndarray,
 ) -> Environment:
     """Create the 1D linearized track graph for Repeated Y-Maze.
 
@@ -300,6 +325,9 @@ def _create_repeated_y_track_graph(
         Maze dimensions.
     bin_size : float
         Spatial bin size in cm.
+    offset : np.ndarray, shape (2,)
+        Position subtracted from every node, in cm, so the track shares the
+        2-D maze's origin.
 
     Returns
     -------
@@ -387,6 +415,10 @@ def _create_repeated_y_track_graph(
         pos2 = np.array(junction_positions[i + 1])
         distance = float(np.linalg.norm(pos2 - pos1))
         graph.add_edge(f"junction_{i + 1}", f"junction_{i + 2}", distance=distance)
+
+    for node in graph.nodes:
+        x, y = np.subtract(graph.nodes[node]["pos"], offset)
+        graph.nodes[node]["pos"] = (float(x), float(y))
 
     # Define edge order for linearization
     edge_order = []

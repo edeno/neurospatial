@@ -215,6 +215,30 @@ class TestMakeRepeatedYMaze:
         # Both should have similar number of bins
         assert maze_default.env_2d.n_bins == maze_explicit.env_2d.n_bins
 
+    def test_corridors_are_4_inches_wide(self):
+        """Corridors default to the 4-in alley width of period rat mazes."""
+        from shapely.geometry import Point
+
+        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
+
+        maze = make_repeated_y_maze()
+        floor = maze.env_2d.arena.polygonal_domain()
+        widths = [
+            2.0 * floor.boundary.distance(Point((start + end) / 2))
+            for start, end in np.asarray(maze.env_track.arena.segments)
+        ]
+        np.testing.assert_allclose(widths, 4 * 2.54)
+
+    def test_origin_is_the_maze_centre(self):
+        """The 2-D floor and the track share an origin at the maze centre."""
+        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
+
+        maze = make_repeated_y_maze()
+        min_x, min_y, max_x, max_y = maze.env_2d.arena.polygonal_domain().bounds
+        np.testing.assert_allclose([min_x + max_x, min_y + max_y], 0.0, atol=1e-9)
+        track_points = np.asarray(maze.env_track.arena.segments).reshape(-1, 2)
+        assert np.abs(track_points.mean(axis=0)).max() < 25.0
+
 
 class TestRepeatedYTrackGraph:
     """Tests for the track graph structure of Repeated Y-Maze."""
