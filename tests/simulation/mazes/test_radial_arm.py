@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestMakeRadialArmMaze:
@@ -119,6 +120,65 @@ class TestMakeRadialArmMaze:
             angle = angle % (2 * np.pi)
             expected_angle = expected_angle % (2 * np.pi)
             assert np.isclose(angle, expected_angle, atol=0.1)
+
+    def test_default_is_the_published_eight_arm_rat_maze(self):
+        """Zoladek & Roberts (1978): 35.5 cm platform, 8 arms of 76 x 9 cm."""
+        from shapely.geometry import LineString
+
+        from neurospatial.simulation.mazes.radial_arm import (
+            RadialArmDims,
+            make_radial_arm_maze,
+        )
+
+        dims = RadialArmDims()
+        assert 2 * dims.center_radius == 35.5
+        assert (dims.arm_length, dims.arm_width, dims.n_arms) == (76.0, 9.0, 8)
+
+        polygon = make_radial_arm_maze(include_track=False).env_2d.arena.polygon
+        reach = dims.center_radius + dims.arm_length
+        # Arm 0 points along +x: it ends 17.75 + 76 cm out and is 9 cm wide
+        # halfway along.
+        assert polygon.bounds[2] == pytest.approx(reach)
+        middle = dims.center_radius + dims.arm_length / 2
+        section = polygon.intersection(LineString([(middle, -20.0), (middle, 20.0)]))
+        assert section.length == pytest.approx(dims.arm_width)
+
+    def test_arm_regions_sit_inside_their_arm_ends(self):
+        """Each arm region is half an arm width from the end and side walls."""
+        from shapely.geometry import Point
+
+        from neurospatial.simulation.mazes.radial_arm import (
+            RadialArmDims,
+            make_radial_arm_maze,
+        )
+
+        dims = RadialArmDims()
+        env = make_radial_arm_maze(dims=dims, include_track=False).env_2d
+        polygon = env.arena.polygon
+        for i in range(dims.n_arms):
+            point = Point(env.regions[f"arm_{i}"].data)
+            assert polygon.contains(point)
+            assert polygon.boundary.distance(point) == pytest.approx(dims.arm_width / 2)
+
+    def test_track_arm_ends_agree_with_the_arm_regions(self):
+        """Track leaves are the arm ends; arm regions keep their 2-D places."""
+        from neurospatial.simulation.mazes.radial_arm import (
+            RadialArmDims,
+            make_radial_arm_maze,
+        )
+
+        dims = RadialArmDims()
+        maze = make_radial_arm_maze(dims=dims, bin_size=1.0)
+        track = maze.env_track
+        graph = track.connectivity
+        leaves = [n for n in graph.nodes if graph.degree(n) == 1]
+        assert len(leaves) == dims.n_arms
+        reach = dims.center_radius + dims.arm_length
+        np.testing.assert_allclose(
+            np.linalg.norm(track.bin_centers[leaves], axis=1), reach, atol=1.0
+        )
+        for name, region in maze.env_2d.regions.items():
+            np.testing.assert_allclose(track.regions[name].data, region.data, atol=1e-9)
 
     def test_arms_at_equal_angular_spacing(self):
         """Arms should be equally spaced around the center."""

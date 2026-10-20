@@ -5,8 +5,15 @@ typically used for spatial memory and foraging tasks. Animals can visit each arm
 to retrieve rewards, making it ideal for studying spatial working memory and
 reference memory.
 
-Reference: Olton and Samuelson (1976) - "Remembrance of places passed:
-Spatial memory in rats"
+The task was introduced by Olton & Samuelson (1976), "Remembrance of places
+passed: Spatial memory in rats", J Exp Psychol Anim Behav Process 2:97-116,
+doi:10.1037/0097-7403.2.2.97. Their apparatus dimensions could not be
+verified, so the defaults follow the eight-arm rat maze of Zoladek & Roberts
+(1978), "The sensory basis of spatial memory in the rat", Anim Learn Behav
+6:77-81, doi:10.3758/BF03212006: "an elevated, eight-arm radial maze
+consisting of a circular central platform, 35.5 cm in diameter, and eight
+identical arms, each 76 cm long x 9 cm wide", with a food cup "fixed to its
+extreme peripheral end".
 
 The standard configuration has 8 arms (for rats), though 6 arms are common
 for mice. Each arm can be independently baited, allowing researchers to test
@@ -31,6 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import networkx as nx
 import numpy as np
 
 from neurospatial.environment import Environment
@@ -40,7 +48,6 @@ from neurospatial.simulation.mazes._geometry import (
     corridor_end_point,
     make_circular_arena,
     make_corridor_polygon,
-    make_star_graph,
     union_polygons,
 )
 
@@ -51,17 +58,20 @@ class RadialArmDims(MazeDims):
 
     The Radial Arm Maze consists of a central circular platform with arms
     radiating outward at equal angular spacing. Standard configurations use
-    8 arms for rats and 6 arms for mice.
+    8 arms for rats and 6 arms for mice. The defaults are the rat maze of
+    Zoladek & Roberts (1978), doi:10.3758/BF03212006: a 35.5 cm central
+    platform and eight arms 76 cm long and 9 cm wide.
 
     Attributes
     ----------
     center_radius : float
-        Radius of the central platform in cm. Default is 15.0.
+        Radius of the central platform in cm. Default is 17.75 (35.5 cm
+        diameter).
     arm_length : float
-        Length of each arm from the edge of the center to the end in cm.
-        Default is 50.0.
+        Length of each arm from the edge of the central platform to the arm's
+        far end in cm. Default is 76.0.
     arm_width : float
-        Width of each arm corridor in cm. Default is 10.0.
+        Width of each arm corridor in cm. Default is 9.0.
     n_arms : int
         Number of arms radiating from the center. Default is 8 (standard
         for rats; use 6 for mice).
@@ -69,12 +79,12 @@ class RadialArmDims(MazeDims):
     Examples
     --------
     >>> dims = RadialArmDims()
-    >>> dims.center_radius
-    15.0
+    >>> dims.center_radius * 2  # central platform diameter, cm
+    35.5
     >>> dims.arm_length
-    50.0
+    76.0
     >>> dims.arm_width
-    10.0
+    9.0
     >>> dims.n_arms
     8
 
@@ -85,9 +95,9 @@ class RadialArmDims(MazeDims):
     6
     """
 
-    center_radius: float = 15.0
-    arm_length: float = 50.0
-    arm_width: float = 10.0
+    center_radius: float = 17.75
+    arm_length: float = 76.0
+    arm_width: float = 9.0
     n_arms: int = 8
 
 
@@ -106,8 +116,8 @@ def make_radial_arm_maze(
     Parameters
     ----------
     dims : RadialArmDims, optional
-        Maze dimensions. If None, uses default dimensions
-        (15 cm center radius, 50 cm arms, 10 cm width, 8 arms).
+        Maze dimensions. If None, uses the Zoladek & Roberts (1978) rat maze
+        (35.5 cm central platform, 8 arms 76 cm long and 9 cm wide).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
@@ -130,14 +140,16 @@ def make_radial_arm_maze(
     - Arm i is at angle: 2π * i / n_arms (starting from positive x-axis)
 
     Regions:
+
     - center: Point at origin (0, 0)
-    - arm_0, arm_1, ..., arm_{n-1}: Points at each arm endpoint
+    - arm_0, arm_1, ..., arm_{n-1}: Points centred in the end square of each
+      arm, half an arm width back from its far end, where the food cup is.
 
     Track Graph Topology:
-    - Star graph with center node connected to each arm endpoint
-    - center -> arm_0_end: Edge along arm 0
-    - center -> arm_1_end: Edge along arm 1
-    - ... (and so on for all arms)
+
+    - Star graph with a ``center`` node joined to one end node per arm, each
+      named like the arm's region (``arm_0``, ``arm_1``, ...) and placed at
+      the arm's far end.
 
     Examples
     --------
@@ -242,7 +254,8 @@ def _create_radial_arm_track_graph(
 
     The track graph represents the radial arm maze topology as a star graph:
     - center node at the origin
-    - n_arms edge extending from center to each arm endpoint
+    - one edge from the center to each arm's far end, whose node is named
+      like the arm's region (``arm_i``)
 
     Parameters
     ----------
@@ -256,25 +269,18 @@ def _create_radial_arm_track_graph(
     Environment
         1D linearized environment representing the radial arm track.
     """
-    # Calculate arm endpoints
-    arm_endpoints = []
-    for i in range(dims.n_arms):
-        angle = 2 * np.pi * i / dims.n_arms
-        end_x = (dims.center_radius + dims.arm_length) * np.cos(angle)
-        end_y = (dims.center_radius + dims.arm_length) * np.sin(angle)
-        arm_endpoints.append((end_x, end_y))
-
-    # Create star graph using geometry helper
-    graph = make_star_graph(
-        center=(0.0, 0.0),
-        arm_endpoints=arm_endpoints,
-    )
-
-    # Build edge order for linearization
-    # Start from center, visit each arm in sequence
+    # One edge from the centre to each arm's far end; end nodes share the
+    # arm regions' names
+    reach = dims.center_radius + dims.arm_length
+    graph = nx.Graph()
+    graph.add_node("center", pos=(0.0, 0.0))
     edge_order = []
     for i in range(dims.n_arms):
-        edge_order.append(("center", f"arm_{i}_end"))
+        angle = 2 * np.pi * i / dims.n_arms
+        end_pos = (float(reach * np.cos(angle)), float(reach * np.sin(angle)))
+        graph.add_node(f"arm_{i}", pos=end_pos)
+        graph.add_edge("center", f"arm_{i}", distance=reach)
+        edge_order.append(("center", f"arm_{i}"))
 
     # Create the 1D environment
     env_track = Environment.from_graph(
