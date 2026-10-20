@@ -2,7 +2,13 @@
 
 **Created**: 2026-10-14
 **Committed**: 2026-10-14
-**Status**: Accepted scope; implementation not started
+**Status**: Accepted scope; partially implemented. Delivered so far: area 1
+(#112, #114, #120), area 5 except interval states (#118), and area 6
+same-environment comparisons (#119). Area 2 is partly covered by environment
+stages A–E (#67–#76). Areas 3 and 4 have not started. Extending `break_before`
+to the remaining consumers is in progress on `refactor/api-consistency`. See
+[TASKS.md](TASKS.md) for per-item evidence.
+**Status reviewed**: 2026-10-20
 
 Enable scientists to analyze continuous exploration, repeated routes, experience,
 and changing experimental conditions, then connect those measurements to neural
