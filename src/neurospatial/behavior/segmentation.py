@@ -848,8 +848,8 @@ def _detect_runs_between_regions_contiguous(
 def segment_by_velocity(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    min_speed: float,
     *,
+    min_speed: float,
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = DEFAULT_SPEED_SMOOTHING,

@@ -34,8 +34,8 @@ __all__ = [
 
 def region_reward_field(
     env: Environment,
-    region_name: str,
     *,
+    region_name: str,
     reward_value: float = 1.0,
     decay: Literal["constant", "linear", "gaussian"] = "constant",
     bandwidth: float | None = None,
@@ -111,10 +111,10 @@ def region_reward_field(
     >>> _ = regions.add("goal", polygon=goal_polygon)
     >>> env = env.with_regions(regions)
     >>> # Binary reward (sparse RL)
-    >>> reward_binary = region_reward_field(env, "goal", decay="constant")
+    >>> reward_binary = region_reward_field(env, region_name="goal", decay="constant")
     >>> # Smooth Gaussian reward shaping
     >>> reward_smooth = region_reward_field(
-    ...     env, "goal", decay="gaussian", bandwidth=10.0
+    ...     env, region_name="goal", decay="gaussian", bandwidth=10.0
     ... )
 
     See Also

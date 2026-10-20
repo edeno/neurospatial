@@ -402,8 +402,8 @@ def extract_pre_decision_window(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     entry_time: float,
-    window_duration: float,
     *,
+    window_duration: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -484,7 +484,7 @@ def extract_pre_decision_window(
 
     >>> break_before = times == 3.0
     >>> extract_pre_decision_window(
-    ...     times, positions, 4.0, 2.0, break_before=break_before
+    ...     times, positions, 4.0, window_duration=2.0, break_before=break_before
     ... )[0].tolist()
     [3.0, 3.5]
     """
@@ -779,8 +779,8 @@ def compute_pre_decision_metrics(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     entry_time: float,
-    window_duration: float,
     *,
+    window_duration: float,
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
