@@ -139,6 +139,12 @@ class TestRegions:
             assert len(maze.env_2d.bins_in_region(f"platform_{i}")) > 0
             assert platform.area == pytest.approx(1.5 * np.sqrt(3) * 11.5**2)
 
+    def test_no_apparatus_landmarks(self, maze):
+        # Wood et al. (2018) fix no goal, start, reward port or cue on the
+        # apparatus: the schedule chooses the goal and start platforms.
+        assert len(maze.env_2d.landmarks) == 0
+        assert len(maze.env_track.landmarks) == 0
+
 
 class TestEnvironments:
     def test_returns_maze_environments(self, maze):

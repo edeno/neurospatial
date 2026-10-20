@@ -22,6 +22,20 @@ The maze has:
 - 18 platforms in ring 3
 Total: 37 platforms with hexagonal 6-connectivity
 
+The maze has no landmarks, because Wood et al. (2018) fix nothing on it
+beyond the platforms themselves. The goal and start platforms are chosen by
+the testing schedule: "The animal's objective is to reach a specific goal
+platform from eight or nine different starting locations", and "the starting
+platform changed between trials and these eight or nine platforms were
+distributed approximately equally around the maze"; which platforms they
+were is shown only in Extended Data Fig. 2. There is no reward port: "Upon
+reaching the goal animals were confined there and given one Cheerio® after a
+delay of approximately five seconds". The cues are the room's: "The maze sits
+within a standard laboratory giving the animal access to abundant extra-maze
+cues", with no placement given. For a session's goal, use its
+``platform_*`` region for visits, and add a landmark at that platform's
+centre if an encoding analysis needs the goal as an object position.
+
 References
 ----------
 Wood, R. A., Bauza, M., Krupic, J., Burton, S., Delekate, A., Chan, D., &
