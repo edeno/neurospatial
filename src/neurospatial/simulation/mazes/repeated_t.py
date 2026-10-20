@@ -6,18 +6,23 @@ Tolman and Nyswander (1927) describe the maze of their Experiment VI(a):
     and a diagram of it is shown in figure 5. It will be seen that the maze
     divides up into a succession of equivalent T units."
 
-A rat leaves the start box and meets six T-shaped choice points in turn; at
-each, one arm leads on and the other is a blind alley, and the last choice
-point opens onto the goal. The dimensions are those written on the figure:
+A rat leaves the start box (Fig. 5's S) and meets six T-shaped choice points
+in turn; at each, one arm leads on and the other is a blind alley, and the
+last choice point opens onto the alley whose end is the food box (Fig. 5's
+F). The text describes neither box; Blodgett (1929), who used the six-unit
+maze, times each run "from the time the rat left the starting box until the
+door of the food box was closed behind it". The dimensions are those written
+on the figure:
 alleys 4 in (10.16 cm) wide, and each alley segment 16 in (40.64 cm) long
 along its walls, except the two segments that join choice points 4, 5 and 6,
 which are 18 in (45.72 cm). At the drawing's scale (the 4-in width marker),
 these labelled lengths run between the walls of the crossing alleys, so
 neighbouring choice points are 20 in (or 22 in) apart centre to centre. The
-start box, its stem and the partition where blind alley 4 ends against the
-first alley are not dimensioned; their sizes are scaled from the drawing and
-are estimates. The doors, closed behind the rat to stop retracing, are not
-modelled.
+start box, its stem, the food box and the partition where blind alley 4 ends
+against the first alley are not dimensioned; their sizes are scaled from the
+drawing and are estimates. The food box is the last 5.5 in of the final
+alley, behind the dashed line drawn across it. The doors, closed behind the
+rat to stop retracing, are not modelled.
 
 The layout is turned a quarter turn clockwise from the figure, as drawn in
 Wijnen et al. (2024, Fig. 1b): start at the left, goal at the right::
@@ -36,6 +41,10 @@ alley 4 runs back toward alley 1 and stops a partition short of it.
 
 References
 ----------
+Blodgett, H. C. (1929). The effect of the introduction of reward upon the
+maze performance of rats. University of California Publications in
+Psychology, 4(8), 113-134.
+
 Tolman, E. C., & Nyswander, D. B. (1927). The reliability and validity of
 maze-measures for rats. Journal of Comparative Psychology, 7(6), 425-460.
 https://doi.org/10.1037/h0072851
@@ -56,6 +65,8 @@ Examples
 'cm'
 >>> [name for name in maze.env_2d.regions if name.startswith("choice_")]
 ['choice_1', 'choice_2', 'choice_3', 'choice_4', 'choice_5', 'choice_6']
+>>> {name: lm.metadata["role"] for name, lm in maze.env_2d.landmarks.items()}
+{'start_box': 'start_box', 'food_box': 'goal_box'}
 """
 
 from __future__ import annotations
@@ -68,6 +79,7 @@ from shapely.affinity import translate
 from shapely.geometry import box
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
@@ -111,6 +123,10 @@ class RepeatedTDims(MazeDims):
     start_box_depth : float
         Depth of the start box along the stem, in cm. Default is 15.24
         (about 6 in, scaled from the figure; an estimate).
+    food_box_depth : float
+        Length of the food box, the end of the final alley, in cm. Default
+        is 13.97 (about 5.5 in, scaled from the figure; an estimate). It
+        must be less than ``arm_length``.
 
     Examples
     --------
@@ -129,6 +145,7 @@ class RepeatedTDims(MazeDims):
     start_stem_length: float = 10.16
     start_box_width: float = 19.05
     start_box_depth: float = 15.24
+    food_box_depth: float = 13.97
 
 
 def make_repeated_t_maze(
@@ -153,29 +170,35 @@ def make_repeated_t_maze(
     -------
     MazeEnvironments
         Contains:
-        - env_2d: the alleys and start box
+        - env_2d: the alleys and the start and food boxes
         - env_track: alley centrelines as a track graph (if include_track)
 
     Raises
     ------
     ValueError
         If ``long_arm_length`` does not exceed ``arm_length`` or
-        ``wall_thickness`` is not positive, so that alleys would touch.
+        ``wall_thickness`` is not positive, so that alleys would touch, or
+        if ``food_box_depth`` is not between 0 and ``arm_length``.
 
     Notes
     -----
     The origin is the centre of the maze's bounding box. The start box is
-    at the left and the goal at the right end of the top row.
+    at the left and the food box at the right end of the top row.
 
-    Regions:
+    Landmarks, each with a region of the same name:
 
-    - start: centre of the start box
+    - start_box: Fig. 5's S (role ``"start_box"``); the region is the box
+    - food_box: Fig. 5's F, where the rat is fed (role ``"goal_box"``); the
+      region is the end of the last alley, ``food_box_depth`` long
+
+    Each landmark is the centre of its box. Other regions:
+
     - choice_1 ... choice_6: the T junctions, in the order the rat meets them
     - blind_1 ... blind_6: the end of the blind alley at each choice point
-    - goal: the end of the last alley, Fig. 5's F
 
-    Track graph: start, the six choice points, the six blind-alley ends and
-    the goal; the true path runs start, choice_1, ..., choice_6, goal.
+    Track graph: start_box, the six choice points, the six blind-alley ends
+    and food_box, at the end of the last alley; the true path runs
+    start_box, choice_1, ..., choice_6, food_box.
 
     Examples
     --------
@@ -204,6 +227,12 @@ def make_repeated_t_maze(
             f"arm_length={dims.arm_length}, wall_thickness={dims.wall_thickness}) "
             "makes alleys touch. Use long_arm_length greater than arm_length "
             "and a positive wall_thickness."
+        )
+    if not 0 < dims.food_box_depth < dims.arm_length:
+        raise ValueError(
+            f"RepeatedTDims(food_box_depth={dims.food_box_depth}) does not fit "
+            f"in the last alley, {dims.arm_length} cm long. Use a food_box_depth "
+            "between 0 and arm_length."
         )
     warn_if_bins_bridge_walls(bin_size, thinnest_wall, "repeated T-maze")
 
@@ -237,8 +266,16 @@ def make_repeated_t_maze(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
+    # The food box is the end of the last alley, which runs in +x.
+    end_x, end_y = positions["food_box"]
+    half = dims.width / 2.0
+    boxes = {
+        "start_box": translate(start_box, -offset[0], -offset[1]),
+        "food_box": box(end_x - dims.food_box_depth, end_y - half, end_x, end_y + half),
+    }
+
     regions = Regions()
-    regions.add("start", point=positions["start"])
+    regions.add("start_box", polygon=boxes["start_box"])
     for k in range(1, _N_CHOICES + 1):
         regions.add(f"choice_{k}", point=positions[f"choice_{k}"])
     for k in range(1, _N_CHOICES + 1):
@@ -246,13 +283,14 @@ def make_repeated_t_maze(
             positions[f"choice_{k}"], positions[f"blind_{k}"], dims.width
         )
         regions.add(f"blind_{k}", point=end)
-    regions.add(
-        "goal",
-        point=corridor_end_point(
-            positions[f"choice_{_N_CHOICES}"], positions["goal"], dims.width
-        ),
+    regions.add("food_box", polygon=boxes["food_box"])
+    landmarks = Landmarks(
+        Landmark(name, "point", polygon.centroid.coords[0], {"role": role})
+        for (name, polygon), role in zip(
+            boxes.items(), ("start_box", "goal_box"), strict=True
+        )
     )
-    env_2d = env_2d.with_regions(regions)
+    env_2d = env_2d.with_regions(regions).with_landmarks(landmarks)
 
     env_track = None
     if include_track:
@@ -288,17 +326,22 @@ def _layout(
         (near + far - arm - half, far),
     ]
     positions = {
-        "start": (-half - dims.start_stem_length - dims.start_box_depth / 2.0, 0.0),
-        "goal": (near + far + arm + half, far),
+        "start_box": (
+            -half - dims.start_stem_length - dims.start_box_depth / 2.0,
+            0.0,
+        ),
+        "food_box": (near + far + arm + half, far),
     }
-    edges = [("start", "choice_1")]
+    edges = [("start_box", "choice_1")]
     for k, (choice, blind_end) in enumerate(
         zip(choices, blind_ends, strict=True), start=1
     ):
         positions[f"choice_{k}"] = choice
         positions[f"blind_{k}"] = blind_end
         edges.append((f"choice_{k}", f"blind_{k}"))
-        edges.append((f"choice_{k}", f"choice_{k + 1}" if k < _N_CHOICES else "goal"))
+        edges.append(
+            (f"choice_{k}", f"choice_{k + 1}" if k < _N_CHOICES else "food_box")
+        )
     return positions, edges
 
 
