@@ -238,6 +238,7 @@ class TestObjectVectorOverlayConversion:
             object_positions=object_positions,
             animal_positions=animal_positions,
             times=times,
+            max_gap=None,
             firing_rates=firing_rates,
         )
 
@@ -417,7 +418,7 @@ class TestObjectVectorOverlayValidation:
             overlay.convert_to_data(frame_times, len(frame_times), mock_env)
 
     def test_validates_firing_rates_finite(self, mock_env: Any):
-        """Test that firing_rates with NaN/Inf are rejected."""
+        """Missing rate modulation remains missing rather than zero activity."""
         from neurospatial.animation.overlays import ObjectVectorOverlay
 
         object_positions = np.array([[50.0, 50.0]])
@@ -433,8 +434,9 @@ class TestObjectVectorOverlayValidation:
             firing_rates=firing_rates,
         )
 
-        with pytest.raises(ValueError, match="finite"):
-            overlay.convert_to_data(frame_times, len(frame_times), mock_env)
+        result = overlay.convert_to_data(frame_times, len(frame_times), mock_env)
+        assert result.firing_rates[0] == 1.0
+        assert np.isnan(result.firing_rates[1])
 
     def test_validates_object_positions_finite(self, mock_env: Any):
         """Test that object_positions with NaN/Inf are rejected."""

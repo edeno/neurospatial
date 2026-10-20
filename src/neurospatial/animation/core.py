@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -102,6 +101,7 @@ _BACKEND_OPTIONS: dict[str, frozenset[str]] = {
             "image_format",
             "initial_cache_size",
             "cache_limit",
+            "return_container",
             "show_regions",
             "region_alpha",
             "dry_run",
@@ -693,25 +693,10 @@ def animate_fields(
 
             _validate_pickle_ability(overlay_data, n_workers=n_workers)
 
-    if overlay_data and backend != "fastplotlib":
-        # Overlays only the fastplotlib backend draws: skipped, with a warning.
-        skipped = [
-            name
-            for name, items in (
-                ("SpikeRasterOverlay", overlay_data.spike_rasters),
-                ("EpochOverlay", overlay_data.epochs),
-            )
-            if items
-        ]
-        if skipped:
-            warnings.warn(
-                f"The {backend} backend does not draw {' or '.join(skipped)}, "
-                "so it is skipped; the other overlays are drawn. Use "
-                "backend='fastplotlib' to show it.",
-                UserWarning,
-                stacklevel=_external_stacklevel(),
-            )
-            overlay_data = replace(overlay_data, spike_rasters=[], epochs=[])
+    if overlay_data and backend in _BACKEND_OPTIONS:
+        from neurospatial.animation._capabilities import warn_unsupported_overlays
+
+        overlay_data = warn_unsupported_overlays(backend, overlay_data)
 
     # Convert arrays to list for non-napari backends
     # Napari backend can handle arrays directly (enables memmap efficiency)

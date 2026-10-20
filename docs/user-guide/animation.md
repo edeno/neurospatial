@@ -1,6 +1,8 @@
 # Field Animation
 
-Animate spatial fields over time using four different backends optimized for different use cases.
+Animate spatial fields on their recording clock. Use `Animation` to inspect
+identified events and export the same panels; `Environment.animate_fields`
+provides the existing direct backend interface.
 
 ## Quick Start
 
@@ -9,13 +11,15 @@ Animate spatial fields over time using four different backends optimized for dif
 import numpy as np
 
 from neurospatial import Environment
-from neurospatial.encoding import compute_spatial_rates
-
-# Create environment and batch-encode all cells at once.
-# spikes is a list of per-cell spike-time arrays (length 30 here).
+# A simulated moving spatial field, one row per recording time.
+# Rate maps from compute_spatial_rates have one row per UNIT, not per time.
+# To animate real decoding, use Animation.from_decoding(result) below.
 env = Environment.from_samples(positions, bin_size=2.5)
-fields = compute_spatial_rates(env, spikes, times, positions).firing_rates  # (30, n_bins)
-frame_times = np.arange(len(fields), dtype=float) / 30.0  # one timestamp per field
+frame_times = times
+distance = np.linalg.norm(
+    positions[:, None, :] - env.bin_centers[None, :, :], axis=-1
+)
+fields = np.exp(-0.5 * (distance / 2.5) ** 2)
 
 # Interactive viewer (best for exploration)
 env.animate_fields(fields, frame_times=frame_times, backend="napari")
@@ -29,6 +33,106 @@ env.animate_fields(fields, frame_times=frame_times, save_path="animation.html")
 # Jupyter widget (best for notebooks)
 env.animate_fields(fields, frame_times=frame_times, backend="widget")
 ```
+
+## Inspect replay events and export a selected window
+
+Install notebook and export dependencies with
+`pip install 'neurospatial[animation,video]'`.
+
+Keep the posterior's environment and clock with
+`Animation.from_decoding(result)`. A scene can combine named spatial streams,
+tracking, spikes, LFP, epochs and calibrated video. Its notebook view and MP4/GIF
+export use the same renderer, panel arrangement and color limits.
+
+The example below uses a simulated posterior to demonstrate the complete
+workflow. Replace `result` with your decoding result and the event records with
+your detected ripples or trials. Overlapping events retain their separate IDs.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+import pandas as pd
+
+from neurospatial import Environment
+from neurospatial.animation import Animation, PositionOverlay, SpikeRasterOverlay
+from neurospatial.decoding import DecodingResult
+
+times = 100.0 + np.arange(21) * 0.02
+positions = np.column_stack([np.linspace(0, 10, 21), np.ones(21)])
+env = Environment.from_samples(positions, bin_size=1.0)
+posterior = np.exp(-0.5 * np.sum(
+    (env.bin_centers[None, :, :] - positions[:, None, :]) ** 2, axis=-1
+))
+posterior /= posterior.sum(axis=1, keepdims=True)
+result = DecodingResult(posterior=posterior, env=env, times=times)
+
+scene = Animation.from_decoding(
+    result,
+    overlays=[
+        PositionOverlay(positions, times=times),
+        SpikeRasterOverlay(
+            [np.array([100.04, 100.12]), np.array([100.08, 100.20])],
+            unit_ids=["CA1-7", "CA1-19"],
+        ),
+    ],
+)
+events = pd.DataFrame({
+    "event_id": ["ripple-17", "ripple-28"],
+    "start_time": [100.02, 100.18],
+    "stop_time": [100.16, 100.36],
+    "trajectory_score": [0.9, 0.4],
+})
+inspector = scene.inspect_events(events, padding=0.02)
+inspector.filter_events(inspector.events_table()["trajectory_score"] > 0.5)
+inspector.select("ripple-17")
+inspector.annotate("ripple-17", review="accepted", note="Forward replay")
+
+# A complete frame can also be inspected without a GUI.
+frame = scene.render_frame(100.08, dpi=60)
+assert frame.shape[-1] == 3
+```
+
+In a notebook, keep the scene open while working:
+
+```python
+inspector.show()                       # event picker, review notes, all panels
+inspector.export("ripple-17.mp4", fps=30, speed=0.1)
+inspector.export_events("review.json")  # IDs, intervals, scores, annotations
+# Save only the selected row:
+inspector.export_events("selected.csv", selected_only=True)
+inspector.close()                      # controls; the scene is still reusable
+scene.close()                          # figures and readers opened by the scene
+```
+
+`pd.read_json("review.json", orient="table")` restores the typed event table.
+Annotations use an `annotation_` prefix, so reviewing an event cannot overwrite
+an analysis score. Export refuses existing files unless `overwrite=True`.
+
+A scene view also provides `seek(time)`, `select_time(start, stop)`, `export(path)`
+and `close()`. Times are recording seconds and selected windows are half-open.
+`view.native` exposes the underlying viewer. GPU viewing is available with
+`scene.show(backend="fastplotlib")`; export retains scene panels and scales, but
+does not capture camera changes or custom graphics added to the native viewer.
+Native adapters require a shared color scale; notebook scenes support an
+independent colormap and range for each named field.
+Scenes currently support 1-D and 2-D environments. Napari and 3-D viewing remain
+available through `env.animate_fields`; the scene interface rejects napari
+because that adapter cannot yet retain independent stream clocks.
+
+For streams on different clocks, use
+`Animation(env, {"posterior": AnimationField(posterior, decode_times),
+"likelihood": AnimationField(likelihood, likelihood_times)})`.
+Field sources remain lazy and caller-owned. Do not modify a source while a
+scene is using it; close any caller-opened file after the scene.
+
+Position, pose, heading and object-vector overlays preserve NaN observations.
+Their default `max_gap=0.5` seconds and optional `break_before` match analysis
+support: interpolation stays inside observed intervals, with no extrapolation.
+Set `max_gap=None` deliberately for sparsely sampled continuous observations.
+`PositionOverlay(units=..., frame=...)` validates supplied coordinate metadata
+against the environment and asks for an explicit transform when it differs.
+NWB position adapters forward units. `SpikeRasterOverlay(rates=rate_result)`
+validates the environment and aligns maps by `unit_ids`.
 
 ## Overwriting existing files
 
@@ -79,16 +183,17 @@ Choose the right backend for your workflow:
 
 ### Overlay Support by Backend
 
-| Backend | Position | Bodypart | HeadDirection | Video | Regions |
-|---------|----------|----------|---------------|-------|---------|
-| **Napari** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Video** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **HTML** | ✓ | ✗ | ✗ | ✗ | ✓ |
-| **Widget** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Fastplotlib** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Interface | Position / pose / heading / events | Video | Time series | Spikes / epochs / object vectors | Multiple fields |
+|-----------|-----------------------------------|-------|-------------|----------------------------------|-----------------|
+| `Animation` notebook / export | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Direct napari | ✓ | ✓ | ✓ | Warns and skips | ✓ |
+| Direct video / widget | ✓ | ✓ | ✓ | Warns and skips | — |
+| Direct HTML | ✓ | Warns and skips | Warns and skips | Warns and skips | — |
+| Fastplotlib | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Fastplotlib also draws event, time-series, spike-raster and object-vector
-overlays, walls and landmarks.
+All interfaces draw regions. Scene preflight rejects an unsupported overlay
+instead of producing an incomplete view. The direct dispatcher retains its
+warning-and-skip behavior.
 
 See [Animation Overlays](../animation_overlays.md) for detailed overlay documentation including VideoOverlay calibration.
 

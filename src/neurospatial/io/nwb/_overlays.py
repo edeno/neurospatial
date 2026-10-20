@@ -82,6 +82,7 @@ def position_overlay_from_nwb(
     return PositionOverlay(
         positions=positions,
         times=timestamps,
+        units=kwargs.pop("units", position_data.units),
         color=color,
         size=size,
         trail_length=trail_length,

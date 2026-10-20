@@ -17,7 +17,7 @@ and landmarks.
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from itertools import pairwise
@@ -32,6 +32,7 @@ from neurospatial.animation._parallel import (
     _event_visibility,
     _head_direction_color,
 )
+from neurospatial.animation._sampling import sample_at_times
 from neurospatial.animation.overlays import _OWN_SAMPLE_TYPES
 from neurospatial.environment._fastplotlib import (
     COLORBAR_WIDTH,
@@ -169,6 +170,21 @@ class _Samples:
         row = int(np.searchsorted(self.times, time, side="right")) - 1
         return row if row >= 0 and time < self.ends[row] else -1
 
+    def nearest(self, time: float) -> int:
+        """Nearest video sample, with earlier ties and no extrapolation."""
+        if self.times is None:
+            return self.frame_of(time)
+        if not len(self.times) or time < self.times[0] or time > self.times[-1]:
+            return -1
+        right = int(np.searchsorted(self.times, time, side="left"))
+        if right == 0:
+            return 0
+        return (
+            right - 1
+            if time - self.times[right - 1] <= self.times[right] - time
+            else right
+        )
+
     def recent(self, row: int, n_frames: int) -> slice:
         """The rows of the last ``n_frames`` animation frames, up to ``row``."""
         if self.times is None:
@@ -188,6 +204,37 @@ def _row(values: NDArray[np.float64], row: int) -> NDArray[np.float64]:
     return values[row] if row >= 0 else np.full(values.shape[1:], np.nan)
 
 
+def _sample_observation(
+    data: Any,
+    clock: _Samples,
+    values: NDArray[np.float64],
+    time: float,
+    *,
+    name: str | None = None,
+    circular: bool = False,
+) -> NDArray[np.float64]:
+    """Sample the overlay on its own clock, preserving observed support."""
+    if clock.times is None:
+        return _row(values, clock.at(time))
+    sample_valid = data.sample_valid
+    interval_valid = data.interval_valid
+    if name is not None:
+        sample_valid = sample_valid.get(name) if sample_valid is not None else None
+        interval_valid = (
+            interval_valid.get(name) if interval_valid is not None else None
+        )
+    sampled = sample_at_times(
+        clock.times,
+        values,
+        np.array([time]),
+        interp=data.interp,
+        sample_valid=sample_valid,
+        interval_valid=interval_valid,
+        circular=circular,
+    )
+    return np.asarray(sampled[0], dtype=np.float64)
+
+
 class _Position:
     """The animal's position and a fading trail of recent positions.
 
@@ -199,12 +246,16 @@ class _Position:
         self.frames = data.trail_length or 0
         self.length = clock.most_recent(self.frames) if self.frames > 1 else 0
         if self.length > 1:
-            colors = np.tile(_rgba(data.color), (self.length, 1))
+            # Leave room for NaN separators at every unsupported interval.
+            self._trail_points = 2 * self.length + 1
+            colors = np.tile(_rgba(data.color), (self._trail_points, 1))
             colors[:, 3] = perceived_alpha(
-                np.linspace(0.0, _TRAIL_MAX_ALPHA, self.length)
+                np.linspace(0.0, _TRAIL_MAX_ALPHA, self._trail_points)
             )
             self.trail = subplot.add_line(
-                xyz(np.full((self.length, 2), np.nan)), colors=colors, thickness=2
+                xyz(np.full((self._trail_points, 2), np.nan)),
+                colors=colors,
+                thickness=2,
             )
         self.marker = subplot.add_scatter(
             xyz([np.nan, np.nan]),
@@ -215,13 +266,35 @@ class _Position:
         )
 
     def update(self, time: float) -> None:
-        row = self.clock.at(time)
-        self.marker.data = xyz(_row(self.data.data, row))
+        current = _sample_observation(self.data, self.clock, self.data.data, time)
+        self.marker.data = xyz(current)
         if self.length > 1:
-            window = np.full((self.length, self.data.data.shape[1]), np.nan)
+            row = (
+                self.clock.at(time)
+                if self.clock.times is None
+                else int(np.searchsorted(self.clock.times, time, side="right")) - 1
+            )
+            window = np.full((self._trail_points, self.data.data.shape[1]), np.nan)
             if row >= 0:
-                recent = self.data.data[self.clock.recent(row, self.frames)]
-                window[self.length - len(recent) :] = recent
+                shown = self.clock.recent(row, self.frames)
+                recent = self.data.data[shown].copy()
+                if self.data.sample_valid is not None:
+                    recent[~self.data.sample_valid[shown]] = np.nan
+                edges = np.ones(max(0, len(recent) - 1), dtype=bool)
+                if self.data.interval_valid is not None:
+                    edges &= self.data.interval_valid[shown.start : shown.stop - 1]
+                if (
+                    self.clock.times is not None
+                    and time > self.clock.times[row]
+                    and np.all(np.isfinite(current))
+                ):
+                    recent = np.vstack([recent, current])
+                    edges = np.append(edges, True)
+                if len(recent):
+                    points = np.insert(
+                        recent, np.flatnonzero(~edges) + 1, np.nan, axis=0
+                    )
+                    window[-len(points) :] = points
             self.trail.data = xyz(window)
 
 
@@ -250,24 +323,25 @@ class _Bodyparts:
         if self.edges:
             assert skeleton is not None
             self.lines = subplot.add_line(
-                self._segments(-1),
+                pair_segments(
+                    np.full((len(self.edges), 2), np.nan),
+                    np.full((len(self.edges), 2), np.nan),
+                ),
                 colors=skeleton.edge_color,
                 thickness=skeleton.edge_width,
             )
 
-    def _segments(self, row: int) -> NDArray[np.float32]:
-        parts = self.data.bodyparts
-        return pair_segments(
-            [_row(parts[start], row) for start, _ in self.edges],
-            [_row(parts[end], row) for _, end in self.edges],
-        )
-
     def update(self, time: float) -> None:
-        row = self.clock.at(time)
-        parts = self.data.bodyparts
-        self.points.data = xyz([_row(parts[name], row) for name in self.names])
+        parts = {
+            name: _sample_observation(self.data, self.clock, values, time, name=name)
+            for name, values in self.data.bodyparts.items()
+        }
+        self.points.data = xyz([parts[name] for name in self.names])
         if self.edges:
-            self.lines.data = self._segments(row)
+            self.lines.data = pair_segments(
+                [parts[start] for start, _ in self.edges],
+                [parts[end] for _, end in self.edges],
+            )
 
 
 class _HeadDirection:
@@ -291,10 +365,16 @@ class _HeadDirection:
     def update(self, time: float) -> None:
         origin = self.center
         if self.anchor is not None:
-            animal = _row(self.anchor.data.data, self.anchor.clock.at(time))
-            if np.all(np.isfinite(animal)):
-                origin = animal
-        heading = _row(self.data.data, self.clock.at(time))
+            origin = _sample_observation(
+                self.anchor.data, self.anchor.clock, self.anchor.data.data, time
+            )
+        heading = _sample_observation(
+            self.data,
+            self.clock,
+            self.data.data,
+            time,
+            circular=self.data.data.ndim == 1,
+        )
         segment = heading_segment(origin, heading, self.data.length)
         self.line.data = xyz(segment)
         if np.all(np.isfinite(segment)):
@@ -414,13 +494,19 @@ class _ObjectVectors:
             )
 
     def update(self, time: float) -> None:
-        row = self.clock.at(time)
-        animal = _row(self.data.animal_positions, row)
+        animal = _sample_observation(
+            self.data, self.clock, self.data.animal_positions, time
+        )
         objects = self.data.object_positions
         self.lines.data = pair_segments(np.broadcast_to(animal, objects.shape), objects)
-        if self.data.firing_rates is not None and row >= 0:
+        if self.data.firing_rates is not None:
+            rate = _sample_observation(
+                self.data, self.clock, self.data.firing_rates, time
+            )
             color = self.color.copy()
-            color[3] *= 0.1 + 0.9 * self.data.firing_rates[row] / self.top_rate
+            color[3] *= (
+                0.1 + 0.9 * float(rate) / self.top_rate if np.isfinite(rate) else 0.0
+            )
             self.lines.colors = color
 
 
@@ -650,7 +736,7 @@ class _PositionTime:
         )
         # Each position's color, distance along the track, and samples.
         self.positions = [
-            (data.color, track_position(env, data.data), samples)
+            (data.color, track_position(env, data.data), samples, data)
             for data, samples in positions
         ]
         self.first, self.rows = 0, np.empty((0, len(self.lower)))
@@ -733,7 +819,7 @@ class _PositionTime:
                 colors=color,
                 thickness=2,
             )
-            for color, _, samples in self.positions
+            for color, _, samples, _ in self.positions
         ]
 
     def frames_at(self, time: float) -> slice:
@@ -765,7 +851,9 @@ class _PositionTime:
             )
             self.mesh.mapcoords = mapcoords
         half = self.window / 2
-        for line, (_, track, clock) in zip(self.lines, self.positions, strict=True):
+        for line, (_, track, clock, data) in zip(
+            self.lines, self.positions, strict=True
+        ):
             if clock.times is None:
                 shown, times, ends = frames, self.clock[frames], self.ends[frames]
             else:
@@ -774,10 +862,14 @@ class _PositionTime:
                     np.searchsorted(clock.times, time + half, side="right"),
                 )[: len(line.data) // 2]
                 times, ends = clock.times[shown], clock.ends[shown]
-            along = track[shown]
+            along = track[shown].copy()
+            if data.sample_valid is not None:
+                along[~data.sample_valid[shown]] = np.nan
             segment = np.searchsorted(self.segment_starts, along, side="right")
             # A sample shown until its end: the next one after it is a gap.
             gap = times[1:] - ends[:-1] > 1e-9
+            if data.interval_valid is not None:
+                gap |= ~data.interval_valid[shown[:-1]]
             breaks = np.flatnonzero((np.diff(segment) != 0) | gap)
             drawn = np.insert(
                 np.column_stack([times, along]), breaks + 1, np.nan, axis=0
@@ -1077,21 +1169,28 @@ def _project(rows: NDArray[np.float64], projection: Any) -> NDArray[np.float64]:
 
 
 def _field_stacks(
-    fields: Sequence[Any] | NDArray[np.float64], names: Sequence[str] | None
+    fields: Sequence[Any] | NDArray[np.float64] | Mapping[str, Any],
+    names: Sequence[str] | None,
 ) -> tuple[list[Any], list[str]]:
     """The fields to show, one stack of frames each, and their names.
 
     Several are a list of lists or tuples of frames, as napari takes them.
     """
-    several = (
-        isinstance(fields, (list, tuple))
-        and len(fields) > 0
-        and isinstance(fields[0], (list, tuple))
-    )
-    stacks = [
-        stack if hasattr(stack, "shape") else np.asarray(stack)
-        for stack in (fields if several else [fields])
-    ]
+    if isinstance(fields, Mapping):
+        stacks = list(fields.values())
+        if names is None:
+            names = list(fields)
+    else:
+        several = (
+            isinstance(fields, (list, tuple))
+            and len(fields) > 0
+            and (isinstance(fields[0], (list, tuple)) or np.ndim(fields[0]) == 2)
+        )
+        stacks = list(fields) if several else [fields]
+        stacks = [
+            np.asarray(stack) if isinstance(stack, (list, tuple)) else stack
+            for stack in stacks
+        ]
     lengths = sorted({len(stack) for stack in stacks})
     if len(lengths) > 1:
         raise ValueError(
@@ -1370,6 +1469,7 @@ def _frames_graphic(
             )
             self._graphic = graphic
             self._reader = ThreadPoolExecutor(max_workers=1)
+            self._closed = False
 
         @property
         def slicer(self) -> Any:
@@ -1390,8 +1490,19 @@ def _frames_graphic(
         async def _set_indices_(self, at: dict[str, float] | None = None) -> None:
             at = self.indices if at is None else at
             time = at["time"]
-            show(time, await run_in_thread_pool(self._reader, read, time))
-            self._last_indices = at
+            if self._closed:
+                return
+            result = await run_in_thread_pool(self._reader, read, time)
+            if not self._closed:
+                show(time, result)
+                self._last_indices = at
+
+        def close(self) -> None:
+            if self._closed:
+                return
+            self._closed = True
+            self._reader.shutdown(wait=True, cancel_futures=True)
+            self._slicer.close()
 
     return Frames()
 
@@ -1510,7 +1621,7 @@ class FastplotlibAnimation:
     def __init__(
         self,
         env: Environment,
-        fields: Sequence[Any] | NDArray[np.float64],
+        fields: Sequence[Any] | NDArray[np.float64] | Mapping[str, Any],
         *,
         frame_times: NDArray[np.float64],
         speed: float = 1.0,
@@ -1528,6 +1639,7 @@ class FastplotlibAnimation:
         layer_names: Sequence[str] | None = None,
         colorbar_label: str = "",
         track: Environment | None = None,
+        _field_at_time: Callable[[float], list[NDArray[np.float64]]] | None = None,
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -1539,6 +1651,13 @@ class FastplotlibAnimation:
         )
 
         fastplotlib = import_fastplotlib()
+        self._closed = False
+        self._field_at_time = _field_at_time
+        self._owned_video_readers = [
+            video.reader
+            for video in (overlay_data.videos if overlay_data else [])
+            if getattr(video, "_owns_reader", False)
+        ]
         stacks, names = _field_stacks(fields, layer_names)
         self._stacks = stacks
         self.n_frames = len(stacks[0])
@@ -1791,6 +1910,7 @@ class FastplotlibAnimation:
             if self._field_graphics
             else self._tracks[0].view.cursor,
         )
+        self._frames = frames
         # fastplotlib has no public way to add a custom NDGraphic yet.
         self.widget[self._plot]._nd_graphics.append(frames)
         self._series = [
@@ -1922,8 +2042,14 @@ class FastplotlibAnimation:
         Runs on a worker thread.
         """
         frame = self._frame_of(time)
-        values = [np.asarray(stack[frame], dtype=np.float64) for stack in self._stacks]
-        images = [video.data.get_frame(video.clock.at(time)) for video in self._videos]
+        values = (
+            self._field_at_time(time + self._start)
+            if self._field_at_time is not None
+            else [np.asarray(stack[frame], dtype=np.float64) for stack in self._stacks]
+        )
+        images = [
+            video.data.get_frame(video.clock.nearest(time)) for video in self._videos
+        ]
         if not self._tracks:
             return _Frame(frame, values, images, 0, [])
         window = self._tracks[0].frames_at(time)
@@ -1999,6 +2125,46 @@ class FastplotlibAnimation:
     def frame(self, frame: int) -> None:
         frame = int(np.clip(frame, 0, self.n_frames - 1))
         self.widget.indices = {"time": self._clock[frame]}
+
+    def seek(self, time: float) -> None:
+        """Move every panel to an absolute recording time, in seconds."""
+        if self._closed:
+            raise RuntimeError(
+                "This animation is closed. Create a new view before seeking."
+            )
+        if not np.isfinite(time):
+            raise ValueError("time must be a finite recording time in seconds.")
+        self.widget.indices = {
+            "time": float(np.clip(time - self._start, 0, self._clock[-1]))
+        }
+
+    def close(self) -> None:
+        """Stop worker reads and release the viewer and owned video files."""
+        if self._closed:
+            return
+        self._closed = True
+        playing = getattr(getattr(self.widget, "ui_sliders", None), "_playing", {})
+        for dimension in playing:
+            playing[dimension] = False
+        self._frames.close()
+        # Other NDGraphics own executors too (for example time-series panels).
+        for graphic in self.widget.ndgraphics:
+            graphic.pause = True
+            if graphic is not self._frames:
+                graphic.slicer.close()
+        self.figure.renderer.remove_event_handler(self._key, "key_down")
+        self.widget.close()
+        if self._canvas is not None:
+            if self._canvas is not getattr(self.figure, "_output", None):
+                self._canvas.close()
+            self._canvas = None
+        seen = set()
+        for reader in self._owned_video_readers:
+            if id(reader) not in seen:
+                close_reader = getattr(reader, "close", None)
+                if close_reader is not None:
+                    close_reader()
+                seen.add(id(reader))
 
     def show(self, **kwargs: Any) -> Any:
         """Display the animation with its controls.
@@ -2159,7 +2325,7 @@ def _shade_epochs(
 
 def render_fastplotlib(
     env: Environment,
-    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    fields: Sequence[NDArray[np.float64]] | NDArray[np.float64] | Mapping[str, Any],
     *,
     dry_run: bool = False,
     **options: Any,

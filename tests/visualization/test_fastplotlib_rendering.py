@@ -1342,8 +1342,10 @@ def test_overlays_move_at_their_own_rate_between_slow_frames(apparatus, track):
             assert np.isnan(position.marker.data[0, 0])
             assert not video.image.visible
             continue
-        np.testing.assert_allclose(position.marker.data[0, :2], path[sample], rtol=1e-6)
-        assert video.image.data[0, 0, 1] == sample % 256
+        expected = [np.interp(time, times, path[:, axis]) for axis in range(2)]
+        np.testing.assert_allclose(position.marker.data[0, :2], expected, rtol=1e-6)
+        nearest = int(np.argmin(np.abs(times - time)))
+        assert video.image.data[0, 0, 1] == nearest % 256
         # The trail covers the last two frames' time: 2 s of samples, to
         # within one sample at its edge.
         trail = position.trail.data[:][:, 0]

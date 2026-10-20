@@ -205,18 +205,15 @@ class TestFieldToRgbForNapariZeroRange:
         # Since normalized = 0.5, index = 127
         expected_color = cmap_lookup[127]
 
-        # For grid layouts, inactive bins are black [0,0,0]. Filter those out.
-        rgb_flat = rgb.reshape(-1, 3)
-        # Find non-black pixels (active bins)
-        non_black_mask = np.any(rgb_flat != 0, axis=1)
-
-        if np.any(non_black_mask):
-            # All active pixels should have the expected color
-            active_pixels = rgb_flat[non_black_mask]
-            assert np.all(active_pixels == expected_color), (
-                f"Expected all active pixels to be {expected_color}, "
-                f"but got unique values: {np.unique(active_pixels, axis=0)}"
-            )
+        # Select active raster cells explicitly: unsupported cells are gray.
+        active_pixels = (
+            np.flip(rgb, axis=0)
+            .transpose(1, 0, 2)
+            .reshape(-1, 3)[env.active_mask.ravel()]
+        )
+        np.testing.assert_array_equal(
+            active_pixels, np.broadcast_to(expected_color, active_pixels.shape)
+        )
 
     def test_zero_range_no_divide_by_zero_warning(self):
         """Test that zero range does not produce divide-by-zero warning."""

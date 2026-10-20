@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
+import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -32,6 +35,57 @@ except ImportError:
     ipywidgets = None
     display = None  # type: ignore[assignment]
     IPYWIDGETS_AVAILABLE = False
+
+
+class _FrameUpdateThrottle:
+    """Render the newest request, including a trailing update on notebook loops."""
+
+    def __init__(self, callback: Callable[[int], None], interval: float = 1 / 30):
+        self._callback = callback
+        self._interval = interval
+        self._last_update: float | None = None
+        self._pending: int | None = None
+        self._handle: asyncio.TimerHandle | None = None
+        self._closed = False
+
+    def request(self, frame_idx: int) -> None:
+        if self._closed:
+            return
+        self._pending = frame_idx
+        now = time.monotonic()
+        delay = (
+            0.0
+            if self._last_update is None
+            else self._interval - (now - self._last_update)
+        )
+        if delay <= 0:
+            if self._handle is not None:
+                self._handle.cancel()
+                self._handle = None
+            self._flush()
+        elif self._handle is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # A plain Python caller has no notebook event loop to schedule on.
+                self._flush()
+            else:
+                self._handle = loop.call_later(delay, self._flush)
+
+    def _flush(self) -> None:
+        self._handle = None
+        if self._closed or self._pending is None:
+            return
+        frame_idx, self._pending = self._pending, None
+        self._last_update = time.monotonic()
+        self._callback(frame_idx)
+
+    def close(self) -> None:
+        self._closed = True
+        self._pending = None
+        if self._handle is not None:
+            self._handle.cancel()
+            self._handle = None
 
 
 def render_field_to_png_bytes_with_overlays(
@@ -755,7 +809,8 @@ def render_widget(
     image_format: str = "png",
     frame_times: NDArray[np.float64] | None = None,
     dry_run: bool = False,
-) -> None:
+    return_container: bool = False,
+) -> Any | None:
     """Create interactive Jupyter widget with slider control.
 
     Pre-renders a subset of frames for responsive scrubbing, then renders
@@ -817,11 +872,15 @@ def render_widget(
         If True, check the inputs, report the number of frames and how many
         would be pre-rendered, and return without rendering or displaying.
 
+    return_container : bool, default=False
+        Internal lifecycle hook: return the displayed native widget container.
+        Its ``close()`` method releases rendering and playback resources.
+
     Returns
     -------
-    None
-        Widget is displayed directly in the notebook output area.
-        Does not return a value to prevent duplicate auto-display.
+    None or ipywidgets.VBox
+        Widget is displayed directly. By default no value is returned, avoiding
+        duplicate auto-display. With return_container=True, return its container.
 
     Raises
     ------
@@ -876,12 +935,12 @@ def render_widget(
             "  uv add ipywidgets"
         )
 
-    import time
     from collections import OrderedDict
 
     from neurospatial.animation.rendering import (
         _validate_frame_labels,
         animation_colormap_range,
+        render_field_to_image_bytes,
         render_field_to_png_bytes,
     )
 
@@ -908,7 +967,18 @@ def render_widget(
         )
         return None
 
-    # LRU cache storing raw PNG bytes (not base64 strings)
+    image_format = image_format.lower()
+    if image_format not in ("png", "jpeg"):
+        raise ValueError(f"image_format must be 'png' or 'jpeg', got '{image_format}'")
+
+    def render_plain_frame(idx: int) -> bytes:
+        if image_format == "png":
+            return render_field_to_png_bytes(env, fields[idx], cmap, vmin, vmax, dpi)
+        return render_field_to_image_bytes(
+            env, fields[idx], cmap, vmin, vmax, dpi, image_format=image_format
+        )
+
+    # LRU cache storing raw image bytes (not base64 strings)
     cached_frames: OrderedDict[int, bytes] = OrderedDict()
 
     def cache_put(i: int, png_bytes: bytes) -> None:
@@ -945,8 +1015,8 @@ def render_widget(
                 frame_times=frame_times,
             )
         else:
-            # Render without overlays (backward compatibility)
-            png_bytes = render_field_to_png_bytes(env, fields[i], cmap, vmin, vmax, dpi)
+            # Render without overlays in the widget's requested image format.
+            png_bytes = render_plain_frame(i)
         cache_put(i, png_bytes)
 
     # Generate default frame labels if none provided
@@ -986,10 +1056,7 @@ def render_widget(
                     region_alpha=region_alpha,
                 )
             else:
-                # Render without overlays (backward compatibility)
-                png_bytes = render_field_to_png_bytes(
-                    env, fields[idx], cmap, vmin, vmax, dpi
-                )
+                png_bytes = render_plain_frame(idx)
             cache_put(idx, png_bytes)
             return png_bytes
 
@@ -1035,21 +1102,12 @@ def render_widget(
     # Store reference to prevent garbage collection
     link = ipywidgets.jslink((play, "value"), (slider, "value"))
 
-    # Throttle slider updates to ~30 Hz to avoid decode storms with large images
-    _last_update_time = [0.0]  # Use list for mutable capture in closure
+    # Keep the most recent slider request and flush it on the notebook loop.
+    throttle = _FrameUpdateThrottle(show_frame)
 
     def on_slider_change(change: dict[str, Any]) -> None:
-        """Update display when slider value changes (throttled to ~30 Hz)."""
-        if change["name"] != "value":
-            return
-
-        # Throttle updates: skip if less than 1/30 second since last update
-        current_time = time.time()
-        if current_time - _last_update_time[0] < (1 / 30):
-            return  # Skip this update
-
-        _last_update_time[0] = current_time
-        show_frame(int(change["new"]))
+        if change["name"] == "value":
+            throttle.request(int(change["new"]))
 
     slider.observe(on_slider_change, names="value")
 
@@ -1065,10 +1123,32 @@ def render_widget(
         ]
     )
 
-    # Store link reference on container to prevent garbage collection
+    # Own the observer, timer, renderer, and widget link for the display lifetime.
     container._links = [link]
+    original_close = getattr(container, "close", None)
+    closed = False
 
-    # Display container and return None to prevent auto-display
+    def close() -> None:
+        nonlocal closed
+        if closed:
+            return
+        closed = True
+        throttle.close()
+        unobserve = getattr(slider, "unobserve", None)
+        if unobserve is not None:
+            unobserve(on_slider_change, names="value")
+        link.unlink()
+        if persistent_renderer is not None:
+            persistent_renderer.close()
+        cached_frames.clear()
+        for widget in (play, slider, title_widget, image_widget, container.children[0]):
+            widget_close = getattr(widget, "close", None)
+            if widget_close is not None:
+                widget_close()
+        if original_close is not None:
+            original_close()
+
+    container.close = close
     display(container)
 
-    return None  # Prevent auto-display (widget already displayed above)
+    return container if return_container else None

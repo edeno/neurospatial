@@ -121,6 +121,21 @@ def _get_group_index(
     raise ValueError(f"TimeSeriesData with label '{ts_data.label}' not found in groups")
 
 
+def _set_group_global_limits(
+    axes: list[Axes], groups: list[list[TimeSeriesData]]
+) -> None:
+    """Keep every trace in a shared panel within the stable value range."""
+    for ax, group in zip(axes, groups, strict=True):
+        bounded = [ts for ts in group if ts.use_global_limits]
+        if not bounded:
+            continue
+        lower = min(ts.global_vmin for ts in bounded)
+        upper = max(ts.global_vmax for ts in bounded)
+        value_range = upper - lower
+        margin = value_range * 0.05 if value_range > 0 else 0.5
+        ax.set_ylim(lower - margin, upper + margin)
+
+
 @dataclass
 class TimeSeriesArtistManager:
     """Manages matplotlib artists for time series rendering.
@@ -134,11 +149,11 @@ class TimeSeriesArtistManager:
     axes : list[Axes]
         One Axes per group (row).
     lines : dict[str, Line2D]
-        Mapping from label (or id) to Line2D artist.
+        Mapping from overlay identity to Line2D artist.
     cursors : list[Line2D]
         One cursor line per Axes.
     value_texts : dict[str, Text]
-        Mapping from label to Text artist for cursor value display.
+        Mapping from overlay identity to Text artist for cursor value display.
     frame_times : NDArray[np.float64]
         Animation frame timestamps.
     group_window_seconds : dict[int, float]
@@ -276,8 +291,8 @@ class TimeSeriesArtistManager:
                 label=ts_data.label if ts_data.label else None,
             )
 
-            # Use label as key, or generate unique key from id
-            key = ts_data.label if ts_data.label else str(id(ts_data))
+            # Labels are display text; different overlays may share a label.
+            key = str(id(ts_data))
             lines[key] = line
             ts_data_keys[id(ts_data)] = key
 
@@ -302,20 +317,13 @@ class TimeSeriesArtistManager:
             )
             value_texts[key] = value_text
 
-            # Set stable y-limits from global values
-            if ts_data.use_global_limits:
-                y_range = ts_data.global_vmax - ts_data.global_vmin
-                margin = y_range * 0.05 if y_range > 0 else 0.5
-                ax.set_ylim(
-                    ts_data.global_vmin - margin,
-                    ts_data.global_vmax + margin,
-                )
-
             # Add y-label from first overlay in group
             if ts_data.label and not ax.get_ylabel():
                 ax.set_ylabel(
                     ts_data.label, fontsize=9, color="white" if dark_theme else "black"
                 )
+
+        _set_group_global_limits(axes, groups)
 
         # Create cursor lines (one per axes, None if disabled)
         cursors: list[Line2D | None] = []
@@ -595,8 +603,8 @@ class TimeSeriesArtistManager:
                 label=ts_data.label if ts_data.label else None,
             )
 
-            # Use label as key, or generate unique key from id
-            key = ts_data.label if ts_data.label else str(id(ts_data))
+            # Labels are display text; different overlays may share a label.
+            key = str(id(ts_data))
             lines[key] = line
             ts_data_keys[id(ts_data)] = key
 
@@ -621,20 +629,13 @@ class TimeSeriesArtistManager:
             )
             value_texts[key] = value_text
 
-            # Set stable y-limits from global values
-            if ts_data.use_global_limits:
-                y_range = ts_data.global_vmax - ts_data.global_vmin
-                margin = y_range * 0.05 if y_range > 0 else 0.5
-                ax.set_ylim(
-                    ts_data.global_vmin - margin,
-                    ts_data.global_vmax + margin,
-                )
-
             # Add y-label from first overlay in group
             if ts_data.label and not ax.get_ylabel():
                 ax.set_ylabel(
                     ts_data.label, fontsize=9, color="white" if dark_theme else "black"
                 )
+
+        _set_group_global_limits(axes, groups)
 
         # Create cursor lines (one per axes, None if disabled)
         cursors: list[Line2D | None] = []

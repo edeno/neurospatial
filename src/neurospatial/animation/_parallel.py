@@ -251,11 +251,14 @@ _TRAIL_MAX_ALPHA = 0.7
 
 
 def _build_trail_segments(
-    trail_positions: NDArray[np.float64], color: Any
+    trail_positions: NDArray[np.float64],
+    color: Any,
+    *,
+    interval_valid: NDArray[np.bool_] | None = None,
 ) -> tuple[list[NDArray[np.float64]], list[tuple[float, float, float, float]]]:
     """Build decaying-alpha trail line segments from a position window.
 
-    Each segment connects consecutive *visible* (non-NaN) positions within the
+    Each segment connects adjacent observed positions within the
     trail window. The per-segment alpha encodes the segment's true age: it is
     derived from the segment's newer endpoint index within the *original*
     window (length ``len(trail_positions)``), NOT from the compacted index
@@ -284,7 +287,7 @@ def _build_trail_segments(
     if window_len < 2:
         return [], []
 
-    valid_mask = ~np.any(np.isnan(trail_positions), axis=1)
+    valid_mask = np.isfinite(trail_positions).all(axis=1)
     valid_indices = np.nonzero(valid_mask)[0]
     if len(valid_indices) < 2:
         return [], []
@@ -297,6 +300,10 @@ def _build_trail_segments(
     segments: list[NDArray[np.float64]] = []
     colors: list[tuple[float, float, float, float]] = []
     for older, newer in itertools.pairwise(valid_indices):
+        if newer != older + 1 or (
+            interval_valid is not None and not interval_valid[older]
+        ):
+            continue
         segments.append(trail_positions[[older, newer]])
         # Newer endpoint's original window index sets the segment's age.
         alpha = float(newer) / denom * _TRAIL_MAX_ALPHA
@@ -337,7 +344,12 @@ def _render_position_overlay_matplotlib(ax: Any, pos_data: Any, frame_idx: int) 
         trail_start = max(0, frame_idx - pos_data.trail_length + 1)
         trail_positions = pos_data.data[trail_start : frame_idx + 1]
 
-        segments, colors = _build_trail_segments(trail_positions, pos_data.color)
+        intervals = getattr(pos_data, "interval_valid", None)
+        if intervals is not None:
+            intervals = intervals[trail_start:frame_idx]
+        segments, colors = _build_trail_segments(
+            trail_positions, pos_data.color, interval_valid=intervals
+        )
         if segments:
             lc = LineCollection(segments, colors=colors, linewidths=1.5, zorder=100)
             ax.add_collection(lc)
@@ -485,9 +497,9 @@ def _render_head_direction_overlay_matplotlib(
     # Determine arrow origin: prefer position data if available
     if position_data is not None:
         origin = position_data.data[frame_idx]
-        # Skip if position is NaN (use centroid fallback)
-        if np.any(np.isnan(origin)):
-            origin = np.mean(env.bin_centers, axis=0)
+        # Missing tracking cannot locate an animal's heading in the arena.
+        if not np.isfinite(origin).all():
+            return
     else:
         # Fallback: use centroid of environment
         origin = np.mean(env.bin_centers, axis=0)
@@ -1059,8 +1071,8 @@ class OverlayArtistManager:
         # Determine arrow origin
         if position_data is not None:
             origin = position_data.data[frame_idx]
-            if np.any(np.isnan(origin)):
-                origin = np.mean(self.env.bin_centers, axis=0)
+            if not np.isfinite(origin).all():
+                return None
         else:
             origin = np.mean(self.env.bin_centers, axis=0)
 
@@ -1164,7 +1176,12 @@ class OverlayArtistManager:
         trail_start = max(0, frame_idx - pos_data.trail_length + 1)
         trail_positions = pos_data.data[trail_start : frame_idx + 1]
 
-        segments, colors = _build_trail_segments(trail_positions, pos_data.color)
+        intervals = getattr(pos_data, "interval_valid", None)
+        if intervals is not None:
+            intervals = intervals[trail_start:frame_idx]
+        segments, colors = _build_trail_segments(
+            trail_positions, pos_data.color, interval_valid=intervals
+        )
         if segments:
             trail_lc.set_segments(segments)
             trail_lc.set_colors(colors)

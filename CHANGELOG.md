@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Animation workflows
+
+- `Animation` and named `AnimationField` streams retain physical clocks,
+  lazy sources and fixed color scales across notebook viewing and MP4/GIF
+  export. `Animation.from_decoding` retains the result's environment and times.
+  `AnimationView` adds recording-time seeking, interval selection and export,
+  with native viewers available through `native`.
+- `EventInspector` preserves overlapping event IDs and analysis metadata during
+  filtering, selection and annotation, and exports selected event clips and
+  typed review tables. Scene exports include multiple fields, spike rasters,
+  epochs, signals, object vectors and calibrated video.
+- Observed animation overlays now preserve missing NaN samples and do not
+  interpolate across gaps over 0.5 seconds or `break_before` boundaries.
+  Pass `max_gap=None` explicitly for continuous observations sampled more
+  sparsely. Native GPU views use the same interpolation and support rules.
+  Position metadata and NWB units are validated against the environment;
+  raster rate-result adapters align maps by unit identity.
+- Fix cropped/downsampled video calibration and napari physical-scale video
+  placement, missing-value colors, grouped trace limits and duplicate labels,
+  final widget slider updates, JPEG output and external HTML frame paths.
+  Backend capability checks explicitly report unsupported overlays.
+
 ### Breaking
 
 - Options of public free functions are keyword-only, as `Environment`

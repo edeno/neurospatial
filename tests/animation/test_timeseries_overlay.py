@@ -781,7 +781,7 @@ class TestTimeSeriesArtistManager:
         assert len(manager.axes) == 1  # One group = one axes
         assert len(manager.lines) == 1  # One line per overlay
         assert len(manager.cursors) == 1  # One cursor per axes
-        assert "Speed" in manager.lines or 0 in manager.lines
+        assert manager._ts_data_keys[id(sample_timeseries_data)] in manager.lines
 
         plt.close(fig)
 

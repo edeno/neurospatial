@@ -14,6 +14,10 @@ Available backends:
 
 Public API
 ----------
+Animation, AnimationField : class
+    Named field streams and synchronized overlays shared by viewing and export.
+AnimationView, EventInspector : class
+    Recording-time controls and identified event selection and annotation.
 PositionOverlay, BodypartOverlay, HeadDirectionOverlay, ObjectVectorOverlay : class
     Sample-aligned spatial overlays.
 EventOverlay, TimeSeriesOverlay, VideoOverlay : class
@@ -34,6 +38,7 @@ subsample_frames, estimate_colormap_range_from_subset, large_session_napari_conf
 """
 
 from neurospatial.animation._video_io import _VideoReader as _VideoReader
+from neurospatial.animation._view import AnimationView
 from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
 from neurospatial.animation.calibration import calibrate_video
 from neurospatial.animation.config import ScaleBarConfig
@@ -42,6 +47,7 @@ from neurospatial.animation.core import (
     large_session_napari_config,
     subsample_frames,
 )
+from neurospatial.animation.events import EventInspector
 from neurospatial.animation.overlays import (
     BodypartOverlay,
     EpochOverlay,
@@ -53,6 +59,7 @@ from neurospatial.animation.overlays import (
     TimeSeriesOverlay,
     VideoOverlay,
 )
+from neurospatial.animation.scene import Animation, AnimationField
 from neurospatial.animation.skeleton import (
     MOUSE_SKELETON,
     RAT_SKELETON,
@@ -66,8 +73,12 @@ __all__: list[str] = [
     "MOUSE_SKELETON",
     "RAT_SKELETON",
     "SIMPLE_SKELETON",
+    "Animation",
+    "AnimationField",
+    "AnimationView",
     "BodypartOverlay",
     "EpochOverlay",
+    "EventInspector",
     "EventOverlay",
     "FastplotlibAnimation",
     "HeadDirectionOverlay",

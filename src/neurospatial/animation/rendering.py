@@ -504,7 +504,8 @@ def field_to_rgb_for_napari(
     rgb : ndarray of shape (height, width, 3) or (n_bins, 3), dtype uint8
         RGB image for napari. For 2D grid layouts, returns (height, width, 3)
         in napari coordinate convention (y, x). For non-grid layouts, returns
-        (n_bins, 3) for point cloud rendering.
+        (n_bins, 3) for point cloud rendering. Missing observations and inactive
+        grid cells use neutral gray (128, 128, 128), including constant fields.
 
     Raises
     ------
@@ -538,6 +539,10 @@ def field_to_rgb_for_napari(
             f"Expected shape: ({env.n_bins},)"
         )
 
+    # Preserve missing observations before normalization, including constant fields.
+    nan_mask = np.isnan(field)
+    missing_rgb = np.array([128, 128, 128], dtype=np.uint8)
+
     # Normalize to [0, 1], guarding against zero-range (constant field or vmin == vmax)
     value_range = vmax - vmin
     if value_range <= 0 or not np.isfinite(value_range):
@@ -549,7 +554,6 @@ def field_to_rgb_for_napari(
 
     # Handle NaN values - set to 0 before integer conversion
     # NaN values pass through np.clip unchanged, which causes issues with astype
-    nan_mask = np.isnan(normalized)
     if np.any(nan_mask):
         normalized = np.where(nan_mask, 0.0, normalized)
 
@@ -558,6 +562,7 @@ def field_to_rgb_for_napari(
 
     # Lookup RGB values
     rgb = cmap_lookup[indices]
+    rgb[nan_mask] = missing_rgb
 
     # For grid-compatible 2D layouts, reshape to 2D image
     # Only rectilinear grids rasterize; also require a 2-D grid_shape.
@@ -565,7 +570,9 @@ def field_to_rgb_for_napari(
     grid_shape = env.grid_shape
     if is_grid and len(grid_shape) == 2:
         # Create full grid RGB and fill the active bins
-        full_rgb = np.zeros((grid_shape[0], grid_shape[1], 3), dtype=np.uint8)
+        full_rgb = np.full(
+            (grid_shape[0], grid_shape[1], 3), missing_rgb, dtype=np.uint8
+        )
         full_rgb.reshape(-1, 3)[env.active_mask.flatten()] = rgb
 
         # Transpose from (n_x, n_y, 3) to (n_y, n_x, 3) for napari (y, x) convention

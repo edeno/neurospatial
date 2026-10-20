@@ -57,22 +57,20 @@ def test_trail_alpha_matches_true_age_with_nan_gap():
         plt.close(fig)
 
     # Valid window indices are [0, 1, 2, 4, 5, 6, 7] (index 3 occluded).
-    # Segments connect consecutive valid positions:
-    #   (0->1), (1->2), (2->4), (4->5), (5->6), (6->7)
+    # Segments connect adjacent observations, with no bridge over missing frame 3:
+    #   (0->1), (1->2), (4->5), (5->6), (6->7)
     # True-age alpha = (newer_window_index / (L-1)) * 0.7 with L = 8 frames.
     max_alpha = 0.7
     denom = n - 1  # 7
-    expected = np.array([1, 2, 4, 5, 6, 7], dtype=float) / denom * max_alpha
+    expected = np.array([1, 2, 5, 6, 7], dtype=float) / denom * max_alpha
     np.testing.assert_allclose(alphas, expected, atol=1e-9)
 
     # The newest segment reaches the current frame -> full 0.7 alpha.
     assert alphas[-1] == max(alphas)
     np.testing.assert_allclose(alphas[-1], max_alpha, atol=1e-9)
 
-    # The segment bridging the NaN gap must jump (skip the occluded frame's
-    # age), proving the alpha indexes the original window, not the compacted
-    # valid sequence.
-    np.testing.assert_allclose(alphas[2], 4 / denom * max_alpha, atol=1e-9)
+    # The first segment after the gap retains its true age and both endpoints.
+    np.testing.assert_allclose(alphas[2], 5 / denom * max_alpha, atol=1e-9)
 
 
 def test_trail_alpha_no_gap_matches_window_length():
@@ -125,7 +123,7 @@ def test_artist_manager_trail_alpha_matches_true_age_with_nan_gap():
 
     denom = n - 1
     max_alpha = 0.7
-    expected = np.array([1, 2, 4, 5, 6, 7], dtype=float) / denom * max_alpha
+    expected = np.array([1, 2, 5, 6, 7], dtype=float) / denom * max_alpha
     np.testing.assert_allclose(alphas, expected, atol=1e-9)
     assert alphas[-1] == max(alphas)
     np.testing.assert_allclose(alphas[-1], max_alpha, atol=1e-9)

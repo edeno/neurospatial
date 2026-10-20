@@ -216,6 +216,7 @@ class TestHeadDirectionInterpolation:
         overlay = HeadDirectionOverlay(
             headings=np.array([3.0, -3.0]),
             times=np.array([0.0, 1.0]),
+            max_gap=None,
         )
         # Frame_times must span the source range; assert on the midpoint frame.
         frame_times = np.array([0.0, 0.5, 1.0])
@@ -231,6 +232,7 @@ class TestHeadDirectionInterpolation:
         overlay = HeadDirectionOverlay(
             headings=np.array([0.1, 0.2]),
             times=np.array([0.0, 1.0]),
+            max_gap=None,
         )
         frame_times = np.array([0.0, 0.5, 1.0])
         result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
@@ -242,6 +244,7 @@ class TestHeadDirectionInterpolation:
         overlay = HeadDirectionOverlay(
             headings=np.array([0.1, 0.2]),
             times=np.array([0.0, 1.0]),
+            max_gap=None,
         )
         # The last frame (2.0) extrapolates beyond [0, 1]; it must yield NaN
         # while the in-range frames stay finite.
@@ -257,6 +260,7 @@ class TestHeadDirectionInterpolation:
         overlay = HeadDirectionOverlay(
             headings=np.array([[1.0, 0.0], [0.0, 1.0]]),
             times=np.array([0.0, 1.0]),
+            max_gap=None,
         )
         frame_times = np.array([0.0, 0.5, 1.0])
         result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
@@ -1485,7 +1489,7 @@ class TestConvertOverlaysToData:
             "body": np.array([[0.0, 5.0], [10.0, 15.0]]),
         }
         times = np.array([0.0, 1.0])
-        overlay = BodypartOverlay(data=data, times=times)
+        overlay = BodypartOverlay(data=data, times=times, max_gap=None)
 
         # Animation at 4 Hz
         frame_times = np.array([0.0, 0.5, 1.0])
@@ -1646,7 +1650,7 @@ class TestConvertOverlaysToData:
         assert "monotonic" in error_msg.lower()
 
     def test_validation_finite_values_during_conversion(self, mock_env):
-        """Test that finite value validation is called."""
+        """Missing observations survive conversion without becoming positions."""
         from neurospatial.animation.overlays import _convert_overlays_to_data
 
         # Create overlay with NaN values
@@ -1657,17 +1661,13 @@ class TestConvertOverlaysToData:
         frame_times = np.array([0.0, 1.0, 2.0])
         n_frames = 3
 
-        # Should raise ValueError from _validate_finite_values
-        with pytest.raises(ValueError) as exc_info:
-            _convert_overlays_to_data(
-                overlays=[overlay],
-                frame_times=frame_times,
-                n_frames=n_frames,
-                env=mock_env,
-            )
-
-        error_msg = str(exc_info.value)
-        assert "nan" in error_msg.lower()
+        converted = _convert_overlays_to_data(
+            overlays=[overlay], frame_times=frame_times, n_frames=n_frames, env=mock_env
+        )
+        assert np.isnan(converted.positions[0].data[1]).all()
+        np.testing.assert_array_equal(
+            converted.positions[0].data[[0, 2]], positions[[0, 2]]
+        )
 
     def test_validation_shape_mismatch(self, mock_env):
         """Test that shape validation catches dimension mismatches."""

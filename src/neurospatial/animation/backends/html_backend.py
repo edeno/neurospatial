@@ -84,6 +84,7 @@ import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
+from urllib.parse import quote
 
 import numpy as np
 from numpy.typing import NDArray
@@ -799,6 +800,7 @@ def render_html(
         # Generate lightweight HTML with relative frame references
         html = _generate_non_embedded_html_player(
             frames_dir=frames_dir,
+            output_path=output_path,
             n_frames=n_frames,
             frame_labels=frame_labels,
             fps=fps,
@@ -1427,6 +1429,8 @@ def _generate_non_embedded_html_player(
     title: str,
     image_format: str,
     overlay_data: dict | None = None,
+    *,
+    output_path: Path | None = None,
 ) -> str:
     """Generate HTML player with disk-backed frames (non-embedded).
 
@@ -1446,6 +1450,9 @@ def _generate_non_embedded_html_player(
         Image format (png or jpeg)
     overlay_data : dict | None, optional
         JSON-compatible dictionary with overlay data (positions and regions)
+    output_path : Path, optional
+        HTML output file used to resolve the frame directory's relative URL.
+        Omit only for a frame directory beside the HTML file.
 
     Returns
     -------
@@ -1468,8 +1475,13 @@ def _generate_non_embedded_html_player(
     labels_json = json.dumps(frame_labels)
     overlay_json_str = json.dumps(overlay_data) if overlay_data else "null"
 
-    # Relative directory name for JavaScript
-    frames_dir_name = frames_dir.name
+    # Resolve URLs from the HTML file, including nested or external directories.
+    relative_dir = (
+        os.path.relpath(frames_dir.resolve(), output_path.resolve().parent)
+        if output_path is not None
+        else frames_dir.name
+    )
+    frames_dir_json = json.dumps(quote(Path(relative_dir).as_posix(), safe="/"))
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1646,7 +1658,7 @@ def _generate_non_embedded_html_player(
         const N = {n_frames};
         const labels = {labels_json};
         const baseFPS = {fps};
-        const framesDir = "{frames_dir_name}";
+        const framesDir = {frames_dir_json};
         const overlayData = {overlay_json_str};
 
         // Zero-pad frame numbers (5 digits)

@@ -1250,7 +1250,7 @@ def _build_video_napari_affine(
     Notes
     -----
     The full transform chain is:
-    video_px → (transform_to_env) → env_cm → (env_to_napari) → napari_px
+    video_px → environment → grid pixels → physically scaled napari world
 
     If transform_to_env is None, uses env_bounds to position the video
     by computing a simple scale+translate transform from video pixel
@@ -1327,9 +1327,35 @@ def _build_video_napari_affine(
     # The video_to_env converts (row, col) to (x, y)
     # The env_to_napari converts (x, y) to (row, col)
     # Combined: (row_v, col_v) → (x, y) → (row_n, col_n)
-    affine: NDArray[np.float64] = env_to_napari @ video_to_env
+    # Field layers scale their raster pixels into physical viewer units. Video
+    # layers have no separate scale, so include that output scale here too.
+    pixel_to_world = np.diag([*scale.pixel_size, 1.0])
+    affine: NDArray[np.float64] = pixel_to_world @ env_to_napari @ video_to_env
 
     return affine
+
+
+def _build_position_trail_tracks(
+    positions: NDArray[np.float64],
+    interval_valid: NDArray[np.bool_] | None = None,
+) -> NDArray[np.float64]:
+    """Give each observed run its own track ID, retaining both run endpoints.
+
+    Coordinates have already been converted to napari order. Filtering missing
+    rows must not reconnect their neighbors or connect across declared breaks.
+    """
+    n_frames = len(positions)
+    if not n_frames:
+        return np.empty((0, 4), dtype=np.float64)
+    finite: NDArray[np.bool_] = np.asarray(np.isfinite(positions).all(axis=1))
+    continuous = finite[:-1] & finite[1:]
+    if interval_valid is not None:
+        continuous &= interval_valid
+    track_ids = np.r_[0, np.cumsum(~continuous)]
+    tracks: NDArray[np.float64] = np.column_stack(
+        (track_ids, np.arange(n_frames), positions)
+    )
+    return tracks[finite]
 
 
 def _render_position_overlay(
@@ -1376,20 +1402,9 @@ def _render_position_overlay(
 
     # Add tracks layer for trail if trail_length specified
     if position_data.trail_length is not None:
-        # Create track data: (track_id, time, y, x)
-        track_data = np.column_stack(
-            [
-                np.zeros(n_frames),  # Single track
-                np.arange(n_frames),  # Time
-                transformed_data[:, 0],  # Y
-                transformed_data[:, 1],  # X
-            ]
+        track_data = _build_position_trail_tracks(
+            transformed_data, position_data.interval_valid
         )
-
-        # Filter out NaN values - napari Tracks layer requires finite data
-        valid_mask = np.all(np.isfinite(track_data), axis=1)
-        if not np.all(valid_mask):
-            track_data = track_data[valid_mask]
 
         # Napari tracks layer uniform color workaround (REQUIRED - no alternative):
         #
@@ -1593,8 +1608,14 @@ def _render_bodypart_overlay(
         # Track which bodypart each point belongs to
         all_features.extend([part_name] * n_frames)
 
-    # Stack all points
+    # Missing keypoints must not enter napari geometry, while feature labels
+    # and colors keep the same rows as the remaining points.
     points_array = np.vstack(all_points)
+    valid_points = np.isfinite(points_array).all(axis=1)
+    points_array = points_array[valid_points]
+    all_features = [
+        name for name, keep in zip(all_features, valid_points, strict=True) if keep
+    ]
 
     # Determine face colors
     face_colors: list[str] | str
