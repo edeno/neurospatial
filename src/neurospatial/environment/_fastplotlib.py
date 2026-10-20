@@ -337,19 +337,18 @@ def volume_opacity(
 ) -> NDArray[np.float64]:
     """Opacity of each bin of a 3-D field: high values opaque, low ones faint.
 
-    A missing bin is faint, or invisible when ``nan_color`` is None, so bins
-    asked to be skipped take no part in the volume's blending.
+    Missing bins are invisible in 3D, so unsupported observations take no
+    part in the volume's blending.
     """
     scaled = scale.scaled(values)
-    missing = 0.0 if scale.nan_color is None else 0.05
-    return np.where(np.isfinite(scaled), 0.03 + 0.97 * scaled, missing)
+    return np.where(np.isfinite(scaled), 0.03 + 0.97 * scaled, 0.0)
 
 
 class FieldGraphic:
     """One value per bin, drawn as colored cells or points; ``update`` recolors.
 
     In three dimensions a point's opacity follows its value, so the bins with
-    the highest values show through the volume; missing bins are faint.
+    the highest values show through the volume; missing bins are invisible.
     Hovering over a bin shows its index, position and value.
 
     Parameters
@@ -370,22 +369,54 @@ class FieldGraphic:
         env: Environment,
         values: NDArray[np.float64],
         scale: ColorScale,
+        *,
+        field_rendering: str = "points",
+        volume_threshold: float | None = None,
+        slice_plane: tuple[float, float, float, float] | None = None,
     ) -> None:
-        self.scale = scale
-        self.values = values
-        self._volume = env.n_dims == 3
-        cells = cell_mesh(env)
-        # Only the bin of each vertex is needed again; the mesh owns the rest.
-        self._vertex_bin = None if cells is None else cells.vertex_bin
-        self._triangle_bin = (
-            None if cells is None else cells.vertex_bin[cells.triangles[:, 0]]
+        from neurospatial.environment._fastplotlib_volume import (
+            VolumeField,
+            resolve_field_rendering,
         )
+
+        mode = resolve_field_rendering(
+            env,
+            field_rendering,
+            volume_threshold=volume_threshold,
+            slice_plane=slice_plane,
+        )
+        self.scale, self.values = scale, values
+        self._volume = env.n_dims == 3
         self._centers = env.bin_centers
         labels = env._plot_labels()
         self._axes = list(labels.coordinates.axis_labels(labels.units))
         if self._volume:
             suffix = f" ({labels.units})" if labels.units else ""
             self._axes.append(f"Z Position{suffix}")
+        self._native_volume_bins: NDArray[np.intp] | None = None
+        self._native_volume = None
+        if mode != "points":
+            self._native_volume = VolumeField(
+                subplot,
+                env,
+                values,
+                scale,
+                mode=mode,
+                threshold=volume_threshold,
+                plane=slice_plane,
+            )
+            self.graphic = self._native_volume.graphic
+            mask = self._native_volume.grid.active_mask
+            self._native_volume_bins = np.full(mask.shape, -1, dtype=np.intp)
+            self._native_volume_bins[mask] = np.arange(env.n_bins)
+            self.graphic.tooltip_format = self.describe
+            return
+        cells = cell_mesh(env)
+        # Only the bin of each vertex is needed again; the mesh owns the rest.
+        self._vertex_bin = None if cells is None else cells.vertex_bin
+        self._triangle_bin = (
+            None if cells is None else cells.vertex_bin[cells.triangles[:, 0]]
+        )
         if self._volume:
             alpha_mode = "weighted_blend"  # order-independent: no depth sort
         else:
@@ -404,7 +435,21 @@ class FieldGraphic:
 
     def describe(self, pick_info: dict[str, Any]) -> str:
         """The tooltip for the bin under the pointer."""
-        if self._triangle_bin is not None:
+        if self._native_volume_bins is not None:
+            # Native volume picks already use global XYZ voxel indices, even
+            # when the uploaded array is ZYX or split into texture tiles.
+            index = tuple(int(coordinate) for coordinate in pick_info["index"])
+            if len(index) != 3 or any(
+                coordinate < 0 or coordinate >= size
+                for coordinate, size in zip(
+                    index, self._native_volume_bins.shape, strict=True
+                )
+            ):
+                return "outside the volume"
+            bin_index = int(self._native_volume_bins[index])
+            if bin_index < 0:
+                return "inactive cell (not an environment bin)"
+        elif self._triangle_bin is not None:
             bin_index = int(self._triangle_bin[pick_info["face_index"]])
         else:
             bin_index = int(pick_info["vertex_index"])
@@ -431,7 +476,9 @@ class FieldGraphic:
     def update(self, values: NDArray[np.float64]) -> None:
         """Recolor the bins with new values."""
         self.values = values
-        if self._vertex_bin is not None:
+        if self._native_volume is not None:
+            self._native_volume.update(values)
+        elif self._vertex_bin is not None:
             self.graphic.mapcoords = self._coordinates(values)
         else:
             self.graphic.colors = self._colors(values)
@@ -717,7 +764,11 @@ def plot_field(
     """
     from neurospatial.environment._visualization import field_color_limits
 
-    scale = ColorScale(cmap, *field_color_limits(field, vmin, vmax), nan_color)
+    scale = ColorScale(
+        cmap,
+        *field_color_limits(field, vmin, vmax),
+        None if env.n_dims == 3 else nan_color,
+    )
     figure, subplot = new_figure(env)
     FieldGraphic(subplot, env, field, scale)
     draw_layers(subplot, env, show_walls=True, show_landmarks=True, show_regions=False)

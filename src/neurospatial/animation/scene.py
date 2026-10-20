@@ -191,10 +191,13 @@ class AnimationField:
         return len(self.times)
 
     def __getitem__(self, index: Any) -> Any:
-        """Read spatial rows from the original source."""
+        """Read spatial rows; a single-row result owns its sampled values."""
         if isinstance(index, slice):
             return self.values[index]
-        row = np.asarray(self.values[index], dtype=float)
+        # Lazy readers may reuse their scratch storage on the next access.
+        # A sampled observation must remain stable across independent streams
+        # and the worker-to-GUI handoff without materializing the whole source.
+        row = np.array(self.values[index], dtype=float, copy=True)
         if row.shape != (self.n_bins,):
             raise ValueError(
                 f"Field row {index} has shape {row.shape}; expected ({self.n_bins},)."
@@ -277,6 +280,9 @@ class Animation:
         self._closed = False
         self._closing = False
         self._view_lock = RLock()
+        # Native viewers prepare frames on workers. All views and exports of
+        # this scene share readers, which need not support concurrent seeks.
+        self._source_lock = RLock()
         self._views: set[AnimationView] = set()
         if track is not None:
             from neurospatial.animation._tracks import (
@@ -531,8 +537,9 @@ class Animation:
 
     def sample_fields(self, time: float) -> dict[str, np.ndarray]:
         """Sample every named stream at the same physical time."""
-        self._ensure_open()
-        return {name: field.sample(time) for name, field in self.fields.items()}
+        with self._source_lock:
+            self._ensure_open()
+            return {name: field.sample(time) for name, field in self.fields.items()}
 
     def render_frame(
         self, time: float, *, dpi: int = 100, figsize: tuple[float, float] | None = None
@@ -540,13 +547,14 @@ class Animation:
         """Render a complete scene as an RGB array, without a display."""
         from neurospatial.animation._scene_rendering import SceneRenderer
 
-        self._ensure_open()
-        settings = (dpi, figsize)
-        if self._renderer is None or self._renderer.settings != settings:
-            if self._renderer is not None:
-                self._renderer.close()
-            self._renderer = SceneRenderer(self, dpi=dpi, figsize=figsize)
-        return cast("np.ndarray", self._renderer.render(float(time)))
+        with self._source_lock:
+            self._ensure_open()
+            settings = (dpi, figsize)
+            if self._renderer is None or self._renderer.settings != settings:
+                if self._renderer is not None:
+                    self._renderer.close()
+                self._renderer = SceneRenderer(self, dpi=dpi, figsize=figsize)
+            return cast("np.ndarray", self._renderer.render(float(time)))
 
     def export(
         self,
@@ -631,16 +639,23 @@ class Animation:
                     failures.append(error)
             with self._view_lock:
                 self._views.clear()
-            if self._renderer is not None:
-                renderer, self._renderer = self._renderer, None
+            # Native workers have drained. Also let any already-running public
+            # read/export finish before closing shared sources, and publish the
+            # closed state before a waiting reader can acquire this lock.
+            with self._source_lock:
                 try:
-                    renderer.close()
-                except BaseException as error:
-                    failures.append(error)
-            try:
-                self._owned_readers.close()
-            except BaseException as error:
-                failures.append(error)
+                    if self._renderer is not None:
+                        renderer, self._renderer = self._renderer, None
+                        try:
+                            renderer.close()
+                        except BaseException as error:
+                            failures.append(error)
+                    try:
+                        self._owned_readers.close()
+                    except BaseException as error:
+                        failures.append(error)
+                finally:
+                    self._closed = True
         finally:
             with self._view_lock:
                 self._closed = True

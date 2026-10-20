@@ -247,7 +247,7 @@ def test_scene_view_exports_native_3d_camera_and_independent_streams(tmp_path):
                 ),
             },
         ) as scene,
-        scene.show(backend="fastplotlib") as view,
+        scene.show(backend="fastplotlib", field_rendering="points") as view,
     ):
         native = view.native
         native.figure.canvas.set_logical_size(720, 480)

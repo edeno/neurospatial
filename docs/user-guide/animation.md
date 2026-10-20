@@ -123,6 +123,21 @@ keeps its own recording clock, colormap, range and label in all three views.
 Napari uses a recording-time control to synchronize layers with signal,
 raster, epoch and projected-track panels.
 
+Position and event `size`, and object-vector `object_size`, specify marker
+diameters in logical screen pixels. They stay independent of environment units
+and camera zoom. Export renderers convert this diameter to their native sizing
+units; HiDPI screens may use several physical pixels per logical pixel.
+
+Napari prepares lazy fields, video and scientific windows on a worker and
+applies layer updates on the GUI thread, following napari's
+[threading guidance](https://napari.org/stable/guides/threading.html).
+Playback follows elapsed recording time and can skip frames when reads are
+slow. Scrubbing retains the latest pending request instead of building a queue.
+Explicit `view.seek(time)` and export remain synchronous, so subsequent work
+sees the requested time. Views and scene exports serialize access to shared
+readers; closing the scene waits for pending reads. Held field rows and
+overlapping track windows use bounded caches.
+
 `view.export()` captures the current scientific view, including camera edits,
 layer styling and custom graphics. It excludes application controls and restores
 the recording time and playback state when it finishes, including after an
@@ -147,8 +162,9 @@ Closing one view leaves the scene available for another view or export. A
 caller-supplied napari viewer keeps its unrelated layers and controls.
 
 Scenes support 1-D, 2-D and 3-D environments; napari scenes require 2-D or 3-D.
-Regular 3-D cells retain their physical geometry in scene exports and become
-volumes in napari; layouts without cell geometry show values at bin centers.
+Regular 3-D cells retain their physical geometry in scene exports. Uniform
+3-D grids become native volumes in napari and fastplotlib, including grids with
+affine coordinate transforms. Other layouts show values at bin centers.
 Three-dimensional headings require vectors, not planar angles, and point
 regions keep their full coordinates. Planar video, polygon regions and scale
 bars require a 2-D scene. In napari, named fields use
@@ -158,6 +174,32 @@ Scenes reject regions, headings and video in 1-D environments. Notebook and
 scene-export overlays place 1-D positions, pose and object vectors on the
 spatial axis at zero field amplitude. Fastplotlib scenes also reject scale
 bars and, in 1-D, pose and object-vector overlays.
+
+Fastplotlib defaults to `field_rendering="auto"`: maximum-intensity projection
+(`"mip"`) for uniform 3-D grids and the existing cell/point representation for
+other environments. Choose `"points"` to retain bin-center points in 3-D,
+`"iso"` for an isosurface, or `"slice"` for a plane. Explicit volume modes reject
+unsupported geometry before allocating a viewer.
+
+<!-- docs-test: skip Requires a live GPU viewer and a 3-D scene -->
+```python
+view = scene.show(
+    backend="fastplotlib", field_rendering="iso", volume_threshold=0.4
+)
+# Alternatively, the WORLD-coordinate plane z = 20:
+slice_view = scene.show(
+    backend="fastplotlib", field_rendering="slice", slice_plane=(0, 0, 1, -20)
+)
+```
+
+`volume_threshold` uses the original field's units and must lie within its
+fixed `vmin`/`vmax`; it defaults to their midpoint. `slice_plane=(a, b, c, d)`
+means `a*x + b*y + c*z + d = 0` in environment coordinates and defaults to a
+horizontal plane through the volume center. Missing and inactive voxels remain
+transparent, distinct from finite zero or negative values. Nearest voxel
+sampling prevents interpolation across missing cells. These options also work
+with `env.animate_fields(..., backend="fastplotlib")`; static
+`env.plot_field(..., backend="fastplotlib")` retains its existing bin geometry.
 
 For streams on different clocks, use
 `Animation(env, {"posterior": AnimationField(posterior, decode_times),
@@ -583,12 +625,31 @@ jupyter labextension install @jupyter-widgets/jupyterlab-manager
 
 ## Fastplotlib Backend (GPU, local or remote)
 
-Draws each frame on the GPU when it is shown, so a long recording starts at
-once and scrubbing stays fast: a frame of a 2,600-bin arena with position,
-pose, heading and event overlays updates in about 5 ms. It draws each bin's
-own cell (grids, hexagons, triangles, clipped polygons) and 3-D environments
-as points whose opacity follows the value, so the high values show through the
-volume. `backend="auto"` never chooses it.
+Draws each frame on the GPU when it is shown and reads fields lazily. It draws
+each 2-D bin's own cell (grids, hexagons, triangles, clipped polygons), uniform
+3-D grids as native volumes, and other 3-D environments as bin-center points.
+Choose `field_rendering="points"` for the previous 3-D point representation.
+Playback performance depends on field size, overlays, source latency and the
+GPU; measure your workload with the benchmark below. `backend="auto"` never
+chooses fastplotlib.
+
+Measure native scene performance with a reproducible lazy-source workload:
+
+```bash
+uv run python scripts/benchmark_animation_scenes.py \
+  --backend fastplotlib --dimensions 3 --grid-size 16 \
+  --frames 48 --samples 24 --warmup 4 --panels --output /tmp/animation.json
+```
+
+Use `--backend napari` for Qt/OpenGL, or `--smoke` for a small rendering check.
+With a visible GUI, `--delay-ms 80 --playback-seconds 1 --burst-seeks 12`
+exercises slow-source playback and rapid time changes. Fastplotlib also accepts
+`--field-rendering points` to compare its 3-D representations. The JSON records
+versions, workload, actual capture resolution, source reads, resident memory
+and warmed median/p95/p99 latency. GUI playback and event-loop responsiveness
+are reported separately from synchronous seek plus GPU readback; capture timing
+is not playback FPS. Offscreen runs explicitly omit GUI playback measurements.
+Use matching workloads and actual resolutions when comparing runs.
 
 ```bash
 pip install "neurospatial[fastplotlib]"   # Python 3.11 or newer

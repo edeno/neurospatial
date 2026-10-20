@@ -18,6 +18,12 @@ from numpy.typing import NDArray
 from neurospatial.animation._region_names import shown_region_names
 from neurospatial.animation._style import _heading_displacements
 from neurospatial.animation._utils import _emit_status
+from neurospatial.animation.backends._napari_compat import (
+    canvas_grid,
+    qt_window,
+    screen_point_options,
+    set_spatial_units,
+)
 
 # Import shared coordinate transforms
 from neurospatial.animation.core import MAX_PLAYBACK_FPS
@@ -81,8 +87,8 @@ POINT_MARKER_RADIUS: float = 2.0
 POINT_BORDER_WIDTH: float = 0.5
 """Border width for position and bodypart point markers."""
 
-BODYPART_POINT_SIZE: float = 5.0
-"""Default size for bodypart point markers."""
+BODYPART_POINT_SIZE: float = 8.0
+"""Bodypart marker diameter in logical screen pixels."""
 
 SKELETON_DEFAULT_WIDTH: float = 2.0
 """Default edge width for skeleton lines."""
@@ -1516,7 +1522,7 @@ def _render_position_overlay(
             layer = viewer.add_points(
                 initial_data,
                 name=f"Position{name_suffix}",
-                size=position_data.size,
+                **screen_point_options(position_data.size),
                 face_color=position_data.color,
                 border_color="white",
                 border_width=POINT_BORDER_WIDTH,
@@ -1540,7 +1546,7 @@ def _render_position_overlay(
             layer = viewer.add_points(
                 points_data,
                 name=f"Position{name_suffix}",
-                size=position_data.size,
+                **screen_point_options(position_data.size),
                 face_color=position_data.color,
                 border_color="white",
                 border_width=POINT_BORDER_WIDTH,
@@ -1632,7 +1638,7 @@ def _render_bodypart_overlay(
     layer = viewer.add_points(
         points_array,
         name=f"Bodyparts{name_suffix}",
-        size=BODYPART_POINT_SIZE,
+        **screen_point_options(BODYPART_POINT_SIZE),
         face_color=face_colors,
         border_color="black",
         border_width=POINT_BORDER_WIDTH,
@@ -1948,7 +1954,7 @@ def _render_event_overlay(
         points_layer = viewer.add_points(
             points_3d,
             name=f"Events{name_suffix}",
-            size=event_data.size,
+            **screen_point_options(event_data.size),
             face_color=face_colors,
             border_color=border_color,
             border_width=event_data.border_width,
@@ -1967,7 +1973,7 @@ def _render_event_overlay(
     points_layer = viewer.add_points(
         positions_array,  # (N, 2) - just y, x (no time dimension)
         name=f"Events{name_suffix}",
-        size=event_data.size,
+        **screen_point_options(event_data.size),
         face_color=face_colors,
         border_color=border_color,
         border_width=event_data.border_width,
@@ -3247,6 +3253,11 @@ def render_napari(
             if show_regions:
                 _render_regions(viewer, env, show_regions, region_alpha)
 
+            # These legacy builders create their own viewer; every layer here
+            # is owned by this animation. Leading frame axes remain unitless.
+            for layer in viewer.layers:
+                set_spatial_units(layer, env.units, env.n_dims)
+
             # Configure napari's native scale bar if requested
             if scale_bar:
                 from neurospatial.animation.config import (
@@ -3455,21 +3466,21 @@ def _render_multi_field_napari(
             # Configure grid mode based on layout parameter
             # Napari's grid mode arranges layers in a 2D grid for side-by-side viewing
             if n_sequences > 1:
-                viewer.grid.enabled = True
+                canvas_grid(viewer).enabled = True
                 if layout == "horizontal":
                     # Side-by-side: single row with n_sequences columns
-                    viewer.grid.shape = (1, n_sequences)
-                    viewer.grid.stride = 1
+                    canvas_grid(viewer).shape = (1, n_sequences)
+                    canvas_grid(viewer).stride = 1
                 elif layout == "vertical":
                     # Stacked: n_sequences rows with single column
-                    viewer.grid.shape = (n_sequences, 1)
+                    canvas_grid(viewer).shape = (n_sequences, 1)
                     # stride=-1 reverses layer order so first layer appears at top
-                    viewer.grid.stride = -1
+                    canvas_grid(viewer).stride = -1
                 elif layout == "grid":
                     # Auto-grid: napari determines optimal arrangement
                     # Use -1 for automatic sizing based on number of layers
-                    viewer.grid.shape = (-1, -1)
-                    viewer.grid.stride = 1
+                    canvas_grid(viewer).shape = (-1, -1)
+                    canvas_grid(viewer).stride = 1
 
             # Configure playback controls
             viewer.dims.current_step = (0, *viewer.dims.current_step[1:])
@@ -3616,6 +3627,11 @@ def _render_multi_field_napari(
             # Render regions if requested
             if show_regions:
                 _render_regions(viewer, env, show_regions, region_alpha)
+
+            # These legacy builders create their own viewer; every layer here
+            # is owned by this animation. Leading frame axes remain unitless.
+            for layer in viewer.layers:
+                set_spatial_units(layer, env.units, env.n_dims)
 
             # Configure napari's native scale bar if requested
             if scale_bar:
@@ -4244,7 +4260,7 @@ def _bind_napari_cleanup(viewer: Any, cleanup: Callable[[], None]) -> None:
     from neurospatial.animation._resources import _bind_cleanup
 
     _bind_cleanup(viewer, cleanup)
-    window = getattr(getattr(viewer, "window", None), "_qt_window", None)
+    window = qt_window(viewer)
     if window is None:
         return
     original_close_event = window.closeEvent

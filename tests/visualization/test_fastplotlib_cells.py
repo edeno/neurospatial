@@ -161,7 +161,7 @@ def test_equal_limits_do_not_divide_by_zero():
 def test_volume_opacity_follows_the_value_and_skips_missing_bins_on_request():
     values = np.array([0.0, 1.0, np.nan])
     shown = volume_opacity(ColorScale("viridis", 0.0, 1.0, "lightgray"), values)
-    np.testing.assert_allclose(shown, [0.03, 1.0, 0.05])
+    np.testing.assert_allclose(shown, [0.03, 1.0, 0.0])
     skipped = volume_opacity(ColorScale("viridis", 0.0, 1.0, None), values)
     assert skipped[2] == 0.0  # nan_color=None: missing bins do not blend
 

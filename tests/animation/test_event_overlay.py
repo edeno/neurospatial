@@ -1701,7 +1701,9 @@ class TestMatplotlibEventOverlayInstantMode:
     @pytest.fixture
     def mock_ax(self):
         """Create mock matplotlib axes."""
-        return MagicMock()
+        axes = MagicMock()
+        axes.figure.dpi = 100
+        return axes
 
     @pytest.fixture
     def event_data_instant(self):
@@ -1770,9 +1772,9 @@ class TestMatplotlibEventOverlayInstantMode:
         assert "marker" in call_kwargs
         assert call_kwargs["marker"] == "o"
 
-        # Check size (scatter uses s=size**2 for area)
+        # Scatter takes typographic points squared; overlay size is pixels.
         assert "s" in call_kwargs
-        assert call_kwargs["s"] == 8.0**2
+        assert call_kwargs["s"] == (8.0 * 72 / mock_ax.figure.dpi) ** 2
 
         # Check border
         assert "edgecolors" in call_kwargs

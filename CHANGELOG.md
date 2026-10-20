@@ -4,6 +4,26 @@
 
 ### Animation workflows
 
+- Render uniform 3-D fastplotlib animation fields as native volumes, with
+  `field_rendering="mip"`, `"iso"`, `"slice"` and explicit `"points"` fallback.
+  Preserve affine environment coordinates, fixed scales and missing voxels;
+  thresholds use field units and slice planes use world XYZ coordinates.
+  Correct translated isosurface depth in the affected pygfx shader without
+  changing other applications' materials.
+- Keep overlay marker diameters in logical screen pixels across napari,
+  fastplotlib, HTML and Matplotlib exports, independent of coordinate units and
+  zoom. This corrects oversized napari 3-D markers and inconsistent HTML radii.
+- Prepare napari scene reads off the GUI thread with a bounded pending request,
+  elapsed-time playback, held-row and overlapping-window caches, and persistent
+  scientific-panel artists. Serialize shared reader access across native views
+  and scene exports; drain workers before closing readers.
+- Snapshot sampled rows and decoded frames before retaining them or handing
+  them to a renderer, so lazy readers that reuse scratch buffers cannot change
+  already-sampled observations.
+- Isolate native compatibility hooks, use napari's current canvas/scene APIs,
+  and carry physical units on owned layers. Check fastplotlib's supported widget
+  capabilities before allocation. Add a reproducible real-backend benchmark
+  separating GUI playback responsiveness from synchronous GPU capture latency.
 - Preserve NWB position reference frames in eager and lazy reads. Position and
   pose overlay adapters share validation that prevents keyword overrides from
   erasing or relabeling declared coordinate units and frames.

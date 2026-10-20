@@ -166,7 +166,10 @@ def frame_extremes(
                     fields[index.start : index.stop : stride], dtype=float
                 )
             else:
-                chunk = np.stack([np.asarray(fields[i], dtype=float) for i in index])
+                # Readers may refill the same scratch array for the next row.
+                chunk = np.stack(
+                    [np.array(fields[i], dtype=float, copy=True) for i in index]
+                )
             chunk = np.where(np.isfinite(chunk), chunk, np.nan)
             lows.append(np.nanmin(chunk.reshape(len(chunk), -1), axis=1))
             highs.append(np.nanmax(chunk.reshape(len(chunk), -1), axis=1))

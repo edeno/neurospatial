@@ -428,6 +428,7 @@ def show_animation(
         sources,
         frame_times=animation.frame_times,
         overlay_data=data,
+        _source_lock=animation._source_lock,
         _field_streams=tuple(animation.fields.values()),
         _field_at_time=lambda time: list(animation.sample_fields(time).values()),
         _field_styles=[

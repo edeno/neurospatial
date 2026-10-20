@@ -116,7 +116,7 @@ class PositionOverlayJSON(TypedDict):
     color : str
         CSS color string (e.g., "red", "#FF0000", "rgb(255, 0, 0)").
     size : float
-        Marker size in environment units.
+        Marker diameter in logical screen pixels.
     trail_length : int
         Number of previous frames to show as decaying trail.
     """
@@ -176,7 +176,7 @@ class EventOverlayJSON(TypedDict):
     colors : dict[str, str]
         CSS color per event type (e.g., {"spikes": "#ff0000"}).
     size : float
-        Marker size in environment units.
+        Marker diameter in logical screen pixels.
     border_color : str
         Border/edge color for markers.
     border_width : float
@@ -1195,7 +1195,7 @@ def _generate_html_player(
 
                     ctx.fillStyle = posOverlay.color;
                     ctx.beginPath();
-                    ctx.arc(x, y, posOverlay.size, 0, 2 * Math.PI);
+                    ctx.arc(x, y, posOverlay.size / 2, 0, 2 * Math.PI);
                     ctx.fill();
                 }});
             }}
@@ -1265,7 +1265,7 @@ def _generate_html_player(
                                 ctx.strokeStyle = borderColor;
                                 ctx.lineWidth = borderWidth;
                                 ctx.beginPath();
-                                ctx.arc(x, y, size, 0, 2 * Math.PI);
+                                ctx.arc(x, y, size / 2, 0, 2 * Math.PI);
                                 ctx.fill();
                                 ctx.stroke();
                             }}
@@ -1766,7 +1766,7 @@ def _generate_non_embedded_html_player(
 
                     ctx.fillStyle = posOverlay.color;
                     ctx.beginPath();
-                    ctx.arc(x, y, posOverlay.size, 0, 2 * Math.PI);
+                    ctx.arc(x, y, posOverlay.size / 2, 0, 2 * Math.PI);
                     ctx.fill();
                 }});
             }}
@@ -1836,7 +1836,7 @@ def _generate_non_embedded_html_player(
                                 ctx.strokeStyle = borderColor;
                                 ctx.lineWidth = borderWidth;
                                 ctx.beginPath();
-                                ctx.arc(x, y, size, 0, 2 * Math.PI);
+                                ctx.arc(x, y, size / 2, 0, 2 * Math.PI);
                                 ctx.fill();
                                 ctx.stroke();
                             }}

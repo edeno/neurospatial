@@ -89,7 +89,8 @@ overlay = PositionOverlay(
 - `positions`: NDArray of shape `(n_samples, n_dims)` with coordinates
 - `times`: Optional timestamps for temporal alignment (default: assumes 1:1 with frames)
 - `color`: Matplotlib/Napari color name (default: `"red"`)
-- `size`: Marker size in points (default: `10.0`)
+- `size`: Marker diameter in logical screen pixels (default: `10.0`), independent
+  of environment units and camera zoom.
 - `trail_length`: Number of frames to show as trail (default: `None` = no trail)
 
 ### Bodypart Overlay

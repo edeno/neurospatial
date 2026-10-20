@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from dataclasses import fields as dataclass_fields
 from dataclasses import replace
 from itertools import pairwise
+from threading import RLock
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
@@ -71,6 +72,21 @@ from neurospatial.environment._fastplotlib import (
     plot_title,
     xyz,
 )
+from neurospatial.environment._fastplotlib_compat import (
+    _frames_graphic,
+    _guard_series_updates,
+    figure_output,
+    invalidate_pending,
+    mark_displayed,
+    playback_state,
+    prepare_figure_close,
+    register_frames,
+    require_animation_support,
+    require_volume_support,
+    set_playback_fps,
+    update_graphic,
+)
+from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
 
 if TYPE_CHECKING:
     from matplotlib.colors import Colormap
@@ -1361,85 +1377,6 @@ class _Frame(NamedTuple):
     rows: list[NDArray[np.float64]]  # each field in a track's window, (n, n_bins)
 
 
-def _frames_graphic(
-    nd_subplot: Any,
-    indices: Any,
-    fields: Any,
-    frame_of: Callable[[float], int],
-    read: Callable[[float], Any],
-    show: Callable[[float, Any], None],
-    graphic: Any,
-) -> Any:
-    """The field and every frame-aligned panel, as one ``NDGraphic``.
-
-    The widget's slider is in seconds; ``frame_of`` maps it to the frame
-    shown, which is held until the next frame starts. ``read`` loads the
-    data for a time (field values, video images) on a worker thread, so disk
-    reads do not stall the controls; ``show`` then draws all of it together,
-    so the overlays never show another frame than the field. Built in a
-    function because fastplotlib is optional.
-    """
-    from concurrent.futures import ThreadPoolExecutor
-
-    from fastplotlib.widgets.nd_widget import NDGraphic, NDSlicer
-    from fastplotlib.widgets.nd_widget._async import run_in_thread_pool
-
-    class Frames(NDGraphic):  # type: ignore[misc,unused-ignore]
-        def __init__(self) -> None:
-            super().__init__(nd_subplot, "field")
-            # Names the dims for the widget; the frames are read by ``read``.
-            self._slicer = NDSlicer(
-                fields, ("time", "bin"), ("bin",), slider_maps={"time": frame_of}
-            )
-            self._graphic = graphic
-            self._reader = ThreadPoolExecutor(max_workers=1)
-            self._closed = False
-            self._generation = 0
-
-        @property
-        def slicer(self) -> Any:
-            return self._slicer
-
-        @property
-        def graphic(self) -> Any:
-            return self._graphic
-
-        @property
-        def display_dims(self) -> tuple[str, ...]:
-            return self._slicer.display_dims  # type: ignore[no-any-return]
-
-        @property
-        def indices(self) -> dict[str, float]:
-            return {"time": indices["time"]}
-
-        async def _set_indices_(self, at: dict[str, float] | None = None) -> None:
-            at = self.indices if at is None else at
-            time = at["time"]
-            if self._closed:
-                return
-            generation = self._generation
-            result = await run_in_thread_pool(self._reader, read, time)
-            if not self._closed and generation == self._generation:
-                show(time, result)
-                self._last_indices = at
-
-        def synchronize(self) -> None:
-            """Invalidate pending writes and finish any read already on the worker."""
-            self._generation += 1
-            self._reader.submit(lambda: None).result()
-
-        def close(self) -> None:
-            if self._closed:
-                return
-            self._closed = True
-            try:
-                self._reader.shutdown(wait=True, cancel_futures=True)
-            finally:
-                self._slicer.close()
-
-    return Frames()
-
-
 class FastplotlibAnimation:
     """Fields over time on the GPU, with a time slider and playback controls.
 
@@ -1526,6 +1463,19 @@ class FastplotlibAnimation:
         does), so the fields should be probabilities, such as a decoded
         posterior; a track bin no 2-D bin maps to is missing.
 
+    field_rendering : {"auto", "points", "mip", "iso", "slice"}, default="auto"
+        Uniform 3D grids use a native maximum intensity volume in auto mode;
+        other environments use bin cells or points. Affine transformed grids
+        retain their world coordinates. Explicit volume modes require uniform
+        3D source cells. Missing and inactive voxels are transparent.
+    volume_threshold : float or None, default=None
+        Isosurface threshold in original field units, within fixed vmin/vmax.
+        None uses their midpoint. Only valid with field_rendering="iso".
+    slice_plane : tuple of float or None, default=None
+        WORLD XYZ plane (a, b, c, d): a*x + b*y + c*z + d = 0. None uses
+        a world-horizontal plane through the volume center. Only valid with
+        field_rendering="slice". Values sample nearest voxels.
+
     Attributes
     ----------
     widget : fastplotlib.NDWidget
@@ -1572,10 +1522,14 @@ class FastplotlibAnimation:
         layer_names: Sequence[str] | None = None,
         colorbar_label: str = "",
         track: Environment | None = None,
+        field_rendering: str = "auto",
+        volume_threshold: float | None = None,
+        slice_plane: tuple[float, float, float, float] | None = None,
         _field_at_time: Callable[[float], list[NDArray[np.float64]]] | None = None,
         _field_styles: Sequence[Mapping[str, Any]] | None = None,
         _field_streams: Sequence[AnimationField] | None = None,
         _reader_owner: _OwnedReaders | None = None,
+        _source_lock: Any = None,
     ) -> None:
         from neurospatial.animation._timeseries import _group_timeseries
         from neurospatial.animation.rendering import (
@@ -1586,8 +1540,18 @@ class FastplotlibAnimation:
             typical_peak,
         )
 
+        rendering = resolve_field_rendering(
+            env,
+            field_rendering,
+            volume_threshold=volume_threshold,
+            slice_plane=slice_plane,
+        )
         fastplotlib = import_fastplotlib()
+        require_animation_support(fastplotlib)
+        require_volume_support(rendering)
         self._closed = False
+        self._key_registered = False
+        self._source_lock = RLock() if _source_lock is None else _source_lock
         self._field_at_time = _field_at_time
         from neurospatial.animation._resources import _OwnedReaders
 
@@ -1597,6 +1561,15 @@ class FastplotlibAnimation:
             else _reader_owner
         )
         try:
+
+            def source_rows(source: Any, index: Any) -> NDArray[np.float64]:
+                with self._source_lock:
+                    return np.array(source[index], dtype=float, copy=True)
+
+            def extremes_of(source: Any) -> Any:
+                with self._source_lock:
+                    return frame_extremes(source)
+
             stacks, names = _field_stacks(fields, layer_names)
             if _field_styles is not None and len(_field_styles) != len(stacks):
                 raise ValueError("_field_styles must contain one style per field.")
@@ -1684,27 +1657,6 @@ class FastplotlibAnimation:
                 top += weight
             camera, controller = camera_options(env)
             n_spatial = len(field_names) + rates_under_fields
-            # The slider stops at the last frame.
-            self.widget = fastplotlib.NDWidget(
-                ranges={"time": (0.0, self._clock[-1] + step, step)},
-                extents=extents,
-                cameras=[camera] * n_spatial + ["2d"] * len(panels),
-                controller_types=[controller] * n_spatial + ["panzoom"] * len(panels),
-                size=(1100 if panels or several else 800, 760),
-            )
-            self.figure = self.widget.figure
-            self.widget.ui_sliders._fps["time"] = steps_per_second
-            self.widget.ui_sliders._frame_time["time"] = 1 / steps_per_second
-            self._plots = [self.figure[name] for name in field_names]
-            # The panel that holds the frames' NDGraphic, and without field
-            # panels the colorbar: the first field, or the first track.
-            self._plot = self.figure[(field_names or track_names)[0]]
-            for name in time_panels:
-                # One time axis, at the bottom, and no toolbar: the panels read as
-                # one plot against time.
-                self.figure[name].toolbar = False
-                self.figure[name].axes.x.visible = name == time_panels[-1]
-
             # A video below the field shows through where its values are low: a
             # posterior over the camera's view of the animal. A bin is opaque
             # from the typical frame's peak (the median of the frames' maxima),
@@ -1743,9 +1695,9 @@ class FastplotlibAnimation:
                     or (below and "opaque_from" not in style)
                 ):
                     extremes = (
-                        [frame_extremes(stack) for stack in group]
+                        [extremes_of(stack) for stack in group]
                         if streams is None
-                        else [frame_extremes(field._scale_rows()) for field in streams]
+                        else [extremes_of(field._scale_rows()) for field in streams]
                     )
                     lows = np.concatenate([item[0] for item in extremes])
                     highs = np.concatenate([item[1] for item in extremes])
@@ -1757,7 +1709,11 @@ class FastplotlibAnimation:
                     style.get("opaque_from", typical_peak(highs)) if below else None
                 )
                 scale = ColorScale(
-                    colormap, floor, ceiling, "lightgray", opaque_from=opaque
+                    colormap,
+                    floor,
+                    ceiling,
+                    None if env.n_dims == 3 else "lightgray",
+                    opaque_from=opaque,
                 )
                 scales.append(scale)
                 labels.append(style.get("label", colorbar_label))
@@ -1773,12 +1729,7 @@ class FastplotlibAnimation:
                         projected = np.concatenate(
                             [
                                 _project(
-                                    np.stack(
-                                        [
-                                            np.asarray(stack[i], dtype=float)
-                                            for i in sample
-                                        ]
-                                    ),
+                                    np.stack([source_rows(stack, i) for i in sample]),
                                     self._projection,
                                 )
                                 for stack in group
@@ -1792,9 +1743,10 @@ class FastplotlibAnimation:
                             projected_field_limits,
                         )
 
-                        projected_limits = projected_field_limits(
-                            streams, self._projection
-                        )
+                        with self._source_lock:
+                            projected_limits = projected_field_limits(
+                                streams, self._projection
+                            )
                     track_scale = ColorScale(colormap, *projected_limits, "lightgray")
                 track_scales.append(track_scale)
             if _field_styles is None:
@@ -1804,6 +1756,34 @@ class FastplotlibAnimation:
                 extensions *= len(stacks)
             self._field_scales = scales
             self._track_scales = track_scales
+
+            if rendering == "iso" and volume_threshold is not None:
+                for scale in scales:
+                    if not scale.vmin <= volume_threshold <= scale.vmax:
+                        raise ValueError(
+                            "volume_threshold must lie between fixed vmin and vmax "
+                            f"({scale.vmin}, {scale.vmax}), in field data units."
+                        )
+
+            # The slider stops at the last frame.
+            self.widget = fastplotlib.NDWidget(
+                ranges={"time": (0.0, self._clock[-1] + step, step)},
+                extents=extents,
+                cameras=[camera] * n_spatial + ["2d"] * len(panels),
+                controller_types=[controller] * n_spatial + ["panzoom"] * len(panels),
+                size=(1100 if panels or several else 800, 760),
+            )
+            self.figure = self.widget.figure
+            set_playback_fps(self.widget, steps_per_second)
+            self._plots = [self.figure[name] for name in field_names]
+            # The panel that holds the frames' NDGraphic, and without field
+            # panels the colorbar: the first field, or the first track.
+            self._plot = self.figure[(field_names or track_names)[0]]
+            for name in time_panels:
+                # One time axis, at the bottom, and no toolbar: the panels read as
+                # one plot against time.
+                self.figure[name].toolbar = False
+                self.figure[name].axes.x.visible = name == time_panels[-1]
 
             def clock(times: NDArray[np.float64] | None) -> _Samples:
                 return _Samples(times, self._frame_of, typical, frame_times=self._clock)
@@ -1833,7 +1813,13 @@ class FastplotlibAnimation:
                     env._plot_labels().coordinates.equal_aspect
                 )
                 field = FieldGraphic(
-                    plot, env, np.asarray(stack[0], dtype=float), scales[i]
+                    plot,
+                    env,
+                    source_rows(stack, 0),
+                    scales[i],
+                    field_rendering=rendering,
+                    volume_threshold=volume_threshold,
+                    slice_plane=slice_plane,
                 )
                 self._field_graphics.append(field)
                 if overlay_data is not None and overlay_data.videos:
@@ -1944,7 +1930,7 @@ class FastplotlibAnimation:
             )
             self._frames = frames
             # fastplotlib has no public way to add a custom NDGraphic yet.
-            self.widget[self._plot]._nd_graphics.append(frames)
+            register_frames(self.widget, self._plot, frames)
             self._series = [
                 drawn
                 for i, group in enumerate(groups)
@@ -1983,6 +1969,7 @@ class FastplotlibAnimation:
                 bottom_panel = self.figure[time_panels[-1]]
                 _Room(bottom_panel, *bottom_panel.y_range)
             self.figure.renderer.add_event_handler(self._key, "key_down")
+            self._key_registered = True
             self._add_key_hint()
             self._show(0.0, self._read(0.0))
             self.figure.canvas.add_event_handler(self._canvas_closed, "close")
@@ -2018,7 +2005,7 @@ class FastplotlibAnimation:
         """The keyboard shortcuts listed in the class docstring."""
         key = event.key
         if key in (" ", "Space"):
-            playing = self.widget.ui_sliders._playing
+            playing = playback_state(self.widget)
             playing["time"] = not playing["time"]
         elif key in ("ArrowRight", "ArrowLeft"):
             self.frame = self.frame + (1 if key == "ArrowRight" else -1)
@@ -2088,17 +2075,32 @@ class FastplotlibAnimation:
 
         Runs on a worker thread.
         """
+        with self._source_lock:
+            return self._read_locked(time)
+
+    def _read_locked(self, time: float) -> _Frame:
+        """Read source windows while the scene's source lock is held."""
         frame = self._frame_of(time)
         values = (
-            self._field_at_time(time + self._start)
+            [
+                np.array(row, dtype=np.float64, copy=True)
+                for row in self._field_at_time(time + self._start)
+            ]
             if self._field_at_time is not None
-            else [field.sample(time + self._start) for field in self._field_streams]
+            else [
+                np.array(field.sample(time + self._start), copy=True)
+                for field in self._field_streams
+            ]
             if self._field_streams is not None
-            else [np.asarray(stack[frame], dtype=np.float64) for stack in self._stacks]
+            else [
+                np.array(stack[frame], dtype=np.float64, copy=True)
+                for stack in self._stacks
+            ]
         )
-        images = [
-            video.data.get_frame(video.clock.nearest(time)) for video in self._videos
-        ]
+        images = []
+        for video in self._videos:
+            image = video.data.get_frame(video.clock.nearest(time))
+            images.append(None if image is None else np.array(image, copy=True))
         windows = [panel.frames_at(time) for panel in self._tracks]
         return _Frame(
             frame,
@@ -2123,7 +2125,9 @@ class FastplotlibAnimation:
         n_bins = self._field_bins
 
         def read(part: slice) -> NDArray[np.float64]:
-            rows = np.asarray(stack[part], dtype=np.float64).reshape(-1, n_bins)
+            rows = np.array(stack[part], dtype=np.float64, copy=True).reshape(
+                -1, n_bins
+            )
             if self._field_streams is not None:
                 rows = np.where(
                     self._field_streams[index].sample_valid[part, None], rows, np.nan
@@ -2210,15 +2214,13 @@ class FastplotlibAnimation:
         the selected unit's rate map remain part of the rendered figure.
         Playback and asynchronous field reads stay suspended until exit.
         """
-        from fastplotlib.widgets.nd_widget._async import run_sync
-
         if self._closed:
             raise RuntimeError(
                 "This animation is closed. Create a new view before exporting."
             )
         self.show()
         original_time = float(self.widget.indices["time"])
-        playing = self.widget.ui_sliders._playing
+        playing = playback_state(self.widget)
         original_playing = dict(playing)
         graphics = list(self.widget.ndgraphics)
         paused = [graphic.pause for graphic in graphics]
@@ -2229,10 +2231,10 @@ class FastplotlibAnimation:
                 raise RuntimeError("This animation was closed during capture.")
             self.widget.indices = {"time": time}
             self._show(time, self._read(time))
-            self._frames._last_indices = {"time": time}
+            mark_displayed(self._frames, time)
             for graphic, was_paused in zip(graphics, paused, strict=True):
                 if graphic is not self._frames and not was_paused:
-                    run_sync(graphic._set_indices_())
+                    update_graphic(graphic)
 
         def capture(absolute_time: float) -> NDArray[np.uint8]:
             if not np.isfinite(absolute_time):
@@ -2254,10 +2256,7 @@ class FastplotlibAnimation:
                 graphic.pause = True
             # Reads queued before export must never overwrite captured frames
             # or the restored viewer when their callbacks resume afterward.
-            indices = self.widget.indices
-            revisions = getattr(indices, "_fetch_rev", {})
-            for graphic in graphics:
-                revisions[graphic] = revisions.get(graphic, 0) + 1
+            invalidate_pending(self.widget, graphics)
             self._frames.synchronize()
             synchronized = True
             yield capture
@@ -2299,7 +2298,7 @@ class FastplotlibAnimation:
         widget = getattr(self, "widget", None)
         figure = getattr(self, "figure", None)
         frames = getattr(self, "_frames", None)
-        playing = getattr(getattr(widget, "ui_sliders", None), "_playing", {})
+        playing = playback_state(widget)
         for dimension in playing:
             playing[dimension] = False
         # Continue cleanup after native-window errors so all workers drain
@@ -2321,14 +2320,17 @@ class FastplotlibAnimation:
             if graphic is not frames:
                 release(graphic.slicer.close)
         if figure is not None:
-            release(lambda: figure.renderer.remove_event_handler(self._key, "key_down"))
-            if hasattr(figure, "_output") and figure._output is None:
-                figure._output = figure.canvas
+            if getattr(self, "_key_registered", False):
+                release(
+                    lambda: figure.renderer.remove_event_handler(self._key, "key_down")
+                )
+                self._key_registered = False
+            prepare_figure_close(figure)
         if widget is not None:
             release(widget.close)
         canvas = getattr(self, "_canvas", None)
         if canvas is not None:
-            if canvas is not getattr(figure, "_output", None):
+            if canvas is not figure_output(figure):
                 release(canvas.close)
             self._canvas = None
         release(self._reader_owner.close)
@@ -2354,7 +2356,7 @@ class FastplotlibAnimation:
                 # fastplotlib's offscreen show initializes layout but returns
                 # None; retain its actual canvas for capture and cleanup.
                 self._canvas = self.figure.canvas
-                self.figure._output = self._canvas
+                prepare_figure_close(self.figure)
             # fastplotlib turns y downward in every subplot with an image (a
             # video under each field); environments keep y up.
             for plot in self._plots:
@@ -2369,22 +2371,6 @@ class FastplotlibAnimation:
 
 # The most datapoints a series draws in its window before it thins them.
 _MAX_SERIES_POINTS = 100_000
-
-
-def _guard_series_updates(series: Any) -> None:
-    """Keep an older async series read from replacing the current time window."""
-    from concurrent.futures import CancelledError
-
-    update = series._update_graphic
-
-    def update_current(features: Any, indices: Mapping[str, Any]) -> None:
-        if dict(indices) != dict(series.indices):
-            # The NDWidget scheduler handles this as a superseded fetch.
-            # Cancel before it also records these indices as displayed.
-            raise CancelledError
-        update(features, indices)
-
-    series._update_graphic = update_current
 
 
 def _add_series(

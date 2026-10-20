@@ -48,7 +48,7 @@ from neurospatial.animation._style import (
 from neurospatial.animation._style import (
     _head_direction_color as _head_direction_color,
 )
-from neurospatial.animation._style import _heading_displacement
+from neurospatial.animation._style import _heading_displacement, _marker_area
 
 if TYPE_CHECKING:
     from matplotlib.artist import Artist
@@ -210,7 +210,7 @@ def _render_event_overlay_matplotlib(
                 pos[0],
                 pos[1],
                 c=[(*base_rgba[:3], alpha)],
-                s=event_data.size**2,
+                s=_marker_area(event_data.size, dpi=ax.figure.dpi),
                 marker=marker,
                 zorder=104,
                 edgecolors=event_data.border_color,
@@ -268,7 +268,7 @@ def _render_position_overlay_matplotlib(ax: Any, pos_data: Any, frame_idx: int) 
         current_pos[0],
         current_pos[1],
         c=pos_data.color,
-        s=pos_data.size**2,  # Matplotlib scatter uses area
+        s=_marker_area(pos_data.size, dpi=ax.figure.dpi),
         zorder=101,
         edgecolors="white",
         linewidths=0.5,
@@ -312,7 +312,7 @@ def _render_bodypart_overlay_matplotlib(
             pos[0],
             pos[1],
             c=color,
-            s=25,
+            s=_marker_area(8.0, dpi=ax.figure.dpi),
             zorder=102,
             edgecolors="white",
             linewidths=0.5,
@@ -846,7 +846,7 @@ class OverlayArtistManager:
                 [current_pos[0]],
                 [current_pos[1]],
                 c=[pos_data.color],
-                s=[pos_data.size**2],
+                s=[_marker_area(pos_data.size, dpi=self.ax.figure.dpi)],
                 zorder=101,
                 edgecolors="white",
                 linewidths=0.5,
@@ -857,7 +857,7 @@ class OverlayArtistManager:
                 [0],
                 [0],
                 c=[pos_data.color],
-                s=[pos_data.size**2],
+                s=[_marker_area(pos_data.size, dpi=self.ax.figure.dpi)],
                 zorder=101,
                 edgecolors="white",
                 linewidths=0.5,
@@ -890,7 +890,7 @@ class OverlayArtistManager:
                 offsets_array[:, 0],
                 offsets_array[:, 1],
                 c=all_colors,
-                s=25,
+                s=_marker_area(8.0, dpi=self.ax.figure.dpi),
                 zorder=102,
                 edgecolors="white",
                 linewidths=0.5,
@@ -901,7 +901,7 @@ class OverlayArtistManager:
                 [0],
                 [0],
                 c=["cyan"],
-                s=25,
+                s=_marker_area(8.0, dpi=self.ax.figure.dpi),
                 zorder=102,
                 edgecolors="white",
                 linewidths=0.5,

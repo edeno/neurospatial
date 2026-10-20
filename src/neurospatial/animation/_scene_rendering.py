@@ -9,7 +9,11 @@ from typing import Any, cast
 import numpy as np
 
 from neurospatial.animation._prepared import PreparedScene
-from neurospatial.animation._style import _heading_displacement, _rate_opacity
+from neurospatial.animation._style import (
+    _heading_displacement,
+    _marker_area,
+    _rate_opacity,
+)
 
 
 class SceneRenderer:
@@ -345,7 +349,7 @@ class SceneRenderer:
                             )
                 ax.scatter(
                     *xy(point),
-                    s=position.size**2,
+                    s=_marker_area(position.size, dpi=self.figure.dpi),
                     color=position.color,
                     edgecolor="white",
                     zorder=101,
@@ -360,6 +364,7 @@ class SceneRenderer:
                     ax.scatter(
                         *xy(point),
                         color=(body.colors or {}).get(name, "red"),
+                        s=_marker_area(8.0, dpi=self.figure.dpi),
                         zorder=101,
                     )
             if body.skeleton is not None:
@@ -420,7 +425,7 @@ class SceneRenderer:
                         *xy(point),
                         color=vectors.color,
                         marker=vectors.object_marker,
-                        s=vectors.object_size**2,
+                        s=_marker_area(vectors.object_size, dpi=self.figure.dpi),
                         zorder=103,
                     )
                 if np.isfinite(animal).all():
@@ -457,7 +462,7 @@ class SceneRenderer:
                             *xy(point),
                             color=events.colors[name],
                             marker=events.markers[name],
-                            s=events.size**2,
+                            s=_marker_area(events.size, dpi=self.figure.dpi),
                             alpha=float(alpha) * events.opacity,
                             linewidths=events.border_width,
                             edgecolors=events.border_color,

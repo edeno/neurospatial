@@ -237,3 +237,68 @@ def test_fresh_napari_preparation_imports_no_canvas_or_renderer():
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=30
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_overlapping_track_windows_reuse_rows_with_bounded_cache():
+    class Rows:
+        shape = (500, 2)
+
+        def __init__(self):
+            self.reads = []
+
+        def __len__(self):
+            return self.shape[0]
+
+        def __getitem__(self, index):
+            self.reads.append(index)
+            return np.array([index, index + 1.0])
+
+    env = Environment.from_grid_mask(np.ones(2, dtype=bool), (np.arange(3.0),))
+    rows = Rows()
+    scene = Animation(
+        env,
+        AnimationField(rows, np.arange(500.0) / 100, vmin=0, vmax=500),
+        window_seconds=2.0,
+    )
+    helper = PreparedScene(scene)
+    rows.reads.clear()
+    field = scene.fields["field"]
+    helper.track_window(field, 1.0)
+    first = set(rows.reads)
+    rows.reads.clear()
+    helper.track_window(field, 1.01)
+    assert first.isdisjoint(rows.reads)
+    assert len(rows.reads) <= 2
+    assert len(first) > 128
+    helper._row_budget = 2048
+    for time in np.arange(1.0, 4.5, 0.01):
+        helper.track_window(field, time)
+    assert len(helper._rows) <= 4096
+    assert helper._row_bytes <= helper._row_budget
+    scene.close()
+
+
+def test_cached_field_rows_own_snapshots_of_reused_source_buffers(env):
+    class ScratchRows:
+        shape = (3, 4)
+
+        def __init__(self):
+            self.buffer = np.empty(4)
+
+        def __len__(self):
+            return 3
+
+        def __getitem__(self, index):
+            self.buffer.fill(index)
+            return self.buffer
+
+    scene = Animation(
+        env, AnimationField(ScratchRows(), [0.0, 0.1, 0.2], vmin=0, vmax=2)
+    )
+    helper = PreparedScene(scene)
+    zero = helper.field_samples(0.0)["field"]
+    helper.field_samples(0.1)
+    assert np.all(zero == 0)
+    assert helper.field_samples(0.0)["field"] is zero
+    np.testing.assert_array_equal(zero, np.zeros(4))
+    scene.close()

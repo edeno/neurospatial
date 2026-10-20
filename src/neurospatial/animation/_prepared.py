@@ -6,6 +6,7 @@ sources and derives only the requested time window; it owns no canvas or reader.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Iterator, Sequence
 from itertools import chain
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
@@ -97,6 +98,32 @@ class PreparedScene:
 
         require_scene_rendering(scene)
         self.scene = scene
+        self.source_lock = scene._source_lock
+        # Bound overlapping-window retention by both row count and bytes. A
+        # single source row can exceed the byte budget; it is then not retained.
+        self._rows: OrderedDict[tuple[int, int, bool], np.ndarray] = OrderedDict()
+        self._row_bytes = 0
+        self._row_budget = 32 * 1024 * 1024
+        self._held: dict[int, tuple[int, np.ndarray]] = {}
+        self._missing: dict[int, np.ndarray] = {}
+        self._video_held: dict[int, tuple[int, np.ndarray | None]] = {}
+        self._raster_clocks = {
+            (id(raster), row): (
+                spikes if np.all(spikes[1:] >= spikes[:-1]) else np.sort(spikes)
+            )
+            for raster in scene._overlay_data.spike_rasters
+            for row, spikes in enumerate(raster.spike_times)
+        }
+        self.event_clocks = {}
+        for events in scene._overlay_data.events:
+            for name in events.event_positions:
+                times = events.event_times.get(name)
+                if times is None:
+                    times = scene.frame_times[events.event_frame_indices[name]]
+                indices = np.maximum(
+                    np.searchsorted(scene.frame_times, times, side="right") - 1, 0
+                )
+                self.event_clocks[id(events), name] = (times, indices)
         self.signal_groups: dict[tuple[str, str | int], list[Any]] = {}
         data = scene._overlay_data
         for i, signal in enumerate(data.timeseries):
@@ -113,15 +140,77 @@ class PreparedScene:
             + bool(data.epochs)
             + (self.track_extents is not None)
         )
-        self.limits = {
-            name: field.color_limits() for name, field in scene.fields.items()
-        }
-        self.track_limits = dict(self.limits)
-        if self.projection is not None:
-            for name, field in scene.fields.items():
-                self.track_limits[name] = projected_field_limits(
-                    (field,), self.projection
+        with self.source_lock:
+            self.limits = {
+                name: field.color_limits() for name, field in scene.fields.items()
+            }
+            self.track_limits = dict(self.limits)
+            if self.projection is not None:
+                for name, field in scene.fields.items():
+                    self.track_limits[name] = projected_field_limits(
+                        (field,), self.projection
+                    )
+
+    def clear_cache(self) -> None:
+        """Release view-local row and decoder buffers after pending reads drain."""
+        self._rows.clear()
+        self._row_bytes = 0
+        self._held.clear()
+        self._missing.clear()
+        self._video_held.clear()
+
+    def _field_row(
+        self, field: AnimationField, index: int, *, projected: bool = False
+    ) -> np.ndarray:
+        key = (id(field), index, projected)
+        if key in self._rows:
+            self._rows.move_to_end(key)
+            return self._rows[key]
+        values: np.ndarray
+        if projected and self.projection is not None:
+            values = _project(self._field_row(field, index)[None, :], self.projection)[
+                0
+            ]
+        else:
+            with self.source_lock:
+                # Indexable lazy adapters may reuse a scratch buffer. Retain
+                # an owned snapshot before another source read overwrites it.
+                values = np.array(field[index], copy=True)
+        if values.nbytes <= self._row_budget:
+            while self._rows and (
+                len(self._rows) >= 4096
+                or self._row_bytes + values.nbytes > self._row_budget
+            ):
+                _, expired = self._rows.popitem(last=False)
+                self._row_bytes -= expired.nbytes
+            self._rows[key] = values
+            self._row_bytes += values.nbytes
+        return values
+
+    def field_samples(self, time: float) -> dict[str, np.ndarray]:
+        """Hold one row per stream without rereading a slow source each tick."""
+        samples = {}
+        for name, field in self.scene.fields.items():
+            index = int(np.searchsorted(field.times, time, side="right")) - 1
+            supported = (
+                index >= 0
+                and field.sample_valid[index]
+                and (
+                    field.times[index] == time
+                    or (index < len(field) - 1 and field.interval_valid[index])
                 )
+            )
+            if supported:
+                previous = self._held.get(id(field))
+                if previous is None or previous[0] != index:
+                    previous = (index, self._field_row(field, index))
+                    self._held[id(field)] = previous
+                samples[name] = previous[1]
+            else:
+                if id(field) not in self._missing:
+                    self._missing[id(field)] = np.full(field.n_bins, np.nan)
+                samples[name] = self._missing[id(field)]
+        return samples
 
     def clock(self, item: Any) -> np.ndarray:
         """The source clock, with the scene clock for explicitly aligned rows."""
@@ -154,7 +243,16 @@ class PreparedScene:
             if right > 0 and time - times[right - 1] <= times[right] - time
             else right
         )
-        return cast("np.ndarray | None", video.get_frame(index))
+        previous = self._video_held.get(id(video))
+        if previous is None or previous[0] != index:
+            with self.source_lock:
+                image = video.get_frame(index)
+                image = None if image is None else np.asarray(image).copy()
+            # Decoder buffers may be reused by the next read. A displayed
+            # frame must remain stable while the worker prepares its successor.
+            previous = (index, image)
+            self._video_held[id(video)] = previous
+        return previous[1]
 
     def bounds(self, time: float) -> tuple[float, float]:
         half = self.scene.window_seconds / 2
@@ -175,8 +273,15 @@ class PreparedScene:
     def raster_window(self, raster: Any, row: int, time: float) -> np.ndarray:
         """One unit's spike times in the current window, preserving unit order."""
         left, right = self.bounds(time)
-        spikes = raster.spike_times[row]
-        return cast("np.ndarray", spikes[(spikes >= left) & (spikes <= right)])
+        spikes = self._raster_clocks[id(raster), row]
+        return cast(
+            "np.ndarray",
+            spikes[
+                np.searchsorted(spikes, left, side="left") : np.searchsorted(
+                    spikes, right, side="right"
+                )
+            ],
+        )
 
     def track_window(self, field: AnimationField, time: float) -> TrackWindow:
         """Derive cells only for authoritative supported native field intervals."""
@@ -193,14 +298,17 @@ class PreparedScene:
         ]
         polygons, colors = [], []
         for index in selected:
-            values = field[int(index)]
-            if self.projection is not None:
-                values = _project(values[None, :], self.projection)[0]
+            values = self._field_row(
+                field, int(index), projected=self.projection is not None
+            )
             lo, hi = max(left, field.times[index]), min(right, field.times[index + 1])
-            for first, last, value in zip(starts, stops, values, strict=True):
-                if np.isfinite(value):
-                    polygons.append([(lo, first), (hi, first), (hi, last), (lo, last)])
-                    colors.append(value)
+            finite = np.isfinite(values)
+            bottom, top = starts[finite], stops[finite]
+            cells = np.empty((len(bottom), 4, 2))
+            cells[:, :, 0] = [lo, hi, hi, lo]
+            cells[:, :, 1] = np.column_stack([bottom, bottom, top, top])
+            polygons.append(cells)
+            colors.append(values[finite])
         paths = []
         for position in self.scene._overlay_data.positions:
             times = self.clock(position)
@@ -218,7 +326,7 @@ class PreparedScene:
                     if np.isfinite(segment).all():
                         paths.append((segment, position.color))
         return TrackWindow(
-            np.asarray(polygons, dtype=float).reshape(-1, 4, 2),
-            np.asarray(colors),
+            np.concatenate(polygons) if polygons else np.empty((0, 4, 2)),
+            np.concatenate(colors) if colors else np.empty(0),
             paths,
         )

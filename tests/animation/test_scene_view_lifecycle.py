@@ -15,6 +15,49 @@ from neurospatial.animation import Animation, AnimationView
 from neurospatial.animation.overlays import VideoData
 
 
+def test_close_waits_for_an_active_public_source_read(env):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from neurospatial.animation import AnimationField
+
+    reading, release, closing, reader_closed = Event(), Event(), Event(), Event()
+
+    class Rows:
+        shape = (2, env.n_bins)
+
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            reading.set()
+            assert release.wait(5)
+            assert not reader_closed.is_set()
+            return np.ones(env.n_bins)
+
+    scene = Animation(env, AnimationField(Rows(), [0.0, 0.1], vmin=0, vmax=1))
+    scene._owned_readers = SimpleNamespace(close=reader_closed.set)
+
+    def close():
+        closing.set()
+        scene.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        read = pool.submit(scene.sample_fields, 0.0)
+        try:
+            assert reading.wait(5)
+            closed = pool.submit(close)
+            assert closing.wait(5)
+            assert not reader_closed.is_set()
+        finally:
+            release.set()
+        read.result(timeout=5)
+        closed.result(timeout=5)
+    assert reader_closed.is_set()
+    with pytest.raises(RuntimeError, match="closed"):
+        scene.sample_fields(0.0)
+
+
 @pytest.fixture
 def env():
     return Environment.from_grid_mask(

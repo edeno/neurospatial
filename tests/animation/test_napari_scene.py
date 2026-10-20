@@ -172,14 +172,17 @@ def test_native_qt_capture_restores_time_camera_and_custom_graphics():
         [[8.0, 5.0, 2.0]], name="User annotation", face_color="red", size=4
     )
     handle.seek(10.1)
-    handle.viewer.camera.angles = (20.0, 30.0, 40.0)
-    angles = tuple(handle.viewer.camera.angles)
+    from neurospatial.animation.backends._napari_compat import scene_camera
+
+    camera = scene_camera(handle.viewer)
+    camera.angles = (20.0, 30.0, 40.0)
+    angles = tuple(camera.angles)
     try:
         with handle.capture_session() as capture:
             frame = capture(10.2)
             assert frame.dtype == np.uint8 and frame.shape[2] == 3
         assert handle.time == 10.1
-        assert tuple(handle.viewer.camera.angles) == angles
+        assert tuple(camera.angles) == angles
         assert "User annotation" in handle.viewer.layers
     finally:
         handle.close()
@@ -334,4 +337,355 @@ def test_native_video_uses_custom_mapping_and_hides_missing_rows(mapping):
         assert video.visible == (mapped >= 0)
         if mapped >= 0:
             assert video.data[0, 0, 0] == [20, 100, 200][mapped]
+    scene.close()
+
+
+def test_screen_markers_have_fixed_canvas_diameter_in_3d():
+    from neurospatial.animation.backends._napari_compat import scene_camera
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2, 2), dtype=bool),
+        tuple(np.array([0.0, 0.05, 0.1]) for _ in range(3)),
+    )
+    times = np.array([0.0, 0.1])
+    scene = Animation(
+        env,
+        np.ones((2, env.n_bins)),
+        frame_times=times,
+        overlays=[PositionOverlay(np.full((2, 3), 0.05), times, size=12)],
+    )
+    handle = model_handle(scene)
+    handle.seek(0.05)
+    point = next(layer for layer in handle.viewer.layers if layer.name == "Position 1")
+    np.testing.assert_equal(point.canvas_size_limits, (12, 12))
+    # Modern accessors must not evaluate deprecated legacy properties.
+    modern = SimpleNamespace(scene=SimpleNamespace(camera="modern"))
+    assert scene_camera(modern) == "modern"
+    scene.close()
+
+
+def test_held_native_field_does_not_reread_or_mutate_layer():
+    class Rows:
+        shape = (3, 4)
+
+        def __init__(self):
+            self.reads = []
+
+        def __len__(self):
+            return 3
+
+        def __getitem__(self, index):
+            self.reads.append(index)
+            return np.full(4, index, dtype=float)
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    rows = Rows()
+    scene = Animation(env, AnimationField(rows, [0.0, 0.2, 0.4], vmin=0, vmax=2))
+    handle = model_handle(scene)
+    rows.reads.clear()
+    handle.seek(0.01)
+    layer = handle.field_layers["field"]
+    image = layer.data
+    handle.seek(0.05)
+    handle.seek(0.19)
+    assert rows.reads == []  # first row was retained during construction
+    assert layer.data is image
+    handle.seek(0.2)
+    assert rows.reads == [1]
+    scene.close()
+
+
+def test_async_scrubs_coalesce_and_playback_does_not_starve(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, get_ident
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    scene = Animation(env, np.arange(12).reshape(3, 4), frame_times=[0.0, 0.2, 0.4])
+    handle = model_handle(scene)
+    handle._generation, handle._inflight, handle._pending = 0, None, None
+    handle._capturing = False
+    handle._source_lock = handle._helper.source_lock
+    handle._bridge = SimpleNamespace(ready=SimpleNamespace(emit=lambda _: None))
+    handle.timer = SimpleNamespace(isActive=lambda: False)
+    entered, release = Event(), Event()
+    calls, applies = [], []
+    main_thread = get_ident()
+    original = handle._prepare
+
+    def slow_prepare(time):
+        calls.append((time, get_ident()))
+        if len(calls) == 1:
+            entered.set()
+            assert release.wait(5)
+        return original(time)
+
+    original_apply = handle._apply
+
+    def apply(time, samples):
+        applies.append((time, get_ident()))
+        original_apply(time, samples)
+
+    monkeypatch.setattr(handle, "_prepare", slow_prepare)
+    monkeypatch.setattr(handle, "_apply", apply)
+    with ThreadPoolExecutor(max_workers=1) as handle._executor:
+        handle._request_seek(0.05)
+        assert entered.wait(5)
+        first = handle._inflight
+        handle._request_seek(0.1)
+        handle._request_seek(0.15)
+        handle._request_seek(0.2)
+        assert len(calls) == 1 and handle._pending[1] == 0.2
+        release.set()
+        first.result(timeout=5)
+        handle._prepared_ready((1, 0.05, first))
+        assert not applies  # obsolete scrub result must not flash onscreen
+        second = handle._inflight
+        second.result(timeout=5)
+        handle._prepared_ready((handle._generation, 0.2, second))
+        assert handle.time == 0.2 and len(calls) == 2
+        handle._request_seek(0.25, playback=True)
+        third = handle._inflight
+        handle._request_seek(0.3, playback=True)
+        handle._request_seek(0.35, playback=True)
+        third.result(timeout=5)
+        handle._prepared_ready((handle._generation, 0.25, third))
+        assert handle.time == 0.25  # slow playback still makes visible progress
+        fourth = handle._inflight
+        fourth.result(timeout=5)
+        # A public exact seek wins over an already completed, queued job.
+        handle.seek(0.4)
+        handle._prepared_ready((handle._generation - 1, 0.35, fourth))
+        assert handle.time == 0.4
+    assert all(thread != main_thread for _, thread in calls[:-1])
+    assert all(thread == main_thread for _, thread in applies)
+    scene.close()
+
+
+def test_playback_clock_tracks_elapsed_seconds(monkeypatch):
+    import neurospatial.animation.backends._napari_scene as module
+
+    handle = NapariScene.__new__(NapariScene)
+    handle.scene = SimpleNamespace(frame_times=np.array([100.0, 110.0]))
+    handle._time = 100.0
+    handle._play_origin, handle._play_started, handle._speed = 100.0, 50.0, 2.0
+    requested = []
+    handle._request_seek = lambda time, **_: requested.append(time)
+    handle.timer = SimpleNamespace(stop=lambda: None)
+    handle.play_button = SimpleNamespace(setText=lambda _: None)
+    monkeypatch.setattr(module, "monotonic", lambda: 52.5)
+    handle._tick()
+    assert requested == [105.0]
+
+
+@pytest.mark.napari
+def test_native_async_reads_keep_qt_responsive_and_capture_discards_pending(
+    monkeypatch,
+):
+    from threading import Event, Timer, get_ident
+    from time import monotonic, sleep
+
+    from qtpy.QtCore import QTimer
+    from qtpy.QtWidgets import QApplication
+
+    from neurospatial.animation.backends._napari_scene import build_napari_scene
+
+    class Rows:
+        shape = (6, 4)
+
+        def __init__(self):
+            self.entered, self.release = Event(), Event()
+            self.block = False
+            self.threads = []
+
+        def __len__(self):
+            return 6
+
+        def __getitem__(self, index):
+            if self.block:
+                self.threads.append(get_ident())
+                self.entered.set()
+                assert self.release.wait(5)
+            return np.full(4, index, dtype=float)
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    rows = Rows()
+    scene = Animation(env, AnimationField(rows, np.arange(6) * 0.2, vmin=0, vmax=5))
+    handle = build_napari_scene(scene, show=True)
+    try:
+        rows.block = True
+        main_thread = get_ident()
+        handle.time_control.setValue(0.2)
+        assert rows.entered.wait(5)
+        handle.time_control.setValue(0.4)
+        handle.time_control.setValue(0.6)
+        # A lazy read waits on the worker while the native event loop is live.
+        responsive = []
+        QTimer.singleShot(0, lambda: responsive.append(True))
+        QApplication.processEvents()
+        assert responsive and handle.time == 0.0
+        assert handle._pending[1] == 0.6
+        rows.release.set()
+        deadline = monotonic() + 5
+        while handle.time != 0.6 and monotonic() < deadline:
+            QApplication.processEvents()
+            sleep(0.001)
+        assert handle.time == 0.6
+        assert all(thread != main_thread for thread in rows.threads)
+
+        # An export owns exact synchronous time even when old work is queued.
+        rows.release.clear()
+        rows.entered.clear()
+        handle.time_control.setValue(0.8)
+        assert rows.entered.wait(5)
+        Timer(0.02, rows.release.set).start()
+        with handle.capture_session() as capture:
+            image = capture(1.0)
+            assert handle.time == 1.0 and image.ndim == 3
+        QApplication.processEvents()
+        assert handle.time == 0.6
+
+        # Native worker errors become inspectable and never escape Qt slots.
+        def fail(time):
+            raise OSError("decoder read failed")
+
+        monkeypatch.setattr(handle, "_prepare", fail)
+        handle.time_control.setValue(0.2)
+        deadline = monotonic() + 5
+        while handle.last_error is None and monotonic() < deadline:
+            QApplication.processEvents()
+            sleep(0.001)
+        assert isinstance(handle.last_error, OSError)
+        assert not handle.timer.isActive()
+    finally:
+        rows.release.set()
+        handle.close()
+        scene.close()
+
+
+def test_native_field_names_cannot_collide_with_prepared_metadata():
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    values = np.arange(8).reshape(2, 4)
+    scene = Animation(
+        env,
+        {
+            "__videos__": AnimationField(values, [0.0, 0.1]),
+            "__panels__": AnimationField(values + 10, [0.0, 0.1]),
+        },
+    )
+    handle = model_handle(scene)
+    handle.seek(0.1)
+    np.testing.assert_array_equal(
+        handle.field_layers["__videos__"].data.T.ravel(), values[1]
+    )
+    np.testing.assert_array_equal(
+        handle.field_layers["__panels__"].data.T.ravel(), values[1] + 10
+    )
+    scene.close()
+
+
+@pytest.mark.napari
+@pytest.mark.parametrize("dimensions", [2, 3])
+def test_native_marker_capture_keeps_diameter_when_camera_zooms(dimensions):
+    from neurospatial.animation.backends._napari_compat import scene_camera
+    from neurospatial.animation.backends._napari_scene import build_napari_scene
+
+    env = Environment.from_grid_mask(
+        np.ones((2,) * dimensions, dtype=bool),
+        tuple(np.array([0.0, 0.05, 0.1]) for _ in range(dimensions)),
+    )
+    scene = Animation(
+        env,
+        np.ones((2, env.n_bins)),
+        frame_times=[0.0, 0.1],
+        overlays=[
+            PositionOverlay(
+                np.full((2, dimensions), 0.05),
+                np.array([0.0, 0.1]),
+                size=12,
+                color="red",
+            ),
+        ],
+    )
+    handle = build_napari_scene(scene, show=True)
+    try:
+        handle.field_layers["field"].visible = False
+        camera = scene_camera(handle.viewer)
+        zoom = camera.zoom
+        diameters = []
+        for factor in [0.5, 2.0]:
+            camera.zoom = zoom * factor
+            image = handle.capture_frame(0.0)
+            red = (image[..., 0] > 180) & (image[..., 1] < 80) & (image[..., 2] < 80)
+            y, x = np.nonzero(red)
+            assert len(x), "the physical position must remain visible"
+            diameters.append(max(np.ptp(x), np.ptp(y)) + 1)
+        assert max(diameters) <= 32  # catches enormous world-sized 3D markers
+        assert max(diameters) / min(diameters) < 1.5
+    finally:
+        handle.close()
+        scene.close()
+
+
+@pytest.mark.napari
+def test_native_track_panel_keeps_collections_across_seeks_and_clears_cache():
+    from neurospatial.animation.backends._napari_scene import build_napari_scene
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    track = Environment.linear_track(endpoints=[[0.0, 0.5], [2.0, 0.5]], bin_size=1)
+    scene = Animation(
+        env, np.arange(12).reshape(3, 4), frame_times=[0.0, 0.1, 0.2], track=track
+    )
+    handle = build_napari_scene(scene, show=True)
+    try:
+        panels = handle._panels
+        artists = list(panels.axes[0].collections)
+        note = panels.axes[0].text(0.1, 0.5, "Track annotation")
+        handle.seek(0.05)
+        handle.seek(0.15)
+        assert list(panels.axes[0].collections) == artists
+        assert note in panels.axes[0].texts
+        assert handle._helper._rows
+        handle.close()
+        assert not handle._helper._rows
+        assert not handle._helper._held
+        assert not handle._helper._video_held
+        assert handle._panels is None
+        assert not scene._closed
+    finally:
+        handle.close()
+        scene.close()
+
+
+def test_legacy_spatial_units_leave_frame_axes_dimensionless():
+    from napari.layers import Image
+
+    from neurospatial.animation.backends._napari_compat import set_spatial_units
+
+    layer = Image(np.ones((2, 3, 4)))
+    set_spatial_units(layer, "cm", 2)
+    assert str(layer.units[0]) == "dimensionless"
+    assert tuple(str(unit) for unit in layer.units[1:]) == ("centimeter", "centimeter")
+
+
+def test_freeform_environment_unit_labels_do_not_break_native_layers():
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool),
+        (np.arange(3.0), np.arange(3.0)),
+        units="arena units",
+    )
+    scene = Animation(env, np.ones((2, 4)), frame_times=[0.0, 0.1])
+    handle = model_handle(scene)
+    handle.seek(0.05)
+    assert env.units == "arena units"
+    assert np.isfinite(handle.field_layers["field"].data).all()
     scene.close()

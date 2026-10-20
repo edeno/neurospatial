@@ -143,6 +143,9 @@ def test_named_field_sources_keep_lazy_identity_without_reading():
 
 def test_native_read_uses_absolute_time_callback_and_seek_uses_recording_time():
     animation = object.__new__(backend.FastplotlibAnimation)
+    from threading import RLock
+
+    animation._source_lock = RLock()
     animation._closed = False
     animation._clock = np.array([0.0, 1.0])
     animation._start = 100.0
@@ -160,6 +163,9 @@ def test_native_read_uses_absolute_time_callback_and_seek_uses_recording_time():
 
 def test_native_close_releases_graphics_canvas_and_owned_readers_once():
     animation = object.__new__(backend.FastplotlibAnimation)
+    from threading import RLock
+
+    animation._source_lock = RLock()
     animation._closed = False
     animation._frames = Mock()
     other = SimpleNamespace(slicer=Mock())
@@ -263,13 +269,21 @@ def test_stale_time_series_read_cannot_overwrite_restored_viewer():
 
 
 def _capture_view():
+    class Indices(dict):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self._fetch_rev = {}
+
     animation = object.__new__(backend.FastplotlibAnimation)
+    from threading import RLock
+
+    animation._source_lock = RLock()
     animation._closed = False
     animation.show = Mock()
     animation._frames = Mock(pause=False)
     other = Mock(pause=True)
     animation.widget = SimpleNamespace(
-        indices={"time": 0.25},
+        indices=Indices(time=0.25),
         ui_sliders=SimpleNamespace(_playing={"time": True}),
         ndgraphics=[animation._frames, other],
     )
@@ -307,3 +321,46 @@ def test_failed_time_restore_still_restores_cameras_and_playback():
     assert animation._frames.pause is False
     assert other.pause is True
     camera.set_state.assert_called_once_with({"width": 12.0})
+
+
+def test_worker_payload_owns_each_source_row_and_video_frame():
+    """Sources may reuse the same buffer across fields and later worker reads."""
+    from threading import RLock
+
+    scratch = np.empty(2)
+    pixels = np.empty((2, 2, 3), dtype=np.uint8)
+
+    class Source:
+        def __init__(self, base):
+            self.base = base
+
+        def __getitem__(self, index):
+            scratch[:] = self.base + index
+            return scratch
+
+    def read_video(index):
+        pixels[:] = index + 20
+        return pixels
+
+    animation = object.__new__(backend.FastplotlibAnimation)
+    animation._source_lock = RLock()
+    animation._clock = np.array([0.0, 1.0])
+    animation._start = 0.0
+    animation._field_at_time = None
+    animation._field_streams = None
+    animation._stacks = [Source(1), Source(10)]
+    animation._tracks = []
+    animation._videos = [
+        SimpleNamespace(
+            data=SimpleNamespace(get_frame=read_video),
+            clock=SimpleNamespace(nearest=lambda time: int(time)),
+        )
+    ]
+    first = animation._read(0.0)
+    second = animation._read(1.0)
+    np.testing.assert_array_equal(first.values[0], [1, 1])
+    np.testing.assert_array_equal(first.values[1], [10, 10])
+    np.testing.assert_array_equal(second.values[0], [2, 2])
+    np.testing.assert_array_equal(second.values[1], [11, 11])
+    np.testing.assert_array_equal(first.images[0], 20)
+    np.testing.assert_array_equal(second.images[0], 21)

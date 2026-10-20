@@ -213,13 +213,19 @@ def test_native_capture_does_not_restore_or_resume_a_closed_controller():
     from unittest.mock import MagicMock, Mock
 
     pytest.importorskip("fastplotlib.widgets.nd_widget")
+
+    class Indices(dict):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self._fetch_rev = {}
+
     animation = gpu.FastplotlibAnimation.__new__(gpu.FastplotlibAnimation)
     animation._closed = False
     animation.show = Mock()
     animation._frames = Mock(pause=False)
     other = Mock(pause=False)
     animation.widget = SimpleNamespace(
-        indices={"time": 0.1},
+        indices=Indices(time=0.1),
         ui_sliders=SimpleNamespace(_playing={"time": True}),
         ndgraphics=[animation._frames, other],
         close=Mock(),

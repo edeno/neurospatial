@@ -205,7 +205,8 @@ class PositionOverlay:
         Color for the position marker and trail (matplotlib color string).
         Default is "red".
     size : float, optional
-        Size of the position marker in points. Default is 10.0.
+        Position marker diameter in logical screen pixels, independent of
+        coordinate units and zoom. Default is 10.0.
     trail_length : int | None, optional
         Number of recent frames to show as a trail. If None, no trail is rendered.
         Trail opacity decays over the length. Default is None.
@@ -847,7 +848,7 @@ class EventOverlay:
 
         Default is None.
     size : float, optional
-        Marker size in points. Default is 8.0.
+        Marker diameter in logical screen pixels. Default is 8.0.
     decay_frames : int | None, optional
         Number of frames over which event markers persist and fade.
 
@@ -1164,7 +1165,7 @@ class EventOverlay:
         colors : str | dict[str, str] | None, optional
             Colors for event markers. See EventOverlay for details. Default is None.
         size : float, optional
-            Marker size in points. Default is 8.0.
+            Marker diameter in logical screen pixels. Default is 8.0.
         opacity : float, optional
             Base opacity for visible events (0.0-1.0). Default is 0.7.
         decay_frames : int | None, optional
@@ -1272,7 +1273,7 @@ class EventOverlay:
         colors : str | dict[str, str] | None, optional
             Colors for event markers. See EventOverlay for details. Default is None.
         size : float, optional
-            Marker size in points. Default is 8.0.
+            Marker diameter in logical screen pixels. Default is 8.0.
         opacity : float, optional
             Base opacity for visible events (0.0-1.0). Default is 0.7.
         decay_frames : int | None, optional
@@ -2322,7 +2323,7 @@ class ObjectVectorOverlay:
     object_marker : str, optional
         Marker style for objects ('o', 's', '^', etc.). Default is "o".
     object_size : float, optional
-        Size of object markers in points. Default is 15.0.
+        Object marker diameter in logical screen pixels. Default is 15.0.
     interp : {"linear", "nearest"}, optional
         Interpolation method for aligning overlay to animation frames.
         "linear" (default) for smooth trajectories.
@@ -2994,7 +2995,7 @@ class PositionData:
     color : str
         Marker and trail color (matplotlib color string).
     size : float
-        Marker size in points.
+        Marker diameter in logical screen pixels.
     trail_length : int or None
         Trail length in frames, or None for no trail.
     times : ndarray of shape (n_samples,), dtype float64, or None
@@ -3146,7 +3147,7 @@ class EventData:
     markers : dict[str, str]
         Dict mapping event type names to marker style strings.
     size : float
-        Marker size in points.
+        Marker diameter in logical screen pixels.
     decay_frames : int | None
         Number of frames over which events persist:
 
@@ -3567,7 +3568,7 @@ class ObjectVectorData:
     object_marker : str
         Marker style for objects.
     object_size : float
-        Size of object markers in points.
+        Object marker diameter in logical screen pixels.
     times : ndarray of shape (n_samples,), dtype float64, or None
         Times of the rows, in seconds, when the overlay keeps its own
         samples (the fastplotlib backend shows each until the next); None

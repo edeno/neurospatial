@@ -153,6 +153,9 @@ _SCENE_OPTIONS = {
             "colorbar_label",
             "track",
             "dry_run",
+            "field_rendering",
+            "volume_threshold",
+            "slice_plane",
         }
     ),
 }
@@ -199,6 +202,14 @@ def require_scene_view(scene: Animation, backend: str, options: dict[str, Any]) 
             "spatial fields. Omit layout to keep overlays and regions registered."
         )
     if backend == "fastplotlib":
+        from neurospatial.environment._fastplotlib_volume import resolve_field_rendering
+
+        resolve_field_rendering(
+            scene.env,
+            options.get("field_rendering", "auto"),
+            volume_threshold=options.get("volume_threshold"),
+            slice_plane=options.get("slice_plane"),
+        )
         track = options.get("track", scene.track)
         if track is not None:
             from neurospatial.animation._tracks import _checked_track

@@ -10,14 +10,30 @@ from __future__ import annotations
 import logging
 import weakref
 from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager, suppress
-from typing import Any, cast
+from time import monotonic
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 
 from neurospatial.animation._prepared import PreparedScene
-from neurospatial.animation._scene_rendering import draw_track_panel
 from neurospatial.animation._style import _heading_displacement, _rate_opacity
+from neurospatial.animation.backends._napari_compat import (
+    canvas_grid,
+    canvas_overlay,
+    qt_window,
+    screen_point_options,
+    set_spatial_units,
+)
+
+
+class _PreparedFrame(NamedTuple):
+    """Keep arbitrary scientific field names separate from view metadata."""
+
+    fields: dict[str, np.ndarray]
+    videos: dict[int, np.ndarray | None]
+    panels: Any
 
 
 def _native_grid(env: Any) -> tuple[Any, np.ndarray] | None:
@@ -155,38 +171,79 @@ class _ScientificPanels:
             self.cursors.append(
                 ax.axvline(scene.frame_times[0], color="red", linewidth=1)
             )
-        self._track_artists: list[Any] = []
+        from matplotlib.collections import LineCollection, PolyCollection
+        from matplotlib.colors import Normalize
 
-    def update(self, time: float) -> None:
+        self._track_artists = []
+        for ax, name, field in self.tracks:
+            cells = PolyCollection(
+                [],
+                cmap=field.cmap,
+                norm=Normalize(*helper.track_limits[name]),
+                edgecolors="none",
+            )
+            positions = LineCollection([], linewidths=1, zorder=3)
+            ax.add_collection(cells)
+            ax.add_collection(positions)
+            assert helper.track_extents is not None
+            starts, stops = helper.track_extents
+            ax.set_ylim(float(np.min(starts)), float(np.max(stops)))
+            ax.set_ylabel(f"Position ({helper.track_env.units or 'units'})")
+            ax.set_title(f"{name} along track")
+            self._track_artists.append((cells, positions))
+        # Layout is stable across ticks. Repeated tight_layout measures every
+        # artist and can dominate playback even when no source I/O is needed.
+        self.figure.subplots_adjust(
+            left=0.12, right=0.93, bottom=0.1, top=0.94, hspace=0.75
+        )
+
+    def prepare(self, time: float) -> dict[str, Any]:
+        """Build bounded scientific windows without touching Qt or artists."""
+        return {
+            "signals": [
+                self.helper.signal_window(signal, time) for _, signal in self.signals
+            ],
+            "rasters": [
+                self.helper.raster_window(raster, row, time)
+                for _, raster, row in self.rasters
+            ],
+            "tracks": [
+                self.helper.track_window(field, time) for _, _, field in self.tracks
+            ],
+        }
+
+    def update(self, time: float, prepared: Any = None) -> None:
+        prepared = self.prepare(time) if prepared is None else prepared
         left, right = (
             time - self.scene.window_seconds / 2,
             time + self.scene.window_seconds / 2,
         )
-        for line, signal in self.signals:
-            times, values = self.helper.signal_window(signal, time)
+        for (line, _), (times, values) in zip(
+            self.signals, prepared["signals"], strict=True
+        ):
             line.set_data(times, values)
-        for artist, raster, row in self.rasters:
-            spikes = self.helper.raster_window(raster, row, time)
-            segments = np.array(
-                [[[t, row - 0.4], [t, row + 0.4]] for t in spikes]
-            ).reshape(-1, 2, 2)
+        for (artist, _, row), spikes in zip(
+            self.rasters, prepared["rasters"], strict=True
+        ):
+            segments = np.empty((len(spikes), 2, 2))
+            segments[:, :, 0] = spikes[:, None]
+            segments[:, :, 1] = [row - 0.4, row + 0.4]
             artist.set_segments(segments)
-        for artist in self._track_artists:
-            artist.remove()
-        self._track_artists.clear()
-        for ax, name, field in self.tracks:
-            before = set(ax.get_children())
-            # _track also adds a cursor; remove only that managed duplicate.
-            draw_track_panel(ax, self.helper, name, field, time, colorbar=False)
-            self._track_artists.extend(set(ax.get_children()) - before)
+        for (cells, positions), window in zip(
+            self._track_artists, prepared["tracks"], strict=True
+        ):
+            cells.set_verts(window.polygons)
+            cells.set_array(window.values)
+            positions.set_segments([segment for segment, _ in window.positions])
+            positions.set_color([color for _, color in window.positions])
         for ax, cursor in zip(self.axes, self.cursors, strict=True):
             ax.set_xlim(left, right)
             cursor.set_xdata([time, time])
-        self.figure.tight_layout()
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
     def capture(self) -> np.ndarray:
-        self.canvas.draw()
+        if self.figure.stale:
+            self.canvas.draw()
         return cast("np.ndarray", np.asarray(self.canvas.buffer_rgba())[..., :3].copy())
 
 
@@ -195,7 +252,12 @@ class NapariScene:
 
     def __init__(self, scene: Any, **options: Any) -> None:
         import napari
-        from qtpy.QtCore import QTimer
+        from qtpy.QtCore import (  # type: ignore[attr-defined]
+            QObject,
+            Qt,
+            QTimer,
+            Signal,
+        )
         from qtpy.QtWidgets import (
             QDoubleSpinBox,
             QHBoxLayout,
@@ -224,6 +286,13 @@ class NapariScene:
         self._step = self._speed / fps
         self._helper = PreparedScene(scene)
         self._panels: _ScientificPanels | None = None
+        self._source_lock = self._helper.source_lock
+        self._inflight: Future[Any] | None = None
+        self._pending: tuple[int, float] | None = None
+        self._generation = 0
+        self._capturing = False
+        self.last_error: BaseException | None = None
+        self._last_samples: dict[str, np.ndarray] = {}
         self.viewer: Any = options.get("viewer")
         self._owns_viewer = self.viewer is None
         if self.viewer is None:
@@ -236,6 +305,9 @@ class NapariScene:
         self._updates: list[Any] = []
         self.field_layers: dict[str, Any] = {}
         try:
+            self._executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="napari-scene"
+            )
             if not self._owns_viewer:
                 if "title" in options:
                     self.viewer.title = options["title"]
@@ -268,8 +340,8 @@ class NapariScene:
                     raise ValueError(
                         "Napari grid layout separates individual overlay layers; omit layout to keep overlays registered to every field."
                     )
-                self.viewer.grid.enabled = True
-                self.viewer.grid.shape = {
+                canvas_grid(self.viewer).enabled = True
+                canvas_grid(self.viewer).shape = {
                     "horizontal": (1, len(scene.fields)),
                     "vertical": (len(scene.fields), 1),
                     "grid": (-1, -1),
@@ -295,7 +367,15 @@ class NapariScene:
             self.timer.setInterval(max(1, round(1000 / fps)))
             self.timer.timeout.connect(self._tick)
             self.play_button.clicked.connect(self._toggle_play)
-            self.time_control.valueChanged.connect(self.seek)
+            self.time_control.valueChanged.connect(self._request_seek)
+
+            class PreparedBridge(QObject):
+                ready = Signal(object)
+
+            self._bridge = PreparedBridge(controls)
+            self._bridge.ready.connect(
+                self._prepared_ready, Qt.ConnectionType.QueuedConnection
+            )
             if self._helper.panel_count:
                 self._panels = _ScientificPanels(scene, self._helper)
                 self._panel_dock = self.viewer.window.add_dock_widget(
@@ -304,7 +384,7 @@ class NapariScene:
             self.seek(self._time)
             from qtpy.QtCore import QEvent, QObject
 
-            window = self.viewer.window._qt_window
+            window = qt_window(self.viewer)
             handle_ref, window_ref = weakref.ref(self), weakref.ref(window)
 
             class WindowLifecycle(QObject):
@@ -355,6 +435,7 @@ class NapariScene:
     def _add(self, kind: str, data: Any, **kwargs: Any) -> Any:
         layer = getattr(self.viewer, f"add_{kind}")(data, **kwargs)
         self._layers.append(layer)
+        set_spatial_units(layer, self.scene.env.units, self.scene.env.n_dims)
         return layer
 
     def _build_fields(self) -> None:
@@ -371,7 +452,7 @@ class NapariScene:
                     np.linspace(low, high, 256) / field._typical_peak(), 0, 1
                 )
             cmap = Colormap(colors, name=field.cmap)
-            values = field.sample(self._time)
+            values = self._helper.field_samples(self._time)[name]
             if native is not None:
                 grid, affine = native
                 layer = self._add(
@@ -384,11 +465,22 @@ class NapariScene:
                     blending="translucent",
                     rendering="attenuated_mip",
                 )
-                self._updates.append(
-                    lambda time, samples, layer=layer, name=name, grid=grid: setattr(
-                        layer, "data", _image(samples[name], grid)
-                    )
-                )
+
+                def update_image(
+                    time: float,
+                    samples: Any,
+                    *,
+                    layer: Any = layer,
+                    name: str = name,
+                    grid: Any = grid,
+                ) -> None:
+                    if (
+                        getattr(self, "_last_samples", {}).get(name)
+                        is not samples.fields[name]
+                    ):
+                        layer.data = _image(samples.fields[name], grid)
+
+                self._updates.append(update_image)
             else:
                 layer = self._add(
                     "points",
@@ -405,8 +497,12 @@ class NapariScene:
                 def update(
                     time: float, samples: Any, *, layer: Any = layer, name: str = name
                 ) -> None:
-                    layer.features = {"value": samples[name]}
-                    layer.shown = np.isfinite(samples[name])
+                    if (
+                        getattr(self, "_last_samples", {}).get(name)
+                        is not samples.fields[name]
+                    ):
+                        layer.features = {"value": samples.fields[name]}
+                        layer.shown = np.isfinite(samples.fields[name])
 
                 self._updates.append(update)
             self.field_layers[name] = layer
@@ -429,7 +525,7 @@ class NapariScene:
             layer.data = [
                 np.asarray(segment)[:, ::-1]
                 for segment in segments
-                if np.isfinite(segment).all()
+                if np.isfinite(segment).all() and np.any(np.diff(segment, axis=0))
             ]
 
         for i, position in enumerate(data.positions):
@@ -438,7 +534,7 @@ class NapariScene:
                 empty,
                 ndim=dims,
                 name=f"Position {i + 1}",
-                size=position.size,
+                **screen_point_options(position.size),
                 face_color=_rgba(position.color),
             )
             trail = (
@@ -495,7 +591,7 @@ class NapariScene:
                             ),
                         )
                     ),
-                    size=8,
+                    **screen_point_options(8),
                 )
                 for name in names
             }
@@ -586,7 +682,7 @@ class NapariScene:
                     empty,
                     ndim=dims,
                     name=f"Objects {i + 1}",
-                    size=vector.object_size,
+                    **screen_point_options(vector.object_size),
                     symbol=_symbol(vector.object_marker),
                     face_color=_rgba(vector.color),
                 )
@@ -631,11 +727,13 @@ class NapariScene:
                     ndim=dims,
                     name=f"Events {i + 1}: {name}",
                     face_color=_rgba(events.colors[name]),
-                    size=events.size,
+                    **screen_point_options(events.size),
                     symbol=_symbol(events.markers[name]),
                     border_width=events.border_width,
                     border_color=_rgba(events.border_color),
                 )
+
+                event_times, event_indices = self._helper.event_clocks[id(events), name]
 
                 def update_events(
                     time: float,
@@ -645,13 +743,9 @@ class NapariScene:
                     name: str = name,
                     positions: Any = positions,
                     layer: Any = layer,
+                    times: Any = event_times,
+                    indices: Any = event_indices,
                 ) -> None:
-                    times = e.event_times.get(name)
-                    if times is None:
-                        times = scene.frame_times[e.event_frame_indices[name]]
-                    indices = np.maximum(
-                        np.searchsorted(scene.frame_times, times, side="right") - 1, 0
-                    )
                     frame = (
                         int(np.searchsorted(scene.frame_times, time, side="right")) - 1
                     )
@@ -671,7 +765,9 @@ class NapariScene:
             # below decides whether the current observation is visible.
             available = np.flatnonzero(video.frame_indices >= 0)
             image = (
-                video.get_frame(int(available[0]))
+                self._helper.video_frame(
+                    video, float(self._helper.clock(video)[available[0]])
+                )
                 if len(available)
                 else np.zeros((1, 1, 3), dtype=np.uint8)
             )
@@ -724,7 +820,7 @@ class NapariScene:
                 v: Any = video,
                 layer: Any = layer,
             ) -> None:
-                image = self._helper.video_frame(v, time)
+                image = samples.videos[id(v)]
                 layer.visible = image is not None
                 if image is not None:
                     layer.data = image
@@ -741,7 +837,7 @@ class NapariScene:
                     "points",
                     np.asarray(region.data).reshape(1, dims)[:, ::-1],
                     name=f"Region: {name}",
-                    size=10,
+                    **screen_point_options(10),
                     face_color="white",
                     opacity=scene.region_alpha,
                 )
@@ -763,7 +859,7 @@ class NapariScene:
                     f"Napari cannot draw region kind {region.kind!r}; omit show_regions."
                 )
 
-    def seek(self, time: float) -> None:
+    def _validate_time(self, time: float) -> float:
         if self._closed:
             raise RuntimeError("This napari view is closed.")
         time = float(time)
@@ -774,23 +870,112 @@ class NapariScene:
             raise ValueError(
                 "time must lie inside the scene's recording clock, in seconds."
             )
-        samples = self.scene.sample_fields(time)
+        return time
+
+    def _prepare(self, time: float) -> _PreparedFrame:
+        # Decoders and lazy source adapters need not support concurrent reads.
+        # Synchronous seek, worker jobs and close share this source lifetime.
+        with getattr(self, "_source_lock", self._helper.source_lock):
+            return _PreparedFrame(
+                self._helper.field_samples(time),
+                {
+                    id(video): self._helper.video_frame(video, time)
+                    for video in self.scene._overlay_data.videos
+                },
+                self._panels.prepare(time) if self._panels is not None else None,
+            )
+
+    def _apply(self, time: float, samples: _PreparedFrame) -> None:
         for update in self._updates:
             update(time, samples)
+        self._last_samples = {name: samples.fields[name] for name in self.scene.fields}
         self._time = time
         self.time_control.blockSignals(True)
         try:
             self.time_control.setValue(time)
         finally:
             self.time_control.blockSignals(False)
-        self.viewer.text_overlay.visible = True
-        self.viewer.text_overlay.text = f"t = {time:.3f} s"
+        canvas_overlay(self.viewer, "text").visible = True
+        canvas_overlay(self.viewer, "text").text = f"t = {time:.3f} s"
         if self._panels is not None:
-            self._panels.update(time)
+            self._panels.update(time, samples.panels)
+        self.last_error = None
+
+    def _invalidate_pending(self) -> None:
+        self._generation = getattr(self, "_generation", 0) + 1
+        self._pending = None
+
+    def seek(self, time: float) -> None:
+        """Synchronously prepare and apply an exact recording-time observation."""
+        time = self._validate_time(time)
+        self._invalidate_pending()
+        self._apply(time, self._prepare(time))
+        if getattr(self, "timer", None) is not None and self.timer.isActive():
+            self._play_origin, self._play_started = time, monotonic()
+
+    def _request_seek(self, time: float, *, playback: bool = False) -> None:
+        """GUI-only request: retain one in-flight job and the latest target."""
+        if self._closed or self._capturing:
+            return
+        time = self._validate_time(time)
+        if not playback:
+            self._generation += 1
+            if self.timer.isActive():
+                self._play_origin, self._play_started = time, monotonic()
+        # Playback requests share an epoch: a completed frame can advance the
+        # display while a newer wall-clock target waits. A manual scrub or
+        # synchronous seek invalidates that epoch and discards its results.
+        request = (self._generation, time)
+        if self._inflight is not None:
+            self._pending = request
+        else:
+            self._submit(request)
+
+    def _submit(self, request: tuple[int, float]) -> None:
+        generation, time = request
+        future = self._executor.submit(self._prepare, time)
+        self._inflight = future
+        bridge = self._bridge
+
+        def completed(done: Future[Any]) -> None:
+            # No layer, artist or widget mutation on a worker thread. The
+            # queued signal is delivered only by the GUI event loop.
+            with suppress(RuntimeError):
+                bridge.ready.emit((generation, time, done))
+
+        future.add_done_callback(completed)
+
+    def _prepared_ready(self, result: tuple[int, float, Future[Any]]) -> None:
+        generation, time, future = result
+        if future is self._inflight:
+            self._inflight = None
+        if self._closed:
+            return
+        if generation == self._generation and not self._capturing:
+            try:
+                self._apply(time, future.result())
+            except Exception as error:
+                self.last_error = error
+                text = canvas_overlay(self.viewer, "text")
+                text.visible = True
+                text.text = f"Read failed at {time:.3f} s: {error}\nLast frame t = {self.time:.3f} s"
+                self.timer.stop()
+                self.play_button.setText("Play")
+                logging.getLogger(__name__).exception(
+                    "Napari scene preparation failed at %.6f s", time
+                )
+        pending, self._pending = self._pending, None
+        if pending is not None and not self._capturing:
+            self._submit(pending)
 
     def _tick(self) -> None:
-        time = min(float(self.scene.frame_times[-1]), self.time + self._step)
-        self.seek(time)
+        if not hasattr(self, "_play_started"):
+            self._play_origin, self._play_started = self.time, monotonic()
+        time = min(
+            float(self.scene.frame_times[-1]),
+            self._play_origin + (monotonic() - self._play_started) * self._speed,
+        )
+        self._request_seek(time, playback=True)
         if time >= self.scene.frame_times[-1]:
             self.timer.stop()
             self.play_button.setText("Play")
@@ -802,6 +987,7 @@ class NapariScene:
         else:
             if self.time >= self.scene.frame_times[-1]:
                 self.seek(float(self.scene.frame_times[0]))
+            self._play_origin, self._play_started = self.time, monotonic()
             self.timer.start()
             self.play_button.setText("Pause")
 
@@ -817,6 +1003,7 @@ class NapariScene:
             return
         self.seek(state["time"])
         if state["playing"]:
+            self._play_origin, self._play_started = self.time, monotonic()
             self.timer.start()
         self.play_button.setText("Pause" if state["playing"] else "Play")
 
@@ -826,14 +1013,21 @@ class NapariScene:
             raise RuntimeError("This napari view is closed.")
         state = self.capture_state()
         self.timer.stop()
+        was_capturing = getattr(self, "_capturing", False)
+        self._capturing = True
+        self._invalidate_pending()
         try:
             yield self.capture_frame
         finally:
+            self._capturing = was_capturing
             self.restore_state(state)
 
     def capture_frame(self, time: float) -> np.ndarray:
         from qtpy.QtWidgets import QApplication
 
+        if not self._capturing:
+            with self.capture_session() as capture:
+                return cast("np.ndarray", capture(time))
         self.seek(time)
         # Process pending native layer/camera draws before a blocking screenshot.
         QApplication.processEvents()
@@ -851,6 +1045,7 @@ class NapariScene:
         if self._closed:
             return
         self._closed = True
+        self._invalidate_pending()
         from neurospatial.animation._resources import _raise_cleanup_errors
 
         failures: list[BaseException] = []
@@ -868,10 +1063,18 @@ class NapariScene:
         timer = getattr(self, "timer", None)
         if timer is not None:
             release(timer.stop)
+        executor = getattr(self, "_executor", None)
+        if executor is not None:
+            # Drain reads before Animation.close closes its owned video readers.
+            release(lambda: executor.shutdown(wait=True, cancel_futures=True))
+        bridge = getattr(self, "_bridge", None)
+        if bridge is not None:
+            release(lambda: bridge.ready.disconnect(self._prepared_ready))
+        self._inflight = None
         for control, signal_name, callback in (
             (timer, "timeout", self._tick),
             (getattr(self, "play_button", None), "clicked", self._toggle_play),
-            (getattr(self, "time_control", None), "valueChanged", self.seek),
+            (getattr(self, "time_control", None), "valueChanged", self._request_seek),
         ):
             if control is not None:
 
@@ -885,7 +1088,7 @@ class NapariScene:
                         getattr(control, signal_name).disconnect(callback)
 
                 release(disconnect)
-        native_window = getattr(self.viewer.window, "_qt_window", None)
+        native_window = qt_window(self.viewer)
         lifecycle = getattr(self, "_lifecycle", None)
         if lifecycle is not None:
             if native_window is not None:
@@ -909,6 +1112,10 @@ class NapariScene:
             if widget is not None:
                 release(lambda widget=widget: widget.setParent(None))
                 release(widget.deleteLater)
+        release(self._helper.clear_cache)
+        self._last_samples = {}
+        self.last_error = None
+        self._panels = None
         self._updates.clear()
         self._layers.clear()
         self.field_layers.clear()

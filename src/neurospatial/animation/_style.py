@@ -15,6 +15,16 @@ from numpy.typing import NDArray
 _TRAIL_MAX_ALPHA = 0.7
 
 
+def _marker_area(size: float, *, dpi: float) -> float:
+    """Convert a screen-pixel marker diameter to Matplotlib points squared.
+
+    Overlay sizes describe the display, independently of coordinate units and
+    zoom. Matplotlib's scatter API instead expects an area in typographic
+    points, so the canvas DPI belongs in this backend-boundary conversion.
+    """
+    return (size * 72.0 / dpi) ** 2
+
+
 def _event_visibility(
     frame_indices: NDArray[np.int_], frame_idx: int, decay: int | None
 ) -> tuple[NDArray[np.bool_], NDArray[np.float64]]:

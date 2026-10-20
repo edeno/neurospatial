@@ -41,6 +41,34 @@ class LazyRows:
         raise AssertionError("Do not copy caller-owned field sources")
 
 
+def test_independent_field_samples_own_reused_reader_buffers():
+    class ScratchRows:
+        shape = (2, 4)
+
+        def __init__(self):
+            self.buffer = np.empty(4)
+
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            self.buffer.fill(index)
+            return self.buffer
+
+    source = ScratchRows()
+    field = AnimationField(source, [0, 0.1])
+    first = field.sample(0.0)
+    second = field.sample(0.1)
+    np.testing.assert_array_equal(first, np.zeros(4))
+    np.testing.assert_array_equal(second, np.ones(4))
+    assert not np.shares_memory(first, source.buffer)
+    from neurospatial.animation._field_stats import frame_extremes
+
+    lows, highs = frame_extremes(source)
+    np.testing.assert_array_equal(lows, [0, 1])
+    np.testing.assert_array_equal(highs, [0, 1])
+
+
 @pytest.fixture
 def env():
     return Environment.from_grid_mask(
