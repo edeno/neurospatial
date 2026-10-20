@@ -1838,6 +1838,7 @@ def heading_direction_labels(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from heading angle.
 
@@ -1869,6 +1870,10 @@ def heading_direction_labels(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -1877,14 +1882,15 @@ def heading_direction_labels(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     In trajectory mode, speed and heading come from the Gaussian-smoothed
     velocity of :func:`compute_speed`, so tracking jitter at rest is
     "stationary"; a sample in no observed run is "stationary" too.
     Precomputed speed/heading inputs retain their existing behavior without a
-    time gate.
+    time gate, and refuse ``break_before``.
 
     Examples
     --------
@@ -1928,6 +1934,19 @@ def heading_direction_labels(
                 f"Speed and heading arrays must have the same length. "
                 f"Got speed: {len(speed_arr)}, heading: {len(heading_arr)}."
             )
+        if break_before is not None:
+            raise ValueError(
+                _format_error(
+                    "heading_direction_labels() got break_before with "
+                    "precomputed speed and heading.",
+                    why="Recording breaks apply to the velocity computed from "
+                    "times and positions; precomputed speed and heading are "
+                    "labeled as given.",
+                    fix="pass times and positions with break_before instead of "
+                    "speed and heading, or compute them with break_before "
+                    "(e.g. compute_speed(times, positions, break_before=...)).",
+                )
+            )
 
         n_samples = len(speed_arr)
 
@@ -1946,10 +1965,14 @@ def heading_direction_labels(
         n_samples = len(times_arr)
 
         from neurospatial._intervals import observed_interval_mask
+        from neurospatial._observation import validate_break_before
         from neurospatial.ops import _velocity_heading_and_speed
 
+        breaks = validate_break_before(
+            break_before, n_samples, call="heading_direction_labels"
+        )
         interval_mask = observed_interval_mask(
-            times_arr, max_gap=max_gap, epochs=epochs
+            times_arr, max_gap=max_gap, epochs=epochs, break_before=breaks
         )
         if n_samples == 0:
             return np.array([], dtype=object)
@@ -2712,6 +2735,7 @@ def instantaneous_goal_alignment(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Compute instantaneous alignment between movement and goal direction.
 
@@ -2736,6 +2760,10 @@ def instantaneous_goal_alignment(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -2745,8 +2773,9 @@ def instantaneous_goal_alignment(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     Samples in no observed run and samples below ``min_speed`` have NaN
     alignment. Each run's last sample repeats its previous interval's
@@ -2771,8 +2800,14 @@ def instantaneous_goal_alignment(
     goal = np.asarray(goal)
 
     from neurospatial._intervals import observed_interval_mask
+    from neurospatial._observation import validate_break_before
 
-    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    breaks = validate_break_before(
+        break_before, len(times), call="instantaneous_goal_alignment"
+    )
+    interval_mask = observed_interval_mask(
+        times, max_gap=max_gap, epochs=epochs, break_before=breaks
+    )
     if len(positions) < 2:
         return np.full(len(positions), np.nan)
 
@@ -2798,6 +2833,7 @@ def goal_bias(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> float:
     """Compute mean alignment toward goal over trajectory.
 
@@ -2823,6 +2859,10 @@ def goal_bias(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -2832,8 +2872,9 @@ def goal_bias(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     Interpretation:
     - > 0.5: Strong goal-directed navigation
@@ -2848,11 +2889,19 @@ def goal_bias(
     >>> goal_bias(times, positions, goal, min_speed=0.0) > 0.8
     True
     """
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(times, positions, call="goal_bias")
+    breaks = validate_break_before(break_before, len(times), call="goal_bias")
     alignment = instantaneous_goal_alignment(
-        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+        times,
+        positions,
+        goal,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
     )
 
     valid_alignment = alignment[~np.isnan(alignment)]
@@ -3014,6 +3063,7 @@ def compute_goal_directed_metrics(
     goal_radius: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> GoalDirectedMetrics:
     """Compute comprehensive goal-directed navigation metrics.
 
@@ -3044,6 +3094,10 @@ def compute_goal_directed_metrics(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -3054,11 +3108,14 @@ def compute_goal_directed_metrics(
     ------
     ValueError
         If positions and times have different lengths.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     Heading alignment and approach-rate averages use observed intervals.
     Time-to-goal remains wall-clock time, which is known across a pause.
@@ -3070,10 +3127,14 @@ def compute_goal_directed_metrics(
     ... )  # doctest: +SKIP
     >>> print(result)  # doctest: +SKIP
     """
+    from neurospatial._observation import validate_break_before
     from neurospatial._validation import validate_times_positions
 
     times, positions = validate_times_positions(
         times, positions, call="compute_goal_directed_metrics"
+    )
+    breaks = validate_break_before(
+        break_before, len(times), call="compute_goal_directed_metrics"
     )
     goal = np.asarray(goal)
 
@@ -3083,11 +3144,24 @@ def compute_goal_directed_metrics(
         env, min_speed, call="compute_goal_directed_metrics()"
     )
     bias = goal_bias(
-        times, positions, goal, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+        times,
+        positions,
+        goal,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
     )
 
     rates = approach_rate(
-        times, positions, goal, metric=metric, env=env, max_gap=max_gap, epochs=epochs
+        times,
+        positions,
+        goal,
+        metric=metric,
+        env=env,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
     )
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 

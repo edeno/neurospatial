@@ -160,9 +160,9 @@ def compute_speed(
     keep nearly all of its rest. Every ``min_speed`` gate in the package
     (rate maps, decoding, ``segment_by_velocity``, decision and goal
     metrics) uses this speed, so passing ``speed=compute_speed(...)``
-    explicitly gives the same result as leaving it out. Those gates have no
-    ``break_before``; when you declare breaks, pass this speed explicitly with
-    ``speed=``.
+    explicitly gives the same result as leaving it out. A gate without a
+    ``break_before`` argument cannot see a declared break; when you declare
+    breaks, pass this speed to it explicitly with ``speed=``.
 
     Speed is never smoothed across a declared break, a missing sample, a gap
     longer than ``max_gap`` or the edge of an ``epochs`` window.
@@ -1516,6 +1516,7 @@ def compute_home_range(
     percentile: float = 95.0,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.int_]:
     """
     Compute home range as bins containing a percentile of time spent.
@@ -1551,6 +1552,10 @@ def compute_home_range(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. Requires ``times``.
 
     Returns
     -------
@@ -1559,14 +1564,16 @@ def compute_home_range(
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause.
 
     When ``times`` is given, dwell comes only from valid intervals. Each
     run's last sample receives that run's median interval duration; samples
     in no run receive zero dwell. Bins with zero observed dwell are omitted.
     No observed dwell gives an empty home
-    range. With ``times=None``, counts are used and time gates are unused.
+    range. With ``times=None``, counts are used, time gates are unused and
+    ``break_before`` raises.
 
     The home range is computed by:
     1. Computing occupancy per bin (visit counts, or time-weighted dwell time
@@ -1621,6 +1628,16 @@ def compute_home_range(
     in_environment = position_bins >= 0
 
     if times is None:
+        if break_before is not None:
+            raise ValueError(
+                _format_error(
+                    "compute_home_range() got break_before without times.",
+                    why="Without times the home range counts samples per bin, "
+                    "and a recording break does not change a count.",
+                    fix="pass times= to weight each bin by the dwell time "
+                    "observed within each recording, or drop break_before.",
+                )
+            )
         # Count-based occupancy (assumes uniform sampling).
         unique_bins, occupancy = np.unique(
             position_bins[in_environment], return_counts=True
@@ -1635,8 +1652,14 @@ def compute_home_range(
                 f"Got {len(times)} and {len(position_bins)}."
             )
         from neurospatial._intervals import observed_interval_mask
+        from neurospatial._observation import validate_break_before
 
-        interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+        breaks = validate_break_before(
+            break_before, len(times), call="compute_home_range"
+        )
+        interval_mask = observed_interval_mask(
+            times, max_gap=max_gap, epochs=epochs, break_before=breaks
+        )
         if len(position_bins) == 0:
             return np.array([], dtype=np.intp)
         sample_weights = _sample_dwell_times(times, interval_mask)[in_environment]
