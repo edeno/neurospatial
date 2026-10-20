@@ -6,10 +6,11 @@ spontaneous alternation behavior. Animals typically explore all three arms,
 and researchers measure whether they prefer to alternate between arms rather
 than revisiting the same arm consecutively.
 
-The standard Y-maze has three identical arms radiating from a central junction
-at 60°, 180°, and 300° (or equivalently: up-right, down, up-left). In this
-implementation, we use 90°, 210°, 330° (up, down-left, down-right) for cleaner
-visualization.
+The arms point at 270° (down), 30° (up-right) and 150° (up-left), so the
+single arm points down as in the Y-maze drawn in Wijnen et al. (2024),
+Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x, Fig. 1a.
+Y-maze sizes vary between labs; the 50 cm arms and 10 cm width are
+figure-consistent defaults, not a published apparatus.
 
 Examples
 --------
@@ -27,16 +28,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import networkx as nx
 import numpy as np
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
-    make_buffered_line,
-    make_star_graph,
+    corridor_end_point,
+    make_corridor_polygon,
     union_polygons,
 )
+
+# Arm directions in degrees, counterclockwise from +x: down, up-right, up-left.
+_ARM_ANGLES_DEG = (270.0, 30.0, 150.0)
 
 
 @dataclass(frozen=True)
@@ -44,13 +49,14 @@ class YMazeDims(MazeDims):
     """Dimension specifications for Y-Maze.
 
     The Y-Maze consists of three identical arms radiating from a central
-    junction at 120° intervals. The arms are oriented at 90° (up), 210°
-    (down-left), and 330° (down-right) from the origin.
+    junction at 120° intervals. The arms point at 270° (down), 30°
+    (up-right) and 150° (up-left).
 
     Attributes
     ----------
     arm_length : float
-        Length of each arm in cm. Default is 50.0.
+        Length of each arm in cm, from the junction centre to the arm's far
+        end wall. Default is 50.0.
     width : float
         Width of all corridors in cm. Default is 10.0.
 
@@ -69,6 +75,15 @@ class YMazeDims(MazeDims):
 
     arm_length: float = 50.0
     width: float = 10.0
+
+
+def _arm_endpoints(dims: YMazeDims) -> list[tuple[float, float]]:
+    """Far end of each arm's centreline, in arm order."""
+    angles = np.radians(_ARM_ANGLES_DEG)
+    return [
+        (float(dims.arm_length * np.cos(a)), float(dims.arm_length * np.sin(a)))
+        for a in angles
+    ]
 
 
 def make_y_maze(
@@ -102,23 +117,23 @@ def make_y_maze(
 
     Notes
     -----
-    The maze is centered at the origin with three arms:
-    - Arm 1: Points up (90°) from center to (0, arm_length)
-    - Arm 2: Points down-left (210°) from center to (-0.866*arm_length, -0.5*arm_length)
-    - Arm 3: Points down-right (330°) from center to (+0.866*arm_length, -0.5*arm_length)
+    The maze is centered at the origin with three square-ended arms, each
+    reaching ``arm_length`` from the centre:
+
+    - Arm 1: Points down (270°) to (0, -arm_length)
+    - Arm 2: Points up-right (30°) to (+0.866*arm_length, +0.5*arm_length)
+    - Arm 3: Points up-left (150°) to (-0.866*arm_length, +0.5*arm_length)
 
     Regions:
+
     - center: Point at origin (0, 0)
-    - arm1_end: Point at arm 1 endpoint (90°)
-    - arm2_end: Point at arm 2 endpoint (210°)
-    - arm3_end: Point at arm 3 endpoint (330°)
+    - arm1_end, arm2_end, arm3_end: Points centred in the end square of each
+      arm, half a corridor width back from its far end.
 
     Track Graph Topology:
-    - center -> arm1_end: Edge along arm 1
-    - center -> arm2_end: Edge along arm 2
-    - center -> arm3_end: Edge along arm 3
 
-    The corridors have rounded ends (cap_style='round') to avoid sharp corners.
+    - center -> arm1_end, center -> arm2_end, center -> arm3_end: one edge
+      along each arm, ending at the arm's far end.
 
     Examples
     --------
@@ -150,29 +165,12 @@ def make_y_maze(
     if dims is None:
         dims = YMazeDims()
 
-    # Arm angles (in degrees): 90° (up), 210° (down-left), 330° (down-right)
-    arm_angles_deg = [90.0, 210.0, 330.0]
-    arm_angles_rad = np.radians(arm_angles_deg)
-
-    # Center position at origin
     center_pos = (0.0, 0.0)
+    arm_endpoints = _arm_endpoints(dims)
 
-    # Calculate arm endpoints using trigonometry
-    arm_endpoints = [
-        (
-            dims.arm_length * np.cos(angle),
-            dims.arm_length * np.sin(angle),
-        )
-        for angle in arm_angles_rad
-    ]
-
-    # Create corridor polygons with rounded ends
+    # Square-ended corridors, so each arm ends exactly arm_length from centre
     arm_polygons = [
-        make_buffered_line(
-            start=center_pos,
-            end=endpoint,
-            width=dims.width,
-        )
+        make_corridor_polygon(start=center_pos, end=endpoint, width=dims.width)
         for endpoint in arm_endpoints
     ]
 
@@ -191,9 +189,10 @@ def make_y_maze(
     # Add regions for key locations
     region_builder = Regions()
     region_builder.add("center", point=center_pos)
-    region_builder.add("arm1_end", point=arm_endpoints[0])
-    region_builder.add("arm2_end", point=arm_endpoints[1])
-    region_builder.add("arm3_end", point=arm_endpoints[2])
+    for i, endpoint in enumerate(arm_endpoints, start=1):
+        region_builder.add(
+            f"arm{i}_end", point=corridor_end_point(center_pos, endpoint, dims.width)
+        )
     env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
@@ -210,8 +209,9 @@ def _create_y_maze_track_graph(
 ) -> Environment:
     """Create the 1D linearized track graph for Y-Maze.
 
-    The track graph represents the Y-maze topology with a star shape:
-    three edges radiating from a central node to each arm endpoint.
+    The track graph is a star: one edge from the ``center`` node to each arm's
+    far end, with end nodes named like the arm-end regions
+    (``arm1_end``, ``arm2_end``, ``arm3_end``).
 
     Parameters
     ----------
@@ -225,36 +225,13 @@ def _create_y_maze_track_graph(
     Environment
         1D linearized environment representing the Y-maze track.
     """
-    # Arm angles (in degrees)
-    arm_angles_deg = [90.0, 210.0, 330.0]
-    arm_angles_rad = np.radians(arm_angles_deg)
-
-    # Center position at origin
-    center_pos = (0.0, 0.0)
-
-    # Calculate arm endpoints
-    arm_endpoints = [
-        (
-            dims.arm_length * np.cos(angle),
-            dims.arm_length * np.sin(angle),
-        )
-        for angle in arm_angles_rad
-    ]
-
-    # Create star graph with center and three arms
-    graph = make_star_graph(
-        center=center_pos,
-        arm_endpoints=arm_endpoints,
-        spacing=None,  # No intermediate nodes, just direct edges
-    )
-
-    # Edge order for linearization
-    # We'll linearize as: center -> arm1_end, center -> arm2_end, center -> arm3_end
-    edge_order = [
-        ("center", "arm_0_end"),  # Arm 1 (90°)
-        ("center", "arm_1_end"),  # Arm 2 (210°)
-        ("center", "arm_2_end"),  # Arm 3 (330°)
-    ]
+    graph = nx.Graph()
+    graph.add_node("center", pos=(0.0, 0.0))
+    edge_order = []
+    for i, endpoint in enumerate(_arm_endpoints(dims), start=1):
+        graph.add_node(f"arm{i}_end", pos=endpoint)
+        graph.add_edge("center", f"arm{i}_end", distance=dims.arm_length)
+        edge_order.append(("center", f"arm{i}_end"))
 
     # Create the 1D environment
     env_track = Environment.from_graph(
