@@ -2761,13 +2761,12 @@ class Environment(Generic[_C]):
         ``apply_transform`` needs no mapping: transforms keep bin IDs, so bin
         ``i`` of the transformed environment is bin ``i`` of the original.
 
-        Polygon cells kept whole by a clip have the parent's polygon exactly,
-        and own the same boundary points, but their centers and areas are
-        recomputed from the polygon and can differ from the parent's by
-        rounding. ``compare_spatial_rates(bin_mapping=...)`` requires exactly
-        equal centers and follows boundary ownership through subsets only, so
-        it refuses clip pairs; it accepts the pairs of a subset or an
-        identical rebuild.
+        Same-cell pairs meet the check ``compare_spatial_rates(bin_mapping=...)``
+        applies, so ``pairs`` of a subset, a clip or an identical rebuild can be
+        passed to it. Polygon cells kept whole by a clip have the parent's
+        polygon exactly and own the same boundary points; their centers and
+        areas are recomputed from the polygon and may differ from the
+        parent's by rounding only.
 
         Examples
         --------

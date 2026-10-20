@@ -817,10 +817,13 @@ def compare_spatial_rates(
         ``rates_b.env.bin_mapping_from(rates_a.env).pairs`` gives these rows.
         Each bin appears at most once on each side.
         Paired bins must be the same cells, checked as for unmapped
-        environments: identical centers, sizes and measured dimensions; the
-        same cell shape where both environments record cells (grid boxes,
-        triangles, hexagons or polygon cells); and, for polygon cells, the
-        same bin owning each boundary. Both environments must share their
+        environments and by ``Environment.bin_mapping_from``: identical
+        centers, sizes and measured dimensions; the same cell shape where both
+        environments record cells (grid boxes, triangles, hexagons or polygon
+        cells); and, for polygon cells, the same bin owning each boundary,
+        followed through subsets and through clips that kept a cell whole.
+        A polygon cell's center and area are computed from its polygon, so
+        for exactly the same polygon they may differ by rounding. Both environments must share their
         coordinate system, units and frame, which no mapping can bridge. By
         default the environments must have the same bins. With a mapping,
         topology is compared through it: every mapped bin must have the same

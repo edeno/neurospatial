@@ -24,29 +24,20 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial.environment._comparison import (
-    _cell_corners,
+    _cell_array,
+    _compares_polygons,
     _label_difference,
-    _records_cells,
-)
-from neurospatial.geometry import (
-    ClippedLocator,
-    PolygonCells,
-    SubsetLocator,
-    encode,
-    materialize_cells,
+    _paired_cell_differences,
 )
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
-    from neurospatial.geometry import Binning, Locator, RectilinearGrid
+    from neurospatial.geometry import Binning, RectilinearGrid
 
 _OPERATION = "Environment.bin_mapping_from()"
 # Grid edges coincide within a billionth of a cell width: the tolerance
 # rebin(bin_size=...) uses to decide which new cell a bin overlaps.
 _EDGE_RTOL = 1e-9
-# A cell a clip did not cut keeps its polygon exactly, but its center and
-# area are recomputed from that polygon and differ by rounding only.
-_ROUNDING = 64 * np.finfo(np.float64).eps
 
 
 @dataclass(frozen=True, eq=False, repr=False)
@@ -63,8 +54,8 @@ class BinMapping(ReadOnlyArraysMixin):
     ----------
     pairs : ndarray of intp, shape (n_pairs, 2)
         Rows of ``(bin in parent, bin in child)``, sorted by child bin, then
-        parent bin. Each parent bin appears at most once. For a subset or an
-        identical rebuild, these are the rows
+        parent bin. Each parent bin appears at most once. For a subset, a
+        clip or an identical rebuild, these are the rows
         ``compare_spatial_rates(rates_parent, rates_child, bin_mapping=...)``
         takes.
     kind : {"one_to_one", "many_to_one"}
@@ -706,58 +697,37 @@ def _identity_pairs(
 ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
     """Pairs of identical cells and the parent bins split between child bins.
 
-    Cells are compared as ``compare_spatial_rates(bin_mapping=...)`` compares
-    them: exactly equal centers, measures and cell shapes. Polygon cells must
-    be exactly the same polygon and own the same boundary points; their
-    centers and areas, recomputed from the polygon, may differ by rounding,
-    and ownership is followed through clips as well as subsets (see
-    ``_ownership_keys``). ``compare_spatial_rates`` follows it through
-    subsets only.
+    Cells are compared by ``_paired_cell_differences``, the definition of the
+    same cell that ``compare_spatial_rates(bin_mapping=...)`` also checks.
+    Candidates are the parent bins with exactly the child centers, or for
+    polygon cells, whose centers may differ by rounding, the parent bin
+    containing each child center.
     """
     parent_bins, child_bins = parent._binning, child._binning
-    polygons = (
-        child_bins.bins.n_dims == 2
-        and _records_cells(parent_bins)
-        and _records_cells(child_bins)
-        and (
-            isinstance(parent_bins.shapes, PolygonCells)
-            or isinstance(child_bins.shapes, PolygonCells)
-        )
-    )
-    if not polygons:
+    if not _compares_polygons(parent_bins, child_bins):
         child_rows, parent_rows = _equal_centers(
             parent_bins.bins.centers, child_bins.bins.centers
         )
-        same = _same_cells(parent_bins, child_bins, parent_rows, child_rows)
+        same = _paired_cell_differences(parent, child, parent_rows, child_rows) < 0
         pairs = np.column_stack([parent_rows[same], child_rows[same]])
         return pairs.astype(np.intp), np.zeros(0, dtype=np.intp)
     candidates = parent.bin_at(child.bin_centers)
     child_rows = np.flatnonzero(candidates >= 0).astype(np.intp)
     parent_rows = candidates[child_rows]
-    parent_cells = _cell_array(parent_bins)[parent_rows]
-    child_cells = _cell_array(child_bins)[child_rows]
-    same = _same_polygon_cells(
-        parent_bins, child_bins, parent_rows, child_rows, parent_cells, child_cells
-    )
+    same = _paired_cell_differences(parent, child, parent_rows, child_rows) < 0
     pairs = np.column_stack([parent_rows[same], child_rows[same]]).astype(np.intp)
     # A child cell inside a larger parent cell means that cell is divided.
     rest = ~same
-    child_area = shapely.area(child_cells[rest])
+    parent_cells = _cell_array(parent_bins)[parent_rows[rest]]
+    child_cells = _cell_array(child_bins)[child_rows[rest]]
+    child_area = shapely.area(child_cells)
     within = (
-        shapely.area(shapely.intersection(parent_cells[rest], child_cells[rest]))
+        shapely.area(shapely.intersection(parent_cells, child_cells))
         >= (1 - _EDGE_RTOL) * child_area
     )
-    smaller = child_area < (1 - _EDGE_RTOL) * shapely.area(parent_cells[rest])
+    smaller = child_area < (1 - _EDGE_RTOL) * shapely.area(parent_cells)
     split = np.unique(parent_rows[rest][within & smaller]).astype(np.intp)
     return pairs, split
-
-
-def _cell_array(binning: Binning) -> NDArray[np.object_]:
-    """Each bin's polygon, as an object array for vectorized shapely calls."""
-    cells = materialize_cells(binning)
-    array = np.empty(len(cells), dtype=object)
-    array[:] = cells
-    return array
 
 
 def _equal_centers(
@@ -770,139 +740,3 @@ def _equal_centers(
     owner = first[np.ravel(inverse)[len(parent) :]]
     matched = owner < len(parent)
     return np.flatnonzero(matched).astype(np.intp), owner[matched].astype(np.intp)
-
-
-def _same_cells(
-    parent: Binning,
-    child: Binning,
-    parent_rows: NDArray[np.intp],
-    child_rows: NDArray[np.intp],
-) -> NDArray[np.bool_]:
-    """Whether bins with equal centers have equal measures and cell corners."""
-    same: NDArray[np.bool_] = np.asarray(
-        (parent.bins.sizes[parent_rows] == child.bins.sizes[child_rows])
-        & (
-            parent.bins.measure_dims[parent_rows] == child.bins.measure_dims[child_rows]
-        ),
-        dtype=bool,
-    )
-    if not (_records_cells(parent) and _records_cells(child)):
-        return same
-    parent_corners, child_corners = _cell_corners(parent), _cell_corners(child)
-    if parent_corners is None or child_corners is None:
-        return same
-    if parent_corners.shape[1:] != child_corners.shape[1:]:
-        return np.zeros_like(same)
-    corners_equal = np.all(
-        parent_corners[parent_rows] == child_corners[child_rows], axis=(1, 2)
-    )
-    return np.asarray(same & corners_equal, dtype=bool)
-
-
-def _same_polygon_cells(
-    parent: Binning,
-    child: Binning,
-    parent_rows: NDArray[np.intp],
-    child_rows: NDArray[np.intp],
-    parent_cells: NDArray[np.object_],
-    child_cells: NDArray[np.object_],
-) -> NDArray[np.bool_]:
-    """Whether paired polygon cells are the same cell owning the same points."""
-    parent_centers = parent.bins.centers[parent_rows]
-    child_centers = child.bins.centers[child_rows]
-    parent_sizes = parent.bins.sizes[parent_rows]
-    allowance = _ROUNDING * (
-        np.maximum(np.abs(parent_centers), np.abs(child_centers))
-        + np.sqrt(parent_sizes)[:, np.newaxis]
-    )
-    same = (
-        shapely.equals(parent_cells, child_cells)
-        & (parent.bins.measure_dims[parent_rows] == child.bins.measure_dims[child_rows])
-        & (
-            np.abs(parent_sizes - child.bins.sizes[child_rows])
-            <= _ROUNDING * parent_sizes
-        )
-        & np.all(np.abs(parent_centers - child_centers) <= allowance, axis=1)
-    )
-    rows = np.flatnonzero(same)
-    same[rows] = _same_ownership(
-        parent.locator, child.locator, parent_rows[rows], child_rows[rows]
-    )
-    return np.asarray(same, dtype=bool)
-
-
-def _ownership_keys(
-    locator: Locator, rows: NDArray[np.intp]
-) -> tuple[NDArray[np.object_], NDArray[np.intp]]:
-    """The locator that decides each bin's boundary points, and its bin there.
-
-    A subset gives a point to the kept bin whose parent owned it, so its bins
-    own their parents' points. A clip gives a point to the piece of the
-    parent bin that owned it, so a parent bin's only piece owns the parent's
-    points inside that piece. Callers compare keys only for bins whose
-    polygons are already known to be equal, so a piece and a whole cell with
-    the same key own the same points.
-    """
-    rows = np.array(rows, dtype=np.intp)
-    roots = np.empty(len(rows), dtype=object)
-    active = np.ones(len(rows), dtype=bool)
-    while np.any(active):
-        if isinstance(locator, SubsetLocator):
-            parent_to_child = locator.parent_to_child
-            kept = np.flatnonzero(parent_to_child >= 0)
-            child_to_parent = np.empty(kept.size, dtype=np.intp)
-            child_to_parent[parent_to_child[kept]] = kept
-            rows[active] = child_to_parent[rows[active]]
-            locator = locator.base
-        elif isinstance(locator, ClippedLocator):
-            sources = locator.mapping.parent_bin_indices
-            pieces = np.bincount(sources, minlength=locator.mapping.n_parent_bins)
-            only_piece = active.copy()
-            only_piece[active] = pieces[sources[rows[active]]] == 1
-            roots[active & ~only_piece] = locator
-            active = only_piece
-            rows[active] = sources[rows[active]]
-            locator = locator.base
-        else:
-            roots[active] = locator
-            break
-    return roots, rows
-
-
-def _same_ownership(
-    parent: Locator,
-    child: Locator,
-    parent_rows: NDArray[np.intp],
-    child_rows: NDArray[np.intp],
-) -> NDArray[np.bool_]:
-    """Whether each pair's bins own the same boundary points."""
-    parent_roots, parent_keys = _ownership_keys(parent, parent_rows)
-    child_roots, child_keys = _ownership_keys(child, child_rows)
-    same: NDArray[np.bool_] = np.asarray(parent_keys == child_keys, dtype=bool)
-    verdicts: dict[tuple[int, int], bool] = {}
-    for row in np.flatnonzero(same):
-        first, second = parent_roots[row], child_roots[row]
-        key = (id(first), id(second))
-        if key not in verdicts:
-            verdicts[key] = _same_locator(first, second)
-        same[row] = verdicts[key]
-    return same
-
-
-def _same_locator(first: Locator, second: Locator) -> bool:
-    """Whether two locators are the same, as their saved records compare."""
-    if first is second:
-        return True
-    try:
-        first_meta, first_arrays = encode(first, "locator")
-        second_meta, second_arrays = encode(second, "locator")
-    except ValueError:
-        return False
-    return (
-        first_meta == second_meta
-        and first_arrays.keys() == second_arrays.keys()
-        and all(
-            np.array_equal(value, second_arrays[key])
-            for key, value in first_arrays.items()
-        )
-    )

@@ -14,6 +14,7 @@ import warnings
 
 import numpy as np
 import pytest
+from shapely.geometry import box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
 from neurospatial.encoding import (
@@ -256,6 +257,34 @@ def test_bin_mapping_pairs_a_subset_by_place(make, maps, env):
     np.testing.assert_array_equal(
         pv[keep], population_vector_correlation(first[:, keep], second[:, keep])
     )
+
+
+def test_bin_mapping_pairs_the_cells_a_clip_kept_whole(make):
+    """Clipped cells kept whole are the same cells, whatever their centroids."""
+    positions = np.random.default_rng(4).uniform(0.0, 40.0, size=(3000, 2))
+    grid = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    clipped = grid.clip(box(0.0, 0.0, 21.0, 40.0))
+    pairs = clipped.bin_mapping_from(grid).pairs
+    parents, children = pairs.T
+    assert np.any(grid.bin_centers[parents] != clipped.bin_centers[children])
+    rng = np.random.default_rng(12)
+    first = rng.uniform(0.0, 10.0, (5, grid.n_bins))
+    second = rng.uniform(0.0, 10.0, (5, clipped.n_bins))
+
+    pv = population_vector_correlation(
+        make(first, IDS, on=grid),
+        make(second, IDS, on=clipped),
+        bin_mapping=pairs,
+        topology="may_differ",
+    )
+
+    unpaired = np.setdiff1d(np.arange(grid.n_bins), parents)
+    assert np.isnan(pv[unpaired]).all()
+    expected = [
+        np.corrcoef(first[:, a], second[:, b])[0, 1]
+        for a, b in zip(parents, children, strict=True)
+    ]
+    np.testing.assert_allclose(pv[parents], expected, rtol=1e-12)
 
 
 @pytest.mark.parametrize(
