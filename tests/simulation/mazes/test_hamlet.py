@@ -1,300 +1,201 @@
-"""Tests for Hamlet Maze implementation."""
+"""Tests for Hamlet Maze implementation.
+
+The apparatus (Crouzier et al. 2018, doi:10.1016/j.nlm.2018.02.014) is 1.6 m
+across: a central pentagonal ring of alleys, five alleys radiating from it,
+each splitting into two arms that lead to two different houses (Wijnen et
+al. 2024, doi:10.1007/s00429-024-02771-x). Alley positions and widths are
+estimates; these tests pin the topology, the published diameter and that the
+floor is exactly the alleys and houses.
+"""
 
 from __future__ import annotations
 
+from collections import Counter
+
+import networkx as nx
 import numpy as np
+import pytest
+import shapely
+
+from neurospatial.simulation.mazes._base import MazeEnvironments
+from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
+
+HOUSES = [f"house_{k}" for k in range(5)]
+RING = [f"ring_{k}" for k in range(5)]
+SPLITS = [f"split_{k}" for k in range(5)]
 
 
-class TestMakeHamletMaze:
-    """Tests for make_hamlet_maze factory function."""
+@pytest.fixture(scope="module")
+def maze():
+    return make_hamlet_maze()
 
-    def test_returns_maze_environments(self):
-        """make_hamlet_maze should return MazeEnvironments."""
-        from neurospatial.simulation.mazes._base import MazeEnvironments
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
 
-        maze = make_hamlet_maze()
+@pytest.fixture(scope="module")
+def track_graph(maze):
+    return maze.env_track._binning.linearization.graph
+
+
+def _pos(graph, node):
+    return np.asarray(graph.nodes[node]["pos"])
+
+
+def _segments(graph):
+    return shapely.union_all(
+        [shapely.LineString([_pos(graph, u), _pos(graph, v)]) for u, v in graph.edges()]
+    )
+
+
+class TestTopology:
+    def test_node_and_edge_counts(self, track_graph):
+        assert set(track_graph) == set(HOUSES + RING + SPLITS)
+        assert track_graph.number_of_edges() == 20
+        assert nx.is_connected(track_graph)
+
+    def test_pentagonal_ring_of_five_alleys(self, track_graph):
+        ring = track_graph.subgraph(RING)
+        assert ring.number_of_edges() == 5
+        assert all(d == 2 for _, d in ring.degree())
+        assert [len(cycle) for cycle in nx.cycle_basis(ring)] == [5]
+
+    def test_each_radial_alley_splits_into_arms_to_two_houses(self, track_graph):
+        for k in range(5):
+            assert set(track_graph[f"ring_{k}"]) - set(RING) == {f"split_{k}"}
+            assert set(track_graph[f"split_{k}"]) == {
+                f"ring_{k}",
+                f"house_{k}",
+                f"house_{(k + 1) % 5}",
+            }
+
+    def test_degrees(self, track_graph):
+        degrees = dict(track_graph.degree())
+        assert Counter(degrees.values()) == {3: 10, 2: 5}
+        assert all(degrees[h] == 2 for h in HOUSES)
+
+    def test_no_central_hub(self, track_graph):
+        positions = np.array([_pos(track_graph, n) for n in track_graph])
+        assert np.linalg.norm(positions, axis=1).min() > 15.0
+
+
+class TestGeometry:
+    def test_default_dims(self):
+        dims = HamletDims()
+        assert (dims.ring_radius, dims.split_radius, dims.house_radius) == (
+            22.0,
+            43.0,
+            70.0,
+        )
+        assert dims.corridor_width == 9.0
+        assert dims.house_size == 16.0
+        assert dims.n_arms == 5
+
+    def test_diameter_is_about_one_point_six_metres(self, maze):
+        floor = maze.env_2d.arena.polygon
+        radii = np.hypot(*np.asarray(floor.exterior.coords).T)
+        assert 2 * radii.max() == pytest.approx(160.0, abs=5.0)
+
+    def test_centred_with_houses_at_star_points(self, track_graph):
+        for k, name in enumerate(HOUSES):
+            angle = np.pi / 2 + 2 * np.pi * k / 5
+            expected = 70.0 * np.array([np.cos(angle), np.sin(angle)])
+            np.testing.assert_allclose(_pos(track_graph, name), expected, atol=1e-9)
+        centroid = np.mean([_pos(track_graph, n) for n in track_graph], axis=0)
+        np.testing.assert_allclose(centroid, 0.0, atol=1e-9)
+
+    def test_alleys_lie_between_houses(self, track_graph):
+        for k in range(5):
+            alley = np.arctan2(*_pos(track_graph, f"split_{k}")[::-1])
+            expected = np.pi / 2 + 2 * np.pi * (k + 0.5) / 5
+            assert np.angle(np.exp(1j * (alley - expected))) == pytest.approx(0.0)
+
+
+class TestFootprint:
+    def test_every_track_edge_lies_inside_the_maze(self, maze, track_graph):
+        env = maze.env_2d
+        for u, v in track_graph.edges():
+            p, q = _pos(track_graph, u), _pos(track_graph, v)
+            points = p + np.linspace(0.0, 1.0, 200)[:, None] * (q - p)
+            assert env.arena.contains(points).all(), (u, v)
+            assert (env.bin_at(points) >= 0).all(), (u, v)
+
+    def test_floor_is_only_alleys_and_houses(self, maze, track_graph):
+        floor = maze.env_2d.arena.polygon
+        houses = shapely.union_all([maze.env_2d.regions[h].data for h in HOUSES])
+        alleys = _segments(track_graph).buffer(4.5)
+        assert floor.difference(alleys.union(houses)).area == pytest.approx(
+            0.0, abs=1e-6
+        )
+        centers = maze.env_2d.bin_centers
+        on_alley = (
+            shapely.distance(_segments(track_graph), shapely.points(centers))
+            <= 4.5 + 1e-9
+        )
+        in_house = shapely.contains_xy(houses, centers[:, 0], centers[:, 1])
+        assert (on_alley | in_house).all()
+
+    def test_alleys_keep_their_full_width(self, maze, track_graph):
+        # The floor covers the whole 9 cm band around every alley centerline,
+        # junctions included.
+        floor = maze.env_2d.arena.polygon
+        band = _segments(track_graph).buffer(4.5 - 1e-6, cap_style="flat")
+        assert band.difference(floor).area == pytest.approx(0.0, abs=1e-6)
+
+    def test_blocks_are_solid(self, maze, track_graph):
+        # Six blocks: the center of the ring, and one between each house and
+        # the ring. Their centers are not floor and no bin lies in them.
+        floor = maze.env_2d.arena.polygon
+        assert floor.geom_type == "Polygon"
+        assert len(floor.interiors) == 6
+        ring = np.array([_pos(track_graph, n) for n in RING])
+        block_centers = [ring.mean(axis=0)]
+        for k in range(5):
+            face = [
+                ring[k - 1],
+                _pos(track_graph, f"split_{(k - 1) % 5}"),
+                _pos(track_graph, f"house_{k}"),
+                _pos(track_graph, f"split_{k}"),
+                ring[k],
+            ]
+            block_centers.append(shapely.Polygon(face).centroid.coords[0])
+        assert not maze.env_2d.arena.contains(np.array(block_centers)).any()
+
+
+class TestRegions:
+    def test_region_names(self, maze):
+        assert list(maze.env_2d.regions) == HOUSES + RING + SPLITS
+
+    def test_houses_are_square_goal_boxes(self, maze, track_graph):
+        for name in HOUSES:
+            region = maze.env_2d.regions[name]
+            assert region.kind == "polygon"
+            assert region.data.area == pytest.approx(16.0**2)
+            assert region.data.contains(shapely.Point(_pos(track_graph, name)))
+
+    def test_junction_points_on_the_track_nodes(self, maze, track_graph):
+        for name in RING + SPLITS:
+            region = maze.env_2d.regions[name]
+            assert region.kind == "point"
+            np.testing.assert_allclose(region.data, _pos(track_graph, name))
+
+
+class TestEnvironments:
+    def test_returns_maze_environments(self, maze):
         assert isinstance(maze, MazeEnvironments)
-
-    def test_env_2d_is_valid_environment(self):
-        """env_2d should be a valid, fitted Environment."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
-        # Should have n_bins > 0 if fitted
-        assert maze.env_2d.n_bins > 0
-
-    def test_env_2d_has_correct_units(self):
-        """env_2d should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
         assert maze.env_2d.units == "cm"
-
-    def test_env_2d_has_correct_extent(self):
-        """env_2d should cover center-inner-outer structure."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
-
-        dims = HamletDims(inner_radius=40.0, outer_radius=80.0, corridor_width=10.0)
-        maze = make_hamlet_maze(dims=dims)
-
-        # Get spatial extent from bin_centers
-        bin_centers = maze.env_2d.bin_centers
-        x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
-        y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
-
-        # Total extent should cover outer_radius + corridor_width buffer
-        total_radius = dims.outer_radius + dims.corridor_width
-        x_extent = x_max - x_min
-        y_extent = y_max - y_min
-
-        # Both extents should be approximately 2 * total_radius (diameter)
-        expected_extent = 2 * total_radius
-        assert x_extent > expected_extent * 0.6  # At least 60% (conservative)
-        assert y_extent > expected_extent * 0.6  # At least 60% (conservative)
-
-    def test_env_2d_has_center_region(self):
-        """env_2d should have center region."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
-        assert "center" in maze.env_2d.regions
-
-    def test_env_2d_has_inner_regions(self):
-        """env_2d should have 5 inner regions (pentagon vertices)."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
-        # Should have inner_0 through inner_4 (5 regions)
-        for i in range(5):
-            assert f"inner_{i}" in maze.env_2d.regions
-
-    def test_env_2d_has_outer_regions(self):
-        """env_2d should have 5 outer regions."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
-        # Should have outer_0 through outer_4 (5 regions)
-        for i in range(5):
-            assert f"outer_{i}" in maze.env_2d.regions
-
-    def test_center_region_is_point_type(self):
-        """Center region should be point type."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
-        region = maze.env_2d.regions["center"]
-        assert region.kind == "point"
-
-    def test_inner_regions_are_point_type(self):
-        """All inner regions should be point type."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
-        for i in range(5):
-            region = maze.env_2d.regions[f"inner_{i}"]
-            assert region.kind == "point"
-
-    def test_outer_regions_are_point_type(self):
-        """All outer regions should be point type."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze()
-        for i in range(5):
-            region = maze.env_2d.regions[f"outer_{i}"]
-            assert region.kind == "point"
-
-    def test_inner_positions_form_pentagon(self):
-        """Inner regions should be positioned at pentagon vertices."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
-
-        dims = HamletDims(inner_radius=40.0)
-        maze = make_hamlet_maze(dims=dims)
-
-        # Inner positions should be approximately at distance inner_radius from origin
-        for i in range(5):
-            inner_pos = maze.env_2d.regions[f"inner_{i}"].data
-            distance_from_origin = np.linalg.norm(inner_pos)
-            assert np.isclose(distance_from_origin, dims.inner_radius, atol=2.0)
-
-    def test_outer_positions_are_at_outer_radius(self):
-        """Outer regions sit at the corridor's end square, half a corridor
-        width inside the outer radius."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
-
-        dims = HamletDims(inner_radius=40.0, outer_radius=80.0)
-        maze = make_hamlet_maze(dims=dims)
-
-        # Outer positions should be at outer_radius from origin
-        for i in range(5):
-            outer_pos = maze.env_2d.regions[f"outer_{i}"].data
-            distance_from_origin = np.linalg.norm(outer_pos)
-            assert np.isclose(
-                distance_from_origin,
-                dims.outer_radius - dims.corridor_width / 2,
-                atol=2.0,
-            )
-
-    def test_include_track_true_creates_env_track(self):
-        """include_track=True should create env_track."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
+        assert maze.env_track.units == "cm"
+        assert maze.env_track.is_linearized_track
+        assert maze.env_track.arena.width == pytest.approx(9.0)
 
     def test_include_track_false_no_env_track(self):
-        """include_track=False should result in env_track=None."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
+        assert make_hamlet_maze(include_track=False).env_track is None
 
-        maze = make_hamlet_maze(include_track=False)
-        assert maze.env_track is None
-
-    def test_env_track_is_1d(self):
-        """env_track should be a 1D linearized environment."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.is_linearized_track
-
-    def test_env_track_is_connected(self):
-        """Track graph should be connected."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # The underlying graph should be connected
-        import networkx as nx
-
-        assert nx.is_connected(maze.env_track.connectivity)
-
-    def test_env_track_has_correct_units(self):
-        """env_track should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.units == "cm"
+    def test_custom_dims_scale_the_maze(self):
+        dims = HamletDims(split_radius=50.0, house_radius=90.0, corridor_width=10.0)
+        maze = make_hamlet_maze(dims=dims, bin_size=3.0)
+        graph = maze.env_track._binning.linearization.graph
+        assert np.linalg.norm(_pos(graph, "house_0")) == pytest.approx(90.0)
+        assert np.linalg.norm(_pos(graph, "split_0")) == pytest.approx(50.0)
 
     def test_custom_bin_size(self):
-        """Custom bin_size should affect discretization."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
-
-        dims = HamletDims()
-
-        maze_fine = make_hamlet_maze(dims=dims, bin_size=1.0)
-        maze_coarse = make_hamlet_maze(dims=dims, bin_size=5.0)
-
-        # Finer bins should result in more bins
-        assert maze_fine.env_2d.n_bins > maze_coarse.env_2d.n_bins
-
-    def test_custom_dims(self):
-        """Custom dimensions should be respected."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
-
-        dims = HamletDims(inner_radius=50.0, outer_radius=100.0, corridor_width=15.0)
-        maze = make_hamlet_maze(dims=dims)
-
-        # Check that bin_centers span approximately the expected range
-        bin_centers = maze.env_2d.bin_centers
-        x_extent = bin_centers[:, 0].max() - bin_centers[:, 0].min()
-
-        # Should be larger than default
-        default_maze = make_hamlet_maze()
-        default_x_extent = (
-            default_maze.env_2d.bin_centers[:, 0].max()
-            - default_maze.env_2d.bin_centers[:, 0].min()
-        )
-
-        assert x_extent > default_x_extent
-
-    def test_none_dims_uses_defaults(self):
-        """dims=None should use default dimensions."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
-
-        maze_default = make_hamlet_maze(dims=None)
-        maze_explicit = make_hamlet_maze(dims=HamletDims())
-
-        # Both should have similar number of bins
-        assert maze_default.env_2d.n_bins == maze_explicit.env_2d.n_bins
-
-
-class TestHamletTrackGraph:
-    """Tests for the track graph structure of Hamlet Maze."""
-
-    def test_track_has_center_inner_outer_structure(self):
-        """Track graph should have center-inner-outer connectivity."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # The track graph should be connected
-        import networkx as nx
-
-        assert nx.is_connected(maze.env_track.connectivity)
-        assert maze.env_track.is_linearized_track
-
-    def test_track_nodes_have_positions(self):
-        """All track graph nodes should have position attributes."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # Each node should have a 'pos' attribute
-        for node in maze.env_track.connectivity.nodes():
-            assert "pos" in maze.env_track.connectivity.nodes[node]
-
-    def test_track_covers_full_maze(self):
-        """Track should cover the full Hamlet maze extent."""
-        from neurospatial.simulation.mazes.hamlet import HamletDims, make_hamlet_maze
-
-        dims = HamletDims(inner_radius=40.0, outer_radius=80.0)
-        maze = make_hamlet_maze(dims=dims, include_track=True)
-        assert maze.env_track is not None
-
-        # Get the positions of all nodes
-        graph = maze.env_track.connectivity
-        positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
-
-        # Extent should cover outer_radius
-        extent = positions.max(axis=0) - positions.min(axis=0)
-        expected_extent = 2 * dims.outer_radius
-
-        # Both x and y should cover most of the expected extent
-        assert extent[0] > expected_extent * 0.6  # At least 60%
-        assert extent[1] > expected_extent * 0.6  # At least 60%
-
-    def test_track_has_center_node(self):
-        """Track graph should have nodes at center position."""
-        import numpy as np
-
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
-
-        graph = maze.env_track.connectivity
-        # After discretization, nodes have integer IDs but positions
-        # Check that there's a node near the center (0, 0)
-        center_pos = np.array([0.0, 0.0])
-        min_dist = float("inf")
-        for node in graph.nodes():
-            pos = np.array(graph.nodes[node]["pos"])
-            dist = np.linalg.norm(pos - center_pos)
-            min_dist = min(min_dist, dist)
-        # Should have a node within reasonable distance of center
-        assert min_dist < 10.0  # Within 10 cm of center
-
-    def test_track_has_inner_and_outer_nodes(self):
-        """Track graph should have inner and outer nodes."""
-        from neurospatial.simulation.mazes.hamlet import make_hamlet_maze
-
-        maze = make_hamlet_maze(include_track=True)
-        assert maze.env_track is not None
-
-        graph = maze.env_track.connectivity
-        # Should have inner and outer nodes (5 each = 10 + center = 11)
-        assert graph.number_of_nodes() >= 11
+        fine = make_hamlet_maze(bin_size=1.0, include_track=False)
+        coarse = make_hamlet_maze(bin_size=5.0, include_track=False)
+        assert fine.env_2d.n_bins > coarse.env_2d.n_bins

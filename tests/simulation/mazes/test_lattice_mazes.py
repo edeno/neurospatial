@@ -124,17 +124,18 @@ class TestHoneycombMaze:
 class TestHamletMaze:
     """Test Hamlet maze specific behavior."""
 
-    def test_has_inner_regions(self):
-        """Hamlet should have 5 inner vertices (pentagon at inner_radius)."""
+    def test_has_five_house_regions(self):
+        """Hamlet should have 5 houses (goal boxes)."""
         maze = make_hamlet_maze(bin_size=3.0)
-        inner_regions = [r for r in maze.env_2d.regions if r.startswith("inner_")]
-        assert len(inner_regions) == 5
+        house_regions = [r for r in maze.env_2d.regions if r.startswith("house_")]
+        assert len(house_regions) == 5
 
-    def test_has_outer_regions(self):
-        """Hamlet should have 5 outer vertices (at outer_radius)."""
+    def test_has_ring_and_split_regions(self):
+        """Hamlet marks where each radial alley leaves the ring and splits."""
         maze = make_hamlet_maze(bin_size=3.0)
-        outer_regions = [r for r in maze.env_2d.regions if r.startswith("outer_")]
-        assert len(outer_regions) == 5
+        ring_regions = [r for r in maze.env_2d.regions if r.startswith("ring_")]
+        split_regions = [r for r in maze.env_2d.regions if r.startswith("split_")]
+        assert len(ring_regions) == len(split_regions) == 5
 
     def test_default_5_arms(self):
         """Hamlet should have 5 arms by default."""
