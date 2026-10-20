@@ -417,6 +417,7 @@ def _bin_mapping_from(child: Environment, parent: Environment) -> BinMapping:
             )
         )
     _refuse_labels(child, parent)
+    _refuse_dimensions(child, parent)
     parent_bins, child_bins = parent._binning, child._binning
     lattices = _shared_lattice(parent_bins, child_bins)
     if isinstance(lattices, tuple):
@@ -561,6 +562,20 @@ def _no_pairs_error(
 
 
 # --- nested grids -----------------------------------------------------------
+
+
+def _refuse_dimensions(child: Environment, parent: Environment) -> None:
+    """Refuse environments whose coordinates have different widths."""
+    if child.n_dims == parent.n_dims:
+        return
+    raise IncompatibleEnvironmentError(
+        f"{_OPERATION}: parent has {parent.n_dims}-D coordinates and this "
+        f"environment {child.n_dims}-D, so no bin of one is a place in the other.",
+        fix="build both environments from positions with the same number of "
+        "coordinates",
+        first=parent,
+        second=child,
+    )
 
 
 def _lattice(binning: Binning) -> tuple[NDArray[np.float64], RectilinearGrid] | None:

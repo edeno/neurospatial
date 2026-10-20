@@ -616,3 +616,64 @@ def test_summary_and_repr_count_every_bin(strip):
         "bins: 4 mapped, 2 unmapped, 0 split; child bins: 2 fully covered, 0 "
         "partly covered, 0 uncovered)"
     )
+
+
+def _explicit_points(centers) -> Environment:
+    """Three point bins in a line, with unit measures and no cells."""
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        MissingFaces,
+        NearestBinLocator,
+        SpatialBins,
+    )
+
+    centers = np.asarray(centers, dtype=float)
+    return Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(
+                centers, np.ones(len(centers)), np.ones(len(centers), dtype=np.intp)
+            ),
+            BinConnections.from_arrays(np.array([[0, 1], [1, 2]]), np.ones(2)),
+            NearestBinLocator(centers, max_distance=0.5),
+            MissingFaces("explicit points"),
+        ),
+        units="cm",
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ([[0], [1], [2]], [[0, 0], [1, 1], [2, 2]]),
+        ([[0, 0], [1, 1], [2, 2]], [[0, 0, 0], [1, 1, 1], [2, 2, 2]]),
+    ],
+    ids=["1d-vs-2d", "2d-vs-3d"],
+)
+def test_coordinates_of_different_widths_are_never_the_same_cells(first, second):
+    from neurospatial.encoding import SpatialRatesResult
+
+    env_a, env_b = _explicit_points(first), _explicit_points(second)
+
+    def rates(env):
+        return SpatialRatesResult(
+            firing_rates=np.array([[1.0, 2.0, 3.0], [3.0, 1.0, 2.0]]),
+            occupancy=np.ones(3),
+            env=env,
+            method="binned",
+            bandwidth=0.0,
+            unit_ids=["a", "b"],
+        )
+
+    with pytest.raises(IncompatibleEnvironmentError, match="-D coordinates"):
+        env_b.bin_mapping_from(env_a)
+    for mapping in (None, np.column_stack([np.arange(3), np.arange(3)])):
+        with pytest.raises(IncompatibleEnvironmentError, match="bin coordinates"):
+            compare_spatial_rates(
+                rates(env_a),
+                rates(env_b),
+                bin_mapping=mapping,
+                topology="may_differ",
+                min_common_bins=3,
+            )

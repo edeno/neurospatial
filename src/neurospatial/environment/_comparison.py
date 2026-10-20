@@ -230,6 +230,11 @@ def _paired_cell_differences(
     def mark(code: int, differs: NDArray[np.bool_]) -> None:
         codes[(codes < 0) & differs] = code
 
+    if first_bins.centers.shape[1] != second_bins.centers.shape[1]:
+        # Coordinates of different widths are different places; comparing
+        # them elementwise would broadcast a 1-D center against each axis.
+        codes[:] = 0
+        return codes
     first_centers = first_bins.centers[rows_first]
     second_centers = second_bins.centers[rows_second]
     first_sizes = first_bins.sizes[rows_first]
