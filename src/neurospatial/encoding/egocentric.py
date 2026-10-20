@@ -3757,9 +3757,8 @@ def _object_vector_significance(
     validate_trajectory(times, positions=positions, headings=headings, context=context)
     for train in trains:
         validate_spike_times(train, context=context)
-    # An owned copy, so editing the caller's array cannot change the null.
     breaks = validate_break_before(break_before, len(times), call=context)
-    options["break_before"] = None if breaks is None else breaks.copy()
+    options["break_before"] = breaks
     _validate_object_vector_metric(env, metric, context=context)
     object_positions, _ = resolve_object_positions(
         object_positions, env=env, positions=positions, metric=metric

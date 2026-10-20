@@ -6093,11 +6093,10 @@ def place_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="place_cell_significance")
-    # An owned copy, so editing the caller's array cannot change the null.
     breaks = validate_break_before(
         break_before, len(times), call="place_cell_significance"
     )
-    options["break_before"] = None if breaks is None else breaks.copy()
+    options["break_before"] = breaks
     resolved_speed = resolve_speed(
         times,
         positions,

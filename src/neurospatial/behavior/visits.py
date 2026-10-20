@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import as_intervals, intervals_contain
+from neurospatial._intervals import as_intervals, interval_valid_mask, intervals_contain
 from neurospatial._observation import validate_break_before
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -249,13 +249,13 @@ def detect_region_visits(
         return []
 
     # A terminal epoch boundary can close exposure, but cannot create an event.
-    continuous = valid[:-1] & valid[1:]
-    if max_gap is not None:
-        continuous &= np.diff(clock) <= max_gap
-    if windows is not None:
-        continuous &= intervals_contain(windows, clock[:-1], clock[1:])
-    if breaks is not None:
-        continuous &= ~breaks[1:]
+    continuous = (
+        valid[:-1]
+        & valid[1:]
+        & interval_valid_mask(
+            clock, max_gap=max_gap, epochs=windows, break_before=breaks
+        )
+    )
     connected = continuous & selected[:-1] & selected[1:]
     starts = np.flatnonzero(selected & np.r_[True, ~connected])
     stops = np.flatnonzero(selected & np.r_[~connected, True]) + 1

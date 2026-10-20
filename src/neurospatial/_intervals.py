@@ -103,6 +103,23 @@ class TimeSupport:
         }
 
 
+def recording_index(break_before: NDArray[np.bool_]) -> NDArray[np.intp]:
+    """Index of the recording each sample belongs to, counting declared breaks.
+
+    Parameters
+    ----------
+    break_before : ndarray of bool, shape (n_samples,)
+        Already validated declared breaks; entry 0 is ignored.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_samples,)
+        0 for the first recording, incremented at every break.
+    """
+    index: NDArray[np.intp] = np.cumsum(np.r_[False, break_before[1:]], dtype=np.intp)
+    return index
+
+
 def break_sample_times(
     times: NDArray[np.float64], break_before: NDArray[np.bool_] | None
 ) -> NDArray[np.float64] | None:

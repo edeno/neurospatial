@@ -3141,11 +3141,10 @@ def head_direction_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="head_direction_cell_significance")
-    # An owned copy, so editing the caller's array cannot change the null.
     breaks = validate_break_before(
         break_before, len(times), call="head_direction_cell_significance"
     )
-    options["break_before"] = None if breaks is None else breaks.copy()
+    options["break_before"] = breaks
     frame_bins, _ = directional_frame_bins(headings, bin_size, angle_unit=angle_unit)
     mask = interval_valid_mask(
         times,

@@ -48,7 +48,7 @@ def _align_true_positions(
     n_dims: int,
     max_gap: float | None,
     break_before: ArrayLike | None = None,
-    call: str = "DecodingResult.error_against",
+    call: str,
 ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
     """Interpolate ground truth only between finite, continuously observed samples.
 
@@ -101,17 +101,18 @@ def _align_true_positions(
         raise ValueError("true_positions contains Inf; use NaN for missing tracking.")
     if max_gap is not None and (not np.isfinite(max_gap) or max_gap <= 0):
         raise ValueError("max_gap must be a finite positive number of seconds or None.")
+    from neurospatial._intervals import interval_valid_mask
     from neurospatial._observation import validate_break_before
 
     breaks = validate_break_before(break_before, true_times.size, call=call)
 
     aligned = np.full((times.size, n_dims), np.nan, dtype=np.float64)
     finite = np.all(np.isfinite(true_positions), axis=1)
-    continuous = finite[:-1] & finite[1:]
-    if max_gap is not None:
-        continuous &= np.diff(true_times) <= max_gap
-    if breaks is not None:
-        continuous &= ~breaks[1:]
+    continuous = (
+        finite[:-1]
+        & finite[1:]
+        & interval_valid_mask(true_times, max_gap=max_gap, break_before=breaks)
+    )
     source_runs = np.cumsum(np.r_[False, ~continuous], dtype=np.intp)
     run_ids = np.full(times.size, -1, dtype=np.intp)
     right = np.searchsorted(true_times, times, side="left")
@@ -128,11 +129,7 @@ def _align_true_positions(
     upper = right[query]
     lower = upper - 1
     widths = true_times[upper] - true_times[lower]
-    observed = finite[lower] & finite[upper]
-    if max_gap is not None:
-        observed &= widths <= max_gap
-    if breaks is not None:
-        observed &= ~breaks[upper]
+    observed = continuous[lower]
     query, lower, upper, widths = (
         values[observed] for values in (query, lower, upper, widths)
     )

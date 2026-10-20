@@ -2590,11 +2590,10 @@ def spatial_view_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="spatial_view_cell_significance")
-    # An owned copy, so editing the caller's array cannot change the null.
     breaks = validate_break_before(
         break_before, len(times), call="spatial_view_cell_significance"
     )
-    options["break_before"] = None if breaks is None else breaks.copy()
+    options["break_before"] = breaks
     mask = _view_observation_mask(
         times,
         max_gap=max_gap,

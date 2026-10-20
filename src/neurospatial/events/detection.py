@@ -21,6 +21,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import (
     as_intervals,
     observed_interval_mask,
+    recording_index,
     run_time_bounds,
 )
 from neurospatial._observation import validate_break_before
@@ -238,7 +239,7 @@ def add_positions(
     if breaks is not None:
         # A break separates recordings in the input order. After sorting, a
         # break falls wherever neighbouring samples come from different ones.
-        recording = np.cumsum(np.r_[False, breaks[1:]])[sort_idx]
+        recording = recording_index(breaks)[sort_idx]
         sorted_breaks = np.r_[False, recording[1:] != recording[:-1]]
 
     # Interpolate positions at event times

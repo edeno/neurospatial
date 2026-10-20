@@ -118,7 +118,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import intervals_contain
+from neurospatial._intervals import (
+    break_sample_times,
+    intervals_contain,
+    recording_index,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.geometry import require_cartesian
@@ -1115,8 +1119,10 @@ def distance_to_reward(
     recordings = None
     if breaks is not None:
         recordings = (
-            np.cumsum(np.r_[False, breaks[1:]]),
-            np.searchsorted(times[1:][breaks[1:]], sorted_reward_times, side="right"),
+            recording_index(breaks),
+            np.searchsorted(
+                break_sample_times(times, breaks), sorted_reward_times, side="right"
+            ),
         )
 
     # Find relevant reward for each sample based on mode
