@@ -1240,6 +1240,9 @@ reactivation = explained_variance_reactivation(
     correlations["template"],
     correlations["match"],
     control_correlations=correlations["control"],
+    template_unit_ids=selected_ids,
+    match_unit_ids=selected_ids,
+    control_unit_ids=selected_ids,
 )
 print(
     "EV, controlled REV (effect sizes):",
@@ -1257,7 +1260,9 @@ return an exploratory pattern. Pattern `member_indices` are positions in the
 selected unit order; `member_unit_ids` gives the original labels, and passing
 `unit_ids=` to `assembly_activation`, or `template_unit_ids=` and
 `match_unit_ids=` to `reactivation_strength`, matches the count columns to the
-pattern's weights by label. A pattern can have no core members at the default absolute-weight
+pattern's weights by label. The same per-period labels given to
+`explained_variance_reactivation` match each pair correlation to the same two
+cells in every period. A pattern can have no core members at the default absolute-weight
 z-score cutoff, even when its dimension passes the reference.
 
 `assembly_activation` standardizes the projection within each period,

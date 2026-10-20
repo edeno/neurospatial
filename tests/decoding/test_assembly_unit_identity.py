@@ -1,9 +1,11 @@
-"""Unit identity of detected assemblies.
+"""Unit identity of detected assemblies and pairwise reactivation.
 
 A pattern's weight ``i`` belongs to one cell. When the pattern and new counts
 both carry the sorter's labels, the counts' columns are matched to the weights
 by label, so the answer cannot depend on the order the units were listed in.
-Without labels the columns pair by position, as before.
+Likewise, labelled pair correlations of different periods are compared pair by
+pair of the same two cells. Without labels everything pairs by position, as
+before.
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ from neurospatial.decoding.assemblies import (
     AssemblyPattern,
     assembly_activation,
     detect_assemblies,
+    explained_variance_reactivation,
+    pairwise_correlations,
     reactivation_strength,
 )
 
@@ -352,3 +356,204 @@ def test_labelled_counts_must_be_two_dimensional(labelled, rest_counts) -> None:
             template_unit_ids=LABELS,
             match_unit_ids=LABELS,
         )
+
+
+# ---------------------------------------------------------------------------
+# Explained variance: pairs of the same two cells in every period
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def period_counts(run_counts) -> dict[str, np.ndarray]:
+    """Pre-task rest without the assembly, running and post-task rest with it."""
+    return {
+        "control": _counts(seed=3, n_time=3000, drive=0.0),
+        "template": run_counts,
+        "match": _counts(seed=4, n_time=3000, drive=0.3),
+    }
+
+
+def _ev(period_counts, orders=None, *, labelled=False, control=True):
+    """EV of the periods, with each period's columns in ``orders[period]``."""
+    orders = orders or {}
+    correlations, labels = {}, {}
+    for period, counts in period_counts.items():
+        order = orders.get(period, np.arange(N_UNITS))
+        correlations[period] = pairwise_correlations(counts[:, order])
+        labels[f"{period}_unit_ids"] = LABELS[order]
+    if not control:
+        del correlations["control"], labels["control_unit_ids"]
+    return explained_variance_reactivation(
+        correlations["template"],
+        correlations["match"],
+        control_correlations=correlations.get("control"),
+        **(labels if labelled else {}),
+    )
+
+
+def _values(result) -> list[float]:
+    return [result.explained_variance, result.reversed_ev, result.partial_correlation]
+
+
+PERMUTED = {
+    "match": {"match": ORDERS[1]},
+    "control": {"control": ORDERS[1]},
+    "every-period": {"template": ORDERS[0], "match": ORDERS[1], "control": ORDERS[0]},
+}
+
+
+@pytest.mark.parametrize("permuted", PERMUTED.values(), ids=PERMUTED.keys())
+def test_ev_is_invariant_to_unit_order_with_labels(period_counts, permuted) -> None:
+    expected = _ev(period_counts)
+    assert expected.explained_variance > 0.5 > expected.reversed_ev
+
+    result = _ev(period_counts, permuted, labelled=True)
+
+    np.testing.assert_allclose(_values(result), _values(expected), **ROUNDING)
+    assert result.n_pairs == expected.n_pairs == N_UNITS * (N_UNITS - 1) // 2
+
+
+def test_ev_without_control_is_invariant_to_unit_order_with_labels(
+    period_counts,
+) -> None:
+    expected = _ev(period_counts, control=False)
+    result = _ev(period_counts, PERMUTED["match"], labelled=True, control=False)
+    np.testing.assert_allclose(_values(result), _values(expected), **ROUNDING)
+
+
+def test_positional_ev_of_reordered_units_is_wrong(period_counts) -> None:
+    """Why identity matters: by position, each rest pair meets another pair."""
+    right = _ev(period_counts)
+    wrong = _ev(period_counts, PERMUTED["match"])
+    assert right.explained_variance > 0.5
+    assert wrong.explained_variance < 0.1
+
+
+def test_positional_control_of_reordered_units_fakes_reactivation(
+    period_counts,
+) -> None:
+    """A mispaired baseline hides correlations that were there before the task."""
+    already_correlated = {
+        **period_counts,
+        "control": _counts(seed=3, n_time=3000, drive=0.3),
+    }
+    right = _ev(already_correlated)
+    assert right.explained_variance < right.reversed_ev  # no evidence of replay
+
+    wrong = _ev(already_correlated, PERMUTED["control"])
+    assert wrong.explained_variance > 0.5 > 0.1 > wrong.reversed_ev
+
+    labelled = _ev(already_correlated, PERMUTED["control"], labelled=True)
+    np.testing.assert_allclose(_values(labelled), _values(right), **ROUNDING)
+
+
+def test_labels_in_the_same_order_give_the_label_free_answer(period_counts) -> None:
+    unlabelled = _ev(period_counts)
+    labelled = _ev(period_counts, labelled=True)
+    assert _values(labelled) == _values(unlabelled)
+    assert labelled.n_pairs == unlabelled.n_pairs
+
+
+@pytest.fixture(scope="module")
+def period_correlations(period_counts) -> dict[str, np.ndarray]:
+    return {
+        period: pairwise_correlations(counts)
+        for period, counts in period_counts.items()
+    }
+
+
+@pytest.mark.parametrize(
+    ("given", "with_control", "missing"),
+    [
+        (["template_unit_ids"], False, "but not match_unit_ids="),
+        (["match_unit_ids"], False, "but not template_unit_ids="),
+        (["template_unit_ids", "match_unit_ids"], True, "but not control_unit_ids="),
+        (["control_unit_ids"], True, "but not template_unit_ids= or match_unit_ids="),
+    ],
+    ids=["template-only", "match-only", "control-missing", "control-only"],
+)
+def test_ev_refuses_labels_for_some_periods(
+    period_correlations, given, with_control, missing
+) -> None:
+    with pytest.raises(ValueError, match=re.escape(missing)) as caught:
+        explained_variance_reactivation(
+            period_correlations["template"],
+            period_correlations["match"],
+            control_correlations=(
+                period_correlations["control"] if with_control else None
+            ),
+            **dict.fromkeys(given, LABELS),
+        )
+    assert "or none of them to pair by position" in str(caught.value)
+
+
+def test_ev_refuses_control_labels_without_control(period_correlations) -> None:
+    with pytest.raises(ValueError, match="but no control_correlations="):
+        explained_variance_reactivation(
+            period_correlations["template"],
+            period_correlations["match"],
+            template_unit_ids=LABELS,
+            match_unit_ids=LABELS,
+            control_unit_ids=LABELS,
+        )
+
+
+def _ev_with_labels(period_correlations, **overrides):
+    """Labelled EV of the three periods, with some arguments replaced."""
+    arguments = {
+        "template": period_correlations["template"],
+        "match": period_correlations["match"],
+        "control_correlations": period_correlations["control"],
+        "template_unit_ids": LABELS,
+        "match_unit_ids": LABELS,
+        "control_unit_ids": LABELS,
+    }
+    arguments.update(overrides)
+    return explained_variance_reactivation(
+        arguments.pop("template"), arguments.pop("match"), **arguments
+    )
+
+
+def test_ev_names_units_missing_from_a_period(
+    period_counts, period_correlations
+) -> None:
+    """A unit lost in one period is named, not shifted onto another's pairs."""
+    keep = np.arange(N_UNITS) != 3  # unit 7 not recorded in the match period
+    with pytest.raises(
+        ValueError,
+        match=re.escape("only in template_unit_ids: [7], only in match_unit_ids: []"),
+    ) as caught:
+        _ev_with_labels(
+            period_correlations,
+            match=pairwise_correlations(period_counts["match"][:, keep]),
+            match_unit_ids=LABELS[keep],
+        )
+    message = str(caught.value)
+    assert message.startswith("explained_variance_reactivation(): match_correlations")
+    assert "compute pairwise_correlations() again" in message
+
+    labels = LABELS.copy()
+    labels[0] = 100
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "only in template_unit_ids: [40], only in control_unit_ids: [100]"
+        ),
+    ):
+        _ev_with_labels(period_correlations, control_unit_ids=labels)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"match_unit_ids": np.r_[LABELS[:-1], 40]}, "unique"),
+        ({"control_unit_ids": LABELS[:-1]}, "length mismatch"),
+        ({"match": np.zeros(189)}, re.escape("not n * (n - 1) / 2 pairs")),
+        ({"template": np.zeros((N_UNITS, N_UNITS))}, "must be 1-D"),
+    ],
+    ids=["duplicate", "wrong-length", "not-all-pairs", "matrix"],
+)
+def test_ev_refuses_invalid_labels(period_correlations, overrides, match) -> None:
+    with pytest.raises(ValueError, match=match) as caught:
+        _ev_with_labels(period_correlations, **overrides)
+    assert "explained_variance_reactivation()" in str(caught.value)

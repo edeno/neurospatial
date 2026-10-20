@@ -138,8 +138,11 @@ Bayesian decoding of position from spike counts.
 
 ### [neurospatial.decoding.assemblies](neurospatial/decoding/assemblies.md)
 
-Population covariance and reactivation analyses take count matrices, with
-consistent units and column order across template, match and control periods:
+Population covariance and reactivation analyses take count matrices with the
+same units in the template, match and control periods. Pass each period's
+column labels (`unit_ids=` or `template_unit_ids=`, `match_unit_ids=`,
+`control_unit_ids=`) to match cells by label; without labels the columns pair
+by position:
 
 - `detect_assemblies()`: Dimensions above the Marchenko-Pastur reference and
   fitted patterns; a selected dimension may have no thresholded core members

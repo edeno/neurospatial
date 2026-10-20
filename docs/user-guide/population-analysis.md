@@ -529,6 +529,13 @@ two rest periods: it measures how much the running correlations resemble
 pre-task rest, controlling for post-task rest. Reactivation predicts EV larger
 than REV.
 
+Each correlation must be compared with the correlation of the same two cells
+in the other periods. Pass each period's column labels (`template_unit_ids=`,
+`match_unit_ids=`, `control_unit_ids=`) and the pairs are matched by cell, so
+periods sorted or binned with their units in different orders still compare
+the right pairs, and a unit missing from one period raises. Without labels the
+pairs are matched by position.
+
 ```python
 rest_correlations = {
     name: pairwise_correlations(counts[name]) for name in ("pre_rest", "post_rest")
@@ -537,11 +544,25 @@ reactivation = explained_variance_reactivation(
     run_correlations,
     rest_correlations["post_rest"],
     control_correlations=rest_correlations["pre_rest"],
+    template_unit_ids=unit_ids,
+    match_unit_ids=unit_ids,
+    control_unit_ids=unit_ids,
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
       f"REV = {reactivation.reversed_ev:.3f}, over {reactivation.n_pairs} pairs")
 assert np.isclose(reactivation.explained_variance, 0.75, atol=0.006)
 assert np.isclose(reactivation.reversed_ev, 0.015, atol=0.0006)
+
+# Post-task rest with its units in another order gives the same EV.
+reordered = explained_variance_reactivation(
+    run_correlations,
+    pairwise_correlations(counts["post_rest"][:, order]),
+    control_correlations=rest_correlations["pre_rest"],
+    template_unit_ids=unit_ids,
+    match_unit_ids=unit_ids[order],
+    control_unit_ids=unit_ids,
+)
+assert np.isclose(reordered.explained_variance, reactivation.explained_variance)
 ```
 
 EV (0.75) is far above REV (0.015): the correlation structure of running
@@ -617,6 +638,9 @@ my_reactivation = explained_variance_reactivation(
     pairwise_correlations(my_counts["run"]),
     pairwise_correlations(my_counts["post_rest"]),
     control_correlations=pairwise_correlations(my_counts["pre_rest"]),
+    template_unit_ids=my_unit_ids,
+    match_unit_ids=my_unit_ids,
+    control_unit_ids=my_unit_ids,
 )
 print(f"{spatial.sum()} of {len(my_unit_ids)} units pass the information screen; "
       f"they cover {my_coverage.coverage_fraction:.0%} of the track")
@@ -638,10 +662,10 @@ Checks before you interpret the numbers:
   periods and keep `unit_ids` with every result; a different selection per
   period compares different cells. Pass the labels as `unit_ids=` to
   `compute_spatial_rates`, `detect_assemblies` and `assembly_activation`, and
-  as `template_unit_ids=` and `match_unit_ids=` to `reactivation_strength`, so
-  cells are matched by label. Pairwise
-  correlations and EV pair cells by column position, so their count
-  matrices must share one column order.
+  as `template_unit_ids=` and `match_unit_ids=` to `reactivation_strength`
+  (plus `control_unit_ids=` for `explained_variance_reactivation`), so cells
+  are matched by label. Without labels these calls pair cells by column
+  position, so every count matrix must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
   threshold, the membership cutoff, activation above 2, and EV versus REV are
   descriptive. Use `place_cell_significance` for place-cell decisions and a

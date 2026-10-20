@@ -73,7 +73,10 @@ Typical Workflows
 2. Measure explained variance:
 
    >>> ev_result = explained_variance_reactivation(
-   ...     corr_behavior, corr_sleep
+   ...     corr_behavior,
+   ...     corr_sleep,
+   ...     template_unit_ids=behavior_labels,
+   ...     match_unit_ids=sleep_labels,
    ... )  # doctest: +SKIP
    >>> print(f"EV = {ev_result.explained_variance:.3f}")  # doctest: +SKIP
 
@@ -1255,17 +1258,36 @@ def pairwise_correlations(
     Returns only the upper triangle (excluding diagonal) to avoid
     redundancy. Use `numpy.triu_indices` to reconstruct the full matrix.
 
-    Pair ``k`` is the pair of columns ``np.triu_indices(n_neurons, k=1)``
-    gives at ``k``, so correlations of two periods describe the same pairs
-    of cells only when both count matrices have the same units in the same
-    column order.
+    The pairs follow the columns of ``spike_counts``: pair ``k`` is the pair
+    of columns ``np.triu_indices(n_neurons, k=1)`` gives at ``k``. The
+    correlations of two periods therefore describe the same pairs of cells
+    only when both count matrices have the same units in the same column
+    order. To compare periods whose columns are ordered differently, pass
+    each period's column labels to :func:`explained_variance_reactivation`
+    (``template_unit_ids=``, ``match_unit_ids=``, ``control_unit_ids=``),
+    which pairs the correlations by cell.
 
     Examples
     --------
-    >>> corr = pairwise_correlations(spike_counts)  # doctest: +SKIP
-    >>> n_neurons = spike_counts.shape[1]  # doctest: +SKIP
-    >>> n_pairs = n_neurons * (n_neurons - 1) // 2  # doctest: +SKIP
-    >>> assert len(corr) == n_pairs  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial.decoding import pairwise_correlations
+    >>> counts = np.random.default_rng(0).poisson(2.0, (500, 4)).astype(float)
+    >>> unit_ids = np.array([12, 15, 31, 40])  # the label of each column
+    >>> corr = pairwise_correlations(counts)
+    >>> corr.shape  # 4 * 3 / 2 pairs
+    (6,)
+    >>> first, second = np.triu_indices(4, k=1)
+    >>> [(int(unit_ids[i]), int(unit_ids[j])) for i, j in zip(first[:3], second[:3])]
+    [(12, 15), (12, 31), (12, 40)]
+
+    Pass the same labels on when comparing periods:
+
+    >>> ev = explained_variance_reactivation(  # doctest: +SKIP
+    ...     corr,
+    ...     pairwise_correlations(counts_sleep),
+    ...     template_unit_ids=unit_ids,
+    ...     match_unit_ids=sleep_unit_ids,
+    ... )
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
 
@@ -1472,6 +1494,9 @@ def explained_variance_reactivation(
     match_correlations: NDArray[np.float64],
     *,
     control_correlations: NDArray[np.float64] | None = None,
+    template_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    match_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
+    control_unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> ExplainedVarianceResult:
     """
     Compute explained variance for pairwise correlation reactivation.
@@ -1483,14 +1508,31 @@ def explained_variance_reactivation(
     ----------
     template_correlations : NDArray[np.float64], shape (n_pairs,)
         Pairwise correlations during template (e.g., behavior).
-        From `pairwise_correlations()`. Pairs are matched by position, so
-        every period's counts must have the same units in the same column
-        order.
+        From `pairwise_correlations()`. Without labels, pairs are matched by
+        position, so every period's counts must have the same units in the
+        same column order.
     match_correlations : NDArray[np.float64], shape (n_pairs,)
         Pairwise correlations during match (e.g., sleep/rest).
     control_correlations : NDArray[np.float64], optional
         Control period correlations (e.g., pre-behavior baseline).
         If provided, computes partial correlation controlling for baseline.
+    template_unit_ids : array-like, shape (n_neurons,), optional
+        Label of the unit in each column of the counts that
+        ``template_correlations`` came from, so pair ``k`` is the cells
+        ``template_unit_ids[i]`` and ``template_unit_ids[j]`` with
+        ``i, j = np.triu_indices(n_neurons, k=1)`` at ``k``. Labels match
+        the pairs of each period by cell instead of by position: the match
+        and control pairs are put in the template's order before the
+        comparison, so each period may list its units in its own order. When
+        labels are given, every supplied period needs them, and all periods
+        must hold the same units.
+    match_unit_ids : array-like, shape (n_neurons,), optional
+        Column labels of the counts that ``match_correlations`` came from.
+        Required with ``template_unit_ids``.
+    control_unit_ids : array-like, shape (n_neurons,), optional
+        Column labels of the counts that ``control_correlations`` came from.
+        Required with ``template_unit_ids`` when ``control_correlations`` is
+        given, and refused without it.
 
     Returns
     -------
@@ -1500,7 +1542,10 @@ def explained_variance_reactivation(
     Raises
     ------
     ValueError
-        If correlation arrays have different lengths.
+        If correlation arrays have different lengths. With labels: if a
+        supplied period has no labels, a period's labels are not one
+        distinct label per unit of its pair vector, or the periods hold
+        different units.
 
     Notes
     -----
@@ -1546,14 +1591,40 @@ def explained_variance_reactivation(
 
     Examples
     --------
-    >>> # Compute correlations
-    >>> corr_pre = pairwise_correlations(counts_pre_behavior)  # doctest: +SKIP
-    >>> corr_behavior = pairwise_correlations(counts_behavior)  # doctest: +SKIP
-    >>> corr_sleep = pairwise_correlations(counts_sleep)  # doctest: +SKIP
-    >>>
-    >>> # Measure reactivation with baseline control
+    Units 3, 5 and 8 fire together during behavior and sleep. The sleep
+    counts list the units in another order; their labels pair each sleep
+    correlation with the same two cells as in behavior:
+
+    >>> import numpy as np
+    >>> from neurospatial.decoding import (
+    ...     explained_variance_reactivation,
+    ...     pairwise_correlations,
+    ... )
+    >>> rng = np.random.default_rng(0)
+    >>> behavior = rng.poisson(1.0, (2000, 10)).astype(float)
+    >>> behavior[:, [3, 5, 8]] += rng.poisson(0.5, (2000, 1))
+    >>> sleep = rng.poisson(1.0, (2000, 10)).astype(float)
+    >>> sleep[:, [3, 5, 8]] += rng.poisson(0.5, (2000, 1))
+    >>> labels = np.arange(10)
+    >>> order = rng.permutation(10)  # the sleep recording's unit order
+    >>> result = explained_variance_reactivation(
+    ...     pairwise_correlations(behavior),
+    ...     pairwise_correlations(sleep[:, order]),
+    ...     template_unit_ids=labels,
+    ...     match_unit_ids=labels[order],
+    ... )
+    >>> bool(result.explained_variance > 0.5)
+    True
+
+    With a pre-behavior baseline control:
+
     >>> result = explained_variance_reactivation(  # doctest: +SKIP
-    ...     corr_behavior, corr_sleep, control_correlations=corr_pre
+    ...     corr_behavior,
+    ...     corr_sleep,
+    ...     control_correlations=corr_pre,
+    ...     template_unit_ids=behavior_labels,
+    ...     match_unit_ids=sleep_labels,
+    ...     control_unit_ids=pre_labels,
     ... )
     >>> print(f"EV = {result.explained_variance:.3f}")  # doctest: +SKIP
     >>> print(f"REV = {result.reversed_ev:.3f}")  # doctest: +SKIP
@@ -1566,6 +1637,21 @@ def explained_variance_reactivation(
         ensemble reactivation during sleep and modulation by hippocampal
         ripples. J Neurosci 24(29):6446-6456.
     """
+    labels = {
+        "template_unit_ids": template_unit_ids,
+        "match_unit_ids": match_unit_ids,
+        "control_unit_ids": control_unit_ids,
+    }
+    if any(value is not None for value in labels.values()):
+        template_correlations, match_correlations, control_correlations = (
+            _pairs_in_template_order(
+                template_correlations,
+                match_correlations,
+                control_correlations,
+                labels,
+            )
+        )
+
     template_correlations = np.asarray(template_correlations, dtype=np.float64)
     match_correlations = np.asarray(match_correlations, dtype=np.float64)
 
@@ -1647,3 +1733,166 @@ def explained_variance_reactivation(
         partial_correlation=float(partial_corr),
         n_pairs=int(np.sum(valid_mask)),
     )
+
+
+def _pairs_in_template_order(
+    template_correlations: NDArray[np.float64],
+    match_correlations: NDArray[np.float64],
+    control_correlations: NDArray[np.float64] | None,
+    labels: dict[str, NDArray[Any] | Sequence[Any] | None],
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64] | None]:
+    """Put the match and control pairs in the template's unit order, by label.
+
+    Parameters
+    ----------
+    template_correlations, match_correlations : array-like, shape (n_pairs,)
+        Pair correlations from :func:`pairwise_correlations`.
+    control_correlations : array-like, shape (n_pairs,), or None
+        Pair correlations of the control period, if any.
+    labels : dict
+        ``template_unit_ids``, ``match_unit_ids`` and ``control_unit_ids``
+        as given; at least one is not None.
+
+    Returns
+    -------
+    template, match, control : ndarray, shape (n_pairs,)
+        The template pairs unchanged, and the match and control pairs
+        reordered so pair ``k`` of every period is the same two cells.
+    """
+    call = "explained_variance_reactivation()"
+    if control_correlations is None and labels["control_unit_ids"] is not None:
+        raise ValueError(
+            _format_error(
+                f"{call} got control_unit_ids= but no control_correlations=.",
+                why="Why: control_unit_ids labels the control period's "
+                "correlations, and there are none to label.",
+                fix="pass control_correlations= with it, or drop control_unit_ids=",
+            )
+        )
+    needed = ["template_unit_ids", "match_unit_ids"]
+    if control_correlations is not None:
+        needed.append("control_unit_ids")
+    missing = [name for name in needed if labels[name] is None]
+    if missing:
+        given = [name for name in needed if labels[name] is not None]
+        raise ValueError(
+            _format_error(
+                f"{call} got {'= and '.join(given)}= but not {'= or '.join(missing)}=.",
+                why="Why: labels pair each correlation with its two cells, and a "
+                "period without labels can only be paired by position; mixing "
+                "the two in one call would compare different pairs of cells "
+                "without an error.",
+                fix="pass the column labels of the counts each period's "
+                "correlations came from (template_unit_ids=, match_unit_ids= "
+                "and, with control_correlations, control_unit_ids=; the same "
+                "labels when every period was binned from one list of spike "
+                "trains), or none of them to pair by position",
+            )
+        )
+    template = np.asarray(template_correlations, dtype=np.float64)
+    reference = _pair_labels(template, labels["template_unit_ids"], "template")
+
+    def in_template_order(
+        correlations: NDArray[np.float64], period: str
+    ) -> NDArray[np.float64]:
+        values = np.asarray(correlations, dtype=np.float64)
+        period_labels = _pair_labels(values, labels[f"{period}_unit_ids"], period)
+        order, only_template, only_period = _label_order(period_labels, reference)
+        if only_template or only_period:
+            raise ValueError(
+                _format_error(
+                    f"{call}: {period}_correlations must describe the same units "
+                    f"as template_correlations; only in template_unit_ids: "
+                    f"{only_template}, only in {period}_unit_ids: {only_period}.",
+                    why="Why: EV compares the correlation of each pair of cells "
+                    "across periods, so every pair needs a correlation in every "
+                    "period.",
+                    fix="select the units recorded in every period, keep the "
+                    "same units in each count matrix (counts[:, keep] and "
+                    "unit_ids[keep]), and compute pairwise_correlations() again",
+                )
+            )
+        return _reorder_pairs(values, order)
+
+    match = in_template_order(match_correlations, "match")
+    control = (
+        None
+        if control_correlations is None
+        else in_template_order(control_correlations, "control")
+    )
+    return template, match, control
+
+
+def _pair_labels(
+    correlations: NDArray[np.float64],
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    period: str,
+) -> NDArray[Any]:
+    """Validate the unit labels of one period's pair vector.
+
+    Parameters
+    ----------
+    correlations : ndarray, shape (n_pairs,)
+        Pair correlations from :func:`pairwise_correlations`.
+    unit_ids : array-like
+        One label per unit, ``n_pairs == n_units * (n_units - 1) / 2``.
+    period : {'template', 'match', 'control'}
+        Period name for error messages.
+
+    Returns
+    -------
+    ndarray, shape (n_units,)
+        The resolved labels.
+    """
+    call = "explained_variance_reactivation()"
+    argument = f"{period}_correlations"
+    if correlations.ndim != 1:
+        raise ValueError(
+            _format_error(
+                f"{call}: {argument} must be 1-D to be labelled by "
+                f"{period}_unit_ids=, got shape {correlations.shape}.",
+                fix="pass the pair correlations returned by pairwise_correlations()",
+            )
+        )
+    n_pairs = correlations.size
+    n_units = round((1 + np.sqrt(1 + 8 * n_pairs)) / 2)
+    if n_units * (n_units - 1) // 2 != n_pairs:
+        raise ValueError(
+            _format_error(
+                f"{call}: {argument} has {n_pairs} entries, which is not "
+                "n * (n - 1) / 2 pairs for any number of units n.",
+                why=f"Why: {period}_unit_ids labels the units whose pairs "
+                "pairwise_correlations() lists in np.triu_indices(n, k=1) order, "
+                "so the correlations must hold every pair.",
+                fix="pass the full output of pairwise_correlations() together "
+                "with the column labels of its spike_counts",
+            )
+        )
+    return resolve_unit_ids(unit_ids, n_units, context=f"{call} for {argument}")
+
+
+def _reorder_pairs(
+    correlations: NDArray[np.float64], order: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """Reorder a pair vector so its units follow ``order``.
+
+    Parameters
+    ----------
+    correlations : ndarray, shape (n_pairs,)
+        Correlation of the units at ``np.triu_indices(n_units, k=1)``.
+    order : ndarray of intp, shape (n_units,)
+        Position of each target unit among the current units.
+
+    Returns
+    -------
+    ndarray, shape (n_pairs,)
+        Correlation of target units ``i`` and ``j`` at the position
+        ``np.triu_indices(n_units, k=1)`` gives the pair ``(i, j)``.
+    """
+    n_units = order.size
+    upper = np.triu_indices(n_units, k=1)
+    matrix = np.zeros((n_units, n_units), dtype=np.float64)
+    matrix[upper] = correlations
+    matrix[upper[::-1]] = correlations
+    reordered: NDArray[np.float64] = matrix[np.ix_(order, order)][upper]
+    return reordered
