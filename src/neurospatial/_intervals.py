@@ -43,6 +43,9 @@ class TimeSupport:
     contiguous half-open time bounds without retaining the recording arrays.
     Recording support and training support are separate instances: training
     may additionally exclude slow movement or invalid coordinates.
+    ``break_times`` holds the time of the first sample after each declared
+    recording break (``times[k]`` where ``break_before[k]``, ``k >= 1``), or
+    ``None`` when no ``break_before`` was given.
     """
 
     mask: NDArray[np.bool_]
@@ -50,6 +53,7 @@ class TimeSupport:
     epochs: NDArray[np.float64] | None
     spike_window: NDArray[np.float64] | None
     max_gap: float | None
+    break_times: NDArray[np.float64] | None = None
 
     @classmethod
     def from_mask(
@@ -60,8 +64,13 @@ class TimeSupport:
         epochs: NDArray[np.float64] | None,
         spike_window: NDArray[np.float64] | None,
         max_gap: float | None,
+        break_before: NDArray[np.bool_] | None = None,
     ) -> TimeSupport:
-        """Snapshot an interval mask and already normalized time windows."""
+        """Snapshot an interval mask and already normalized time windows.
+
+        ``break_before`` (already validated, shape ``(n_samples,)``) is
+        recorded as the times of the samples that start a new recording.
+        """
 
         def snapshot(array: Any) -> Any:
             if array is None:
@@ -76,6 +85,7 @@ class TimeSupport:
             snapshot(epochs),
             snapshot(spike_window),
             max_gap,
+            snapshot(break_sample_times(times, break_before)),
         )
 
     def analysis_settings(self) -> dict[str, Any]:
@@ -87,7 +97,35 @@ class TimeSupport:
             ),
             "observed_intervals": self.runs.tolist(),
             "max_gap": None if self.max_gap is None else float(self.max_gap),
+            "break_times": (
+                None if self.break_times is None else self.break_times.tolist()
+            ),
         }
+
+
+def break_sample_times(
+    times: NDArray[np.float64], break_before: NDArray[np.bool_] | None
+) -> NDArray[np.float64] | None:
+    """Times of the samples that start a new recording, or None.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Sample times in seconds.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared breaks; entry 0 is ignored.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_breaks,), or None
+        ``times[k]`` for every ``k >= 1`` with ``break_before[k]``; ``None``
+        when ``break_before`` is ``None``.
+    """
+    if break_before is None:
+        return None
+    times = np.asarray(times, dtype=np.float64)
+    flags = np.asarray(break_before, dtype=bool)
+    return np.asarray(times[1:][flags[1:]], dtype=np.float64)
 
 
 def _format_rows(idx: NDArray[np.intp]) -> str:
