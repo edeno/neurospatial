@@ -75,13 +75,33 @@ class TestMakeWatermaze:
         maze = make_watermaze()
         assert "platform" in maze.env_2d.regions
 
-    def test_platform_region_is_point(self):
-        """Platform region should be a point region."""
-        from neurospatial.simulation.mazes.watermaze import make_watermaze
+    def test_platform_is_a_landmark_with_its_real_extent(self):
+        """The hidden platform: a landmark and a 15 cm circular region."""
+        from shapely.geometry import Point
 
-        maze = make_watermaze()
-        platform = maze.env_2d.regions["platform"]
+        from neurospatial.simulation.mazes.watermaze import (
+            WatermazeDims,
+            make_watermaze,
+        )
+
+        dims = WatermazeDims()
+        env = make_watermaze(dims=dims).env_2d
+        assert list(env.landmarks) == ["platform"]
+        platform = env.landmarks["platform"]
         assert platform.kind == "point"
+        assert dict(platform.metadata) == {"role": "platform"}
+
+        region = env.regions["platform"]
+        assert region.kind == "polygon"
+        disc = Point(platform.data).buffer(dims.platform_radius, quad_segs=256)
+        assert region.data.symmetric_difference(disc).area < 0.01 * disc.area
+        np.testing.assert_allclose(region.data.centroid.coords[0], platform.data)
+        # Every bin centre within the platform, and only those.
+        inside = np.hypot(*(env.bin_centers - platform.data).T) < 7.0
+        assert set(np.flatnonzero(inside)) <= set(env.bins_in_region("platform"))
+        assert len(env.bins_in_region("platform")) == pytest.approx(
+            np.pi * 7.5**2 / 2.0**2, rel=0.15
+        )
 
     def test_platform_default_position(self):
         """Platform should default to center of NE quadrant."""
@@ -93,7 +113,7 @@ class TestMakeWatermaze:
         dims = WatermazeDims(pool_diameter=150.0)
         maze = make_watermaze(dims=dims)
 
-        platform = maze.env_2d.regions["platform"]
+        platform = maze.env_2d.landmarks["platform"]
         # Halfway between the pool centre and the wall, on the NE diagonal.
         r = dims.pool_diameter / 2
         x, y = platform.data
@@ -111,8 +131,9 @@ class TestMakeWatermaze:
 
         dims = WatermazeDims()
         env = make_watermaze(dims=dims).env_2d
-        platform = Point(env.regions["platform"].data).buffer(dims.platform_radius)
+        platform = Point(env.landmarks["platform"].data).buffer(dims.platform_radius)
         assert env.arena.polygon.contains(platform)
+        assert env.arena.polygon.contains(env.regions["platform"].data)
 
     def test_default_sizes_are_in_the_published_ranges(self):
         """Morris (2008): pools 1.5-2 m; platforms 10-15 cm, 1/50-1/100 of area."""
@@ -131,9 +152,10 @@ class TestMakeWatermaze:
         custom_position = (20.0, 30.0)
         maze = make_watermaze(platform_position=custom_position)
 
-        platform = maze.env_2d.regions["platform"]
-        assert np.isclose(platform.data[0], custom_position[0], atol=0.1)
-        assert np.isclose(platform.data[1], custom_position[1], atol=0.1)
+        platform = maze.env_2d.landmarks["platform"]
+        np.testing.assert_array_equal(platform.data, custom_position)
+        centroid = maze.env_2d.regions["platform"].data.centroid
+        np.testing.assert_allclose(centroid.coords[0], custom_position, atol=1e-9)
 
     def test_env_2d_has_quadrant_regions(self):
         """env_2d should have NE, NW, SE, SW quadrant regions."""
@@ -145,39 +167,71 @@ class TestMakeWatermaze:
         assert "SE" in maze.env_2d.regions
         assert "SW" in maze.env_2d.regions
 
-    def test_quadrant_regions_are_points(self):
-        """Quadrant regions should be point regions."""
+    def test_quadrants_are_quarter_discs_partitioning_the_pool(self):
+        """NE, NW, SE, SW are the pool's quarters, for quadrant occupancy."""
+        import shapely
+
         from neurospatial.simulation.mazes.watermaze import make_watermaze
 
-        maze = make_watermaze()
-        assert maze.env_2d.regions["NE"].kind == "point"
-        assert maze.env_2d.regions["NW"].kind == "point"
-        assert maze.env_2d.regions["SE"].kind == "point"
-        assert maze.env_2d.regions["SW"].kind == "point"
+        env = make_watermaze().env_2d
+        pool = env.arena.polygon
+        quadrants = {q: env.regions[q] for q in ("NE", "NW", "SE", "SW")}
+        assert all(r.kind == "polygon" for r in quadrants.values())
+        for region in quadrants.values():
+            assert region.data.area == pytest.approx(pool.area / 4)
+        union = shapely.union_all([r.data for r in quadrants.values()])
+        assert union.symmetric_difference(pool).area == pytest.approx(0.0, abs=1e-6)
+        for a in quadrants.values():
+            for b in quadrants.values():
+                if a is not b:
+                    assert a.data.intersection(b.data).area == pytest.approx(0.0)
+        # The quadrants are not landmarks: they are analysis zones.
+        assert not set(quadrants) & set(env.landmarks)
 
-    def test_quadrant_positions_correct(self):
-        """Quadrant regions should be at correct positions."""
+    def test_quadrant_compass_directions(self):
+        """North is +y and east is +x; each quarter lies on its own side."""
         from neurospatial.simulation.mazes.watermaze import (
             WatermazeDims,
             make_watermaze,
         )
 
         dims = WatermazeDims(pool_diameter=150.0)
-        maze = make_watermaze(dims=dims)
-
-        # Quadrant centres lie R/2 from the pool centre on each diagonal,
-        # with north = +y and east = +x.
+        env = make_watermaze(dims=dims).env_2d
         r = dims.pool_diameter / 2
-        expected_angles = {"NE": 45.0, "NW": 135.0, "SW": -135.0, "SE": -45.0}
-        for name, angle in expected_angles.items():
-            x, y = maze.env_2d.regions[name].data
-            assert np.hypot(x, y) == pytest.approx(r / 2), name
-            assert np.degrees(np.arctan2(y, x)) == pytest.approx(angle), name
+        signs = {"NE": (1, 1), "NW": (-1, 1), "SE": (1, -1), "SW": (-1, -1)}
+        for name, (sx, sy) in signs.items():
+            x0, y0, x1, y1 = env.regions[name].data.bounds
+            assert (min(0, sx * r), min(0, sy * r)) == pytest.approx((x0, y0)), name
+            assert (max(0, sx * r), max(0, sy * r)) == pytest.approx((x1, y1)), name
+            # A quarter disc's centroid lies 4R / (3 pi) along each axis.
+            centroid = env.regions[name].data.centroid
+            expected = np.array([sx, sy]) * 4 * r / (3 * np.pi)
+            np.testing.assert_allclose(centroid.coords[0], expected, rtol=1e-2)
 
-        # The default platform marks the NE quadrant centre.
-        np.testing.assert_allclose(
-            maze.env_2d.regions["platform"].data, maze.env_2d.regions["NE"].data
-        )
+        # The default platform lies in the NE quadrant.
+        platform = env.regions["platform"].data
+        assert env.regions["NE"].data.contains(platform)
+
+    def test_quadrants_cover_every_bin(self):
+        """Every bin lies in some quadrant; off-axis bins lie in exactly one."""
+        from neurospatial.simulation.mazes.watermaze import make_watermaze
+
+        env = make_watermaze().env_2d
+        counts = np.zeros(env.n_bins, dtype=int)
+        for q in ("NE", "NW", "SE", "SW"):
+            counts[env.bins_in_region(q)] += 1
+        assert (counts >= 1).all()
+        on_axis = np.isclose(env.bin_centers, 0.0).any(axis=1)
+        assert (counts[~on_axis] == 1).all()
+
+    def test_no_start_or_cue_landmarks(self):
+        """Morris (2008) gives no fixed start positions or cue placement."""
+        from neurospatial.simulation.mazes.watermaze import make_watermaze
+
+        roles = {
+            lm.metadata["role"] for lm in make_watermaze().env_2d.landmarks.values()
+        }
+        assert roles == {"platform"}
 
     def test_env_track_is_none(self):
         """env_track should be None (open field, no track)."""
