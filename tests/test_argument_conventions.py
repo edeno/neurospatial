@@ -3,6 +3,7 @@
 import importlib
 import inspect
 
+import pytest
 from test_public_api_snapshot import NAMESPACES
 
 
@@ -62,6 +63,36 @@ def test_env_is_first():
             }:
                 offenders.append(function.__name__)
     assert not offenders, sorted(offenders)
+
+
+@pytest.mark.parametrize(
+    ("name", "data", "option", "value"),
+    [
+        ("read_environment", 1, "name", "arena"),
+        ("write_environment", 2, "name", "arena"),
+        ("read_position", 1, "processing_module", "behavior"),
+        ("read_head_direction", 1, "processing_module", "behavior"),
+        ("read_pose", 1, "pose_estimation_name", "dlc"),
+        ("read_events", 2, "processing_module", "behavior"),
+        ("write_place_field", 3, "name", "cell_1"),
+        ("write_occupancy", 3, "name", "occupancy_1"),
+        ("write_laps", 3, "description", "laps"),
+        ("write_region_crossings", 4, "description", "crossings"),
+        ("dataframe_to_events_table", 2, "description", "rewards"),
+    ],
+)
+def test_nwb_option_passed_by_position_names_its_keyword(name, data, option, value):
+    """An NWB name or description passed by position gets the corrected call.
+
+    These options were positional before; the error says which keyword the
+    value belongs to. It is raised before the file is touched, so a placeholder
+    stands in for the NWB file and data.
+    """
+    from neurospatial.io import nwb
+
+    with pytest.raises(TypeError, match="positional") as caught:
+        getattr(nwb, name)(*[object()] * data, value)
+    assert f"pass {option}={value!r} by keyword" in str(caught.value)
 
 
 def test_environment_method_options_are_keyword_only():

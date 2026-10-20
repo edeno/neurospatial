@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import (
     data_from_series,
     position_units_from_series,
@@ -35,11 +36,12 @@ if TYPE_CHECKING:
 DEFAULT_POSITION_UNITS: str = "cm"
 
 
+@keyword_hint("processing_module", "position_name")
 def read_position(
     nwbfile: NWBFile,
+    *,
     processing_module: str | None = None,
     position_name: str | None = None,
-    *,
     lazy: bool = False,
 ) -> NWBPosition:
     """
@@ -331,8 +333,10 @@ def _get_timestamps(spatial_series: SpatialSeries) -> NDArray[np.float64]:
     return timestamps_from_series(spatial_series)
 
 
+@keyword_hint("processing_module", "compass_name")
 def read_head_direction(
     nwbfile: NWBFile,
+    *,
     processing_module: str | None = None,
     compass_name: str | None = None,
 ) -> NWBHeadDirection:

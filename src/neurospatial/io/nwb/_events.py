@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import events_table_to_dataframe
 
 if TYPE_CHECKING:
@@ -38,9 +39,11 @@ PREDEFINED_EPOCHS: str = "epochs"
 PREDEFINED_INVALID_TIMES: str = "invalid_times"
 
 
+@keyword_hint("processing_module")
 def read_events(
     nwbfile: NWBFile,
     table_name: str,
+    *,
     processing_module: str = DEFAULT_PROCESSING_MODULE,
 ) -> pd.DataFrame:
     """
@@ -204,12 +207,13 @@ def read_intervals(
     )
 
 
+@keyword_hint("description")
 def write_laps(
     nwbfile: NWBFile,
     lap_times: NDArray[np.float64],
     lap_types: NDArray[np.int_] | None = None,
-    description: str = "Detected lap events",
     *,
+    description: str = "Detected lap events",
     start_regions: Sequence[str] | None = None,
     end_regions: Sequence[str] | None = None,
     stop_times: NDArray[np.float64] | None = None,
@@ -411,13 +415,14 @@ def write_laps(
     logger.debug("Wrote EventsTable '%s' with %d lap events", name, n_laps)
 
 
+@keyword_hint("description")
 def write_region_crossings(
     nwbfile: NWBFile,
     crossing_times: NDArray[np.float64],
     region_names: NDArray[np.str_],
     event_types: NDArray[np.str_],
-    description: str = "Region crossing events",
     *,
+    description: str = "Region crossing events",
     name: str = DEFAULT_REGION_CROSSINGS_NAME,
     overwrite: bool = False,
 ) -> None:
@@ -899,9 +904,11 @@ def read_trials(nwbfile: NWBFile) -> pd.DataFrame:
     return read_intervals(nwbfile, "trials")
 
 
+@keyword_hint("description")
 def dataframe_to_events_table(
     df: pd.DataFrame,
     name: str,
+    *,
     description: str = "Events",
 ) -> ndx_events.EventsTable:
     """

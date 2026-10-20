@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial.io.nwb._adapters import (
     data_from_series,
     require_unscaled_for_lazy,
@@ -31,10 +32,11 @@ if TYPE_CHECKING:
     from neurospatial.animation.skeleton import Skeleton
 
 
+@keyword_hint("pose_estimation_name")
 def read_pose(
     nwbfile: NWBFile,
-    pose_estimation_name: str | None = None,
     *,
+    pose_estimation_name: str | None = None,
     lazy: bool = False,
 ) -> tuple[dict[str, NDArray[np.float64] | Any], NDArray[np.float64] | Any, Skeleton]:
     """
