@@ -29,7 +29,7 @@ from neurospatial.encoding import SpikeTrains, compute_spatial_rates
 def test_nested_epoch_rows_are_unambiguous():
     times = np.array([0.0, 5.0, 7.0, 10.0, 15.0])
     np.testing.assert_array_equal(
-        in_epochs(times, [[0, 5], [10, 15]]), [True, True, False, True, True]
+        in_epochs(times, [[0, 5], [10, 15]]), [True, False, False, True, False]
     )
 
 
@@ -117,15 +117,27 @@ def test_as_intervals_empty_forms(empty) -> None:
 
 
 # ---------------------------------------------------------------------------
-# in_epochs: inclusive-endpoint mask
+# in_epochs: half-open [start, stop) mask by default
 # ---------------------------------------------------------------------------
 
 
-def test_in_epochs_single_interval_inclusive() -> None:
-    """Endpoints included under the default closed='both'."""
+def test_in_epochs_single_interval_half_open() -> None:
+    """The start is inside and the stop outside under the default closed='left'."""
     t = np.array([-1.0, 0.0, 2.5, 5.0, 6.0])
     mask = in_epochs(t, (0.0, 5.0))
-    np.testing.assert_array_equal(mask, [False, True, True, True, False])
+    np.testing.assert_array_equal(mask, [False, True, True, False, False])
+    both = in_epochs(t, (0.0, 5.0), closed="both")
+    np.testing.assert_array_equal(both, [False, True, True, True, False])
+
+
+def test_adjacent_windows_split_points_without_sharing_any() -> None:
+    """A spike on the boundary of two adjacent windows lands in exactly one."""
+    spikes = np.array([0.5, 1.0, 1.5, 2.0])
+    first = restrict_spike_trains([spikes], [(0.0, 1.0)])[0]
+    second = restrict_spike_trains([spikes], [(1.0, 2.0)])[0]
+    np.testing.assert_array_equal(first, [0.5])
+    np.testing.assert_array_equal(second, [1.0, 1.5])
+    assert not np.intersect1d(first, second).size
 
 
 def test_in_epochs_multiple_intervals_union() -> None:
@@ -194,7 +206,7 @@ def test_restrict_times_and_positions_aligned() -> None:
     positions = np.column_stack([times * 10.0, times * -1.0])
     t_kept, pos_kept = restrict(times, positions, epochs=(1.0, 3.0))
 
-    expected_mask = (times >= 1.0) & (times <= 3.0)
+    expected_mask = (times >= 1.0) & (times < 3.0)
     np.testing.assert_array_equal(t_kept, times[expected_mask])
     np.testing.assert_array_equal(pos_kept, positions[expected_mask])
     # Order preserved (strictly increasing subset).
@@ -287,7 +299,7 @@ def test_restrict_spike_trains_list() -> None:
     assert isinstance(out, list)
     assert len(out) == 2
     np.testing.assert_array_equal(out[0], np.array([1.5, 2.9]))
-    np.testing.assert_array_equal(out[1], np.array([3.0, 3.5]))
+    np.testing.assert_array_equal(out[1], np.array([3.0]))  # 3.5 is the stop
 
 
 def test_restrict_spike_trains_accepts_spiketrains_container() -> None:
@@ -346,8 +358,8 @@ def test_compute_spatial_rates_honors_restriction() -> None:
     )
 
     # Restricted equals a hand-masked reference.
-    mask = (times >= 55.0) & (times <= 100.0)
-    ref_trains = [tr[(tr >= 55.0) & (tr <= 100.0)] for tr in trains]
+    mask = (times >= 55.0) & (times < 100.0)
+    ref_trains = [tr[(tr >= 55.0) & (tr < 100.0)] for tr in trains]
     reference = compute_spatial_rates(env, ref_trains, times[mask], positions[mask])
     np.testing.assert_array_equal(
         np.nan_to_num(restricted.firing_rates),
