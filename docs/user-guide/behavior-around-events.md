@@ -395,7 +395,8 @@ change in which events you are averaging.
   first frame of each later recording with `break_before`, and pass it to
   `compute_speed`, `heading_from_velocity`,
   `compute_movement_angular_velocity`, `align_continuous_to_events` and
-  `add_positions`.
+  `add_positions`, and to the rate maps and decoders you run on the same
+  recording (see [Recordings joined on one clock](workflows.md#recordings-joined-on-one-clock)).
   Nothing is then smoothed, filled, interpolated or averaged across the join,
   and a jump in position between the recordings is not read as running.
   Passing each recording's `[start, stop)` as `epochs` does not do this:

@@ -160,9 +160,8 @@ def compute_speed(
     keep nearly all of its rest. Every ``min_speed`` gate in the package
     (rate maps, decoding, ``segment_by_velocity``, decision and goal
     metrics) uses this speed, so passing ``speed=compute_speed(...)``
-    explicitly gives the same result as leaving it out. A gate without a
-    ``break_before`` argument cannot see a declared break; when you declare
-    breaks, pass this speed to it explicitly with ``speed=``.
+    explicitly gives the same result as leaving it out, provided the gate
+    gets the same ``break_before``.
 
     Speed is never smoothed across a declared break, a missing sample, a gap
     longer than ``max_gap`` or the edge of an ``epochs`` window.
