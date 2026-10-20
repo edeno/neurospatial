@@ -6,8 +6,9 @@
 
 **Status:** Partially implemented. The representation phases are complete
 (PR #67). Slice 2D's physical walls came through arena stages A and D
-(#68, #73, #74). The others are partial: 2A has `Environment.bin_sources` (#71) and
-the validated caller `bin_mapping` in `compare_spatial_rates` (#119); 2B has
+(#68, #73, #74). The others are partial: 2A has `Environment.bin_sources` (#71),
+the validated caller `bin_mapping` in `compare_spatial_rates` (#119) and exact
+derivation correspondences from `Environment.bin_mapping_from` (#121); 2B has
 measure dimensions (#67, #101) and affine measures (#76); 2C has
 zero-conductance path-only bridges (#71); 2E has containment-gated feature
 sampling (#118). 2F interval states, optional external `bin_ids`, directed

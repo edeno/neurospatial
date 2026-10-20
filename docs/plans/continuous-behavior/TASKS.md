@@ -65,7 +65,11 @@ Source: [phase-1-observation-support.md](phase-1-observation-support.md).
   `generate_population_spikes` accept `break_before` through the shared
   `_intervals` gate (#121; `tests/encoding/test_declared_breaks.py`,
   `tests/decoding/test_declared_breaks.py`, `tests/behavior/test_declared_breaks.py`).
-  Remaining: `behavior.distance_to_reward` (position interpolation), `behavior.time_efficiency` and `ops.visibility_occupancy` take neither `max_gap` nor `break_before`.
+  `ops.visibility_occupancy` and `behavior.distance_to_reward` follow the same
+  rules (#121; `tests/ops/test_visibility.py`,
+  `tests/behavior/test_distance_covariates.py`). `behavior.time_efficiency`
+  takes no gates: it compares one trial's elapsed time with an optimal time,
+  and a tracking dropout does not shorten the trial.
 - [x] Fix missing-position transitions and movement helpers without bridging gaps.
   Evidence: `Environment.transitions(times=, positions=)` counts only
   inside-to-inside pairs (`c77e3833`, #85; `tests/environment/test_missing_data.py`).
@@ -102,8 +106,12 @@ Source: [phase-2-environment-contracts.md](phase-2-environment-contracts.md).
 - [ ] Add optional scientific bin IDs and validated derivation correspondences.
   *Partial:* combined environments expose `Environment.bin_sources` (#71), and
   `compare_spatial_rates(bin_mapping=...)` validates caller-supplied one-to-one
-  correspondences by geometry (#119). Optional external `bin_ids` and
-  subset/rebin mapping outputs remain.
+  correspondences by geometry (#119). `Environment.bin_mapping_from(parent)`
+  returns exact subset, unsplit-clip and nested-rebin correspondences with
+  NaN-aware `sum`, pooled `rates` and unanimous `category` transfers, sharing
+  one same-cell definition with the comparisons (#121;
+  `tests/environment/test_bin_mapping.py`). Optional external `bin_ids`,
+  persisted mappings and allocation rules for split cells remain.
 - [ ] Enforce measure dimensions and supported transfer/conservation rules.
   *Partial:* measure dimensions (#67, per-bin `measure_dims` in #101), exact
   affine measures (#76) and
@@ -209,8 +217,9 @@ Source: [phase-6-neural-comparisons.md](phase-6-neural-comparisons.md).
   (`8a3e7980`, `0b0ed9c9`, #119). Tests: `tests/encoding/test_compare_spatial_rates.py`
   and `test_rate_comparison_result.py`. Population follow-on: the per-location
   `population_vector_correlation` is `95973398` (#120). It pairs
-  `SpatialRatesResult` inputs by `unit_ids`, and assembly activation matches
-  columns by label (#121; `tests/encoding/test_population_vector_identity.py`,
+  `SpatialRatesResult` inputs by `unit_ids`, and the assembly functions
+  (`assembly_activation`, `reactivation_strength`,
+  `explained_variance_reactivation`) match units by label (#121; `tests/encoding/test_population_vector_identity.py`,
   `tests/decoding/test_assembly_unit_identity.py`).
 - [x] Accept only one-to-one comparison mappings initially and reject
   coarsening/overlap; document separate re-estimation on common bins.
