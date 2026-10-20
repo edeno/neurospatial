@@ -145,6 +145,12 @@ def compute_boundary_distances(
     --------
     nearest_boundary : Distance and direction to the closest wall point.
     compute_viewed_location : First wall along the gaze direction.
+    neurospatial.behavior.distance_to_boundary : Distance to the edge of the
+        environment's bins, to obstacles or to a region's boundary.
+    neurospatial.behavior.distance_to_region : Distance to a target bin or
+        region.
+    neurospatial.behavior.distance_to_reward : Distance to the reward location
+        at each sample.
 
     Examples
     --------
@@ -227,6 +233,12 @@ def nearest_boundary(
     See Also
     --------
     compute_boundary_distances : Distance to the first wall along each ray.
+    neurospatial.behavior.distance_to_boundary : Distance to the edge of the
+        environment's bins, to obstacles or to a region's boundary.
+    neurospatial.behavior.distance_to_region : Distance to a target bin or
+        region.
+    neurospatial.behavior.distance_to_reward : Distance to the reward location
+        at each sample.
 
     Examples
     --------

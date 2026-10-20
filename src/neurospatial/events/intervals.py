@@ -468,6 +468,10 @@ def filter_by_intervals(
     --------
     intervals_to_events : Convert intervals to point events.
     events_to_intervals : Pair start/stop events into intervals.
+    neurospatial.behavior.restrict : Restrict time arrays and aligned arrays
+        (positions, speed) to epochs.
+    neurospatial.behavior.in_epochs : Boolean mask of the timestamps inside
+        epochs.
 
     Examples
     --------

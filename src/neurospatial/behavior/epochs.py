@@ -175,6 +175,12 @@ def in_epochs(
     ndarray of bool
         Same shape as ``t``; ``True`` where ``t`` is inside any interval.
 
+    See Also
+    --------
+    restrict : Slice times and aligned arrays to the epochs.
+    neurospatial.events.filter_by_intervals : Keep the rows of an events
+        DataFrame that fall in an intervals DataFrame.
+
     Notes
     -----
     NaN timestamps evaluate ``False`` at every ``>=``/``<=``/``>``/``<``
@@ -258,6 +264,13 @@ def restrict(
     ValueError
         If any array's first-axis length differs from ``len(times)`` (the error
         names the offending positional index).
+
+    See Also
+    --------
+    in_epochs : The boolean mask this function slices by.
+    restrict_spike_trains : Restrict ragged per-unit spike trains.
+    neurospatial.events.filter_by_intervals : Keep the rows of an events
+        DataFrame that fall in an intervals DataFrame.
 
     Examples
     --------
