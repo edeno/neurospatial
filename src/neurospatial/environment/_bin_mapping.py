@@ -315,7 +315,7 @@ class BinMapping(ReadOnlyArraysMixin):
         Returns
         -------
         dict
-            ``kind``, ``n_parent_bins``, ``n_child_bins``, ``n_pairs``,
+            ``kind``, ``n_parent_bins``, ``n_child_bins``,
             ``n_mapped_parent_bins``, ``n_unmapped_parent_bins``,
             ``n_split_parent_bins``, ``n_fully_covered_child_bins``,
             ``n_partly_covered_child_bins`` and ``n_uncovered_child_bins``.
@@ -327,7 +327,6 @@ class BinMapping(ReadOnlyArraysMixin):
             "kind": self.kind,
             "n_parent_bins": self.n_parent_bins,
             "n_child_bins": self.n_child_bins,
-            "n_pairs": len(self.pairs),
             "n_mapped_parent_bins": len(self.pairs),
             "n_unmapped_parent_bins": len(self.unmapped_parent_bins),
             "n_split_parent_bins": len(self.split_parent_bins),
@@ -432,21 +431,26 @@ def _bin_mapping_from(child: Environment, parent: Environment) -> BinMapping:
     lattices = _shared_lattice(parent_bins, child_bins)
     incomplete = np.zeros(0, dtype=np.intp)
     if isinstance(lattices, tuple):
-        parent_grid, child_grid = lattices
-        nested = _nested_pairs(parent_grid, child_grid, parent_bins, child_bins)
-        if nested is None:
+        forward, parent_grid, child_grid = lattices
+        pairs = _nested_pairs(parent_grid, child_grid, child_bins)
+        if pairs is None:
             raise _no_pairs_error(
                 child,
                 parent,
                 _lattice_reason(parent_grid, child_grid),
                 finer=_nests(child_grid, parent_grid) is not None,
             )
-        pairs, coverage = nested
-        split, incomplete = _ownership_splits(child, parent, parent_grid, pairs)
-        if len(split):
-            pairs = pairs[~np.isin(pairs[:, 0], split)]
-            coverage = _nested_coverage(pairs, parent_bins, child_bins)
-        reason = "every parent bin lies outside this environment's bins"
+        split, incomplete = _ownership_splits(
+            child, parent, parent_grid, forward, pairs
+        )
+        pairs = pairs[~np.isin(pairs[:, 0], split)]
+        coverage = _nested_coverage(pairs, parent_bins, child_bins)
+        reason = (
+            f"{len(split)} parent bins own boundary points that this environment "
+            "gives to other bins"
+            if len(split)
+            else "every parent bin lies outside this environment's bins"
+        )
     else:
         pairs, split = _identity_pairs(parent, child)
         coverage = np.zeros(child.n_bins)
@@ -468,7 +472,7 @@ def _assemble(
     coverage: NDArray[np.float64],
     n_parent: int,
     n_child: int,
-    incomplete: NDArray[np.intp] | None = None,
+    incomplete: NDArray[np.intp],
 ) -> BinMapping:
     """Sort the pairs and sort every bin into its category.
 
@@ -491,8 +495,7 @@ def _assemble(
         unmapped_parent_bins=np.flatnonzero(unmapped).astype(np.intp),
         split_parent_bins=split.astype(np.intp),
         uncovered_child_bins=np.union1d(
-            np.flatnonzero(per_child == 0),
-            np.zeros(0, dtype=np.intp) if incomplete is None else incomplete,
+            np.flatnonzero(per_child == 0), incomplete
         ).astype(np.intp),
         child_coverage=coverage,
     )
@@ -605,6 +608,7 @@ def _ownership_splits(
     child: Environment,
     parent: Environment,
     parent_grid: RectilinearGrid,
+    forward: NDArray[np.float64],
     pairs: NDArray[np.intp],
 ) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
     """Parent cells whose owned points the child gives to another cell.
@@ -636,9 +640,7 @@ def _ownership_splits(
     probes = np.stack(
         [values[:, offsets[axis]] for axis, values in enumerate(per_axis)], axis=-1
     ).reshape(-1, len(per_axis))
-    forward = _lattice(parent._binning)
-    assert forward is not None
-    probes = probes @ forward[0][:-1, :-1].T + forward[0][:-1, -1]
+    probes = probes @ forward[:-1, :-1].T + forward[:-1, -1]
     by_parent = parent.bin_at(probes)
     by_child = child.bin_at(probes)
     expected = np.where(by_parent >= 0, owner[np.maximum(by_parent, 0)], -1)
@@ -677,12 +679,13 @@ def _lattice(binning: Binning) -> tuple[NDArray[np.float64], RectilinearGrid] | 
 
 def _shared_lattice(
     parent: Binning, child: Binning
-) -> tuple[RectilinearGrid, RectilinearGrid] | str | None:
-    """Both grids in their shared lattice coordinates, a reason, or None.
+) -> tuple[NDArray[np.float64], RectilinearGrid, RectilinearGrid] | str | None:
+    """The shared lattice frame and both grids in it, a reason, or None.
 
-    Returns the two grids when both environments are rectangular grids drawn
-    in the same lattice frame; a reason when both are grids in different
-    frames; None when either is not a grid.
+    Returns the lattice-to-environment matrix and the two grids when both
+    environments are rectangular grids drawn in the same lattice frame; a
+    reason when both are grids in different frames; None when either is not
+    a grid.
     """
     first, second = _lattice(parent), _lattice(child)
     if first is None or second is None:
@@ -693,7 +696,7 @@ def _shared_lattice(
             "rotated, sheared or shifted relative to the other), so no cell of "
             "one lies exactly inside a cell of the other"
         )
-    return first[1], second[1]
+    return first[0], first[1], second[1]
 
 
 def _axis_fit(
@@ -743,12 +746,9 @@ def _nests(inner: RectilinearGrid, outer: RectilinearGrid) -> NDArray[np.intp] |
 
 
 def _nested_pairs(
-    parent_grid: RectilinearGrid,
-    child_grid: RectilinearGrid,
-    parent: Binning,
-    child: Binning,
-) -> tuple[NDArray[np.intp], NDArray[np.float64]] | None:
-    """Pair each parent cell with the child cell holding it, with coverage.
+    parent_grid: RectilinearGrid, child_grid: RectilinearGrid, child: Binning
+) -> NDArray[np.intp] | None:
+    """Pair each parent cell with the child cell holding it.
 
     Returns None when a child edge cuts a parent cell. Parent cells outside
     the child grid, or in an inactive child cell, are left unpaired.
@@ -759,11 +759,10 @@ def _nested_pairs(
     child_of_cell = np.full(child_grid.shape, -1, dtype=np.intp)
     child_of_cell[np.nonzero(child_grid.active_mask)] = np.arange(child.bins.n_bins)
     inside = np.all(positions >= 0, axis=0)
-    owner = np.full(parent.bins.n_bins, -1, dtype=np.intp)
+    owner = np.full(positions.shape[1], -1, dtype=np.intp)
     owner[inside] = child_of_cell[tuple(positions[:, inside])]
     parents = np.flatnonzero(owner >= 0)
-    pairs = np.column_stack([parents, owner[parents]]).astype(np.intp)
-    return pairs, _nested_coverage(pairs, parent, child)
+    return np.column_stack([parents, owner[parents]]).astype(np.intp)
 
 
 def _lattice_reason(parent: RectilinearGrid, child: RectilinearGrid) -> str:

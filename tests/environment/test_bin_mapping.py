@@ -602,7 +602,6 @@ def test_summary_and_repr_count_every_bin(strip):
         "kind": "many_to_one",
         "n_parent_bins": 6,
         "n_child_bins": 2,
-        "n_pairs": 4,
         "n_mapped_parent_bins": 4,
         "n_unmapped_parent_bins": 2,
         "n_split_parent_bins": 0,
@@ -742,3 +741,14 @@ def test_coordinates_of_different_widths_are_never_the_same_cells(first, second)
                 topology="may_differ",
                 min_common_bins=3,
             )
+
+
+def test_a_grid_whose_every_bin_is_split_is_refused_naming_the_splits():
+    # Edges 1e-13 apart nest within tolerance, but each environment's lookup
+    # gives the shared boundaries to different cells, so no pair is exact.
+    rng = np.random.default_rng(0)
+    samples = rng.uniform(0, 20, (500, 2))
+    parent = Environment.from_samples(samples, bin_size=2.0)
+    child = Environment.from_samples(samples + 1e-13, bin_size=2.0)
+    with pytest.raises(ValueError, match="own boundary points"):
+        child.bin_mapping_from(parent)
