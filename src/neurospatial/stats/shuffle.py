@@ -40,7 +40,7 @@ Examples
 >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
 >>> null_scores = []
 >>> for shuffled in shuffle_time_bins(spike_counts, n_shuffles=100, rng=42):
-...     # result = decode_position(env, shuffled, models, dt)
+...     # result = decode_position(env, shuffled, models, dt=dt)
 ...     # null_scores.append(compute_sequence_score(result))
 ...     pass
 
