@@ -1159,14 +1159,18 @@ decoded = decode_position(
 assert decoded.posterior.shape == (len(centers_by_period["match"]), env.n_bins)
 np.testing.assert_allclose(decoded.posterior.sum(axis=1), 1.0)
 # Branch 2: counts, not the decoded posterior.
-assemblies = detect_assemblies(counts["template"], algorithm="pca", rng=0)
+assemblies = detect_assemblies(
+    counts["template"], algorithm="pca", unit_ids=selected_ids, rng=0
+)
 print("Retained unit IDs:", selected_ids.tolist())
 print("Dimensions above Marchenko-Pastur reference:", assemblies.n_significant)
 for pattern in assemblies.patterns:
-    print("Thresholded core member IDs:", selected_ids[pattern.member_indices].tolist())
-    activation = assembly_activation(counts["match"], pattern)
+    print("Thresholded core member IDs:", pattern.member_unit_ids.tolist())
+    activation = assembly_activation(counts["match"], pattern, unit_ids=selected_ids)
     assert len(activation) == len(centers_by_period["match"])
-    strength = reactivation_strength(counts["template"], counts["match"], pattern)
+    strength = reactivation_strength(
+        counts["template"], counts["match"], pattern, unit_ids=selected_ids
+    )
     print("Standardized activation mean/SD:", activation.mean(), activation.std())
     print("Activation magnitude ratio (effect size):", strength)
 correlations = {
@@ -1190,8 +1194,9 @@ assert np.isfinite(reactivation.explained_variance) and np.isfinite(
 `n_significant` counts dimensions above a random-matrix reference, not neurons
 with calibrated p-values. If no dimension passes, the algorithm may still
 return an exploratory pattern. Pattern `member_indices` are positions in the
-selected unit order; mapping them through `selected_ids` recovers the original
-labels. A pattern can have no core members at the default absolute-weight
+selected unit order; `member_unit_ids` gives the original labels, and passing
+`unit_ids=` to `assembly_activation` and `reactivation_strength` matches the
+count columns to the pattern's weights by label. A pattern can have no core members at the default absolute-weight
 z-score cutoff, even when its dimension passes the reference.
 
 `assembly_activation` standardizes the projection within each period,

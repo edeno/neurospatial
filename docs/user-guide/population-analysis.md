@@ -143,8 +143,10 @@ rotation, a new room, or the same room on another day. We simulate one session
 on the linear track with a change halfway through. After 120 s, every other
 place cell moves its field 80 cm along the track; the rest keep their field.
 
-Use one environment and the same rate-map settings for both conditions, and
-select each condition with `epochs=` instead of slicing the arrays.
+Use one environment and the same rate-map settings for both conditions,
+select each condition with `epochs=` instead of slicing the arrays, and pass
+the sorter's labels as `unit_ids=` so each result knows which cell each row
+is.
 
 ```python
 from neurospatial.encoding import (
@@ -169,12 +171,13 @@ for unit, cell in enumerate(session.models):
         )
         rate = np.where(times < change_time, rate, moved.firing_rate(positions))
     spike_times.append(generate_poisson_spikes(rate, times, seed=200 + unit))
+unit_ids = np.arange(len(spike_times))  # your sorter's unit labels
 
 conditions = {"before": (0.0, change_time), "after": (change_time, float(times[-1]))}
 maps = {
     name: compute_spatial_rates(
         env, spike_times, times, positions,
-        epochs=window, bandwidth=5.0, min_occupancy=0.05,
+        unit_ids=unit_ids, epochs=window, bandwidth=5.0, min_occupancy=0.05,
     )
     for name, window in conditions.items()
 }
@@ -191,10 +194,12 @@ Stack the two conditions, and the diagonal of the before-versus-after block
 is each cell's rate-map correlation across the change. The classic
 population-vector correlation of remapping studies works the other way round:
 `population_vector_correlation` correlates the vector of all cells' rates at
-each location, giving one value per bin. A location where every cell has the
-same rate has no defined correlation and is NaN, as is a location with a NaN
-rate in either condition; summarize over the defined locations and report how
-many were undefined.
+each location, giving one value per bin. Pass it the two rate results: it
+pairs the cells by `unit_ids` and compares only bins with occupancy in both
+conditions, so you do not line up rows or select bins yourself. A location
+outside that shared support is NaN, as is a location where every cell has the
+same rate (no defined correlation); summarize over the defined locations and
+report how many were undefined.
 
 ```python
 n_units = len(spike_times)
@@ -210,11 +215,28 @@ demo = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
 demo_pv = population_vector_correlation(demo, demo)
 assert np.isnan(demo_pv[1]) and np.allclose(demo_pv[[0, 2]], 1.0)
 
-pv = population_vector_correlation(before, after)
+pv = population_vector_correlation(maps["before"], maps["after"])  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"Population-vector correlation per location: median {np.median(pv[defined]):.2f} "
       f"({(~defined).sum()} of {pv.size} locations undefined)")
-assert np.isclose(np.median(pv[defined]), 0.27, atol=0.006) and defined.all()
+assert np.isclose(np.median(pv[defined]), 0.27, atol=0.006)
+assert np.array_equal(defined, shared)  # undefined only where a condition lacks data
+
+# Units are paired by label: listing the cells in another order changes nothing.
+order = np.random.default_rng(2).permutation(len(spike_times))
+after_reordered = compute_spatial_rates(
+    env, [spike_times[i] for i in order], times, positions,
+    unit_ids=unit_ids[order], epochs=conditions["after"],
+    bandwidth=5.0, min_occupancy=0.05,
+)
+pv_reordered = population_vector_correlation(maps["before"], after_reordered)
+assert np.array_equal(pv_reordered, pv, equal_nan=True)
+# Bare arrays pair rows by position, so the same reordering pairs different cells.
+by_position = population_vector_correlation(
+    maps["before"].firing_rates[:, shared], after_reordered.firing_rates[:, shared]
+)
+print(f"Rows in another order, paired by position: median {np.median(by_position):.2f}")
+assert np.isclose(np.median(by_position), -0.1, atol=0.06)
 ```
 
 The cells that kept their field have map correlations of 0.99-1.00, and the
@@ -226,6 +248,15 @@ where it went. An unchanged map gives values near 1 and a completely new map
 values near 0. Correlations of smoothed maps are high when the fields are
 well sampled; with few laps per condition, compare against the correlation
 between two halves of the same condition before calling a change remapping.
+
+Reordering the units of one condition gives the same values, because the
+results pair cells by label. The same arrays paired by row position correlate
+different cells, and the median drops to about -0.1 although nothing about
+the cells changed. If you pass arrays (for example matrices from another
+tool), lining up the rows is your job. With results, units recorded in only
+one condition are left out by default; `unit_selection="exact"` refuses them
+instead. Maps estimated on different environments are refused unless you pass
+an explicit `bin_mapping=` that pairs bins at the same place.
 
 `field_overlap` asks the same question with field boundaries instead of rates:
 the Jaccard index of the bins inside a cell's fields in the two conditions
@@ -303,6 +334,7 @@ periods = {"pre_rest": (0.0, 60.0), "run": (60.0, 180.0), "post_rest": (180.0, 2
 assembly_of = np.r_[np.repeat([0, 1, 2], 4), np.full(16, -1)]  # -1: no assembly
 field_centers = np.array([40.0, 100.0, 160.0])
 n_units = assembly_of.size
+unit_ids = 100 + np.arange(n_units)  # your sorter's unit labels
 rest_clock = np.arange(0.0, 60.0, 0.002)
 replay_starts = rng.uniform(0.0, 59.9, size=(3, 30))  # seconds into post-task rest
 
@@ -346,15 +378,16 @@ print({name: matrix.shape for name, matrix in counts.items()})
 ```
 
 Each count matrix is `(n_time_bins, n_units)`, with the same unit order in
-every period. The bin size sets the time scale of "together": 25-100 ms bins
-are typical for assemblies; shorter bins catch tighter synchrony but give
-noisier correlations. Use enough bins: at least 5-10 times more time bins than
+every period; `unit_ids` labels the columns. The bin size sets the time scale
+of "together": 25-100 ms bins are typical for assemblies; shorter bins catch
+tighter synchrony but give noisier correlations. Use enough bins: at least 5-10 times more time bins than
 units.
 
 ### Which cells fire together during running?
 
 `pairwise_correlations` returns the correlation of every pair of units, in the
-order of `np.triu_indices(n_units, k=1)`:
+order of `np.triu_indices(n_units, k=1)`. Those are column positions; map them
+through `unit_ids` to name the cells:
 
 ```python
 from neurospatial.decoding import (
@@ -370,7 +403,7 @@ run_correlations = pairwise_correlations(counts["run"])
 first, second = np.triu_indices(n_units, k=1)
 strongest = np.argsort(run_correlations)[::-1][:5]
 for pair in strongest:
-    print(f"units {first[pair]:2d} and {second[pair]:2d}: "
+    print(f"units {unit_ids[first[pair]]} and {unit_ids[second[pair]]}: "
           f"r = {run_correlations[pair]:.2f}")
 print(f"Pairs with r > 0.1: {(run_correlations > 0.1).sum()} "
       f"of {run_correlations.size}")
@@ -390,18 +423,20 @@ largest eigenvalue expected if the units were independent, given the number of
 units and time bins. ICA then separates the kept dimensions into patterns of
 neuron weights, and units whose weight stands out (absolute weight more than
 2 standard deviations above the mean, set with `z_threshold=`) are listed as
-core members.
+core members. Pass the column labels as `unit_ids=`: each pattern then names
+its members by label (`member_unit_ids`), and later calls can match the
+columns of other periods to the pattern's weights by label.
 
 ```python
 threshold = marchenko_pastur_threshold(n_units, counts["run"].shape[0])
-assemblies = detect_assemblies(counts["run"], rng=0)
+assemblies = detect_assemblies(counts["run"], unit_ids=unit_ids, rng=0)
 print(f"Marchenko-Pastur threshold: {threshold:.2f}")
 print("Largest eigenvalues:", np.round(assemblies.eigenvalues[:5], 2))
 print("Dimensions above threshold:", assemblies.n_significant)
 planted = []
 for pattern in assemblies.patterns:
-    members = pattern.member_indices
-    print(f"Core members {members.tolist()} -> planted assembly "
+    members = pattern.member_indices  # column positions of the members
+    print(f"Core members {pattern.member_unit_ids.tolist()} -> planted assembly "
           f"{np.unique(assembly_of[members]).tolist()}")
     planted.append(np.unique(assembly_of[members]).tolist())
 assert assemblies.n_significant == 3
@@ -420,22 +455,29 @@ core members at the default cutoff even when its dimension passes. Pass
 
 `assembly_activation` projects counts from any period onto a pattern and
 returns one value per time bin, standardized within that period (mean 0,
-standard deviation 1). ICA determines a pattern only up to its sign, so
-`detect_assemblies` orients each pattern so the neurons with the largest
-positive weights are the members; the bins where those members fire together
-then have positive activation.
+standard deviation 1). With `unit_ids=`, the columns are matched to the
+pattern's weights by label, so counts binned from a differently ordered unit
+list still give the right answer, and a unit missing from either side raises
+instead of shifting every weight onto the wrong cell. ICA determines a
+pattern only up to its sign, so `detect_assemblies` orients each pattern so
+the neurons with the largest positive weights are the members; the bins where
+those members fire together then have positive activation.
 
 ```python
 reactivated = []
 for k, pattern in enumerate(assemblies.patterns):
     assembly = assembly_of[pattern.member_indices[0]]
-    activation = assembly_activation(counts["post_rest"], pattern)
+    activation = assembly_activation(counts["post_rest"], pattern, unit_ids=unit_ids)
     # In this simulation we know when each assembly burst together.
     starts = 180.0 + replay_starts[assembly]
     centers = bin_times["post_rest"][:, None]
     in_event = ((centers >= starts) & (centers < starts + 0.1)).any(axis=1)
-    strength_pre = reactivation_strength(counts["run"], counts["pre_rest"], pattern)
-    strength_post = reactivation_strength(counts["run"], counts["post_rest"], pattern)
+    strength_pre = reactivation_strength(
+        counts["run"], counts["pre_rest"], pattern, unit_ids=unit_ids
+    )
+    strength_post = reactivation_strength(
+        counts["run"], counts["post_rest"], pattern, unit_ids=unit_ids
+    )
     print(f"Pattern {k}: activation {activation[in_event].mean():.1f} during "
           f"its events vs {activation[~in_event].mean():.1f} otherwise; "
           f"strength pre {strength_pre:.2f}, post {strength_post:.2f}")
@@ -446,6 +488,15 @@ assert 3.39 <= in_events.min() <= in_events.max() <= 3.71
 assert np.allclose(otherwise, -0.2, atol=0.06)
 assert 1.044 <= pre.min() <= pre.max() <= 1.076
 assert 1.064 <= post.min() <= post.max() <= 1.136
+
+# The columns of rest counts in another order give the same activation.
+order = np.random.default_rng(3).permutation(n_units)
+pattern = assemblies.patterns[0]
+reordered = assembly_activation(
+    counts["post_rest"][:, order], pattern, unit_ids=unit_ids[order]
+)
+in_order = assembly_activation(counts["post_rest"], pattern, unit_ids=unit_ids)
+assert np.allclose(reordered, in_order)
 ```
 
 In post-task rest, each pattern's activation averages about 3.5 standard
@@ -556,7 +607,7 @@ my_rates = compute_spatial_rates(
 )
 spatial = my_rates.spatial_information() >= 0.5
 my_coverage = population_coverage(my_env, my_rates.firing_rates[spatial])
-my_assemblies = detect_assemblies(my_counts["run"], rng=0)
+my_assemblies = detect_assemblies(my_counts["run"], unit_ids=my_unit_ids, rng=0)
 my_reactivation = explained_variance_reactivation(
     pairwise_correlations(my_counts["run"]),
     pairwise_correlations(my_counts["post_rest"]),
@@ -580,7 +631,11 @@ Checks before you interpret the numbers:
   through `t_start`/`t_stop` or `epochs=` of `bin_spikes_in_time`.
 - **One unit selection.** Remove silent or constant units once across all
   periods and keep `unit_ids` with every result; a different selection per
-  period compares different cells.
+  period compares different cells. Pass the same labels as `unit_ids=` to
+  `compute_spatial_rates`, `detect_assemblies`, `assembly_activation` and
+  `reactivation_strength` so cells are matched by label. Pairwise
+  correlations and EV pair cells by column position, so their count
+  matrices must share one column order.
 - **Screens, not verdicts.** The information cutoff, the Marchenko-Pastur
   threshold, the membership cutoff, activation above 2, and EV versus REV are
   descriptive. Use `place_cell_significance` for place-cell decisions and a

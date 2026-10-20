@@ -323,27 +323,44 @@ not establish coordinated temporal activity or membership in a cell assembly.
 ### Population-vector correlation
 
 To ask whether the population code at each location changed between two
-conditions, correlate the vector of all cells' rates at each location. Rows
-must be the same units in the same order in both maps:
+conditions, correlate the vector of all cells' rates at each location. Pass
+the two rate results, estimated with the sorter's labels as `unit_ids=`: cells
+are paired by label and bins by place, so the order the units were listed in
+does not matter.
 
 <!-- docs-test: run -->
 ```python
 import numpy as np
 
-from neurospatial.encoding import population_vector_correlation
+from neurospatial.encoding import compute_spatial_rates, population_vector_correlation
+from neurospatial.simulation import linear_track_session
 
-rng = np.random.default_rng(0)
-before = rng.gamma(2.0, 2.0, size=(20, 50))  # (n_units, n_bins)
-after = before * rng.lognormal(0.0, 0.2, size=before.shape)  # ~20% rate changes
-pv = population_vector_correlation(before, after)  # (n_bins,)
+session = linear_track_session(duration=120.0, n_place_cells=12, n_laps=10, seed=0)
+unit_ids = np.arange(101, 113)  # the sorter's unit labels
+first_half, second_half = (
+    compute_spatial_rates(
+        session.env, session.spike_times, session.times, session.positions,
+        unit_ids=unit_ids, epochs=window, bandwidth=5.0, min_occupancy=0.05,
+    )
+    for window in ([0.0, 60.0], [60.0, 120.0])
+)
+pv = population_vector_correlation(first_half, second_half)  # (n_bins,)
 defined = np.isfinite(pv)
 print(f"median {np.median(pv[defined]):.2f}, "
       f"{(~defined).sum()} of {pv.size} locations undefined")
+assert np.isclose(np.median(pv[defined]), 0.99, atol=0.006)
 ```
 
-A location is NaN, not 0, where either map has a NaN rate, where it is outside
-`spatial_support` (pass `rates_1.spatial_support & rates_2.spatial_support`
-for zero-filled maps), or where every cell has the same rate. See
+The simulated place fields do not move, so the two halves have a median
+correlation near 1 (0.99). A location is NaN, not 0, where either condition
+lacks occupancy or has a NaN rate there, or where every cell has the same rate. Units recorded in only one
+condition are left out (`unit_selection="exact"` refuses them instead), and
+maps estimated on different environments need an explicit `bin_mapping=`.
+
+With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
+then be the same units in the same order in both, and for zero-filled maps
+pass `spatial_support=rates_1.spatial_support & rates_2.spatial_support` so an
+unvisited bin is not read as 0 Hz. See
 [Does the spatial map change between conditions?](population-analysis.md#does-the-spatial-map-change-between-conditions)
 for a worked remapping example.
 
