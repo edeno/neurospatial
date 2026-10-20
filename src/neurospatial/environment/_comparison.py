@@ -23,6 +23,7 @@ from shapely.ops import unary_union
 from neurospatial.geometry import (
     ClippedLocator,
     HexagonShapes,
+    MissingCellGeometryError,
     PolygonCells,
     SubsetLocator,
     TriangleShapes,
@@ -447,10 +448,16 @@ def _topology_difference(first: Environment, second: Environment) -> str | None:
 
 
 def _conductances(env: Environment) -> sparse.csr_matrix | None:
-    """Smoothing conductances between bins, or None when ``env`` cannot smooth."""
+    """Smoothing conductances between bins, or None when ``env`` cannot smooth.
+
+    An environment cannot smooth when its bins have no finite-volume cell
+    faces (including a combined environment with such a component), or when
+    it is a combined environment moved by a transform that is not a
+    similarity. Any other error propagates.
+    """
     try:
         return env._diffusion_geometry.W
-    except NotImplementedError:
+    except MissingCellGeometryError:
         return None
 
 

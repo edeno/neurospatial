@@ -15,6 +15,7 @@ from neurospatial.geometry._arrays import ReadOnlyState, per_dimension
 from neurospatial.geometry._binning import (
     BinConnections,
     Binning,
+    MissingCellGeometryError,
     SpatialBins,
     refuse_mixed_measure_conductance,
 )
@@ -300,7 +301,7 @@ def combined_diffusion(binning: Binning) -> DiffusionGeometry | None:
             if not np.allclose(
                 normalized @ normalized.T, np.eye(len(linear)), rtol=0, atol=1e-12
             ):
-                raise NotImplementedError(
+                raise MissingCellGeometryError(
                     "Combined scalar diffusion requires a similarity transform; use the original coordinates."
                 )
             # Conductance has units length ** (measure_dim - 2) of the bins it

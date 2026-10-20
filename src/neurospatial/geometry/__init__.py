@@ -23,6 +23,9 @@ from neurospatial.geometry._arrays import get_centers as get_centers
 from neurospatial.geometry._binning import BinConnections as BinConnections
 from neurospatial.geometry._binning import Binning as Binning
 from neurospatial.geometry._binning import KnownFaces as KnownFaces
+from neurospatial.geometry._binning import (
+    MissingCellGeometryError as MissingCellGeometryError,
+)
 from neurospatial.geometry._binning import MissingFaces as MissingFaces
 from neurospatial.geometry._binning import SpatialBins as SpatialBins
 from neurospatial.geometry._binning import TrackLinearization as TrackLinearization

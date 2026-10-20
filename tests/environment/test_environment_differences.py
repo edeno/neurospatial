@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
+from typing import NoReturn
 from uuid import uuid4
 
 import networkx as nx
@@ -33,9 +34,11 @@ from neurospatial.binning import (
 )
 from neurospatial.environment import (
     _environment_differences,
+    _fields,
     _mapped_bin_difference,
     _mapped_topology_difference,
 )
+from neurospatial.environment._comparison import _conductances
 from neurospatial.layout import create_layout
 from neurospatial.ops import AffineND
 
@@ -425,6 +428,47 @@ def test_two_environments_that_cannot_smooth_have_the_same_conductances() -> Non
     assert _environment_differences(first, second) == (None, None)
     identity = np.column_stack([np.arange(3), np.arange(3)])
     assert _mapped_topology_difference(first, second, identity) is None
+
+
+def _sheared_combined_grids() -> Environment:
+    def grid(offset: float) -> Environment:
+        return Environment.from_grid_mask(
+            np.ones((2, 2), dtype=bool),
+            grid_edges=(offset + np.arange(3.0) * 10,) * 2,
+            units="cm",
+        )
+
+    combined = Environment.combine({"a": grid(0.0), "b": grid(40.0)})
+    shear = AffineND(np.array([[1.0, 0.5, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+    return combined.apply_transform(shear, units="cm")
+
+
+def test_two_sheared_combined_environments_cannot_smooth_alike() -> None:
+    # A shear is not a similarity transform, so the combined conductances
+    # cannot be carried into the new coordinates.
+    first, second = _sheared_combined_grids(), _sheared_combined_grids()
+    assert _conductances(first) is None
+    assert _environment_differences(first, second) == (None, None)
+    with pytest.raises(NotImplementedError, match="similarity transform"):
+        first.smooth(np.ones(first.n_bins), bandwidth=5.0, mode="average")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (NotImplementedError("a bug"), NotImplementedError),
+        (ValueError("bad faces"), ValueError),
+    ],
+)
+def test_an_error_other_than_missing_cell_geometry_is_not_hidden(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, expected: type[Exception]
+) -> None:
+    def broken(*args: object, **kwargs: object) -> NoReturn:
+        raise error
+
+    monkeypatch.setattr(_fields, "_build_diffusion_geometry", broken)
+    with pytest.raises(expected, match=str(error)):
+        _environment_differences(_grid(), _grid())
 
 
 _IDENTITY_3 = np.column_stack([np.arange(3), np.arange(3)])
