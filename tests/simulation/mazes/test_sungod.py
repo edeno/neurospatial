@@ -3,6 +3,151 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+import shapely
+
+from neurospatial.simulation.mazes.sungod import make_sungod_maze
+
+ARM_PORTS = [f"arm_port_{k}" for k in range(1, 9)]
+PORTS = ["home_port", "center_port_left", "center_port_right", *ARM_PORTS]
+
+# Port positions in cm, traced from the maze and taken as ground truth.
+PORT_POSITIONS = {
+    "home_port": (40.93, 1.35),
+    "center_port_left": (25.93, -2.99),
+    "center_port_right": (25.90, 3.91),
+    "arm_port_1": (-26.95, -47.31),
+    "arm_port_2": (-34.25, -34.31),
+    "arm_port_3": (-39.39, -20.62),
+    "arm_port_4": (-43.77, -7.36),
+    "arm_port_5": (-43.25, 6.74),
+    "arm_port_6": (-39.84, 20.76),
+    "arm_port_7": (-34.23, 33.54),
+    "arm_port_8": (-24.58, 44.43),
+}
+
+
+@pytest.fixture(scope="module")
+def maze():
+    return make_sungod_maze()
+
+
+def _rightward(maze, points):
+    """Distance to the right of the line from the home port to the box center.
+
+    Positive to the right as seen from the home port facing the arms.
+    """
+    graph = maze.env_track.binning.linearization.graph
+    home = np.asarray(graph.nodes["home_port"]["pos"])
+    facing = np.asarray(graph.nodes["box_center"]["pos"]) - home
+    facing /= np.linalg.norm(facing)
+    left = np.array([-facing[1], facing[0]])
+    return -(np.atleast_2d(points) - home) @ left
+
+
+class TestPorts:
+    """The 11 ports of Gillespie et al. (2021), named as in the paper."""
+
+    def test_ports_are_reward_port_landmarks(self, maze):
+        landmarks = maze.env_2d.landmarks
+        assert list(landmarks) == PORTS
+        assert {lm.kind for lm in landmarks.values()} == {"point"}
+        assert {lm.metadata["role"] for lm in landmarks.values()} == {"reward_port"}
+        port_types = [landmarks[name].metadata["port_type"] for name in PORTS]
+        assert port_types == ["home", "center", "center"] + ["arm"] * 8
+        assert landmarks["center_port_left"].metadata["side"] == "left"
+        assert landmarks["center_port_right"].metadata["side"] == "right"
+        assert [landmarks[name].metadata["arm"] for name in ARM_PORTS] == list(
+            range(1, 9)
+        )
+
+    def test_port_positions(self, maze):
+        for name, position in PORT_POSITIONS.items():
+            np.testing.assert_allclose(
+                maze.env_2d.landmarks[name].data, position, atol=0.01, err_msg=name
+            )
+
+    def test_each_port_has_a_point_region_at_its_landmark(self, maze):
+        regions = maze.env_2d.regions
+        assert list(regions) == [*PORTS, "box"]
+        for name in PORTS:
+            assert regions[name].kind == "point"
+            np.testing.assert_allclose(
+                regions[name].data, maze.env_2d.landmarks[name].data
+            )
+
+    def test_center_ports_are_about_7_5_cm_apart(self, maze):
+        landmarks = maze.env_2d.landmarks
+        gap = np.linalg.norm(
+            landmarks["center_port_left"].data - landmarks["center_port_right"].data
+        )
+        assert gap == pytest.approx(6.9, abs=0.05)
+
+    def test_home_and_center_ports_are_in_the_box(self, maze):
+        box = shapely.Polygon(maze.env_2d.regions["box"].data)
+        for name in ("home_port", "center_port_left", "center_port_right"):
+            assert box.contains(shapely.Point(maze.env_2d.landmarks[name].data)), name
+        for name in ARM_PORTS:
+            assert not box.contains(shapely.Point(maze.env_2d.landmarks[name].data))
+
+    def test_home_port_is_the_box_port_farthest_from_the_arms(self, maze):
+        landmarks = maze.env_2d.landmarks
+        arm_ports = landmarks.positions(ARM_PORTS)
+
+        def distance_to_arms(name):
+            return np.linalg.norm(arm_ports - landmarks[name].data, axis=1).min()
+
+        assert distance_to_arms("home_port") > distance_to_arms("center_port_left")
+        assert distance_to_arms("home_port") > distance_to_arms("center_port_right")
+
+    def test_home_axis_passes_between_the_center_ports(self, maze):
+        landmarks = maze.env_2d.landmarks
+        left, right = _rightward(
+            maze, landmarks.positions(["center_port_left", "center_port_right"])
+        )
+        assert left < 0 < right
+
+    def test_arms_are_numbered_left_to_right_from_the_home_port(self, maze):
+        rightward = _rightward(maze, maze.env_2d.landmarks.positions(ARM_PORTS))
+        assert np.all(np.diff(rightward) > 0)
+
+    def test_each_arm_port_is_at_the_far_end_of_its_arm(self, maze):
+        graph = maze.env_track.binning.linearization.graph
+        ends = np.array([graph.nodes[f"arm_{k}_end"]["pos"] for k in range(1, 9)])
+        for k, name in enumerate(ARM_PORTS):
+            distances = np.linalg.norm(ends - maze.env_2d.landmarks[name].data, axis=1)
+            assert distances.argmin() == k, name
+            # Within the last few cm of an arm about 50 cm long.
+            assert distances[k] < 5.0, name
+
+    def test_ports_scale_with_the_maze(self):
+        from neurospatial.simulation.mazes.sungod import SungodDims
+
+        large = make_sungod_maze(SungodDims(scale=2.0), include_track=False)
+        for name, position in PORT_POSITIONS.items():
+            np.testing.assert_allclose(
+                large.env_2d.landmarks[name].data,
+                2.0 * np.asarray(position),
+                atol=0.05,
+                err_msg=name,
+            )
+
+
+class TestTrack:
+    def test_track_starts_at_the_home_port(self, maze):
+        graph = maze.env_track.binning.linearization.graph
+        np.testing.assert_allclose(
+            graph.nodes["home_port"]["pos"], PORT_POSITIONS["home_port"], atol=0.01
+        )
+        assert set(graph.neighbors("home_port")) == {"box_center"}
+        assert set(graph.neighbors("box_center")) == {
+            "home_port",
+            *(f"arm_{k}_start" for k in range(1, 9)),
+        }
+
+    def test_track_carries_the_ports(self, maze):
+        assert list(maze.env_track.landmarks) == PORTS
+        assert list(maze.env_track.regions) == list(maze.env_2d.regions)
 
 
 class TestMakeSungodMaze:
@@ -77,34 +222,6 @@ class TestMakeSungodMaze:
         # Both spans should be in the 70-120 cm range for a ~1 m maze.
         assert 70.0 < x_extent < 120.0
         assert 70.0 < y_extent < 120.0
-
-    def test_region_positions(self):
-        """Named regions exist and sit within the maze footprint.
-
-        The maze defines a 'center' region plus 11 reward wells; all should land
-        inside the (centered) ~1 m extent rather than at degenerate coordinates.
-        """
-        from neurospatial.simulation.mazes.sungod import make_sungod_maze
-
-        maze = make_sungod_maze()
-        regions = maze.env_2d.regions
-
-        assert "center" in regions
-        well_names = [name for name in regions if name.startswith("reward_well_")]
-        assert len(well_names) == 11
-
-        bin_centers = maze.env_2d.bin_centers
-        x_lo, x_hi = bin_centers[:, 0].min() - 5.0, bin_centers[:, 0].max() + 5.0
-        y_lo, y_hi = bin_centers[:, 1].min() - 5.0, bin_centers[:, 1].max() + 5.0
-
-        for name in ["center", *well_names]:
-            x, y = np.asarray(regions[name].data, dtype=float)
-            assert x_lo <= x <= x_hi, (
-                f"{name} x={x:.1f} outside [{x_lo:.1f}, {x_hi:.1f}]"
-            )
-            assert y_lo <= y <= y_hi, (
-                f"{name} y={y:.1f} outside [{y_lo:.1f}, {y_hi:.1f}]"
-            )
 
     def test_include_track_toggle(self):
         """include_track controls whether a 1D track graph is produced."""
