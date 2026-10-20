@@ -316,12 +316,9 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         """Resolve unit labels and own read-only copies of the arrays."""
         if self.unit_ids is None:
             object.__setattr__(self, "_unit_ids_generated", True)
-        if self.patterns:
-            n_neurons = len(self.patterns[0].weights)
-        else:
-            n_neurons = 0 if self.unit_ids is None else len(self.unit_ids)
+        # One eigenvalue per neuron, from the neurons' correlation matrix.
         labels = resolve_unit_ids(
-            self.unit_ids, n_neurons, context="AssemblyDetectionResult"
+            self.unit_ids, len(self.eigenvalues), context="AssemblyDetectionResult"
         )
         object.__setattr__(self, "unit_ids", labels)
         self._own_arrays()
