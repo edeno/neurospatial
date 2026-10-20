@@ -809,6 +809,8 @@ def _identity_pairs(
     pairs = np.column_stack([parent_rows[same], child_rows[same]]).astype(np.intp)
     # A child cell inside a larger parent cell means that cell is divided.
     rest = ~same
+    if not rest.any():
+        return pairs, np.zeros(0, dtype=np.intp)
     parent_cells = _cell_array(parent_bins)[parent_rows[rest]]
     child_cells = _cell_array(child_bins)[child_rows[rest]]
     child_area = shapely.area(child_cells)
