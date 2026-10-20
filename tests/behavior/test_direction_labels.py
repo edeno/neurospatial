@@ -112,12 +112,12 @@ class TestGoalPairDirectionLabels:
 
         # Check labels during first trial (10-20s, indices 100-200)
         # Using arrow notation: "home→goal_left"
-        first_trial_mask = (simple_times >= 10.0) & (simple_times <= 20.0)
+        first_trial_mask = (simple_times >= 10.0) & (simple_times < 20.0)
         first_trial_labels = labels[first_trial_mask]
         assert all(label == "home→goal_left" for label in first_trial_labels)
 
         # Check labels during second trial (30-45s, indices 300-450)
-        second_trial_mask = (simple_times >= 30.0) & (simple_times <= 45.0)
+        second_trial_mask = (simple_times >= 30.0) & (simple_times < 45.0)
         second_trial_labels = labels[second_trial_mask]
         assert all(label == "home→goal_right" for label in second_trial_labels)
 
@@ -173,7 +173,7 @@ class TestGoalPairDirectionLabels:
         assert all(label == "center→goal_right" for label in labels[overlap_mask])
 
         # Second trial only region (30-40s)
-        second_only_mask = (simple_times > 30.0) & (simple_times <= 40.0)
+        second_only_mask = (simple_times > 30.0) & (simple_times < 40.0)
         assert all(label == "center→goal_right" for label in labels[second_only_mask])
 
     def test_empty_trials_list(
@@ -222,14 +222,14 @@ class TestGoalPairDirectionLabels:
         labels = goal_pair_direction_labels(simple_times, trials)
 
         # Check arrow notation
-        trial_mask = (simple_times >= 10.0) & (simple_times <= 20.0)
+        trial_mask = (simple_times >= 10.0) & (simple_times < 20.0)
         expected_label = "A→B"
         assert all(label == expected_label for label in labels[trial_mask])
 
-    def test_boundary_inclusive(
+    def test_trial_is_half_open(
         self,
     ) -> None:
-        """Boundary timepoints should be included in the trial."""
+        """The trial's first sample is labeled; its last, which leaves it, is not."""
         # Exact timestamps for boundaries
         times = np.array([5.0, 10.0, 15.0, 20.0, 25.0])
         trials = [
@@ -244,11 +244,10 @@ class TestGoalPairDirectionLabels:
 
         labels = goal_pair_direction_labels(times, trials)
 
-        # Boundaries should be included
         assert labels[0] == "other"  # 5.0 - before
-        assert labels[1] == "home→goal"  # 10.0 - at start (inclusive)
+        assert labels[1] == "home→goal"  # 10.0 - at start
         assert labels[2] == "home→goal"  # 15.0 - during
-        assert labels[3] == "home→goal"  # 20.0 - at end (inclusive)
+        assert labels[3] == "other"  # 20.0 - at end: its interval is after the trial
         assert labels[4] == "other"  # 25.0 - after
 
     def test_multiple_region_names(

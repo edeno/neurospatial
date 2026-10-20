@@ -41,8 +41,11 @@ def test_laps_to_direction_labels_shape():
 
     # Labeled samples match the lap directions.
     assert labels[0] == "clockwise"  # t=0.0
-    assert labels[3] == "clockwise"  # t=3.0 (inclusive endpoint)
-    assert labels[-1] == "counter-clockwise"  # t=10.0
+    assert labels[2] == "clockwise"  # t=2.0
+    # The lap's last sample starts the interval that leaves the lap.
+    assert labels[3] == "other"  # t=3.0
+    assert labels[9] == "counter-clockwise"  # t=9.0
+    assert labels[-1] == "other"  # t=10.0
 
     # Unlabeled gap between laps is the "other" sentinel.
     assert labels[5] == "other"  # t=5.0
@@ -72,18 +75,19 @@ def test_runs_to_direction_labels_scalar_and_sequence():
 
     scalar = runs_to_direction_labels(runs, times)
     assert scalar[0] == "run"
-    assert scalar[-1] == "run"
+    assert scalar[9] == "run"
+    assert scalar[-1] == "other"  # a run's last sample leaves the run
     assert scalar[5] == "other"
 
     per_run = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
     assert per_run[0] == "outbound"
-    assert per_run[-1] == "inbound"
+    assert per_run[9] == "inbound"
     assert per_run[5] == "other"
 
     # success_only drops the failed run.
     filtered = runs_to_direction_labels(runs, times, success_only=True)
     assert filtered[0] == "run"
-    assert filtered[-1] == "other"
+    assert filtered[9] == "other"
 
 
 def test_runs_to_direction_labels_ndarray_labels():
@@ -102,7 +106,7 @@ def test_runs_to_direction_labels_ndarray_labels():
     )
     assert np.array_equal(array_labels, list_labels)
     assert array_labels[0] == "outbound"
-    assert array_labels[-1] == "inbound"
+    assert array_labels[9] == "inbound"
     assert array_labels[5] == "other"
 
     # Wrong-length ndarray must raise the length-mismatch ValueError, not

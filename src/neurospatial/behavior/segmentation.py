@@ -191,18 +191,20 @@ def _interval_labels(
 
     Allocates an object array of length ``len(times)`` filled with ``default``
     and, for each ``(start_time, end_time, label)`` interval, assigns ``label``
-    to every sample with ``start_time <= times <= end_time``. This is the shared
+    to every sample with ``start_time <= times < end_time``. This is the shared
     primitive behind the trial/lap/run direction-label helpers (so the
-    inclusive-endpoint, last-writer-wins semantics live in one place). Later
-    intervals overwrite earlier ones on any overlap.
+    half-open, last-writer-wins semantics live in one place). A sample's label
+    describes the interval that starts at it, so the last sample of a lap or
+    run, whose interval leaves it, is not given its label. Later intervals
+    overwrite earlier ones on any overlap.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds).
     intervals : iterable of (float, float, object)
-        ``(start_time, end_time, label)`` tuples. Endpoints are inclusive on
-        both sides.
+        ``(start_time, end_time, label)`` tuples, half-open
+        ``[start_time, end_time)``.
     default : object, optional
         Value for samples outside every interval. Default is ``"other"`` (the
         sentinel ``compute_directional_place_fields`` excludes from results).
@@ -216,7 +218,7 @@ def _interval_labels(
     labels: NDArray[np.object_] = np.full(len(times), default, dtype=object)
 
     for start_time, end_time, label in intervals:
-        mask = (times >= start_time) & (times <= end_time)
+        mask = (times >= start_time) & (times < end_time)
         labels[mask] = label
 
     return labels
@@ -1580,7 +1582,7 @@ def laps_to_direction_labels(
     ----------
     laps : list[Lap]
         Laps from :func:`detect_laps`. Each contributes its ``[start_time,
-        end_time]`` interval (inclusive endpoints) and ``direction``.
+        end_time)`` interval (half-open) and ``direction``.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds). The output has this length.
     unknown_label : object, optional
@@ -1620,8 +1622,8 @@ def laps_to_direction_labels(
     ...     Lap(6.0, 10.0, "counter-clockwise", 1.0),
     ... ]
     >>> labels = laps_to_direction_labels(laps, times)
-    >>> labels[0], labels[5], labels[-1]
-    ('clockwise', 'other', 'counter-clockwise')
+    >>> labels[0], labels[5], labels[9], labels[-1]
+    ('clockwise', 'other', 'counter-clockwise', 'other')
     """
     intervals = [
         (
@@ -1654,7 +1656,7 @@ def runs_to_direction_labels(
     ----------
     runs : list[Run]
         Runs from a run detector. Each contributes its ``[start_time,
-        end_time]`` interval (inclusive endpoints).
+        end_time)`` interval (half-open).
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the whole session (seconds). The output has this length.
     labels : object or sequence of object, optional
@@ -1705,8 +1707,8 @@ def runs_to_direction_labels(
     ...     Run(6.0, 10.0, empty, True),
     ... ]
     >>> labels = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
-    >>> labels[0], labels[5], labels[-1]
-    ('outbound', 'other', 'inbound')
+    >>> labels[0], labels[5], labels[9], labels[-1]
+    ('outbound', 'other', 'inbound', 'other')
     """
     if isinstance(labels, (Sequence, np.ndarray)) and not isinstance(
         labels, (str, bytes)

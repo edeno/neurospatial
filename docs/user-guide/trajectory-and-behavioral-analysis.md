@@ -740,14 +740,14 @@ laps = [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)
 labels = laps_to_direction_labels(laps, times)  # "other" outside every lap
 conditions = labels_to_epochs(times, labels, missing_label="other")
 print(conditions.epochs_table()[["label", "start", "stop", "duration"]])
-assert conditions["clockwise"].tolist() == [[0.0, 4.5]]
+assert conditions["clockwise"].tolist() == [[0.0, 4.0]]
 assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
 ```
 
-The time between two frames takes the label of the frame at its start, so the
-clockwise window runs to 4.5 s, the frame after the lap's last frame at 4.0 s.
-The last frame of the recording starts no interval, so the counter-clockwise
-window ends at 9.5 s. Pass `valid=` to leave out frames with lost tracking.
+The time between two frames takes the label of the frame at its start. A lap
+covers `[start_time, end_time)`, so its last frame, whose interval leaves the
+lap, is labeled "other", and each window is exactly its lap: 0–4 s and
+6–9.5 s. Pass `valid=` to leave out frames with lost tracking.
 [Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs)
 uses these windows to compare rate maps between conditions.
 
