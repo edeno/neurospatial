@@ -886,14 +886,16 @@ def population_vector_correlation(
         - Arrays: one unit per row in the same order in both, one bin per
           column. Matching the rows is then the caller's job: a correlation
           across cells is meaningless if row ``i`` is a different unit in each
-          condition. NaN rates (bins without occupancy, the default of
-          ``compute_spatial_rates``) exclude that location.
+          condition. A NaN rate excludes that location.
     spatial_support : array of bool, shape (n_bins,), optional
         Arrays only. Bins observed in both conditions, for example
-        ``rates_1.spatial_support & rates_2.spatial_support``. Pass it when
-        the arrays were zero-filled, so an unvisited bin is not read as 0 Hz.
-        Locations outside it are NaN. With NaN-kept maps it is not needed.
-        Results carry their own support, so passing it with results raises.
+        ``rates_1.spatial_support & rates_2.spatial_support``. Pass it for
+        any arrays taken from ``compute_spatial_rates``: smoothing (the
+        default ``method="diffusion_kde"``) gives finite rates in bins the
+        animal never visited, and zero-filling reads them as 0 Hz, so NaN
+        rates alone do not mark every unvisited bin. Locations outside it
+        are NaN. Results carry their own support, so passing it with results
+        raises.
     unit_selection : {"intersection", "exact"}, default="intersection"
         Results only. ``"intersection"`` correlates over the units present in
         both conditions; the others are left out (find them with
@@ -1060,8 +1062,8 @@ def population_vector_correlation(
     >>> np.round(population_vector_correlation(rates, -rates), 2)
     array([-1., nan, -1.])
 
-    With zero-filled arrays, pass the bins observed in both conditions so an
-    unvisited bin is not compared as 0 Hz:
+    With arrays, pass the bins observed in both conditions so an unvisited
+    bin is not compared, whether it holds 0 Hz or a smoothed rate:
 
     >>> filled = rates.copy()
     >>> filled[:, 0] = 0.0  # bin 0 was never visited

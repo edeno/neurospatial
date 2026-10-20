@@ -358,9 +358,10 @@ condition are left out (`unit_selection="exact"` refuses them instead), and
 maps estimated on different environments need an explicit `bin_mapping=`.
 
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
-then be the same units in the same order in both, and for zero-filled maps
-pass `spatial_support=rates_1.spatial_support & rates_2.spatial_support` so an
-unvisited bin is not read as 0 Hz. See
+then be the same units in the same order in both, and pass
+`spatial_support=rates_1.spatial_support & rates_2.spatial_support`: smoothing
+gives finite rates in bins the animal never visited, and zero-filling reads
+them as 0 Hz, so without it unvisited bins are compared. See
 [Does the spatial map change between conditions?](population-analysis.md#does-the-spatial-map-change-between-conditions)
 for a worked remapping example.
 

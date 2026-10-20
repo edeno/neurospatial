@@ -1579,7 +1579,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   compared. It warns, like `compare_spatial_rates`, when the conditions were
   estimated with different `method`, `bandwidth` or `min_occupancy`. Plain
   `(n_units, n_bins)` arrays are also accepted; then the rows must be the same
-  units in the same order, and zero-filled maps need `spatial_support`. A
+  units in the same order, and `spatial_support` must be passed, because
+  smoothed maps have finite rates in bins the animal never visited. A
   location is NaN, never 0, when a rate is NaN in either map, the bin is not
   supported, or every cell has exactly the same rate there. Summarize with
   the median over defined locations and report how many were undefined.
