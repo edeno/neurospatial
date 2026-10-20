@@ -92,7 +92,7 @@ class HeadDirectionCellModel:
 
     >>> from neurospatial import Environment
     >>> from neurospatial.simulation import simulate_trajectory_ou
-    >>> from neurospatial.ops.egocentric import heading_from_velocity
+    >>> from neurospatial.behavior import heading_from_velocity
     >>>
     >>> # Create environment and trajectory
     >>> samples = np.random.uniform(0, 100, (1000, 2))

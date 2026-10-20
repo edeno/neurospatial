@@ -51,8 +51,8 @@ import numpy as np
 from shapely.geometry import box
 
 from neurospatial import Environment
-from neurospatial.behavior import compute_speed
-from neurospatial.ops import heading_from_velocity, nearest_boundary, sample_spatial_features
+from neurospatial.behavior import compute_speed, heading_from_velocity
+from neurospatial.ops import nearest_boundary, sample_spatial_features
 
 rng = np.random.default_rng(0)
 
@@ -422,9 +422,13 @@ to the simulated session as if it were two recordings joined at 60 s.
 
 <!-- docs-test: run setup=docs_behavior_around_reward -->
 ```python
-from neurospatial.behavior import compute_movement_angular_velocity, compute_speed
+from neurospatial.behavior import (
+    compute_movement_angular_velocity,
+    compute_speed,
+    heading_from_velocity,
+)
 from neurospatial.events import align_continuous_to_events
-from neurospatial.ops import heading_from_velocity, nearest_boundary
+from neurospatial.ops import nearest_boundary
 
 
 def behavior_around_events(env, times, positions, recording_id, event_times, window, dt):

@@ -18,6 +18,7 @@ References
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -207,8 +208,8 @@ def compute_speed(
     See Also
     --------
     segment_by_velocity : Running bouts from this speed.
-    neurospatial.ops.heading_from_velocity : Movement direction from the
-        same smoothed velocity.
+    heading_from_velocity : Movement direction from the same smoothed
+        velocity.
 
     Examples
     --------
@@ -247,6 +248,340 @@ def compute_speed(
     return smoothed_speed(
         times_arr, positions_arr, support.interval_mask, smooth_window=smooth_window
     )
+
+
+def heading_from_velocity(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
+    min_speed: float = 0.0,
+    smooth_window: float = DEFAULT_SPEED_SMOOTHING,
+    allow_all_nan: bool = False,
+) -> NDArray[np.float64]:
+    """Compute heading from position timeseries using velocity direction.
+
+    Parameters
+    ----------
+    times : array-like, shape (n_time,)
+        Finite, strictly increasing timestamps in seconds, one per position.
+    positions : NDArray, shape (n_time, 2)
+        Animal positions over time, in environment units (e.g. cm). A row with
+        a non-finite coordinate (NaN, for a lost frame) is a missing sample:
+        it has no heading, and no velocity is computed across it.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted. Windows that
+        touch merge into one, so to keep recordings joined on one clock apart
+        use ``break_before``.
+    break_before : ArrayLike of bool, shape (n_time,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. No velocity or smoothing spans a declared
+        break.
+    min_speed : float, default 0.0
+        Minimum speed threshold in **the same units per second as
+        ``positions``** (e.g. cm/s if positions are in cm). Samples slower
+        than this have no heading (NaN). Samples with zero speed have no
+        heading at any threshold. The velocity is smoothed, so at the default
+        of 0 most of a short stop still has a heading; set ``min_speed`` (for
+        example 2 cm/s) to mark stops as having no heading.
+    smooth_window : float, default 0.1
+        Standard deviation, in seconds, of the Gaussian that smooths the
+        velocity before its direction and speed are taken, the same
+        smoothing as :func:`neurospatial.behavior.compute_speed`; without
+        it, tracking jitter at rest gives random headings that pass
+        ``min_speed``. Set to 0 to disable smoothing.
+    allow_all_nan : bool, default False
+        Controls the degenerate case where **every observed** sample is below
+        ``min_speed`` or still (heading undefined everywhere). ``False`` (the
+        default) raises ``ValueError`` so the failure is loud; ``True`` returns
+        an all-NaN array with a ``UserWarning`` instead, for batch pipelines
+        that handle NaN explicitly.
+
+    Returns
+    -------
+    NDArray, shape (n_time,)
+        Heading in radians at each timepoint, in the **allocentric
+        world-frame convention** (0 = East, π/2 = North, π = West,
+        -π/2 = South), wrapped to ``[-π, π]`` per ``numpy.arctan2``
+        (so westward motion returns +π, not -π). NaN at missing samples, at
+        samples in no run (an isolated sample, or a single-sample input), and
+        at samples slower than ``min_speed`` or with zero speed.
+
+    Raises
+    ------
+    ValueError
+        If there are no samples, if positions is not 2-D with at least x/y
+        coordinates, if times is not 1-D, finite, strictly increasing (no
+        repeated timestamp) and aligned with positions, if ``break_before`` is
+        not a Boolean array with one entry per sample, or if every observed
+        sample is below ``min_speed`` or still and ``allow_all_nan`` is
+        ``False`` (the default).
+
+    Warns
+    -----
+    UserWarning
+        If every observed sample is below ``min_speed`` or still and
+        ``allow_all_nan=True`` (an all-NaN heading array is returned).
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``
+    and not crossing a ``break_before``) is analyzed as a separate recording;
+    no velocity or heading spans a pause or a declared break.
+
+    Velocity is the centered secant of position over each sample's actual
+    elapsed time (one-sided at a run's ends), smoothed separately within each
+    run. Samples touching no valid interval have NaN headings. If no samples
+    belong to any run, the result is all NaN.
+
+    Movement heading is the direction of the velocity vector, so it is not
+    observed while the animal is slower than ``min_speed`` or still, and the
+    function returns NaN there rather than an interpolated direction the
+    animal may never have faced. For a heading while the animal is still, use
+    :func:`heading_from_body_orientation` with pose keypoints.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import heading_from_velocity
+
+    Trajectory moving East:
+
+    >>> t = np.linspace(0, 10, 100)
+    >>> positions = np.column_stack([t * 10, np.zeros_like(t)])
+    >>> headings = heading_from_velocity(t, positions)
+    >>> np.allclose(headings[10:-10], 0.0, atol=0.1)
+    True
+
+    Trajectory moving North:
+
+    >>> positions = np.column_stack([np.zeros_like(t), t * 10])
+    >>> headings = heading_from_velocity(t, positions)
+    >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
+    True
+
+    Two recordings joined on one clock: the animal runs East, then is put
+    back 40 cm to the west and runs North. Undeclared, the jump reads as
+    running West; declared with ``break_before``, it does not.
+
+    >>> times = np.arange(8) / 4  # s
+    >>> x = np.array([0.0, 1.0, 2.0, 3.0, -37.0, -37.0, -37.0, -37.0])  # cm
+    >>> y = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0])  # cm
+    >>> positions = np.column_stack([x, y])
+    >>> new_recording = times == 1.0
+    >>> np.round(heading_from_velocity(times, positions, smooth_window=0.0), 2).tolist()
+    [0.0, 0.0, 0.0, 3.14, 3.12, 1.57, 1.57, 1.57]
+    >>> np.round(
+    ...     heading_from_velocity(
+    ...         times, positions, smooth_window=0.0, break_before=new_recording
+    ...     ),
+    ...     2,
+    ... ).tolist()
+    [0.0, 0.0, 0.0, 0.0, 1.57, 1.57, 1.57, 1.57]
+
+    A lost frame is a NaN row. It has no heading, and no velocity is
+    computed across it:
+
+    >>> times = np.arange(8) * 0.1  # s
+    >>> positions = np.column_stack([np.arange(8.0), np.zeros(8)])  # cm
+    >>> positions[3] = np.nan
+    >>> heading_from_velocity(times, positions, smooth_window=0.0).tolist()
+    [0.0, 0.0, 0.0, nan, 0.0, 0.0, 0.0, 0.0]
+
+    The animal runs East, stops for 0.3 s and runs back West. While it is
+    slower than ``min_speed`` its direction of movement is not observed:
+
+    >>> times = np.arange(7) * 0.1  # s
+    >>> positions = np.column_stack(
+    ...     [[0.0, 1.0, 1.0, 1.0, 1.0, 0.0, -1.0], np.zeros(7)]
+    ... )  # cm
+    >>> np.round(heading_from_velocity(times, positions, min_speed=2.0), 2).tolist()
+    [0.0, 0.0, nan, nan, 3.14, 3.14, 3.14]
+    """
+    from neurospatial._observation import validated_observations
+    from neurospatial.ops.egocentric import (
+        _movement_heading_and_speed,
+        _validate_velocity_positions,
+    )
+
+    # Validate first so a swapped (positions, times) call gets that message.
+    raw_positions = positions
+    times, positions, support = validated_observations(
+        times,
+        raw_positions,
+        call="heading_from_velocity",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="every heading is NaN",
+    )
+    _validate_velocity_positions(raw_positions)
+    heading, speed = _movement_heading_and_speed(
+        times, positions, support.interval_mask, smooth_window=smooth_window
+    )
+    # The velocity direction is observed only where the animal moves.
+    moving = (speed > 0) & (speed >= min_speed)
+    heading[~moving] = np.nan
+    in_run = support.run_ids >= 0
+    if in_run.any() and not moving.any():
+        fastest = float(np.max(speed[in_run]))
+        if not allow_all_nan:
+            fix = (
+                "lower min_speed in position-units per second, or pass "
+                "allow_all_nan=True for a batch pipeline that handles NaN."
+                if min_speed > 0
+                else "the animal never moves, so pass allow_all_nan=True for a "
+                "batch pipeline that handles NaN, or use "
+                "heading_from_body_orientation() with pose keypoints."
+            )
+            raise ValueError(
+                f"Cannot compute heading: every observed sample's speed is "
+                f"below min_speed={min_speed} or zero (the fastest is "
+                f"{fastest:.4g}).\n"
+                "Why: velocity direction is undefined for an all-stationary "
+                f"or too-slow trajectory.\nFix: {fix}"
+            )
+        warnings.warn(
+            f"Every observed sample's speed (max {fastest:.4g}) is below "
+            f"min_speed={min_speed} or zero; returning an all-NaN heading "
+            "array because allow_all_nan=True.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return heading
+
+
+def _interpolate_heading_circular(
+    heading: NDArray[np.float64],
+    mask: NDArray[np.bool_],
+) -> NDArray[np.float64]:
+    """Interpolate masked headings along the shorter arc, linearly in angle.
+
+    Unwrap consecutive finite anchors, interpolate angles, then wrap to
+    (-pi, pi]. For an exactly antipodal pair, the sign of the stored
+    difference chooses the turn. Samples beyond the anchors keep the nearest
+    valid heading. Unmasked non-finite values are not interpolation anchors.
+
+    Parameters
+    ----------
+    heading : NDArray, shape (n_time,)
+        Heading values in radians.
+    mask : NDArray, shape (n_time,)
+        Boolean mask where True indicates values to interpolate.
+
+    Returns
+    -------
+    NDArray, shape (n_time,)
+        Heading with masked values interpolated.
+    """
+    if not np.any(mask):
+        return heading
+
+    valid = ~mask & np.isfinite(heading)
+    valid_idx = np.flatnonzero(valid)
+    if valid_idx.size == 0:
+        return heading
+    unwrapped = np.unwrap(heading[valid_idx])
+    filled = np.interp(np.flatnonzero(mask), valid_idx, unwrapped)
+    result: NDArray[np.float64] = heading.copy()
+    result[mask] = np.pi - np.mod(np.pi - filled, 2.0 * np.pi)
+    return result
+
+
+def heading_from_body_orientation(
+    nose: NDArray[np.float64],
+    tail: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Compute heading from nose and tail keypoints.
+
+    Parameters
+    ----------
+    nose : NDArray, shape (n_time, 2)
+        Nose keypoint positions. May contain NaN values.
+    tail : NDArray, shape (n_time, 2)
+        Tail keypoint positions. May contain NaN values.
+
+    Returns
+    -------
+    NDArray, shape (n_time,)
+        Heading in radians at each timepoint. NaN keypoints are
+        interpolated along the shorter arc, linearly in angle.
+
+    Raises
+    ------
+    ValueError
+        If all keypoints are NaN.
+
+    Notes
+    -----
+    NaN keypoints are interpolated by sample index across any gap, including a
+    gap that spans a recording break; this function has no ``times`` argument
+    and cannot see breaks. When several recordings are concatenated, call it
+    once per recording segment, splitting where a recording-id array (or a
+    ``break_before`` array) changes, so that no fill bridges two recordings::
+
+        starts = np.flatnonzero(break_before)  # break_before[0] is ignored
+        segments = np.split(np.arange(len(nose)), starts[starts > 0])
+        headings = np.concatenate(
+            [heading_from_body_orientation(nose[s], tail[s]) for s in segments]
+        )
+
+    Do not split at every missing frame (for example at the runs of
+    ``compute_cumulative_distance``): that would leave the NaN frames unfilled.
+    If a gap within a recording is too long for the filled heading to be
+    trusted, set the samples inside it back to NaN afterwards.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import heading_from_body_orientation
+
+    Heading from nose/tail pointing East:
+
+    >>> n = 50
+    >>> nose = np.tile([10.0, 0.0], (n, 1))
+    >>> tail = np.tile([0.0, 0.0], (n, 1))
+    >>> headings = heading_from_body_orientation(nose, tail)
+    >>> np.allclose(headings, 0.0)
+    True
+    """
+    nose = np.asarray(nose, dtype=np.float64)
+    tail = np.asarray(tail, dtype=np.float64)
+
+    # Compute body vector: nose - tail
+    body_vector = nose - tail
+
+    # Identify NaN samples
+    nan_mask = np.any(np.isnan(body_vector), axis=1)
+
+    if np.all(nan_mask):
+        raise ValueError(
+            "Cannot compute heading: all keypoints are NaN.\n\n"
+            "WHAT: Both nose and tail positions are NaN at all timepoints\n"
+            "WHY: Need at least one valid (nose, tail) pair for body orientation\n\n"
+            "Fix:\n"
+            "1. Check pose estimation output for tracking failures\n"
+            "2. Verify keypoint extraction completed successfully\n"
+            "3. Consider using heading_from_velocity() if pose data unavailable"
+        )
+
+    # Compute heading where valid
+    heading = np.arctan2(body_vector[:, 1], body_vector[:, 0])
+
+    # Interpolate NaN samples using circular interpolation
+    if np.any(nan_mask):
+        heading = _interpolate_heading_circular(heading, nan_mask)
+
+    return heading
 
 
 def compute_turn_angles(

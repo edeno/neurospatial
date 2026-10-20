@@ -494,7 +494,7 @@ def head_sweep_from_positions(
     as a separate recording; no velocity or heading spans a pause.
 
     Heading is the direction of the smoothed velocity (as in
-    :func:`neurospatial.ops.egocentric.heading_from_velocity`) and is NaN
+    :func:`neurospatial.behavior.heading_from_velocity`) and is NaN
     where the animal is slower than ``min_speed`` or still. The result sums
     :func:`head_sweep_magnitude` over runs, without connecting the last
     heading of one run to the first of the next; runs without a head sweep

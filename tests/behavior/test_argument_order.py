@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial import Environment, behavior, ops
+from neurospatial import Environment, behavior
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +54,7 @@ def recording():
 )
 def test_old_order_raises(name, recording):
     env, times, positions = recording
-    function = getattr(ops if name == "heading_from_velocity" else behavior, name)
+    function = getattr(behavior, name)
     args = (positions, times)
     kwargs = {}
     if name in {"compute_decision_analysis", "compute_vte_session"}:

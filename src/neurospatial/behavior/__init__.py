@@ -8,7 +8,8 @@ computations.
 
 Submodules
 ----------
-trajectory : Step lengths, turn angles, MSD, home range, curvature
+trajectory : Speed, movement and body heading, step lengths, turn angles,
+    MSD, home range, curvature
 epochs : Restrict times / arrays / spike trains to time intervals (epochs);
     convert per-sample labels to epochs
 segmentation : Laps, trials, region crossings, runs
@@ -101,6 +102,8 @@ from neurospatial.behavior.trajectory import (
     compute_step_lengths,
     compute_trajectory_curvature,
     compute_turn_angles,
+    heading_from_body_orientation,
+    heading_from_velocity,
     mean_square_displacement,
 )
 from neurospatial.behavior.visits import (
@@ -212,5 +215,7 @@ __all__ = [  # noqa: RUF022
     "compute_step_lengths",
     "compute_trajectory_curvature",
     "compute_turn_angles",
+    "heading_from_body_orientation",
+    "heading_from_velocity",
     "mean_square_displacement",
 ]

@@ -2003,7 +2003,7 @@ def compute_directional_rate(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
@@ -2262,7 +2262,7 @@ def compute_directional_rates(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
@@ -2590,7 +2590,7 @@ def is_head_direction_cell(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common
@@ -2954,7 +2954,7 @@ def head_direction_cell_significance(
         **Movement heading vs. head direction.** This function expects the
         animal's *head direction* (where the head points, typically from a
         head-mounted LED pair or pose tracking). A velocity-derived heading
-        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        (e.g. from :func:`neurospatial.behavior.heading_from_velocity`)
         is the direction of *movement*, which equals head direction only when
         the animal moves the way it faces. Feeding movement heading here and
         reporting the result as a "head direction cell" is a common

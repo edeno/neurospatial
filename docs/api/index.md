@@ -159,9 +159,12 @@ Behavioral analysis built on trajectory + environment.
 
 **Key Modules:**
 
-- `behavior.trajectory`: Step lengths, cumulative distance, MSD, curvature,
-  planar turning angles, planar curvature, movement angular velocity,
-  home range
+- `behavior.trajectory`: Speed, step lengths, cumulative distance, MSD,
+  curvature, planar turning angles, planar curvature, movement angular
+  velocity, home range
+- `compute_speed(times, positions)`, `heading_from_velocity(times, positions)`,
+  `heading_from_body_orientation(nose, tail)`: Per-sample speed and heading
+  (radians, 0 = East) from tracking data
 - `behavior.resampling`: Distance resampling of observed runs
 - `behavior.navigation`: Path efficiency, goal-directed metrics,
   graph turn sequences
@@ -193,8 +196,6 @@ Allocentric ↔ egocentric coordinate transforms.
 
 **Key Functions:**
 
-- `heading_from_velocity(times, positions)`, `heading_from_body_orientation()`:
-  Derive head direction from tracking data
 - `allocentric_to_egocentric()`, `egocentric_to_allocentric()`:
   Frame conversions
 - `compute_egocentric_bearing()`, `compute_egocentric_distance()`:

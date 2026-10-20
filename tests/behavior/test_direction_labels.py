@@ -11,13 +11,13 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from neurospatial.behavior import heading_from_velocity
 from neurospatial.behavior.navigation import (
     goal_pair_direction_labels,
     heading_direction_labels,
 )
 from neurospatial.behavior.segmentation import Trial
 from neurospatial.behavior.trajectory import compute_speed
-from neurospatial.ops.egocentric import heading_from_velocity
 
 # -----------------------------------------------------------------------------
 # Fixtures

@@ -287,7 +287,7 @@ def _check_samples(
                     why="Why: egocentric directions are measured from where "
                     "the animal faces (0 = ahead, +pi/2 = left).",
                     fix="pass headings in radians (0 = East), for example "
-                    "from neurospatial.ops.heading_from_velocity",
+                    "from neurospatial.behavior.heading_from_velocity",
                 )
             )
         headings = np.asarray(headings, dtype=np.float64).ravel()

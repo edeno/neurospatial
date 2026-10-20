@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from neurospatial import Environment, Regions
+from neurospatial.behavior import heading_from_velocity
 from neurospatial.behavior.decisions import (
     compute_decision_analysis,
     extract_pre_decision_window,
@@ -28,7 +29,6 @@ from neurospatial.behavior.vte import (
     head_sweep_from_positions,
 )
 from neurospatial.events import add_positions
-from neurospatial.ops.egocentric import heading_from_velocity
 
 
 @pytest.fixture(scope="module")

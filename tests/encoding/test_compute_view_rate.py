@@ -1850,7 +1850,7 @@ class TestComputeViewRateNaNHandling:
 
     @pytest.fixture(scope="class")
     def session(self):
-        from neurospatial.ops.egocentric import heading_from_velocity
+        from neurospatial.behavior import heading_from_velocity
         from neurospatial.simulation import (
             generate_poisson_spikes,
             simulate_trajectory_ou,

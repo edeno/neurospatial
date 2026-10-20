@@ -504,7 +504,7 @@ def _held_movement_heading(
         ``max_gap`` (0.5 s).
     """
     from neurospatial._exceptions import _format_error
-    from neurospatial.ops.egocentric import heading_from_velocity
+    from neurospatial.behavior import heading_from_velocity
 
     with warnings.catch_warnings():
         warnings.filterwarnings(
