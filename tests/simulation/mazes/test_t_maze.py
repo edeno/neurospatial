@@ -117,6 +117,20 @@ class TestMakeTMaze:
             # Half a corridor width from the end wall and both side walls.
             assert polygon.boundary.distance(point) == pytest.approx(inset)
 
+    def test_unverified_food_and_start_box_are_not_landmarks(self):
+        """No source places food wells or a start box, so the maze has none."""
+        from neurospatial.simulation.mazes.t_maze import make_t_maze
+
+        maze = make_t_maze()
+        assert len(maze.env_2d.landmarks) == 0
+        assert len(maze.env_track.landmarks) == 0
+        assert list(maze.env_2d.regions) == [
+            "start",
+            "junction",
+            "left_end",
+            "right_end",
+        ]
+
     def test_default_extent_matches_the_figure_scale(self):
         """A 100 cm stem and a 2 x 50 cm crossbar of 10 cm wide corridors."""
         from neurospatial.simulation.mazes.t_maze import make_t_maze

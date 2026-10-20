@@ -14,6 +14,16 @@ Rat T-maze sizes vary from lab to lab and there is no canonical apparatus. The
 defaults here are consistent with the T-maze drawn in Wijnen et al. (2024)
 Fig. 1a, whose crossbar spans about the 1 m scale bar.
 
+The maze has no landmarks. Deacon & Rawlins (2006), Nat Protoc 1:7-12,
+doi:10.1038/nprot.2006.2, run both spontaneous and rewarded alternation on
+it: "Animals are started from the base of the T and allowed to choose one of
+the goal arms", and the alternation "can be reinforced by making the animal
+hungry and rewarding it with a preferred food if it alternates". Spontaneous
+alternation uses no reward. Where the food sits in a goal arm, how large its
+well is, and whether the stem base is a closed start box could not be
+verified, so ``start``, ``left_end`` and ``right_end`` are plain regions.
+Add a reward-port landmark at a goal-arm end for your own apparatus.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_t_maze, TMazeDims
