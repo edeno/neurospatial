@@ -68,8 +68,8 @@ def validate_dt(dt: float) -> float:
 
 def bin_spikes_in_time(
     spike_times: Sequence[NDArray[np.float64]],
-    dt: float,
     *,
+    dt: float,
     t_start: float | None = None,
     t_stop: float | None = None,
     epochs: Any = None,
