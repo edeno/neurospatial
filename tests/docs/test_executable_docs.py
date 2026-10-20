@@ -190,11 +190,15 @@ def collect_blocks(text: str, path: str) -> list[DocBlock]:
     return blocks
 
 
-# Later blocks of the guide continue from its first block; reading that block
-# from the document keeps the setup identical to what readers run.
+# Later blocks of these guides continue from the guide's first block; reading
+# that block from the document keeps the setup identical to what readers run.
 _BEHAVIOR_GUIDE = "docs/user-guide/behavior-around-events.md"
 SETUPS["docs_behavior_around_reward"] = collect_blocks(
     (ROOT / _BEHAVIOR_GUIDE).read_text(encoding="utf-8"), _BEHAVIOR_GUIDE
+)[0].code
+_WORKFLOWS_GUIDE = "docs/user-guide/workflows.md"
+SETUPS["workflows_outbound_inbound"] = collect_blocks(
+    (ROOT / _WORKFLOWS_GUIDE).read_text(encoding="utf-8"), _WORKFLOWS_GUIDE
 )[0].code
 
 

@@ -263,6 +263,65 @@ class TestSpatialRatesRoundTrip:
         with pytest.raises(ValueError, match="n_bins"):
             read_place_field(empty_nwb, env=other)
 
+    def test_same_size_env_with_different_units_raises(
+        self, empty_nwb, sample_environment
+    ):
+        """A same-size env= cannot relabel the stored rates' units."""
+        from neurospatial import IncompatibleEnvironmentError
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        write_spatial_rates(empty_nwb, _make_rates_result(env))
+        relabelled = env.with_metadata(units="m")
+        assert relabelled.n_bins == env.n_bins
+
+        with pytest.raises(IncompatibleEnvironmentError, match="units"):
+            read_place_field(empty_nwb, env=relabelled)
+
+    def test_same_size_env_with_shifted_bins_raises(
+        self, empty_nwb, sample_environment
+    ):
+        """A same-size env= with other bin coordinates cannot relabel the maps."""
+        from neurospatial import Environment, IncompatibleEnvironmentError
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        write_spatial_rates(empty_nwb, _make_rates_result(env))
+        positions = np.random.default_rng(42).uniform(0, 100, (1000, 2))
+        shifted = Environment.from_samples(
+            positions + 1000.0, bin_size=5.0, units="cm", frame="test_session"
+        )
+        assert shifted.n_bins == env.n_bins
+
+        with pytest.raises(IncompatibleEnvironmentError, match="bin coordinates"):
+            read_place_field(empty_nwb, env=shifted)
+
+    def test_equivalent_env_is_accepted_and_attached(
+        self, empty_nwb, sample_environment
+    ):
+        """An env= equal to the saved one is verified and attached as passed."""
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        write_spatial_rates(empty_nwb, _make_rates_result(env))
+        equivalent = env.with_metadata()
+
+        back = read_place_field(empty_nwb, env=equivalent)
+        assert back.env is equivalent
+
+    def test_explicit_env_without_persisted_env_raises(
+        self, empty_nwb, sample_environment
+    ):
+        """env= cannot be verified when the file saved no environment."""
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        write_spatial_rates(empty_nwb, _make_rates_result(env))
+        del empty_nwb.scratch["spatial_rates_environment"]
+
+        with pytest.raises(ValueError, match="cannot verify"):
+            read_place_field(empty_nwb, env=env)
+
     def test_overwrite_semantics(self, empty_nwb, sample_environment):
         """Duplicate name raises without overwrite; replaces with overwrite=True."""
         from neurospatial.io.nwb import read_place_field, write_spatial_rates
@@ -430,40 +489,6 @@ class TestSpatialRatesRoundTrip:
         back = read_place_field(empty_nwb, env=env)
         np.testing.assert_array_equal(np.asarray(back.firing_rates), original_rates)
         np.testing.assert_array_equal(np.asarray(back.occupancy), original_occ)
-
-    def test_firing_rates_shape_validation(self, empty_nwb, sample_environment):
-        """Wrong firing_rates n_bins raises a param-named ValueError."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-        from neurospatial.io.nwb import write_spatial_rates
-
-        env = sample_environment
-        rng = np.random.default_rng(0)
-        bad = SpatialRatesResult(
-            firing_rates=rng.uniform(0, 10, (3, env.n_bins + 1)),
-            occupancy=rng.uniform(0, 5, env.n_bins),
-            env=env,
-            method="binned",
-            bandwidth=5.0,
-        )
-        with pytest.raises(ValueError, match="firing_rates"):
-            write_spatial_rates(empty_nwb, bad)
-
-    def test_occupancy_shape_validation(self, empty_nwb, sample_environment):
-        """Wrong occupancy length raises a param-named ValueError."""
-        from neurospatial.encoding.spatial import SpatialRatesResult
-        from neurospatial.io.nwb import write_spatial_rates
-
-        env = sample_environment
-        rng = np.random.default_rng(0)
-        bad = SpatialRatesResult(
-            firing_rates=rng.uniform(0, 10, (3, env.n_bins)),
-            occupancy=rng.uniform(0, 5, env.n_bins + 1),
-            env=env,
-            method="binned",
-            bandwidth=5.0,
-        )
-        with pytest.raises(ValueError, match="occupancy"):
-            write_spatial_rates(empty_nwb, bad)
 
     def test_disk_roundtrip(self, sample_environment, tmp_path):
         """Population rates survive a real write -> close -> reopen cycle."""

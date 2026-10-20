@@ -4,10 +4,46 @@
 
 ### Breaking
 
+- `field_stability` returns NaN when fewer than 3 bins are finite in both maps
+  (the correlation is undefined, not "uncorrelated"): fewer than 2 paired bins
+  was `0.0` and exactly 2 was always `+-1`; both are now `nan`. Use `np.nanmean` or
+  `np.isfinite` when averaging across cells. It is also `nan` when either map
+  is flat up to rounding (highest and lowest rates within `1e-12` of its
+  largest rate), the rule `compare_spatial_rates` uses. Before, only an exactly
+  constant map gave `nan`, so a flat map from a smoothing estimator, which
+  differs from constant by rounding, was correlated with the other map.
+
+- `SpatialRateResult` and `SpatialRatesResult` raise `ValueError` when built
+  with firing rates or occupancy that do not have one value per bin of `env`
+  (`env.n_bins`). Before, a result built by hand with the wrong environment
+  was accepted, and each rate was then plotted, exported and decoded at the
+  wrong place. Results from `compute_spatial_rate(s)` and `read_place_field`
+  are unaffected.
+
+  ```python
+  # before: accepted, and rate j was labeled with bin j of other_env
+  SpatialRatesResult(firing_rates=rates, occupancy=occupancy, env=other_env, ...)
+  # after: pass the environment the rates were estimated on
+  SpatialRatesResult(firing_rates=rates, occupancy=occupancy, env=env, ...)
+  ```
+
+- `read_place_field(nwbfile, env=env)` checks `env` against the environment
+  saved with the rates, as the decoder checks rates from another environment
+  (see Fixed), and raises `IncompatibleEnvironmentError` naming what differs:
+  units or coordinate frame, bin coordinates or order, bin measures, cell
+  shapes (including polygon cells and which bin owns each boundary),
+  connectivity, smoothing conductances between neighboring bins, or the arena
+  and its walls. Before, it checked only the number of bins, so a same-size
+  environment in other units or with bins in other places silently relabeled
+  the maps. Omit `env=` to use the saved environment. A file whose rates have
+  no saved environment cannot verify `env=` and raises `ValueError`; rewrite
+  it with `write_spatial_rates`.
+
 - `AnnotationResult` from `annotate_video` has four fields,
   `(environment, regions, walls, landmarks)`; unpack it as
   `env, regions, walls, landmarks = result` or use the attributes.
   `RegionType` adds `"wall"` and `"landmark"`.
+
 - `count_place_cells` counts a cell at exactly `threshold` and takes `threshold`
   by keyword, matching the inclusive `>=` cutoff of `classify()` and the other
   threshold screens. Before, a cell had to exceed the threshold, and
@@ -782,6 +818,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- `compute_directional_place_fields` leaves out frames labeled `None` or
+  `NaN`, as it does frames labeled `"other"`. Before, such labels raised
+  `TypeError`.
 - `animate_fields` color limits default to robust ones in every backend: the
   1st percentile of the frames' minima and the 99th of their maxima, instead
   of the minimum and maximum over all frames. One extreme frame no longer
@@ -1292,6 +1331,40 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `neurospatial.behavior.labels_to_epochs(times, labels, *, valid, break_before,
+  max_gap, epochs, missing_label)` turns one label per frame (running
+  direction, trial type, task phase, door state) into half-open
+  `[start, stop)` windows for each label, returned as a `LabelEpochsResult`
+  mapping each label to its windows. Pass `conditions[label]` as `epochs=` to
+  a rate map or decoder together with the original arrays. The time between
+  two frames takes the label of the frame at its start and is kept only when
+  both frames are `valid`, no more than `max_gap` apart, inside one `epochs`
+  window and not across a `break_before`; a dropout or gap ends an epoch, so
+  the same label afterwards starts a new one. `None`, `NaN` and
+  `missing_label` mark unlabeled frames. `durations` gives the time per label
+  and `epochs_table()` one row per epoch.
+- `neurospatial.encoding.compare_spatial_rates(rates_a, rates_b, *, method,
+  unit_selection, bin_mapping, bins, topology, min_common_bins)` correlates
+  each unit's rate map between two conditions and returns a
+  `RateComparisonResult`. Units are paired by `unit_ids`, never by row order;
+  population maps computed without `unit_ids=` are refused. Each unit is scored only over
+  its own common support: bins occupied for at least each map's
+  `min_occupancy` in both conditions where both rates are finite, so a
+  smoothed rate in an unvisited bin never counts. A unit with fewer than
+  `min_common_bins` (default 3) such bins, or a map that is flat over them,
+  gets `NaN` and a `status` saying why, never `0.0`. Maps estimated on
+  different environments raise `IncompatibleEnvironmentError`; equal bin
+  counts are not enough. A `bin_mapping` must pair bins one to one at the
+  same places, since rates cannot be averaged onto coarser bins, and a change
+  in connectivity or walls on the same bins (a door or barrier) needs
+  `topology="may_differ"`, which the result records. Different estimator
+  settings between the maps raise a warning. The result gives `correlation`,
+  `n_common_bins`, `status`, `rate_difference` (B - A, Hz, NaN outside common
+  support), `summary_table()`, `to_dataframe()`, `to_xarray()`, `summary()`
+  and `plot()`; it gives no p-values or remapping verdicts. The new
+  [outbound and inbound runs](https://edeno.github.io/neurospatial/user-guide/workflows/#place-fields-on-outbound-and-inbound-runs)
+  workflow goes from direction labels to per-direction maps, a cell-by-cell
+  comparison and decoding on held-out laps.
 - `neurospatial.events.align_continuous_to_events(times, signals,
   event_times, window, *, dt, ...)` samples per-frame signals such as speed,
   heading or the occupied zone at fixed times around each event and returns a
@@ -1859,6 +1932,18 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- When the decoder refuses rate maps estimated on a different environment, its
+  error names a difference in the bins themselves (polygon cell shapes or
+  which bin owns a boundary) even when the connectivity or the arena also
+  differ. Before, it named only the connectivity or arena difference.
+  `read_place_field(env=...)` reports differences the same way (see
+  Breaking).
+- Decoding with rates from an environment with polygon cells (one cut with
+  `clip`) on an environment that records no cells, such as explicit bins from
+  `from_bins`, compares the bins by center and measure. Before, it raised
+  `ValueError` ("The locator does not publish exact planar cell geometry").
+  `read_place_field(env=...)` and `compare_spatial_rates` follow the same
+  rule.
 - `detect_assemblies` orients each ICA and PCA pattern so its largest-magnitude
   weight is positive, and flips its activation with it. Before, the sign was
   arbitrary, so an assembly's members could have negative weights and
@@ -1869,6 +1954,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   it raised `IndexError` when any bin was uncovered. On a track built from a
   2-D graph, gap marks are now at each gap's linearized position; before, they
   were drawn at its x and y coordinates.
+- Decoding with rates from another environment now compares the bins' cell
+  shapes, not only their centers and areas. Triangular meshes, hexagonal
+  layouts and grids (axis-aligned or rotated) whose cells differ with the
+  same centers and areas, such as a 10 x 10 cell and a 20 x 5 cell, used to
+  be accepted as the same bins; they now raise `IncompatibleEnvironmentError` naming "cell
+  shapes". Environments that smooth a field between the same neighbors
+  differently (different face areas in `from_bins`, or one that cannot smooth)
+  now differ in "smoothing conductances between neighboring bins".
+  `read_place_field(env=...)` makes the same check (see Breaking), and
+  `compare_spatial_rates` applies the same bin checks to each pair of a
+  `bin_mapping`: paired bins must also have the same cell shape and, for
+  polygon cells, the same polygon and the same bin owning each boundary, so
+  an identity mapping is refused exactly where no mapping is. A subset of
+  polygon cells still pairs with its parent.
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it

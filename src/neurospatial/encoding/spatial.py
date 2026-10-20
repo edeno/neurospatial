@@ -513,6 +513,54 @@ def _check_gam_result_invariant(
             )
 
 
+def _check_rates_match_env(
+    kind: str,
+    rates: ArrayLike,
+    occupancy: ArrayLike,
+    env: Environment,
+    *,
+    rates_ndim: int,
+) -> None:
+    """Refuse firing rates or occupancy whose bins are not ``env``'s bins.
+
+    ``rates`` is ``(n_bins,)`` when ``rates_ndim=1`` (single unit) and
+    ``(n_units, n_bins)`` when ``rates_ndim=2`` (population); ``occupancy``
+    is ``(n_bins,)``.
+    """
+    n_bins = env.n_bins
+    rates_shape, occupancy_shape = np.shape(rates), np.shape(occupancy)
+    why = (
+        "each rate and occupancy value belongs to one bin of the environment "
+        "the rates were estimated on"
+    )
+    fix = (
+        "pass the Environment used to compute these rates, or recompute them "
+        "on this environment"
+    )
+    if len(rates_shape) != rates_ndim:
+        expected = "(n_bins,)" if rates_ndim == 1 else "(n_units, n_bins)"
+        raise ValueError(
+            _format_error(
+                f"{kind}: firing rates have shape {rates_shape}, not {expected} "
+                f"over the env's {n_bins} bins.",
+                why=why,
+                fix=fix,
+            )
+        )
+    if rates_shape[-1] != n_bins or occupancy_shape != (n_bins,):
+        occupancy_bins = (
+            occupancy_shape[0] if len(occupancy_shape) == 1 else occupancy_shape
+        )
+        raise ValueError(
+            _format_error(
+                f"{kind}: firing rates have {rates_shape[-1]} bins and occupancy "
+                f"{occupancy_bins}, but env has {n_bins}.",
+                why=why,
+                fix=fix,
+            )
+        )
+
+
 def _index_per_unit(value: Any, idx: int) -> Any:
     """Slice a possibly-per-unit GAM field to a single unit (for indexing).
 
@@ -653,8 +701,10 @@ class SpatialRateResult(SpatialResultMixin):
     occupancy : ArrayLike
         Time spent in each bin in seconds. Shape is (n_bins,).
     env : Environment
-        The spatial environment used for the computation. Provides bin
-        centers, connectivity, and plotting methods.
+        The immutable environment these rates were estimated on. It is their
+        spatial context: bin coordinates and order, bin measures, units, frame
+        and connectivity. Environments never change; ``with_metadata`` returns
+        a new one, so relabelling later cannot change this result.
     method : str
         Estimator used: "diffusion_kde", "gaussian_kde", "binned", or "glm".
     bandwidth : float or None
@@ -882,6 +932,13 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
                 "pooled": self.pooled,
             },
             n_units=None,
+        )
+        _check_rates_match_env(
+            "SpatialRateResult",
+            self.firing_rate,
+            self.occupancy,
+            self.env,
+            rates_ndim=1,
         )
         self._own_arrays()
 
@@ -1505,7 +1562,10 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
         Time spent in each bin in seconds. Shape is (n_bins,). Shared
         across all neurons.
     env : Environment
-        The spatial environment used for the computation.
+        The immutable environment these rates were estimated on. It is their
+        spatial context: bin coordinates and order, bin measures, units, frame
+        and connectivity. Environments never change; ``with_metadata`` returns
+        a new one, so relabelling later cannot change this result.
     method : str
         Estimator used: "diffusion_kde", "gaussian_kde", "binned", or "glm".
     bandwidth : float or None
@@ -1741,6 +1801,13 @@ class SpatialRatesResult(SpatialResultMixin, UnitSelectionMixin):
                 "pooled": self.pooled,
             },
             n_units=n_units,
+        )
+        _check_rates_match_env(
+            "SpatialRatesResult",
+            self.firing_rates,
+            self.occupancy,
+            self.env,
+            rates_ndim=2,
         )
 
         object.__setattr__(
@@ -4586,8 +4653,8 @@ def compute_directional_place_fields(
         Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
     direction_labels : NDArray[object], shape (n_timepoints,)
         Direction label for each timepoint. Each label is a hashable string
-        (e.g., "A→B", "forward", "CW"). The special label "other" is excluded
-        from results, allowing unlabeled periods to be ignored.
+        (e.g., "A→B", "forward", "CW"). The special label "other", ``None`` and
+        ``NaN`` mark unlabeled periods and are excluded from results.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method passed through to the place-field helper.
     bandwidth : float or None, default=None
@@ -4679,7 +4746,6 @@ def compute_directional_place_fields(
     from neurospatial._intervals import (
         intersect_intervals,
         resolve_time_windows,
-        run_time_bounds,
     )
     from neurospatial.encoding._spatial_counts import require_allocentric
 
@@ -4691,24 +4757,36 @@ def compute_directional_place_fields(
             f"got {len(direction_labels)} and {len(times)}"
         )
 
-    # Convert labels to array
-    labels_arr = np.asarray(direction_labels, dtype=object)
+    # Label code of each interval (the label at its start sample). "other",
+    # None and NaN are missing (-1); consecutive intervals with one code form
+    # one window, so separate runs never join.
+    import pandas as pd
 
-    # Get unique labels, excluding "other"
-    unique_labels = [label for label in np.unique(labels_arr) if label != "other"]
+    from neurospatial._observation import label_runs
+
+    labels_arr = np.empty(len(direction_labels), dtype=object)
+    for i, value in enumerate(direction_labels):
+        labels_arr[i] = value
+    codes, uniques = pd.factorize(labels_arr[:-1], use_na_sentinel=True)
+    codes = codes.astype(np.intp)
+    # The trailing False keeps an already-missing code (-1) missing.
+    is_other = np.array([bool(u == "other") for u in uniques] + [False])
+    codes[is_other[codes]] = -1
+    first, last, run_codes = label_runs(codes, np.ones(codes.size, dtype=bool))
+    sample_times = np.asarray(times, dtype=np.float64)
+    run_windows = np.column_stack([sample_times[first], sample_times[last + 1]])
 
     # Sort labels for reproducibility
-    unique_labels = sorted(unique_labels, key=str)
+    labelled = [(uniques[c], c) for c in np.unique(run_codes)]
+    labelled = sorted(labelled, key=lambda item: str(item[0]))
 
     # Compute place field for each direction
     firing_rates_dict: dict[str, NDArray[np.float64]] = {}
     occupancy_dict: dict[str, NDArray[np.float64]] = {}
 
     resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
-    for label in unique_labels:
-        label_windows = run_time_bounds(times, labels_arr[:-1] == label)
-        if label_windows.shape[0] == 0:
-            continue
+    for label, code in labelled:
+        label_windows = run_windows[run_codes == code]
         windows = (
             label_windows
             if resolved_epochs is None

@@ -649,6 +649,34 @@ class TestFieldStability:
         stability_different = field_stability(rate_map_1, rate_map_3, method="pearson")
         assert np.isnan(stability_different)
 
+    @pytest.mark.parametrize("method", ["pearson", "spearman"])
+    def test_field_stability_flat_map_from_an_estimator_is_nan(self, method):
+        """A map flat up to rounding is constant, as in compare_spatial_rates.
+
+        One spike at the start of every occupancy interval fires at exactly
+        1 / dt = 30 Hz wherever the animal went, so the smoothed map is flat
+        analytically and differs from 30 Hz only by rounding. Correlating
+        that rounding with a real field would report a spurious stability.
+        """
+        from neurospatial.encoding import compute_spatial_rates
+        from neurospatial.encoding._field_metrics import field_stability
+
+        times = np.arange(3000) / 30.0
+        positions = 50 + 40 * np.column_stack(
+            [np.sin(2 * np.pi * times / 20), np.cos(2 * np.pi * times / 13)]
+        )
+        env = Environment.from_samples(positions, bin_size=10.0, units="cm")
+        in_field = np.linalg.norm(positions - [70.0, 70.0], axis=1) < 15
+        flat, field = compute_spatial_rates(
+            env, [times[:-1], times[in_field][::2]], times, positions
+        ).firing_rates
+        supported = np.isfinite(flat)
+        assert_allclose(flat[supported], 30.0, rtol=1e-12)
+        assert np.ptp(flat[supported]) > 0  # rounding left a spread
+
+        assert np.isnan(field_stability(flat, field, method=method))
+        assert np.isnan(field_stability(field, flat, method=method))
+
 
 class TestRateMapCoherence:
     """Tests for rate map coherence metric.
@@ -1951,7 +1979,51 @@ class TestFieldStabilityEdgeCases:
         rate_map_2 = np.array([2.0, np.nan, np.nan, np.nan])
 
         stability = field_stability(rate_map_1, rate_map_2)
-        assert stability == 0.0
+        assert np.isnan(stability)
+
+    def test_field_stability_no_overlapping_finite_bins_is_nan(self):
+        """Each map has finite bins, but none are shared: undefined, not 0."""
+        from neurospatial.encoding._field_metrics import field_stability
+
+        rate_map_1 = np.array([1.0, 2.0, np.nan, np.nan])
+        rate_map_2 = np.array([np.nan, np.nan, 3.0, 4.0])
+
+        for method in ("pearson", "spearman"):
+            assert np.isnan(field_stability(rate_map_1, rate_map_2, method=method))
+
+    def test_field_stability_constant_map_is_nan(self):
+        """A constant map over the finite paired bins has no defined correlation."""
+        from neurospatial.encoding._field_metrics import field_stability
+
+        varying = np.array([1.0, 2.0, 4.0, np.nan])
+        constant = np.array([3.0, 3.0, 3.0, np.nan])
+
+        for method in ("pearson", "spearman"):
+            assert np.isnan(field_stability(varying, constant, method=method))
+            assert np.isnan(field_stability(constant, varying, method=method))
+
+    def test_field_stability_two_finite_bins_is_nan(self):
+        """Two paired bins always give r = +-1, so they are not a measurement."""
+        from neurospatial.encoding._field_metrics import field_stability
+
+        rate_map_1 = np.array([1.0, 2.0, np.nan])
+        rate_map_2 = np.array([5.0, 9.0, 1.0])
+
+        for method in ("pearson", "spearman"):
+            assert np.isnan(field_stability(rate_map_1, rate_map_2, method=method))
+
+    def test_field_stability_three_finite_bins_is_defined(self):
+        """Three paired bins are the minimum that give a measured correlation."""
+        from neurospatial.encoding._field_metrics import field_stability
+
+        rate_map_1 = np.array([1.0, 2.0, 3.0, np.nan])
+        rate_map_2 = np.array([1.0, 3.0, 2.0, 9.0])
+
+        expected = np.corrcoef([1.0, 2.0, 3.0], [1.0, 3.0, 2.0])[0, 1]
+        assert field_stability(rate_map_1, rate_map_2) == pytest.approx(expected)
+        assert field_stability(rate_map_1, rate_map_2, method="spearman") == (
+            pytest.approx(0.5)
+        )
 
     def test_field_stability_all_nan(self):
         """Test field_stability when all values are NaN."""
@@ -1961,7 +2033,7 @@ class TestFieldStabilityEdgeCases:
         rate_map_2 = np.array([np.nan, np.nan, np.nan])
 
         stability = field_stability(rate_map_1, rate_map_2)
-        assert stability == 0.0
+        assert np.isnan(stability)
 
     def test_field_stability_invalid_method(self):
         """Test field_stability raises ValueError for invalid method."""

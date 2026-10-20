@@ -8,7 +8,9 @@ import pytest
 from neurospatial import behavior
 from neurospatial._observation import (
     ObservationSupport,
+    label_runs,
     resolve_observation_support,
+    resolve_sample_support,
     validate_break_before,
     validate_max_gap,
     validated_observations,
@@ -330,3 +332,49 @@ def test_signals_refuse_integers_float64_cannot_hold(dtype):
 def test_signals_accept_integers_at_the_float64_limit():
     sig = np.array([-(2**53), 2**53, 0, 1, 2], dtype=np.int64)
     _signals(signals=sig)
+
+
+# --- sample-validity entry point and label runs ------------------------------
+
+
+def test_resolve_sample_support_matches_position_entry_point():
+    rng = np.random.default_rng(3)
+    times = np.cumsum(rng.uniform(0.05, 0.15, size=60))
+    times[30:] += 2.0  # one gap longer than max_gap
+    positions = rng.normal(size=(60, 2))
+    positions[rng.choice(60, size=8, replace=False), rng.integers(0, 2, 8)] = np.nan
+    breaks = np.zeros(60, dtype=bool)
+    breaks[45] = True
+    kwargs = {"max_gap": 0.5, "epochs": None, "break_before": breaks, "result": "r"}
+    expected = resolve_observation_support(times, positions, **kwargs)
+    actual = resolve_sample_support(times, np.isfinite(positions).all(axis=1), **kwargs)
+    assert not expected.sample_valid.all()
+    assert expected.run_sample_bounds.shape[0] > 2
+    for name in (
+        "sample_valid",
+        "interval_mask",
+        "run_ids",
+        "run_sample_bounds",
+        "run_time_bounds",
+    ):
+        a, b = getattr(actual, name), getattr(expected, name)
+        assert a.dtype == b.dtype, name
+        np.testing.assert_array_equal(a, b, err_msg=name)
+
+
+def test_label_runs_merges_only_adjacent_retained_equal_codes():
+    codes = np.array([0, 0, 1, 1, 0, 0, 0, 0, 1, -1, 1], dtype=np.intp)
+    mask = np.array([1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1], dtype=bool)
+    first, last, code = label_runs(codes, mask)
+    np.testing.assert_array_equal(first, [0, 2, 4, 7, 8, 10])
+    np.testing.assert_array_equal(last, [1, 3, 4, 7, 8, 10])
+    np.testing.assert_array_equal(code, [0, 1, 0, 0, 1, 1])
+
+
+def test_label_runs_with_nothing_retained_is_empty():
+    for codes, mask in (
+        (np.zeros(0, dtype=np.intp), np.zeros(0, dtype=bool)),
+        (np.array([-1, 0], dtype=np.intp), np.array([True, False])),
+    ):
+        first, last, code = label_runs(codes, mask)
+        assert first.shape == last.shape == code.shape == (0,)

@@ -3,7 +3,8 @@ Neural encoding analysis.
 
 This module provides tools for analyzing how neurons represent space,
 including place cells, grid cells, head direction cells, border cells,
-object-vector cells, and spatial view cells.
+object-vector cells, and spatial view cells, and how the same cells' rate
+maps compare between behavioral conditions (``compare_spatial_rates``).
 
 Submodules
 ----------
@@ -17,6 +18,12 @@ view : Spatial view cell analysis
 phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """
+
+# Comparing rate maps between conditions
+from neurospatial.encoding._comparison import (
+    RateComparisonResult,
+    compare_spatial_rates,
+)
 
 # Border/boundary cell analysis
 # Field metrics (from _field_metrics and _metrics modules)
@@ -218,6 +225,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     "field_shift_distance",
     "field_size",
     "field_stability",
+    "compare_spatial_rates",
+    "RateComparisonResult",
     "in_out_field_ratio",
     "information_per_second",
     "mutual_information",
