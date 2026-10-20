@@ -157,6 +157,11 @@ class TestRegions:
         for a, b in combinations(polygons, 2):
             assert a.intersection(b).area < 1e-6
 
+    def test_has_no_landmarks(self, maze):
+        """No fixed reward hardware or placed cues: food goes on a chosen node."""
+        assert len(maze.env_2d.landmarks) == 0
+        assert len(maze.env_track.landmarks) == 0
+
     def test_every_choice_point_is_a_point_region(self, maze, graph):
         regions = maze.env_2d.regions
         nodes = {n: r for n, r in regions.items() if n.startswith("node_")}

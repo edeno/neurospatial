@@ -197,6 +197,14 @@ def make_rat_hexmaze(
     - node_A0 ... node_D23: points at the choice points, the start and goal
       locations of the task
 
+    The maze has no landmarks. It has no fixed reward hardware: in Alonso et
+    al. (2021) "a heap of food crumbles (Coco Pops, Kellogg's) was placed at
+    a previously determined GL [goal location], which varied for each
+    animal", and the mouse was placed by hand at start locations that changed
+    from trial to trial, so goals and starts are node regions chosen per
+    session. The paper's "local and global cues applied in and around the
+    maze" have no published positions.
+
     Examples
     --------
     Create the default four-module rat HexMaze:
