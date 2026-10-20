@@ -38,6 +38,29 @@
     `BarnesDims.hole_inset` and `CheeseboardDims.rim_margin`. The small hex
     maze's wells are now `port_A`, `port_B` and `port_C`, and an invalid
     barrier set raises `ValueError` naming the cut-off hexes.
+  - Reward ports, holes, platforms and start and goal boxes are now
+    landmarks (`env.landmarks`), so encoding functions take them by name as
+    object positions. Each landmark's `metadata["role"]` is one of
+    `MAZE_LANDMARK_ROLES`, and a region of the same name gives its real
+    extent where the source publishes one (Barnes holes, watermaze platform,
+    radial-arm food cups, crossword and Hamlet boxes); otherwise the region
+    stays a point. The watermaze quadrants are quarter-disc regions. Mazes
+    whose source fixes no port or box (T, Y, plus, honeycomb, rat HexMaze)
+    declare none and say why. Renamed regions and track nodes:
+
+    | Maze | Before | Now |
+    | --- | --- | --- |
+    | linear track | `reward_left`, `reward_right` | `well_left`, `well_right` |
+    | W-maze (track nodes) | `well_1_top`..`well_3_top` | `well_1`..`well_3` |
+    | radial arm | `arm_0`..`arm_7` | `food_cup_0`..`food_cup_7` |
+    | Barnes | `hole_k` and `escape_hole` at the same hole | `escape_hole` only; new `start_box` |
+    | cheeseboard | `reward_i_j` | `well_i_j` |
+    | Sungod | `reward_well_0`..`10`, `center` | `home_port`, `center_port_left`/`_right`, `arm_port_1`..`8`, `box` |
+    | crossword | `box_*`, `reward_*` | `start_box_*`, `cap_*` |
+    | Hamlet | `house_0`..`4` | `hide_house`, `run_house`, `interact_house`, `eat_house`, `drink_house`; new `agora` |
+    | Hampton Court | `start`, `goal` | `entrance`, `central_enclosure` |
+    | repeated T | `start`, `goal` | `start_box`, `food_box` |
+    | repeated Y | `start`, `goal` | `entrance_box`, `food_box` |
 
   ```python
   # before
