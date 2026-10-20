@@ -4,6 +4,7 @@ These tests verify that all lattice mazes (Crossword, Honeycomb, Hamlet)
 and the complex Rat HexMaze work correctly together and share consistent interfaces.
 """
 
+import numpy as np
 import pytest
 
 from neurospatial.simulation.mazes import (
@@ -145,34 +146,32 @@ class TestHamletMaze:
 class TestRatHexMaze:
     """Test Rat HexMaze specific behavior."""
 
-    def test_has_3_modules(self):
-        """Rat HexMaze should have 3 modules (A, B, C)."""
+    def test_has_4_modules(self):
+        """Rat HexMaze has 4 modules (A, B, C, D), as in Wijnen et al. 2024."""
         maze = make_rat_hexmaze(bin_size=5.0)
-        for module in ["module_A", "module_B", "module_C"]:
+        for module in ["module_A", "module_B", "module_C", "module_D"]:
             assert module in maze.env_2d.regions
 
-    def test_default_3_modules(self):
-        """Rat HexMaze should have 3 modules by default."""
+    def test_default_4_modules(self):
+        """Rat HexMaze has 4 modules by default."""
         dims = RatHexmazeDims()
-        assert dims.n_modules == 3
+        assert dims.n_modules == 4
 
-    def test_has_many_nodes(self):
-        """Rat HexMaze should have many nodes (large maze)."""
+    def test_has_96_choice_points(self):
+        """Every one of the 96 nodes is a track-graph node."""
         maze = make_rat_hexmaze(bin_size=5.0)
-        n_nodes = maze.env_track.connectivity.number_of_nodes()
-        # Should have many nodes for a large-scale maze
-        assert n_nodes > 100
+        graph = maze.env_track.binning.linearization.graph
+        assert graph.number_of_nodes() == 96
 
 
 class TestLatticeMazesComplexity:
     """Test relative complexity of lattice mazes."""
 
     def test_rat_hexmaze_is_large(self):
-        """Rat HexMaze should be a large maze (many nodes)."""
+        """Rat HexMaze spans about 9 m."""
         rat_hex = make_rat_hexmaze(bin_size=4.0)
-        rat_hex_nodes = rat_hex.env_track.connectivity.number_of_nodes()
-        # Rat HexMaze should have >100 nodes (large-scale maze)
-        assert rat_hex_nodes > 100
+        extent = np.ptp(rat_hex.env_2d.bin_centers, axis=0)
+        assert extent[0] > 850.0
 
     def test_honeycomb_has_reasonable_connectivity(self):
         """Honeycomb should have reasonable average connectivity."""

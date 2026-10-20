@@ -1,17 +1,30 @@
-"""Rat HexMaze environment for large-scale spatial navigation research.
+"""Rat HexMaze: four mouse HexMaze modules joined by five bridges.
 
-The Rat HexMaze is a large-scale navigation task consisting of multiple hexagonal
-modules connected by corridor bridges. Each module contains junction nodes arranged
-in a hexagonal lattice with 120° angles between corridors. The maze design forces
-cognitive map formation because all nodes look identical from inside (Warner-Warden trick).
+The mouse HexMaze (Alonso et al. 2021) is one module of narrow corridors
+"arranged as six regular densely packed hexagons, forming 12 two-way and 12
+three-way choice points (nodes) 36.3 cm apart, in total spanning 2 × 1.9 m",
+"assembled from 30 10-cm-wide opaque white acrylic gangways connected by 24
+equilateral triangular intersection segments". The six hexagons form a ring
+around a central hexagonal hole, so every corridor is one node spacing long
+and corridors meet at 120°.
 
-Reference: Alonso et al. 2021 - large-scale navigation for cognitive map learning
+The rat HexMaze (Wijnen et al. 2024) "consist of four times the original
+HexMaze, connected through two large and three small bridges, spanning 9 × 5 m
+in size (unpublished)… each node (96 in total) can serve both as a start as
+well as a goal location". The rat apparatus's node spacing, bridge lengths and
+corridor width are not published; the defaults here are estimates (see
+:class:`RatHexmazeDims`).
 
-From paper: "The HexMaze is a large-scale navigation task for mice, consisting of
-30 corridors and 24 crossings... the corridors of this maze are separated by 120° angles"
-(p. 830). "The rat HexMaze consist of four times the original HexMaze, connected through
-two large and three small bridges, spanning 9×5 m in size... each node (96 in total)
-can serve both as a start as well as a goal location" (p. 831).
+References
+----------
+Alonso, A., Bokeria, L., van der Meij, J., Samanta, A., Eichler, R., Lotfi, A.,
+Spooner, P., Navarro Lobato, I., & Genzel, L. (2021). The HexMaze: A previous
+knowledge task on map learning for mice. eNeuro, 8(4).
+https://doi.org/10.1523/ENEURO.0554-20.2021
+
+Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
+following simple rules to complex map learning. Brain Structure and Function,
+229, 823-841. https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------
@@ -19,13 +32,13 @@ Examples
 ...     make_rat_hexmaze,
 ...     RatHexmazeDims,
 ... )
->>> maze = make_rat_hexmaze()
+>>> maze = make_rat_hexmaze(bin_size=4.0)
 >>> maze.env_2d.units
 'cm'
->>> "module_A" in maze.env_2d.regions
-True
->>> "corridor_AB" in maze.env_2d.regions
-True
+>>> [name for name in maze.env_2d.regions if name.startswith("module_")]
+['module_A', 'module_B', 'module_C', 'module_D']
+>>> sum(name.startswith("node_") for name in maze.env_2d.regions)
+96
 """
 
 from __future__ import annotations
@@ -34,7 +47,8 @@ from dataclasses import dataclass
 
 import networkx as nx
 import numpy as np
-from shapely.geometry import Point
+from numpy.typing import NDArray
+from shapely.geometry import Polygon
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
@@ -44,49 +58,68 @@ from neurospatial.simulation.mazes._geometry import (
     union_polygons,
 )
 
+_MODULE_LETTERS = ("A", "B", "C", "D")
+
+# Bridges as (name, module, node, module, node), using the node numbering of
+# ``_module_layout``. Each bridge leaves a two-way corner node of the module
+# perimeter along its free 60° lattice direction, so it meets the module at
+# 120° like every other junction. Small bridges climb or descend at ±60° and
+# are ``bridge_length`` long; large bridges are horizontal and
+# ``3 * node_spacing + bridge_length`` long.
+_BRIDGES = (
+    ("AB", 0, 14, 1, 20),  # A's upper-right corner to B's lower-left corner
+    ("BC", 1, 23, 2, 17),  # B's lower-right corner to C's upper-left corner
+    ("CD", 2, 14, 3, 20),  # C's upper-right corner to D's lower-left corner
+    ("AC", 0, 12, 2, 19),  # A's right corner to C's left corner (large)
+    ("BD", 1, 13, 3, 18),  # B's right corner to D's left corner (large)
+)
+
 
 @dataclass(frozen=True)
 class RatHexmazeDims(MazeDims):
-    """Dimension specifications for Rat HexMaze.
-
-    The Rat HexMaze consists of multiple hexagonal modules connected by corridor
-    bridges. Each module contains a hexagonal lattice of junction nodes with 120°
-    angles between corridors.
+    """Dimension specifications for the Rat HexMaze.
 
     Attributes
     ----------
-    module_width : float
-        Width of each hexagonal module in cm. Default is 90.0.
+    node_spacing : float
+        Distance between neighboring nodes (choice points) inside a module,
+        which is the length of every module corridor, in cm. Default 48.0.
+        This is an estimate: the rat spacing is unpublished, and 48 cm makes
+        the whole maze span about 9 × 5 m as reported. The mouse HexMaze uses
+        36.3 cm.
     corridor_width : float
-        Width of all corridors in cm. Default is 11.0.
+        Width of all corridors and bridges in cm. Default 10.0, the published
+        mouse HexMaze width; the rat width is unpublished.
+    bridge_length : float
+        Length of the three small bridges in cm, from one module's corner
+        node to the next module's corner node. Default 62.4 (1.3 ×
+        ``node_spacing``), estimated from the published drawing. The two
+        large bridges are then ``3 * node_spacing + bridge_length`` long,
+        which keeps every module on one shared hexagonal lattice.
     n_modules : int
-        Number of hexagonal modules (clusters). Default is 3.
-    nodes_per_module : int
-        Number of junction nodes per module. Default is 24 (mouse HexMaze size).
+        Number of modules, 1 to 4. Default 4, the full rat HexMaze. 1 builds
+        a single mouse HexMaze module; 2 and 3 keep the first modules of the
+        rat layout (A-B, or A-B-C) and the bridges between them.
 
     Examples
     --------
     >>> dims = RatHexmazeDims()
-    >>> dims.module_width
-    90.0
-    >>> dims.corridor_width
-    11.0
+    >>> dims.node_spacing, dims.corridor_width, dims.bridge_length
+    (48.0, 10.0, 62.4)
     >>> dims.n_modules
-    3
-    >>> dims.nodes_per_module
-    24
+    4
 
-    >>> custom = RatHexmazeDims(module_width=120.0, n_modules=2)
-    >>> custom.module_width
-    120.0
-    >>> custom.n_modules
-    2
+    The published mouse HexMaze is one module with 36.3 cm node spacing:
+
+    >>> mouse = RatHexmazeDims(n_modules=1, node_spacing=36.3, corridor_width=10.0)
+    >>> mouse.n_modules
+    1
     """
 
-    module_width: float = 90.0
-    corridor_width: float = 11.0
-    n_modules: int = 3
-    nodes_per_module: int = 24
+    node_spacing: float = 48.0
+    corridor_width: float = 10.0
+    bridge_length: float = 62.4
+    n_modules: int = 4
 
 
 def make_rat_hexmaze(
@@ -94,70 +127,100 @@ def make_rat_hexmaze(
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:
-    """Create a Rat HexMaze environment.
+    r"""Create a Rat HexMaze environment.
 
-    Creates a large-scale hexagonal maze with multiple modules connected by
-    corridor bridges. Each module contains junction nodes arranged in a hexagonal
-    lattice with 120° angles, forcing cognitive map formation.
+    Builds four HexMaze modules on one hexagonal lattice and joins them with
+    three small and two large bridges. Every module corridor is one node
+    spacing long, and corridors meet at 120° at all three-way nodes,
+    including where a bridge joins a module.
 
     Parameters
     ----------
     dims : RatHexmazeDims, optional
-        Maze dimensions. If None, uses default dimensions
-        (90 cm module width, 11 cm corridor width, 3 modules, 24 nodes per module).
+        Maze dimensions. If None, uses the defaults (48 cm node spacing,
+        10 cm corridors, 62.4 cm small bridges, 4 modules), which are
+        estimates for the rat apparatus.
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
-        Whether to create linearized track graph (default: True).
-        The track graph provides a 1D representation for trajectory analysis.
+        Whether to create the linearized track graph (default: True).
 
     Returns
     -------
     MazeEnvironments
         Contains:
-        - env_2d: 2D polygon-based environment
-        - env_track: 1D linearized track environment (if include_track=True)
+        - env_2d: 2D environment covering the corridors and bridges, each
+          ``corridor_width`` wide
+        - env_track: 1D linearized track whose graph nodes are the maze's
+          choice points (if include_track=True)
+
+    Raises
+    ------
+    ValueError
+        If ``dims.n_modules`` is not 1, 2, 3 or 4.
 
     Notes
     -----
-    The maze consists of multiple hexagonal modules arranged linearly:
-    - Module A at x=0
-    - Module B at x=module_width * 1.5
-    - Module C at x=module_width * 3.0
-    - Corridor bridges connect adjacent modules
+    Layout (flat-top hexagons, ``s = node_spacing``, ``L = bridge_length``)::
+
+            B=======D
+           / \     /
+          /   \   /
+         /     \ /
+        A=======C
+
+    ``/`` and ``\`` are small bridges, ``=`` large bridges. Module origins
+    (the center of each module's central hexagonal hole) are A = (0, 0),
+    B = (4s + L/2, √3(2s + L/2)), C = (8s + L, 0) and D = (12s + 1.5L,
+    √3(2s + L/2)).
+
+    Each module has 24 nodes and 30 corridors. Nodes are numbered from the
+    module origin outward:
+
+    - 0-5: around the central hole, at distance s and angles 0°, 60°, … 300°
+      (three-way nodes)
+    - 6-11: at distance 2s along the same angles, node 6 + k joined to node k
+      by a spoke corridor (three-way nodes)
+    - 12-23: perimeter corners at distance √7·s; nodes 12 + 2k and 13 + 2k
+      flank node 6 + k (two-way nodes unless a bridge leaves them)
+
+    The full four-module maze has 96 nodes, 125 corridors (120 module
+    corridors and 5 bridges), 58 three-way and 38 two-way nodes. Including
+    the corridor width it spans (17s + 1.5L + w) × (5√3·s + (√3/2)L + w),
+    9.2 × 4.8 m with the defaults.
 
     Regions:
-    - module_A: Polygon region covering first hexagonal module
-    - module_B: Polygon region covering second hexagonal module
-    - module_C: Polygon region covering third hexagonal module
-    - corridor_AB: Polygon region for bridge between modules A and B
-    - corridor_BC: Polygon region for bridge between modules B and C
 
-    Track Graph Topology:
-    - Junction nodes arranged in hexagonal lattice within each module
-    - 120° angles between corridors at junctions
-    - Bridge edges connecting modules
+    - module_A ... module_D: polygons covering each module's corridors
+    - bridge_AB, bridge_BC, bridge_CD (small) and bridge_AC, bridge_BD
+      (large): polygons covering each bridge outside the modules
+    - node_A0 ... node_D23: points at the choice points, the start and goal
+      locations of the task
 
     Examples
     --------
-    Create a default Rat HexMaze:
+    Create the default four-module rat HexMaze:
 
-    >>> maze = make_rat_hexmaze()
-    >>> maze.env_2d.units
-    'cm'
-    >>> maze.env_2d.n_bins > 0
-    True
+    >>> maze = make_rat_hexmaze(bin_size=4.0)
+    >>> graph = maze.env_track.binning.linearization.graph
+    >>> graph.number_of_nodes(), graph.number_of_edges()
+    (96, 125)
+    >>> sorted(name for name in maze.env_2d.regions if name.startswith("bridge_"))
+    ['bridge_AB', 'bridge_AC', 'bridge_BC', 'bridge_BD', 'bridge_CD']
 
-    Create with custom dimensions:
+    Create the published mouse HexMaze (one module, 36.3 cm node spacing):
 
-    >>> dims = RatHexmazeDims(module_width=120.0, n_modules=2)
-    >>> maze = make_rat_hexmaze(dims=dims, bin_size=4.0)
-    >>> "module_A" in maze.env_2d.regions
-    True
+    >>> mouse = make_rat_hexmaze(
+    ...     RatHexmazeDims(n_modules=1, node_spacing=36.3, corridor_width=10.0),
+    ...     bin_size=2.0,
+    ... )
+    >>> graph = mouse.env_track.binning.linearization.graph
+    >>> graph.number_of_nodes(), graph.number_of_edges()
+    (24, 30)
 
     Skip track graph creation:
 
-    >>> maze = make_rat_hexmaze(include_track=False)
+    >>> maze = make_rat_hexmaze(bin_size=4.0, include_track=False)
     >>> maze.env_track is None
     True
 
@@ -167,333 +230,144 @@ def make_rat_hexmaze(
     """
     if dims is None:
         dims = RatHexmazeDims()
+    if dims.n_modules not in (1, 2, 3, 4):
+        raise ValueError(
+            f"n_modules must be 1, 2, 3 or 4, got {dims.n_modules}. The rat "
+            "HexMaze has four modules (n_modules=4); n_modules=1 builds a "
+            "single mouse HexMaze module."
+        )
 
-    # Create hexagonal modules and bridges
-    module_polygons, module_centers = _create_hexagonal_modules(dims)
-    bridge_polygons, bridge_centers = _create_corridor_bridges(dims, module_centers)
+    graph = _hexmaze_graph(dims)
+    letters = _MODULE_LETTERS[: dims.n_modules]
 
-    # Union all polygons into single geometry
-    all_polygons = module_polygons + bridge_polygons
-    hexmaze_polygon = union_polygons(all_polygons)
+    def corridor(u: str, v: str) -> Polygon:
+        return make_buffered_line(
+            graph.nodes[u]["pos"], graph.nodes[v]["pos"], dims.corridor_width
+        )
 
-    # Create 2D environment
+    modules = {
+        letter: union_polygons(
+            [
+                corridor(u, v)
+                for u, v in graph.edges
+                if u.startswith(f"node_{letter}") and v.startswith(f"node_{letter}")
+            ]
+        )
+        for letter in letters
+    }
+    all_modules = union_polygons(list(modules.values()))
+    bridges = {
+        name: corridor(u, v).difference(all_modules)
+        for name, u, v in _bridge_edges(dims.n_modules)
+    }
+
     env_2d = Environment.from_polygon(
-        polygon=hexmaze_polygon,
+        polygon=union_polygons([all_modules, *bridges.values()]),
         bin_size=bin_size,
         name="rat_hexmaze",
         connect_diagonal_neighbors=True,
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # Add module regions (as point regions at module centers)
-    module_names = ["module_A", "module_B", "module_C"]
     region_builder = Regions()
-    for name, center in zip(
-        module_names[: dims.n_modules], module_centers, strict=True
-    ):
-        # Create circular region for module
-        module_region = Point(center).buffer(dims.module_width / 3)
-        region_builder.add(name, polygon=module_region)
-
-    # Add corridor bridge regions (as point regions at bridge centers)
-    bridge_names = ["corridor_AB", "corridor_BC"]
-    for name, center in zip(
-        bridge_names[: dims.n_modules - 1], bridge_centers, strict=True
-    ):
-        # Create rectangular region for bridge
-        bridge_length = dims.module_width * 0.5
-        bridge_region = Point(center).buffer(bridge_length / 2)
-        region_builder.add(name, polygon=bridge_region)
+    for letter, module in modules.items():
+        region_builder.add(f"module_{letter}", polygon=module)
+    for name, bridge in bridges.items():
+        region_builder.add(f"bridge_{name}", polygon=bridge)
+    for node, pos in graph.nodes(data="pos"):
+        region_builder.add(node, point=pos)
     env_2d = env_2d.with_regions(region_builder)
 
-    # Create track graph if requested
     env_track = None
     if include_track:
-        env_track = _create_hexmaze_track_graph(dims, module_centers, bin_size)
+        env_track = Environment.from_graph(
+            graph=graph,
+            edge_order=list(graph.edges),
+            edge_spacing=0.0,
+            bin_size=bin_size,
+            track_width=dims.corridor_width,
+            name="rat_hexmaze_1d",
+        )
+        env_track = env_track.with_metadata(units="cm")
 
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
-def _create_hexagonal_modules(
-    dims: RatHexmazeDims,
-) -> tuple[list, list[tuple[float, float]]]:
-    """Create hexagonal module polygons.
-
-    Creates simplified hexagonal modules as circular approximations.
-    Each module is positioned along the x-axis.
+def _module_layout(
+    node_spacing: float,
+) -> tuple[NDArray[np.float64], list[tuple[int, int]]]:
+    """Node positions and corridors of one HexMaze module.
 
     Parameters
     ----------
-    dims : RatHexmazeDims
-        Maze dimensions.
+    node_spacing : float
+        Distance between neighboring nodes, in cm.
 
     Returns
     -------
-    tuple[list, list[tuple[float, float]]]
-        - List of Shapely Polygon objects for each module
-        - List of module center positions (x, y)
+    positions : NDArray[np.float64], shape (24, 2)
+        Node positions relative to the module origin, numbered as described
+        in :func:`make_rat_hexmaze`.
+    edges : list[tuple[int, int]]
+        The 30 corridors as node index pairs, each ``node_spacing`` long.
     """
-    module_polygons = []
-    module_centers = []
+    s = node_spacing
+    angles = np.deg2rad(60.0 * np.arange(6))
+    unit = np.column_stack([np.cos(angles), np.sin(angles)])  # (6, 2)
+    inner = s * unit
+    middle = 2 * s * unit
+    outer = np.empty((12, 2))
+    outer[0::2] = middle + s * np.roll(unit, 1, axis=0)  # toward angle 60k - 60°
+    outer[1::2] = middle + s * np.roll(unit, -1, axis=0)  # toward angle 60k + 60°
+    positions = np.vstack([inner, middle, outer])
 
-    # Position modules along x-axis with spacing
-    module_spacing = dims.module_width * 1.5  # 1.5x width spacing
-
-    for i in range(dims.n_modules):
-        # Module center position
-        center_x = i * module_spacing
-        center_y = 0.0
-        center = (center_x, center_y)
-        module_centers.append(center)
-
-        # Create hexagonal module as circle approximation
-        # A hexagon inscribed in a circle of radius R has width 2R
-        radius = dims.module_width / 2
-        module_poly = Point(center).buffer(radius, quad_segs=6)  # 6 segments = hexagon
-        module_polygons.append(module_poly)
-
-    return module_polygons, module_centers
+    edges = []
+    for k in range(6):
+        edges += [
+            (k, (k + 1) % 6),  # around the central hole
+            (k, 6 + k),  # spoke
+            (6 + k, 12 + 2 * k),  # perimeter
+            (6 + k, 13 + 2 * k),
+            (13 + 2 * k, 12 + 2 * ((k + 1) % 6)),
+        ]
+    return positions, edges
 
 
-def _create_corridor_bridges(
-    dims: RatHexmazeDims,
-    module_centers: list[tuple[float, float]],
-) -> tuple[list, list[tuple[float, float]]]:
-    """Create corridor bridge polygons connecting modules.
+def _module_origins(dims: RatHexmazeDims) -> NDArray[np.float64]:
+    """Origins of modules A-D, shape (4, 2), in cm."""
+    s, half_bridge = dims.node_spacing, dims.bridge_length / 2
+    dx, dy = 4 * s + half_bridge, np.sqrt(3.0) * (2 * s + half_bridge)
+    return np.array([[0.0, 0.0], [dx, dy], [2 * dx, 0.0], [3 * dx, dy]])
 
-    Parameters
-    ----------
-    dims : RatHexmazeDims
-        Maze dimensions.
-    module_centers : list[tuple[float, float]]
-        List of module center positions.
 
-    Returns
-    -------
-    tuple[list, list[tuple[float, float]]]
-        - List of Shapely Polygon objects for corridor bridges
-        - List of bridge center positions (x, y)
+def _bridge_edges(n_modules: int) -> list[tuple[str, str, str]]:
+    """Bridges whose two modules are both built, as (name, node, node)."""
+    return [
+        (name, f"node_{_MODULE_LETTERS[m1]}{i1}", f"node_{_MODULE_LETTERS[m2]}{i2}")
+        for name, m1, i1, m2, i2 in _BRIDGES
+        if max(m1, m2) < n_modules
+    ]
+
+
+def _hexmaze_graph(dims: RatHexmazeDims) -> nx.Graph:
+    """Choice-point graph of the maze: module corridors, then bridges.
+
+    Nodes are named ``node_<module><index>`` and carry ``pos`` in cm; edges
+    carry their Euclidean ``distance``.
     """
-    bridge_polygons = []
-    bridge_centers = []
-
-    # Create bridges between adjacent modules
-    for i in range(len(module_centers) - 1):
-        start_center = module_centers[i]
-        end_center = module_centers[i + 1]
-
-        # Bridge center is midpoint
-        bridge_center = (
-            (start_center[0] + end_center[0]) / 2,
-            (start_center[1] + end_center[1]) / 2,
-        )
-        bridge_centers.append(bridge_center)
-
-        # Create corridor connecting modules (with rounded ends)
-        # Start at edge of first module, end at edge of second module
-        start_radius = dims.module_width / 2
-        end_radius = dims.module_width / 2
-
-        # Direction vector from start to end
-        dx = end_center[0] - start_center[0]
-        dy = end_center[1] - start_center[1]
-        dist = np.sqrt(dx**2 + dy**2)
-        unit_x = dx / dist
-        unit_y = dy / dist
-
-        # Bridge start and end points (at module edges)
-        bridge_start = (
-            start_center[0] + unit_x * start_radius,
-            start_center[1] + unit_y * start_radius,
-        )
-        bridge_end = (
-            end_center[0] - unit_x * end_radius,
-            end_center[1] - unit_y * end_radius,
-        )
-
-        # Create bridge corridor with rounded ends
-        bridge_poly = make_buffered_line(
-            start=bridge_start,
-            end=bridge_end,
-            width=dims.corridor_width,
-        )
-        bridge_polygons.append(bridge_poly)
-
-    return bridge_polygons, bridge_centers
-
-
-def _create_hexmaze_track_graph(
-    dims: RatHexmazeDims,
-    module_centers: list[tuple[float, float]],
-    bin_size: float,
-) -> Environment:
-    """Create the 1D linearized track graph for Rat HexMaze.
-
-    Creates a simplified track graph with junction nodes in each module
-    connected by corridor bridges. Each module contains a hexagonal lattice
-    of nodes with 120° angles.
-
-    Parameters
-    ----------
-    dims : RatHexmazeDims
-        Maze dimensions.
-    module_centers : list[tuple[float, float]]
-        List of module center positions.
-    bin_size : float
-        Spatial bin size in cm.
-
-    Returns
-    -------
-    Environment
-        1D linearized environment representing the hexmaze track.
-    """
+    positions, edges = _module_layout(dims.node_spacing)
     graph = nx.Graph()
-
-    # Create simplified hexagonal lattice within each module
-    # For simplicity, create a small hexagonal cluster around each module center
-    all_nodes = []
-    module_node_names = []
-
-    for module_idx, center in enumerate(module_centers):
-        # Create hexagonal lattice nodes in this module
-        # Simple pattern: center + 6 surrounding nodes in hexagonal arrangement
-        module_nodes = _create_hexagonal_lattice_nodes(
-            center=center,
-            radius=dims.module_width / 3,
-            n_rings=2,  # 1 center + 6 inner + 12 outer = 19 nodes
-        )
-
-        # Add nodes to graph with unique names
-        module_names = []
-        for i, pos in enumerate(module_nodes):
-            node_name = f"module_{module_idx}_node_{i}"
-            graph.add_node(node_name, pos=pos)
-            all_nodes.append((node_name, pos))
-            module_names.append(node_name)
-
-        module_node_names.append(module_names)
-
-        # Connect nodes within module (hexagonal lattice with 120° angles)
-        _connect_hexagonal_lattice(graph, module_names, module_nodes)
-
-    # Add bridge connections between modules
-    for i in range(len(module_centers) - 1):
-        # Connect closest nodes between adjacent modules
-        module_a_nodes = module_node_names[i]
-        module_b_nodes = module_node_names[i + 1]
-
-        # Find closest pair of nodes between modules
-        min_dist: float = float("inf")
-        closest_pair = None
-
-        for node_a in module_a_nodes:
-            pos_a = np.array(graph.nodes[node_a]["pos"])
-            for node_b in module_b_nodes:
-                pos_b = np.array(graph.nodes[node_b]["pos"])
-                dist: float = float(np.linalg.norm(pos_b - pos_a))
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_pair = (node_a, node_b)
-
-        # Add bridge edge
-        if closest_pair is not None:
-            graph.add_edge(closest_pair[0], closest_pair[1], distance=min_dist)
-
-    # Create edge order for linearization (traverse modules sequentially)
-    edge_order = list(graph.edges())
-
-    # Create the 1D environment
-    env_track = Environment.from_graph(
-        graph=graph,
-        edge_order=edge_order,
-        edge_spacing=0.0,
-        bin_size=bin_size,
-        track_width=dims.corridor_width,
-        name="rat_hexmaze_1d",
-    )
-    env_track = env_track.with_metadata(units="cm")
-
-    return env_track
-
-
-def _create_hexagonal_lattice_nodes(
-    center: tuple[float, float],
-    radius: float,
-    n_rings: int = 2,
-) -> list[tuple[float, float]]:
-    """Create nodes arranged in hexagonal lattice rings.
-
-    Parameters
-    ----------
-    center : tuple[float, float]
-        Center position (x, y).
-    radius : float
-        Radius of each ring.
-    n_rings : int, optional
-        Number of rings (default: 2).
-        n_rings=1 gives 1+6=7 nodes
-        n_rings=2 gives 1+6+12=19 nodes
-
-    Returns
-    -------
-    list[tuple[float, float]]
-        List of node positions (x, y).
-    """
-    nodes = [center]  # Center node
-
-    cx, cy = center
-
-    for ring in range(1, n_rings + 1):
-        # Nodes in this ring at 60° intervals
-        n_nodes_in_ring = 6 * ring
-        ring_radius = radius * ring / n_rings
-
-        for i in range(n_nodes_in_ring):
-            # Angle in radians (60° = π/3)
-            angle = 2 * np.pi * i / n_nodes_in_ring
-            x = cx + ring_radius * np.cos(angle)
-            y = cy + ring_radius * np.sin(angle)
-            nodes.append((x, y))
-
-    return nodes
-
-
-def _connect_hexagonal_lattice(
-    graph: nx.Graph,
-    node_names: list[str],
-    node_positions: list[tuple[float, float]],
-) -> None:
-    """Connect nodes in hexagonal lattice with 120° angles.
-
-    Connects each node to its nearest neighbors to form a hexagonal lattice.
-
-    Parameters
-    ----------
-    graph : nx.Graph
-        NetworkX graph to add edges to.
-    node_names : list[str]
-        List of node names.
-    node_positions : list[tuple[float, float]]
-        List of node positions corresponding to node_names.
-    """
-    # For each node, connect to nearest neighbors (typically 3 for hexagonal lattice)
-    for i, (name_i, pos_i) in enumerate(zip(node_names, node_positions, strict=True)):
-        pos_i_arr = np.array(pos_i)
-
-        # Find nearest neighbors
-        distances = []
-        for j, (name_j, pos_j) in enumerate(
-            zip(node_names, node_positions, strict=True)
-        ):
-            if i == j:
-                continue
-            pos_j_arr = np.array(pos_j)
-            dist = np.linalg.norm(pos_j_arr - pos_i_arr)
-            distances.append((dist, name_j))
-
-        # Sort by distance and connect to 3 nearest (hexagonal lattice)
-        distances.sort()
-        for dist, neighbor_name in distances[:3]:
-            # Add edge if not already exists
-            if not graph.has_edge(name_i, neighbor_name):
-                graph.add_edge(name_i, neighbor_name, distance=dist)
+    n = dims.n_modules
+    for letter, origin in zip(
+        _MODULE_LETTERS[:n], _module_origins(dims)[:n], strict=True
+    ):
+        for i, pos in enumerate(positions + origin):
+            graph.add_node(f"node_{letter}{i}", pos=(float(pos[0]), float(pos[1])))
+        for i, j in edges:
+            graph.add_edge(
+                f"node_{letter}{i}", f"node_{letter}{j}", distance=dims.node_spacing
+            )
+    for _, u, v in _bridge_edges(dims.n_modules):
+        distance = np.hypot(*np.subtract(graph.nodes[u]["pos"], graph.nodes[v]["pos"]))
+        graph.add_edge(u, v, distance=float(distance))
+    return graph
