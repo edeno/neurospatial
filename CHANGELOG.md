@@ -4,6 +4,30 @@
 
 ### Breaking
 
+- `ops.visibility_occupancy` counts viewing time only over usable sampling
+  intervals. It takes `max_gap` (default 0.5 s), `epochs` and
+  `break_before`, so a tracking pause or the join between two recordings no
+  longer counts as viewing time. An interval adds time only when both its
+  samples have a finite position and heading; NaN positions or headings mark
+  missing samples instead of raising. The last sample used to repeat the
+  previous interval's duration and now adds no time: for gap-free data each
+  bin visible from the last sample loses exactly `times[-1] - times[-2]`.
+  `fov`, `n_rays` and `boundary_source` are checked even when no interval is
+  usable, a non-integer `n_rays` raises `ValueError` (was `TypeError`), and
+  headings need one entry per timestamp.
+- `behavior.distance_to_reward` takes `max_gap` (default 0.5 s), `epochs` and
+  `break_before`. NaN positions give NaN distance instead of raising. Without
+  `reward_positions`, a reward location is read from the sample at the reward
+  time or interpolated only within an observed interval that passes
+  `max_gap` and `break_before`; epochs do not restrict this, because rewards
+  often come while the animal is still. A reward in a gap, across a break,
+  next to a missing sample or outside the recording now has an unknown
+  location, so samples that select it get NaN with a warning; before, it was
+  interpolated across the gap or clipped to the session edge. With
+  `break_before`, a sample selects only rewards from its own recording, and
+  samples outside `epochs` are NaN. Gap-free tracking with rewards inside the
+  recording gives identical results.
+
 - Per-sample behavioral covariates have one home, `neurospatial.behavior`.
   `heading_from_velocity` and `heading_from_body_orientation` move from
   `neurospatial.ops` next to `compute_speed`, and `distance_to_reward` and
@@ -1628,9 +1652,42 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 - `detect_assemblies(..., unit_ids=)` stores unit labels on the result and on
   each `AssemblyPattern`, and `pattern.member_unit_ids` names the core
   members. `assembly_activation(..., unit_ids=)` and
-  `reactivation_strength(..., unit_ids=)` match the columns of new spike
-  counts to the pattern by label, and raise when a label is missing on either
-  side. Without `unit_ids=` the columns pair by position, as before.
+  `reactivation_strength(..., template_unit_ids=, match_unit_ids=)` match the
+  columns of new spike counts to the pattern by label, so each period may list
+  its units in its own order.
+  `explained_variance_reactivation(..., template_unit_ids=, match_unit_ids=,
+  control_unit_ids=)` takes the column labels of the counts each period's
+  `pairwise_correlations` came from, and compares the correlations of the
+  same two cells in every period. A label missing on either side raises and
+  is named, and labels given for only some periods raise. Without labels,
+  pairing stays positional, as before.
+- `Environment.bin_mapping_from(parent)` returns a `BinMapping`
+  (`neurospatial.environment`) of exact bin pairs between an environment and
+  the one it was derived from: identical cells (subsets, cells a clip did not
+  cut, identical rebuilds) and whole fine cells inside coarser cells on the
+  same lattice (`rebin`). Cut cells are reported as split instead of paired;
+  refinements, offset or rotated lattices and different units or frames are
+  refused. `sum` carries counts, occupancy and probability mass with NaN kept
+  as missing, `rates` pools rates from summed counts and occupancy (rates are
+  never averaged), and `category` keeps a label only where all merged bins
+  share it. `mapping.pairs` is the `bin_mapping=` that
+  `compare_spatial_rates` and `population_vector_correlation` take. These
+  functions and `bin_mapping_from` now share one definition of the same cell:
+  polygon cells (for example the cells a clip kept whole) are the same cell
+  when their polygons are equal and their centers and areas agree to
+  rounding. Before, clip cells whose centroids differed in the last digits
+  were refused as different places; this also applies wherever two
+  environments are checked for the same bins, such as decoding with rates
+  estimated on another environment and reading fields from NWB.
+
+  ```python
+  part = env.subset(mask=in_center)
+  mapping = part.bin_mapping_from(env)
+  compare_spatial_rates(full_rates, part_rates, bin_mapping=mapping.pairs)
+
+  coarse = env.rebin(2)
+  coarse_counts = coarse.bin_mapping_from(env).sum(fine_counts)
+  ```
 
 - `neurospatial.behavior.labels_to_epochs(times, labels, *, valid, break_before,
   max_gap, epochs, missing_label)` turns one label per frame (running
