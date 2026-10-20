@@ -4,6 +4,7 @@ Run from the annotation feature checkout with its optional viewers installed::
 
     uv run --no-sync python examples/try_annotation.py --provider cpu
     uv run --no-sync python examples/try_annotation.py --provider sam2
+    uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model large
     uv run --no-sync python examples/try_annotation.py --provider cpu --video movie.mp4
 
 SAM 2 additionally requires its optional dependencies and a local checkpoint.
@@ -51,6 +52,12 @@ def main() -> None:
     """Choose a provider, then open a frame in the annotation editor."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", choices=("cpu", "sam2"), default="cpu")
+    parser.add_argument(
+        "--sam2-model",
+        choices=("tiny", "small", "base-plus", "large"),
+        default="tiny",
+        help="SAM 2.1 checkpoint size. Tiny loads faster; compare Large for finer outlines.",
+    )
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--video", type=Path, help="Use a frame from your video.")
     source.add_argument("--image", type=Path, help="Use a photo or extracted frame.")
@@ -64,10 +71,11 @@ def main() -> None:
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=Path(__file__).resolve().parents[1]
-        / "data/annotation_demo/sam2.1_hiera_tiny.pt",
+        help="Override the selected model's local checkpoint path.",
     )
-    parser.add_argument("--model-config", default="configs/sam2.1/sam2.1_hiera_t.yaml")
+    parser.add_argument(
+        "--model-config", help="Override the selected model's matching SAM 2 config."
+    )
     parser.add_argument("--device", choices=("cpu", "mps", "cuda"), default="cpu")
     parser.add_argument(
         "--check",
@@ -86,10 +94,24 @@ def main() -> None:
     if args.provider == "cpu":
         provider = RegionGrowProvider(tolerance=0.1)
     else:
-        print(f"Loading SAM 2.1 on {args.device}…", flush=True)
+        config_suffix = {"tiny": "t", "small": "s", "base-plus": "b+", "large": "l"}[
+            args.sam2_model
+        ]
+        model_config = (
+            args.model_config or f"configs/sam2.1/sam2.1_hiera_{config_suffix}.yaml"
+        )
+        checkpoint = args.checkpoint or (
+            Path(__file__).resolve().parents[1]
+            / "data/annotation_demo"
+            / f"sam2.1_hiera_{args.sam2_model.replace('-', '_')}.pt"
+        )
+        print(
+            f"Loading SAM 2 on {args.device}: {model_config} ({checkpoint.name})…",
+            flush=True,
+        )
         provider = SegmentAnythingProvider.from_sam2(
-            args.model_config,
-            args.checkpoint,
+            model_config,
+            checkpoint,
             device=args.device,
         )
 

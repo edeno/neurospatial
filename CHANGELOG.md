@@ -1203,6 +1203,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- The annotation demo accepts `--sam2-model tiny|small|base-plus|large`, chooses
+  the matching local checkpoint and config, and prints the model it loads so
+  segmentation quality comparisons identify the actual model size.
+
 - Assisted annotation previews update automatically as inside/outside points or
   CPU color tolerance change. Outlines keep the point tool active, stale results
   cannot be accepted, and paint/erase correction remains available explicitly.

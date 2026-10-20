@@ -320,6 +320,24 @@ and `--model-config configs/sam2.1/sam2.1_hiera_t.yaml` to supply another local
 checkpoint/config pair. Keep `--no-sync` when launching so uv retains these
 optional packages, which are not part of the core dependency lockfile.
 
+The launcher defaults to **SAM 2.1 Tiny** for a shorter initial load and lower
+memory use. To compare with **SAM 2.1 Large** on a difficult frame, download its
+checkpoint (about 900 MB) and choose it explicitly:
+
+```bash
+curl --fail --location --output data/annotation_demo/sam2.1_hiera_large.pt \
+    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
+uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model large
+```
+
+Add `--video /path/to/movie.mp4 --frame-index 100` to compare on your own recording
+using the same frame and clicks. `--sam2-model` also accepts `small` and
+`base-plus`, and selects the matching config and local checkpoint filename.
+The launcher prints the config and checkpoint it actually loads. Image embeddings
+are reused between clicks, so a larger model's initial image processing can take
+longer than subsequent outline updates. `--checkpoint` and `--model-config` still
+override the selected defaults; weights are never downloaded by the launcher.
+
 Load the provider **before** opening the editor so dependency, config or
 checkpoint errors are reported first. Supply an existing local checkpoint;
 this factory does not download weights. The default device is `"cpu"`.
