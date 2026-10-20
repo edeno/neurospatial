@@ -1,272 +1,156 @@
-"""Tests for Honeycomb Maze implementation."""
+"""Tests for Honeycomb Maze implementation.
+
+The published apparatus (Wood et al. 2018, doi:10.1038/nature25433) has 37
+tessellated hexagonal platforms, 11.5 cm along each side, 1 cm apart, in a
+hexagonal configuration 145.5 cm across.
+"""
 
 from __future__ import annotations
 
+from collections import Counter
+
 import networkx as nx
 import numpy as np
+import pytest
+import shapely
+
+from neurospatial.simulation.mazes._base import MazeEnvironments
+from neurospatial.simulation.mazes.honeycomb import HoneycombDims, make_honeycomb_maze
+
+N_PLATFORMS = 37
 
 
-class TestMakeHoneycombMaze:
-    """Tests for make_honeycomb_maze factory function."""
+@pytest.fixture(scope="module")
+def maze():
+    return make_honeycomb_maze()
 
-    def test_returns_maze_environments(self):
-        """make_honeycomb_maze should return MazeEnvironments."""
-        from neurospatial.simulation.mazes._base import MazeEnvironments
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
 
-        maze = make_honeycomb_maze()
-        assert isinstance(maze, MazeEnvironments)
+@pytest.fixture(scope="module")
+def track_graph(maze):
+    return maze.env_track._binning.linearization.graph
 
-    def test_env_2d_is_valid_environment(self):
-        """env_2d should be a valid, fitted Environment."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
 
-        maze = make_honeycomb_maze()
-        # Should have n_bins > 0 if fitted
-        assert maze.env_2d.n_bins > 0
+@pytest.fixture(scope="module")
+def platforms(maze):
+    return [maze.env_2d.regions[f"platform_{i}"].data for i in range(N_PLATFORMS)]
 
-    def test_env_2d_has_correct_units(self):
-        """env_2d should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
 
-        maze = make_honeycomb_maze()
-        assert maze.env_2d.units == "cm"
+class TestPublishedGeometry:
+    def test_default_dims(self):
+        dims = HoneycombDims()
+        assert dims.platform_side == 11.5
+        assert dims.gap == 1.0
+        assert dims.n_rings == 3
+        assert dims.spacing == pytest.approx(11.5 * np.sqrt(3) + 1.0)
 
-    def test_env_2d_has_37_platforms(self):
-        """env_2d should have 37 platform regions (1 + 6 + 12 + 18)."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
+    def test_thirty_seven_platforms_of_published_side(self, platforms):
+        assert len(platforms) == N_PLATFORMS
+        for platform in platforms:
+            sides = np.hypot(*np.diff(np.asarray(platform.exterior.coords), axis=0).T)
+            np.testing.assert_allclose(sides, 11.5)
 
-        maze = make_honeycomb_maze()
+    def test_neighbours_face_across_a_one_cm_gap(self, platforms, track_graph):
+        # Flat sides face each other: the nearest points of two neighbouring
+        # platforms are a whole side apart in parallel, 1 cm away.
+        for u, v in track_graph.edges():
+            a = platforms[int(u.split("_")[1])]
+            b = platforms[int(v.split("_")[1])]
+            assert a.distance(b) == pytest.approx(1.0)
+            shared = a.buffer(0.51).intersection(b.buffer(0.51))
+            assert shared.length > 2 * 11.5 * 0.9  # a full side, not a corner
 
-        # Should have 37 platform regions
-        platform_regions = [
-            name for name in maze.env_2d.regions if name.startswith("platform_")
-        ]
-        assert len(platform_regions) == 37
+    def test_platforms_do_not_overlap(self, platforms):
+        union = shapely.union_all(platforms)
+        assert union.area == pytest.approx(sum(p.area for p in platforms))
 
-    def test_platform_regions_numbered_correctly(self):
-        """Platform regions should be numbered 0 through 36."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
+    def test_total_diameter_is_published(self, platforms):
+        # 145.5 cm published; seven platforms flat to flat give 145.43 cm.
+        x0, _, x1, _ = shapely.union_all(platforms).bounds
+        assert x1 - x0 == pytest.approx(145.5, abs=0.1)
 
-        maze = make_honeycomb_maze()
+    def test_centred_on_origin(self, platforms):
+        assert np.allclose(platforms[0].centroid.coords[0], (0.0, 0.0))
+        x0, y0, x1, y1 = shapely.union_all(platforms).bounds
+        assert (x0 + x1) / 2 == pytest.approx(0.0, abs=1e-9)
+        assert (y0 + y1) / 2 == pytest.approx(0.0, abs=1e-9)
 
-        # Check all platform IDs exist
-        for i in range(37):
-            assert f"platform_{i}" in maze.env_2d.regions
+    def test_track_graph_is_the_hexagonal_lattice(self, track_graph):
+        assert track_graph.number_of_nodes() == N_PLATFORMS
+        assert track_graph.number_of_edges() == 90
+        assert Counter(dict(track_graph.degree()).values()) == {6: 19, 4: 12, 3: 6}
+        assert track_graph.degree("platform_0") == 6
+        assert nx.is_connected(track_graph)
 
-    def test_all_platforms_are_point_regions(self):
-        """All platform regions should be point regions."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
+    def test_custom_rings_and_side(self):
+        dims = HoneycombDims(platform_side=10.0, gap=2.0, n_rings=2)
+        maze = make_honeycomb_maze(dims=dims, bin_size=3.0)
+        names = [r for r in maze.env_2d.regions if r.startswith("platform_")]
+        assert len(names) == 19
+        second = maze.env_2d.regions["platform_1"].data.centroid
+        assert np.hypot(second.x, second.y) == pytest.approx(10.0 * np.sqrt(3) + 2.0)
 
-        maze = make_honeycomb_maze()
 
-        for i in range(37):
-            region = maze.env_2d.regions[f"platform_{i}"]
-            assert region.kind == "point"
+class TestFootprint:
+    def test_floor_is_one_piece_without_holes(self, maze):
+        floor = maze.env_2d.arena.polygon
+        assert floor.geom_type == "Polygon"
+        assert len(floor.interiors) == 0
 
-    def test_platform_0_at_center(self):
-        """Platform 0 should be at the center (0, 0)."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
+    def test_every_track_edge_lies_inside_the_maze(self, maze, track_graph):
+        env = maze.env_2d
+        for u, v in track_graph.edges():
+            p = np.asarray(track_graph.nodes[u]["pos"])
+            q = np.asarray(track_graph.nodes[v]["pos"])
+            points = p + np.linspace(0.0, 1.0, 200)[:, None] * (q - p)
+            assert env.arena.contains(points).all(), (u, v)
+            assert (env.bin_at(points) >= 0).all(), (u, v)
 
-        maze = make_honeycomb_maze()
-
-        center_platform = maze.env_2d.regions["platform_0"]
-        assert np.allclose(center_platform.data, [0.0, 0.0], atol=1.0)
-
-    def test_hexagonal_spatial_extent(self):
-        """env_2d should have hexagonal spatial extent."""
-        from neurospatial.simulation.mazes.honeycomb import (
-            HoneycombDims,
-            make_honeycomb_maze,
+    def test_floor_is_platforms_plus_gaps(self, maze, platforms):
+        # Each platform grown by half a gap, keeping its corners: the floor
+        # adds only the 1 cm gaps (narrower than a bin) and a half-gap rim.
+        floor = maze.env_2d.arena.polygon
+        grown = shapely.union_all(
+            [p.buffer(0.5 + 1e-6, join_style="mitre") for p in platforms]
         )
+        assert floor.difference(grown).area == pytest.approx(0.0, abs=1e-6)
+        platform_area = sum(p.area for p in platforms)
+        assert platform_area / floor.area == pytest.approx(0.907, abs=0.001)
 
-        dims = HoneycombDims(spacing=25.0, n_rings=3)
-        maze = make_honeycomb_maze(dims=dims)
+    def test_most_bins_lie_on_platforms(self, maze, platforms):
+        centers = maze.env_2d.bin_centers
+        on_platform = shapely.contains_xy(
+            shapely.union_all(platforms), centers[:, 0], centers[:, 1]
+        )
+        assert on_platform.mean() > 0.88
+        # The rest are in a gap or the rim: at most half a gap from a
+        # platform's side, or half a gap / cos(30 deg) where three gaps meet.
+        off = shapely.points(centers[~on_platform])
+        distances = shapely.distance(shapely.union_all(platforms), off)
+        assert distances.max() <= 0.5 / np.cos(np.pi / 6) + 1e-6
 
-        # Get spatial extent from bin_centers
-        bin_centers = maze.env_2d.bin_centers
-        x_extent = bin_centers[:, 0].max() - bin_centers[:, 0].min()
-        y_extent = bin_centers[:, 1].max() - bin_centers[:, 1].min()
 
-        # For 3 rings, maximum extent is roughly 3 * spacing * 2
-        # (center to outermost platform on each side)
-        expected_extent = 3 * dims.spacing * 2
-        assert x_extent > expected_extent * 0.5  # At least 50% of expected
-        assert y_extent > expected_extent * 0.5  # At least 50% of expected
+class TestRegions:
+    def test_platform_regions_are_the_platforms(self, maze, platforms):
+        assert list(maze.env_2d.regions) == [
+            f"platform_{i}" for i in range(N_PLATFORMS)
+        ]
+        for i, platform in enumerate(platforms):
+            assert maze.env_2d.regions[f"platform_{i}"].kind == "polygon"
+            assert len(maze.env_2d.bins_in_region(f"platform_{i}")) > 0
+            assert platform.area == pytest.approx(1.5 * np.sqrt(3) * 11.5**2)
 
-    def test_include_track_true_creates_env_track(self):
-        """include_track=True should create env_track."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
 
-        maze = make_honeycomb_maze(include_track=True)
-        assert maze.env_track is not None
-
-    def test_include_track_false_no_env_track(self):
-        """include_track=False should result in env_track=None."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
-
-        maze = make_honeycomb_maze(include_track=False)
-        assert maze.env_track is None
-
-    def test_env_track_is_1d(self):
-        """env_track should be a 1D linearized environment."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
-
-        maze = make_honeycomb_maze(include_track=True)
-        assert maze.env_track is not None
+class TestEnvironments:
+    def test_returns_maze_environments(self, maze):
+        assert isinstance(maze, MazeEnvironments)
+        assert maze.env_2d.units == "cm"
+        assert maze.env_track.units == "cm"
         assert maze.env_track.is_linearized_track
 
-    def test_env_track_has_correct_units(self):
-        """env_track should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
-
-        maze = make_honeycomb_maze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.units == "cm"
+    def test_include_track_false_no_env_track(self):
+        assert make_honeycomb_maze(include_track=False).env_track is None
 
     def test_custom_bin_size(self):
-        """Custom bin_size should affect discretization."""
-        from neurospatial.simulation.mazes.honeycomb import (
-            HoneycombDims,
-            make_honeycomb_maze,
-        )
-
-        dims = HoneycombDims()
-
-        maze_fine = make_honeycomb_maze(dims=dims, bin_size=1.0)
-        maze_coarse = make_honeycomb_maze(dims=dims, bin_size=5.0)
-
-        # Finer bins should result in more bins
-        assert maze_fine.env_2d.n_bins > maze_coarse.env_2d.n_bins
-
-    def test_custom_dims(self):
-        """Custom dimensions should be respected."""
-        from neurospatial.simulation.mazes.honeycomb import (
-            HoneycombDims,
-            make_honeycomb_maze,
-        )
-
-        dims = HoneycombDims(spacing=30.0, n_rings=2)
-        maze = make_honeycomb_maze(dims=dims)
-
-        # With n_rings=2, should have 1 + 6 + 12 = 19 platforms
-        platform_regions = [
-            name for name in maze.env_2d.regions if name.startswith("platform_")
-        ]
-        assert len(platform_regions) == 19
-
-    def test_none_dims_uses_defaults(self):
-        """dims=None should use default dimensions."""
-        from neurospatial.simulation.mazes.honeycomb import (
-            HoneycombDims,
-            make_honeycomb_maze,
-        )
-
-        maze_default = make_honeycomb_maze(dims=None)
-        maze_explicit = make_honeycomb_maze(dims=HoneycombDims())
-
-        # Both should have the same number of platforms
-        assert len(maze_default.env_2d.regions) == len(maze_explicit.env_2d.regions)
-
-
-class TestHoneycombTrackGraph:
-    """Tests for the track graph structure of Honeycomb Maze."""
-
-    def test_track_has_37_nodes(self):
-        """Track graph should have 37 nodes (one per platform)."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
-
-        maze = make_honeycomb_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # Should have 37 nodes in the track graph
-        # (actual count will be higher due to intermediate nodes from Environment.from_graph)
-        # But the graph we create should have 37 nodes before discretization
-        # We'll check that the environment is connected instead
-        assert nx.is_connected(maze.env_track.connectivity)
-
-    def test_track_is_connected(self):
-        """Track graph should be connected."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
-
-        maze = make_honeycomb_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # The underlying graph should be connected
-        assert nx.is_connected(maze.env_track.connectivity)
-
-    def test_track_nodes_have_positions(self):
-        """All track graph nodes should have position attributes."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
-
-        maze = make_honeycomb_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # Each node should have a 'pos' attribute
-        for node in maze.env_track.connectivity.nodes():
-            assert "pos" in maze.env_track.connectivity.nodes[node]
-
-    def test_hexagonal_connectivity(self):
-        """Platforms form a hex lattice: center has 6 neighbors, max degree is 6."""
-        from neurospatial.simulation.mazes.honeycomb import (
-            HoneycombDims,
-            make_honeycomb_maze,
-        )
-
-        dims = HoneycombDims(spacing=25.0, n_rings=3)
-        maze = make_honeycomb_maze(dims=dims, include_track=True)
-
-        # Work on the pre-discretized platform lattice via the platform point
-        # regions (the discretized Environment graph inserts intermediate nodes,
-        # which is why the old test could not check degree directly).
-        platform_names = [
-            name for name in maze.env_2d.regions if name.startswith("platform_")
-        ]
-        positions = np.array(
-            [maze.env_2d.regions[name].data for name in platform_names]
-        )
-
-        # Two platforms are lattice-adjacent if their centers are one spacing
-        # apart (allow 15% tolerance for float/binning effects).
-        adjacency_radius = dims.spacing * 1.15
-        degrees = np.array(
-            [
-                int(
-                    np.sum(
-                        (np.linalg.norm(positions - p, axis=1) > 1e-6)
-                        & (np.linalg.norm(positions - p, axis=1) < adjacency_radius)
-                    )
-                )
-                for p in positions
-            ]
-        )
-
-        # The central platform (platform_0, at the origin) is fully surrounded,
-        # so it must have exactly 6 neighbors, and no platform exceeds 6.
-        center_idx = platform_names.index("platform_0")
-        assert degrees[center_idx] == 6
-        assert degrees.max() == 6
-
-    def test_track_covers_all_platforms(self):
-        """Track should cover all platform positions."""
-        from neurospatial.simulation.mazes.honeycomb import (
-            HoneycombDims,
-            make_honeycomb_maze,
-        )
-
-        dims = HoneycombDims(spacing=25.0, n_rings=3)
-        maze = make_honeycomb_maze(dims=dims, include_track=True)
-        assert maze.env_track is not None
-
-        # Get the positions of all nodes in the track graph
-        graph = maze.env_track.connectivity
-        positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
-
-        # Extent should cover the full hexagonal grid
-        x_extent = positions[:, 0].max() - positions[:, 0].min()
-        y_extent = positions[:, 1].max() - positions[:, 1].min()
-
-        # For 3 rings, expect roughly 3 * spacing * 2 extent
-        expected_extent = 3 * dims.spacing * 2
-        assert x_extent >= expected_extent * 0.5
-        assert y_extent >= expected_extent * 0.5
+        fine = make_honeycomb_maze(bin_size=1.0, include_track=False)
+        coarse = make_honeycomb_maze(bin_size=5.0, include_track=False)
+        assert fine.env_2d.n_bins > coarse.env_2d.n_bins

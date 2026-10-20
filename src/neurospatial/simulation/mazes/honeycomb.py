@@ -1,12 +1,19 @@
 """Honeycomb Maze environment for spatial navigation research.
 
-The Honeycomb Maze consists of 37 hexagonal platforms arranged in concentric rings
-around a central platform. Platforms can be raised or lowered individually, creating
-flexible spatial navigation tasks. This design is particularly useful for studying
-goal-directed navigation and path integration in a discrete, graph-like environment.
+The Honeycomb Maze consists of 37 hexagonal platforms in an overall hexagonal
+configuration. Each platform can be raised or lowered on its own, so on each
+step the animal chooses between two raised neighbours of its current
+platform, a discrete navigation task with controlled choices.
 
-Reference: Wood et al. 2018 (eLife) - "The honeycomb maze provides a novel test to
-study hippocampal-dependent spatial navigation"
+The geometry follows Wood et al. (2018), Methods ("Maze Description"): "The
+Honeycomb Maze consists of 37 tessellated hexagonal platforms (11.5 cm along
+each side) in an overall hexagonal configuration (total maze diameter
+145.5 cm, five platforms across with 1 cm gaps between each platform)".
+Neighbouring platforms face each other across a flat side, so their centers
+are one flat-to-flat width (11.5 cm x sqrt(3)) plus the 1 cm gap apart. Seven
+platforms then span 145.4 cm flat to flat, matching the published diameter;
+a 37-platform hexagon is seven platforms across its widest row, not five as
+the quoted sentence says.
 
 The maze has:
 - 1 central platform (platform_0)
@@ -14,6 +21,13 @@ The maze has:
 - 12 platforms in ring 2
 - 18 platforms in ring 3
 Total: 37 platforms with hexagonal 6-connectivity
+
+References
+----------
+Wood, R. A., Bauza, M., Krupic, J., Burton, S., Delekate, A., Chan, D., &
+O'Keefe, J. (2018). The honeycomb maze provides a novel test to study
+hippocampal-dependent spatial navigation. Nature, 554(7690), 102-105.
+https://doi.org/10.1038/nature25433
 
 Examples
 --------
@@ -36,26 +50,29 @@ from dataclasses import dataclass
 
 import networkx as nx
 import numpy as np
+import shapely
 from shapely.geometry import Polygon
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
-from neurospatial.simulation.mazes._geometry import union_polygons
 
 
 @dataclass(frozen=True)
 class HoneycombDims(MazeDims):
     """Dimension specifications for Honeycomb Maze.
 
-    The Honeycomb Maze consists of hexagonal platforms arranged in concentric
-    rings. Each platform is a regular hexagon, and adjacent platforms are
-    separated by a fixed spacing.
+    Each platform is a regular hexagon; neighbouring platforms face each
+    other across a flat side, separated by a fixed gap.
 
     Attributes
     ----------
-    spacing : float
-        Distance between adjacent platform centers in cm. Default is 25.0.
+    platform_side : float
+        Side length of each hexagonal platform in cm, which is also its
+        center-to-corner radius. Default is 11.5 (Wood et al. 2018).
+    gap : float
+        Gap between the facing sides of neighbouring platforms in cm.
+        Default is 1.0 (Wood et al. 2018).
     n_rings : int
         Number of rings around the central platform. Default is 3, which
         creates 1 + 6 + 12 + 18 = 37 platforms total.
@@ -63,20 +80,32 @@ class HoneycombDims(MazeDims):
     Examples
     --------
     >>> dims = HoneycombDims()
-    >>> dims.spacing
-    25.0
+    >>> dims.platform_side
+    11.5
+    >>> dims.gap
+    1.0
     >>> dims.n_rings
     3
+    >>> round(dims.spacing, 2)  # neighbouring centers, cm
+    20.92
 
-    >>> custom = HoneycombDims(spacing=30.0, n_rings=4)
-    >>> custom.spacing
-    30.0
+    >>> custom = HoneycombDims(platform_side=10.0, n_rings=4)
     >>> custom.n_rings
     4
     """
 
-    spacing: float = 25.0
+    platform_side: float = 11.5
+    gap: float = 1.0
     n_rings: int = 3
+
+    @property
+    def spacing(self) -> float:
+        """Distance between neighbouring platform centers in cm.
+
+        One platform's flat-to-flat width, ``platform_side * sqrt(3)``, plus
+        the gap.
+        """
+        return float(self.platform_side * np.sqrt(3.0) + self.gap)
 
 
 def make_honeycomb_maze(
@@ -93,8 +122,8 @@ def make_honeycomb_maze(
     Parameters
     ----------
     dims : HoneycombDims, optional
-        Maze dimensions. If None, uses default dimensions
-        (25 cm spacing, 3 rings = 37 platforms).
+        Maze dimensions. If None, uses the published dimensions
+        (11.5 cm platform sides, 1 cm gaps, 3 rings = 37 platforms).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
@@ -107,13 +136,22 @@ def make_honeycomb_maze(
         Contains:
         - env_2d: 2D polygon-based environment
         - env_track: 1D linearized track environment (if include_track=True);
-          its ``track_width`` is one platform's width, so a sample within one
-          platform radius of the centerline is on the track, including a few in
-          the gaps between platforms
+          its ``track_width`` is one platform's corner-to-corner width, so a
+          sample anywhere on a platform is on the track, as are a few in the
+          gaps between platforms
 
     Notes
     -----
     The maze is centered at the origin with platform_0 at (0, 0).
+    Neighbouring platforms lie along 0, 60, 120, ... degrees from each other
+    and face each other across a flat side.
+
+    The 2-D environment is the union of the hexagonal cells that tile the
+    plane around each platform center (each cell is its platform grown by
+    half a gap), so the floor is one connected piece. It includes the 1 cm
+    gaps between platforms, which are narrower than a bin, and a half-gap
+    rim around the outside; the ``platform_*`` regions are the platforms
+    themselves.
 
     Platform numbering:
     - platform_0: Center (ring 0)
@@ -122,14 +160,14 @@ def make_honeycomb_maze(
     - platform_19 to platform_36: Ring 3 (18 platforms)
 
     Regions:
-    - platform_0 through platform_36: Point regions at platform centers
+    - platform_0 through platform_36: Hexagonal polygon regions, one per
+      platform
 
     Track Graph Topology:
-    - Hexagonal 6-connectivity: Each platform connects to up to 6 neighbors
-    - Ring 0 (center) connects to all 6 platforms in ring 1
-    - Ring 1 platforms connect to center and ring 2 neighbors
-    - Ring 2 platforms connect to ring 1 and ring 3 neighbors
-    - Ring 3 (outermost) platforms connect to ring 2 neighbors only
+    - One node per platform center, one edge per pair of neighbouring
+      platforms (90 edges for 37 platforms)
+    - Platforms in rings 0-2 have 6 neighbours; on the outer ring, the six
+      corner platforms have 3 and the others 4
 
     Examples
     --------
@@ -143,9 +181,9 @@ def make_honeycomb_maze(
 
     Create with custom dimensions:
 
-    >>> dims = HoneycombDims(spacing=30.0, n_rings=2)
+    >>> dims = HoneycombDims(platform_side=15.0, n_rings=2)
     >>> maze = make_honeycomb_maze(dims=dims, bin_size=4.0)
-    >>> "platform_0" in maze.env_2d.regions
+    >>> "platform_18" in maze.env_2d.regions
     True
 
     Skip track graph creation:
@@ -161,46 +199,33 @@ def make_honeycomb_maze(
     if dims is None:
         dims = HoneycombDims()
 
-    # Generate all platform positions
     positions = _generate_hexagonal_grid(dims.spacing, dims.n_rings)
 
-    # Create hexagonal polygon for each platform
-    # Platform radius is approximately spacing / 2 to allow slight gap between platforms
-    platform_radius = _platform_radius(dims)
-    platform_polygons = [
-        _make_hexagon_polygon(center, platform_radius) for center in positions
-    ]
+    # The cell around each platform has an apothem of half the center
+    # spacing, so neighbouring cells share a side and tile without gaps.
+    # Snapping to a 1e-6 cm grid makes the shared corners, computed from
+    # different centers, coincide exactly, so no sliver holes remain.
+    cell_radius = dims.spacing / np.sqrt(3.0)
+    floor = shapely.union_all(
+        [_make_hexagon_polygon(center, cell_radius) for center in positions],
+        grid_size=1e-6,
+    )
 
-    # Union all platforms into single polygon
-    honeycomb_polygon = union_polygons(platform_polygons)
-
-    # Convert to Polygon if result is MultiPolygon (extract convex hull or buffer slightly)
-    # For honeycomb, we want one contiguous polygon, so use convex_hull or buffer
-    from shapely.geometry import MultiPolygon
-
-    if isinstance(honeycomb_polygon, MultiPolygon):
-        # Buffer by a small amount to merge nearby polygons
-        honeycomb_polygon = honeycomb_polygon.buffer(0.1).buffer(-0.1)
-        # If still MultiPolygon, take convex hull
-        if isinstance(honeycomb_polygon, MultiPolygon):
-            honeycomb_polygon = honeycomb_polygon.convex_hull
-
-    # Create 2D environment
     env_2d = Environment.from_polygon(
-        polygon=honeycomb_polygon,
+        polygon=floor,
         bin_size=bin_size,
         name="honeycomb_maze",
         connect_diagonal_neighbors=True,
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # Add regions for each platform (numbered 0 through n_platforms-1)
     region_builder = Regions()
     for i, pos in enumerate(positions):
-        region_builder.add(f"platform_{i}", point=pos)
+        region_builder.add(
+            f"platform_{i}", polygon=_make_hexagon_polygon(pos, dims.platform_side)
+        )
     env_2d = env_2d.with_regions(region_builder)
 
-    # Create track graph if requested
     env_track = None
     if include_track:
         env_track = _create_honeycomb_track_graph(dims, bin_size)
@@ -294,32 +319,30 @@ def _make_hexagon_polygon(
     center: tuple[float, float],
     radius: float,
 ) -> Polygon:
-    """Create a regular hexagon polygon.
+    """Create a regular hexagon whose flat sides face its lattice neighbours.
+
+    Vertices sit at 30, 90, 150, ... degrees, so the sides are perpendicular
+    to the 0, 60, 120, ... degree directions in which neighbouring platforms
+    lie.
 
     Parameters
     ----------
     center : tuple[float, float]
         Center point (x, y) of the hexagon.
     radius : float
-        Distance from center to vertices (circumradius).
+        Distance from center to vertices (circumradius), equal to the side.
 
     Returns
     -------
     Polygon
         Shapely polygon representing the hexagon.
     """
-    # Generate 6 vertices at 60° intervals
-    angles = np.linspace(0, 2 * np.pi, 7)[:-1]  # 6 vertices, exclude duplicate endpoint
-    vertices = [
-        (center[0] + radius * np.cos(angle), center[1] + radius * np.sin(angle))
-        for angle in angles
-    ]
-    return Polygon(vertices)
-
-
-def _platform_radius(dims: HoneycombDims) -> float:
-    """Corner radius of each hexagonal platform, leaving a gap between them."""
-    return dims.spacing / 2.5
+    angles = np.pi / 6 + np.arange(6) * np.pi / 3
+    return Polygon(
+        np.column_stack(
+            [center[0] + radius * np.cos(angles), center[1] + radius * np.sin(angles)]
+        )
+    )
 
 
 def _create_honeycomb_track_graph(
@@ -387,16 +410,15 @@ def _create_honeycomb_track_graph(
     # Start from center platform
     add_edges_from_node("platform_0")
 
-    # Create the 1D environment. The platforms are the widest walkable part,
-    # so the track is as wide as a platform: a sample within one platform
-    # radius of the centerline is on the track, which also admits a few
-    # samples in the gap between two platforms.
+    # The platforms are the walkable surface, so the track is as wide as a
+    # platform corner to corner: every point of a platform lies within one
+    # side length of its center, which also admits a few samples in the gaps.
     env_track = Environment.from_graph(
         graph=graph,
         edge_order=edge_order,
         edge_spacing=0.0,  # No spacing between edges
         bin_size=bin_size,
-        track_width=2.0 * _platform_radius(dims),
+        track_width=2.0 * dims.platform_side,
         name="honeycomb_1d",
     )
     env_track = env_track.with_metadata(units="cm")
