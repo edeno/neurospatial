@@ -1092,6 +1092,7 @@ def subsample_frames(
 
 def estimate_colormap_range_from_subset(
     fields: NDArray | list,
+    *,
     n_samples: int = 10_000,
     percentile: tuple[float, float] = (1.0, 99.0),
     seed: int | None = None,
@@ -1176,6 +1177,7 @@ def estimate_colormap_range_from_subset(
 
 def large_session_napari_config(
     n_frames: int,
+    *,
     sample_rate_hz: int | None = None,
 ) -> dict[str, Any]:
     """Get recommended napari animation settings for large datasets.
