@@ -1,13 +1,15 @@
 """Linear Track maze environment.
 
 The Linear Track is the simplest spatial navigation paradigm - a straight
-corridor with reward ports at both ends. Animals run back and forth (laps)
-between rewards, which makes the track a standard apparatus for place-cell,
+corridor with a reward well at each end. Animals run back and forth (laps)
+between the wells, which makes the track a standard apparatus for place-cell,
 theta-sequence and replay studies.
 
-The default length follows Kim & Frank (2009), PLoS One 4:e5494,
+The default length and the wells follow Kim & Frank (2009), PLoS One 4:e5494,
 doi:10.1371/journal.pone.0005494, who trained rats on "an elevated linear
-track (150 cm long, 6 cm wide)".
+track (150 cm long, 6 cm wide)": "Rats were motivated with droplets of
+sweetened milk, which were automatically dispensed in food wells located at
+the two ends of the track."
 
 Examples
 --------
@@ -15,10 +17,10 @@ Examples
 >>> maze = make_linear_track()
 >>> maze.env_2d.units
 'cm'
->>> "reward_left" in maze.env_2d.regions
-True
->>> "reward_right" in maze.env_2d.regions
-True
+>>> list(maze.env_2d.landmarks)
+['well_left', 'well_right']
+>>> maze.env_2d.landmarks["well_left"].metadata["role"]
+'reward_port'
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from dataclasses import dataclass
 import networkx as nx
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
@@ -75,7 +78,7 @@ def make_linear_track(
 ) -> MazeEnvironments:
     """Create a Linear Track environment.
 
-    Creates a straight corridor with reward ports at both ends. This is the
+    Creates a straight corridor with a reward well at each end. This is the
     simplest maze design, ideal for studying place cells, theta sequences,
     and sharp-wave ripple replay.
 
@@ -102,11 +105,18 @@ def make_linear_track(
     - X-axis: from -length/2 to +length/2
     - Y-axis: from -width/2 to +width/2
 
-    Regions (each centred in the end square of the track, half a track width
-    back from the end wall):
+    Each food well is a landmark in ``env_2d.landmarks`` with role
+    ``"reward_port"``, and a point region of the same name. Both sit in the
+    end square of the track, half a track width back from the end wall:
 
-    - reward_left: Point at left end (-length/2 + width/2, 0)
-    - reward_right: Point at right end (+length/2 - width/2, 0)
+    - well_left: Point at left end (-length/2 + width/2, 0)
+    - well_right: Point at right end (+length/2 - width/2, 0)
+
+    The regions are points because Kim & Frank (2009) do not give the wells'
+    size. They scored well visits with "a circle with a 15-cm radius" around
+    each well; that circle is an analysis choice, not the well, so add a
+    region of that size to reproduce their visits. The track's end nodes, at
+    the end walls, share the wells' names.
 
     Examples
     --------
@@ -122,7 +132,7 @@ def make_linear_track(
 
     >>> dims = LinearTrackDims(length=200.0, width=12.0)
     >>> maze = make_linear_track(dims=dims, bin_size=4.0)
-    >>> "reward_left" in maze.env_2d.regions
+    >>> "well_left" in maze.env_2d.regions
     True
 
     Skip track graph creation:
@@ -155,11 +165,26 @@ def make_linear_track(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # Add regions for reward locations
+    # One food well at each end; Kim & Frank (2009) do not give its size
+    wells = {
+        "well_left": corridor_end_point(end, start, dims.width),
+        "well_right": corridor_end_point(start, end, dims.width),
+    }
     region_builder = Regions()
-    region_builder.add("reward_left", point=corridor_end_point(end, start, dims.width))
-    region_builder.add("reward_right", point=corridor_end_point(start, end, dims.width))
-    env_2d = env_2d.with_regions(region_builder)
+    for name, position in wells.items():
+        region_builder.add(name, point=position)
+    landmarks = Landmarks(
+        [
+            Landmark(
+                name,
+                "point",
+                position,
+                metadata={"role": "reward_port", "port_type": "food_well"},
+            )
+            for name, position in wells.items()
+        ]
+    )
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(landmarks)
 
     # Create track graph if requested
     env_track = None
@@ -192,16 +217,16 @@ def _create_linear_track_graph(
     # Create a simple linear graph from start to end
     graph = nx.Graph()
 
-    # Add start and end nodes with positions
-    graph.add_node("start", pos=(-half_length, 0.0))
-    graph.add_node("end", pos=(half_length, 0.0))
+    # End nodes at the end walls, named like the wells there
+    graph.add_node("well_left", pos=(-half_length, 0.0))
+    graph.add_node("well_right", pos=(half_length, 0.0))
 
     # Connect with edge that has distance attribute
     distance = dims.length
-    graph.add_edge("start", "end", distance=distance)
+    graph.add_edge("well_left", "well_right", distance=distance)
 
     # Edge order is just the single edge
-    edge_order = [("start", "end")]
+    edge_order = [("well_left", "well_right")]
 
     # Create the 1D environment
     env_track = Environment.from_graph(

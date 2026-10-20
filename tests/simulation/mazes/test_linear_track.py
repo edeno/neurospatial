@@ -55,22 +55,23 @@ class TestMakeLinearTrack:
         # Y extent should roughly match width
         assert y_max - y_min < dims.width * 2  # Not too much wider than corridor
 
-    def test_env_2d_has_reward_left_region(self):
-        """env_2d should have a 'reward_left' region."""
+    def test_a_food_well_at_each_end_is_a_reward_port(self):
+        """Kim & Frank (2009): food wells at the two ends of the track."""
         from neurospatial.simulation.mazes.linear_track import make_linear_track
 
         maze = make_linear_track()
-        assert "reward_left" in maze.env_2d.regions
+        landmarks = maze.env_2d.landmarks
+        assert list(landmarks) == ["well_left", "well_right"]
+        for well in landmarks.values():
+            assert well.kind == "point"
+            assert dict(well.metadata) == {
+                "role": "reward_port",
+                "port_type": "food_well",
+            }
+        assert list(maze.env_2d.regions) == ["well_left", "well_right"]
 
-    def test_env_2d_has_reward_right_region(self):
-        """env_2d should have a 'reward_right' region."""
-        from neurospatial.simulation.mazes.linear_track import make_linear_track
-
-        maze = make_linear_track()
-        assert "reward_right" in maze.env_2d.regions
-
-    def test_reward_regions_at_correct_positions(self):
-        """Reward regions should be at the ends of the track."""
+    def test_wells_sit_in_the_end_squares_of_the_track(self):
+        """Each well is half a width back from its end wall, with a point region."""
         from neurospatial.simulation.mazes.linear_track import (
             LinearTrackDims,
             make_linear_track,
@@ -79,24 +80,32 @@ class TestMakeLinearTrack:
         dims = LinearTrackDims(length=150.0)
         maze = make_linear_track(dims=dims)
 
-        # Get region positions (Region.data contains the point coordinates)
-        reward_left = maze.env_2d.regions["reward_left"]
-        reward_right = maze.env_2d.regions["reward_right"]
-
-        # Both should be point regions
-        assert reward_left.kind == "point"
-        assert reward_right.kind == "point"
-
-        # Each reward sits in the end square of the track, half a width back
-        # from the end wall.
         inset = dims.length / 2 - dims.width / 2
-        np.testing.assert_allclose(reward_left.data, [-inset, 0.0])
-        np.testing.assert_allclose(reward_right.data, [inset, 0.0])
         polygon = maze.env_2d.arena.polygon
-        for region in (reward_left, reward_right):
-            point = Point(region.data)
+        for name, x in (("well_left", -inset), ("well_right", inset)):
+            well = maze.env_2d.landmarks[name]
+            np.testing.assert_allclose(well.data, [x, 0.0])
+            # The well size is unpublished, so the region is the well's point.
+            region = maze.env_2d.regions[name]
+            assert region.kind == "point"
+            np.testing.assert_allclose(region.data, well.data)
+            point = Point(well.data)
             assert polygon.contains(point)
             assert polygon.boundary.distance(point) == pytest.approx(dims.width / 2)
+
+    def test_track_carries_the_wells_and_ends_at_them(self):
+        """The track's landmarks are the 2-D wells; its end nodes share their names."""
+        from neurospatial.simulation.mazes.linear_track import make_linear_track
+
+        maze = make_linear_track()
+        track = maze.env_track
+        assert list(track.landmarks) == ["well_left", "well_right"]
+        for name, well in maze.env_2d.landmarks.items():
+            np.testing.assert_allclose(track.landmarks[name].data, well.data)
+        assert list(track.binning.linearization.graph.nodes) == [
+            "well_left",
+            "well_right",
+        ]
 
     def test_default_length_is_the_published_150_cm_track(self):
         """Kim & Frank (2009): a 150 cm long linear track."""
@@ -111,8 +120,8 @@ class TestMakeLinearTrack:
         assert x_max - x_min == pytest.approx(150.0)
         assert y_max - y_min == pytest.approx(dims.width)
 
-    def test_track_rewards_stay_where_they_are_in_2d(self):
-        """Each reward on the linearized track lies where it does in 2-D."""
+    def test_track_wells_stay_where_they_are_in_2d(self):
+        """Each well region on the linearized track lies where it does in 2-D."""
         from neurospatial.simulation.mazes.linear_track import make_linear_track
 
         maze = make_linear_track(bin_size=1.0)
