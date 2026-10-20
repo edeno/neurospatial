@@ -6,11 +6,13 @@ central junction. It is commonly used for rule-switching tasks where animals
 must learn and flexibly switch between different response rules (e.g., go
 east vs go west, or go to the light vs go to the dark arm).
 
-Reference: Wijnen et al. 2024 (Brain Structure & Function)
-
 The plus maze provides more decision alternatives than a T-maze while
 maintaining a simple structure that supports both egocentric (body-turn)
-and allocentric (world-centered) navigation strategies.
+and allocentric (world-centered) navigation strategies. Wijnen et al. (2024),
+Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x, discuss plus
+mazes in their review text; the plus maze is not among the mazes drawn in
+their Fig. 1. Plus-maze sizes vary between labs, and the defaults here are
+not taken from a published apparatus.
 
 Examples
 --------
@@ -32,6 +34,7 @@ from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
+    corridor_end_point,
     make_corridor_polygon,
     union_polygons,
 )
@@ -48,15 +51,15 @@ class PlusMazeDims(MazeDims):
     Attributes
     ----------
     arm_length : float
-        Length of each arm from center to end in cm. Default is 45.0,
-        giving a total span of 100 cm (45 + 10/2 + 45 + 10/2 ≈ 100 cm).
+        Length of each arm in cm, from the centre to the arm's far end wall.
+        Default is 45.0.
     width : float
         Width of all corridors in cm. Default is 10.0.
 
     Notes
     -----
-    Default dimensions create a 100 cm x 100 cm maze footprint:
-    - Total width/height = 2 * arm_length + width = 2 * 45 + 10 = 100 cm
+    Default dimensions create a 90 cm x 90 cm maze footprint:
+    total width/height = 2 * arm_length = 2 * 45 = 90 cm.
 
     Examples
     --------
@@ -91,7 +94,7 @@ def make_plus_maze(
     ----------
     dims : PlusMazeDims, optional
         Maze dimensions. If None, uses default dimensions creating a
-        100 cm x 100 cm maze (45 cm arms, 10 cm width).
+        90 cm x 90 cm maze (45 cm arms, 10 cm width).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     include_track : bool, optional
@@ -113,12 +116,14 @@ def make_plus_maze(
     - East arm: x = 0 to x = +arm_length
     - West arm: x = 0 to x = -arm_length
 
-    Regions:
+    Regions (arm ends are centred in the end square of each arm, half a
+    corridor width back from its far end, with ``d = arm_length - width/2``):
+
     - center: Central junction at (0, 0)
-    - north_end: North arm endpoint (0, +arm_length)
-    - south_end: South arm endpoint (0, -arm_length)
-    - east_end: East arm endpoint (+arm_length, 0)
-    - west_end: West arm endpoint (-arm_length, 0)
+    - north_end: North arm end (0, +d)
+    - south_end: South arm end (0, -d)
+    - east_end: East arm end (+d, 0)
+    - west_end: West arm end (-d, 0)
 
     Track Graph Topology (star):
     - center -> north_end
@@ -210,10 +215,15 @@ def make_plus_maze(
     # Add regions for key locations
     region_builder = Regions()
     region_builder.add("center", point=center_pos)
-    region_builder.add("north_end", point=north_end_pos)
-    region_builder.add("south_end", point=south_end_pos)
-    region_builder.add("east_end", point=east_end_pos)
-    region_builder.add("west_end", point=west_end_pos)
+    for name, end_pos in (
+        ("north_end", north_end_pos),
+        ("south_end", south_end_pos),
+        ("east_end", east_end_pos),
+        ("west_end", west_end_pos),
+    ):
+        region_builder.add(
+            name, point=corridor_end_point(center_pos, end_pos, dims.width)
+        )
     env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested

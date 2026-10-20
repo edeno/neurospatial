@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+from shapely.geometry import Point
 
 
 class TestMakePlusMaze:
@@ -129,21 +131,35 @@ class TestMakePlusMaze:
         assert np.isclose(center.data[0], 0.0, atol=1.0)
         assert np.isclose(center.data[1], 0.0, atol=1.0)
 
-        # North end should be at (0, +arm_length)
-        assert np.isclose(north_end.data[0], 0.0, atol=1.0)
-        assert np.isclose(north_end.data[1], dims.arm_length, atol=1.0)
+        # Arm ends are centred in each arm's end square, half a corridor
+        # width back from the far end wall.
+        d = dims.arm_length - dims.width / 2
+        np.testing.assert_allclose(north_end.data, [0.0, d])
+        np.testing.assert_allclose(south_end.data, [0.0, -d])
+        np.testing.assert_allclose(east_end.data, [d, 0.0])
+        np.testing.assert_allclose(west_end.data, [-d, 0.0])
+        polygon = maze.env_2d.arena.polygon
+        for region in (north_end, south_end, east_end, west_end):
+            point = Point(region.data)
+            assert polygon.contains(point)
+            assert polygon.boundary.distance(point) == pytest.approx(dims.width / 2)
 
-        # South end should be at (0, -arm_length)
-        assert np.isclose(south_end.data[0], 0.0, atol=1.0)
-        assert np.isclose(south_end.data[1], -dims.arm_length, atol=1.0)
+    def test_default_footprint_is_twice_the_arm_length(self):
+        """Arms reach arm_length from the centre: a 90 x 90 cm footprint."""
+        from neurospatial.simulation.mazes.plus_maze import make_plus_maze
 
-        # East end should be at (+arm_length, 0)
-        assert np.isclose(east_end.data[0], dims.arm_length, atol=1.0)
-        assert np.isclose(east_end.data[1], 0.0, atol=1.0)
+        bounds = make_plus_maze(include_track=False).env_2d.arena.polygon.bounds
+        assert bounds == pytest.approx((-45.0, -45.0, 45.0, 45.0))
 
-        # West end should be at (-arm_length, 0)
-        assert np.isclose(west_end.data[0], -dims.arm_length, atol=1.0)
-        assert np.isclose(west_end.data[1], 0.0, atol=1.0)
+    def test_track_regions_stay_where_they_are_in_2d(self):
+        """Each region on the linearized track lies where it does in 2-D."""
+        from neurospatial.simulation.mazes.plus_maze import make_plus_maze
+
+        maze = make_plus_maze(bin_size=1.0)
+        for name, region in maze.env_2d.regions.items():
+            np.testing.assert_allclose(
+                maze.env_track.regions[name].data, region.data, atol=1e-9
+            )
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
