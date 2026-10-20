@@ -4,6 +4,34 @@
 
 ### Breaking
 
+- Every time window is half-open, `[start, stop)`, the convention analysis
+  `epochs=` and `labels_to_epochs` already used, so adjacent windows never
+  share a spike or event:
+  - `in_epochs`, `restrict` and `restrict_spike_trains` default to
+    `closed="left"` (was `"both"`); pass `closed="both"` to match pynapple's
+    inclusive `restrict`.
+  - `align_spikes_to_events` and `align_events` leave out a spike or event
+    exactly at `event + stop`, so the raster agrees with the peri-event
+    histogram, which already did. `event_count_in_window`, `event_indicator`
+    and `filter_by_intervals` do the same at the window or interval stop.
+  - A window with `stop <= start` is refused, since it holds no time.
+    `event_indicator` therefore needs an explicit `window=` (its default
+    `(0.0, 0.0)` matched only exact float equality); `window=(-bin_size / 2,
+    bin_size / 2)` marks each event at exactly one sample.
+  - `laps_to_direction_labels`, `runs_to_direction_labels`,
+    `running_direction_labels` and `goal_pair_direction_labels` label
+    `[start_time, end_time)`: a lap's last sample starts the interval that
+    leaves the lap, so it is now `"other"`, and `labels_to_epochs` gives
+    windows that match the laps exactly.
+
+  ```python
+  # before: a spike at t = 1.0 was in both halves
+  first, second = restrict(spikes, epochs=(0, 1)), restrict(spikes, epochs=(1, 2))
+  # after: it is in `second` only; for the old behavior pass closed="both"
+  event_indicator(times, rewards)                       # before
+  event_indicator(times, rewards, window=(-dt / 2, dt / 2))  # after
+  ```
+
 - `ops.visibility_occupancy` counts viewing time only over usable sampling
   intervals. It takes `max_gap` (default 0.5 s), `epochs` and
   `break_before`, so a tracking pause or the join between two recordings no
