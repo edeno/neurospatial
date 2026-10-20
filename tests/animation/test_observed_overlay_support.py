@@ -126,17 +126,20 @@ def test_frame_clock_is_finite_and_one_dimensional(bad):
         _validate_frame_times(bad, bad.size)
 
 
-def test_position_units_are_checked_without_rescaling(env):
+@pytest.mark.parametrize("overlay_type", [PositionOverlay, BodypartOverlay])
+def test_position_units_are_checked_without_rescaling(env, overlay_type):
     positions = np.array([[1.0, 2.0], [3.0, 4.0]])
-    result = PositionOverlay(
-        positions, units="centimeters", frame="arena"
-    ).convert_to_data(np.array([0.0, 0.1]), 2, env)
-    np.testing.assert_array_equal(result.data, positions)
+    values = {"nose": positions} if overlay_type is BodypartOverlay else positions
+    result = overlay_type(values, units="centimeters", frame="arena").convert_to_data(
+        np.array([0.0, 0.1]), 2, env
+    )
+    coordinates = (
+        result.bodyparts["nose"] if overlay_type is BodypartOverlay else result.data
+    )
+    np.testing.assert_array_equal(coordinates, positions)
     for kwargs in ({"units": "m"}, {"frame": "camera"}):
         with pytest.raises(ValueError, match="explicitly convert"):
-            PositionOverlay(positions, **kwargs).convert_to_data(
-                np.array([0.0, 0.1]), 2, env
-            )
+            overlay_type(values, **kwargs).convert_to_data(np.array([0.0, 0.1]), 2, env)
 
 
 def test_rates_align_unit_identity_before_row_order_and_validate_geometry(env):

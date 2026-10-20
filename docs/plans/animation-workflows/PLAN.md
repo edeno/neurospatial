@@ -228,3 +228,44 @@ Validation:
   while the closed scene, view and controller can be garbage-collected.
 - NWB overlays and all executable documentation: **64 passed**.
 - Ruff and formatting pass; mypy passes across all **306 source files**.
+
+## Pose metadata and prepared geometry review
+
+All five findings from the latest contract review are addressed:
+
+- NWB pose reads validate every bodypart's clock, including implicit clocks,
+  finite/increasing samples and lazy chunk boundaries. Only float64 roundoff
+  differences are accepted. Lazy reads preserve coordinate handles and inspect
+  timestamps in bounded chunks; the public `read_pose` tuple stays unchanged.
+- Pose adapters retain homogeneous units and reference frames, reject conflicting
+  declarations and prevent keyword overrides from relabeling known coordinates.
+  `BodypartOverlay(units=..., frame=...)` shares the position overlay's environment
+  validation. Frame descriptions remain verbatim; transforms are explicit.
+- Preparation owns spatial rows, combines finite support with supplied masks,
+  marks rejected observations NaN and removes intervals with rejected endpoints.
+  Markers, trails and track panels now agree with the shared sampler, including
+  custom adapters and legacy renderers.
+- Partial bodypart mask dictionaries infer missing entries consistently during
+  sampling and realignment. Unknown names and malformed masks fail clearly.
+- Shared scalar/batch heading geometry suppresses undefined zero vectors in all
+  renderers, including interpolated opposite headings. Finite vectors normalize
+  stably to requested length; legacy napari setup remains vectorized.
+
+Regression coverage includes original failures, eager/lazy NWB reads, conversion
+and unit aliases, missing metadata, owned-array isolation, partial pose masks and
+2-D/3-D heading cancellation during rendering and export. GUI-dependent playback
+and dock tests now carry napari markers and run with Cocoa rather than headless
+display detection.
+
+Validation against the feature worktree:
+
+- Broad animation, environment integration, API and argument contracts:
+  **1,623 passed, 6 skipped, 200 deselected**.
+- Full NWB suite and executable documentation: **652 passed, 9 deselected**.
+- Apple Metal rendering/capture plus observation and heading regressions:
+  **107 passed**.
+- Native Cocoa napari suite: **145 passed**; playback/dock integration:
+  **18 passed**.
+- Ruff/formatting pass for all 15 changed Python files; mypy passes all
+  **306 source files**. An independent agent review found no additional
+  actionable issues in the integrated fixes.

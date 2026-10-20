@@ -17,7 +17,7 @@ import numpy as np
 
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._scene_rendering import draw_track_panel
-from neurospatial.animation._style import _rate_opacity
+from neurospatial.animation._style import _heading_displacement, _rate_opacity
 
 
 def _native_grid(env: Any) -> tuple[Any, np.ndarray] | None:
@@ -558,20 +558,9 @@ class NapariScene:
                     if len(data.positions) == 1
                     else np.mean(scene.env.bin_centers, axis=0)
                 )
-                direction = (
-                    np.array([np.cos(float(value)), np.sin(float(value))])
-                    if h.data.ndim == 1
-                    else value
-                )
-                norm = np.linalg.norm(direction)
-                if (
-                    np.isfinite(direction).all()
-                    and np.isfinite(origin).all()
-                    and norm > 0
-                ):
-                    layer.data = np.array(
-                        [[origin[::-1], (h.length * direction / norm)[::-1]]]
-                    )
+                direction = _heading_displacement(value, h.length, n_dims=dims)
+                if direction is not None and np.isfinite(origin).all():
+                    layer.data = np.array([[origin[::-1], direction[::-1]]])
                     if h.color in colormaps:
                         angle = np.arctan2(direction[1], direction[0])
                         layer.edge_color = np.asarray(

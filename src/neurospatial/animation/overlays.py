@@ -403,6 +403,11 @@ class BodypartOverlay:
     break_before : ndarray of bool, shape (n_samples,), optional
         True at sample k forbids interpolation between samples k-1 and k.
         Entry zero is ignored. NaN denotes missing tracking; Inf is rejected.
+    units, frame : str, optional
+        Coordinate units and reference frame shared by every bodypart. Declared
+        values must match the environment's declarations (known length-unit
+        aliases are normalized). Convert coordinates explicitly before using
+        different units or frames; these labels never rescale the data.
 
     Attributes
     ----------
@@ -490,6 +495,8 @@ class BodypartOverlay:
     _: KW_ONLY
     max_gap: float | None = 0.5
     break_before: NDArray[np.bool_] | None = None
+    units: str | None = None
+    frame: str | None = None
 
     def convert_to_data(
         self,
@@ -518,6 +525,7 @@ class BodypartOverlay:
             "BodypartOverlay",
             why="It draws tracked body parts at their arena coordinates.",
         )
+        _validate_position_metadata(self, env)
         # Validate skeleton consistency first
         bodypart_names = list(self.data.keys())
         _validate_skeleton_consistency(
@@ -3813,7 +3821,9 @@ def _support_metadata(
     return {"sample_valid": sample_valid, "interval_valid": interval_valid}
 
 
-def _validate_position_metadata(overlay: PositionOverlay, env: Any) -> None:
+def _validate_position_metadata(
+    overlay: PositionOverlay | BodypartOverlay, env: Any
+) -> None:
     for name in ("units", "frame"):
         declared, expected = getattr(overlay, name), getattr(env, name, None)
         if declared is None or expected is None:
@@ -3825,7 +3835,7 @@ def _validate_position_metadata(overlay: PositionOverlay, env: Any) -> None:
             )
         if declared != expected:
             raise ValueError(
-                f"PositionOverlay {name} {declared!r} does not match environment {name} "
+                f"{type(overlay).__name__} {name} {declared!r} does not match environment {name} "
                 f"{expected!r}. Fix: explicitly convert the coordinates to the environment's "
                 f"units and frame before constructing the overlay; coordinates are never silently rescaled."
             )
@@ -4853,17 +4863,103 @@ def _validate_prepared_samples(
             raise ValueError(
                 f"{type(data).__name__}.{name} must have one row per sample time."
             )
-        for label, expected in (
-            ("sample_valid", len(times)),
-            ("interval_valid", len(times) - 1),
-        ):
-            mask = getattr(data, label)
-            if isinstance(mask, dict):
-                mask = mask.get(name)
-            if mask is not None and np.shape(mask) != (expected,):
+    for label, expected in (
+        ("sample_valid", len(times)),
+        ("interval_valid", len(times) - 1),
+    ):
+        masks = getattr(data, label)
+        if masks is None:
+            continue
+        if isinstance(data, BodypartData):
+            if not isinstance(masks, dict):
                 raise ValueError(
-                    f"{type(data).__name__}.{label} must have shape ({expected},)."
+                    f"BodypartData.{label} must map bodypart names to boolean masks."
                 )
+            unknown = masks.keys() - data.bodyparts.keys()
+            if unknown:
+                raise ValueError(
+                    f"BodypartData.{label} references unknown bodyparts: "
+                    f"{sorted(unknown, key=str)}."
+                )
+            entries = list(masks.items())
+        else:
+            entries = [(label, masks)]
+        for name, mask in entries:
+            if mask is not None and (
+                np.shape(mask) != (expected,) or np.asarray(mask).dtype != np.bool_
+            ):
+                raise ValueError(
+                    f"{type(data).__name__}.{label} ({name}) must be a boolean "
+                    f"array with shape ({expected},)."
+                )
+
+
+def _normalize_prepared_support(data: Any) -> Any:
+    """Own spatial rows and make their effective observation support explicit.
+
+    Sampling and renderers that consume raw rows must agree about rejected
+    observations. A break only rejects the interval; its finite endpoints stay
+    available as exact observations.
+    """
+
+    def normalized(
+        values: NDArray[np.float64],
+        samples: NDArray[np.bool_] | None,
+        intervals: NDArray[np.bool_] | None,
+    ) -> tuple[NDArray[np.float64], NDArray[np.bool_], NDArray[np.bool_]]:
+        owned = np.array(values, dtype=np.float64, copy=True)
+        valid = np.asarray(
+            np.isfinite(owned.reshape(len(owned), -1)).all(axis=1), dtype=np.bool_
+        )
+        if samples is not None:
+            valid &= samples
+        supported = valid[:-1] & valid[1:]
+        if intervals is not None:
+            supported &= intervals
+        owned[~valid] = np.nan
+        return owned, valid, supported
+
+    if isinstance(data, BodypartData):
+        bodyparts: dict[str, NDArray[np.float64]] = {}
+        bodypart_samples: dict[str, NDArray[np.bool_]] = {}
+        bodypart_intervals: dict[str, NDArray[np.bool_]] = {}
+        for name, values in data.bodyparts.items():
+            bodyparts[name], bodypart_samples[name], bodypart_intervals[name] = (
+                normalized(
+                    values,
+                    None if data.sample_valid is None else data.sample_valid.get(name),
+                    None
+                    if data.interval_valid is None
+                    else data.interval_valid.get(name),
+                )
+            )
+        return replace(
+            data,
+            bodyparts=bodyparts,
+            sample_valid=bodypart_samples,
+            interval_valid=bodypart_intervals,
+        )
+    if isinstance(data, ObjectVectorData):
+        values, sample_valid, interval_valid = normalized(
+            data.animal_positions, data.sample_valid, data.interval_valid
+        )
+        return replace(
+            data,
+            animal_positions=values,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
+        )
+    if isinstance(data, (PositionData, HeadDirectionData)):
+        values, sample_valid, interval_valid = normalized(
+            data.data, data.sample_valid, data.interval_valid
+        )
+        return replace(
+            data,
+            data=values,
+            sample_valid=sample_valid,
+            interval_valid=interval_valid,
+        )
+    return data
 
 
 def _convert_overlays_to_data(
@@ -5045,6 +5141,7 @@ def _convert_overlays_to_data(
                         internal_data, times=conversion_times.copy()
                     )
                 _validate_prepared_samples(internal_data, conversion_times)
+                internal_data = _normalize_prepared_support(internal_data)
                 if own_samples and internal_data.times is not None:
                     _validate_temporal_alignment(
                         np.asarray(internal_data.times, dtype=np.float64),
@@ -5241,10 +5338,10 @@ def _realign_prepared_overlays(
                     interp=source_pose.interp,
                     sample_valid=None
                     if source_pose.sample_valid is None
-                    else source_pose.sample_valid[name],
+                    else source_pose.sample_valid.get(name),
                     interval_valid=None
                     if source_pose.interval_valid is None
-                    else source_pose.interval_valid[name],
+                    else source_pose.interval_valid.get(name),
                 )
                 (
                     target_pose.bodyparts[name],

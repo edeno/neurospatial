@@ -33,6 +33,7 @@ from neurospatial.animation._style import (
     _TRAIL_MAX_ALPHA,
     _event_visibility,
     _head_direction_color,
+    _heading_displacement,
     _rate_opacity,
 )
 from neurospatial.animation._tracks import (
@@ -420,17 +421,13 @@ def heading_segment(
     Returns
     -------
     ndarray of float64, shape (2, n_dims)
-        NaN for a missing heading.
+        NaN for a missing or zero-vector heading.
     """
     origin = np.asarray(origin, dtype=np.float64)
-    direction = np.zeros(len(origin))
-    if np.ndim(heading) == 0:
-        direction[:2] = np.cos(heading), np.sin(heading)
-    else:
-        vector = np.asarray(heading, dtype=np.float64)[: len(origin)]
-        norm = np.linalg.norm(vector)
-        direction[: len(vector)] = vector / norm if norm > 0 else vector
-    segment = np.array([origin, origin + direction * length])
+    direction = _heading_displacement(heading, length, n_dims=len(origin))
+    if direction is None:
+        return np.full((2, len(origin)), np.nan)
+    segment = np.array([origin, origin + direction])
     return segment if np.all(np.isfinite(segment)) else np.full_like(segment, np.nan)
 
 

@@ -114,6 +114,9 @@ def bodypart_overlay_from_nwb(
 
         - interp : {"linear", "nearest"}, optional
             Interpolation method for temporal alignment. Default is "linear".
+        - units, frame : str, optional
+            Coordinate declarations when absent from NWB. Known NWB metadata
+            cannot be overridden with conflicting declarations.
 
     Returns
     -------
@@ -124,6 +127,9 @@ def bodypart_overlay_from_nwb(
     ------
     KeyError
         If no PoseEstimation container found, or if specified name not found.
+    ValueError
+        If bodypart clocks or known coordinate declarations disagree, or a
+        keyword declaration conflicts with the NWB metadata.
     ImportError
         If ndx-pose is not installed.
 
@@ -146,14 +152,35 @@ def bodypart_overlay_from_nwb(
     ...     colors={"nose": "yellow", "body": "red", "tail": "blue"},
     ... )
     """
+    from neurospatial._units import normalize_position_units
     from neurospatial.animation.overlays import BodypartOverlay
-    from neurospatial.io.nwb._pose import read_pose
+    from neurospatial.io.nwb._pose import _read_pose_with_metadata
 
     # Read pose data from NWB
-    bodyparts, timestamps, skeleton = read_pose(
+    bodyparts, timestamps, skeleton, units, frame = _read_pose_with_metadata(
         nwbfile,
         pose_estimation_name=pose_estimation_name,
     )
+
+    # NWB reference_frame is descriptive text. Preserve it verbatim rather
+    # than inferring a coordinate transform or a standardized frame name.
+    declarations = {"units": units, "frame": frame}
+    for name, known in declarations.items():
+        if name not in kwargs:
+            continue
+        requested = kwargs.pop(name)
+        equivalent = requested == known
+        if name == "units" and requested is not None and known is not None:
+            equivalent = normalize_position_units(requested) == known
+        if known is not None and not equivalent:
+            raise ValueError(
+                f"BodypartOverlay {name} {requested!r} conflicts with NWB pose "
+                f"{name} {known!r}. Fix: explicitly convert the source coordinates "
+                "before constructing the overlay; metadata cannot relabel or "
+                "rescale coordinates."
+            )
+        if known is None:
+            declarations[name] = requested
 
     # Create and return BodypartOverlay
     return BodypartOverlay(
@@ -161,6 +188,8 @@ def bodypart_overlay_from_nwb(
         times=timestamps,
         skeleton=skeleton,  # Auto-extracted from PoseEstimation.skeleton
         colors=colors,
+        units=declarations["units"],
+        frame=declarations["frame"],
         **kwargs,
     )
 

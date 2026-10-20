@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 # Skip all tests if napari is not available
 pytest.importorskip("napari")
+pytestmark = pytest.mark.napari
 
 
 @pytest.fixture

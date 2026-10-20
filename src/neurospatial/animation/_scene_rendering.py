@@ -9,7 +9,7 @@ from typing import Any, cast
 import numpy as np
 
 from neurospatial.animation._prepared import PreparedScene
-from neurospatial.animation._style import _rate_opacity
+from neurospatial.animation._style import _heading_displacement, _rate_opacity
 
 
 class SceneRenderer:
@@ -376,35 +376,27 @@ class SceneRenderer:
                 if len(data.positions) == 1
                 else np.mean(scene.env.bin_centers, axis=0)
             )
-            if (
-                np.isfinite(sampled_heading).all()
-                and np.isfinite(point).all()
-                and len(point) in (2, 3)
-            ):
-                angle = (
-                    float(sampled_heading)
-                    if heading.data.ndim == 1
-                    else float(np.arctan2(sampled_heading[1], sampled_heading[0]))
-                )
+            direction = _heading_displacement(
+                sampled_heading, heading.length, n_dims=len(point)
+            )
+            if direction is not None and np.isfinite(point).all():
+                angle = float(np.arctan2(direction[1], direction[0]))
                 color = (
                     colormaps[heading.color]((angle % (2 * np.pi)) / (2 * np.pi))
                     if heading.color in colormaps
                     else heading.color
                 )
                 if len(point) == 3:
-                    norm = float(np.linalg.norm(sampled_heading))
-                    if norm > 0:
-                        ax.quiver(
-                            *point,
-                            *(heading.length * sampled_heading / norm),
-                            color=color,
-                            linewidth=heading.width,
-                        )
+                    ax.quiver(
+                        *point,
+                        *direction,
+                        color=color,
+                        linewidth=heading.width,
+                    )
                 else:
                     ax.arrow(
                         *point,
-                        heading.length * np.cos(angle),
-                        heading.length * np.sin(angle),
+                        *direction,
                         color=color,
                         width=heading.width,
                         length_includes_head=True,

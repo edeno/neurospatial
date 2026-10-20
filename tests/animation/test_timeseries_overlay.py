@@ -1104,6 +1104,7 @@ def _napari_viewer():
     viewer.close()
 
 
+@pytest.mark.napari
 class TestTimeSeriesNapariDockWidget:
     """Test napari dock widget integration for time series overlays."""
 

@@ -4,6 +4,14 @@
 
 ### Animation workflows
 
+- Validate every NWB pose bodypart's clock and spatial metadata before sharing
+  a time axis. Pose overlays retain declared units and reference frames and
+  reject mismatches with the environment without silently relabeling coordinates.
+- Normalize custom overlay support during preparation so invalid observations
+  remain missing in markers, trails and track panels. Partial bodypart mask
+  dictionaries now follow the same rules during sampling and realignment.
+- Share heading geometry across renderers: zero vectors, including interpolated
+  opposite directions, no longer produce an arbitrary eastward arrow.
 - Apply observation masks and gap rules to overlays that inherit `frame_times`,
   including fastplotlib sampling between frames. Preserve NaNs when normalizing
   constant signals and share finite, bounded object-vector rate opacity across

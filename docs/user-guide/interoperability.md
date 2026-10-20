@@ -438,6 +438,15 @@ Choose the physical unit explicitly in that case before creating an environment.
 `environment_from_position` retains its warned cm fallback when used without
 an explicit unit.
 
+`read_pose` returns `(bodyparts, times, skeleton)` and checks that every bodypart
+uses the same sample clock, units and reference frame. Different clocks must be
+aligned explicitly before combining them into a pose. The
+`bodypart_overlay_from_nwb` adapter carries the declared units and reference
+frame into `BodypartOverlay`, which checks them against the environment. Convert
+coordinates explicitly when these declarations differ; supplying a different
+metadata label does not perform that conversion. Lazy pose reads validate the
+clocks without materializing the coordinate arrays.
+
 ### Population fields, decoding and a truthful overlay
 
 This recipe reads eager arrays from `session.nwb`, selects the named `epochs`

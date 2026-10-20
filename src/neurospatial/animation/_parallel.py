@@ -48,6 +48,7 @@ from neurospatial.animation._style import (
 from neurospatial.animation._style import (
     _head_direction_color as _head_direction_color,
 )
+from neurospatial.animation._style import _heading_displacement
 
 if TYPE_CHECKING:
     from matplotlib.artist import Artist
@@ -381,9 +382,6 @@ def _render_head_direction_overlay_matplotlib(
     Colormap colors follow counterclockwise heading, with east at hue 0 and
     one full turn wrapping to 0. Fixed Matplotlib colors retain their color.
     """
-    # Determine if data is angles or vectors
-    is_angles = head_dir_data.data.ndim == 1
-
     # Determine arrow origin: prefer position data if available
     if position_data is not None:
         origin = position_data.data[frame_idx]
@@ -394,22 +392,11 @@ def _render_head_direction_overlay_matplotlib(
         # Fallback: use centroid of environment
         origin = np.mean(env.bin_centers, axis=0)
 
-    # Compute direction vector
-    if is_angles:
-        angle = head_dir_data.data[frame_idx]
-        # Skip rendering if angle is NaN
-        if np.isnan(angle):
-            return
-        direction = np.array([np.cos(angle), np.sin(angle)]) * head_dir_data.length
-    else:
-        direction = head_dir_data.data[frame_idx]
-        # Skip if direction is NaN
-        if np.any(np.isnan(direction)):
-            return
-        # Normalize and scale
-        norm = np.linalg.norm(direction)
-        if norm > 0:
-            direction = direction / norm * head_dir_data.length
+    direction = _heading_displacement(
+        head_dir_data.data[frame_idx], head_dir_data.length, n_dims=len(origin)
+    )
+    if direction is None:
+        return
 
     # Render arrow using quiver
     ax.quiver(
@@ -956,8 +943,6 @@ class OverlayArtistManager:
         self, head_dir_data: Any, frame_idx: int, position_data: Any | None
     ) -> Quiver | None:
         """Create quiver artist for head direction."""
-        is_angles = head_dir_data.data.ndim == 1
-
         # Determine arrow origin
         if position_data is not None:
             origin = position_data.data[frame_idx]
@@ -966,19 +951,11 @@ class OverlayArtistManager:
         else:
             origin = np.mean(self.env.bin_centers, axis=0)
 
-        # Compute direction vector
-        if is_angles:
-            angle = head_dir_data.data[frame_idx]
-            if np.isnan(angle):
-                return None
-            direction = np.array([np.cos(angle), np.sin(angle)]) * head_dir_data.length
-        else:
-            direction = head_dir_data.data[frame_idx]
-            if np.any(np.isnan(direction)):
-                return None
-            norm = np.linalg.norm(direction)
-            if norm > 0:
-                direction = direction / norm * head_dir_data.length
+        direction = _heading_displacement(
+            head_dir_data.data[frame_idx], head_dir_data.length, n_dims=len(origin)
+        )
+        if direction is None:
+            return None
 
         quiver: Quiver = self.ax.quiver(
             origin[0],

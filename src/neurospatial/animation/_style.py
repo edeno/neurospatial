@@ -116,6 +116,47 @@ def _build_trail_segments(
     return segments, colors
 
 
+def _heading_displacement(
+    heading: NDArray[np.float64] | float, length: float, *, n_dims: int
+) -> NDArray[np.float64] | None:
+    """Return a heading's displacement in environment coordinates, or None.
+
+    A finite angle describes a direction in the x-y plane. A finite nonzero
+    vector describes a direction in all its coordinates, regardless of its
+    magnitude. Zero vectors have no direction (including cancellation during
+    interpolation), so renderers must omit their arrows. Scaling before the
+    norm preserves even very small or large finite vectors without underflow
+    or overflow. Coordinate conversion belongs to each backend.
+    """
+    value = np.asarray(heading, dtype=np.float64)
+    samples = value.reshape(1) if value.ndim == 0 else value[np.newaxis, :]
+    direction = _heading_displacements(samples, length, n_dims=n_dims)[0]
+    return direction if np.isfinite(direction).all() else None
+
+
+def _heading_displacements(
+    headings: NDArray[np.float64], length: float, *, n_dims: int
+) -> NDArray[np.float64]:
+    """Batch form of heading geometry; undefined rows are entirely NaN.
+
+    One-dimensional input contains angles; two-dimensional input contains
+    vectors. Batch normalization keeps long-recording backend setup vectorized.
+    """
+    values = np.asarray(headings, dtype=np.float64)
+    directions = np.full((len(values), n_dims), np.nan)
+    if values.ndim == 1:
+        valid = np.isfinite(values)
+        directions[valid] = 0
+        directions[valid, 0] = np.cos(values[valid])
+        directions[valid, 1] = np.sin(values[valid])
+    elif values.ndim == 2 and values.shape[1] == n_dims:
+        scales = np.max(np.abs(values), axis=1)
+        valid = np.isfinite(values).all(axis=1) & (scales > 0)
+        scaled = values[valid] / scales[valid, np.newaxis]
+        directions[valid] = scaled / np.linalg.norm(scaled, axis=1, keepdims=True)
+    return directions * length
+
+
 def _head_direction_color(
     color: str, direction: NDArray[np.float64]
 ) -> tuple[float, float, float, float]:

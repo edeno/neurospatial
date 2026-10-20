@@ -178,14 +178,24 @@ Set `max_gap=None` deliberately for sparsely sampled continuous observations.
 Trajectory-based `EventOverlay` locations use the same rules. An event inside
 a tracking gap keeps its time but has an unknown position, so no spatial marker
 is drawn for it. Explicit fixed event locations are unaffected.
-`PositionOverlay(units=..., frame=...)` validates supplied coordinate metadata
-against the environment and asks for an explicit transform when it differs.
-NWB position adapters forward units. `SpikeRasterOverlay(rates=rate_result)`
+`PositionOverlay(units=..., frame=...)` and `BodypartOverlay(units=..., frame=...)`
+validate supplied coordinate metadata against the environment and ask for an
+explicit transform when it differs. NWB position adapters forward units; pose
+adapters also retain the declared reference frame and require matching bodypart
+clocks and spatial metadata. Changing metadata labels does not transform data.
+Zero heading vectors, including those produced halfway between opposite vector
+observations, have no defined direction and draw no arrow in any backend.
+`SpikeRasterOverlay(rates=rate_result)`
 validates the environment and aligns maps by `unit_ids`.
 Mixed unit identifiers, such as integer `1` and string `"1"`, remain distinct.
 Normalizing a constant `TimeSeriesOverlay` maps finite samples to zero while
 preserving NaNs. Object-vector rate opacity uses the finite peak over the
 prepared recording, keeping its scale stable when a view selects a window.
+
+Custom `OverlayProtocol` adapters may supply sample and interval validity masks.
+Preparation combines them with finite coordinate support, so rejected samples
+remain missing in markers, trails and track panels. Omitted masks are inferred
+from the observations; omitted bodypart mask entries use that same rule.
 
 For `track=...`, the environment and track must use the same units and
 Cartesian coordinate frame. Unit spelling aliases are accepted; convert or

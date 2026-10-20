@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.animation._region_names import shown_region_names
+from neurospatial.animation._style import _heading_displacements
 from neurospatial.animation._utils import _emit_status
 
 # Import shared coordinate transforms
@@ -1698,8 +1699,6 @@ def _build_head_direction_tracks(
         separate track with 2 points (origin and indicator).
     """
     n_frames = len(head_dir_data.data)
-    is_angles = head_dir_data.data.ndim == 1
-
     # Pre-compute scale factors
     env_scale = _EnvScale.from_env(env)
     transform_target = env_scale if env_scale is not None else env
@@ -1711,20 +1710,9 @@ def _build_head_direction_tracks(
         centroid = np.mean(env.bin_centers, axis=0)
         origins = np.tile(centroid, (n_frames, 1))
 
-    # Compute direction vectors
-    if is_angles:
-        angles = head_dir_data.data
-        directions = np.column_stack(
-            [
-                np.cos(angles) * head_dir_data.length,
-                np.sin(angles) * head_dir_data.length,
-            ]
-        )
-    else:
-        directions = head_dir_data.data.copy()
-        norms = np.linalg.norm(directions, axis=1, keepdims=True)
-        norms = np.where(norms > 0, norms, 1.0)
-        directions = directions / norms * head_dir_data.length
+    directions = _heading_displacements(
+        head_dir_data.data, head_dir_data.length, n_dims=origins.shape[1]
+    )
 
     # Compute indicator positions
     indicator_positions = origins + directions
@@ -1736,13 +1724,9 @@ def _build_head_direction_tracks(
     )
 
     # Find valid frames
-    valid_origins = ~np.isnan(origins).any(axis=1)
-    valid_directions = (
-        ~np.isnan(head_dir_data.data).any(axis=-1)
-        if head_dir_data.data.ndim > 1
-        else ~np.isnan(head_dir_data.data)
-    )
-    valid_indicators = ~np.isnan(indicator_napari).any(axis=1)
+    valid_origins = np.isfinite(origins).all(axis=1)
+    valid_directions = np.isfinite(directions).all(axis=1)
+    valid_indicators = np.isfinite(indicator_napari).all(axis=1)
     valid_mask = valid_origins & valid_directions & valid_indicators
     valid_frame_indices = np.where(valid_mask)[0]
 
