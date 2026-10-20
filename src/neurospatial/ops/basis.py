@@ -1188,6 +1188,7 @@ def spatial_basis(
 def plot_basis_functions(
     env: FieldPlotConsumer,
     basis: NDArray[np.float64],
+    *,
     indices: list[int] | None = None,
     n_examples: int = 6,
     figsize: tuple[float, float] = (12, 8),

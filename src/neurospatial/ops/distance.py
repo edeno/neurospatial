@@ -112,8 +112,8 @@ def geodesic_distance_between_points(
     G: nx.Graph,
     bin_from: int,
     bin_to: int,
-    default: float = np.inf,
     *,
+    default: float = np.inf,
     weight: str | None = "distance",
 ) -> float:
     """Compute geodesic distance between two specific nodes in a graph.
