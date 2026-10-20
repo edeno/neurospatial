@@ -163,6 +163,107 @@ def test_free_function_optional_data_list_is_current():
     )
 
 
+# Names of required arguments that are data wherever they appear, since a public
+# name has one meaning everywhere. A required option such as dt, bin_size,
+# duration or a threshold is keyword-only even without a default, so a new
+# required positional name fails until it is classified here as data.
+REQUIRED_DATA_NAMES = {
+    # Environments, graphs and recordings, and samples of them.
+    *("env", "env_1", "env_2", "src_env", "dst_env", "source_env", "target_env"),
+    *("G", "graph", "nodes", "sources", "bin_from", "bin_to", "centers"),
+    *("nwbfile", "session", "obj", "data", "df", "path"),
+    *("video_path", "xml_path", "json_path", "mask_img"),
+    *("times", "t", "sample_times", "positions", "position", "points", "pts"),
+    *("position_bins", "position_bins1", "position_bins2"),
+    *("headings", "heading", "nose", "tail", "speeds", "lfp", "signals"),
+    *("spike_times", "spike_counts", "template_counts", "match_counts"),
+    *("targets", "ego_points", "object_positions", "cue_positions"),
+    *("goal", "goal_bins", "start", "subgoals", "regions", "region_names"),
+    *("angles", "angles1", "angles2", "angle", "linear_values", "phases"),
+    *("distances", "correlations"),
+    # Events, intervals, trials and labels.
+    *("event_times", "events", "reference_events", "start_events", "stop_events"),
+    *("event_types", "entry_time", "reward_times", "lap_times", "crossing_times"),
+    *("intervals", "epochs", "windows", "trials", "trial_labels"),
+    *("laps", "runs", "visits", "labels", "direction_labels", "voronoi_labels"),
+    # The window of each event, by position in the canonical events order
+    # f(spike_times, event_times, window, *, bin_size).
+    "window",
+    # Fields, rate maps, fitted models and the results computed from them.
+    *("field", "fields", "edge_field", "kernel", "basis", "bin_edges"),
+    *("firing_rate", "firing_rate_1", "firing_rate_2"),
+    *("firing_rates", "firing_rates_1", "firing_rates_2"),
+    *("rate_map_1", "rate_map_2", "rates_a", "rates_b", "all_place_fields"),
+    *("occupancy", "joint_counts", "autocorr_2d", "tuning_curve"),
+    *("field_bins", "field_bins_1", "field_bins_2", "field_bins_i", "field_bins_j"),
+    *("encoding_models", "models", "pattern", "posterior", "log_likelihood"),
+    *("source_probs", "decoded_positions", "actual_positions", "actual_bins"),
+    *("template_correlations", "match_correlations", "spatial_information"),
+    *("observed", "null_scores", "beta_sin", "beta_cos", "cov_matrix"),
+    *("vte_index", "z_head_sweep", "z_speed_inv", "head_sweeps"),
+    *("result", "expected_bins"),
+    # Calibration measurements and the components of a transform.
+    *("landmarks_px", "landmarks_cm", "p1_px", "p2_px", "known_length_cm"),
+    *("data_px", "data_cm", "src", "dst", "frame_size_px", "frame_height_px"),
+    *("px_per_cm", "rotation_matrix", "scale", "translation_vector"),
+    "angle_degrees",
+}
+
+# Required arguments that are data in these functions only.
+REQUIRED_DATA_ARGUMENTS = {
+    # The layout looked up or built.
+    ("create_layout", "kind"),
+    ("find_layout_type", "name"),
+    ("get_layout_parameters", "layout_type"),
+    # Sizes of the data the function describes.
+    ("field_density_map", "n_bins"),
+    ("geodesic_distance_matrix", "n_states"),
+    ("large_session_napari_config", "n_frames"),
+    ("marchenko_pastur_threshold", "n_neurons"),
+    ("marchenko_pastur_threshold", "n_time_bins"),
+}
+
+
+def _required_positional(parameters):
+    return [
+        p.name
+        for p in parameters.values()
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        and p.default is p.empty
+    ]
+
+
+def test_free_function_required_options_are_keyword_only():
+    """A required option, such as ``dt`` or ``bin_size``, is keyword-only too.
+
+    ``decode_position(env, counts, rates, 0.025)`` reads as data; naming the
+    bin width says what the number is. Required positional arguments must be
+    data named above.
+    """
+    offenders = [
+        f"{function.__name__}({name})"
+        for function, parameters in public_functions()
+        for name in _required_positional(parameters)
+        if name not in REQUIRED_DATA_NAMES
+        and (function.__name__, name) not in REQUIRED_DATA_ARGUMENTS
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_free_function_required_data_lists_are_current():
+    """Each listed name is still a required positional of a public function."""
+    present = {
+        (function.__name__, name)
+        for function, parameters in public_functions()
+        for name in _required_positional(parameters)
+    }
+    names = {name for _, name in present}
+    assert not REQUIRED_DATA_NAMES - names, sorted(REQUIRED_DATA_NAMES - names)
+    assert not REQUIRED_DATA_ARGUMENTS - present, sorted(
+        REQUIRED_DATA_ARGUMENTS - present
+    )
+
+
 @pytest.mark.parametrize(
     ("name", "data", "option", "value"),
     [
