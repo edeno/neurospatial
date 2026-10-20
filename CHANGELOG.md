@@ -4,6 +4,29 @@
 
 ### Breaking
 
+- Per-sample behavioral covariates have one home, `neurospatial.behavior`.
+  `heading_from_velocity` and `heading_from_body_orientation` move from
+  `neurospatial.ops` next to `compute_speed`, and `distance_to_reward` and
+  `distance_to_boundary` move from `neurospatial.events` next to
+  `distance_to_region`. Signatures and results are unchanged; there are no
+  aliases, so the old imports raise `ImportError`. `ops` keeps the egocentric
+  frame conversions, and `events` keeps the time-based regressors
+  (`time_to_nearest_event`, `event_count_in_window`, `event_indicator`) and
+  its event-table utilities.
+
+  ```python
+  # before
+  from neurospatial.ops import heading_from_body_orientation, heading_from_velocity
+  from neurospatial.events import distance_to_boundary, distance_to_reward
+  # after
+  from neurospatial.behavior import (
+      distance_to_boundary,
+      distance_to_reward,
+      heading_from_body_orientation,
+      heading_from_velocity,
+  )
+  ```
+
 - `population_vector_correlation` is now `rate_map_correlations`. It always
   returned the correlation between every pair of rate maps (rows), not the
   per-location population-vector correlation of remapping studies. The
@@ -1544,19 +1567,69 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 ### Added
 
 - `neurospatial.encoding.population_vector_correlation(firing_rates_1,
-  firing_rates_2, *, spatial_support=None)` returns the population-vector
-  correlation at each location between two conditions, the remapping measure
-  of Leutgeb et al. (2005): one value per bin, the Pearson correlation across
-  cells of the rates at that bin. A location is NaN, never 0, when a rate is
-  NaN in either map, the bin is outside `spatial_support` (pass it for
-  zero-filled maps), or every cell has exactly the same rate there. Summarize
-  with the median over defined locations and report how many were undefined.
+  firing_rates_2, *, spatial_support, unit_selection, bin_mapping, topology)`
+  returns the population-vector correlation at each location between two
+  conditions, the remapping measure of Leutgeb et al. (2005): one value per
+  bin, the Pearson correlation across cells of the rates at that bin. Pass
+  the two `SpatialRatesResult`: units are paired by `unit_ids`
+  (`unit_selection="intersection"` or `"exact"`, as in
+  `compare_spatial_rates`), generated row-position ids are refused, bins are
+  paired by place (different environments need `bin_mapping=`, and
+  `topology=` is checked), and only bins observed in both conditions are
+  compared. It warns, like `compare_spatial_rates`, when the conditions were
+  estimated with different `method`, `bandwidth` or `min_occupancy`. Plain
+  `(n_units, n_bins)` arrays are also accepted; then the rows must be the same
+  units in the same order, and zero-filled maps need `spatial_support`. A
+  location is NaN, never 0, when a rate is NaN in either map, the bin is not
+  supported, or every cell has exactly the same rate there. Summarize with
+  the median over defined locations and report how many were undefined.
 
   ```python
-  pv = population_vector_correlation(before.firing_rates, after.firing_rates)
+  pv = population_vector_correlation(before, after)  # two SpatialRatesResult
   defined = np.isfinite(pv)
   print(np.median(pv[defined]), (~defined).sum())
   ```
+
+- `break_before` (True at the first sample of each later recording) is
+  accepted wherever `max_gap` is: rate maps (`compute_spatial_rate(s)`,
+  `compute_directional_rate(s)`, `compute_view_rate(s)`,
+  `compute_object_vector_rate(s)`, `compute_egocentric_rate(s)`,
+  `compute_boundary_vector_rate(s)`, `compute_directional_place_fields`),
+  `has_place_field`, the `is_*_cell` predicates and `*_cell_significance`
+  tests, `decode_session`, `decode_session_summary`,
+  `BayesianDecoder.fit`/`predict`/`predict_summary`/`score`,
+  `DecodingResult.error_against`/`plot`, the behavior segmentation, visit and
+  goal functions (`detect_region_crossings`, `detect_region_visits`,
+  `detect_runs_between_regions`, `detect_laps`, `segment_trials`,
+  `segment_by_velocity`, `running_direction_labels`,
+  `heading_direction_labels`, `detect_goal_directed_runs`, `goal_bias`,
+  `instantaneous_goal_alignment`, `compute_goal_directed_metrics`,
+  `compute_home_range`), `Environment.occupancy`, `bin_sequence`,
+  `bin_sequence_with_runs` and `transitions`,
+  `neurospatial.events.add_positions` and
+  `neurospatial.simulation.generate_population_spikes`. A declared break is
+  treated exactly like a gap longer than `max_gap`, even when the clock does
+  not pause: the interval across it adds no occupancy or spikes, speed and
+  heading are not smoothed across it, shuffle nulls respect it, no trial,
+  run, lap, visit, transition or decode bin spans it, and positions are not
+  interpolated across it. Recordings joined on one clock no longer need to be
+  converted to `epochs` by hand (touching windows merge, so that never worked
+  anyway). Rate results and fitted decoders record the break times in
+  `analysis_settings["break_times"]` (`None` when not given).
+
+  ```python
+  new_recording = np.diff(recording_ids, prepend=recording_ids[0]) != 0
+  rates = compute_spatial_rates(
+      env, spike_times, times, positions, break_before=new_recording
+  )
+  ```
+
+- `detect_assemblies(..., unit_ids=)` stores unit labels on the result and on
+  each `AssemblyPattern`, and `pattern.member_unit_ids` names the core
+  members. `assembly_activation(..., unit_ids=)` and
+  `reactivation_strength(..., unit_ids=)` match the columns of new spike
+  counts to the pattern by label, and raise when a label is missing on either
+  side. Without `unit_ids=` the columns pair by position, as before.
 
 - `neurospatial.behavior.labels_to_epochs(times, labels, *, valid, break_before,
   max_gap, epochs, missing_label)` turns one label per frame (running
