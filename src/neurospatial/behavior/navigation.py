@@ -886,10 +886,11 @@ def distance_to_reward(
         check. It does not change which reward a sample uses.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
-        same clock as ``times``). Samples outside every window get NaN, and a
-        reward location is read only from samples and intervals inside them.
-        ``None`` (default) means unrestricted. Rewards outside the windows can
-        still be selected.
+        same clock as ``times``). Samples outside every window get NaN.
+        ``None`` (default) means unrestricted. Epochs do not change which
+        reward a sample uses or where an inferred reward is: rewards are often
+        delivered while the animal is still, outside running epochs, and their
+        locations are still read from the tracked positions.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
@@ -927,8 +928,7 @@ def distance_to_reward(
     UserWarning
         When some reward locations cannot be inferred from ``positions``,
         naming how many and why (outside the recorded span, in a gap longer
-        than ``max_gap``, across a declared break, outside ``epochs`` or at
-        missing positions).
+        than ``max_gap``, across a declared break or at missing positions).
 
     Notes
     -----
@@ -938,8 +938,8 @@ def distance_to_reward(
     observed sample time uses that sample's position. Otherwise the position
     is linearly interpolated between the two samples around the reward
     time, but only when that interval is usable: no longer than ``max_gap``,
-    inside ``epochs``, not crossed by a declared break, and observed at both
-    ends. A reward in a tracking gap, across a recording join, next to a
+    not crossed by a declared break, and observed at both ends. ``epochs``
+    play no part here. A reward in a tracking gap, across a recording join, next to a
     missing sample or outside the recorded span has an unknown location, and
     the samples that select it get NaN. They never fall back to another
     reward or to the nearest recorded position. Provide explicit
@@ -1094,9 +1094,7 @@ def distance_to_reward(
             times,
             positions,
             reward_times,
-            sample_in_epochs,
             max_gap=max_gap,
-            epochs=resolved_epochs,
             break_before=breaks,
         )
 
@@ -1253,18 +1251,17 @@ def _infer_reward_positions(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     reward_times: NDArray[np.float64],
-    sample_in_epochs: NDArray[np.bool_],
     *,
     max_gap: float | None,
-    epochs: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None,
 ) -> NDArray[np.float64]:
     """Read each reward location from the tracked positions at its time.
 
-    A reward exactly at an observed sample time inside ``epochs`` uses that
-    sample. Otherwise it is interpolated within the sampling interval around
-    it, only when that interval passes the shared gate and both its samples
-    are observed. Any other reward has an unknown (NaN) location, and one
+    A reward exactly at an observed sample time uses that sample. Otherwise
+    it is interpolated within the sampling interval around it, only when that
+    interval passes ``max_gap`` and ``break_before`` and both its samples are
+    observed; ``epochs`` restrict the analyzed samples, not where a reward
+    was. Any other reward has an unknown (NaN) location, and one
     ``UserWarning`` says how many and why.
 
     Parameters
@@ -1275,10 +1272,8 @@ def _infer_reward_positions(
         Positions; NaN rows are missing samples.
     reward_times : ndarray, shape (n_rewards,)
         Finite reward times in seconds.
-    sample_in_epochs : ndarray of bool, shape (n_samples,)
-        Whether each sample time lies inside ``epochs``.
-    max_gap, epochs, break_before
-        The validated shared interval gates.
+    max_gap, break_before
+        The validated gap threshold and declared breaks.
 
     Returns
     -------
@@ -1298,16 +1293,13 @@ def _infer_reward_positions(
     k = np.clip(np.searchsorted(times, reward_times, side="right") - 1, 0, None)
     exact = in_span & (times[k] == reward_times)
     interior = in_span & ~exact
-    known = exact & observed[k] & sample_in_epochs[k]
+    known = exact & observed[k]
     reasons = {
         "outside the recorded span": ~in_span,
         "at a missing (NaN) position": exact & ~observed[k],
-        "outside epochs": exact & observed[k] & ~sample_in_epochs[k],
     }
     if n_samples > 1:
-        gates = interval_valid_mask(
-            times, max_gap=max_gap, epochs=epochs, break_before=break_before
-        )
+        gates = interval_valid_mask(times, max_gap=max_gap, break_before=break_before)
         usable = gates & observed[:-1] & observed[1:]
         j = np.clip(k, 0, n_samples - 2)
         known |= interior & usable[j]
@@ -1321,20 +1313,12 @@ def _infer_reward_positions(
             if max_gap is None
             else np.diff(times)[j] > max_gap
         )
-        outside = (
-            np.zeros(len(j), dtype=bool)
-            if epochs is None
-            else ~intervals_contain(epochs, times[j], times[j + 1])
-        )
         blocked = interior & ~usable[j]
         reasons["across a declared break"] = blocked & crossed
         reasons[f"in a gap longer than max_gap={max_gap} s"] = (
             blocked & ~crossed & long_gap
         )
-        reasons["outside epochs"] |= blocked & ~crossed & ~long_gap & outside
-        reasons["next to a missing (NaN) position"] = (
-            blocked & ~crossed & ~long_gap & ~outside
-        )
+        reasons["next to a missing (NaN) position"] = blocked & ~crossed & ~long_gap
 
     located = np.full((len(reward_times), n_dims), np.nan)
     located[known] = np.column_stack(
@@ -1359,9 +1343,8 @@ def _infer_reward_positions(
             f"[{times[0]:g}, {times[-1]:g}] s), so samples whose selected "
             "reward is one of them get NaN distance. A reward location is "
             "read from the sample at the reward time, or interpolated only "
-            "within a sampling interval no longer than max_gap, inside "
-            "epochs, not crossed by a declared break and observed at both "
-            "ends. Fix: pass reward_positions explicitly (for example the "
+            "within a sampling interval no longer than max_gap, not crossed "
+            "by a declared break and observed at both ends. Fix: pass reward_positions explicitly (for example the "
             "reward port's coordinates); check that reward_times are on the "
             "same clock as times; if the long intervals are continuous "
             "tracking, raise max_gap.",

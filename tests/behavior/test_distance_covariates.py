@@ -496,7 +496,6 @@ class TestDistanceToRewardSupport:
             ("gap", "in a gap longer than max_gap"),
             ("break", "across a declared break"),
             ("missing", "next to a missing"),
-            ("epochs", "outside epochs"),
         ],
     )
     def test_reward_in_an_unusable_interval_has_unknown_location(
@@ -512,10 +511,8 @@ class TestDistanceToRewardSupport:
             reward_times[1] = times[5] + 1.0
         elif change == "break":
             kwargs["break_before"] = np.arange(10) == 6
-        elif change == "missing":
-            positions[6] = np.nan
         else:
-            kwargs["epochs"] = [(0.0, 0.52)]
+            positions[6] = np.nan
 
         with pytest.warns(UserWarning, match=rf"1 of 2 reward[\s\S]*1 {reason}"):
             result = self._distance(
@@ -670,6 +667,33 @@ class TestDistanceToRewardSupport:
         expected = np.full(10, np.nan)
         expected[2:5] = [2.0, 3.0, 4.0]  # half-open [0.2, 0.5): sample 5 is out
         assert_array_equal(result, expected)
+
+    def test_reward_outside_running_epochs_keeps_its_inferred_location(
+        self, simple_grid_env
+    ):
+        """Rewards come while the animal sits at the port, outside running epochs."""
+        times = np.arange(10) * 0.1
+        # Runs from x = 0 to x = 5 in 0.5 s, then sits at the port at x = 5.
+        x = np.r_[np.arange(5.0), np.full(5, 5.0)]
+        positions = np.column_stack([x, np.full(10, 5.0)])
+        running = [(0.0, 0.5)]
+        reward_times = np.array([0.75])  # between two stationary samples
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # the location is known: no warning
+            result = self._distance(
+                simple_grid_env,
+                times,
+                positions,
+                reward_times,
+                mode="next",
+                epochs=running,
+            )
+
+        # In-epoch samples select the reward and measure to the port at x = 5.
+        assert_array_equal(result[:5], [5.0, 4.0, 3.0, 2.0, 1.0])
+        # Samples outside the running epochs still give NaN.
+        assert np.isnan(result[5:]).all()
 
     def test_invalid_break_before_raises_the_shared_error(self, simple_grid_env, run):
         times, positions = run
