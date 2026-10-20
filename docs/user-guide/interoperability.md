@@ -466,7 +466,7 @@ with NWBHDF5IO("session.nwb", "r") as io:
     file = io.read()
     units = read_units(file)  # Or unit_ids=[7, 11] to select table labels.
     pos = read_position(file)
-    epoch_table = read_intervals(file, "epochs")
+    epoch_table = read_intervals(file, interval_name="epochs")
     chosen = epoch_table["tags"].map(lambda tags: "run" in tags)
     epochs = epoch_table.loc[chosen, ["start_time", "stop_time"]].to_numpy(dtype=float)
 

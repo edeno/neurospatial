@@ -679,8 +679,8 @@ print(summary.map_position)  # (n_time, n_dims) MAP estimate
 `DecodingSummary` carrying per-time MAP / mean / entropy / peak via
 `.to_dataframe()` and `.summary()` (plus `.map_position`) — **without ever
 materializing the full posterior**. If you already have binned spike counts and
-encoding models, `decode_position_summary(env, spike_counts, encoding_models,
-dt, *, time_chunk=...)` is the array-level equivalent.
+encoding models, `decode_position_summary(env, spike_counts, encoding_models, *,
+dt, time_chunk=...)` is the array-level equivalent.
 
 ### When to reach for the manual path
 
@@ -729,7 +729,7 @@ result = decoder.predict(
 counts, centers = bin_spikes_in_time(
     spike_times, dt=dt, epochs=(test[0], min(test[1], times[-1])),
 )
-array_result = decode_position(env, counts, rates.firing_rates, dt, times=centers,
+array_result = decode_position(env, counts, rates.firing_rates, dt=dt, times=centers,
     prior=rates.spatial_support.astype(float))
 np.testing.assert_array_equal(result.times, array_result.times)
 np.testing.assert_array_equal(result.posterior, array_result.posterior)
@@ -1185,7 +1185,7 @@ windows = {"control": (0.0, 60.0), "template": (60.0, 120.0), "match": (120.0, 1
 counts, centers_by_period = {}, {}
 for period, (start, stop) in windows.items():
     counts[period], centers_by_period[period] = bin_spikes_in_time(
-        trains, dt, t_start=start, t_stop=stop
+        trains, dt=dt, t_start=start, t_stop=stop
     )
 # Select once across every period, preserving original unit order.
 keep = np.logical_and.reduce([np.var(matrix, axis=0) > 0 for matrix in counts.values()])
@@ -1210,7 +1210,7 @@ rates = compute_spatial_rates(
 np.testing.assert_array_equal(rates.unit_ids, selected_ids)
 # Branch 1: maps + count columns in the same selected order.
 decoded = decode_position(
-    env, counts["match"], rates, dt, times=centers_by_period["match"]
+    env, counts["match"], rates, dt=dt, times=centers_by_period["match"]
 )
 assert decoded.posterior.shape == (len(centers_by_period["match"]), env.n_bins)
 np.testing.assert_allclose(decoded.posterior.sum(axis=1), 1.0)

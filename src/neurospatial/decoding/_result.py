@@ -516,7 +516,7 @@ class DecodingResult(ResultMixin):
         Examples
         --------
         >>> result = decode_position(
-        ...     env, spike_counts, encoding_models, dt
+        ...     env, spike_counts, encoding_models, dt=dt
         ... )  # doctest: +SKIP
         >>> ax = result.plot()  # doctest: +SKIP
         >>> ax = result.plot(colorbar=True, show_map=True)  # doctest: +SKIP
@@ -799,7 +799,7 @@ class DecodingResult(ResultMixin):
         Examples
         --------
         >>> result = decode_position(  # doctest: +SKIP
-        ...     env, spike_counts, encoding_models, dt, times=times
+        ...     env, spike_counts, encoding_models, dt=dt, times=times
         ... )
         >>> df = result.to_dataframe()  # doctest: +SKIP
         >>> df.head()  # doctest: +SKIP

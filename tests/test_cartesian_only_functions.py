@@ -168,7 +168,7 @@ def _polar_regions_env(env: Environment) -> Environment:
             "compute_field_emd(metric='euclidean')",
         ),
         (
-            lambda env: select_basis_centers(env, 3, rng=0),
+            lambda env: select_basis_centers(env, n_centers=3, rng=0),
             "select_basis_centers(method='kmeans')",
         ),
         (
@@ -303,7 +303,7 @@ def _polar_regions_env(env: Environment) -> Environment:
         ),
         (
             lambda env: simulate_trajectory_ou(
-                env.with_metadata(units="cm"), 1.0, speed_units="cm", seed=0
+                env.with_metadata(units="cm"), duration=1.0, speed_units="cm", seed=0
             ),
             "simulate_trajectory_ou()",
         ),
@@ -393,7 +393,9 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
         lambda env: compute_field_emd(
             env, _rates(env), _rates(env)[::-1], metric="geodesic"
         ),
-        lambda env: select_basis_centers(env, 3, method="farthest_point", rng=0),
+        lambda env: select_basis_centers(
+            env, n_centers=3, method="farthest_point", rng=0
+        ),
         lambda env: geodesic_rbf_basis(
             env, n_centers=3, center_method="farthest_point", rng=0
         ),

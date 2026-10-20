@@ -112,7 +112,7 @@ PAUSE_CASES: dict[str, Case] = {
         r.position_bins, t, r.env, source="source", target="target", **kw
     ),
     "segment_by_velocity": lambda r, t, kw: segment_by_velocity(
-        t, r.positions, 5.0, min_duration=0.1, **kw
+        t, r.positions, min_speed=5.0, min_duration=0.1, **kw
     ),
     "running_direction_labels": lambda r, t, kw: running_direction_labels(
         r.position_bins,

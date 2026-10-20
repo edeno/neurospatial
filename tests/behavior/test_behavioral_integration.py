@@ -39,7 +39,7 @@ class TestVTEDecisionAnalysisIntegration:
 
         # Extract window using decision_analysis
         window_times, window_positions = extract_pre_decision_window(
-            times, positions, entry_time, window_duration
+            times, positions, entry_time, window_duration=window_duration
         )
 
         # Compute head sweep from window

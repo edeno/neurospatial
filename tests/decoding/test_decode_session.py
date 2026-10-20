@@ -248,7 +248,7 @@ class TestDecodeSessionEquivalence:
 
         counts, centers = bin_spikes_in_time(
             spike_times,
-            dt,
+            dt=dt,
             t_start=times_arr.min(),
             t_stop=times_arr.max(),
         )  # counts: (n_time, n_neurons)
@@ -257,7 +257,7 @@ class TestDecodeSessionEquivalence:
             env,
             counts,
             firing_rates,
-            dt,
+            dt=dt,
             times=centers,
             prior=rates_result.spatial_support.astype(float),
         )
@@ -309,7 +309,7 @@ class TestDecodeSessionEquivalence:
         )
         counts, centers = bin_spikes_in_time(
             spike_times,
-            dt,
+            dt=dt,
             t_start=times_arr.min(),
             t_stop=times_arr.max(),
         )
@@ -317,7 +317,7 @@ class TestDecodeSessionEquivalence:
             env,
             counts,
             rates_result.firing_rates,
-            dt,
+            dt=dt,
             times=centers,
             prior=rates_result.spatial_support.astype(float),
         )
@@ -574,10 +574,10 @@ class TestDecodeSessionDtype:
         seen: dict = {}
         real = posterior_mod.decode_position
 
-        def _spy(env, counts, firing_rates, dt, **kw):
+        def _spy(env, counts, firing_rates, *, dt, **kw):
             seen["models_dtype"] = np.asarray(firing_rates).dtype
             seen["posterior_dtype_kw"] = kw.get("dtype", "MISSING")
-            return real(env, counts, firing_rates, dt, **kw)
+            return real(env, counts, firing_rates, dt=dt, **kw)
 
         # decode_session imports decode_position locally from
         # neurospatial.decoding.posterior, so patch it there.
@@ -890,13 +890,13 @@ def _summary_reference(env, spike_times, times, positions, *, dt, time_chunk, **
         fill_value=0.0,
     )
     counts, centers = bin_spikes_in_time(
-        spike_times, dt, t_start=times_arr.min(), t_stop=times_arr.max()
+        spike_times, dt=dt, t_start=times_arr.min(), t_stop=times_arr.max()
     )
     return decode_position_summary(
         env,
         counts,
         firing_rates,
-        dt,
+        dt=dt,
         times=centers,
         time_chunk=time_chunk,
         **kw,
@@ -1038,10 +1038,10 @@ class TestDecodeSessionSummaryStreaming:
         ).firing_rates
 
         counts, centers = bin_spikes_in_time(
-            spike_times, dt, t_start=times_arr.min(), t_stop=times_arr.max()
+            spike_times, dt=dt, t_start=times_arr.min(), t_stop=times_arr.max()
         )
         ref = decode_position_summary(
-            env, counts, models, dt, times=centers, time_chunk=50
+            env, counts, models, dt=dt, times=centers, time_chunk=50
         )
         got = _decode_with_models_summary(
             env, spike_times, times, models, dt=dt, time_chunk=50
@@ -1069,7 +1069,7 @@ class TestDecodeSessionSummaryStreaming:
 
         # Global grid (reference) via the public binning primitive.
         _, global_centers = bin_spikes_in_time(
-            spike_times, dt, t_start=times_arr.min(), t_stop=times_arr.max()
+            spike_times, dt=dt, t_start=times_arr.min(), t_stop=times_arr.max()
         )
         n_time = len(global_centers)
 

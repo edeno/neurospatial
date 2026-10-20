@@ -35,7 +35,7 @@ def _distance_to_box(positions: np.ndarray, angles: np.ndarray) -> np.ndarray:
 
 def test_directions_are_sector_centers():
     np.testing.assert_allclose(
-        np.degrees(boundary_directions(4)), [-135.0, -45.0, 45.0, 135.0]
+        np.degrees(boundary_directions(n_directions=4)), [-135.0, -45.0, 45.0, 135.0]
     )
 
 

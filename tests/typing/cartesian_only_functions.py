@@ -74,10 +74,10 @@ if TYPE_CHECKING:
         # Only the Euclidean or coordinate-based modes refuse polar at runtime.
         rate_map_centroid(polar, values, bins, method="geodesic")
         compute_field_emd(polar, values, values, metric="geodesic")
-        select_basis_centers(polar, 5, method="farthest_point")
+        select_basis_centers(polar, n_centers=5, method="farthest_point")
         path_progress(bins, polar, start_bins=bins, goal_bins=bins)
         distance_to_region(bins, polar, target_bins=bins)
         trajectory_similarity(bins, bins, polar, method="jaccard")
         # Posterior means are egocentric-plane centroids on polar environments.
         mean_position(polar, values)
-        decode_position_summary(polar, bins, values, 0.02)
+        decode_position_summary(polar, bins, values, dt=0.02)

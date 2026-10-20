@@ -1392,7 +1392,7 @@ open_field = np.random.default_rng(0).uniform(0, 100, size=(5000, 2))  # x, y in
 arena = Environment.from_samples(open_field, bin_size=2.0, units="cm")
 cell = GridCellModel(arena, grid_spacing=30.0, grid_orientation=np.radians(20.0))
 autocorr = spatial_autocorrelation(arena, cell.firing_rate(arena.bin_centers))
-properties = grid_properties(autocorr, autocorrelation_pixel_size(arena))
+properties = grid_properties(autocorr, bin_size=autocorrelation_pixel_size(arena))
 # Before: the lattice sat at 50° (grid_orientation set the plane waves), and
 # properties.orientation reported it reflected about 45°, in degrees
 assert abs(np.degrees(properties.orientation) - 20.0) < 2.0

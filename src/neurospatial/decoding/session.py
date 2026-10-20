@@ -330,7 +330,7 @@ def decode_session(
     ...     env,
     ...     counts,
     ...     rates.firing_rates,
-    ...     0.1,
+    ...     dt=0.1,
     ...     times=centers,
     ...     prior=rates.spatial_support.astype(float),
     ... )
@@ -720,7 +720,7 @@ def _decode_with_models(
     counts = _count_spikes_in_time_bins(trains, bin_left, bin_right)
     centers = bin_left + dt / 2.0
     return decode_position(
-        env, counts, firing_rates, dt, times=centers, dtype=dtype, **decode_kwargs
+        env, counts, firing_rates, dt=dt, times=centers, dtype=dtype, **decode_kwargs
     )._evolve(spike_window=resolved_spike_window)
 
 

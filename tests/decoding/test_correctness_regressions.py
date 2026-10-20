@@ -41,7 +41,7 @@ def test_rate_result_environment_mismatch_raises(tiny_env, decode, validate, mis
         np.ones((1, env.n_bins)), np.ones(env.n_bins), env, "binned", 5.0
     )
     with pytest.raises(IncompatibleEnvironmentError, match="environment") as caught:
-        decode(other, np.array([[1]]), rates, 0.1, validate=validate)
+        decode(other, np.array([[1]]), rates, dt=0.1, validate=validate)
     assert "Fix:" in str(caught.value)
 
 
@@ -53,8 +53,8 @@ def test_rate_result_equivalent_environment_copy_decodes(tiny_env, decode):
         np.arange(1.0, env.n_bins + 1)[None], np.ones(env.n_bins), env, "binned", 5.0
     )
     counts = np.array([[1], [0]])
-    actual = decode(env.with_metadata(), counts, rates, 0.1)
-    expected = decode(env, counts, rates, 0.1)
+    actual = decode(env.with_metadata(), counts, rates, dt=0.1)
+    expected = decode(env, counts, rates, dt=0.1)
     np.testing.assert_array_equal(actual.map_position, expected.map_position)
     np.testing.assert_allclose(actual.posterior_entropy, expected.posterior_entropy)
 
@@ -79,7 +79,12 @@ def test_partial_missing_rate_likelihood_matches_poisson(tiny_env, decode, missi
 
     with pytest.warns(UserWarning, match="non-finite"):
         result = decode(
-            tiny_env, counts, models, 1.0, validate=not np.isinf(missing), time_chunk=1
+            tiny_env,
+            counts,
+            models,
+            dt=1.0,
+            validate=not np.isinf(missing),
+            time_chunk=1,
         )
     np.testing.assert_array_equal(result.map_estimate, expected.argmax(axis=1))
     # Four spikes at the finite 4 Hz model previously made bin 1 win, because

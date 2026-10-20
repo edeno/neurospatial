@@ -80,7 +80,7 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
             "use 'reward'",
         ),
         "region_reward_field": (
-            lambda value: region_reward_field(env, value),
+            lambda value: region_reward_field(env, region_name=value),
             "rewrd",
             "pass region_name='reward'",
         ),

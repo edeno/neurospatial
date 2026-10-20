@@ -76,7 +76,7 @@ if TYPE_CHECKING:
         _features: FeatureLookupConsumer = env
         graph_convolve(env, values, lambda distance: distance)
         regions_to_mask(env, "goal")
-        select_basis_centers(env, 3, method="farthest_point")
+        select_basis_centers(env, n_centers=3, method="farthest_point")
         geodesic_rbf_basis(env, n_centers=3, center_method="farthest_point")
         heat_kernel_wavelet_basis(env, center_method="farthest_point")
         plot_basis_functions(env, np.ones((env.n_bins, 2)))

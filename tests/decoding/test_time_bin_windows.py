@@ -17,7 +17,7 @@ def helpers():
 
 def test_epochs_tile_each_window():
     counts, centers = bin_spikes_in_time(
-        [np.array([0.01, 1.5, 2.01])], 0.25, epochs=[(0, 1), (2, 3)]
+        [np.array([0.01, 1.5, 2.01])], dt=0.25, epochs=[(0, 1), (2, 3)]
     )
     np.testing.assert_array_equal(
         centers, np.r_[np.arange(0.125, 1, 0.25), np.arange(2.125, 3, 0.25)]
@@ -25,7 +25,7 @@ def test_epochs_tile_each_window():
     assert counts.shape == (8, 1)
     assert counts.sum() == 2
     with pytest.raises(ValueError, match="not both") as error:
-        bin_spikes_in_time([], 0.25, t_start=0, epochs=(0, 1))
+        bin_spikes_in_time([], dt=0.25, t_start=0, epochs=(0, 1))
     assert any(line.startswith("Fix:") for line in str(error.value).splitlines())
 
 
@@ -108,6 +108,6 @@ def test_chunked_counts_equal_full():
 
 def test_bins_are_half_open():
     counts, _ = bin_spikes_in_time(
-        [np.array([0.0, 0.5, 1.0])], 0.5, t_start=0, t_stop=1
+        [np.array([0.0, 0.5, 1.0])], dt=0.5, t_start=0, t_stop=1
     )
     np.testing.assert_array_equal(counts, [[1], [1]])

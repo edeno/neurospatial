@@ -55,7 +55,12 @@ def test_every_maze_track_has_a_width(name):
 def test_mazes_without_one_corridor_width_simulate_and_look_up(name):
     track = _track(name)
     session = simulate_session(
-        track, 5.0, n_cells=3, trajectory_method="laps", show_progress=False, seed=0
+        track,
+        duration=5.0,
+        n_cells=3,
+        trajectory_method="laps",
+        show_progress=False,
+        seed=0,
     )
     bins = track.bin_at(session.positions)
     assert (bins >= 0).all()

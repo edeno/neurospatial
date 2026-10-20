@@ -374,7 +374,7 @@ dt = 0.05  # 50 ms bins
 counts, bin_times = {}, {}
 for name, (start, stop) in periods.items():
     counts[name], bin_times[name] = bin_spikes_in_time(
-        spike_times, dt, t_start=start, t_stop=stop
+        spike_times, dt=dt, t_start=start, t_stop=stop
     )
 print({name: matrix.shape for name, matrix in counts.items()})
 ```
@@ -612,7 +612,7 @@ my_env = env
 # Bin every period, then keep units that fire in all of them. Select once, so
 # every analysis below uses the same units in the same order.
 my_counts = {
-    name: bin_spikes_in_time(my_spike_times, 0.05, t_start=start, t_stop=stop)[0]
+    name: bin_spikes_in_time(my_spike_times, dt=0.05, t_start=start, t_stop=stop)[0]
     for name, (start, stop) in my_periods.items()
 }
 keep = np.logical_and.reduce([m.std(axis=0) > 0 for m in my_counts.values()])

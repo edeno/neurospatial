@@ -81,7 +81,9 @@ CALLS = {
         decision_region=empty,
         trials=segment_trials(b, t, env, start_region="left", end_regions=["right"]),
     ),
-    "region_reward_field": lambda env, t, p, b, empty: region_reward_field(env, empty),
+    "region_reward_field": lambda env, t, p, b, empty: region_reward_field(
+        env, region_name=empty
+    ),
     "distance_to_boundary": lambda env, t, p, b, empty: distance_to_boundary(
         env, p, boundary_type="region", region_name=empty
     ),

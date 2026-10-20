@@ -391,7 +391,7 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         autocorr = spatial_autocorrelation(env, rate)
         pixel = autocorrelation_pixel_size(env)
-        properties = grid_properties(autocorr, pixel)
+        properties = grid_properties(autocorr, bin_size=pixel)
 
         assert pixel == min(x_width, y_width)
         assert properties.score > 0.9
@@ -446,7 +446,7 @@ class TestFFTAutocorrelationLagsArePhysical:
         result = compute_spatial_rate(env, spike_times, times, positions)
         expected = grid_properties(
             spatial_autocorrelation(env, np.asarray(result.firing_rate)),
-            autocorrelation_pixel_size(env),
+            bin_size=autocorrelation_pixel_size(env),
         )
 
         np.testing.assert_equal(result.grid_properties().scale, expected.scale)
@@ -579,7 +579,9 @@ class TestGridMetricsOnHexagonalMaps:
         from neurospatial.encoding.grid import grid_properties
 
         for angle, phase in self.CASES:
-            properties = grid_properties(self._hexagonal(n_cells, angle, phase)[2], 2.0)
+            properties = grid_properties(
+                self._hexagonal(n_cells, angle, phase)[2], bin_size=2.0
+            )
             # The field lattice lies 30 degrees from the wave directions.
             expected = np.radians(angle + 30.0) % (np.pi / 3)
             error = abs(properties.orientation - expected) % (np.pi / 3)
@@ -607,7 +609,9 @@ class TestGridMetricsOnHexagonalMaps:
         from neurospatial.encoding.grid import grid_properties
 
         for angle, phase in self.CASES:
-            properties = grid_properties(self._hexagonal(n_cells, angle, phase)[2], 2.0)
+            properties = grid_properties(
+                self._hexagonal(n_cells, angle, phase)[2], bin_size=2.0
+            )
             # Well above the 0.4 grid-cell threshold; a perfect lattice on a
             # 120 cm arena scores about 1.
             assert properties.score > 0.8
@@ -695,7 +699,7 @@ class TestGridOrientationInEnvironmentFrame:
 
         env = self._environment(grid)
         autocorr = spatial_autocorrelation(env, self._lattice_rate(env, lattice_deg))
-        properties = grid_properties(autocorr, autocorrelation_pixel_size(env))
+        properties = grid_properties(autocorr, bin_size=autocorrelation_pixel_size(env))
 
         period = np.pi / 3
         assert 0.0 <= properties.orientation < period

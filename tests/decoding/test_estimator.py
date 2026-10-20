@@ -1113,7 +1113,7 @@ def test_from_rates_nan_bins_are_excluded_from_spatial_support(sim):
     counts, centers = bin_spikes_in_time(
         spikes[:2], dt=0.5, t_start=times[0], t_stop=times[-1]
     )
-    expected = decode_position(env, counts, rates, 0.5, times=centers)
+    expected = decode_position(env, counts, rates, dt=0.5, times=centers)
     np.testing.assert_array_equal(actual.posterior, expected.posterior)
     assert np.isnan(maps[0, 0])
 

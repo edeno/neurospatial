@@ -984,7 +984,9 @@ def test_simulated_orientation_is_recovered_by_grid_properties(orientation_deg):
     model = GridCellModel(env, grid_spacing=30.0, grid_orientation=grid_orientation)
     autocorr = spatial_autocorrelation(env, model.firing_rate(env.bin_centers))
 
-    measured = grid_properties(autocorr, autocorrelation_pixel_size(env)).orientation
+    measured = grid_properties(
+        autocorr, bin_size=autocorrelation_pixel_size(env)
+    ).orientation
 
     error = abs(measured - grid_orientation) % (np.pi / 3)
     assert min(error, np.pi / 3 - error) < np.radians(2.0)

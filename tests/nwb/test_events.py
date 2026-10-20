@@ -33,7 +33,7 @@ class TestReadEvents:
         """Test reading events data from NWB file."""
         from neurospatial.io.nwb import read_events
 
-        events = read_events(sample_nwb_with_events, "laps")
+        events = read_events(sample_nwb_with_events, table_name="laps")
 
         # Check return type
         assert isinstance(events, pd.DataFrame)
@@ -53,7 +53,7 @@ class TestReadEvents:
         """Test that read data matches the original data in the NWB file."""
         from neurospatial.io.nwb import read_events
 
-        events = read_events(sample_nwb_with_events, "laps")
+        events = read_events(sample_nwb_with_events, table_name="laps")
 
         # Get original data directly from NWB
         original_table = sample_nwb_with_events.processing["behavior"]["laps"]
@@ -81,7 +81,9 @@ class TestReadEvents:
         custom_module.add(events_table)
 
         # Read with explicit module
-        events = read_events(nwbfile, "custom_events", processing_module="analysis")
+        events = read_events(
+            nwbfile, table_name="custom_events", processing_module="analysis"
+        )
 
         assert len(events) == 2
         assert events["timestamp"].iloc[0] == pytest.approx(1.5)
@@ -92,20 +94,22 @@ class TestReadEvents:
         from neurospatial.io.nwb import read_events
 
         with pytest.raises(KeyError, match="nonexistent_table"):
-            read_events(sample_nwb_with_events, "nonexistent_table")
+            read_events(sample_nwb_with_events, table_name="nonexistent_table")
 
     def test_error_when_module_not_found(self, empty_nwb):
         """Test KeyError when processing module not found."""
         from neurospatial.io.nwb import read_events
 
         with pytest.raises(KeyError, match="nonexistent_module"):
-            read_events(empty_nwb, "events", processing_module="nonexistent_module")
+            read_events(
+                empty_nwb, table_name="events", processing_module="nonexistent_module"
+            )
 
     def test_dataframe_output_with_timestamp_column(self, sample_nwb_with_events):
         """Test DataFrame output includes timestamp column."""
         from neurospatial.io.nwb import read_events
 
-        events = read_events(sample_nwb_with_events, "laps")
+        events = read_events(sample_nwb_with_events, table_name="laps")
 
         # Timestamp must be a column
         assert "timestamp" in events.columns
@@ -118,7 +122,7 @@ class TestReadEvents:
         """Test that additional columns from EventsTable are preserved."""
         from neurospatial.io.nwb import read_events
 
-        events = read_events(sample_nwb_with_events, "laps")
+        events = read_events(sample_nwb_with_events, table_name="laps")
 
         # Fixture adds 'direction' and 'duration' columns
         assert "direction" in events.columns
@@ -146,7 +150,7 @@ class TestReadEvents:
         behavior_module.add(events_table)
 
         # Read empty table
-        events = read_events(nwbfile, "empty_events")
+        events = read_events(nwbfile, table_name="empty_events")
 
         assert isinstance(events, pd.DataFrame)
         assert len(events) == 0
@@ -173,7 +177,7 @@ class TestReadEvents:
         behavior_module.add(events_table)
 
         # Read table
-        events = read_events(nwbfile, "region_events")
+        events = read_events(nwbfile, table_name="region_events")
 
         assert len(events) == 3
         assert "region" in events.columns
@@ -207,7 +211,7 @@ class TestReadEvents:
 
         # Try to read Position with read_events - should raise TypeError
         with pytest.raises(TypeError, match="is not an EventsTable"):
-            read_events(nwbfile, "Position")
+            read_events(nwbfile, table_name="Position")
 
 
 class TestReadIntervals:
@@ -226,7 +230,7 @@ class TestReadIntervals:
         nwbfile.add_trial(start_time=5.0, stop_time=6.0, trial_type="go")
 
         # Read trials
-        trials = read_intervals(nwbfile, "trials")
+        trials = read_intervals(nwbfile, interval_name="trials")
 
         assert isinstance(trials, pd.DataFrame)
         assert len(trials) == 3
@@ -251,7 +255,7 @@ class TestReadIntervals:
         nwbfile.add_time_intervals(epochs)
 
         # Read epochs
-        result = read_intervals(nwbfile, "epochs")
+        result = read_intervals(nwbfile, interval_name="epochs")
 
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 3
@@ -276,7 +280,7 @@ class TestReadIntervals:
         nwbfile.add_time_intervals(laps)
 
         # Read custom intervals
-        result = read_intervals(nwbfile, "laps")
+        result = read_intervals(nwbfile, interval_name="laps")
 
         assert len(result) == 2
         assert result["start_time"].iloc[0] == pytest.approx(10.0)
@@ -292,7 +296,7 @@ class TestReadIntervals:
         # Add minimal trials
         nwbfile.add_trial(start_time=0.0, stop_time=1.0)
 
-        trials = read_intervals(nwbfile, "trials")
+        trials = read_intervals(nwbfile, interval_name="trials")
 
         # Required columns must be present
         assert "start_time" in trials.columns
@@ -310,7 +314,7 @@ class TestReadIntervals:
         from neurospatial.io.nwb import read_intervals
 
         with pytest.raises(KeyError, match="nonexistent"):
-            read_intervals(empty_nwb, "nonexistent")
+            read_intervals(empty_nwb, interval_name="nonexistent")
 
     def test_additional_columns_preserved(self, empty_nwb):
         """Test that additional columns from TimeIntervals are preserved."""
@@ -330,7 +334,7 @@ class TestReadIntervals:
         intervals.add_row(start_time=10.0, stop_time=30.0, state="run", confidence=0.88)
         nwbfile.add_time_intervals(intervals)
 
-        result = read_intervals(nwbfile, "behavioral_states")
+        result = read_intervals(nwbfile, interval_name="behavioral_states")
 
         assert "state" in result.columns
         assert "confidence" in result.columns
@@ -351,7 +355,7 @@ class TestReadIntervals:
         )
         nwbfile.add_time_intervals(empty_intervals)
 
-        result = read_intervals(nwbfile, "empty_table")
+        result = read_intervals(nwbfile, interval_name="empty_table")
 
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 0
@@ -368,7 +372,7 @@ class TestReadIntervals:
         nwbfile.add_trial(start_time=1.5, stop_time=3.5)
         nwbfile.add_trial(start_time=5.0, stop_time=8.0)
 
-        result = read_intervals(nwbfile, "trials")
+        result = read_intervals(nwbfile, interval_name="trials")
 
         # Get original data
         original = nwbfile.trials
@@ -547,7 +551,7 @@ class TestWriteLaps:
         write_laps(nwbfile, lap_times, lap_types=lap_types)
 
         # Read back using read_events
-        events = read_events(nwbfile, "laps")
+        events = read_events(nwbfile, table_name="laps")
 
         # Verify data matches
         np.testing.assert_array_almost_equal(events["timestamp"].values, lap_times)
@@ -923,7 +927,7 @@ class TestWriteRegionCrossings:
         write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
         # Read back using read_events
-        events = read_events(nwbfile, "region_crossings")
+        events = read_events(nwbfile, table_name="region_crossings")
 
         # Verify data matches
         np.testing.assert_array_almost_equal(events["timestamp"].values, crossing_times)
@@ -985,7 +989,7 @@ class TestWriteLapsRegionColumns:
         assert "start_region" in laps_table.colnames
 
         # Check values via read_events
-        events = read_events(nwbfile, "laps")
+        events = read_events(nwbfile, table_name="laps")
         assert list(events["start_region"]) == start_regions
 
     def test_write_laps_with_end_regions(self, empty_nwb):
@@ -1004,7 +1008,7 @@ class TestWriteLapsRegionColumns:
         assert "end_region" in laps_table.colnames
 
         # Check values via read_events
-        events = read_events(nwbfile, "laps")
+        events = read_events(nwbfile, table_name="laps")
         assert list(events["end_region"]) == end_regions
 
     def test_write_laps_with_stop_times(self, empty_nwb):
@@ -1023,7 +1027,7 @@ class TestWriteLapsRegionColumns:
         assert "stop_time" in laps_table.colnames
 
         # Check values via read_events
-        events = read_events(nwbfile, "laps")
+        events = read_events(nwbfile, table_name="laps")
         np.testing.assert_array_almost_equal(events["stop_time"].values, stop_times)
 
     def test_write_laps_with_all_optional(self, empty_nwb):
@@ -1055,7 +1059,7 @@ class TestWriteLapsRegionColumns:
         assert "stop_time" in laps_table.colnames
 
         # Check all values via read_events
-        events = read_events(nwbfile, "laps")
+        events = read_events(nwbfile, table_name="laps")
         np.testing.assert_array_equal(events["direction"].values, lap_types)
         assert list(events["start_region"]) == start_regions
         assert list(events["end_region"]) == end_regions
@@ -1151,7 +1155,7 @@ class TestWriteLapsRegionColumns:
         )
 
         # Verify new data
-        events = read_events(nwbfile, "laps")
+        events = read_events(nwbfile, table_name="laps")
         assert len(events) == 3
         assert "start_region" in events.columns
         assert "end_region" in events.columns
@@ -1170,7 +1174,7 @@ class TestWriteLapsRegionColumns:
         write_laps(nwbfile, lap_times, lap_types=lap_types)
 
         # Verify original behavior preserved
-        events = read_events(nwbfile, "laps")
+        events = read_events(nwbfile, table_name="laps")
         np.testing.assert_array_almost_equal(events["timestamp"].values, lap_times)
         np.testing.assert_array_equal(events["direction"].values, lap_types)
 
@@ -1208,7 +1212,7 @@ class TestWriteLapsDiskRoundTrip:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             reopened = io.read()
-            recovered = read_events(reopened, "laps")
+            recovered = read_events(reopened, table_name="laps")
 
         # Element-wise comparison against the input, not just "doesn't raise".
         expected = pd.DataFrame(
@@ -1251,7 +1255,7 @@ class TestWriteLapsDiskRoundTrip:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             reopened = io.read()
-            recovered = read_events(reopened, "laps")
+            recovered = read_events(reopened, table_name="laps")
 
         expected = pd.DataFrame(
             {
@@ -1298,7 +1302,7 @@ class TestWriteRegionCrossingsDiskRoundTrip:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             reopened = io.read()
-            recovered = read_events(reopened, "region_crossings")
+            recovered = read_events(reopened, table_name="region_crossings")
 
         expected = pd.DataFrame(
             {
@@ -1348,7 +1352,7 @@ class TestWriteEventsDiskRoundTrip:
 
         with NWBHDF5IO(str(nwb_path), "r") as io:
             reopened = io.read()
-            recovered = read_events(reopened, "behavioral_events")
+            recovered = read_events(reopened, table_name="behavioral_events")
 
         pd.testing.assert_frame_equal(
             recovered.reset_index(drop=True)[["timestamp", "label", "value"]],
