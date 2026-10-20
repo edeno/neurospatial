@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+from shapely.geometry import LineString, Point
 
 
 class TestMakeWMaze:
@@ -31,27 +33,24 @@ class TestMakeWMaze:
         maze = make_w_maze()
         assert maze.env_2d.units == "cm"
 
-    def test_env_2d_has_w_shape_extent(self):
-        """env_2d should have a W-shaped spatial extent."""
+    def test_default_footprint_is_the_published_76_by_76_cm_w_track(self):
+        """Karlsson & Frank (2009): 76 x 76 cm W-tracks, 7 cm wide sections."""
         from neurospatial.simulation.mazes.w_maze import WMazeDims, make_w_maze
 
-        dims = WMazeDims(width=120.0, height=80.0, corridor_width=10.0)
-        maze = make_w_maze(dims=dims)
+        dims = WMazeDims()
+        assert dims.corridor_width == 7.0
+        assert dims.n_wells == 3
 
-        # Get spatial extent from bin_centers
-        bin_centers = maze.env_2d.bin_centers
-        x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
-        y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
+        polygon = make_w_maze(include_track=False).env_2d.arena.polygon
+        x_min, y_min, x_max, y_max = polygon.bounds
+        assert x_max - x_min == pytest.approx(76.0)
+        assert y_max - y_min == pytest.approx(76.0)
 
-        # X extent should cover full width
-        x_extent = x_max - x_min
-        expected_x_extent = dims.width
-        assert x_extent > expected_x_extent * 0.8  # At least 80% of expected
-
-        # Y extent should cover the height
-        y_extent = y_max - y_min
-        expected_y_extent = dims.height
-        assert y_extent > expected_y_extent * 0.8  # At least 80% of expected
+        # Halfway up, the maze is three 7 cm wide arms, 69 cm apart outer to outer.
+        section = polygon.intersection(LineString([(x_min, 40.0), (x_max, 40.0)]))
+        arms = sorted(section.geoms, key=lambda arm: arm.centroid.x)
+        np.testing.assert_allclose([arm.length for arm in arms], 7.0)
+        np.testing.assert_allclose([arm.centroid.x for arm in arms], [-34.5, 0, 34.5])
 
     def test_env_2d_has_well_1_region(self):
         """env_2d should have a 'well_1' region at first well top."""
@@ -74,33 +73,26 @@ class TestMakeWMaze:
         maze = make_w_maze()
         assert "well_3" in maze.env_2d.regions
 
-    def test_region_positions_correct(self):
-        """Regions should be at expected positions for W-maze geometry."""
+    def test_wells_sit_in_the_end_square_of_each_arm(self):
+        """Each arm's reward well is centred in the arm's end square."""
         from neurospatial.simulation.mazes.w_maze import WMazeDims, make_w_maze
 
-        dims = WMazeDims(width=120.0, height=80.0, n_wells=3)
-        maze = make_w_maze(dims=dims)
+        dims = WMazeDims()
+        maze = make_w_maze(dims=dims, include_track=False)
+        polygon = maze.env_2d.arena.polygon
 
-        # Get regions
-        well_1 = maze.env_2d.regions["well_1"]
-        well_2 = maze.env_2d.regions["well_2"]
-        well_3 = maze.env_2d.regions["well_3"]
-
-        # All should be point regions
-        assert well_1.kind == "point"
-        assert well_2.kind == "point"
-        assert well_3.kind == "point"
-
-        # Wells should be at top of vertical corridors
-        # For 3 wells, x positions are: -width/2, 0, +width/2 (at edges and center)
-        assert np.isclose(well_1.data[0], -dims.width / 2, atol=1.0)
-        assert np.isclose(well_1.data[1], dims.height, atol=1.0)
-
-        assert np.isclose(well_2.data[0], 0.0, atol=1.0)
-        assert np.isclose(well_2.data[1], dims.height, atol=1.0)
-
-        assert np.isclose(well_3.data[0], dims.width / 2, atol=1.0)
-        assert np.isclose(well_3.data[1], dims.height, atol=1.0)
+        expected_x = [-dims.width / 2, 0.0, dims.width / 2]
+        for i, x in enumerate(expected_x, start=1):
+            well = maze.env_2d.regions[f"well_{i}"]
+            assert well.kind == "point"
+            np.testing.assert_allclose(
+                well.data, [x, dims.height - dims.corridor_width / 2]
+            )
+            # Half a corridor width from the arm's end and side walls.
+            assert polygon.contains(Point(well.data))
+            assert polygon.boundary.distance(Point(well.data)) == pytest.approx(
+                dims.corridor_width / 2
+            )
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
@@ -212,24 +204,40 @@ class TestWMazeTrackGraph:
         for node in maze.env_track.connectivity.nodes():
             assert "pos" in maze.env_track.connectivity.nodes[node]
 
-    def test_track_covers_full_maze(self):
-        """Track should cover the full W-maze extent."""
+    def test_track_is_a_tree_whose_leaves_are_the_three_arm_ends(self):
+        """The base ends at the outer arms: no dead-end stubs past them."""
+        import networkx as nx
+
         from neurospatial.simulation.mazes.w_maze import WMazeDims, make_w_maze
 
-        dims = WMazeDims(width=120.0, height=80.0)
-        maze = make_w_maze(dims=dims, include_track=True)
-        assert maze.env_track is not None
+        dims = WMazeDims()
+        track = make_w_maze(dims=dims, bin_size=1.0).env_track
+        graph = track.connectivity
+        assert nx.is_tree(graph)
 
-        # Get the positions of all nodes
-        graph = maze.env_track.connectivity
-        positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
+        leaves = sorted(n for n in graph.nodes if graph.degree(n) == 1)
+        assert len(leaves) == 3
+        leaf_positions = track.bin_centers[leaves]
+        np.testing.assert_allclose(
+            np.sort(leaf_positions[:, 0]),
+            [-dims.width / 2, 0.0, dims.width / 2],
+            atol=1.0,
+        )
+        np.testing.assert_allclose(leaf_positions[:, 1], dims.height, atol=1.0)
 
-        # X extent should cover full width
-        x_extent = positions[:, 0].max() - positions[:, 0].min()
-        expected_x = dims.width
-        assert x_extent >= expected_x * 0.8  # At least 80%
+        # The base spans only the outer-arm junctions.
+        base = track.bin_centers[np.abs(track.bin_centers[:, 1]) < 1e-9]
+        assert base[:, 0].min() >= -dims.width / 2 - 1e-9
+        assert base[:, 0].max() <= dims.width / 2 + 1e-9
 
-        # Y extent should cover the height
-        y_extent = positions[:, 1].max() - positions[:, 1].min()
-        expected_y = dims.height
-        assert y_extent >= expected_y * 0.8  # At least 80%
+    def test_track_wells_stay_on_their_own_arms(self):
+        """Each well on the linearized track lies where it does in 2-D."""
+        from neurospatial.simulation.mazes.w_maze import make_w_maze
+
+        maze = make_w_maze(bin_size=1.0)
+        for name in ("well_1", "well_2", "well_3"):
+            np.testing.assert_allclose(
+                maze.env_track.regions[name].data,
+                maze.env_2d.regions[name].data,
+                atol=1e-9,
+            )
