@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+from shapely.geometry import Point
 
 
 class TestMakeYMaze:
@@ -38,24 +40,32 @@ class TestMakeYMaze:
         dims = YMazeDims(arm_length=50.0, width=10.0)
         maze = make_y_maze(dims=dims)
 
-        # Get spatial extent from bin_centers
-        bin_centers = maze.env_2d.bin_centers
-        x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
-        y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
+        polygon = maze.env_2d.arena.polygon
+        vertices = np.asarray(polygon.exterior.coords)
 
-        # X extent should cover arms at 210° and 330° (down-left and down-right)
-        # At 330°: x = arm_length * cos(330°) ≈ 0.866 * arm_length
-        # At 210°: x = arm_length * cos(210°) ≈ -0.866 * arm_length
-        x_extent = x_max - x_min
-        expected_x_extent = 2 * dims.arm_length * np.cos(np.radians(30))  # ~86.6 cm
-        assert x_extent > expected_x_extent * 0.8  # At least 80% of expected
+        # Each arm reaches exactly arm_length from the centre along its axis.
+        for angle in (270.0, 30.0, 150.0):
+            axis = np.array([np.cos(np.radians(angle)), np.sin(np.radians(angle))])
+            assert (vertices @ axis).max() == pytest.approx(dims.arm_length)
 
-        # Y extent should cover from center to top arm (90°) and bottom arms (210°, 330°)
-        # At 90°: y = +arm_length
-        # At 210°/330°: y = -arm_length * sin(30°) = -0.5 * arm_length
-        y_extent = y_max - y_min
-        expected_y_extent = 1.5 * dims.arm_length  # From -0.5*arm to +arm
-        assert y_extent > expected_y_extent * 0.8  # At least 80% of expected
+        # The single arm points down; the other two point up and out.
+        x_min, y_min, x_max, y_max = polygon.bounds
+        assert y_min == pytest.approx(-dims.arm_length)
+        assert y_max < dims.arm_length
+        assert x_max == pytest.approx(-x_min)
+
+    def test_arm_ends_are_square_and_one_corridor_wide(self):
+        """Halfway along, each arm is one 10 cm corridor."""
+        from shapely.geometry import LineString
+
+        from neurospatial.simulation.mazes.y_maze import YMazeDims, make_y_maze
+
+        dims = YMazeDims()
+        polygon = make_y_maze(dims=dims, include_track=False).env_2d.arena.polygon
+        # A horizontal cut through the down arm at half its length.
+        y = -dims.arm_length / 2
+        section = polygon.intersection(LineString([(-100.0, y), (100.0, y)]))
+        assert section.length == pytest.approx(dims.width)
 
     def test_env_2d_has_center_region(self):
         """env_2d should have a 'center' region at origin."""
@@ -104,33 +114,44 @@ class TestMakeYMaze:
         assert arm2_end.kind == "point"
         assert arm3_end.kind == "point"
 
-        # Center should be at origin
-        assert np.isclose(center.data[0], 0.0, atol=1.0)
-        assert np.isclose(center.data[1], 0.0, atol=1.0)
+        np.testing.assert_allclose(center.data, [0.0, 0.0])
 
-        # Arm 1 endpoint at 90° (up)
-        expected_arm1 = (
-            dims.arm_length * np.cos(np.radians(90)),
-            dims.arm_length * np.sin(np.radians(90)),
-        )
-        assert np.isclose(arm1_end.data[0], expected_arm1[0], atol=1.0)
-        assert np.isclose(arm1_end.data[1], expected_arm1[1], atol=1.0)
+        # Arm ends are centred in each arm's end square, half a corridor width
+        # back from the far end: arm 1 down (270°), arm 2 at 30°, arm 3 at 150°.
+        distance = dims.arm_length - dims.width / 2
+        polygon = maze.env_2d.arena.polygon
+        for region, angle in ((arm1_end, 270), (arm2_end, 30), (arm3_end, 150)):
+            expected = distance * np.array(
+                [np.cos(np.radians(angle)), np.sin(np.radians(angle))]
+            )
+            np.testing.assert_allclose(region.data, expected, atol=1e-9)
+            point = Point(region.data)
+            assert polygon.contains(point)
+            assert polygon.boundary.distance(point) == pytest.approx(dims.width / 2)
 
-        # Arm 2 endpoint at 210° (down-left)
-        expected_arm2 = (
-            dims.arm_length * np.cos(np.radians(210)),
-            dims.arm_length * np.sin(np.radians(210)),
-        )
-        assert np.isclose(arm2_end.data[0], expected_arm2[0], atol=1.0)
-        assert np.isclose(arm2_end.data[1], expected_arm2[1], atol=1.0)
+    def test_track_regions_stay_where_they_are_in_2d(self):
+        """Each region on the linearized track lies where it does in 2-D."""
+        from neurospatial.simulation.mazes.y_maze import make_y_maze
 
-        # Arm 3 endpoint at 330° (down-right)
-        expected_arm3 = (
-            dims.arm_length * np.cos(np.radians(330)),
-            dims.arm_length * np.sin(np.radians(330)),
-        )
-        assert np.isclose(arm3_end.data[0], expected_arm3[0], atol=1.0)
-        assert np.isclose(arm3_end.data[1], expected_arm3[1], atol=1.0)
+        maze = make_y_maze(bin_size=1.0)
+        for name, region in maze.env_2d.regions.items():
+            np.testing.assert_allclose(
+                maze.env_track.regions[name].data, region.data, atol=1e-9
+            )
+
+    def test_spontaneous_alternation_maze_has_no_reward_ports(self):
+        """The unrewarded Y-maze has no landmarks; arm ends stay regions."""
+        from neurospatial.simulation.mazes.y_maze import make_y_maze
+
+        maze = make_y_maze()
+        assert len(maze.env_2d.landmarks) == 0
+        assert len(maze.env_track.landmarks) == 0
+        assert list(maze.env_2d.regions) == [
+            "center",
+            "arm1_end",
+            "arm2_end",
+            "arm3_end",
+        ]
 
     def test_arm_angles_are_120_degrees_apart(self):
         """Arms should be separated by 120° angles."""
@@ -295,12 +316,14 @@ class TestYMazeTrackGraph:
         graph = maze.env_track.connectivity
         positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
 
-        # X extent should cover arms at 210° and 330°
-        x_extent = positions[:, 0].max() - positions[:, 0].min()
-        expected_x = 2 * dims.arm_length * np.cos(np.radians(30))  # ~86.6 cm
-        assert x_extent >= expected_x * 0.8  # At least 80%
+        # The track runs from the centre to each arm's far end.
+        radii = np.linalg.norm(positions, axis=1)
+        assert radii.max() <= dims.arm_length + 1e-9
+        assert radii.max() >= dims.arm_length - maze.env_track.bin_sizes.max()
 
-        # Y extent should cover from -0.5*arm_length to +arm_length
-        y_extent = positions[:, 1].max() - positions[:, 1].min()
-        expected_y = 1.5 * dims.arm_length  # 75 cm for arm_length=50
-        assert y_extent >= expected_y * 0.8  # At least 80%
+        # Arms at 30° and 150° span 2 * 0.866 * arm_length in x; the down arm
+        # reaches -arm_length and the others +0.5 * arm_length in y.
+        x_extent = positions[:, 0].max() - positions[:, 0].min()
+        assert x_extent >= 2 * dims.arm_length * np.cos(np.radians(30)) * 0.9
+        assert positions[:, 1].min() <= -0.9 * dims.arm_length
+        assert positions[:, 1].max() <= 0.5 * dims.arm_length + 1e-9

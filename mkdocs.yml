@@ -61,6 +61,7 @@ plugins:
   - gen-files:
       scripts:
         - docs/gen_ref_pages.py
+        - docs/gen_maze_gallery.py
   - literate-nav:
       nav_file: SUMMARY.md
   - section-index
@@ -166,6 +167,7 @@ nav:
           - Layout Engines: user-guide/layout-engines.md
           - Regions: user-guide/regions.md
           - Composite Environments: user-guide/composite-environments.md
+          - Simulated Mazes: user-guide/simulated-mazes.md
           - Dimensionality Support: dimensionality_support.md
           - Alignment & Transforms: user-guide/alignment.md
       - Workflows & Interoperability:

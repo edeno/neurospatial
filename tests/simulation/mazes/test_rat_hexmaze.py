@@ -1,248 +1,239 @@
-"""Tests for Rat HexMaze implementation."""
+"""Tests for the Rat HexMaze: four mouse HexMaze modules joined by five bridges.
+
+The geometry is checked against the published apparatus: each mouse HexMaze
+module has 24 nodes and 30 equal corridors meeting at 120° and spans about
+2 × 1.9 m (Alonso et al. 2021); the rat HexMaze has 96 nodes, three small and
+two large bridges and spans about 9 × 5 m (Wijnen et al. 2024).
+"""
 
 from __future__ import annotations
 
+from collections import Counter
+from itertools import combinations
+
+import networkx as nx
 import numpy as np
+import pytest
+from shapely.geometry import LineString
+
+from neurospatial.simulation.mazes._base import MazeEnvironments
+from neurospatial.simulation.mazes.rat_hexmaze import RatHexmazeDims, make_rat_hexmaze
+
+DIMS = RatHexmazeDims()
+BIN_SIZE = 4.0
 
 
-class TestMakeRatHexmaze:
-    """Tests for make_rat_hexmaze factory function."""
+def _graph(maze: MazeEnvironments) -> nx.Graph:
+    return maze.env_track.binning.linearization.graph
 
-    def test_returns_maze_environments(self):
-        """make_rat_hexmaze should return MazeEnvironments."""
-        from neurospatial.simulation.mazes._base import MazeEnvironments
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
 
-        maze = make_rat_hexmaze()
-        assert isinstance(maze, MazeEnvironments)
+def _length(graph: nx.Graph, u: str, v: str) -> float:
+    return float(np.hypot(*np.subtract(graph.nodes[u]["pos"], graph.nodes[v]["pos"])))
 
-    def test_env_2d_is_valid_environment(self):
-        """env_2d should be a valid, fitted Environment."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
 
-        maze = make_rat_hexmaze()
-        # Should have n_bins > 0 if fitted
-        assert maze.env_2d.n_bins > 0
+def _module(node: str) -> str:
+    return node.removeprefix("node_")[0]
 
-    def test_env_2d_has_correct_units(self):
-        """env_2d should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
 
-        maze = make_rat_hexmaze()
-        assert maze.env_2d.units == "cm"
+@pytest.fixture(scope="module")
+def maze() -> MazeEnvironments:
+    return make_rat_hexmaze(bin_size=BIN_SIZE)
 
-    def test_env_2d_has_large_spatial_extent(self):
-        """env_2d should have a large spatial extent (multiple modules)."""
-        from neurospatial.simulation.mazes.rat_hexmaze import (
-            RatHexmazeDims,
-            make_rat_hexmaze,
+
+@pytest.fixture(scope="module")
+def graph(maze) -> nx.Graph:
+    return _graph(maze)
+
+
+@pytest.fixture(scope="module")
+def mouse() -> MazeEnvironments:
+    """The published mouse HexMaze: one module, 36.3 cm node spacing."""
+    dims = RatHexmazeDims(n_modules=1, node_spacing=36.3, corridor_width=10.0)
+    return make_rat_hexmaze(dims, bin_size=2.0)
+
+
+class TestTopology:
+    def test_has_96_choice_points_and_125_corridors(self, graph):
+        assert graph.number_of_nodes() == 96
+        assert graph.number_of_edges() == 125
+        assert nx.is_connected(graph)
+
+    def test_has_58_three_way_and_38_two_way_nodes(self, graph):
+        assert Counter(d for _, d in graph.degree()) == {3: 58, 2: 38}
+
+    def test_each_module_is_a_mouse_hexmaze(self, graph):
+        for letter in "ABCD":
+            module = graph.subgraph(n for n in graph if _module(n) == letter)
+            assert module.number_of_nodes() == 24
+            assert module.number_of_edges() == 30
+            # Six hexagons around a central hexagonal hole: seven 6-cycles.
+            cycles = nx.minimum_cycle_basis(module)
+            assert sorted(len(c) for c in cycles) == [6] * 7
+
+    def test_three_small_and_two_large_bridges_join_the_modules(self, graph):
+        bridges = {
+            "".join(sorted({_module(u), _module(v)})): _length(graph, u, v)
+            for u, v in graph.edges
+            if _module(u) != _module(v)
+        }
+        s, L = DIMS.node_spacing, DIMS.bridge_length
+        assert bridges == pytest.approx(
+            {"AB": L, "BC": L, "CD": L, "AC": 3 * s + L, "BD": 3 * s + L}
         )
 
-        dims = RatHexmazeDims(module_width=90.0, n_modules=3)
-        maze = make_rat_hexmaze(dims=dims)
+    def test_module_corridors_are_one_node_spacing_long(self, graph):
+        lengths = [
+            _length(graph, u, v) for u, v in graph.edges if _module(u) == _module(v)
+        ]
+        assert len(lengths) == 120
+        np.testing.assert_allclose(lengths, DIMS.node_spacing)
 
-        # Get spatial extent from bin_centers
-        bin_centers = maze.env_2d.bin_centers
-        x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
-        y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
+    def test_edge_distances_are_the_corridor_lengths(self, graph):
+        for u, v, distance in graph.edges(data="distance"):
+            assert distance == pytest.approx(_length(graph, u, v))
 
-        # X extent should cover 3 modules (~270 cm minimum)
-        x_extent = x_max - x_min
-        expected_x_extent = dims.n_modules * dims.module_width
-        assert x_extent > expected_x_extent * 0.6  # At least 60% of expected
+    def test_corridors_meet_at_120_degrees(self, graph):
+        for node in (n for n, d in graph.degree() if d == 3):
+            vectors = np.subtract(
+                [graph.nodes[n]["pos"] for n in graph.neighbors(node)],
+                graph.nodes[node]["pos"],
+            )
+            angles = np.sort(np.arctan2(vectors[:, 1], vectors[:, 0]))
+            gaps = np.diff(np.append(angles, angles[0] + 2 * np.pi))
+            np.testing.assert_allclose(gaps, 2 * np.pi / 3, atol=1e-9, err_msg=node)
 
-        # Y extent should be substantial (hexagonal modules)
-        y_extent = y_max - y_min
-        assert y_extent > dims.module_width * 0.5  # At least half module width
+    def test_corridors_cross_only_at_shared_nodes(self, graph):
+        segments = {
+            (u, v): LineString([graph.nodes[u]["pos"], graph.nodes[v]["pos"]])
+            for u, v in graph.edges
+        }
+        for (e1, s1), (e2, s2) in combinations(segments.items(), 2):
+            if set(e1) & set(e2):
+                assert s1.intersection(s2).geom_type == "Point", (e1, e2)
+            else:
+                assert not s1.intersects(s2), (e1, e2)
 
-    def test_env_2d_has_module_regions(self):
-        """env_2d should have regions for each module."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
 
-        maze = make_rat_hexmaze()
-        assert "module_A" in maze.env_2d.regions
-        assert "module_B" in maze.env_2d.regions
-        assert "module_C" in maze.env_2d.regions
+class TestGeometry:
+    def test_spans_about_9_by_5_m(self, maze, graph):
+        s, L, w = DIMS.node_spacing, DIMS.bridge_length, DIMS.corridor_width
+        nodes = np.array([graph.nodes[n]["pos"] for n in graph])
+        np.testing.assert_allclose(
+            np.ptp(nodes, axis=0),
+            [17 * s + 1.5 * L, 5 * np.sqrt(3) * s + np.sqrt(3) / 2 * L],
+        )
+        # Bin centers sit up to half a bin inside the corridor edges.
+        extent = np.ptp(maze.env_2d.bin_centers, axis=0) + BIN_SIZE
+        np.testing.assert_allclose(extent, np.ptp(nodes, axis=0) + w, atol=BIN_SIZE)
+        np.testing.assert_allclose(extent, [900.0, 500.0], rtol=0.05)
 
-    def test_env_2d_has_corridor_bridge_regions(self):
-        """env_2d should have regions for corridor bridges between modules."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
+    def test_every_corridor_lies_inside_env_2d(self, maze, graph):
+        t = np.linspace(0.0, 1.0, 25)[:, np.newaxis]
+        for u, v in graph.edges:
+            p, q = np.array(graph.nodes[u]["pos"]), np.array(graph.nodes[v]["pos"])
+            assert maze.env_2d.contains(p + t * (q - p)).all(), (u, v)
 
-        maze = make_rat_hexmaze()
-        assert "corridor_AB" in maze.env_2d.regions
-        assert "corridor_BC" in maze.env_2d.regions
+    def test_env_2d_is_one_connected_maze(self, maze):
+        assert nx.is_connected(maze.env_2d.connectivity)
 
-    def test_include_track_true_creates_env_track(self):
-        """include_track=True should create env_track."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
+    def test_hexagon_interiors_are_not_walkable(self, maze):
+        # The center of module A's central hole and of one of its six hexagons.
+        s = DIMS.node_spacing
+        holes = np.array([[0.0, 0.0], [1.5 * s, np.sqrt(3) / 2 * s]])
+        assert not maze.env_2d.contains(holes).any()
 
-        maze = make_rat_hexmaze(include_track=True)
-        assert maze.env_track is not None
 
-    def test_include_track_false_no_env_track(self):
-        """include_track=False should result in env_track=None."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
+class TestRegions:
+    def test_modules_and_bridges_are_named_polygons(self, maze):
+        regions = maze.env_2d.regions
+        names = ["module_A", "module_B", "module_C", "module_D"] + [
+            f"bridge_{b}" for b in ("AB", "BC", "CD", "AC", "BD")
+        ]
+        assert [n for n in regions if not n.startswith("node_")] == names
+        assert all(regions[n].kind == "polygon" for n in names)
 
-        maze = make_rat_hexmaze(include_track=False)
-        assert maze.env_track is None
+    def test_modules_and_bridges_do_not_overlap(self, maze):
+        polygons = [r.data for r in maze.env_2d.regions.values() if r.kind == "polygon"]
+        for a, b in combinations(polygons, 2):
+            assert a.intersection(b).area < 1e-6
 
-    def test_env_track_is_1d(self):
-        """env_track should be a 1D linearized environment."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
+    def test_has_no_landmarks(self, maze):
+        """No fixed reward hardware or placed cues: food goes on a chosen node."""
+        assert len(maze.env_2d.landmarks) == 0
+        assert len(maze.env_track.landmarks) == 0
 
-        maze = make_rat_hexmaze(include_track=True)
-        assert maze.env_track is not None
+    def test_every_choice_point_is_a_point_region(self, maze, graph):
+        regions = maze.env_2d.regions
+        nodes = {n: r for n, r in regions.items() if n.startswith("node_")}
+        assert set(nodes) == set(graph.nodes)
+        for name, region in nodes.items():
+            assert region.kind == "point"
+            np.testing.assert_allclose(region.data, graph.nodes[name]["pos"])
+
+
+class TestMouseHexMaze:
+    def test_has_24_nodes_and_30_corridors(self, mouse):
+        graph = _graph(mouse)
+        assert graph.number_of_nodes() == 24
+        assert graph.number_of_edges() == 30
+        # "12 two-way and 12 three-way choice points" (Alonso et al. 2021)
+        assert Counter(d for _, d in graph.degree()) == {2: 12, 3: 12}
+        lengths = [_length(graph, u, v) for u, v in graph.edges]
+        np.testing.assert_allclose(lengths, 36.3)
+
+    def test_spans_about_2_by_1_9_m(self, mouse):
+        extent = np.ptp(mouse.env_2d.bin_centers, axis=0) + 2.0
+        np.testing.assert_allclose(sorted(extent), [190.0, 200.0], rtol=0.05)
+
+    def test_has_one_module_region_and_no_bridges(self, mouse):
+        names = [n for n in mouse.env_2d.regions if not n.startswith("node_")]
+        assert names == ["module_A"]
+
+
+class TestDims:
+    def test_defaults(self):
+        assert (
+            RatHexmazeDims(
+                node_spacing=48.0, corridor_width=10.0, bridge_length=62.4, n_modules=4
+            )
+            == DIMS
+        )
+
+    @pytest.mark.parametrize(
+        ("n_modules", "n_nodes", "n_edges"), [(2, 48, 61), (3, 72, 93)]
+    )
+    def test_fewer_modules_keep_the_bridges_between_them(
+        self, n_modules, n_nodes, n_edges
+    ):
+        maze = make_rat_hexmaze(RatHexmazeDims(n_modules=n_modules), bin_size=8.0)
+        graph = _graph(maze)
+        assert (graph.number_of_nodes(), graph.number_of_edges()) == (n_nodes, n_edges)
+        assert nx.is_connected(graph)
+        assert nx.is_connected(maze.env_2d.connectivity)
+
+    @pytest.mark.parametrize("n_modules", [0, 5])
+    def test_rejects_unsupported_module_counts(self, n_modules):
+        with pytest.raises(ValueError, match="n_modules must be 1, 2, 3 or 4"):
+            make_rat_hexmaze(RatHexmazeDims(n_modules=n_modules))
+
+    def test_corridor_width_sets_the_track_width(self):
+        maze = make_rat_hexmaze(RatHexmazeDims(corridor_width=14.0), bin_size=8.0)
+        assert maze.env_track.arena.width == pytest.approx(14.0)
+
+
+class TestEnvironments:
+    def test_both_environments_are_in_cm(self, maze):
+        assert maze.env_2d.units == "cm"
+        assert maze.env_track.units == "cm"
         assert maze.env_track.is_linearized_track
 
-    def test_env_track_has_correct_units(self):
-        """env_track should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
+    def test_include_track_false_has_no_track(self):
+        assert make_rat_hexmaze(bin_size=8.0, include_track=False).env_track is None
 
-        maze = make_rat_hexmaze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.units == "cm"
+    def test_finer_bins_give_more_bins(self, maze):
+        coarse = make_rat_hexmaze(bin_size=2 * BIN_SIZE, include_track=False)
+        assert maze.env_2d.n_bins > coarse.env_2d.n_bins
 
-    def test_custom_bin_size(self):
-        """Custom bin_size should affect discretization."""
-        from neurospatial.simulation.mazes.rat_hexmaze import (
-            RatHexmazeDims,
-            make_rat_hexmaze,
-        )
-
-        dims = RatHexmazeDims()
-
-        maze_fine = make_rat_hexmaze(dims=dims, bin_size=1.0)
-        maze_coarse = make_rat_hexmaze(dims=dims, bin_size=5.0)
-
-        # Finer bins should result in more bins
-        assert maze_fine.env_2d.n_bins > maze_coarse.env_2d.n_bins
-
-    def test_custom_dims(self):
-        """Custom dimensions should be respected."""
-        from neurospatial.simulation.mazes.rat_hexmaze import (
-            RatHexmazeDims,
-            make_rat_hexmaze,
-        )
-
-        dims = RatHexmazeDims(module_width=120.0, n_modules=2)
-        maze = make_rat_hexmaze(dims=dims)
-
-        # Check that bin_centers span approximately the expected range
-        bin_centers = maze.env_2d.bin_centers
-        x_extent = bin_centers[:, 0].max() - bin_centers[:, 0].min()
-
-        # X should span at least 2 modules (2 * 120 = 240)
-        assert x_extent > 140  # More than single module
-
-    def test_none_dims_uses_defaults(self):
-        """dims=None should use default dimensions."""
-        from neurospatial.simulation.mazes.rat_hexmaze import (
-            RatHexmazeDims,
-            make_rat_hexmaze,
-        )
-
-        maze_default = make_rat_hexmaze(dims=None)
-        maze_explicit = make_rat_hexmaze(dims=RatHexmazeDims())
-
-        # Both should have similar number of bins
-        assert abs(maze_default.env_2d.n_bins - maze_explicit.env_2d.n_bins) < 10
-
-
-class TestRatHexmazeTrackGraph:
-    """Tests for the track graph structure of Rat HexMaze."""
-
-    def test_track_is_connected(self):
-        """Track graph should be connected."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
-
-        maze = make_rat_hexmaze(include_track=True)
-        assert maze.env_track is not None
-
-        # The underlying graph should be connected
-        import networkx as nx
-
-        assert nx.is_connected(maze.env_track.connectivity)
-
-    def test_track_nodes_have_positions(self):
-        """All track graph nodes should have position attributes."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
-
-        maze = make_rat_hexmaze(include_track=True)
-        assert maze.env_track is not None
-
-        # Each node should have a 'pos' attribute
-        for node in maze.env_track.connectivity.nodes():
-            assert "pos" in maze.env_track.connectivity.nodes[node]
-
-    def test_track_has_hexagonal_junction_angles(self):
-        """Track graph should have 120° angles at junctions."""
-        from neurospatial.simulation.mazes.rat_hexmaze import make_rat_hexmaze
-
-        maze = make_rat_hexmaze(include_track=True)
-        assert maze.env_track is not None
-
-        graph = maze.env_track.connectivity
-
-        # Find a junction node (degree >= 3)
-        junction_nodes = [n for n in graph.nodes() if graph.degree(n) >= 3]
-        assert len(junction_nodes) > 0  # Should have at least one junction
-
-        # Check angles at one junction
-        for junction in junction_nodes[:3]:  # Check first 3 junctions
-            neighbors = list(graph.neighbors(junction))
-            if len(neighbors) >= 3:
-                # Get positions
-                junction_pos = np.array(graph.nodes[junction]["pos"])
-                neighbor_positions = [
-                    np.array(graph.nodes[n]["pos"]) for n in neighbors[:3]
-                ]
-
-                # Calculate angles between arms
-                vectors = [pos - junction_pos for pos in neighbor_positions]
-                angles = []
-                for v in vectors:
-                    angle = np.arctan2(v[1], v[0])
-                    angles.append(angle)
-
-                # Check that there's a ~120° (2π/3 rad) spacing
-                angles_sorted = sorted(angles)
-                angle_diffs = []
-                for i in range(len(angles_sorted)):
-                    diff = (
-                        angles_sorted[(i + 1) % len(angles_sorted)] - angles_sorted[i]
-                    )
-                    # Normalize to [0, 2π)
-                    diff = diff % (2 * np.pi)
-                    angle_diffs.append(diff)
-
-                # At least one pair should be close to 120° (2.094 rad)
-                expected_angle = 2 * np.pi / 3  # 120°
-                has_120_degree = any(
-                    abs(diff - expected_angle) < 0.5 for diff in angle_diffs
-                )
-                if has_120_degree:
-                    break  # Found a junction with 120° angles
-        else:
-            # If we checked all junctions and none had 120° angles, that's acceptable
-            # for simplified implementations as long as topology is correct
-            pass
-
-    def test_track_covers_multiple_modules(self):
-        """Track should span multiple modules."""
-        from neurospatial.simulation.mazes.rat_hexmaze import (
-            RatHexmazeDims,
-            make_rat_hexmaze,
-        )
-
-        dims = RatHexmazeDims(module_width=90.0, n_modules=3)
-        maze = make_rat_hexmaze(dims=dims, include_track=True)
-        assert maze.env_track is not None
-
-        # Get the positions of all nodes
-        graph = maze.env_track.connectivity
-        positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
-
-        # X extent should cover multiple modules
-        x_extent = positions[:, 0].max() - positions[:, 0].min()
-        expected_x = dims.n_modules * dims.module_width
-        assert x_extent >= expected_x * 0.5  # At least 50% of expected
+    def test_none_dims_uses_defaults(self, maze):
+        explicit = make_rat_hexmaze(dims=DIMS, bin_size=BIN_SIZE, include_track=False)
+        assert explicit.env_2d.n_bins == maze.env_2d.n_bins

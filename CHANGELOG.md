@@ -4,6 +4,72 @@
 
 ### Breaking
 
+- The simulated mazes in `neurospatial.simulation.mazes` now match the real
+  apparatus. Their layouts follow Figure 1 of Wijnen et al. 2024 and their
+  sizes come from the papers that describe each maze, cited in each factory's
+  docstring; sizes no paper gives are marked as estimates there. Positions,
+  bins, regions and track graphs of the default mazes all change.
+  - Rebuilt layouts. The rat HexMaze is four 24-node HexMaze modules joined by
+    five bridges (96 junctions, about 9 x 5 m); it was three open hexagonal
+    fields. The small hex maze is the Berke-lab 49-hex triangle with 1.30 m
+    sides and a valid set of 9 barriers. The crossword maze has the 8 tracks,
+    14 crossings, 5 reward arms and 4 start boxes of McNamara et al. 2014.
+    The honeycomb's 37 platforms are tiled side to side (1 cm gaps) and no
+    longer fill the gaps around them. The Hamlet maze is a pentagonal ring
+    whose five alleys split toward the five houses, with no spokes to the
+    centre. Hampton Court follows Small's 1901 plan (8 x 6 ft, 4 in
+    galleries) and the repeated T-maze Tolman & Nyswander's six-unit maze.
+  - New sizes: W-maze 76 x 76 cm with 7 cm track (Frank lab); Barnes 122 cm
+    with 9.5 cm holes; cheeseboard 120 cm with 177 wells 7.5 cm apart;
+    radial arm maze with a 35.5 cm centre and 76 x 9 cm arms; watermaze
+    platform 15 cm across, halfway between the pool centre and the wall;
+    repeated Y-maze 10.16 cm corridors.
+  - Tracks stay on the floor: the Hampton Court and Sungod tracks crossed
+    walls, and the W-maze track had two dead-end stubs at its base. Arm-end,
+    well and reward regions sit inside their corridors instead of on the
+    wall, and the Y-maze's single arm points down.
+  - Changed dimension fields: `RatHexmazeDims(node_spacing, corridor_width,
+    bridge_length, n_modules)`; `SmallHexDims(hex_side, barriers)`;
+    `HoneycombDims(platform_side, gap, n_rings)`; `HamletDims(ring_radius,
+    split_radius, house_radius, corridor_width, house_size, n_arms)`;
+    `HamptonCourtDims(width, height, corridor_width)`;
+    `RepeatedTDims(width, arm_length, long_arm_length, wall_thickness,
+    start_stem_length, start_box_width, start_box_depth)`; new
+    `BarnesDims.hole_inset` and `CheeseboardDims.rim_margin`. The small hex
+    maze's wells are now `port_A`, `port_B` and `port_C`, and an invalid
+    barrier set raises `ValueError` naming the cut-off hexes.
+  - Reward ports, holes, platforms and start and goal boxes are now
+    landmarks (`env.landmarks`), so encoding functions take them by name as
+    object positions. Each landmark's `metadata["role"]` is one of
+    `MAZE_LANDMARK_ROLES`, and a region of the same name gives its real
+    extent where the source publishes one (Barnes holes, watermaze platform,
+    radial-arm food cups, crossword and Hamlet boxes); otherwise the region
+    stays a point. The watermaze quadrants are quarter-disc regions. Mazes
+    whose source fixes no port or box (Y, plus, honeycomb, rat HexMaze)
+    declare none and say why. Renamed regions and track nodes:
+
+    | Maze | Before | Now |
+    | --- | --- | --- |
+    | linear track | `reward_left`, `reward_right` | `well_left`, `well_right` |
+    | W-maze (track nodes) | `well_1_top`..`well_3_top` | `well_1`..`well_3` |
+    | T-maze | `left_end`, `right_end` | `well_left`, `well_right` (food wells) |
+    | radial arm | `arm_0`..`arm_7` | `food_cup_0`..`food_cup_7` |
+    | Barnes | `hole_k` and `escape_hole` at the same hole | `escape_hole` only; new `start_box` |
+    | cheeseboard | `reward_i_j` | `well_i_j` |
+    | Sungod | `reward_well_0`..`10`, `center` | `home_port`, `center_port_left`/`_right`, `arm_port_1`..`8`, `box` |
+    | crossword | `box_*`, `reward_*` | `start_box_*`, `cap_*` |
+    | Hamlet | `house_0`..`4` | `hide_house`, `run_house`, `interact_house`, `eat_house`, `drink_house`; new `agora` |
+    | Hampton Court | `start`, `goal` | `entrance`, `central_enclosure` |
+    | repeated T | `start`, `goal` | `start_box`, `food_box` |
+    | repeated Y | `start`, `goal` | `entrance_box`, `food_box` |
+
+  ```python
+  # before
+  make_rat_hexmaze(RatHexmazeDims(module_width=90.0, n_modules=3))
+  # after: n_modules=1 is the mouse HexMaze of Alonso et al. 2021
+  make_rat_hexmaze(RatHexmazeDims(n_modules=1, node_spacing=36.3))
+  ```
+
 - `population_vector_correlation` is now `rate_map_correlations`. It always
   returned the correlation between every pair of rate maps (rows), not the
   per-location population-vector correlation of remapping studies. The
@@ -3144,6 +3210,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Documentation
 
+- Add a [simulated mazes page](https://edeno.github.io/neurospatial/user-guide/simulated-mazes/) that shows every maze in `neurospatial.simulation.mazes` at true scale, drawn from the package at each docs build, with each maze's source, default size and named ports and boxes.
 - Add a [population analysis guide](https://edeno.github.io/neurospatial/user-guide/population-analysis/) organized by scientific question: place-field coverage and place-cell screens, remapping between conditions, cell assemblies and their reactivation during rest, and pointers to decoding. It maps each question to its module, since coverage and remapping tools live in `neurospatial.encoding` while assembly and reactivation tools live in `neurospatial.decoding`. Its examples run as tests on simulated recordings with planted answers.
 - `compute_turn_angles` and `compute_trajectory_curvature` describe what
   they compute for positions with more than two columns: the cross product

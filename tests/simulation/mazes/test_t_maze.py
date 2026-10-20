@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+from shapely.geometry import Point
 
 
 class TestMakeTMaze:
@@ -67,19 +69,19 @@ class TestMakeTMaze:
         maze = make_t_maze()
         assert "junction" in maze.env_2d.regions
 
-    def test_env_2d_has_left_end_region(self):
-        """env_2d should have a 'left_end' region at left arm endpoint."""
+    def test_env_2d_has_well_left_region(self):
+        """env_2d should have a 'well_left' region at the left arm end."""
         from neurospatial.simulation.mazes.t_maze import make_t_maze
 
         maze = make_t_maze()
-        assert "left_end" in maze.env_2d.regions
+        assert "well_left" in maze.env_2d.regions
 
-    def test_env_2d_has_right_end_region(self):
-        """env_2d should have a 'right_end' region at right arm endpoint."""
+    def test_env_2d_has_well_right_region(self):
+        """env_2d should have a 'well_right' region at the right arm end."""
         from neurospatial.simulation.mazes.t_maze import make_t_maze
 
         maze = make_t_maze()
-        assert "right_end" in maze.env_2d.regions
+        assert "well_right" in maze.env_2d.regions
 
     def test_region_positions_correct(self):
         """Regions should be at expected positions for T-maze geometry."""
@@ -91,8 +93,8 @@ class TestMakeTMaze:
         # Get regions
         start = maze.env_2d.regions["start"]
         junction = maze.env_2d.regions["junction"]
-        left_end = maze.env_2d.regions["left_end"]
-        right_end = maze.env_2d.regions["right_end"]
+        left_end = maze.env_2d.regions["well_left"]
+        right_end = maze.env_2d.regions["well_right"]
 
         # All should be point regions
         assert start.kind == "point"
@@ -100,23 +102,59 @@ class TestMakeTMaze:
         assert left_end.kind == "point"
         assert right_end.kind == "point"
 
-        # Start should be at bottom of stem (y = -stem_length/2)
+        # Start and arm ends are centred in their corridor's end square.
         half_stem = dims.stem_length / 2
-        assert np.isclose(start.data[1], -half_stem, atol=1.0)
-        assert np.isclose(start.data[0], 0.0, atol=1.0)  # Centered in x
+        inset = dims.width / 2
+        np.testing.assert_allclose(start.data, [0.0, -half_stem + inset])
+        np.testing.assert_allclose(junction.data, [0.0, half_stem])
+        np.testing.assert_allclose(left_end.data, [-dims.arm_length + inset, half_stem])
+        np.testing.assert_allclose(right_end.data, [dims.arm_length - inset, half_stem])
 
-        # Junction should be at top of stem (y = +stem_length/2)
-        assert np.isclose(junction.data[1], half_stem, atol=1.0)
-        assert np.isclose(junction.data[0], 0.0, atol=1.0)  # Centered in x
+        polygon = maze.env_2d.arena.polygon
+        for region in (start, left_end, right_end):
+            point = Point(region.data)
+            assert polygon.contains(point)
+            # Half a corridor width from the end wall and both side walls.
+            assert polygon.boundary.distance(point) == pytest.approx(inset)
 
-        # Left end should be at left arm end
-        half_arm = dims.arm_length
-        assert np.isclose(left_end.data[0], -half_arm, atol=1.0)
-        assert np.isclose(left_end.data[1], half_stem, atol=1.0)  # Same y as junction
+    def test_goal_arm_wells_are_reward_ports(self):
+        """Each goal arm ends in a food well, a landmark on its region."""
+        from neurospatial.simulation.mazes.t_maze import make_t_maze
 
-        # Right end should be at right arm end
-        assert np.isclose(right_end.data[0], half_arm, atol=1.0)
-        assert np.isclose(right_end.data[1], half_stem, atol=1.0)  # Same y as junction
+        maze = make_t_maze()
+        assert list(maze.env_2d.regions) == [
+            "start",
+            "junction",
+            "well_left",
+            "well_right",
+        ]
+        for env in (maze.env_2d, maze.env_track):
+            assert list(env.landmarks) == ["well_left", "well_right"]
+        for name, landmark in maze.env_2d.landmarks.items():
+            assert landmark.kind == "point"
+            assert dict(landmark.metadata) == {
+                "role": "reward_port",
+                "port_type": "food_well",
+            }
+            np.testing.assert_allclose(landmark.data, maze.env_2d.regions[name].data)
+
+    def test_default_extent_matches_the_figure_scale(self):
+        """A 100 cm stem and a 2 x 50 cm crossbar of 10 cm wide corridors."""
+        from neurospatial.simulation.mazes.t_maze import make_t_maze
+
+        x_min, y_min, x_max, y_max = make_t_maze().env_2d.arena.polygon.bounds
+        assert (x_min, x_max) == pytest.approx((-50.0, 50.0))
+        assert (y_min, y_max) == pytest.approx((-50.0, 55.0))
+
+    def test_track_regions_stay_where_they_are_in_2d(self):
+        """Each region on the linearized track lies where it does in 2-D."""
+        from neurospatial.simulation.mazes.t_maze import make_t_maze
+
+        maze = make_t_maze(bin_size=1.0)
+        for name, region in maze.env_2d.regions.items():
+            np.testing.assert_allclose(
+                maze.env_track.regions[name].data, region.data, atol=1e-9
+            )
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
@@ -212,7 +250,7 @@ class TestTMazeTrackGraph:
         assert maze.env_track is not None
 
         # The track graph should be connected with proper topology
-        # T-maze has: start -> junction, junction -> left_end, junction -> right_end
+        # T-maze has: start -> junction, junction -> well_left, junction -> well_right
         # This means the underlying graph has 3 edges
         import networkx as nx
 
