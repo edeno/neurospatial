@@ -48,7 +48,7 @@
   - `laps_to_direction_labels`, `runs_to_direction_labels`,
     `running_direction_labels` and `goal_pair_direction_labels` label
     `[start_time, end_time)`: a lap's last sample starts the interval that
-    leaves the lap, so it is now `"other"`, and `labels_to_epochs` gives
+    leaves the lap, so it is now `None`, and `labels_to_epochs` gives
     windows that match the laps exactly.
 
   ```python
@@ -57,6 +57,20 @@
   # after: it is in `second` only; for the old behavior pass closed="both"
   event_indicator(times, rewards)                       # before
   event_indicator(times, rewards, window=(-dt / 2, dt / 2))  # after
+  ```
+
+- Direction-label functions mark samples outside every lap, run or trial
+  with `None` instead of `"other"`, and `"other"` is an ordinary label
+  everywhere. `laps_to_direction_labels` no longer takes `unknown_label`:
+  laps whose direction is unknown are `None`. `compute_directional_place_fields`
+  leaves out `None`, `NaN` and a new `missing_label=` value, like
+  `labels_to_epochs`.
+
+  ```python
+  labels = laps_to_direction_labels(laps, times)       # None outside laps (was "other")
+  conditions = labels_to_epochs(times, labels)         # was: missing_label="other"
+  compute_directional_place_fields(env, spikes, times, positions, my_labels,
+                                   missing_label="other")  # if your labels use "other"
   ```
 
 - `ops.visibility_occupancy` counts viewing time only over usable sampling

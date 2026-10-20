@@ -1987,28 +1987,34 @@ def goal_pair_direction_labels(
 ) -> NDArray[np.object_]:
     """Generate per-timepoint direction labels from trial data.
 
-    Creates labels like 'home->goal_left', 'goal_left->home', or 'other' based on
-    which trial (if any) each timepoint belongs to.
+    Creates labels like ``'home→goal_left'`` or ``'goal_left→home'`` from the
+    trial (if any) each timepoint belongs to. Samples outside every completed
+    trial are ``None``, which :func:`compute_directional_place_fields` and
+    :func:`labels_to_epochs` leave out.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for the entire session (seconds).
     trials : list[Trial]
-        Trial segmentation from ``segment_trials()``.
+        Trial segmentation from ``segment_trials()``. Each completed trial
+        labels ``[start_time, end_time)``; trials with ``end_region=None``
+        label nothing.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
-        Direction label for each timepoint using arrow notation.
+        Direction label for each timepoint using arrow notation, dtype
+        ``object``; ``None`` outside every completed trial.
 
     Examples
     --------
-    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
-    >>> labels = goal_pair_direction_labels(times, trials)  # doctest: +SKIP
-    >>> result = compute_directional_place_fields(  # doctest: +SKIP
-    ...     env, spike_times, times, positions, labels
-    ... )
+    >>> import numpy as np
+    >>> from neurospatial.behavior import Trial, goal_pair_direction_labels
+    >>> times = np.arange(6.0)
+    >>> trials = [Trial(1.0, 3.0, "home", "goal_left", True)]
+    >>> goal_pair_direction_labels(times, trials).tolist()
+    [None, 'home→goal_left', 'home→goal_left', None, None, None]
 
     See Also
     --------

@@ -121,40 +121,40 @@ class TestGoalPairDirectionLabels:
         second_trial_labels = labels[second_trial_mask]
         assert all(label == "home→goal_right" for label in second_trial_labels)
 
-    def test_outside_trials_labeled_other(
+    def test_outside_trials_labeled_none(
         self,
         simple_times: NDArray[np.float64],
         basic_trials: list[Trial],
     ) -> None:
-        """Timepoints outside all trials should be labeled 'other'."""
+        """Timepoints outside all trials are None."""
         labels = goal_pair_direction_labels(simple_times, basic_trials)
 
         # Before first trial (0-10s)
         before_mask = simple_times < 10.0
-        assert all(label == "other" for label in labels[before_mask])
+        assert all(label is None for label in labels[before_mask])
 
         # Between trials (20-30s)
         between_mask = (simple_times > 20.0) & (simple_times < 30.0)
-        assert all(label == "other" for label in labels[between_mask])
+        assert all(label is None for label in labels[between_mask])
 
         # After last trial (45-100s)
         after_mask = simple_times > 45.0
-        assert all(label == "other" for label in labels[after_mask])
+        assert all(label is None for label in labels[after_mask])
 
-    def test_failed_trial_labeled_other(
+    def test_failed_trial_labeled_none(
         self,
         simple_times: NDArray[np.float64],
         failed_trial: Trial,
     ) -> None:
-        """Failed trials (end_region=None) should be labeled 'other'."""
+        """Failed trials (end_region=None) are None."""
         labels = goal_pair_direction_labels(simple_times, [failed_trial])
 
-        # All timepoints should be "other" since trial failed
-        assert all(label == "other" for label in labels)
+        # All timepoints are None since the trial failed
+        assert all(label is None for label in labels)
 
         # Even during trial time window (50-65s)
         during_trial_mask = (simple_times >= 50.0) & (simple_times <= 65.0)
-        assert all(label == "other" for label in labels[during_trial_mask])
+        assert all(label is None for label in labels[during_trial_mask])
 
     def test_overlapping_trials_later_overwrites(
         self,
@@ -180,11 +180,11 @@ class TestGoalPairDirectionLabels:
         self,
         simple_times: NDArray[np.float64],
     ) -> None:
-        """Empty trials list should return all 'other' labels."""
+        """Empty trials list gives all-None labels."""
         labels = goal_pair_direction_labels(simple_times, [])
 
         assert len(labels) == len(simple_times)
-        assert all(label == "other" for label in labels)
+        assert all(label is None for label in labels)
 
     def test_empty_times_array(self) -> None:
         """Empty times array should return empty labels array."""
@@ -244,11 +244,11 @@ class TestGoalPairDirectionLabels:
 
         labels = goal_pair_direction_labels(times, trials)
 
-        assert labels[0] == "other"  # 5.0 - before
+        assert labels[0] is None  # 5.0 - before
         assert labels[1] == "home→goal"  # 10.0 - at start
         assert labels[2] == "home→goal"  # 15.0 - during
-        assert labels[3] == "other"  # 20.0 - at end: its interval is after the trial
-        assert labels[4] == "other"  # 25.0 - after
+        assert labels[3] is None  # 20.0 - at end: its interval is after the trial
+        assert labels[4] is None  # 25.0 - after
 
     def test_multiple_region_names(
         self,
@@ -278,7 +278,7 @@ class TestGoalPairDirectionLabels:
         unique_labels = set(labels)
         assert "center→arm1" in unique_labels
         assert "center→arm2" in unique_labels
-        assert "other" in unique_labels
+        assert None in unique_labels
 
 
 # -----------------------------------------------------------------------------

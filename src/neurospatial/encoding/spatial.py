@@ -4592,8 +4592,9 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
             data["occupancy"] = occ
             frames.append(pd.DataFrame(data))
         if not frames:
-            # No labelled directions (e.g. compute_directional_place_fields
-            # excluded every "other" sample, leaving labels == ()). Return an
+            # No labelled directions (e.g. every label passed to
+            # compute_directional_place_fields was missing, leaving
+            # labels == ()). Return an
             # empty frame with the documented column schema instead of letting
             # pd.concat([]) raise "No objects to concatenate".
             empty: dict[str, NDArray[Any]] = {
@@ -4681,6 +4682,7 @@ def compute_directional_place_fields(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
     spike_window: Any = None,
+    missing_label: Hashable | None = None,
 ) -> DirectionalPlaceFields:
     """Compute place fields conditioned on movement direction or trial type.
 
@@ -4700,9 +4702,10 @@ def compute_directional_place_fields(
     positions : NDArray[np.float64], shape (n_timepoints, n_dims) or (n_timepoints,)
         Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
     direction_labels : NDArray[object], shape (n_timepoints,)
-        Direction label for each timepoint. Each label is a hashable string
-        (e.g., "A→B", "forward", "CW"). The special label "other", ``None`` and
-        ``NaN`` mark unlabeled periods and are excluded from results.
+        Direction label for each timepoint. Each label is hashable (e.g.,
+        "A→B", "forward", "CW"). ``None``, ``NaN`` and ``missing_label`` mark
+        samples without a direction and are excluded. The direction-label
+        functions give ``None`` to samples outside every lap, run or trial.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method passed through to the place-field helper.
     bandwidth : float or None, default=None
@@ -4736,6 +4739,9 @@ def compute_directional_place_fields(
         started before, or continued after, the spike recording. The result
         records the window applied (``result.spike_window``) and whether it was
         assumed (``result.spike_window_assumed``).
+    missing_label : hashable, optional
+        A label value that means "no label" (for example ``"none"`` or
+        ``-1`` from a labeling function), excluded like ``None``.
 
     Returns
     -------
@@ -4783,8 +4789,10 @@ def compute_directional_place_fields(
     >>> times = np.linspace(0, 100, 1000)
     >>> env = Environment.from_samples(positions, bin_size=10.0)
     >>>
-    >>> # Create directional labels (first half forward, second half backward)
-    >>> labels = np.array(["forward"] * 500 + ["backward"] * 500, dtype=object)
+    >>> # Forward, then a pause without a direction (None), then backward
+    >>> labels = np.array(
+    ...     ["forward"] * 400 + [None] * 200 + ["backward"] * 400, dtype=object
+    ... )
     >>> spike_times = np.sort(rng.uniform(0, 100, 50))  # spikes must be sorted
     >>>
     >>> # Compute directional place fields
@@ -4793,8 +4801,8 @@ def compute_directional_place_fields(
     ... )
     >>> "forward" in result.firing_rates
     True
-    >>> "backward" in result.firing_rates
-    True
+    >>> result.labels
+    ('backward', 'forward')
     """
     # Validate direction_labels length matches times
     from neurospatial._intervals import (
@@ -4814,27 +4822,21 @@ def compute_directional_place_fields(
         break_before, len(times), call="compute_directional_place_fields"
     )
 
-    # Label code of each interval (the label at its start sample). "other",
-    # None and NaN are missing (-1); consecutive intervals with one code form
-    # one window, so separate runs never join.
-    import pandas as pd
-
-    from neurospatial._observation import label_runs
+    # Label code of each interval (the label at its start sample). None, NaN
+    # and missing_label are missing (-1); consecutive intervals with one code
+    # form one window, so separate runs never join.
+    from neurospatial._observation import label_codes, label_runs
 
     labels_arr = np.empty(len(direction_labels), dtype=object)
     for i, value in enumerate(direction_labels):
         labels_arr[i] = value
-    codes, uniques = pd.factorize(labels_arr[:-1], use_na_sentinel=True)
-    codes = codes.astype(np.intp)
-    # The trailing False keeps an already-missing code (-1) missing.
-    is_other = np.array([bool(u == "other") for u in uniques] + [False])
-    codes[is_other[codes]] = -1
+    codes, values = label_codes(labels_arr[:-1], missing_label)
     first, last, run_codes = label_runs(codes, np.ones(codes.size, dtype=bool))
     sample_times = np.asarray(times, dtype=np.float64)
     run_windows = np.column_stack([sample_times[first], sample_times[last + 1]])
 
     # Sort labels for reproducibility
-    labelled = [(uniques[c], c) for c in np.unique(run_codes)]
+    labelled = [(values[c], c) for c in np.unique(run_codes)]
     labelled = sorted(labelled, key=lambda item: str(item[0]))
 
     # Compute place field for each direction

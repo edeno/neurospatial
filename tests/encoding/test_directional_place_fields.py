@@ -18,7 +18,7 @@ def test_label_epochs_do_not_join_segments():
     times = np.arange(20) / 10
     positions = np.c_[np.linspace(1, 19, 20)]
     env = Environment.from_samples(np.c_[np.linspace(0, 20, 41)], bin_size=2.0)
-    labels = np.array(["A"] * 10 + ["other"] * 3 + ["A"] * 7)
+    labels = np.array(["A"] * 10 + [None] * 3 + ["A"] * 7)
     result = compute_directional_place_fields(
         env, np.array([0.05, 1.05, 1.55]), times, positions, labels, method="binned"
     )
@@ -29,7 +29,7 @@ def test_directional_place_fields_record_spike_window():
     times = np.arange(20) / 10
     positions = np.c_[np.linspace(1, 19, 20)]
     env = Environment.from_samples(np.c_[np.linspace(0, 20, 41)], bin_size=2.0)
-    labels = np.array(["A"] * 10 + ["other"] * 3 + ["A"] * 7)
+    labels = np.array(["A"] * 10 + [None] * 3 + ["A"] * 7)
     result = compute_directional_place_fields(
         env,
         np.array([0.05, 1.05, 1.55]),
@@ -46,17 +46,23 @@ def test_directional_place_fields_record_spike_window():
     assert result.occupancy["A"].sum() == pytest.approx(0.6, abs=1e-12)
 
 
-@pytest.mark.parametrize("method", ["binned", "diffusion_kde"])
-def test_label_windows_match_hand_written_epochs(method):
-    """Per-label maps equal the estimator run on hand-written label windows."""
+def _gapped_recording():
+    """40 samples at 10 Hz with a lost frame (sample 12) and a 1 s gap after 30."""
     rng = np.random.default_rng(3)
     times = np.arange(40) / 10
     positions = np.linspace(5, 95, 40)[:, None]
     positions[12] = np.nan
     times[31:] += 1.0  # 1 s gap after sample 30
-    labels = np.array(["A"] * 10 + ["other"] * 5 + ["B"] * 10 + ["A"] * 15)
     spikes = np.sort(rng.uniform(0, times[-1], 60))
     env = Environment.from_samples(np.linspace(0, 100, 101)[:, None], bin_size=10.0)
+    return env, spikes, times, positions
+
+
+@pytest.mark.parametrize("method", ["binned", "diffusion_kde"])
+def test_label_windows_match_hand_written_epochs(method):
+    """Per-label maps equal the estimator run on hand-written label windows."""
+    env, spikes, times, positions = _gapped_recording()
+    labels = np.array(["A"] * 10 + [None] * 5 + ["B"] * 10 + ["A"] * 15)
     kwargs = {"method": method, "bandwidth": 10.0, "max_gap": 0.5}
     fields = compute_directional_place_fields(
         env, spikes, times, positions, labels, **kwargs
@@ -71,7 +77,64 @@ def test_label_windows_match_hand_written_epochs(method):
         assert_array_equal(fields.occupancy[label], ref.occupancy)
 
 
-def test_missing_labels_are_excluded_like_other():
+_OTHER_BETWEEN_A = ["A"] * 10 + ["other"] * 5 + ["A"] * 25
+_NONE_BETWEEN_A = ["A"] * 10 + [None] * 5 + ["A"] * 25
+
+
+def _assert_same_fields(actual, expected):
+    assert actual.labels == expected.labels
+    for label in expected.labels:
+        assert_array_equal(actual.firing_rates[label], expected.firing_rates[label])
+        assert_array_equal(actual.occupancy[label], expected.occupancy[label])
+
+
+def test_other_is_an_ordinary_label():
+    """The label "other" gets its own map unless passed as ``missing_label``."""
+    env, spikes, times, positions = _gapped_recording()
+    labels = np.array(_OTHER_BETWEEN_A, dtype=object)
+    kwargs = {"method": "binned", "bandwidth": 10.0}
+
+    fields = compute_directional_place_fields(
+        env, spikes, times, positions, labels, **kwargs
+    )
+    assert fields.labels == ("A", "other")
+    other = compute_spatial_rate(
+        env, spikes, times, positions, epochs=[(1.0, 1.5)], **kwargs
+    )
+    assert_array_equal(fields.occupancy["other"], other.occupancy)
+
+    declared = compute_directional_place_fields(
+        env, spikes, times, positions, labels, missing_label="other", **kwargs
+    )
+    unlabeled = np.array(_NONE_BETWEEN_A, dtype=object)
+    _assert_same_fields(
+        declared,
+        compute_directional_place_fields(
+            env, spikes, times, positions, unlabeled, **kwargs
+        ),
+    )
+    assert declared.labels == ("A",)
+    assert_array_equal(declared.firing_rates["A"], fields.firing_rates["A"])
+    assert_array_equal(declared.occupancy["A"], fields.occupancy["A"])
+
+
+def test_none_labels_are_left_out():
+    """None between two stretches of "A" gives the hand-written "A" windows."""
+    env, spikes, times, positions = _gapped_recording()
+    labels = np.array(_NONE_BETWEEN_A, dtype=object)
+    kwargs = {"method": "binned", "bandwidth": 10.0}
+    fields = compute_directional_place_fields(
+        env, spikes, times, positions, labels, **kwargs
+    )
+    assert fields.labels == ("A",)
+    expected = compute_spatial_rate(
+        env, spikes, times, positions, epochs=[(0.0, 1.0), (1.5, 4.9)], **kwargs
+    )
+    assert_array_equal(fields.firing_rates["A"], expected.firing_rate)
+    assert_array_equal(fields.occupancy["A"], expected.occupancy)
+
+
+def test_missing_labels_are_excluded():
     times = np.arange(20) / 10
     positions = np.c_[np.linspace(1, 19, 20)]
     env = Environment.from_samples(np.c_[np.linspace(0, 20, 41)], bin_size=2.0)
@@ -89,7 +152,7 @@ def test_missing_labels_are_excluded_like_other():
     [
         ([(0.0, 0.5)], 0.5),
         ([(1.5, 2.0)], 0.4),
-        # Spans the "other" stretch: intersecting gives 0.5 + 0.3 s, while
+        # Spans the unlabeled stretch: intersecting gives 0.5 + 0.3 s, while
         # replacing the label windows would give the full 1.1 s.
         ([(0.5, 1.6)], 0.8),
     ],
@@ -99,7 +162,7 @@ def test_caller_epochs_intersect_label_windows(epochs, expected):
     times = np.arange(20) / 10
     positions = np.c_[np.linspace(1, 19, 20)]
     env = Environment.from_samples(np.c_[np.linspace(0, 20, 41)], bin_size=2.0)
-    labels = np.array(["A"] * 10 + ["other"] * 3 + ["A"] * 7)
+    labels = np.array(["A"] * 10 + [None] * 3 + ["A"] * 7)
     result = compute_directional_place_fields(
         env,
         np.array([0.05, 1.05, 1.55]),
@@ -299,7 +362,7 @@ class TestComputeDirectionalPlaceFields:
         times, positions = sample_trajectory
         spike_times = np.array([2.0, 5.0, 10.0, 15.0])
 
-        # All labels the same (not "other")
+        # All labels the same
         labels = np.full(len(times), "forward", dtype=object)
 
         result = compute_directional_place_fields(
@@ -359,16 +422,16 @@ class TestComputeDirectionalPlaceFields:
         assert result.firing_rates["A"].shape == (sample_env.n_bins,)
         assert result.firing_rates["B"].shape == (sample_env.n_bins,)
 
-    def test_other_label_excluded(
+    def test_none_label_excluded(
         self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
     ) -> None:
-        """The 'other' label is excluded from results."""
+        """Samples labeled None are excluded from results."""
         times, positions = sample_trajectory
         spike_times = np.array([2.0, 5.0, 15.0])
 
-        # Mix of "forward", "other", and "backward"
+        # Mix of "forward", unlabeled, and "backward"
         labels = np.array(
-            ["forward"] * 50 + ["other"] * 100 + ["backward"] * 50, dtype=object
+            ["forward"] * 50 + [None] * 100 + ["backward"] * 50, dtype=object
         )
 
         result = compute_directional_place_fields(
@@ -381,10 +444,7 @@ class TestComputeDirectionalPlaceFields:
             bandwidth=10.0,
         )
 
-        # "other" should NOT be in results
-        assert "other" not in result.firing_rates
-        assert "other" not in result.labels
-        assert len(result.firing_rates) == 2
+        assert result.labels == ("backward", "forward")
         assert "forward" in result.firing_rates
         assert "backward" in result.firing_rates
 
@@ -465,14 +525,14 @@ class TestComputeDirectionalPlaceFields:
                 bandwidth=10.0,
             )
 
-    def test_all_other_labels_returns_empty(
+    def test_all_none_labels_returns_empty(
         self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
     ) -> None:
-        """If all labels are 'other', returns empty fields."""
+        """If every label is None, returns empty fields."""
         times, positions = sample_trajectory
         spike_times = np.array([5.0, 10.0])
 
-        labels = np.full(len(times), "other", dtype=object)
+        labels = np.full(len(times), None, dtype=object)
 
         result = compute_directional_place_fields(
             sample_env,

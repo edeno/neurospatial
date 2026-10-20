@@ -558,8 +558,8 @@ and gaps remain missing observations, and each domain has its own support.
 
 On a track aligned with the x axis, label rightward and leftward travel using
 a predeclared movement criterion. For a task with known trial directions, use
-those sample-aligned labels instead. The reserved label `"other"` excludes
-pauses from both occupancy and spikes.
+those sample-aligned labels instead. Samples labeled `None` (pauses) are
+left out of both occupancy and spikes.
 
 <!-- docs-test: run -->
 ```python
@@ -567,7 +567,7 @@ import numpy as np
 from neurospatial.encoding import compute_directional_place_fields
 
 velocity_x = np.gradient(positions[:, 0], times)
-direction_labels = np.full(len(times), "other", dtype=object)
+direction_labels = np.full(len(times), None, dtype=object)
 direction_labels[velocity_x > 2.0] = "rightward"   # cm/s
 direction_labels[velocity_x < -2.0] = "leftward"
 directional = compute_directional_place_fields(

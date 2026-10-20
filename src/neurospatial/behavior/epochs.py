@@ -50,6 +50,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, intervals_contain
 from neurospatial._observation import (
     _validated_signal_times,
+    label_codes,
     label_runs,
     resolve_sample_support,
     validate_break_before,
@@ -768,8 +769,6 @@ def labels_to_epochs(
     >>> list(labels_to_epochs(np.arange(5.0) / 10, labels))
     [('arm1', 'out'), ('arm1', 'in')]
     """
-    import pandas as pd
-
     call = "labels_to_epochs"
     t = _validated_signal_times(times, call=call)
     n_samples = t.size
@@ -791,17 +790,7 @@ def labels_to_epochs(
     breaks = validate_break_before(break_before, n_samples, call=call)
     windows = as_intervals(epochs, name="epochs")
 
-    factorized, uniques = pd.factorize(label_array[:-1], use_na_sentinel=True)
-    codes = factorized.astype(np.intp)
-    # tolist() already yields Python scalars; object arrays can still hold NumPy ones.
-    values: list[Hashable] = [
-        v.item() if isinstance(v, np.generic) else v
-        for v in np.asarray(uniques).tolist()
-    ]
-    if missing_label is not None:
-        # The trailing True maps code -1 (already missing) to itself.
-        is_missing = np.array([bool(v == missing_label) for v in values] + [True])
-        codes[is_missing[codes]] = -1
+    codes, values = label_codes(label_array[:-1], missing_label)
 
     support = resolve_sample_support(
         t,

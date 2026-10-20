@@ -146,7 +146,7 @@ def out_and_back_track():
     animal travels ``home -> reward`` (outbound), then ``reward -> home``
     (inbound). The midpoint sample sits in neither end region (the turnaround),
     so a correct labeler produces a contiguous ``"outbound"`` stretch, then
-    ``"other"`` at the turn, then a contiguous ``"inbound"`` stretch.
+    ``None`` at the turn, then a contiguous ``"inbound"`` stretch.
 
     Returns
     -------

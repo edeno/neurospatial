@@ -10,6 +10,7 @@ depends on an ``Environment``.
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import Any
 
@@ -208,6 +209,56 @@ def resolve_sample_support(
         times, max_gap=max_gap, epochs=epochs, break_before=break_before, result=result
     )
     return _support_from_gates(times, sample_valid, gates)
+
+
+def label_codes(
+    labels: NDArray[Any], missing_label: Hashable | None
+) -> tuple[NDArray[np.intp], list[Hashable]]:
+    """Integer code of each label in first-seen order; -1 for a missing label.
+
+    None, NaN and ``missing_label`` (when not None) are missing. Values are
+    plain Python scalars.
+
+    Parameters
+    ----------
+    labels : ndarray, shape (n_labels,)
+        Hashable labels, usually an object array.
+    missing_label : hashable or None
+        An extra label value that means "no label"; None declares no extra
+        value.
+
+    Returns
+    -------
+    codes : ndarray of intp, shape (n_labels,)
+        Index of each label into ``values``; -1 marks a missing label.
+    values : list of hashable
+        Distinct non-missing labels in first-seen order.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> label_codes(np.array(["a", None, "b", "a"], dtype=object), None)
+    (array([ 0, -1,  1,  0]), ['a', 'b'])
+    >>> label_codes(np.array(["rest", "a", "rest"], dtype=object), "rest")
+    (array([-1,  0, -1]), ['a'])
+    """
+    import pandas as pd
+
+    factorized, uniques = pd.factorize(labels, use_na_sentinel=True)
+    codes = factorized.astype(np.intp)
+    # tolist() already yields Python scalars; object arrays can still hold NumPy ones.
+    values: list[Hashable] = [
+        v.item() if isinstance(v, np.generic) else v
+        for v in np.asarray(uniques).tolist()
+    ]
+    if missing_label is not None:
+        keep = np.array([not bool(v == missing_label) for v in values], dtype=bool)
+        # One extra slot so that code -1 (already missing) stays -1.
+        renumber = np.full(len(values) + 1, -1, dtype=np.intp)
+        renumber[:-1][keep] = np.arange(np.count_nonzero(keep), dtype=np.intp)
+        codes = renumber[codes]
+        values = [v for v, k in zip(values, keep, strict=True) if k]
+    return codes, values
 
 
 def label_runs(
