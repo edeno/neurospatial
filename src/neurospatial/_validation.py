@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -156,7 +155,6 @@ def validate_times_positions(
     positions: ArrayLike,
     *,
     call: str,
-    order: Literal["times, positions", "positions, times"] = "times, positions",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Validate a ``(times, positions)`` pair and name an argument swap.
 
@@ -168,9 +166,6 @@ def validate_times_positions(
         One position row per timestamp.
     call : str
         Public function name, used in the message.
-    order : {"times, positions", "positions, times"}, default="times, positions"
-        The order in which ``call`` takes the two arguments, so the message
-        names the swap the caller actually made.
 
     Returns
     -------
@@ -198,9 +193,7 @@ def validate_times_positions(
     problems = conversion_problems + problems
     if problems:
         raise ValueError(
-            format_times_positions_error(
-                problems, looks_swapped, call=call, order=order
-            )
+            format_times_positions_error(problems, looks_swapped, call=call)
         )
     assert t is not None and p is not None
     return t, p
@@ -244,11 +237,11 @@ def validate_strictly_increasing(times: NDArray[np.float64], *, call: str) -> No
 
 
 def format_times_positions_error(
-    problems: list[str], looks_swapped: bool, *, call: str, order: str
+    problems: list[str], looks_swapped: bool, *, call: str
 ) -> str:
-    first, second = order.split(", ")
     fix = (
-        f"Fix: did you pass {second} before {first}? Call {call}(..., {order}, ...)."
+        "Fix: did you pass positions before times? "
+        f"Call {call}(..., times, positions, ...)."
         if looks_swapped
         else "Fix: pass times as a sorted 1-D array of numeric timestamps in seconds with one "
         "numeric positions row per timestamp."

@@ -81,7 +81,7 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             r.times, r.positions, min_speed=5.0
         ),
         "heading_direction_labels": heading_direction_labels(
-            r.positions, r.times, min_speed=5.0
+            r.times, r.positions, min_speed=5.0
         ),
         "heading_direction_precomputed": heading_direction_labels(
             speed=np.ones(len(r.times)) * 10,
@@ -109,10 +109,10 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             r.env, r.times, r.positions, goal, goal_radius=5
         ),
         "compute_trajectory_curvature": compute_trajectory_curvature(
-            r.positions, times=r.times
+            r.times, r.positions
         ),
         "compute_trajectory_curvature_no_times": compute_trajectory_curvature(
-            r.positions
+            r.times, r.positions, smooth_window=None
         ),
         "compute_home_range": compute_home_range(home_bins, times=home_times),
         "compute_home_range_no_times": compute_home_range(home_bins),

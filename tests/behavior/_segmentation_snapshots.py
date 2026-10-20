@@ -88,9 +88,10 @@ def capture_segmentation_outputs(pause, laps):
         "detect_boundary_crossings": detect_boundary_crossings(
             p.position_bins, labels, p.times
         ),
+        # The golden stores (positions, times); the function returns times first.
         "extract_pre_decision_window": extract_pre_decision_window(
             p.times, p.positions, entry_time=100.5, window_duration=2.0
-        ),
+        )[::-1],
         "compute_pre_decision_metrics": compute_pre_decision_metrics(
             p.times,
             p.positions,

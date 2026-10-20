@@ -456,6 +456,61 @@ class TestGeneratePopulationSpikes:
         assert len(spike_trains) == 1
         assert isinstance(spike_trains[0], np.ndarray)
 
+    def test_head_direction_model_holds_heading_through_stops(self):
+        """Derived headings carry the last movement direction through a stop.
+
+        The path stands still for 1 s, runs East for 1 s, stands still for 1 s
+        and runs North for 1 s (100 Hz). The smoothed speed is exactly zero in
+        the middle of each stop, where heading_from_velocity has no heading.
+        The simulated cell instead fires with the last direction of movement
+        (East), and the leading stop takes the first one (East).
+        """
+        from neurospatial.simulation.spikes import _compute_model_firing_rate
+
+        model = HeadDirectionCellModel(
+            preferred_direction=np.pi / 2, max_rate=50.0, baseline_rate=5.0
+        )
+        times = np.arange(400) / 100  # s
+        x = 10.0 * np.clip(times - 1.0, 0.0, 1.0)  # cm
+        y = 10.0 * np.clip(times - 3.0, 0.0, 1.0)  # cm
+        positions = np.column_stack([x, y])
+
+        rates = _compute_model_firing_rate(model, positions, times, None)
+
+        assert np.isfinite(rates).all()
+        east_rate = model.firing_rate(np.array([0.0]))[0]
+        np.testing.assert_allclose(rates[:50], east_rate, rtol=1e-12)  # leading stop
+        np.testing.assert_allclose(rates[245:255], east_rate, rtol=1e-12)  # mid-stop
+        spike_trains = generate_population_spikes(
+            [model], times, positions, seed=42, show_progress=False
+        )
+        assert len(spike_trains) == 1
+
+    def test_head_direction_model_still_path_needs_headings(self):
+        """A path that never moves has no movement direction to derive."""
+        model = HeadDirectionCellModel(preferred_direction=0.0)
+        times = np.arange(100) / 100
+        positions = np.zeros((100, 2))
+
+        with pytest.raises(ValueError, match="never moves") as caught:
+            generate_population_spikes(
+                [model], times, positions, seed=42, show_progress=False
+            )
+        assert "headings=" in str(caught.value)
+
+    def test_head_direction_model_coarse_sampling_needs_headings(self):
+        """A moving path sampled coarser than max_gap has no usable interval."""
+        model = HeadDirectionCellModel(preferred_direction=0.0)
+        times = np.arange(20, dtype=float)  # 1 Hz
+        positions = np.column_stack([times * 10.0, np.zeros(20)])
+
+        with pytest.raises(ValueError, match="max_gap") as caught:
+            generate_population_spikes(
+                [model], times, positions, seed=42, show_progress=False
+            )
+        assert "never moves" in str(caught.value)
+        assert "headings=" in str(caught.value)
+
     def test_head_direction_model_uses_explicit_headings(self):
         """Explicit headings should be passed to HeadDirectionCellModel."""
         model = HeadDirectionCellModel(

@@ -21,7 +21,7 @@ time bins and are with the decoding tools.
 | --- | --- | --- |
 | Rate maps for every unit | `compute_spatial_rates` | `neurospatial` or `neurospatial.encoding` |
 | How much of the environment is covered, and by how many place cells? | `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
-| Does the map change between conditions? | `population_vector_correlation`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
+| Does the map change between conditions? | `population_vector_correlation`, `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
 | Spike counts in time bins | `bin_spikes_in_time` | `neurospatial.decoding` |
 | Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `reactivation_strength`, `explained_variance_reactivation` | `neurospatial.decoding` (defined in `neurospatial.decoding.assemblies`) |
 | What position does the population encode? | `decode_position`, `decode_session`, `BayesianDecoder` | `neurospatial.decoding` |
@@ -69,6 +69,9 @@ information = rates.spatial_information()  # bits/spike, one value per unit
 n_spatial = count_place_cells(information, threshold=0.5)
 print(f"Units at or above 0.5 bits/spike: {n_spatial} of {len(unit_ids)}")
 print("Information of the untuned units:", np.round(information[20:], 2))
+# Quoted numbers: atol = 0.6 * 10**-decimals
+assert n_spatial == 20
+assert 0.004 <= information[20:].min() <= information[20:].max() <= 0.046
 ```
 
 All 20 simulated place cells pass the 0.5 bits/spike screen and none of the
@@ -96,6 +99,8 @@ print("Uncovered positions, rounded to 10 cm:",
       np.unique(np.round(gap_positions, -1)))
 print("Uncovered bins the animal never visited:",
       int((~rates.spatial_support[coverage.uncovered_bins]).sum()))
+assert np.isclose(coverage.coverage_fraction, 0.69, atol=0.006)
+assert np.isclose(coverage.fields_per_place_cell, 1.0, atol=0.06)
 ```
 
 With all 25 maps the track looks fully covered, but only because the detector
@@ -115,6 +120,7 @@ how many fields include each bin:
 density = field_density_map(coverage.place_fields, env.n_bins)
 covered = density[coverage.covered_bins]
 print(f"Fields per covered bin: median {np.median(covered):.0f}, max {covered.max()}")
+assert covered.max() == 4
 
 fig, ax = plt.subplots(figsize=(8, 2.5))
 plot_population_coverage(env, coverage, show_field_count=True, ax=ax)
@@ -141,7 +147,11 @@ Use one environment and the same rate-map settings for both conditions, and
 select each condition with `epochs=` instead of slicing the arrays.
 
 ```python
-from neurospatial.encoding import field_overlap, population_vector_correlation
+from neurospatial.encoding import (
+    field_overlap,
+    population_vector_correlation,
+    rate_map_correlations,
+)
 from neurospatial.simulation import PlaceCellModel
 
 session = linear_track_session(duration=240.0, n_place_cells=16, n_laps=20, seed=1)
@@ -175,50 +185,36 @@ after = maps["after"].firing_rates[:, shared]
 print(f"Bins compared: {shared.sum()} of {env.n_bins}")
 ```
 
-`population_vector_correlation` correlates every pair of rows in a
-`(n_maps, n_bins)` matrix. Stack the two conditions, and the diagonal of the
-before-versus-after block is each cell's rate-map correlation across the
-change. The classic population-vector correlation of remapping studies works
-the other way round: it correlates the vector of all cells' rates at each
-location, giving one value per bin.
+`rate_map_correlations` returns the map-by-map correlation matrix: the
+Pearson correlation of every pair of rows in a `(n_maps, n_bins)` matrix.
+Stack the two conditions, and the diagonal of the before-versus-after block
+is each cell's rate-map correlation across the change. The classic
+population-vector correlation of remapping studies works the other way round:
+`population_vector_correlation` correlates the vector of all cells' rates at
+each location, giving one value per bin. A location where every cell has the
+same rate has no defined correlation and is NaN, as is a location with a NaN
+rate in either condition; summarize over the defined locations and report how
+many were undefined.
 
 ```python
 n_units = len(spike_times)
-map_similarity = population_vector_correlation(np.vstack([before, after]))
+map_similarity = rate_map_correlations(np.vstack([before, after]))
 per_cell = np.diag(map_similarity[:n_units, n_units:])
 print("Map correlation, cells that kept their field:", np.round(per_cell[~moves], 2))
 print("Map correlation, cells that moved their field:", np.round(per_cell[moves], 2))
+assert per_cell[~moves].min() >= 0.99 - 0.006  # 0.99-1.00
+assert (per_cell[moves] > -0.15).all() and (per_cell[moves] < 0).all()
 
-
-def standardize(x):
-    """Z-score each location's population vector across cells."""
-    # A location where every cell has the same rate has zero spread and comes
-    # out NaN. Such a location has no defined correlation.
-    with np.errstate(invalid="ignore", divide="ignore"):
-        return (x - x.mean(axis=0)) / x.std(axis=0)
-
-
-def median_pv_correlation(x, y):
-    """Median population-vector correlation over locations where it is defined."""
-    per_location = (standardize(x) * standardize(y)).mean(axis=0)
-    defined = np.isfinite(per_location)
-    n_undefined = int((~defined).sum())
-    if not defined.any():
-        return np.nan, n_undefined
-    return float(np.median(per_location[defined])), n_undefined
-
-
-# Identical maps with one flat location: the flat one is skipped, the rest are 1.
+# Identical maps with one flat location: the flat one is NaN, the rest are 1.
 demo = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
-demo_median, demo_undefined = median_pv_correlation(demo, demo)
-assert demo_undefined == 1 and np.isclose(demo_median, 1.0)
+demo_pv = population_vector_correlation(demo, demo)
+assert np.isnan(demo_pv[1]) and np.allclose(demo_pv[[0, 2]], 1.0)
 
-pv_median, n_undefined = median_pv_correlation(before, after)
-if np.isnan(pv_median):
-    print("Population-vector correlation is undefined: every location is flat.")
-else:
-    print(f"Population-vector correlation per location: median {pv_median:.2f} "
-          f"({n_undefined} of {before.shape[1]} locations undefined)")
+pv = population_vector_correlation(before, after)
+defined = np.isfinite(pv)
+print(f"Population-vector correlation per location: median {np.median(pv[defined]):.2f} "
+      f"({(~defined).sum()} of {pv.size} locations undefined)")
+assert np.isclose(np.median(pv[defined]), 0.27, atol=0.006) and defined.all()
 ```
 
 The cells that kept their field have map correlations of 0.99-1.00, and the
@@ -251,12 +247,10 @@ def field_bins(fields):
 def shared_field_overlap(a, b, shared):
     """Jaccard overlap of two cells' fields, counting only bins in `shared`.
 
-    NaN when the cell has no field bin on shared bins in either condition.
+    `field_overlap` returns NaN when neither condition has a field bin left.
     """
     bins_a = np.intersect1d(field_bins(a), np.flatnonzero(shared))
     bins_b = np.intersect1d(field_bins(b), np.flatnonzero(shared))
-    if len(bins_a) == 0 and len(bins_b) == 0:
-        return np.nan
     return field_overlap(bins_a, bins_b)
 
 
@@ -270,13 +264,15 @@ overlap = np.array([
 ])
 print("Field overlap, cells that kept their field:", np.round(overlap[~moves], 2))
 print("Field overlap, cells that moved their field:", np.round(overlap[moves], 2))
+assert 0.854 <= overlap[~moves].min() <= overlap[~moves].max() <= 1.0 + 1e-9  # Jaccard is at most 1
+assert (overlap[moves] == 0).all()
 ```
 
 Cells that kept their field share most of their field bins (overlap
 0.86-1.00), and cells that moved share none. Neither per-cell measure detects
 a cell that keeps its field but changes its peak rate (rate remapping): field
 overlap ignores rates, and a correlation ignores a change of scale. Compare
-in-field rates for that; the per-location population-vector correlation does
+in-field rates for that; the per-location `population_vector_correlation` does
 drop when cells change their rates relative to each other.
 
 ## Which cells fire together, and does that pattern return during rest?
@@ -378,6 +374,7 @@ for pair in strongest:
           f"r = {run_correlations[pair]:.2f}")
 print(f"Pairs with r > 0.1: {(run_correlations > 0.1).sum()} "
       f"of {run_correlations.size}")
+assert ((run_correlations > 0.1).sum(), run_correlations.size) == (18, 378)
 ```
 
 The most correlated pairs are cells of the same assembly. Only 18 of the 378
@@ -401,10 +398,14 @@ assemblies = detect_assemblies(counts["run"], rng=0)
 print(f"Marchenko-Pastur threshold: {threshold:.2f}")
 print("Largest eigenvalues:", np.round(assemblies.eigenvalues[:5], 2))
 print("Dimensions above threshold:", assemblies.n_significant)
+planted = []
 for pattern in assemblies.patterns:
     members = pattern.member_indices
     print(f"Core members {members.tolist()} -> planted assembly "
           f"{np.unique(assembly_of[members]).tolist()}")
+    planted.append(np.unique(assembly_of[members]).tolist())
+assert assemblies.n_significant == 3
+assert all(len(assembly) == 1 for assembly in planted)  # each pattern: one assembly
 ```
 
 Three eigenvalues exceed the threshold, matching the three planted
@@ -425,6 +426,7 @@ positive weights are the members; the bins where those members fire together
 then have positive activation.
 
 ```python
+reactivated = []
 for k, pattern in enumerate(assemblies.patterns):
     assembly = assembly_of[pattern.member_indices[0]]
     activation = assembly_activation(counts["post_rest"], pattern)
@@ -437,6 +439,13 @@ for k, pattern in enumerate(assemblies.patterns):
     print(f"Pattern {k}: activation {activation[in_event].mean():.1f} during "
           f"its events vs {activation[~in_event].mean():.1f} otherwise; "
           f"strength pre {strength_pre:.2f}, post {strength_post:.2f}")
+    reactivated.append((activation[in_event].mean(), activation[~in_event].mean(),
+                        strength_pre, strength_post))
+in_events, otherwise, pre, post = np.array(reactivated).T
+assert 3.39 <= in_events.min() <= in_events.max() <= 3.71
+assert np.allclose(otherwise, -0.2, atol=0.06)
+assert 1.044 <= pre.min() <= pre.max() <= 1.076
+assert 1.064 <= post.min() <= post.max() <= 1.136
 ```
 
 In post-task rest, each pattern's activation averages about 3.5 standard
@@ -475,6 +484,8 @@ reactivation = explained_variance_reactivation(
 )
 print(f"EV = {reactivation.explained_variance:.2f}, "
       f"REV = {reactivation.reversed_ev:.3f}, over {reactivation.n_pairs} pairs")
+assert np.isclose(reactivation.explained_variance, 0.75, atol=0.006)
+assert np.isclose(reactivation.reversed_ev, 0.015, atol=0.0006)
 ```
 
 EV (0.75) is far above REV (0.015): the correlation structure of running

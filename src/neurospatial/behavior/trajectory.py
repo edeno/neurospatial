@@ -1338,12 +1338,14 @@ def compute_home_range(
 
 
 def mean_square_displacement(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
+    times: ArrayLike,
+    positions: ArrayLike,
     *,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
     max_tau: float | None = None,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> MSDResult:
     """
     Compute mean square displacement (MSD) from continuous trajectory positions.
@@ -1355,10 +1357,11 @@ def mean_square_displacement(
 
     Parameters
     ----------
-    times : NDArray[np.float64], shape (n_samples,)
-        Timestamps corresponding to each sample in the trajectory.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions in continuous space.
+    times : array-like, shape (n_samples,)
+        Strictly increasing timestamps in seconds, one per sample.
+    positions : array-like, shape (n_samples, n_dims) or (n_samples,)
+        Trajectory positions in continuous space. A 1-D array is one
+        coordinate. Rows with a non-finite coordinate are missing.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
         - "euclidean": Straight-line distance (ecology standard, most accurate).
@@ -1373,6 +1376,14 @@ def mean_square_displacement(
         Maximum lag time to compute. If None, uses half the total duration.
         Recommended: use max_tau ≤ T/4 where T is total duration, to ensure
         sufficient samples for reliable averaging.
+    epochs : array-like, shape (n_epochs, 2), optional
+        ``(start, stop)`` windows in seconds. A displacement pair is used only
+        when both samples lie in the same window; touching windows merge.
+        ``None`` uses the whole recording.
+    break_before : array of bool, shape (n_samples,), optional
+        True at sample ``k`` declares a recording break between samples
+        ``k - 1`` and ``k``. No pair spans a break. Use it when the
+        positions of two recordings are joined in one array.
 
     Returns
     -------
@@ -1385,11 +1396,15 @@ def mean_square_displacement(
     ------
     ValueError
         If metric="geodesic" but env is None.
-        If positions and times have different lengths.
-        If positions is not a 2D array.
-        If times contains non-finite values.
-        If the median consecutive time step is <= 0 (all-duplicate or
-        non-increasing timestamps), which would make the lag grid undefined.
+        If there are no samples, or positions and times have different lengths.
+        If times are not finite and strictly increasing (a repeated timestamp
+        raises).
+        If ``break_before`` is not a Boolean array with one entry per sample.
+
+    Warns
+    -----
+    UserWarning
+        If ``epochs`` leaves no displacement pair observed.
 
     Notes
     -----
@@ -1405,7 +1420,15 @@ def mean_square_displacement(
     Each target time is matched to the nearest recorded sample within half
     the median sample interval. Targets beyond the recording are excluded.
     Pairs with missing positions are excluded; geodesic pairs additionally
-    require both positions to be inside the environment and connected.
+    require both positions to be inside the environment and connected. A pair
+    is also excluded when a declared ``break_before`` or an ``epochs`` edge
+    lies between its two samples. A single sample returns an empty result.
+
+    There is no ``max_gap``. MSD compares two observed positions a lag apart
+    and does not integrate along the path, so samples missing between them do
+    not change the displacement. A gap matters only when the two positions are
+    not in the same coordinate frame, which is what ``break_before`` and
+    ``epochs`` declare.
 
     **Movement classification from scaling exponent**:
 
@@ -1465,6 +1488,16 @@ def mean_square_displacement(
     >>> alpha = np.polyfit(log_tau, log_msd, 1)[0]  # doctest: +SKIP
     >>> print(f"Diffusion exponent: {alpha:.2f}")  # doctest: +SKIP
     Diffusion exponent: 1.02  # ≈ 1.0 (diffusive motion)
+    >>>
+    >>> # Two recordings joined in one array: declare the join so no
+    >>> # displacement pair spans it.
+    >>> times = np.arange(10.0)
+    >>> positions = np.c_[[0, 1, 2, 3, 4, 100, 101, 102, 103, 104], np.zeros(10)]
+    >>> new_recording = np.arange(10) == 5
+    >>> mean_square_displacement(
+    ...     times, positions, max_tau=3.0, break_before=new_recording
+    ... ).msd
+    array([1., 4., 9.])
 
     References
     ----------
@@ -1477,18 +1510,15 @@ def mean_square_displacement(
            Physical Review E, 87(5), 052713.
     .. [4] Traja documentation: https://traja.readthedocs.io/
     """
-    # Coerce array-likes (e.g. Python lists) before any .ndim access.
-    from neurospatial._validation import validate_times_positions
-
-    times, positions = validate_times_positions(
-        times, positions, call="mean_square_displacement"
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="mean_square_displacement",
+        max_gap=None,
+        epochs=epochs,
+        break_before=break_before,
+        result="no displacement pair was observed",
     )
-    # Input validation
-    if positions.ndim != 2:
-        raise ValueError(
-            f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
-        )
-
     if metric not in ("euclidean", "geodesic"):
         raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
 
@@ -1498,33 +1528,7 @@ def mean_square_displacement(
             "Use metric='euclidean' if env is not available."
         )
 
-    n_samples = len(positions)
-
-    # Determine lag times to compute
-    if max_tau is None:
-        max_tau = (times[-1] - times[0]) / 2.0
-
-    # Find all unique time differences up to max_tau
-    time_diffs = np.diff(times)
-    # Create lag times by accumulating time differences. Use the median delta as
-    # the typical time step; reject records whose typical step is not positive
-    # (all-duplicate or non-increasing timestamps), which would make the lag grid
-    # ill-defined (ZeroDivisionError or negative n_lags).
-    dt = float(np.median(time_diffs))  # Typical time step
-    if dt <= 0:
-        raise ValueError(
-            f"times must be increasing: the median consecutive time step is "
-            f"{dt!r} (<= 0), so the lag grid is undefined. Sort and "
-            f"de-duplicate timestamps before calling."
-        )
-    n_lags = int(max_tau / dt)
-    n_lags = max(1, min(n_lags, n_samples // 2))  # At least 1, at most n_samples/2
-
-    tau_values = np.linspace(dt, max_tau, n_lags)
-    msd_values = np.full(n_lags, np.nan, dtype=np.float64)
-
     if metric == "geodesic":
-        # Map positions to bins for geodesic distance
         assert env is not None  # Already checked above
         require_cartesian(
             env.coordinate_system,
@@ -1534,6 +1538,28 @@ def mean_square_displacement(
             fix="use the allocentric environment the positions were recorded in, or "
             "metric='euclidean'",
         )
+
+    n_samples = len(positions)
+    if n_samples < 2:
+        return MSDResult(lags=np.empty(0), msd=np.empty(0))
+
+    # Determine lag times to compute
+    if max_tau is None:
+        max_tau = (times[-1] - times[0]) / 2.0
+
+    # Find all unique time differences up to max_tau
+    time_diffs = np.diff(times)
+    # The resolver guarantees strictly increasing times, so dt > 0.
+    dt = float(np.median(time_diffs))  # Typical time step
+    n_lags = int(max_tau / dt)
+    n_lags = max(1, min(n_lags, n_samples // 2))  # At least 1, at most n_samples/2
+
+    tau_values = np.linspace(dt, max_tau, n_lags)
+    msd_values = np.full(n_lags, np.nan, dtype=np.float64)
+
+    if metric == "geodesic":
+        # Map positions to bins for geodesic distance
+        assert env is not None  # Already checked above
         position_bins = env.bin_at(positions)
         valid_bins = (position_bins >= 0) & (position_bins < env.n_bins)
 
@@ -1546,7 +1572,10 @@ def mean_square_displacement(
         )
 
     sample_indices = np.arange(n_samples)
-    finite_positions = np.asarray(np.isfinite(positions).all(axis=1), dtype=bool)
+    finite_positions = support.sample_valid
+    # Segments are separated by declared breaks and epoch edges; a pair is
+    # valid only inside one segment.
+    segment = np.r_[0, np.cumsum(~support.interval_gates)]
     # Adding a lag can round an observed endpoint one timestamp ULP upward.
     # Allow that roundoff without extending support by the matching tolerance.
     recording_stop = np.nextafter(times[-1], np.inf)
@@ -1566,6 +1595,7 @@ def mean_square_displacement(
             & (time_errors < dt / 2)
             & finite_positions
             & finite_positions[future_idx]
+            & (segment == segment[future_idx])
         )
 
         if metric == "euclidean":
@@ -1588,36 +1618,39 @@ def mean_square_displacement(
 
 
 def compute_trajectory_curvature(
-    positions: NDArray[np.float64],
-    times: NDArray[np.float64] | None = None,
+    times: ArrayLike,
+    positions: ArrayLike,
     *,
     smooth_window: float | None = 0.2,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
-    """Compute trajectory curvature from position data.
+    """Compute the smoothed turn angle at each tracking sample.
 
     Despite its name, this returns turning angles in radians (the signed change
     of movement direction at each sample), not geometric curvature. For
     curvature in inverse length units use ``compute_planar_curvature``.
     Works for any number of columns (1D, 2D, 3D, N-D), but see Notes for how
-    extra columns enter.
+    extra columns enter. Only observed movement is used: no turn is computed
+    or smoothed across a missing sample, a time gap or a declared recording
+    break.
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates over time in any dimensional space.
-    times : NDArray[np.float64], shape (n_samples,), optional
-        Timestamps for temporal smoothing. If None, assumes uniform sampling.
-    smooth_window : float, optional
-        Temporal smoothing window in seconds. Default: 0.2s (typical for 30-60 Hz
-        tracking data).
+    times : ArrayLike, shape (n_samples,)
+        Sample times in seconds; finite and strictly increasing.
+    positions : ArrayLike, shape (n_samples,) or (n_samples, n_dims)
+        Position coordinates over time in any dimensional space. Rows with a
+        non-finite coordinate are missing.
+    smooth_window : float or None, default=0.2
+        Standard deviation, in seconds, of the Gaussian that smooths the turn
+        angles within each run (0.2 s suits 30-60 Hz tracking). ``None``
+        disables smoothing.
 
         **Important**: For high-speed tracking (120+ Hz) or fast-moving animals,
         use shorter windows (0.05-0.1s) or disable smoothing (smooth_window=None)
         to preserve rapid turns.
-
-        Set to None for no smoothing.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -1626,6 +1659,10 @@ def compute_trajectory_curvature(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
@@ -1634,27 +1671,34 @@ def compute_trajectory_curvature(
         - Positive values: counterclockwise turn (left in 2D top-down view)
         - Negative values: clockwise turn (right in 2D top-down view)
         - Zero: straight movement
-        - NaN: sample belongs to no observed run (when times is supplied)
+        - NaN: missing samples and samples in no run (isolated by a gap, a
+          declared break, a missing neighbour or ``epochs``)
+
+    Raises
+    ------
+    ValueError
+        If ``times`` and ``positions`` are empty, swapped or misaligned,
+        ``times`` is not strictly increasing, ``max_gap`` is not positive and
+        finite or ``None``, or ``break_before`` is not a Boolean array with
+        one entry per sample.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    A run is a stretch of observed samples with no missing row, no gap longer
+    than ``max_gap``, no ``epochs`` edge and no declared break. Each run is
+    analyzed as a separate recording: turn angles are computed and smoothed
+    within it, so a missing row or a break never spreads into its neighbours.
 
-    When ``times`` is given, turn angles and smoothing are applied
-    per run. Samples in no run have NaN curvature. With ``times=None``,
-    ``max_gap`` and ``epochs`` are unused and no temporal smoothing is applied.
-
-    This function wraps `compute_turn_angles()` and adds:
-    - Mapping to the original sample positions (n_samples)
+    Within a run this function wraps `compute_turn_angles()` and adds:
+    - Mapping to the original sample positions
     - Optional temporal smoothing
 
     `compute_turn_angles()` uses atan2(cross, dot) for proper signed angles in [-π, π],
     filters stationary periods automatically, and returns at most (n_samples - 2)
     angles. Each angle is assigned to the original index of its middle position
     after consecutive duplicates are removed (keeping their first sample).
-    Stationary duplicates and the first and last retained positions have zero
-    curvature before smoothing, preserving the timestamps of actual turns.
+    Stationary duplicates and the first and last retained positions of a run
+    have zero turn before smoothing, preserving the timestamps of actual turns.
 
     For positions with more than two columns the angle is
     ``atan2(v1_x * v2_y - v1_y * v2_x, sum(v1 * v2))``: the cross product uses
@@ -1663,39 +1707,51 @@ def compute_trajectory_curvature(
     nor the 3-D angle; pass ``positions[:, :2]`` for a horizontal-plane
     analysis.
 
+    The turn is per sample, so it depends on the frame rate and the running
+    speed. To compare path shape across sessions, use
+    ``compute_planar_curvature``.
+
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.behavior.trajectory import compute_trajectory_curvature
-    >>>
-    >>> # 2D trajectory on any environment (grid, graph, continuous)
+    >>> from neurospatial.behavior import compute_trajectory_curvature
+
+    A straight run has no turns:
+
+    >>> times = np.arange(20) / 30  # 30 Hz, seconds
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-    >>> curvature = compute_trajectory_curvature(positions)
-    >>>
-    >>> # Detect sharp turns (> 45 degrees)
-    >>> sharp_left = np.where(curvature > np.pi / 4)[0]
-    >>> sharp_right = np.where(curvature < -np.pi / 4)[0]
-    >>>
-    >>> # 3D trajectory (e.g., climbing, flying)
-    >>> positions_3d = np.column_stack(
-    ...     [np.linspace(0, 100, 20), np.zeros(20), np.linspace(0, 10, 20)]
+    >>> bool(np.allclose(compute_trajectory_curvature(times, positions), 0.0))
+    True
+
+    A right-angle left turn, without smoothing:
+
+    >>> times = np.arange(4) * 0.1
+    >>> positions = np.array([[0.0, 0], [1, 0], [2, 0], [2, 1]])
+    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=None)
+    >>> np.round(turns, 4).tolist()
+    [0.0, 0.0, 1.5708, 0.0]
+
+    A missing row (lost tracking) is NaN and splits the path into two runs;
+    the turn is not computed across it:
+
+    >>> times = np.arange(7) * 0.1
+    >>> positions = np.array(
+    ...     [[0.0, 0], [1, 0], [2, 0], [2, 1], [np.nan, np.nan], [3, 1], [3, 2]]
     ... )
-    >>> curvature_3d = compute_trajectory_curvature(positions_3d)
-    >>>
-    >>> # With three columns the cross product uses x, y and the dot product
-    >>> # uses all three: the turn at the middle sample is π/4, not the π/2
-    >>> # of the x-y projection
+    >>> turns = compute_trajectory_curvature(times, positions, smooth_window=None)
+    >>> np.round(turns, 4).tolist()
+    [0.0, 0.0, 1.5708, 0.0, nan, 0.0, 0.0]
+
+    With three columns the cross product uses x, y and the dot product uses
+    all three: the turn at the middle sample is π/4, not the π/2 of the x-y
+    projection:
+
+    >>> times = np.array([0.0, 0.1, 0.2])
     >>> x = np.array([[0.0, 0, 0], [1, 0, 1], [1, 1, 2]])
-    >>> float(compute_trajectory_curvature(x)[1])
+    >>> float(compute_trajectory_curvature(times, x, smooth_window=None)[1])
     0.7853981633974483
-    >>> float(compute_trajectory_curvature(x[:, :2])[1])
+    >>> float(compute_trajectory_curvature(times, x[:, :2], smooth_window=None)[1])
     1.5707963267948966
-    >>>
-    >>> # Smooth for noisy tracking data
-    >>> times = np.linspace(0, 10, 20)
-    >>> curvature_smooth = compute_trajectory_curvature(
-    ...     positions, times, smooth_window=0.5, max_gap=None
-    ... )
 
     See Also
     --------
@@ -1704,33 +1760,32 @@ def compute_trajectory_curvature(
     compute_planar_curvature : Signed geometric curvature (inverse length)
     compute_movement_angular_velocity : Turning rate of the movement direction
     """
-    if times is None:
-        return _compute_trajectory_curvature_contiguous(
-            positions, None, smooth_window=smooth_window
-        )
-    from neurospatial._intervals import observed_runs
-    from neurospatial._validation import validate_times_positions
-
-    times, positions = validate_times_positions(
-        times, positions, call="compute_trajectory_curvature", order="positions, times"
+    t, p, support = validated_observations(
+        times,
+        positions,
+        call="compute_trajectory_curvature",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="every curvature value is NaN",
     )
-    curvature: NDArray[np.float64] = np.full(len(positions), np.nan)
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+    curvature: NDArray[np.float64] = np.full(t.size, np.nan)
+    for first, last in support.run_sample_bounds:
+        run = slice(first, last + 1)
         curvature[run] = _compute_trajectory_curvature_contiguous(
-            positions[run], times[run], smooth_window=smooth_window
+            p[run], t[run], smooth_window=smooth_window
         )
     return curvature
 
 
 def _compute_trajectory_curvature_contiguous(
     positions: NDArray[np.float64],
-    times: NDArray[np.float64] | None,
+    times: NDArray[np.float64],
     *,
     smooth_window: float | None,
 ) -> NDArray[np.float64]:
     """Map angles to their original samples and smooth within one recording."""
     angles = compute_turn_angles(positions)
-    positions = np.asarray(positions)
     n_samples = len(positions)
     curvature = np.zeros(n_samples, dtype=np.float64)
     if len(angles):
@@ -1739,7 +1794,7 @@ def _compute_trajectory_curvature_contiguous(
         curvature[retained_indices[1:-1]] = angles
 
     # Optional temporal smoothing
-    if smooth_window is not None and times is not None:
+    if smooth_window is not None:
         from scipy.ndimage import gaussian_filter1d
 
         # Compute sigma from time resolution

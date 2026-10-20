@@ -294,9 +294,7 @@ def validate_trajectory(
             )
     if problems:
         raise ValueError(
-            format_times_positions_error(
-                problems, looks_swapped, call=context, order="times, positions"
-            )
+            format_times_positions_error(problems, looks_swapped, call=context)
         )
 
 

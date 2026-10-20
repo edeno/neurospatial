@@ -12,11 +12,20 @@ import pandas as pd
 import pytest
 
 from neurospatial import Environment, Regions
-from neurospatial.behavior.decisions import extract_pre_decision_window
+from neurospatial.behavior.decisions import (
+    compute_decision_analysis,
+    extract_pre_decision_window,
+)
 from neurospatial.behavior.navigation import goal_bias
 from neurospatial.behavior.segmentation import (
+    Trial,
     detect_region_crossings,
     segment_by_velocity,
+)
+from neurospatial.behavior.vte import (
+    compute_vte_session,
+    compute_vte_trial,
+    head_sweep_from_positions,
 )
 from neurospatial.events import add_positions
 from neurospatial.ops.egocentric import heading_from_velocity
@@ -40,6 +49,32 @@ def coarse_track():
     return env, times, positions
 
 
+def _vte_session(env, times, positions, **kwargs):
+    """VTE session with a straight approach and one through a turnaround.
+
+    With every interval excluded, both trials are skipped with a warning.
+    """
+    trials = [
+        Trial(0.0, 39.0, "start", "mid_area", True),
+        Trial(35.0, 79.0, "start", "mid_area", True),
+    ]
+    options = {
+        "decision_region": "mid_area",
+        "trials": trials,
+        "window_duration": 10.0,
+        "min_speed": 1.0,
+    }
+    if kwargs.get("max_gap", 0.5) is None:
+        result = compute_vte_session(env, times, positions, **options, **kwargs)
+        assert len(result.trial_results) == 2
+        return result
+    with pytest.warns(UserWarning, match=r"only 0 observed sample\(s\)") as record:
+        result = compute_vte_session(env, times, positions, **options, **kwargs)
+    assert sum("only 0 observed" in str(w.message) for w in record) == 2
+    assert result.trial_results == []
+    return result
+
+
 CALLS = {
     "detect_region_crossings": lambda env, t, p, **kw: detect_region_crossings(
         env.bin_at(p), t, env, region_name="mid_area", **kw
@@ -54,6 +89,22 @@ CALLS = {
     "extract_pre_decision_window": lambda env, t, p, **kw: (
         extract_pre_decision_window(t, p, 50.0, 10.0, **kw)
     ),
+    "compute_decision_analysis": lambda env, t, p, **kw: compute_decision_analysis(
+        env,
+        t,
+        p,
+        decision_region="mid_area",
+        goal_regions=["mid_area"],
+        min_speed=1.0,
+        **kw,
+    ),
+    "head_sweep_from_positions": lambda env, t, p, **kw: head_sweep_from_positions(
+        t, p, min_speed=1.0, **kw
+    ),
+    "compute_vte_trial": lambda env, t, p, **kw: compute_vte_trial(
+        t, p, 50.0, 10.0, min_speed=1.0, **kw
+    ),
+    "compute_vte_session": lambda env, t, p, **kw: _vte_session(env, t, p, **kw),
     "add_positions": lambda env, t, p, **kw: add_positions(
         pd.DataFrame({"timestamp": [10.5, 50.5]}), times=t, positions=p, **kw
     ),

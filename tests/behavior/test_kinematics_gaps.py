@@ -129,10 +129,10 @@ def test_home_range_dwell_excludes_pause(two_epoch_recording):
 
 def test_heading_direction_labels_post_pause_sample(two_epoch_recording):
     r = two_epoch_recording
-    labels = heading_direction_labels(r.positions, r.times, min_speed=0)
+    labels = heading_direction_labels(r.times, r.positions, min_speed=0)
     # The first sample after the pause is labeled from its own run's motion,
     # never from the jump across the pause.
-    after = heading_direction_labels(r.positions[5000:], r.times[5000:], min_speed=0)
+    after = heading_direction_labels(r.times[5000:], r.positions[5000:], min_speed=0)
     assert labels[5000] == after[0] != "stationary"
     assert labels[5001] != "stationary"
 
@@ -175,11 +175,35 @@ def test_approach_rate_masks_backward_gap(two_epoch_recording):
 def test_curvature_and_smoothing_are_per_run(two_epoch_recording):
     r = two_epoch_recording
     expected = np.r_[
-        compute_trajectory_curvature(r.positions[:5000], r.times[:5000]),
-        compute_trajectory_curvature(r.positions[5000:], r.times[5000:]),
+        compute_trajectory_curvature(r.times[:5000], r.positions[:5000]),
+        compute_trajectory_curvature(r.times[5000:], r.positions[5000:]),
     ]
-    actual = compute_trajectory_curvature(r.positions, r.times)
+    actual = compute_trajectory_curvature(r.times, r.positions)
     np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0)
+
+
+def test_curvature_declared_break_equals_separate_calls(two_epoch_recording):
+    """A declared break keeps two recordings on one clock from smoothing together."""
+    r = two_epoch_recording
+    n = 5000
+    # Join the second recording directly after the first: no time gap remains.
+    times = np.r_[r.times[:n], r.times[n - 1] + 0.02 + (r.times[n:] - r.times[n])]
+    new_recording = np.arange(times.size) == n
+    joined = compute_trajectory_curvature(
+        times, r.positions, break_before=new_recording
+    )
+    # Slice the same arrays so the time differences are exactly the same.
+    np.testing.assert_array_equal(
+        joined,
+        np.r_[
+            compute_trajectory_curvature(times[:n], r.positions[:n]),
+            compute_trajectory_curvature(times[n:], r.positions[n:]),
+        ],
+    )
+    undeclared = compute_trajectory_curvature(times, r.positions)
+    sigma = 0.2 / 0.02  # default smooth_window over the 50 Hz frame interval
+    near_join = slice(n - int(3 * sigma), n + int(3 * sigma))
+    assert not np.allclose(undeclared[near_join], joined[near_join], rtol=0, atol=1e-6)
 
 
 @pytest.mark.parametrize(
@@ -212,11 +236,11 @@ def test_full_home_range_excludes_zero_dwell_bins():
 def test_curvature_isolated_sample_nan(two_epoch_recording):
     r = two_epoch_recording
     selected = [0, 1, 2, 4999, 5000, 5001, 5002]  # 4999 sits alone
-    curvature = compute_trajectory_curvature(r.positions[selected], r.times[selected])
+    curvature = compute_trajectory_curvature(r.times[selected], r.positions[selected])
     assert np.isnan(curvature[3])
     # Each observed run gets the curvature it has on its own.
     for run in ([0, 1, 2], [5000, 5001, 5002]):
-        alone = compute_trajectory_curvature(r.positions[run], r.times[run])
+        alone = compute_trajectory_curvature(r.times[run], r.positions[run])
         rows = [selected.index(i) for i in run]
         np.testing.assert_allclose(curvature[rows], alone, rtol=1e-12)
         assert np.isfinite(alone).all()
@@ -325,11 +349,11 @@ def test_duplicate_timestamps_give_undefined_not_infinite_speed():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         velocity = interval_velocity(times, positions, np.ones(4, dtype=bool))
-        mean_speed, min_speed = pre_decision_speed_stats(times, positions)
     assert np.all(np.isnan(velocity[1]))
     np.testing.assert_allclose(velocity[[0, 2, 3], 0], 10.0)
-    assert mean_speed == pytest.approx(10.0)
-    assert min_speed == pytest.approx(10.0)
+    # The public speed statistics refuse a repeated timestamp outright.
+    with pytest.raises(ValueError, match="strictly increasing"):
+        pre_decision_speed_stats(times, positions)
 
 
 def test_one_dimensional_positions_give_track_speed():

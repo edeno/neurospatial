@@ -16,6 +16,7 @@ from neurospatial.encoding.population import (
     plot_population_coverage,
     population_coverage,
     population_vector_correlation,
+    rate_map_correlations,
 )
 
 matplotlib.use("Agg")  # Use non-interactive backend for testing
@@ -725,91 +726,257 @@ class TestFieldOverlap:
         assert overlap == pytest.approx(0.0)
 
     def test_field_overlap_both_empty(self) -> None:
-        """Test overlap when both fields are empty."""
+        """No field bins in either set: nothing to compare, so NaN, not 0."""
         field1 = np.array([], dtype=np.int64)
         field2 = np.array([], dtype=np.int64)
         overlap = field_overlap(field1, field2)
-        # By convention, Jaccard(∅, ∅) = 0 (though sometimes defined as 1)
-        # We use 0 to avoid division by zero issues
-        assert overlap == pytest.approx(0.0)
+        assert np.isnan(overlap)
 
 
-class TestPopulationVectorCorrelation:
-    """Test population_vector_correlation function."""
+class TestRateMapCorrelations:
+    """Test rate_map_correlations function."""
 
-    def test_population_vector_correlation_shape(self) -> None:
+    def test_rate_map_correlations_shape(self) -> None:
         """Test correlation matrix has correct shape."""
         # 3 cells, 50 bins
         rng = np.random.default_rng(42)
-        population_matrix = rng.random((3, 50))
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = rng.random((3, 50))
+        corr_matrix = rate_map_correlations(firing_rates)
         # Should be 3x3 symmetric matrix
         assert corr_matrix.shape == (3, 3)
         # Check symmetry
         np.testing.assert_allclose(corr_matrix, corr_matrix.T, rtol=1e-10)
 
-    def test_population_vector_correlation_diagonal(self) -> None:
+    def test_rate_map_correlations_diagonal(self) -> None:
         """Test diagonal elements are 1.0 (self-correlation)."""
         rng = np.random.default_rng(42)
-        population_matrix = rng.random((5, 100))
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = rng.random((5, 100))
+        corr_matrix = rate_map_correlations(firing_rates)
         # Diagonal should be all 1.0
         np.testing.assert_allclose(np.diag(corr_matrix), 1.0, rtol=1e-10)
 
-    def test_population_vector_correlation_identical_cells(self) -> None:
+    def test_rate_map_correlations_identical_cells(self) -> None:
         """Test correlation of identical firing patterns."""
         # Two identical cells
         rng = np.random.default_rng(42)
         pattern = rng.random(50)
-        population_matrix = np.vstack([pattern, pattern])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([pattern, pattern])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Off-diagonal should be 1.0 (perfect correlation)
         assert corr_matrix[0, 1] == pytest.approx(1.0, abs=1e-10)
         assert corr_matrix[1, 0] == pytest.approx(1.0, abs=1e-10)
 
-    def test_population_vector_correlation_orthogonal(self) -> None:
+    def test_rate_map_correlations_orthogonal(self) -> None:
         """Test correlation of uncorrelated cells."""
         # Create orthogonal patterns (correlation ~ 0)
         rng = np.random.default_rng(42)
         n_bins = 1000  # Large number for better approximation
         cell1 = rng.standard_normal(n_bins)
         cell2 = rng.standard_normal(n_bins)
-        population_matrix = np.vstack([cell1, cell2])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([cell1, cell2])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Should be close to 0 (not exactly due to randomness)
         assert abs(corr_matrix[0, 1]) < 0.1
 
-    def test_population_vector_correlation_anticorrelated(self) -> None:
+    def test_rate_map_correlations_anticorrelated(self) -> None:
         """Test negative correlation (anticorrelated patterns)."""
         pattern = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         # Negatively correlated pattern
         anti_pattern = -pattern
-        population_matrix = np.vstack([pattern, anti_pattern])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([pattern, anti_pattern])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Should be -1.0 (perfect anticorrelation)
         assert corr_matrix[0, 1] == pytest.approx(-1.0, abs=1e-10)
 
-    def test_population_vector_correlation_single_cell(self) -> None:
+    def test_rate_map_correlations_single_cell(self) -> None:
         """Test correlation matrix for single cell."""
         rng = np.random.default_rng(42)
-        population_matrix = rng.random((1, 50))
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = rng.random((1, 50))
+        corr_matrix = rate_map_correlations(firing_rates)
         assert corr_matrix.shape == (1, 1)
         assert corr_matrix[0, 0] == pytest.approx(1.0)
 
-    def test_population_vector_correlation_constant_cells(self) -> None:
+    def test_rate_map_correlations_constant_cells(self) -> None:
         """Test handling of cells with constant firing (zero variance)."""
         # Cell with constant firing rate (correlation undefined)
         rng = np.random.default_rng(42)
         constant_cell = np.ones(50)
         varying_cell = rng.random(50)
-        population_matrix = np.vstack([constant_cell, varying_cell])
-        corr_matrix = population_vector_correlation(population_matrix)
+        firing_rates = np.vstack([constant_cell, varying_cell])
+        corr_matrix = rate_map_correlations(firing_rates)
         # Correlation with constant cell should be NaN
         assert np.isnan(corr_matrix[0, 1])
         assert np.isnan(corr_matrix[1, 0])
-        # Self-correlation of constant cell is still 1.0 by definition
-        assert corr_matrix[0, 0] == pytest.approx(1.0)
+        # A constant map has no defined self-correlation either
+        assert np.isnan(corr_matrix[0, 0])
+        assert corr_matrix[1, 1] == pytest.approx(1.0)
+
+    def test_rate_map_correlations_roundoff_constant_map_is_nan(self) -> None:
+        """Equal rates whose std rounds to ~1e-17 still make a constant map."""
+        assert np.full(50, 0.1).std() != 0.0  # the trap this test guards
+        rng = np.random.default_rng(42)
+        varying = rng.random((2, 50))
+        firing_rates = np.vstack([varying[0], np.full(50, 0.1), varying[1]])
+        corr_matrix = rate_map_correlations(firing_rates)
+        expected_nan = np.zeros((3, 3), dtype=bool)
+        expected_nan[1, :] = True
+        expected_nan[:, 1] = True
+        np.testing.assert_array_equal(np.isnan(corr_matrix), expected_nan)
+        keep = [0, 2]
+        np.testing.assert_array_equal(
+            corr_matrix[np.ix_(keep, keep)], rate_map_correlations(varying)
+        )
+
+    def test_rate_map_correlations_nan_bin_propagates_per_row(self) -> None:
+        """A NaN bin makes that map's row, column and diagonal NaN only."""
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((3, 30))
+        firing_rates[1, 4] = np.nan
+        corr_matrix = rate_map_correlations(firing_rates)
+        expected_nan = np.zeros((3, 3), dtype=bool)
+        expected_nan[1, :] = True
+        expected_nan[:, 1] = True
+        np.testing.assert_array_equal(np.isnan(corr_matrix), expected_nan)
+        np.testing.assert_allclose(
+            corr_matrix[0, 2], np.corrcoef(firing_rates[0], firing_rates[2])[0, 1]
+        )
+
+    def test_rate_map_correlations_no_bins_is_all_nan(self) -> None:
+        """No shared bins: nothing to correlate, so every entry is NaN."""
+        corr_matrix = rate_map_correlations(np.ones((3, 0)))
+        assert corr_matrix.shape == (3, 3)
+        assert np.isnan(corr_matrix).all()
+
+    def test_rate_map_correlations_two_conditions(self) -> None:
+        """Stacked conditions: the off-diagonal block's diagonal is per-map r."""
+        rng = np.random.default_rng(42)
+        a = rng.random((4, 30))
+        corr_matrix = rate_map_correlations(np.vstack([a, a]))
+        assert corr_matrix.shape == (8, 8)
+        np.testing.assert_allclose(np.diag(corr_matrix[:4, 4:]), 1.0, atol=1e-10)
+
+
+class TestPopulationVectorCorrelation:
+    """Per-location population-vector correlation between two conditions."""
+
+    DEMO = np.array([[1.0, 2.0, 5.0], [3.0, 2.0, 1.0], [2.0, 2.0, 4.0]])
+
+    @pytest.fixture
+    def random_maps(self) -> tuple[np.ndarray, np.ndarray]:
+        rng = np.random.default_rng(7)
+        return rng.random((12, 40)), rng.random((12, 40))
+
+    def test_identical_maps_are_one_and_flat_location_is_nan(self) -> None:
+        pv = population_vector_correlation(self.DEMO, self.DEMO)
+        assert pv.shape == (3,)
+        assert pv.dtype == np.float64
+        np.testing.assert_allclose(pv[[0, 2]], 1.0, rtol=1e-12)
+        assert np.isnan(pv[1])
+
+    def test_negated_map_is_minus_one(self) -> None:
+        pv = population_vector_correlation(self.DEMO, -self.DEMO)
+        np.testing.assert_allclose(pv[[0, 2]], -1.0, rtol=1e-12)
+        assert np.isnan(pv[1])
+
+    def test_matches_corrcoef_at_every_location(self, random_maps) -> None:
+        a, c = random_maps
+        pv = population_vector_correlation(a, c)
+        expected = [np.corrcoef(a[:, b], c[:, b])[0, 1] for b in range(a.shape[1])]
+        np.testing.assert_allclose(pv, expected, rtol=1e-12)
+
+    def test_uncorrelated_maps_are_near_zero(self) -> None:
+        rng = np.random.default_rng(3)
+        a = rng.random((500, 50))
+        c = rng.random((500, 50))
+        pv = population_vector_correlation(a, c)
+        assert np.all(np.isfinite(pv))
+        assert abs(np.median(pv)) < 0.05
+        assert np.all(np.abs(pv) < 0.2)
+
+    def test_scale_invariant(self, random_maps) -> None:
+        a, c = random_maps
+        np.testing.assert_allclose(
+            population_vector_correlation(a, 3.0 * c),
+            population_vector_correlation(a, c),
+            rtol=1e-12,
+        )
+
+    def test_shared_unit_permutation_leaves_result_unchanged(self, random_maps) -> None:
+        a, c = random_maps
+        order = np.random.default_rng(1).permutation(a.shape[0])
+        np.testing.assert_allclose(
+            population_vector_correlation(a[order], c[order]),
+            population_vector_correlation(a, c),
+            rtol=1e-12,
+        )
+
+    def test_unit_identity_matters(self) -> None:
+        """Shuffling units in one map only breaks a perfect correlation."""
+        a = np.random.default_rng(2).random((12, 40))
+        order = np.roll(np.arange(12), 1)
+        pv = population_vector_correlation(a, a[order])
+        assert np.all(pv < 0.99)
+
+    def test_nan_rate_makes_location_nan(self, random_maps) -> None:
+        a, c = random_maps
+        c = c.copy()
+        c[3, 5] = np.nan  # one unit unsupported at one location
+        a = a.copy()
+        a[:, 9] = np.nan  # a whole unvisited location
+        pv = population_vector_correlation(a, c)
+        assert np.isnan(pv[5]) and np.isnan(pv[9])
+        assert np.isfinite(np.delete(pv, [5, 9])).all()
+
+    def test_location_outside_spatial_support_is_nan(self, random_maps) -> None:
+        a, c = random_maps
+        support = np.ones(a.shape[1], dtype=bool)
+        support[[0, 17]] = False
+        pv = population_vector_correlation(a, c, spatial_support=support)
+        unrestricted = population_vector_correlation(a, c)
+        assert np.isnan(pv[[0, 17]]).all()
+        np.testing.assert_array_equal(pv[support], unrestricted[support])
+
+    def test_zero_filled_unsupported_location_is_nan_not_zero(self) -> None:
+        """Zero-filled maps with spatial_support: an unvisited bin is NaN."""
+        a = self.DEMO.copy()
+        a[:, 0] = 0.0
+        support = np.array([False, True, True])
+        pv = population_vector_correlation(a, a, spatial_support=support)
+        assert np.isnan(pv[0])
+        assert pv[2] == pytest.approx(1.0)
+
+    def test_roundoff_flat_location_is_nan(self) -> None:
+        """Equal rates whose std rounds to ~1e-17 still count as flat."""
+        assert np.full(3, 0.1).std() != 0.0  # the trap this test guards
+        a = self.DEMO.copy()
+        a[:, 1] = 0.1
+        c = self.DEMO + 1.0
+        c[:, 1] = [1.0, 4.0, 2.0]  # the partner varies, so only a is flat
+        pv = population_vector_correlation(a, c)
+        assert np.isnan(pv[1])
+        pv_other = population_vector_correlation(c, a)
+        assert np.isnan(pv_other[1])
+
+    def test_shape_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="same shape"):
+            population_vector_correlation(np.ones((3, 4)), np.ones((3, 5)))
+
+    def test_one_dimensional_input_raises(self) -> None:
+        with pytest.raises(ValueError, match="2-D"):
+            population_vector_correlation(np.ones(4), np.ones(4))
+
+    def test_one_unit_raises(self) -> None:
+        with pytest.raises(ValueError, match="at least two units"):
+            population_vector_correlation(np.ones((1, 4)), np.ones((1, 4)))
+
+    @pytest.mark.parametrize(
+        "support",
+        [np.ones(4, dtype=bool), np.ones(3)],
+        ids=["wrong-shape", "not-bool"],
+    )
+    def test_bad_spatial_support_raises(self, support) -> None:
+        with pytest.raises(ValueError, match="spatial_support"):
+            population_vector_correlation(self.DEMO, self.DEMO, spatial_support=support)
 
 
 class TestPopulationMetricsIntegration:

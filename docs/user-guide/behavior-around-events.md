@@ -28,18 +28,15 @@ tracker lost the animal for 0.8 s around one reward.
 
 Some choices in the code:
 
-- **Lost frames are dropped, not written as NaN rows.** Most behavior
-  functions, such as `compute_speed`, accept NaN rows, but
-  `heading_from_velocity` refuses them. Dropping the frames leaves a 0.8 s
-  gap in `times`, longer than the default `max_gap=0.5` s, so every function
-  that uses time treats the gap as a break and never interpolates across it.
+- **Lost frames are NaN rows.** Every function here treats a NaN row as a
+  missing sample: it gets NaN, and nothing is computed or interpolated across
+  it.
 - **Speed** comes from `compute_speed`, which smooths the velocity with a
   0.1 s Gaussian so tracking jitter does not read as running.
 - **Heading** comes from `heading_from_velocity`: the direction of movement in
   radians, 0 = East, +π/2 = North. Below `min_speed` the animal is not going
-  anywhere, and the function *fills* those frames by interpolating between
-  the headings around them. A filled value is not an observation, so we keep a
-  mask, `heading_observed`, to tell the alignment to ignore those frames.
+  anywhere, so the direction of movement is not observed: the function
+  returns NaN for those frames, and they are already marked unobserved.
 - **Wall distance** comes from `nearest_boundary`: the distance from each
   position to the closest wall of the box, in cm.
 - **Floor texture** is a map: code 0 (smooth) or 1 (rough) for every bin.
@@ -68,10 +65,11 @@ y = 50.0 + lateral[lap] * np.sin(np.pi * times / 8) ** 2
 positions = np.column_stack([x, y])  # cm
 reward_times = np.arange(4.0, 120.0, 8.0)  # s, each arrival at the port (x = 90 cm)
 
-# The tracker lost the animal for 0.8 s around one reward: drop those frames
+# The tracker lost the animal for 0.8 s around one reward
 lost = (times > 35.6) & (times < 36.4)
-times, positions = times[~lost], positions[~lost]
-print(f"{lost.sum()} frames dropped; {times.size} frames kept; {reward_times.size} rewards")
+positions[lost] = np.nan  # lost frames are missing, not zero
+print(f"{lost.sum()} frames lost; {times.size} frames; {reward_times.size} rewards")
+assert (lost.sum(), times.size, reward_times.size) == (23, 3600, 15)
 
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
 
@@ -82,29 +80,32 @@ wall_distance, _ = nearest_boundary(env, positions)  # cm
 texture_map = np.where(env.bin_centers[:, 0] < 50, 0, 1).astype(float)  # 0 smooth, 1 rough
 texture = sample_spatial_features(env, texture_map, positions, feature_ids=["texture"])
 
-# heading_from_velocity fills slow frames by interpolation; they are not observations
-heading_observed = speed >= 2.0
-
+around = {}
 for t in (11.0, 12.0, 13.0):  # 1 s before, at, and 1 s after the second reward
     i = np.argmin(np.abs(times - t))
     print(
-        f"t = {t:4.1f} s: speed {speed[i]:4.1f} cm/s, heading {heading[i]:5.2f} rad "
-        f"(observed: {heading_observed[i]}), wall {wall_distance[i]:4.1f} cm, "
-        f"texture code {texture.values[i, 0]:.0f}"
+        f"t = {t:4.1f} s: speed {speed[i]:4.1f} cm/s, heading {heading[i]:5.2f} rad, "
+        f"wall {wall_distance[i]:4.1f} cm, texture code {texture.values[i, 0]:.0f}"
     )
+    around[t] = (speed[i], heading[i], wall_distance[i], texture.values[i, 0])
+
+# Rows: speed, heading, wall distance, texture at 11, 12 and 13 s (atol = 0.6 * 10**-decimals)
+speed_12, heading_12, wall_12, texture_12 = np.array(list(around.values())).T
+assert np.allclose(speed_12, [22.2, 0.0, 22.2], atol=0.06)
+assert np.allclose(heading_12, [-0.06, np.nan, 3.08], atol=0.006, equal_nan=True)
+assert np.allclose(wall_12, [21.7, 10.0, 21.7], atol=0.06)
+assert (texture_12 == 1).all()
 ```
 
-The tracker lost 23 frames, leaving 3577 frames and 15 rewards. Around the
+The tracker lost 23 of the 3600 frames, and there are 15 rewards. Around the
 second reward (12 s) the features look as expected. One second before it the
 animal runs at 22.2 cm/s with heading −0.06 rad (East), 21.7 cm from the
 nearest wall. At the reward its speed is 0.0 cm/s and it is 10.0 cm from the
 east wall. One second after, it runs back at 22.2 cm/s with heading 3.08 rad
 (West). It is on rough floor (code 1) at all three times.
 
-The heading printed at the reward, 1.51 rad (North), is not real: the animal
-is standing still, and `heading_from_velocity` filled the value halfway
-between East and West. `heading_observed` is False there, and the heading
-alignment below uses it to leave those frames out.
+The heading printed at the reward is `nan`: the animal is standing at the
+port, so its direction of movement is not observed there.
 
 ## Align the features to reward
 
@@ -153,6 +154,7 @@ events["reward_time"] = reward_times
 print(events[events["status"] != "retained"])
 print(f"{result.n_events} rewards kept, {result.n_events_dropped} excluded")
 assert events.loc[events["reward_time"] == 36.0, "status"].item() == "incomplete_support"
+assert (result.n_events, result.n_events_dropped) == (14, 1)
 ```
 
 `events_table()` has one row per input event, in input order, and `status`
@@ -209,6 +211,15 @@ table["rough"] = rough.set_index("relative_time")["proportion"]
 shown = table.index.round(2).isin([-3.0, -2.1, -1.9, -1.0, -0.5, 0.0, 0.5, 1.0, 1.9, 2.1])
 print(table.loc[shown, ["speed", "wall_distance", "rough"]].round(1))
 print(f"events per cell: {result.counts.min()} to {result.counts.max()}")
+assert result.counts.min() == result.counts.max() == 14
+
+# The table below: speed, wall distance and proportion on rough floor
+expected = [
+    [22.2, 21.7, 0.0], [31.3, 46.4, 0.0], [31.3, 46.0, 1.0], [22.2, 21.7, 1.0],
+    [12.0, 13.0, 1.0], [0.0, 10.0, 1.0], [12.0, 13.0, 1.0], [22.2, 21.7, 1.0],
+    [31.3, 46.0, 1.0], [31.3, 46.4, 0.0],
+]  # fmt: skip
+assert np.allclose(table.loc[shown, ["speed", "wall_distance", "rough"]], expected, atol=0.06)
 
 at_reward = np.argmin(np.abs(result.relative_times))
 speed_mean, wall_mean = result.means[at_reward, :2]
@@ -272,8 +283,8 @@ the function would raise an error saying so.
 query time. Each cell then summarizes only the events observed there, and
 `count` says how many those are. Heading is declared `"circular"`: its values
 are angles in radians, and the mean is the direction of the average unit
-vector, not the average of the numbers. The `valid` array marks the slow
-frames as unobserved for heading only (one column per feature).
+vector, not the average of the numbers. The slow frames already carry NaN
+heading, so the alignment treats them as unobserved for heading only.
 
 <!-- docs-test: run setup=docs_behavior_around_reward -->
 ```python
@@ -282,8 +293,6 @@ import matplotlib.pyplot as plt
 from neurospatial.events import align_continuous_to_events
 
 signals = np.column_stack([speed, heading, wall_distance, texture.values[:, 0]])
-valid = np.ones(signals.shape, dtype=bool)
-valid[:, 1] = heading_observed  # slow frames carry no heading
 
 partial = align_continuous_to_events(
     times,
@@ -295,10 +304,10 @@ partial = align_continuous_to_events(
     feature_units={"speed": "cm/s", "heading": "rad", "wall_distance": "cm"},
     value_kinds={"heading": "circular", "texture": "categorical"},
     category_labels={"texture": {0: "smooth", 1: "rough"}},
-    valid=valid,
     window_coverage="partial",
 )
 print(partial.events_table()["status"].value_counts().to_string())
+assert partial.n_events == 15
 
 course = partial.time_course_table()
 shown = course["relative_time"].round(2).isin([-1.0, -0.4, -0.35, 0.0, 0.35, 0.4, 1.0])
@@ -309,11 +318,27 @@ print(
     .to_string(index=False)
 )
 
+# Counts, heading means and resultant length quoted below (atol = 0.6 * 10**-decimals)
+by_time = course.assign(time=course["relative_time"].round(2)).set_index(["feature_id", "time"])
+assert by_time.loc[("speed", -0.4), "count"] == by_time.loc[("speed", 0.4), "count"] == 15
+assert by_time.loc[("speed", -0.35), "count"] == by_time.loc[("speed", 0.35), "count"] == 14
+assert by_time.loc[("heading", 0.0), "count"] == 0
+assert by_time.loc[("heading", 0.0), "status"] == "no_support"
+assert np.isclose(by_time.loc[("heading", -1.0), "mean"], 0.008, atol=0.0006)
+assert np.isclose(by_time.loc[("heading", -1.0), "resultant_length"], 0.996, atol=0.0006)
+after_means = [by_time.loc[("heading", t), "mean"] for t in (0.35, 0.4, 1.0)]
+assert np.min(after_means) > -3.1396 and np.max(after_means) < -3.1334  # -3.139 to -3.134
+
 # Averaging angles as plain numbers goes wrong across the +-pi wrap
 after = np.argmin(np.abs(partial.relative_times - 1.0))
 angles = partial.values[:, after, 1]
 print(f"headings 1 s after reward: {np.round(np.sort(angles), 2)}")
 print(f"circular mean {partial.means[after, 1]:.2f} rad, arithmetic mean {np.mean(angles):.2f} rad")
+below, above = angles[angles < 0], angles[angles > 0]
+assert np.allclose([below.min(), below.max()], [-3.13, -3.03], atol=0.006)
+assert np.allclose([above.min(), above.max()], [3.02, 3.08], atol=0.006)
+assert np.isclose(partial.means[after, 1], -3.13, atol=0.006)
+assert np.isclose(np.mean(angles), -1.04, atol=0.006)
 
 at_reward = np.argmin(np.abs(partial.relative_times))
 assert partial.mean_status[at_reward, 1] == "no_support"
@@ -385,8 +410,8 @@ change in which events you are averaging.
 - **What lies ahead of the animal.** `sample_egocentric_features` reads the
   same kind of map at points fixed in the animal's frame, such as 10 cm ahead
   (`ego_points=[[10.0, 0.0]]`; x is ahead, y is to the left). It places the
-  points with the heading, so pass it only observed headings: set the filled
-  slow frames to NaN first, and they come back unsupported.
+  points with the heading. Headings below `min_speed` are already NaN, and
+  those frames come back unsupported.
 - **Many events or long windows.** `retain_aligned=False` keeps only the
   summaries (`counts`, `means`, `category_counts`), computed in bounded memory,
   and gives the same summaries. Keep the default `True` when you need
@@ -406,7 +431,7 @@ def behavior_around_events(env, times, positions, recording_id, event_times, win
     """Speed, turning, heading and wall distance around events.
 
     times : (n_frames,) s, one clock for all recordings, strictly increasing
-    positions : (n_frames, 2) in env units, lost frames already removed
+    positions : (n_frames, 2) in env units, lost frames as NaN rows
     recording_id : (n_frames,) int, which recording each frame came from
     event_times : (n_events,) s, on the same clock as times
     """
@@ -418,8 +443,6 @@ def behavior_around_events(env, times, positions, recording_id, event_times, win
     wall_distance, _ = nearest_boundary(env, positions)
 
     signals = np.column_stack([speed, turning, heading, wall_distance])
-    valid = np.ones(signals.shape, dtype=bool)
-    valid[:, 2] = speed >= 2.0  # no heading while the animal is still
     return align_continuous_to_events(
         times,
         signals,
@@ -429,7 +452,6 @@ def behavior_around_events(env, times, positions, recording_id, event_times, win
         feature_ids=["speed", "turning", "heading", "wall_distance"],
         feature_units={"speed": "cm/s", "turning": "rad/s", "heading": "rad", "wall_distance": "cm"},
         value_kinds={"heading": "circular"},  # turning is a rate in rad/s: linear
-        valid=valid,
         break_before=new_recording,
         window_coverage="partial",
         retain_aligned=False,  # summaries only, for many events
@@ -462,8 +484,9 @@ print(
     f"frames within 0.5 s of the join heading North: {north.sum()} with "
     f"break_before, {north_bridged.sum()} without, of {near_join.sum()}"
 )
-assert np.allclose(joined, separate)
+assert np.allclose(joined, separate, equal_nan=True)
 assert not north.any()
+assert (north.sum(), north_bridged.sum(), near_join.sum()) == (0, 14, 29)
 ```
 
 `summary()` lists the number of events kept and excluded, the window and the
@@ -474,8 +497,7 @@ no frame within 0.5 s of the join points North. Without it, 14 of those 29
 frames point North: the jump between the recordings is read as running.
 
 For your data, replace `times`, `positions`, `recording_id` and
-`reward_times` with your own arrays, after dropping lost frames (or, if you do
-not need heading, writing them as NaN rows).
+`reward_times` with your own arrays, with lost frames as NaN rows.
 
 ## What this does not do
 

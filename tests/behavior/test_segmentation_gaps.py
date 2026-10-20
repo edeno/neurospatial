@@ -218,7 +218,7 @@ def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
 
 def test_pre_decision_window_stays_in_run(pause_track):
     r = pause_track
-    positions, times = extract_pre_decision_window(
+    times, positions = extract_pre_decision_window(
         r.times, r.positions, entry_time=1100.5, window_duration=1001
     )
     np.testing.assert_array_equal(times, r.times[1000:1005])
@@ -238,7 +238,7 @@ def test_pre_decision_window_stays_in_run(pause_track):
 @pytest.mark.parametrize("entry", [500.0, 1200.0])
 def test_entry_outside_observed_runs_has_empty_window(pause_track, entry):
     r = pause_track
-    positions, times = extract_pre_decision_window(
+    times, positions = extract_pre_decision_window(
         r.times, r.positions, entry_time=entry, window_duration=1001
     )
     assert positions.shape == (0, 2)
@@ -261,26 +261,30 @@ def test_window_callers_forward_epochs(pause_track, function):
         **speed_gate,
     )
     if function is extract_pre_decision_window:
-        assert result[1].size == 0
+        assert result[0].size == 0
     elif function is compute_pre_decision_metrics:
         assert result.n_samples == 0
     else:
-        assert result.mean_speed == 0
-        assert result.head_sweep_magnitude == 0
+        # Entry lies outside the epochs: the window is empty, nothing measured.
+        assert np.isnan(result.mean_speed)
+        assert np.isnan(result.head_sweep_magnitude)
 
 
 def test_vte_trial_uses_only_entry_run(pause_track):
     r = pause_track
-    result = compute_vte_trial(
-        r.times,
-        r.positions,
-        entry_time=1100.5,
-        window_duration=1001,
-        min_speed=5.0,
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_vte_trial(
+            r.times,
+            r.positions,
+            entry_time=1100.5,
+            window_duration=1001,
+            min_speed=5.0,
+        )
+    # The entry run is stationary: an observed zero speed and no heading.
     assert result.mean_speed == 0
     assert result.min_speed == 0
-    assert result.head_sweep_magnitude == 0
+    assert np.isnan(result.head_sweep_magnitude)
 
 
 def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
@@ -301,8 +305,13 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
             window_duration=1001,
         )
     assert len(result.trial_results) == 1
-    assert result.trial_results[0].mean_speed == 0
-    assert result.trial_results[0].window_start >= trial.start_time
+    (trial_result,) = result.trial_results
+    assert trial_result.mean_speed == 0
+    assert trial_result.window_start >= trial.start_time
+    # A stationary window has no heading, so the trial is unclassified.
+    assert np.isnan(trial_result.head_sweep_magnitude)
+    assert trial_result.is_vte is None
+    assert np.isnan(result.vte_fraction)
 
 
 def test_decision_analysis_forwards_windows(pause_track):
@@ -322,7 +331,7 @@ def test_decision_analysis_forwards_windows(pause_track):
 
 def test_max_gap_none_preserves_requested_window(pause_track):
     r = pause_track
-    _, times = extract_pre_decision_window(
+    times, _ = extract_pre_decision_window(
         r.times, r.positions, entry_time=1100.5, window_duration=1001, max_gap=None
     )
     assert times.size == 10

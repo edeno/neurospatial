@@ -4,6 +4,38 @@
 
 ### Breaking
 
+- `population_vector_correlation` is now `rate_map_correlations`. It always
+  returned the correlation between every pair of rate maps (rows), not the
+  per-location population-vector correlation of remapping studies. The
+  argument is `firing_rates`, and a map with constant rates now has a NaN
+  diagonal entry (before, 1.0), because its correlation is undefined. A map
+  with a NaN bin likewise gets a NaN row, column and diagonal entry (its
+  diagonal used to be forced to 1.0), and input with no bins returns all
+  NaN. A map counts as constant when all its rates are exactly equal; equal
+  rates such as 0.1 everywhere, whose standard deviation rounds to about
+  1e-17, used to give a meaningless correlation near 0 instead of NaN.
+
+  ```python
+  # before
+  corr = population_vector_correlation(population_matrix)
+  # after
+  corr = rate_map_correlations(firing_rates)  # same (n_maps, n_maps) matrix
+  ```
+
+  `population_vector_correlation` now returns one correlation per location
+  between two conditions; the old matrix is `rate_map_correlations`. A call
+  with one argument raises a `TypeError`.
+- `field_overlap` returns NaN, not 0.0, when neither field has a bin: with
+  no field in either condition there is nothing to compare, which is not the
+  same as fields that do not overlap. One empty field still gives 0.0.
+
+  ```python
+  # before
+  field_overlap(np.array([], dtype=int), np.array([], dtype=int))  # 0.0
+  # after
+  field_overlap(np.array([], dtype=int), np.array([], dtype=int))  # nan
+  ```
+
 - `field_stability` returns NaN when fewer than 3 bins are finite in both maps
   (the correlation is undefined, not "uncorrelated"): fewer than 2 paired bins
   was `0.0` and exactly 2 was always `+-1`; both are now `nan`. Use `np.nanmean` or
@@ -88,6 +120,186 @@
   `0.0`. `efficiency` and `angular_efficiency` are `nan` unless the whole path
   was observed; a single sample used to give `angular_efficiency = 1.0`.
   `times` must be strictly increasing, and empty input raises.
+
+- `extract_pre_decision_window` returns `(times, positions)`, times first like
+  every other behavior function.
+
+  ```python
+  # before
+  window_positions, window_times = extract_pre_decision_window(times, positions, entry, 1.0)
+  # after
+  window_times, window_positions = extract_pre_decision_window(times, positions, entry, 1.0)
+  ```
+
+  A 1-D `positions` now comes back as a column: `window_positions` has
+  shape `(n_window, 1)`, not `(n_window,)`.
+
+  The decision analyses (`extract_pre_decision_window`,
+  `pre_decision_speed_stats`, `pre_decision_heading_stats`,
+  `compute_pre_decision_metrics`, `detect_boundary_crossings` and
+  `compute_decision_analysis`) now follow the same observation rule as
+  `traveled_path_length` and take `break_before` for joined recordings: the
+  pre-decision window never reaches back across a declared break, and no
+  speed, heading or boundary crossing spans one. A `NaN` row is a missing
+  sample: it stays in the pre-decision window as a missing row instead of
+  cutting the window short, and the statistics use only the observed samples.
+  `pre_decision_heading_stats` and `compute_pre_decision_metrics` no longer
+  raise on a `NaN` row. `PreDecisionMetrics.n_samples` counts the observed
+  samples in the window, and `window_duration` runs from the first to the
+  last of them. Repeated timestamps and empty input raise in all six
+  functions. Recordings without missing rows give the same values as before.
+
+- VTE metrics are `NaN`, not `0.0`, when nothing was observed, and a trial
+  without an observed heading is unclassified instead of "no head sweep".
+
+  ```python
+  # before: a pause with no movement heading scored IdPhi = 0.0 and was
+  # z-scored and classified like a straight run
+  result = compute_vte_session(env, times, positions, decision_region="center", trials=trials)
+  result.trial_results[k].head_sweep_magnitude  # 0.0
+  result.trial_results[k].is_vte                 # True or False
+  # after
+  result.trial_results[k].head_sweep_magnitude  # nan
+  result.trial_results[k].is_vte                 # None ("unclassified")
+  ```
+
+  `head_sweep_magnitude` returns `nan` with fewer than two finite headings,
+  and `head_sweep_from_positions` returns `nan` when the animal never moved
+  faster than `min_speed` (a still animal, a single sample), without the
+  all-`NaN` heading warning. `compute_vte_trial` reports `mean_speed` and
+  `min_speed` as `nan` when the window has no observed interval (fewer than
+  two samples); a measured stop is still `0.0`. `normalize_vte_scores` takes
+  the mean and std over the finite entries and gives a missing entry a `nan`
+  z-score. In `compute_vte_session`, a trial with a `nan` z-score has a `nan`
+  `vte_index` and `is_vte=None`; `n_vte_trials` counts `is_vte is True`,
+  `vte_fraction` is over the classified trials only, the session means and
+  stds use the trials where each quantity was observed, and a session
+  without any analyzed trial reports `nan` statistics and `vte_fraction`
+  (they used to be `0.0`). A `NaN` row is a missing sample: no heading or
+  speed spans it, and a trial is skipped when its window has fewer than
+  three observed samples. `head_sweep_from_positions`, `compute_vte_trial`
+  and `compute_vte_session` take `break_before` for joined recordings, and
+  repeated timestamps and empty input raise. Recordings without missing rows
+  give the same values as before wherever something was observed.
+
+  `head_sweep_from_positions`, `compute_vte_trial`, `compute_vte_session`,
+  `pre_decision_heading_stats`, `compute_pre_decision_metrics` and
+  `compute_decision_analysis` raise on `positions` with fewer than two
+  columns, whatever the number of samples, because a heading needs both x
+  and y. A 1-D input of one sample used to return `0.0` (head sweep and
+  trial speeds) or `nan` (heading statistics), and a 1-D session whose
+  trials were all skipped used to return an empty result.
+
+  `VTESessionResult` has `n_classified`, the number of trials with a VTE
+  verdict, and `summary()` reports it next to `n_trials`. `str(result)` reads
+  `VTE session: 1/3 classified trials VTE (33.3%), 1 unclassified`, or
+  `VTE session: no trial could be classified`; it used to read
+  `VTE session: 1/4 VTE trials (25.0%)`, counting every analyzed trial.
+
+- `heading_direction_labels` takes `times` before `positions`, like every
+  other behavior function. The old order raises an error that names the swap.
+
+  ```python
+  # before
+  heading_direction_labels(positions, times, min_speed=5.0)
+  # after
+  heading_direction_labels(times, positions, min_speed=5.0)
+  ```
+
+  Calls that pass `positions=` and `times=` by keyword, or precomputed
+  `speed=` and `heading=`, are unchanged.
+
+- `approach_rate` follows the same observation rule as
+  `traveled_path_length`, and takes `break_before` for joined recordings.
+
+  ```python
+  # before: a join on one continuous clock read as a fast approach
+  rates = approach_rate(times, positions, goal)
+  # after
+  rates = approach_rate(times, positions, goal, break_before=new_recording)
+  ```
+
+  The rate at the first frame of a new recording is `nan`. Empty input now
+  raises instead of returning an empty array; a single sample gives `[nan]`.
+
+- `compute_trajectory_curvature` takes `times` first, and `times` is required:
+  `compute_trajectory_curvature(times, positions, *, smooth_window=0.2,
+  max_gap=0.5, epochs=None, break_before=None)`.
+
+  ```python
+  # before
+  compute_trajectory_curvature(positions)              # no times: no smoothing
+  compute_trajectory_curvature(positions, times)
+  # after
+  compute_trajectory_curvature(times, positions, smooth_window=None)
+  compute_trajectory_curvature(times, positions, break_before=new_recording)
+  ```
+
+  A `NaN` row splits the path instead of turning nearby values `NaN`: the
+  missing sample is `NaN`, and the turns on each side are computed and
+  smoothed as two separate runs. Before, one lost frame in a 20-sample run
+  made 19 of the 20 values `NaN`. `break_before` keeps joined recordings
+  from being turned or smoothed across the join, and repeated timestamps
+  raise. Recordings without gaps give the same values as before.
+
+- `mean_square_displacement` follows the same observation rule and takes
+  `epochs` and `break_before`:
+  `mean_square_displacement(times, positions, *, metric="euclidean", env=None,
+  max_tau=None, epochs=None, break_before=None)`.
+
+  ```python
+  # before: displacement pairs spanned the join between recordings
+  msd = mean_square_displacement(times, positions, max_tau=10.0)
+  # after
+  msd = mean_square_displacement(times, positions, max_tau=10.0, break_before=new_recording)
+  ```
+
+  No displacement pair spans a declared break or an interval outside
+  `epochs`. There is no `max_gap`: MSD compares two observed positions a lag
+  apart and does not integrate along the path, so samples missing between them
+  do not change it. Repeated timestamps and empty input raise (a repeated
+  timestamp used to be accepted), and a 1-D `positions` is one coordinate. A
+  single sample returns an empty result. Recordings without breaks give the
+  same values as before.
+
+- `heading_from_velocity` no longer invents a heading where it has no
+  velocity direction. Movement heading is the direction of the velocity
+  vector, so it is not observed below `min_speed`, or where speed is exactly
+  zero (where it used to return 0, East). Those samples are now `NaN`; they
+  used to be filled by circular interpolation between the headings around
+  them, which could give a direction the animal never faced, such as North
+  while it stood at a port between arriving heading East and leaving heading
+  West. The velocity is smoothed, so at the default `min_speed=0` most of a
+  short stop still has a heading: set `min_speed` (for example 2 cm/s) to
+  mark stops.
+
+  ```python
+  # before: slow samples filled by circular interpolation; a NaN row raised
+  heading = heading_from_velocity(times, positions, min_speed=2.0)
+  observed = compute_speed(times, positions) >= 2.0  # mask needed to undo the fill
+  # after: NaN where the animal is slower than min_speed, still, or not tracked
+  heading = heading_from_velocity(times, positions, min_speed=2.0)
+  observed = np.isfinite(heading)  # no separate compute_speed mask needed
+  ```
+
+  A `NaN` row (a lost frame) is now a missing sample with `NaN` heading, and
+  no velocity is computed across it; it used to raise. A single sample gives
+  `[nan]` instead of raising, and empty input or a repeated timestamp raises.
+  A perfectly still recording now raises unless `allow_all_nan=True`; it
+  used to return 0 (East) everywhere. For a heading while the animal is
+  still, use `heading_from_body_orientation` with pose keypoints. For the
+  same reason `head_sweep_from_positions(..., min_speed=0)` on a window where
+  the animal never moves returns `nan`, not 0.0: no heading was observed.
+
+  Headings computed with `min_speed > 0` contain `NaN` at slow samples, and a
+  simulated cell given them has `NaN` rates that `generate_poisson_spikes`
+  refuses: simulate firing from an unthresholded heading, or let the
+  simulator derive it. `generate_population_spikes` with a
+  `HeadDirectionCellModel` and no `headings` now holds the last direction of
+  movement through stops (samples before the first movement take the first
+  direction), and raises `ValueError` asking for `headings=` when the
+  trajectory never moves; it used to fire as if the animal faced East
+  wherever it stood exactly still.
 
 These `Environment` changes come with before-and-after code on the environment
 architecture [migration
@@ -1331,6 +1543,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `neurospatial.encoding.population_vector_correlation(firing_rates_1,
+  firing_rates_2, *, spatial_support=None)` returns the population-vector
+  correlation at each location between two conditions, the remapping measure
+  of Leutgeb et al. (2005): one value per bin, the Pearson correlation across
+  cells of the rates at that bin. A location is NaN, never 0, when a rate is
+  NaN in either map, the bin is outside `spatial_support` (pass it for
+  zero-filled maps), or every cell has exactly the same rate there. Summarize
+  with the median over defined locations and report how many were undefined.
+
+  ```python
+  pv = population_vector_correlation(before.firing_rates, after.firing_rates)
+  defined = np.isfinite(pv)
+  print(np.median(pv[defined]), (~defined).sum())
+  ```
+
 - `neurospatial.behavior.labels_to_epochs(times, labels, *, valid, break_before,
   max_gap, epochs, missing_label)` turns one label per frame (running
   direction, trial type, task phase, door state) into half-open
@@ -1401,7 +1628,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   instead of assigning the nearest bin.
 - `heading_from_velocity` takes `break_before`, like `compute_speed`: for
   recordings joined on one clock, mark the first frame of each later
-  recording, and no velocity, smoothing or low-speed fill spans the join, so a
+  recording, and no velocity or smoothing spans the join, so a
   jump in position between recordings is not read as running. Touching
   `epochs` rows merge into one window and do not separate recordings.
 - `compute_cumulative_distance(times, positions, *, max_gap, epochs,

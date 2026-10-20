@@ -1,6 +1,7 @@
 """Spike generation functions for converting firing rates to spike trains."""
 
 import logging
+import warnings
 from typing import Any
 
 import numpy as np
@@ -246,7 +247,10 @@ def generate_population_spikes(
     headings : NDArray[np.float64], shape (n_time,), optional
         Head direction in radians. Required for spatial-view models and
         directional object-vector models. For head-direction models, headings
-        are used when provided; otherwise they are derived from position velocity.
+        are used when provided; otherwise they are the direction of the
+        smoothed velocity, held at the last direction of movement through
+        stops (samples before the first movement take the first direction).
+        A trajectory that never moves then raises ``ValueError``.
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
     seed : int | None, optional
@@ -261,6 +265,12 @@ def generate_population_spikes(
     spike_times_list : list[NDArray[np.float64]]
         List of spike time arrays, one per model. Each array contains
         sorted spike times for that neuron.
+
+    Raises
+    ------
+    ValueError
+        If a head-direction model has no ``headings`` and the trajectory never
+        moves, so no movement direction can be derived.
 
     Examples
     --------
@@ -323,6 +333,25 @@ def generate_population_spikes(
     >>> spike_trains_quiet = generate_population_spikes(
     ...     place_cells, times, positions, seed=42, show_progress=False
     ... )
+
+    A head-direction cell without ``headings`` fires with the direction of
+    movement, held through stops. Here the animal runs East, stops for 2 s and
+    runs North:
+
+    >>> from neurospatial.simulation import HeadDirectionCellModel
+    >>> stop_times = np.arange(400) / 100  # s
+    >>> stop_path = np.column_stack(
+    ...     [10.0 * np.clip(stop_times, 0, 1), 10.0 * np.clip(stop_times - 3, 0, 1)]
+    ... )  # cm
+    >>> hd_spikes = generate_population_spikes(
+    ...     [HeadDirectionCellModel(preferred_direction=0.0)],
+    ...     stop_times,
+    ...     stop_path,
+    ...     seed=0,
+    ...     show_progress=False,
+    ... )
+    >>> len(hd_spikes[0]) > 0
+    True
 
     See Also
     --------
@@ -429,9 +458,7 @@ def _compute_model_firing_rate(
         if headings is None:
             if len(times) < 2:
                 return np.zeros(len(times), dtype=np.float64)
-            from neurospatial.ops.egocentric import heading_from_velocity
-
-            headings = heading_from_velocity(times, positions, min_speed=0.0)
+            headings = _held_movement_heading(times, positions)
         rates = model_any.firing_rate(headings, positions=positions, times=times)
     elif isinstance(model_any, SpatialViewCellModel | ObjectVectorCellModel):
         rates = model_any.firing_rate(positions, times, headings=headings)
@@ -445,6 +472,67 @@ def _compute_model_firing_rate(
             f"for {len(times)} time points."
         )
     return rates
+
+
+def _held_movement_heading(
+    times: NDArray[np.float64], positions: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Movement direction at every sample, held through stops.
+
+    A simulated head-direction cell needs a heading at every sample, including
+    where the animal is still and its movement direction is not defined. The
+    last defined direction is held forward through each stop, and samples
+    before the first movement take the first defined direction.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+        Seconds, strictly increasing.
+    positions : ndarray, shape (n_time, n_dims)
+        Positions in environment units.
+
+    Returns
+    -------
+    ndarray, shape (n_time,)
+        Heading in radians (0 = East, pi/2 = North), finite everywhere.
+
+    Raises
+    ------
+    ValueError
+        If no movement direction is ever defined: the trajectory never moves,
+        or every interval between samples is longer than the default
+        ``max_gap`` (0.5 s).
+    """
+    from neurospatial._exceptions import _format_error
+    from neurospatial.ops.egocentric import heading_from_velocity
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="Every observed sample's speed", category=UserWarning
+        )
+        warnings.filterwarnings(
+            "ignore", message="Interval filtering excluded ALL", category=UserWarning
+        )
+        heading = heading_from_velocity(times, positions, allow_all_nan=True)
+    defined = np.isfinite(heading)
+    if not defined.any():
+        raise ValueError(
+            _format_error(
+                "Cannot derive head direction for HeadDirectionCellModel: no "
+                "movement direction is defined, because the trajectory never "
+                "moves or no interval between samples is short enough to use "
+                "(intervals longer than max_gap=0.5 s are not used).",
+                why="without headings=, the simulated heading is the direction "
+                "of the velocity.",
+                fix="pass headings= with one angle in radians per sample, "
+                "e.g. headings=np.zeros(len(times)) for an animal facing East.",
+            )
+        )
+    last_defined = np.maximum.accumulate(np.where(defined, np.arange(heading.size), 0))
+    first = int(np.argmax(defined))
+    last_defined[:first] = first
+    held: NDArray[np.float64] = heading[last_defined]
+    return held
 
 
 def add_modulation(

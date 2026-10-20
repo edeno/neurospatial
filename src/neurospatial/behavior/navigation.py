@@ -118,7 +118,6 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.behavior._region_bins import region_representative_bin
-from neurospatial.behavior.segmentation import _positive_dt
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -1178,8 +1177,8 @@ def goal_pair_direction_labels(
 
 
 def heading_direction_labels(
-    positions: NDArray[np.float64] | None = None,
     times: NDArray[np.float64] | None = None,
+    positions: NDArray[np.float64] | None = None,
     *,
     speed: NDArray[np.float64] | None = None,
     heading: NDArray[np.float64] | None = None,
@@ -1195,10 +1194,10 @@ def heading_direction_labels(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, 2), optional
-        2D position coordinates over time. Required if speed/heading not provided.
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps (seconds). Required if positions provided.
+    positions : NDArray[np.float64], shape (n_samples, 2), optional
+        2D position coordinates over time. Required if speed/heading not provided.
     speed : NDArray[np.float64], shape (n_samples,), optional
         Precomputed speed at each timepoint.
     heading : NDArray[np.float64], shape (n_samples,), optional
@@ -1208,10 +1207,8 @@ def heading_direction_labels(
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Minimum speed threshold below which a sample is labeled "stationary".
-        In the same spatial-units-per-second as ``positions``/``times`` (e.g.
-        cm/s if positions are in cm). The 5.0 default assumes cm/s.
+        cannot know the positions' unit. Samples slower than this are labeled
+        "stationary".
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -1239,19 +1236,31 @@ def heading_direction_labels(
 
     Examples
     --------
-    >>> labels = heading_direction_labels(
-    ...     positions=positions, times=times
-    ... )  # doctest: +SKIP
-    >>> labels = heading_direction_labels(
-    ...     speed=speed, heading=heading
-    ... )  # doctest: +SKIP
+    Label one second of running north-east (about 63 deg, 22 cm/s), then one
+    second resting in place:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import heading_direction_labels
+    >>> times = np.arange(20) / 10
+    >>> step = np.r_[np.arange(10.0), np.full(10, 9.0)]
+    >>> positions = np.column_stack([step, 2 * step])
+    >>> labels = heading_direction_labels(times, positions, min_speed=5.0)
+    >>> labels[0], labels[-1]
+    ('45–90°', 'stationary')
+
+    Precomputed speed and heading (radians, 0 = East) are binned directly:
+
+    >>> heading_direction_labels(
+    ...     speed=np.array([10.0, 1.0]), heading=np.array([0.3, 0.3]), min_speed=5.0
+    ... ).tolist()
+    ['0–45°', 'stationary']
 
     See Also
     --------
     goal_pair_direction_labels : Direction labels for trialized tasks
     """
     has_precomputed = speed is not None or heading is not None
-    has_trajectory = positions is not None or times is not None
+    has_trajectory = times is not None or positions is not None
 
     if has_precomputed:
         if speed is None or heading is None:
@@ -1271,16 +1280,16 @@ def heading_direction_labels(
         n_samples = len(speed_arr)
 
     elif has_trajectory:
-        if positions is None or times is None:
+        if times is None or positions is None:
             raise ValueError(
-                "If providing trajectory data, both positions and times "
+                "If providing trajectory data, both times and positions "
                 "must be provided."
             )
 
         from neurospatial._validation import validate_times_positions
 
         times_arr, positions_arr = validate_times_positions(
-            times, positions, call="heading_direction_labels", order="positions, times"
+            times, positions, call="heading_direction_labels"
         )
         n_samples = len(times_arr)
 
@@ -1302,7 +1311,7 @@ def heading_direction_labels(
 
     else:
         raise ValueError(
-            "Must provide either (positions, times) or (speed, heading). "
+            "Must provide either (times, positions) or (speed, heading). "
             "Neither was provided."
         )
 
@@ -2211,15 +2220,24 @@ def approach_rate(
     env: Environment | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Compute rate of distance change toward goal.
+
+    The rate at sample ``k`` is the change in distance to the goal over the
+    interval from sample ``k - 1`` to ``k``, divided by its duration. It is
+    measured only over usable intervals: both samples have finite coordinates,
+    the time between them is at most ``max_gap``, they fall inside one of
+    ``epochs`` and no break is declared between them. Every other sample is
+    NaN, so no rate is measured across a missing position or between
+    recordings.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds.
+        Timestamps in seconds; finite and strictly increasing.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
+        Position coordinates. Rows with a non-finite coordinate are missing.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position.
     metric : {"euclidean", "geodesic"}, default="euclidean"
@@ -2234,13 +2252,18 @@ def approach_rate(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Rate of distance change (d(distance)/dt) in units per second.
-        Negative values indicate approaching the goal.
-        First value and samples with invalid backward intervals are NaN.
+        Negative values indicate approaching the goal. The first sample, and
+        every sample whose backward interval is not usable, is NaN; a single
+        sample gives ``[nan]``.
 
     Raises
     ------
@@ -2248,32 +2271,45 @@ def approach_rate(
         If metric="geodesic" but env is None, or the goal is outside the
         environment or has NaN coordinates.
     ValueError
-        If positions and times have different lengths.
-    ValueError
-        If times contains non-finite values or is not strictly increasing
-        (duplicate or out-of-order timestamps would yield ``inf``/``nan``
-        rates).
-
-    Notes
-    -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
-
-    The first sample and samples with an invalid backward interval have
-    NaN rates; no distance change is estimated across a pause.
+        If the inputs are empty, have different lengths, or ``times`` is not
+        finite and strictly increasing.
 
     Examples
     --------
-    >>> positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
-    >>> times = np.linspace(0, 5, 11)
-    >>> goal = np.array([100.0, 0.0])
-    >>> rates = approach_rate(times, positions, goal)
-    >>> bool(np.nanmean(rates) < 0)  # Negative = approaching
-    True
-    """
-    from neurospatial._validation import validate_times_positions
+    Run toward a goal at x = 100 at 8 Hz, then jump 48 units ahead:
 
-    times, positions = validate_times_positions(times, positions, call="approach_rate")
+    >>> import numpy as np
+    >>> from neurospatial.behavior import approach_rate
+    >>> times = np.arange(6) / 8
+    >>> positions = np.column_stack([[0.0, 1, 2, 50, 51, 52], np.zeros(6)])
+    >>> goal = np.array([100.0, 0.0])
+    >>> approach_rate(times, positions, goal).tolist()
+    [nan, -8.0, -8.0, -384.0, -8.0, -8.0]
+
+    On one continuous clock the jump reads as a fast approach. If a new
+    recording starts at sample 3, declare the break:
+
+    >>> new_recording = np.array([False, False, False, True, False, False])
+    >>> approach_rate(times, positions, goal, break_before=new_recording).tolist()
+    [nan, -8.0, -8.0, nan, -8.0, -8.0]
+
+    A missing position gives no rate into or out of it:
+
+    >>> positions[1] = np.nan
+    >>> approach_rate(times, positions, goal).tolist()
+    [nan, nan, nan, -384.0, -8.0, -8.0]
+    """
+    from neurospatial._observation import validated_observations
+
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="approach_rate",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="every approach rate is NaN",
+    )
     goal = np.asarray(goal)
 
     if metric == "geodesic" and env is None:
@@ -2306,13 +2342,11 @@ def approach_rate(
         distances = to_goal[position_bins]
         distances[position_bins == -1] = np.nan
 
-    from neurospatial._intervals import observed_interval_mask
     from neurospatial.behavior._kinematics import interval_velocity
 
-    _positive_dt(times, name="times")
-    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    velocity = interval_velocity(times, distances[:, None], support.interval_mask)
     rates = np.full(len(positions), np.nan)
-    rates[1:] = interval_velocity(times, distances[:, None], mask)[:, 0]
+    rates[1:] = velocity[:, 0]
 
     return rates
 

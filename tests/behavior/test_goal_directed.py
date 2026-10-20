@@ -334,6 +334,53 @@ class TestApproachRate:
         with pytest.raises(ValueError, match="env parameter is required"):
             approach_rate(times, positions, np.array([100.0, 0.0]), metric="geodesic")
 
+    @pytest.fixture
+    def jump(self):
+        """Two runs 48 units apart on one continuous 8 Hz clock."""
+        times = np.arange(6) / 8
+        positions = np.column_stack(
+            [np.array([0.0, 1.0, 2.0, 50.0, 51.0, 52.0]), np.zeros(6)]
+        )
+        return times, positions, np.array([100.0, 0.0])
+
+    def test_undeclared_jump_is_a_rate(self, jump):
+        """On a continuous clock, a jump is measured as fast approach."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        rates = approach_rate(*jump)
+        np.testing.assert_array_equal(rates, [np.nan, -8, -8, -384, -8, -8])
+
+    def test_break_before_leaves_the_join_nan(self, jump):
+        """No rate is measured across a declared recording break."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        break_before = np.zeros(6, dtype=bool)
+        break_before[3] = True
+        rates = approach_rate(*jump, break_before=break_before)
+        np.testing.assert_array_equal(rates, [np.nan, -8, -8, np.nan, -8, -8])
+
+    def test_nan_row_leaves_its_intervals_nan(self, jump):
+        """A missing position gives no rate into or out of it."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        times, positions, goal = jump
+        positions = positions.copy()
+        positions[1] = np.nan
+        rates = approach_rate(times, positions, goal)
+        np.testing.assert_array_equal(rates, [np.nan, np.nan, np.nan, -384, -8, -8])
+
+    def test_empty_input_raises(self):
+        from neurospatial.behavior.navigation import approach_rate
+
+        with pytest.raises(ValueError, match="got no samples"):
+            approach_rate(np.array([]), np.zeros((0, 2)), np.array([1.0, 0.0]))
+
+    def test_single_sample_is_nan(self):
+        from neurospatial.behavior.navigation import approach_rate
+
+        rates = approach_rate(np.array([0.0]), np.array([[0.0, 0.0]]), [1.0, 0.0])
+        np.testing.assert_array_equal(rates, [np.nan])
+
 
 class TestGoalDirectedMetrics:
     """Test GoalDirectedMetrics dataclass."""

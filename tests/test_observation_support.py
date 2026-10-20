@@ -169,6 +169,7 @@ def test_arrays_are_read_only():
     s = _support([0, 0.1, 0.2])
     for name in (
         "sample_valid",
+        "interval_gates",
         "interval_mask",
         "run_ids",
         "run_sample_bounds",
@@ -334,6 +335,40 @@ def test_signals_accept_integers_at_the_float64_limit():
     _signals(signals=sig)
 
 
+def test_interval_gates_ignore_sample_validity():
+    """``interval_mask == interval_gates & valid[:-1] & valid[1:]``."""
+    times = np.array([0.0, 0.1, 0.2, 0.3, 1.5, 1.6, 1.7, 1.8])
+    positions = np.c_[np.arange(8.0), np.zeros(8)]
+    positions[1] = np.nan
+    break_before = np.zeros(8, dtype=bool)
+    break_before[6] = True
+    s = validated_observations(
+        times,
+        positions,
+        call="f",
+        max_gap=0.5,
+        epochs=None,
+        break_before=break_before,
+        result="r",
+    )[2]
+    # gap after sample 3 (1.2 s) and the break before sample 6 close gates;
+    # the NaN row does not.
+    np.testing.assert_array_equal(
+        s.interval_gates, [True, True, True, False, True, False, True]
+    )
+    np.testing.assert_array_equal(
+        s.interval_mask,
+        s.interval_gates & s.sample_valid[:-1] & s.sample_valid[1:],
+    )
+    assert s.interval_mask.sum() < s.interval_gates.sum()
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_interval_gates_shape(n):
+    s = _support(np.arange(n, dtype=float) * 0.1)
+    assert s.interval_gates.shape == (max(n - 1, 0),)
+
+
 # --- sample-validity entry point and label runs ------------------------------
 
 
@@ -352,6 +387,7 @@ def test_resolve_sample_support_matches_position_entry_point():
     assert expected.run_sample_bounds.shape[0] > 2
     for name in (
         "sample_valid",
+        "interval_gates",
         "interval_mask",
         "run_ids",
         "run_sample_bounds",

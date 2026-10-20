@@ -70,10 +70,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import observed_runs
+from neurospatial._intervals import run_sample_bounds
+from neurospatial._observation import (
+    ObservationSupport,
+    validated_observations,
+    validated_signals,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
 from neurospatial.behavior._region_bins import region_representative_bin
 from neurospatial.behavior.segmentation import _safe_gather
 from neurospatial.geometry import require_cartesian
@@ -130,13 +136,36 @@ class PreDecisionMetrics:
         Concentration of heading distribution, range [0, 1].
         Inverse of variance: high = concentrated, low = dispersed.
     window_duration : float
-        Actual duration of pre-decision window (seconds).
-        May be shorter than requested if trajectory starts late.
+        Time from the first to the last observed sample in the window
+        (seconds); 0.0 with fewer than two. Shorter than requested when the
+        trajectory, or its time segment, starts late.
     n_samples : int
-        Number of samples in window.
+        Number of observed (finite) samples in the window; missing rows are
+        not counted.
     is_valid : bool
         Whether observed movement and heading support interpretation of these
         metrics. Missing or insufficient observations have NaN metrics.
+
+    Examples
+    --------
+    A 10 cm/s eastward approach with two lost frames in the 1 s window. Only
+    observed samples count, and the duration runs from the first to the last
+    of them:
+
+    >>> import numpy as np
+    >>> from neurospatial.behavior import compute_pre_decision_metrics
+    >>> times = np.arange(40) / 10  # s
+    >>> positions = np.column_stack([10 * times, np.zeros(40)])  # cm
+    >>> positions[[22, 25]] = np.nan
+    >>> metrics = compute_pre_decision_metrics(
+    ...     times, positions, entry_time=3.0, window_duration=1.0, min_speed=5.0
+    ... )
+    >>> metrics.n_samples
+    8
+    >>> round(metrics.window_duration, 6)
+    0.9
+    >>> metrics.is_valid
+    True
     """
 
     mean_speed: float
@@ -377,15 +406,18 @@ def extract_pre_decision_window(
     *,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Extract trajectory segment before decision region entry.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
-        Full trajectory timestamps (seconds).
+        Full trajectory timestamps in seconds; finite and strictly increasing
+        (a repeated timestamp raises).
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Full trajectory positions.
+        Full trajectory positions. A row with a non-finite coordinate (NaN, for
+        a lost frame) is a missing sample.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
@@ -398,45 +430,98 @@ def extract_pre_decision_window(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The window never reaches back across a
+        declared break.
 
     Returns
     -------
-    window_positions : NDArray[np.float64]
-        Positions within the pre-decision window.
-    window_times : NDArray[np.float64]
+    window_times : NDArray[np.float64], shape (n_window,)
         Times within the pre-decision window.
+    window_positions : NDArray[np.float64], shape (n_window, n_dims)
+        Positions within the pre-decision window, NaN rows included. 1-D
+        positions are returned with shape ``(n_window, 1)``.
+
+    Raises
+    ------
+    ValueError
+        If there are no samples, if ``times`` is not finite and strictly
+        increasing, or if ``break_before`` is not a Boolean array with one
+        entry per sample.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    The recording is split into time segments at gaps longer than
+    ``max_gap``, at ``epochs`` edges and at declared breaks. The window holds
+    the samples with ``max(entry_time - window_duration, segment_start) <= t
+    < entry_time`` in the segment containing ``entry_time``, so it never
+    extends across a pause and is shorter than requested when the segment
+    starts late. If ``entry_time`` lies in no segment, the window is empty.
 
-    The window never extends before the start of the observed run
-    containing entry_time. If entry_time lies in no run, empty arrays
-    are returned.
-
-    If the requested window extends before the observed run start,
-    the returned window will be shorter than requested.
+    A missing row inside the window stays in it as a missing row instead of
+    cutting the window short: a lost frame shortly before entry does not
+    shrink the window. Statistics computed from the window use only the
+    observed samples.
 
     Examples
     --------
-    >>> window_pos, window_times = extract_pre_decision_window(
-    ...     times, positions, entry_time=5.0, window_duration=2.0
-    ... )  # doctest: +SKIP
-    >>> # Returns data from t=3.0 to t<5.0
-    """
-    from neurospatial._validation import validate_times_positions
+    >>> import numpy as np
+    >>> from neurospatial.behavior import extract_pre_decision_window
+    >>> times = np.arange(10) / 2  # s
+    >>> positions = np.column_stack([10 * times, np.zeros(10)])  # cm
+    >>> positions[6] = np.nan  # a lost frame
+    >>> window_times, window_positions = extract_pre_decision_window(
+    ...     times, positions, entry_time=4.0, window_duration=2.0
+    ... )
+    >>> window_times.tolist()
+    [2.0, 2.5, 3.0, 3.5]
+    >>> window_positions[:, 0].tolist()
+    [20.0, 25.0, nan, 35.0]
 
-    times, positions = validate_times_positions(
-        times, positions, call="extract_pre_decision_window"
+    A new recording starting at 3.0 s ends the window there:
+
+    >>> break_before = times == 3.0
+    >>> extract_pre_decision_window(
+    ...     times, positions, 4.0, 2.0, break_before=break_before
+    ... )[0].tolist()
+    [3.0, 3.5]
+    """
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="extract_pre_decision_window",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no pre-decision window was observed",
     )
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
-        if times[run.start] <= entry_time <= times[run.stop - 1]:
-            run_times = times[run]
-            window_start = max(entry_time - window_duration, times[run.start])
-            keep = (run_times >= window_start) & (run_times < entry_time)
-            return positions[run][keep], run_times[keep]
-    return positions[:0], times[:0]
+    window = _pre_decision_window(
+        times, support.interval_gates, entry_time, window_duration
+    )
+    return times[window], positions[window]
+
+
+def _pre_decision_window(
+    times: NDArray[np.float64],
+    interval_gates: NDArray[np.bool_],
+    entry_time: float,
+    window_duration: float,
+) -> slice:
+    """Sample slice of the pre-decision window; empty if entry is in no segment.
+
+    Segments are runs of ``interval_gates`` (``max_gap``, ``epochs`` and
+    declared breaks), whatever the validity of their samples.
+    """
+    for first, last in run_sample_bounds(interval_gates):
+        if times[first] <= entry_time <= times[last]:
+            window_start = max(entry_time - window_duration, times[first])
+            segment = times[first : last + 1]
+            start = int(first + np.searchsorted(segment, window_start, side="left"))
+            stop = int(first + np.searchsorted(segment, entry_time, side="left"))
+            return slice(start, stop)
+    return slice(0, 0)
 
 
 def pre_decision_heading_stats(
@@ -446,15 +531,19 @@ def pre_decision_heading_stats(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> tuple[float, float, float]:
     """Compute circular statistics on heading in a trajectory window.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps (seconds).
+        Timestamps in seconds; finite and strictly increasing (a repeated
+        timestamp raises).
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
+        Position coordinates, ``n_dims >= 2``; heading uses x and y. A row
+        with a non-finite coordinate (NaN, for a lost frame) is a missing
+        sample: it has no heading, and no velocity is computed across it.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s
         with positions in cm): this function sees no environment, so it
@@ -469,6 +558,10 @@ def pre_decision_heading_stats(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. No velocity spans a declared break.
 
     Returns
     -------
@@ -481,10 +574,18 @@ def pre_decision_heading_stats(
         Mean resultant length, range [0, 1].
         1 = all headings identical, 0 = uniform distribution.
 
+    Raises
+    ------
+    ValueError
+        If there are no samples, if ``times`` is not finite and strictly
+        increasing, if ``break_before`` is not a Boolean array with one entry
+        per sample, or if positions has fewer than two coordinates (x and y).
+
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of observed samples with gaps no longer than ``max_gap`` (inside
+    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
+    as a separate recording; no velocity or heading spans a pause.
 
     Circular statistics are computed directly:
 
@@ -497,28 +598,60 @@ def pre_decision_heading_stats(
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import pre_decision_heading_stats
+
+    A 10 cm/s eastward run with one lost frame: the missing row has no
+    heading, and every observed heading points East.
+
+    >>> times = np.arange(10) / 10  # s
+    >>> positions = np.column_stack([10 * times, np.zeros(10)])  # cm
+    >>> positions[4] = np.nan
     >>> mean_dir, circ_var, mrl = pre_decision_heading_stats(
-    ...     times, positions, min_speed=5.0
-    ... )  # doctest: +SKIP
-    >>> if circ_var > 0.5:
-    ...     print("High heading variability")  # doctest: +SKIP
+    ...     times, positions, min_speed=1.0
+    ... )
+    >>> float(mean_dir), float(circ_var), float(mrl)
+    (0.0, 0.0, 1.0)
+
+    A still animal provides no heading:
+
+    >>> pre_decision_heading_stats(times, np.ones((10, 2)), min_speed=1.0)
+    (nan, nan, nan)
     """
-    from neurospatial._validation import validate_times_positions
+    from neurospatial.ops.egocentric import _validate_velocity_positions
 
-    times, positions = validate_times_positions(
-        times, positions, call="pre_decision_heading_stats"
-    )
-    from neurospatial._intervals import observed_interval_mask
-    from neurospatial.ops import _velocity_heading_and_speed
-
-    interval_mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
-    if len(positions) < 2:
-        return np.nan, np.nan, np.nan
-
-    headings, speed = _velocity_heading_and_speed(
+    raw_positions = positions
+    times, positions, support = validated_observations(
         times,
         positions,
-        interval_mask=interval_mask,
+        call="pre_decision_heading_stats",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="the heading statistics are NaN",
+    )
+    _validate_velocity_positions(raw_positions)
+    return _heading_stats(times, positions, support.interval_mask, min_speed=min_speed)
+
+
+def _heading_stats(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+    *,
+    min_speed: float,
+) -> tuple[float, float, float]:
+    """Circular heading statistics over moving samples in usable intervals."""
+    from neurospatial.ops.egocentric import (
+        _movement_heading_and_speed,
+        _validate_velocity_positions,
+    )
+
+    if len(positions) < 2:
+        return np.nan, np.nan, np.nan
+    _validate_velocity_positions(positions)
+    headings, speed = _movement_heading_and_speed(
+        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
     )
     valid_headings = headings[
         (speed >= min_speed) & (speed > 0) & np.isfinite(headings)
@@ -546,15 +679,19 @@ def pre_decision_speed_stats(
     *,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> tuple[float, float]:
     """Compute speed statistics for a trajectory window.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps (seconds).
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
+        Timestamps in seconds; finite and strictly increasing (a repeated
+        timestamp raises).
+    positions : NDArray[np.float64], shape (n_samples, n_dims) or (n_samples,)
+        Position coordinates. A row with a non-finite coordinate (NaN, for a
+        lost frame) is a missing sample: it has no speed, and no velocity is
+        computed across it.
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -563,6 +700,10 @@ def pre_decision_speed_stats(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. No velocity spans a declared break.
 
     Returns
     -------
@@ -571,36 +712,65 @@ def pre_decision_speed_stats(
     min_speed : float
         Minimum instantaneous speed (units/s).
 
+    Raises
+    ------
+    ValueError
+        If there are no samples, if ``times`` is not finite and strictly
+        increasing, or if ``break_before`` is not a Boolean array with one
+        entry per sample.
+
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
+    Each run of observed samples with gaps no longer than ``max_gap`` (inside
+    ``epochs``, not crossing a missing row or a ``break_before``) is analyzed
+    as a separate recording; no velocity spans a pause.
 
-    Only observed interval speeds enter the reductions. Both results are
-    NaN when no interval is valid, including empty or singleton inputs.
+    Only observed speeds enter the reductions. Both results are NaN when no
+    interval is usable, including a single sample.
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior import pre_decision_speed_stats
+
+    Two 10 cm/s runs recorded 50 cm apart and joined on one clock. Undeclared,
+    the jump between them reads as a burst of speed; declared with
+    ``break_before``, it does not.
+
+    >>> times = np.arange(20) / 10  # s
+    >>> x = np.r_[10 * times[:10], 10 * times[10:] + 50.0]  # cm
+    >>> positions = np.column_stack([x, np.zeros(20)])
+    >>> new_recording = times == 1.0
     >>> mean_speed, min_speed = pre_decision_speed_stats(
-    ...     times, positions
-    ... )  # doctest: +SKIP
-    >>> if min_speed < 1.0:
-    ...     print("Animal paused during pre-decision window")  # doctest: +SKIP
+    ...     times, positions, break_before=new_recording
+    ... )
+    >>> round(mean_speed, 6), round(min_speed, 6)
+    (10.0, 10.0)
+    >>> round(pre_decision_speed_stats(times, positions)[0], 1)
+    35.0
     """
-    from neurospatial._validation import validate_times_positions
-
-    times, positions = validate_times_positions(
-        times, positions, call="pre_decision_speed_stats"
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="pre_decision_speed_stats",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="the speed statistics are NaN",
     )
+    return _speed_stats(times, positions, support.interval_mask)
 
-    from neurospatial._intervals import observed_interval_mask
-    from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING, smoothed_speed
 
-    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
-    if not mask.any():
+def _speed_stats(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+) -> tuple[float, float]:
+    """Mean and minimum smoothed speed over usable intervals; NaN without any."""
+    if not interval_mask.any():
         return np.nan, np.nan
     speeds = smoothed_speed(
-        times, positions, mask, smooth_window=DEFAULT_SPEED_SMOOTHING
+        times, positions, interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
     )
     return float(np.nanmean(speeds)), float(np.nanmin(speeds))
 
@@ -614,15 +784,18 @@ def compute_pre_decision_metrics(
     min_speed: float,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> PreDecisionMetrics:
     """Compute all pre-decision window metrics.
 
     Parameters
     ----------
     times : NDArray[np.float64], shape (n_samples,)
-        Full trajectory timestamps (seconds).
+        Full trajectory timestamps in seconds; finite and strictly increasing
+        (a repeated timestamp raises).
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Full trajectory positions.
+        Full trajectory positions, ``n_dims >= 2``. A row with a non-finite
+        coordinate (NaN, for a lost frame) is a missing sample.
     entry_time : float
         Time of decision region entry (seconds).
     window_duration : float
@@ -640,45 +813,92 @@ def compute_pre_decision_metrics(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The window never reaches back across a
+        declared break.
 
     Returns
     -------
     PreDecisionMetrics
         Dataclass containing all pre-decision metrics.
 
+    Raises
+    ------
+    ValueError
+        If there are no samples, if ``times`` is not finite and strictly
+        increasing, or if ``break_before`` is not a Boolean array with one
+        entry per sample.
+
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no velocity or heading spans a pause.
-
-    Only the pre-decision window in the run containing entry_time is
-    analyzed; its duration excludes any preceding pause.
+    The window is the one :func:`extract_pre_decision_window` returns: it lies
+    in the time segment containing ``entry_time`` and never spans a pause, an
+    ``epochs`` edge or a declared break. Missing rows inside it stay missing:
+    speed and heading use only the observed samples, ``n_samples`` counts
+    them, and ``window_duration`` runs from the first to the last of them.
+    With fewer than two observed samples every metric is NaN.
 
     Examples
     --------
-    >>> metrics = compute_pre_decision_metrics(
-    ...     times, positions, entry_time=5.0, window_duration=2.0
-    ... )  # doctest: +SKIP
-    >>> if metrics.suggests_deliberation():
-    ...     print("Possible VTE behavior")  # doctest: +SKIP
-    """
-    # Extract window
-    from neurospatial._validation import validate_times_positions
+    >>> import numpy as np
+    >>> from neurospatial.behavior import compute_pre_decision_metrics
 
-    times, positions = validate_times_positions(
-        times, positions, call="compute_pre_decision_metrics"
-    )
-    window_pos, window_times = extract_pre_decision_window(
+    A 10 cm/s eastward approach with two lost frames in the 1 s window:
+
+    >>> times = np.arange(40) / 10  # s
+    >>> positions = np.column_stack([10 * times, np.zeros(40)])  # cm
+    >>> positions[[22, 25]] = np.nan
+    >>> metrics = compute_pre_decision_metrics(
+    ...     times, positions, entry_time=3.0, window_duration=1.0, min_speed=5.0
+    ... )
+    >>> metrics.n_samples
+    8
+    >>> round(metrics.window_duration, 6), round(metrics.mean_speed, 6)
+    (0.9, 10.0)
+    >>> round(metrics.heading_circular_variance, 6)
+    0.0
+    """
+    from neurospatial.ops.egocentric import _validate_velocity_positions
+
+    raw_positions = positions
+    times, positions, support = validated_observations(
         times,
         positions,
-        entry_time,
-        window_duration,
+        call="compute_pre_decision_metrics",
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
+        result="the pre-decision metrics are NaN",
+    )
+    _validate_velocity_positions(raw_positions)
+    return _pre_decision_metrics(
+        times,
+        positions,
+        support,
+        entry_time,
+        window_duration,
+        min_speed=min_speed,
     )
 
-    # Handle edge case of empty or too-short window
-    if len(window_pos) < 2:
+
+def _pre_decision_metrics(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    support: ObservationSupport,
+    entry_time: float,
+    window_duration: float,
+    *,
+    min_speed: float,
+) -> PreDecisionMetrics:
+    """Speed and heading metrics of the pre-decision window under ``support``."""
+    window = _pre_decision_window(
+        times, support.interval_gates, entry_time, window_duration
+    )
+    window_times = times[window]
+    observed_times = window_times[support.sample_valid[window]]
+    if observed_times.size < 2:
         return PreDecisionMetrics(
             mean_speed=np.nan,
             min_speed=np.nan,
@@ -686,32 +906,26 @@ def compute_pre_decision_metrics(
             heading_circular_variance=np.nan,
             heading_mean_resultant_length=np.nan,
             window_duration=0.0,
-            n_samples=len(window_pos),
+            n_samples=int(observed_times.size),
         )
-
-    # Compute heading stats
-    mean_dir, circ_var, mrl = pre_decision_heading_stats(
-        window_times, window_pos, min_speed=min_speed, max_gap=max_gap, epochs=epochs
+    # The window lies inside one gate segment, so its usable intervals are
+    # exactly the run's usable intervals between its first and last sample.
+    window_mask = support.interval_mask[window.start : window.stop - 1]
+    window_positions = positions[window]
+    mean_dir, circ_var, mrl = _heading_stats(
+        window_times, window_positions, window_mask, min_speed=min_speed
     )
-
-    # Compute speed stats
-    mean_speed, min_speed_val = pre_decision_speed_stats(
-        window_times, window_pos, max_gap=max_gap, epochs=epochs
+    mean_speed, min_speed_val = _speed_stats(
+        window_times, window_positions, window_mask
     )
-
-    # Actual window duration
-    actual_duration = (
-        float(window_times[-1] - window_times[0]) if len(window_times) > 1 else 0.0
-    )
-
     return PreDecisionMetrics(
         mean_speed=mean_speed,
         min_speed=min_speed_val,
         heading_mean_direction=mean_dir,
         heading_circular_variance=circ_var,
         heading_mean_resultant_length=mrl,
-        window_duration=actual_duration,
-        n_samples=len(window_pos),
+        window_duration=float(observed_times[-1] - observed_times[0]),
+        n_samples=int(observed_times.size),
     )
 
 
@@ -882,17 +1096,20 @@ def detect_boundary_crossings(
     *,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> tuple[list[float], list[tuple[int, int]]]:
     """Detect when trajectory crosses decision boundaries.
 
     Parameters
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
-        Bin indices along the trajectory.
+        Bin indices along the trajectory; -1 marks a missing or out-of-bounds
+        position.
     voronoi_labels : NDArray[np.int_], shape (n_bins,)
         Voronoi label for each bin (from geodesic_voronoi_labels).
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps (seconds).
+        Timestamps in seconds; finite and strictly increasing (a repeated
+        timestamp raises).
     max_gap : float or None, default=0.5
         Longest sampling interval (seconds) treated as continuous recording.
         Longer intervals (dropped frames, pauses between sessions) are excluded
@@ -901,39 +1118,88 @@ def detect_boundary_crossings(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. No crossing spans a declared break.
 
     Returns
     -------
     crossing_times : list[float]
-        Times when trajectory crossed a decision boundary.
+        Times when trajectory crossed a decision boundary: the midpoint of
+        the two samples on either side.
     crossing_directions : list[tuple[int, int]]
         (from_goal_idx, to_goal_idx) for each crossing.
 
+    Raises
+    ------
+    ValueError
+        If ``position_bins`` and ``times`` differ in length, if there are no
+        samples, if ``times`` is not finite and strictly increasing, or if
+        ``break_before`` is not a Boolean array with one entry per sample.
+
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    Each time segment with gaps no longer than ``max_gap`` (inside ``epochs``,
+    not crossing a ``break_before``) is analyzed as a separate recording; no
+    crossing spans a pause. A crossing needs two consecutive samples with
+    reachable labels, so a sample at bin -1 or with an unreachable label never
+    forms one.
 
     Examples
     --------
-    >>> crossing_times, directions = detect_boundary_crossings(
-    ...     position_bins, voronoi_labels, times
-    ... )  # doctest: +SKIP
-    >>> print(f"Animal crossed boundary {len(crossing_times)} times")  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial.behavior import detect_boundary_crossings
+    >>> voronoi_labels = np.array([0, 1])  # bin 0 is nearer goal 0, bin 1 goal 1
+    >>> position_bins = np.array([0, 0, 1, 1])
+    >>> times = np.arange(4) / 8  # s
+    >>> detect_boundary_crossings(position_bins, voronoi_labels, times)
+    ([0.1875], [(0, 1)])
+
+    The same samples from two recordings joined on one clock, where the
+    second recording starts in bin 1, have no crossing:
+
+    >>> new_recording = np.array([False, False, True, False])
+    >>> detect_boundary_crossings(
+    ...     position_bins, voronoi_labels, times, break_before=new_recording
+    ... )
+    ([], [])
     """
     position_bins = np.asarray(position_bins, dtype=np.int64)
-    times = np.asarray(times)
-
-    if len(position_bins) != len(times):
+    n_times = len(np.asarray(times))
+    if len(position_bins) != n_times:
         raise ValueError(
             f"position_bins and times must have same length; got "
-            f"{len(position_bins)} and {len(times)}.\n"
+            f"{len(position_bins)} and {n_times}.\n"
             "Why: each trajectory sample needs its corresponding timestamp.\n"
             "Fix: pass one timestamp per position bin on the same clock."
         )
+    times, _, supports = validated_signals(
+        times,
+        position_bins,
+        valid=None,
+        call="detect_boundary_crossings",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="no boundary crossing was observed",
+    )
+    return _boundary_crossings(
+        position_bins, voronoi_labels, times, supports[0].interval_gates
+    )
+
+
+def _boundary_crossings(
+    position_bins: NDArray[np.int64],
+    voronoi_labels: NDArray[np.int_],
+    times: NDArray[np.float64],
+    interval_gates: NDArray[np.bool_],
+) -> tuple[list[float], list[tuple[int, int]]]:
+    """Boundary crossings within each run of ``interval_gates``."""
     crossing_times: list[float] = []
     crossing_directions: list[tuple[int, int]] = []
-    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+    for first, last in run_sample_bounds(interval_gates):
+        run = slice(int(first), int(last) + 1)
         run_times, run_directions = _detect_boundary_crossings_contiguous(
             position_bins[run], voronoi_labels, times[run]
         )
@@ -990,6 +1256,7 @@ def compute_decision_analysis(
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> DecisionAnalysisResult:
     """Compute complete decision analysis for a trajectory.
 
@@ -998,9 +1265,11 @@ def compute_decision_analysis(
     env : Environment
         Spatial environment with region definitions.
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps (seconds).
+        Timestamps in seconds; finite and strictly increasing (a repeated
+        timestamp raises).
     positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
+        Position coordinates. A row with a non-finite coordinate (NaN, for a
+        lost frame) is a missing sample.
     decision_region : str
         Name of decision region in env.regions (e.g., "center" for T-maze).
     goal_regions : list[str]
@@ -1020,6 +1289,11 @@ def compute_decision_analysis(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. Neither the pre-decision window nor a
+        boundary crossing spans a declared break.
 
     Returns
     -------
@@ -1032,29 +1306,55 @@ def compute_decision_analysis(
     ValueError
         If decision_region or any goal_region not found in env.regions.
     ValueError
-        If positions and times have different lengths.
+        If positions and times have different lengths, if there are no
+        samples, if ``times`` is not finite and strictly increasing, or if
+        ``break_before`` is not a Boolean array with one entry per sample.
 
     Notes
     -----
-    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
-
-    Pre-decision windows and boundary crossings respect these recordings.
-    Per-sample goal labels and boundary distances keep the input shape.
+    The recording is split into time segments at gaps longer than
+    ``max_gap``, at ``epochs`` edges and at declared breaks; no segment spans
+    a pause. Pre-decision windows and boundary crossings respect these
+    segments (see :func:`compute_pre_decision_metrics` and
+    :func:`detect_boundary_crossings`). Missing positions fall in no bin, so
+    their goal label is -1 and their boundary distance NaN. Per-sample goal
+    labels and boundary distances keep the input length.
 
     Examples
     --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment, Regions
+    >>> from neurospatial.behavior import compute_decision_analysis
+
+    A T-maze: a stem rising to a crossbar with a goal at each end. The animal
+    walks up the stem and turns right.
+
+    >>> stem = np.column_stack([np.full(30, 50.0), np.linspace(0, 50, 30)])
+    >>> bar = np.column_stack([np.linspace(0, 100, 60), np.full(60, 55.0)])
+    >>> env = Environment.from_samples(np.vstack([stem, bar]), bin_size=5.0)
+    >>> regions = Regions()
+    >>> _ = regions.add("center", point=(50.0, 55.0))
+    >>> _ = regions.add("left", point=(5.0, 55.0))
+    >>> _ = regions.add("right", point=(95.0, 55.0))
+    >>> env = env.with_regions(regions)
+    >>> times = np.arange(100) / 10  # s
+    >>> positions = np.column_stack(
+    ...     [
+    ...         np.r_[np.full(30, 50.0), np.linspace(50, 95, 70)],
+    ...         np.r_[np.linspace(5, 55, 30), np.full(70, 55.0)],
+    ...     ]
+    ... )  # cm
     >>> result = compute_decision_analysis(
     ...     env,
     ...     times,
     ...     positions,
     ...     decision_region="center",
     ...     goal_regions=["left", "right"],
-    ... )  # doctest: +SKIP
-    >>> print(result)  # doctest: +SKIP
+    ...     min_speed=5.0,
+    ... )
+    >>> result.chosen_goal, result.pre_decision.n_samples
+    (1, 10)
     """
-    from neurospatial._validation import validate_times_positions
-
     require_cartesian(
         env.coordinate_system,
         "compute_decision_analysis()",
@@ -1062,9 +1362,19 @@ def compute_decision_analysis(
         "speeds and regions in the same Cartesian coordinates.",
         fix="use the allocentric environment the positions were recorded in",
     )
-    times, positions = validate_times_positions(
-        times, positions, call="compute_decision_analysis"
+    from neurospatial.ops.egocentric import _validate_velocity_positions
+
+    raw_positions = positions
+    times, positions, support = validated_observations(
+        times,
+        positions,
+        call="compute_decision_analysis",
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=break_before,
+        result="the pre-decision metrics are NaN and no boundary crossing was observed",
     )
+    _validate_velocity_positions(raw_positions)
 
     # Validate regions exist
     _require_region_mask(
@@ -1094,14 +1404,8 @@ def compute_decision_analysis(
 
     min_speed = resolve_min_speed(env, min_speed, call="compute_decision_analysis()")
     # Compute pre-decision metrics
-    pre_decision = compute_pre_decision_metrics(
-        times,
-        positions,
-        entry_time,
-        pre_window,
-        min_speed=min_speed,
-        max_gap=max_gap,
-        epochs=epochs,
+    pre_decision = _pre_decision_metrics(
+        times, positions, support, entry_time, pre_window, min_speed=min_speed
     )
 
     # Compute boundary metrics. Each goal region is represented by its
@@ -1121,8 +1425,8 @@ def compute_decision_analysis(
     position_bins = np.asarray(position_bins, dtype=np.int64)
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
     boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
-    crossing_times, crossing_directions = detect_boundary_crossings(
-        position_bins, voronoi_labels, times, max_gap=max_gap, epochs=epochs
+    crossing_times, crossing_directions = _boundary_crossings(
+        position_bins, voronoi_labels, times, support.interval_gates
     )
 
     boundary = DecisionBoundaryMetrics(

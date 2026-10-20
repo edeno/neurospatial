@@ -119,6 +119,7 @@ from neurospatial.encoding.population import (
     plot_population_coverage,
     population_coverage,
     population_vector_correlation,
+    rate_map_correlations,
 )
 
 # Spatial rate (place/grid/border cells)
@@ -242,5 +243,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "field_density_map",
     "count_place_cells",
     "field_overlap",
+    "rate_map_correlations",
     "population_vector_correlation",
 ]
