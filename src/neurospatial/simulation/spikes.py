@@ -5,7 +5,7 @@ import warnings
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 from tqdm.auto import tqdm
 
 from neurospatial._validation import validate_finite
@@ -226,6 +226,7 @@ def generate_population_spikes(
     positions: NDArray[np.float64],
     *,
     headings: NDArray[np.float64] | None = None,
+    break_before: ArrayLike | None = None,
     refractory_period: float = 0.002,
     seed: int | None = None,
     show_progress: bool = True,
@@ -251,6 +252,13 @@ def generate_population_spikes(
         smoothed velocity, held at the last direction of movement through
         stops (samples before the first movement take the first direction).
         A trajectory that never moves then raises ``ValueError``.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. Used only to derive head-direction models'
+        headings, so the velocity is never smoothed across a break; the held
+        direction carries over a break until the animal moves again. Not
+        allowed together with ``headings``.
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
     seed : int | None, optional
@@ -271,6 +279,9 @@ def generate_population_spikes(
     ValueError
         If a head-direction model has no ``headings`` and the trajectory never
         moves, so no movement direction can be derived.
+    ValueError
+        If ``break_before`` is not a Boolean array with one entry per sample,
+        or is passed together with ``headings``.
 
     Examples
     --------
@@ -383,6 +394,22 @@ def generate_population_spikes(
     times, positions = validate_times_positions(
         times, positions, call="generate_population_spikes"
     )
+    from neurospatial._exceptions import _format_error
+    from neurospatial._observation import validate_break_before
+
+    breaks = validate_break_before(
+        break_before, len(times), call="generate_population_spikes"
+    )
+    if breaks is not None and headings is not None:
+        raise ValueError(
+            _format_error(
+                "generate_population_spikes() got both headings and break_before.",
+                why="break_before only keeps the heading derived from the "
+                "velocity from crossing a recording break; given headings are "
+                "used as they are.",
+                fix="pass headings, or break_before to derive them, not both.",
+            )
+        )
     base_seed = seed
 
     # Pre-allocate spike trains list
@@ -399,7 +426,9 @@ def generate_population_spikes(
     # Generate spikes for each model
     for i, model in iterator:
         # Compute firing rates for this model
-        rates = _compute_model_firing_rate(model, positions, times, headings)
+        rates = _compute_model_firing_rate(
+            model, positions, times, headings, break_before=breaks
+        )
 
         # Generate spikes with derived seed for reproducibility
         model_seed = None if base_seed is None else base_seed + i
@@ -442,6 +471,8 @@ def _compute_model_firing_rate(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
     headings: NDArray[np.float64] | None,
+    *,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float64]:
     """Compute firing rates for models with different input conventions."""
     from neurospatial.simulation.models.head_direction_cells import (
@@ -458,7 +489,9 @@ def _compute_model_firing_rate(
         if headings is None:
             if len(times) < 2:
                 return np.zeros(len(times), dtype=np.float64)
-            headings = _held_movement_heading(times, positions)
+            headings = _held_movement_heading(
+                times, positions, break_before=break_before
+            )
         rates = model_any.firing_rate(headings, positions=positions, times=times)
     elif isinstance(model_any, SpatialViewCellModel | ObjectVectorCellModel):
         rates = model_any.firing_rate(positions, times, headings=headings)
@@ -475,7 +508,10 @@ def _compute_model_firing_rate(
 
 
 def _held_movement_heading(
-    times: NDArray[np.float64], positions: NDArray[np.float64]
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float64]:
     """Movement direction at every sample, held through stops.
 
@@ -490,6 +526,9 @@ def _held_movement_heading(
         Seconds, strictly increasing.
     positions : ndarray, shape (n_time, n_dims)
         Positions in environment units.
+    break_before : ndarray of bool, shape (n_time,), optional
+        Already validated declared recording breaks; the velocity is not
+        smoothed across them.
 
     Returns
     -------
@@ -513,7 +552,9 @@ def _held_movement_heading(
         warnings.filterwarnings(
             "ignore", message="Interval filtering excluded ALL", category=UserWarning
         )
-        heading = heading_from_velocity(times, positions, allow_all_nan=True)
+        heading = heading_from_velocity(
+            times, positions, break_before=break_before, allow_all_nan=True
+        )
     defined = np.isfinite(heading)
     if not defined.any():
         raise ValueError(
