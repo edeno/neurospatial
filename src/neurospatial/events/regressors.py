@@ -346,11 +346,11 @@ def event_count_in_window(
 
     # Use searchsorted to find event indices at window boundaries
     # left_indices: first event >= window_start
-    # right_indices: first event > window_end (so count = right - left)
+    # right_indices: first event >= window_end (so count = right - left)
     left_indices = np.searchsorted(sorted_events, window_starts, side="left")
     right_indices = np.searchsorted(sorted_events, window_ends, side="left")
 
-    # Count = number of events in [window_start, window_end]
+    # Count = number of events in [window_start, window_end)
     counts = right_indices - left_indices
 
     return counts.astype(np.int64)
@@ -426,75 +426,6 @@ def event_indicator(
     >>> indicator = event_indicator(sample_times, event_times, window=(-0.1, 0.1))
     >>> X = indicator.astype(float)  # Convert to float for design matrix
     """
-    # Convert to numpy arrays and validate
-    sample_times = np.asarray(sample_times, dtype=np.float64)
-    event_times = np.asarray(event_times, dtype=np.float64)
-
-    # Input validation
-    if np.any(np.isnan(sample_times)):
-        raise ValueError(
-            "sample_times contains NaN values.\n"
-            "  WHY: Times must be valid numeric values.\n"
-            "  Fix: Remove or interpolate NaN values before calling."
-        )
-
-    if np.any(np.isinf(sample_times)):
-        raise ValueError(
-            "sample_times contains inf values.\n"
-            "  WHY: Times must be finite.\n"
-            "  Fix: Remove or clip infinite values before calling."
-        )
-
-    if len(event_times) > 0:
-        if np.any(np.isnan(event_times)):
-            raise ValueError(
-                "event_times contains NaN values.\n"
-                "  WHY: Event times must be valid numeric values.\n"
-                "  Fix: Remove NaN values from event times."
-            )
-
-        if np.any(np.isinf(event_times)):
-            raise ValueError(
-                "event_times contains inf values.\n"
-                "  WHY: Event times must be finite.\n"
-                "  Fix: Remove infinite values from event times."
-            )
-
-    # Validate window
-    window_start, window_end = window
-    if window_start >= window_end:
-        raise ValueError(
-            f"window start ({window_start}) must be before its stop ({window_end}).\n"
-            "  WHY: Window is the half-open range [start, stop) relative to each "
-            "sample, so a window with stop <= start holds no time.\n"
-            "  Fix: Use window=(start, stop) with start < stop, e.g. "
-            "window=(-bin_size / 2, bin_size / 2) to count each event at the "
-            "sample nearest it."
-        )
-
-    # Handle empty sample_times
-    if len(sample_times) == 0:
-        return np.array([], dtype=np.bool_)
-
-    # Handle empty events
-    if len(event_times) == 0:
-        return np.zeros(len(sample_times), dtype=np.bool_)
-
-    # Sort events for efficient searchsorted
-    sorted_events = np.sort(event_times)
-
-    # For each sample, check if any event falls within
-    # [sample + start, sample + end]. Use searchsorted to find events at
-    # window boundaries.
-    window_starts = sample_times + window_start
-    window_ends = sample_times + window_end
-
-    # left_indices: first event >= window_start
-    # right_indices: first event > window_end
-    left_indices = np.searchsorted(sorted_events, window_starts, side="left")
-    right_indices = np.searchsorted(sorted_events, window_ends, side="left")
-
-    # If right > left, there's at least one event in the window
-    result = right_indices > left_indices
-
-    return result
+    counts = event_count_in_window(sample_times, event_times, window=window)
+    indicator: NDArray[np.bool_] = counts > 0
+    return indicator

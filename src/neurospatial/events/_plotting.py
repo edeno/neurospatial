@@ -87,8 +87,8 @@ def plot_peri_event_response(
     event time. This preserves exact boundary membership at large timestamps.
     Display offsets are clipped to the plotted range if subtraction rounding
     would otherwise put an included boundary spike outside the axes.
-    The low-level ``align_spikes_to_events`` retains its legacy inclusive stop
-    edge; this function uses the histogram's half-open bins instead.
+    The raster and the histogram use the same half-open ``[start, stop)``
+    window as ``align_spikes_to_events``.
 
     Shape checks cannot prove that caller-supplied arrays contain the original
     values. Pass the original event array and the spikes used for this unit's

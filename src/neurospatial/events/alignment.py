@@ -228,9 +228,7 @@ def align_spikes_to_events(
         t_start = event_t + window[0]
         t_end = event_t + window[1]
 
-        # Find spikes within window using binary search
-        # searchsorted with side='left' gives first index where value could be inserted
-        # searchsorted with side='right' gives last index + 1
+        # Spikes in the half-open window [t_start, t_end).
         idx_start = np.searchsorted(sorted_spikes, t_start, side="left")
         idx_end = np.searchsorted(sorted_spikes, t_end, side="left")
 
