@@ -205,6 +205,28 @@ environment, regions, walls and landmarks.
 
 ## Assisted Outlines
 
+### Try the Sample Arena
+
+From a checkout with the animation dependencies installed, this launcher opens
+a synthetic arena with an obstacle and reward area:
+
+```bash
+uv run --no-sync python examples/try_annotation.py --provider cpu
+```
+
+Click **Mark inside points**, click the tan floor, and click **Suggest outline**.
+Paint or erase the preview, then **Accept outline**. To compare providers on the
+same frame, launch again with `--provider sam2` after the optional setup below.
+Both providers run on the CPU by default; `--provider cpu` selects color region
+growing, while `--provider sam2` selects the neural segmentation model.
+
+Add `--image /path/to/frame.png` or `--video /path/to/movie.mp4 --frame-index 100`
+to use your own recording. `--save-project arena.annotation.npz` enables saves
+and autosave to a new project file. Add `--check` with either provider to run a
+sample prediction without opening a viewer.
+
+### Select and Correct an Outline
+
 Open **Project and Assistance** and use **Assisted outline** when the arena
 surface has a distinct color:
 
@@ -273,6 +295,23 @@ color alone gives a poor outline. Install PyTorch and SAM 2 separately by
 following [Meta's installation instructions](https://github.com/facebookresearch/sam2#installation),
 and obtain a matching model checkpoint from that repository. These model
 dependencies and weights are optional; the default CPU provider needs neither.
+
+To prepare the sample launcher on a Mac, install into the current checkout's
+virtual environment and download the tiny checkpoint once. These commands use
+a pinned revision of Meta's source and skip its optional CUDA extension:
+
+```bash
+SAM2_BUILD_CUDA=0 uv pip install 'sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4'
+mkdir -p data/annotation_demo
+curl --fail --location --output data/annotation_demo/sam2.1_hiera_tiny.pt \
+    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
+uv run --no-sync python examples/try_annotation.py --provider sam2
+```
+
+The `data/` checkpoint is ignored by Git. Use `--checkpoint /path/to/model.pt`
+and `--model-config configs/sam2.1/sam2.1_hiera_t.yaml` to supply another local
+checkpoint/config pair. Keep `--no-sync` when launching so uv retains these
+optional packages, which are not part of the core dependency lockfile.
 
 Load the provider **before** opening the editor so dependency, config or
 checkpoint errors are reported first. Supply an existing local checkpoint;

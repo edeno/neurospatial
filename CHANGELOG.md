@@ -1731,6 +1731,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Added
 
+- `examples/try_annotation.py` launches CPU or optional SAM 2 assisted
+  annotation on a sample arena, image, or video frame. A `--check` mode runs
+  sample inference without opening a viewer.
+
 - Resumable polygon annotation projects: `AnnotationProject` and
   `AnnotationShape` save editable pixel geometry, calibration, output settings
   and the RGB reference frame in one portable file. `annotate_video` accepts
