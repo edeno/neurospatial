@@ -9,7 +9,18 @@ with no physical constraints on movement paths. Animals can swim in any directio
 making it ideal for studying flexible spatial strategies.
 
 Reference: Morris (1984). "Developments of a water-maze procedure for studying
-spatial learning in the rat." Journal of Neuroscience Methods, 11(1), 47-60.
+spatial learning in the rat." J Neurosci Methods 11:47-60,
+doi:10.1016/0165-0270(84)90007-4.
+
+The default sizes follow Morris (2008), "Morris water maze", Scholarpedia
+3:6315, doi:10.4249/scholarpedia.6315: pools are "generally 1.5 to 2 metres
+in diameter", and the platform is "usually about 10-15 cm in diameter and thus
+between 1/50th and 1/100th of the surface area of the pool". The default
+150 cm pool and 15 cm platform lie in those ranges.
+
+The platform sits by default in the centre of the NE quadrant, which by the
+usual convention is halfway between the pool centre and the wall along the
+quadrant's diagonal. North is +y and east is +x.
 
 Examples
 --------
@@ -29,6 +40,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
@@ -45,17 +58,21 @@ class WatermazeDims(MazeDims):
     Attributes
     ----------
     pool_diameter : float
-        Diameter of the circular pool in cm. Default is 150.0.
+        Diameter of the circular pool in cm. Default is 150.0, at the small
+        end of the 1.5-2 m range given by Morris (2008),
+        doi:10.4249/scholarpedia.6315.
     platform_radius : float
-        Radius of the circular platform in cm. Default is 5.0.
+        Radius of the circular platform in cm. Default is 7.5 (a 15 cm
+        platform, at the large end of the 10-15 cm range given by Morris
+        (2008)).
 
     Examples
     --------
     >>> dims = WatermazeDims()
     >>> dims.pool_diameter
     150.0
-    >>> dims.platform_radius
-    5.0
+    >>> dims.platform_radius * 2  # platform diameter, cm
+    15.0
 
     >>> custom = WatermazeDims(pool_diameter=200.0, platform_radius=10.0)
     >>> custom.pool_diameter
@@ -63,7 +80,7 @@ class WatermazeDims(MazeDims):
     """
 
     pool_diameter: float = 150.0
-    platform_radius: float = 5.0
+    platform_radius: float = 7.5
 
 
 def make_watermaze(
@@ -81,12 +98,14 @@ def make_watermaze(
     ----------
     dims : WatermazeDims, optional
         Maze dimensions. If None, uses default dimensions
-        (150 cm pool diameter, 5 cm platform radius).
+        (150 cm pool diameter, 15 cm platform diameter).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     platform_position : tuple[float, float], optional
         Position (x, y) of the platform center in cm. If None, defaults to
-        the center of the NE quadrant: (pool_diameter/4, pool_diameter/4).
+        the centre of the NE quadrant, halfway between the pool centre and the
+        wall along the NE diagonal: ``(R / (2 * sqrt(2)), R / (2 * sqrt(2)))``
+        with ``R = pool_diameter / 2``.
 
     Returns
     -------
@@ -98,15 +117,19 @@ def make_watermaze(
     Notes
     -----
     The maze is centered at the origin:
-    - Pool boundary is a circle with radius = pool_diameter / 2
-    - Platform defaults to center of NE quadrant
+    - Pool boundary is a circle with radius R = pool_diameter / 2
+    - North is +y and east is +x
+    - Platform defaults to the centre of the NE quadrant
 
-    Regions:
+    Regions (quadrant centres lie halfway between the pool centre and the
+    wall, R/2 from the centre along each quadrant's diagonal, with
+    ``c = R / (2 * sqrt(2))``):
+
     - platform: Point region at platform location
-    - NE: Northeast quadrant center (pool_diameter/4, pool_diameter/4)
-    - NW: Northwest quadrant center (-pool_diameter/4, pool_diameter/4)
-    - SE: Southeast quadrant center (pool_diameter/4, -pool_diameter/4)
-    - SW: Southwest quadrant center (-pool_diameter/4, -pool_diameter/4)
+    - NE: Northeast quadrant centre (+c, +c)
+    - NW: Northwest quadrant centre (-c, +c)
+    - SE: Southeast quadrant centre (+c, -c)
+    - SW: Southwest quadrant centre (-c, -c)
 
     The quadrant regions are useful for:
     - Analyzing spatial bias (time spent in each quadrant)
@@ -150,9 +173,12 @@ def make_watermaze(
     # Pool radius
     radius = dims.pool_diameter / 2.0
 
-    # Default platform position: center of NE quadrant
+    # Quadrant centres: R/2 from the pool centre along each diagonal
+    c = radius / 2.0 / np.sqrt(2.0)
+
+    # Default platform position: centre of the NE quadrant
     if platform_position is None:
-        platform_position = (dims.pool_diameter / 4, dims.pool_diameter / 4)
+        platform_position = (c, c)
 
     # Create circular pool polygon
     pool_polygon = make_circular_arena(
@@ -173,13 +199,11 @@ def make_watermaze(
     region_builder = Regions()
     region_builder.add("platform", point=platform_position)
 
-    # Add quadrant regions at quadrant centers
-    # Quadrant centers are at radius/2 from origin
-    half_radius = radius / 2.0
-    region_builder.add("NE", point=(half_radius, half_radius))
-    region_builder.add("NW", point=(-half_radius, half_radius))
-    region_builder.add("SE", point=(half_radius, -half_radius))
-    region_builder.add("SW", point=(-half_radius, -half_radius))
+    # Add quadrant regions at quadrant centres
+    region_builder.add("NE", point=(c, c))
+    region_builder.add("NW", point=(-c, c))
+    region_builder.add("SE", point=(c, -c))
+    region_builder.add("SW", point=(-c, -c))
     env_2d = env_2d.with_regions(region_builder)
 
     # No track graph for open field

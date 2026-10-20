@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestMakeWatermaze:
@@ -93,12 +94,35 @@ class TestMakeWatermaze:
         maze = make_watermaze(dims=dims)
 
         platform = maze.env_2d.regions["platform"]
-        # NE quadrant center: (pool_diameter/4, pool_diameter/4)
-        expected_x = dims.pool_diameter / 4
-        expected_y = dims.pool_diameter / 4
+        # Halfway between the pool centre and the wall, on the NE diagonal.
+        r = dims.pool_diameter / 2
+        x, y = platform.data
+        assert np.hypot(x, y) == pytest.approx(r / 2)
+        assert np.degrees(np.arctan2(y, x)) == pytest.approx(45.0)
 
-        assert np.isclose(platform.data[0], expected_x, atol=1.0)
-        assert np.isclose(platform.data[1], expected_y, atol=1.0)
+    def test_platform_lies_wholly_inside_the_pool(self):
+        """The 15 cm platform at the NE quadrant centre is inside the pool."""
+        from shapely.geometry import Point
+
+        from neurospatial.simulation.mazes.watermaze import (
+            WatermazeDims,
+            make_watermaze,
+        )
+
+        dims = WatermazeDims()
+        env = make_watermaze(dims=dims).env_2d
+        platform = Point(env.regions["platform"].data).buffer(dims.platform_radius)
+        assert env.arena.polygon.contains(platform)
+
+    def test_default_sizes_are_in_the_published_ranges(self):
+        """Morris (2008): pools 1.5-2 m; platforms 10-15 cm, 1/50-1/100 of area."""
+        from neurospatial.simulation.mazes.watermaze import WatermazeDims
+
+        dims = WatermazeDims()
+        assert dims.pool_diameter == 150.0
+        assert 2 * dims.platform_radius == 15.0
+        area_ratio = (2 * dims.platform_radius / dims.pool_diameter) ** 2
+        assert 1 / 100 <= area_ratio <= 1 / 50
 
     def test_custom_platform_position(self):
         """Custom platform_position should be respected."""
@@ -141,30 +165,19 @@ class TestMakeWatermaze:
         dims = WatermazeDims(pool_diameter=150.0)
         maze = make_watermaze(dims=dims)
 
-        # Quadrant centers at radius/2 from origin
+        # Quadrant centres lie R/2 from the pool centre on each diagonal,
+        # with north = +y and east = +x.
         r = dims.pool_diameter / 2
-        half_r = r / 2
+        expected_angles = {"NE": 45.0, "NW": 135.0, "SW": -135.0, "SE": -45.0}
+        for name, angle in expected_angles.items():
+            x, y = maze.env_2d.regions[name].data
+            assert np.hypot(x, y) == pytest.approx(r / 2), name
+            assert np.degrees(np.arctan2(y, x)) == pytest.approx(angle), name
 
-        ne = maze.env_2d.regions["NE"]
-        nw = maze.env_2d.regions["NW"]
-        se = maze.env_2d.regions["SE"]
-        sw = maze.env_2d.regions["SW"]
-
-        # NE: (+r/2, +r/2)
-        assert np.isclose(ne.data[0], half_r, atol=1.0)
-        assert np.isclose(ne.data[1], half_r, atol=1.0)
-
-        # NW: (-r/2, +r/2)
-        assert np.isclose(nw.data[0], -half_r, atol=1.0)
-        assert np.isclose(nw.data[1], half_r, atol=1.0)
-
-        # SE: (+r/2, -r/2)
-        assert np.isclose(se.data[0], half_r, atol=1.0)
-        assert np.isclose(se.data[1], -half_r, atol=1.0)
-
-        # SW: (-r/2, -r/2)
-        assert np.isclose(sw.data[0], -half_r, atol=1.0)
-        assert np.isclose(sw.data[1], -half_r, atol=1.0)
+        # The default platform marks the NE quadrant centre.
+        np.testing.assert_allclose(
+            maze.env_2d.regions["platform"].data, maze.env_2d.regions["NE"].data
+        )
 
     def test_env_track_is_none(self):
         """env_track should be None (open field, no track)."""
