@@ -845,11 +845,12 @@ class ResultMixin:
 
         Tidy/long form means one observation per row with explicit identifier
         columns, so that DataFrames from different result types concatenate
-        without error in a single :func:`pandas.concat`. Because result types use
-        different identifier columns (e.g. spatial uses ``neuron``/``coord_0``;
-        directional uses ``direction``), the concatenation yields a union schema
-        in which columns absent from a given result are filled with ``NaN``,
-        rather than a single shared column vocabulary.
+        without error in a single :func:`pandas.concat`. Rate results have one
+        row per ``(unit_id, bin)`` and always a ``unit_id`` column; their
+        coordinate columns depend on the domain (spatial maps use
+        ``bin_center_x``/``bin_center_y``, directional maps
+        ``bin_center_angle``), so the concatenation yields a union schema in
+        which columns absent from a given result are filled with ``NaN``.
 
         Returns
         -------
