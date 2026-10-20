@@ -151,6 +151,21 @@ class TestMakePlusMaze:
         bounds = make_plus_maze(include_track=False).env_2d.arena.polygon.bounds
         assert bounds == pytest.approx((-45.0, -45.0, 45.0, 45.0))
 
+    def test_protocol_dependent_start_and_goal_are_not_landmarks(self):
+        """Start and goal arms vary by protocol, so no arm end is a fixed port."""
+        from neurospatial.simulation.mazes.plus_maze import make_plus_maze
+
+        maze = make_plus_maze()
+        assert len(maze.env_2d.landmarks) == 0
+        assert len(maze.env_track.landmarks) == 0
+        assert list(maze.env_2d.regions) == [
+            "center",
+            "north_end",
+            "south_end",
+            "east_end",
+            "west_end",
+        ]
+
     def test_track_regions_stay_where_they_are_in_2d(self):
         """Each region on the linearized track lies where it does in 2-D."""
         from neurospatial.simulation.mazes.plus_maze import make_plus_maze

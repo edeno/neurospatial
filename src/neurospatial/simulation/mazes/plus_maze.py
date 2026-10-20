@@ -14,6 +14,18 @@ mazes in their review text; the plus maze is not among the mazes drawn in
 their Fig. 1. Plus-maze sizes vary between labs, and the defaults here are
 not taken from a published apparatus.
 
+The maze has no landmarks, because its start and goal depend on the
+protocol. Wijnen et al. (2024) introduce it as a maze "in which both these
+locations [start and end points] are frequently variable". In the place
+versus response task of Packard & McGaugh (1996), Neurobiol Learn Mem
+65:65-72, doi:10.1006/nlme.1996.0007, "Rats were trained to approach a
+consistently baited arm in a cross-maze from the same start box", and on
+probe trials "rats were placed in the start box opposite that used in
+training". Which arm holds the food and which arms hold start boxes is set
+by the experimenter, and the abstract gives neither the food cup's nor the
+start boxes' size, so the four arm ends are plain regions. Add reward-port
+and start-box landmarks at the arm ends your protocol uses.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes import make_plus_maze, PlusMazeDims
