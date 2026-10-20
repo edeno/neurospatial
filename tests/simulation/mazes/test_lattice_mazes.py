@@ -4,6 +4,7 @@ These tests verify that all lattice mazes (Crossword, Honeycomb, Hamlet)
 and the complex Rat HexMaze work correctly together and share consistent interfaces.
 """
 
+import numpy as np
 import pytest
 
 from neurospatial.simulation.mazes import (
@@ -75,33 +76,32 @@ class TestCrosswordMaze:
     """Test Crossword maze specific behavior."""
 
     def test_has_default_dims(self):
-        """Crossword maze should have default dimensions."""
+        """Crossword maze should have the published 5 cm tracks."""
         dims = CrosswordDims()
-        assert dims.grid_spacing == 30.0
-        assert dims.corridor_width == 10.0
-        assert dims.box_size == 15.0
+        assert dims.grid_spacing == 19.0
+        assert dims.corridor_width == 5.0
+        assert dims.box_size == 16.0
 
-    def test_has_junction_regions(self):
-        """Crossword should have junction regions at intersections (sparse grid)."""
+    def test_has_five_cap_regions(self):
+        """Crossword has a plastic cap at each of its five protruding tracks."""
         maze = make_crossword_maze(bin_size=3.0)
-        junction_regions = [r for r in maze.env_2d.regions if r.startswith("junction_")]
-        # Sparse crossword pattern: 10 intersections
-        assert len(junction_regions) == 10
+        cap_regions = [r for r in maze.env_2d.regions if r.startswith("cap_")]
+        assert len(cap_regions) == 5
 
-    def test_has_four_box_regions(self):
-        """Crossword should have 4 corner box regions (polygons)."""
+    def test_has_four_start_box_regions(self):
+        """Crossword should have 4 start box regions (polygons)."""
         maze = make_crossword_maze(bin_size=3.0)
-        box_regions = [r for r in maze.env_2d.regions if r.startswith("box_")]
+        box_regions = [r for r in maze.env_2d.regions if r.startswith("start_box_")]
         assert len(box_regions) == 4
 
-    def test_box_regions_are_polygons(self):
-        """All box regions should be polygon type."""
+    def test_start_box_regions_are_polygons(self):
+        """All start box regions should be polygon type."""
         maze = make_crossword_maze(bin_size=3.0)
         for name in [
-            "box_top_left",
-            "box_top_right",
-            "box_bottom_left",
-            "box_bottom_right",
+            "start_box_top_left",
+            "start_box_top_right",
+            "start_box_bottom_left",
+            "start_box_bottom_right",
         ]:
             assert maze.env_2d.regions[name].kind == "polygon"
 
@@ -124,17 +124,19 @@ class TestHoneycombMaze:
 class TestHamletMaze:
     """Test Hamlet maze specific behavior."""
 
-    def test_has_inner_regions(self):
-        """Hamlet should have 5 inner vertices (pentagon at inner_radius)."""
-        maze = make_hamlet_maze(bin_size=3.0)
-        inner_regions = [r for r in maze.env_2d.regions if r.startswith("inner_")]
-        assert len(inner_regions) == 5
+    def test_has_five_house_regions(self):
+        """Hamlet should have 5 houses (goal boxes) and the agora."""
+        maze = make_hamlet_maze(bin_size=2.0)
+        house_regions = [r for r in maze.env_2d.regions if r.endswith("_house")]
+        assert len(house_regions) == 5
+        assert "agora" in maze.env_2d.regions
 
-    def test_has_outer_regions(self):
-        """Hamlet should have 5 outer vertices (at outer_radius)."""
-        maze = make_hamlet_maze(bin_size=3.0)
-        outer_regions = [r for r in maze.env_2d.regions if r.startswith("outer_")]
-        assert len(outer_regions) == 5
+    def test_has_ring_and_split_regions(self):
+        """Hamlet marks where each radial alley leaves the ring and splits."""
+        maze = make_hamlet_maze(bin_size=2.0)
+        ring_regions = [r for r in maze.env_2d.regions if r.startswith("ring_")]
+        split_regions = [r for r in maze.env_2d.regions if r.startswith("split_")]
+        assert len(ring_regions) == len(split_regions) == 5
 
     def test_default_5_arms(self):
         """Hamlet should have 5 arms by default."""
@@ -145,34 +147,32 @@ class TestHamletMaze:
 class TestRatHexMaze:
     """Test Rat HexMaze specific behavior."""
 
-    def test_has_3_modules(self):
-        """Rat HexMaze should have 3 modules (A, B, C)."""
+    def test_has_4_modules(self):
+        """Rat HexMaze has 4 modules (A, B, C, D), as in Wijnen et al. 2024."""
         maze = make_rat_hexmaze(bin_size=5.0)
-        for module in ["module_A", "module_B", "module_C"]:
+        for module in ["module_A", "module_B", "module_C", "module_D"]:
             assert module in maze.env_2d.regions
 
-    def test_default_3_modules(self):
-        """Rat HexMaze should have 3 modules by default."""
+    def test_default_4_modules(self):
+        """Rat HexMaze has 4 modules by default."""
         dims = RatHexmazeDims()
-        assert dims.n_modules == 3
+        assert dims.n_modules == 4
 
-    def test_has_many_nodes(self):
-        """Rat HexMaze should have many nodes (large maze)."""
+    def test_has_96_choice_points(self):
+        """Every one of the 96 nodes is a track-graph node."""
         maze = make_rat_hexmaze(bin_size=5.0)
-        n_nodes = maze.env_track.connectivity.number_of_nodes()
-        # Should have many nodes for a large-scale maze
-        assert n_nodes > 100
+        graph = maze.env_track.binning.linearization.graph
+        assert graph.number_of_nodes() == 96
 
 
 class TestLatticeMazesComplexity:
     """Test relative complexity of lattice mazes."""
 
     def test_rat_hexmaze_is_large(self):
-        """Rat HexMaze should be a large maze (many nodes)."""
+        """Rat HexMaze spans about 9 m."""
         rat_hex = make_rat_hexmaze(bin_size=4.0)
-        rat_hex_nodes = rat_hex.env_track.connectivity.number_of_nodes()
-        # Rat HexMaze should have >100 nodes (large-scale maze)
-        assert rat_hex_nodes > 100
+        extent = np.ptp(rat_hex.env_2d.bin_centers, axis=0)
+        assert extent[0] > 850.0
 
     def test_honeycomb_has_reasonable_connectivity(self):
         """Honeycomb should have reasonable average connectivity."""

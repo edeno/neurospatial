@@ -138,6 +138,12 @@ class TestMakeSquareMaze:
         assert np.isclose(sw.data[0], -quarter, atol=1.0)
         assert np.isclose(sw.data[1], -quarter, atol=1.0)
 
+    def test_rest_box_has_no_landmarks(self):
+        """A rest box holds no reward ports, boxes or cues."""
+        from neurospatial.simulation.mazes.square_maze import make_square_maze
+
+        assert len(make_square_maze().env_2d.landmarks) == 0
+
     def test_no_track_graph(self):
         """Square maze should not have a track graph (open field)."""
         from neurospatial.simulation.mazes.square_maze import make_square_maze

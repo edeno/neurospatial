@@ -1,278 +1,222 @@
-"""Tests for Repeated T-Maze implementation."""
+"""Tests for the repeated T-maze: Blodgett's six-unit T maze (Tolman &
+Nyswander 1927, Fig. 5)."""
 
 from __future__ import annotations
 
+from collections import Counter
+from itertools import pairwise
+
 import networkx as nx
 import numpy as np
+import pytest
+from shapely.geometry import LineString, Point
+
+from neurospatial.simulation.mazes._base import MazeEnvironments
+from neurospatial.simulation.mazes.repeated_t import (
+    RepeatedTDims,
+    make_repeated_t_maze,
+)
+
+INCH = 2.54
+CHOICES = [f"choice_{k}" for k in range(1, 7)]
+BLINDS = [f"blind_{k}" for k in range(1, 7)]
 
 
-class TestMakeRepeatedTMaze:
-    """Tests for make_repeated_t_maze factory function."""
+@pytest.fixture(scope="module")
+def maze():
+    return make_repeated_t_maze()
 
-    def test_returns_maze_environments(self):
-        """make_repeated_t_maze should return MazeEnvironments."""
-        from neurospatial.simulation.mazes._base import MazeEnvironments
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
 
-        maze = make_repeated_t_maze()
-        assert isinstance(maze, MazeEnvironments)
+@pytest.fixture(scope="module")
+def floor(maze):
+    return maze.env_2d.arena.polygonal_domain()
 
-    def test_env_2d_is_valid_environment(self):
-        """env_2d should be a valid, fitted Environment."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
 
-        maze = make_repeated_t_maze()
-        assert maze.env_2d.n_bins > 0
-
-    def test_env_2d_has_correct_units(self):
-        """env_2d should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze()
-        assert maze.env_2d.units == "cm"
-
-    def test_env_2d_has_start_region(self):
-        """env_2d should have a 'start' region."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze()
-        assert "start" in maze.env_2d.regions
-
-    def test_env_2d_has_goal_region(self):
-        """env_2d should have a 'goal' region."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze()
-        assert "goal" in maze.env_2d.regions
-
-    def test_env_2d_has_top_spur_region(self):
-        """env_2d should have a 'top_spur' region (center stem above upper horizontal)."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze()
-        assert "top_spur" in maze.env_2d.regions
-
-    def test_env_2d_has_stem_bottom_regions(self):
-        """env_2d should have regions for bottom of each stem."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze()
-        assert "left_stem_bottom" in maze.env_2d.regions
-        assert "center_stem_bottom" in maze.env_2d.regions
-        assert "right_stem_bottom" in maze.env_2d.regions
-
-    def test_env_2d_has_junction_regions(self):
-        """env_2d should have regions for T-junctions."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze()
-        assert "upper_junction" in maze.env_2d.regions
-        assert "lower_left_junction" in maze.env_2d.regions
-        assert "lower_center_junction" in maze.env_2d.regions
-        assert "upper_right_junction" in maze.env_2d.regions
-
-    def test_env_2d_has_lower_arm_regions(self):
-        """env_2d should have regions for lower arm ends."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze()
-        assert "lower_left_arm" in maze.env_2d.regions
-        assert "lower_center_left_arm" in maze.env_2d.regions
-
-    def test_include_track_true_creates_env_track(self):
-        """include_track=True should create env_track."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze(include_track=True)
-        assert maze.env_track is not None
-
-    def test_include_track_false_no_env_track(self):
-        """include_track=False should result in env_track=None."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze(include_track=False)
-        assert maze.env_track is None
-
-    def test_env_track_is_1d(self):
-        """env_track should be a 1D linearized environment."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.is_linearized_track
-
-    def test_env_track_is_connected(self):
-        """Track graph should be connected."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze(include_track=True)
-        assert maze.env_track is not None
-        assert nx.is_connected(maze.env_track.connectivity)
-
-    def test_env_track_has_correct_units(self):
-        """env_track should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze = make_repeated_t_maze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.units == "cm"
-
-    def test_custom_bin_size(self):
-        """Custom bin_size should affect discretization."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
-
-        maze_fine = make_repeated_t_maze(bin_size=1.0)
-        maze_coarse = make_repeated_t_maze(bin_size=5.0)
-
-        assert maze_fine.env_2d.n_bins > maze_coarse.env_2d.n_bins
-
-    def test_none_dims_uses_defaults(self):
-        """dims=None should use default dimensions."""
-        from neurospatial.simulation.mazes.repeated_t import (
-            RepeatedTDims,
-            make_repeated_t_maze,
+@pytest.fixture(scope="module")
+def track_graph(maze):
+    """The track's nodes and edges, rebuilt from its segments."""
+    graph = nx.Graph()
+    for start, end in np.asarray(maze.env_track.arena.segments):
+        graph.add_edge(
+            tuple(np.round(start, 6)),
+            tuple(np.round(end, 6)),
+            length=float(np.linalg.norm(end - start)),
         )
-
-        maze_default = make_repeated_t_maze(dims=None)
-        maze_explicit = make_repeated_t_maze(dims=RepeatedTDims())
-
-        assert maze_default.env_2d.n_bins == maze_explicit.env_2d.n_bins
+    return graph
 
 
-class TestRepeatedTMazeStructure:
-    """Tests for the three-stem T-maze structure."""
+def _point(maze, name):
+    """A point region's position, or a box landmark's centre."""
+    env = maze.env_2d
+    data = env.landmarks[name].data if name in env.landmarks else env.regions[name].data
+    return tuple(np.round(np.asarray(data, float), 6))
 
-    def test_three_stems_exist(self):
-        """Maze should have three vertical stems."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
 
-        maze = make_repeated_t_maze()
+def _dead_end_near(track_graph, node, point):
+    """The dead end next to track node ``node`` that lies closest to ``point``."""
+    return min(
+        (n for n in track_graph.neighbors(node) if track_graph.degree(n) == 1),
+        key=lambda n: np.linalg.norm(np.subtract(n, point)),
+    )
 
-        # Check that stem bottom regions exist at different x positions
-        left_bottom = maze.env_2d.regions["left_stem_bottom"]
-        center_bottom = maze.env_2d.regions["center_stem_bottom"]
-        right_bottom = maze.env_2d.regions["right_stem_bottom"]
 
-        # X positions should be different (spaced apart)
-        assert left_bottom.data[0] < center_bottom.data[0] < right_bottom.data[0]
+def test_returns_maze_environments_in_cm(maze):
+    assert isinstance(maze, MazeEnvironments)
+    assert maze.env_2d.units == "cm"
+    assert maze.env_track.units == "cm"
+    assert maze.env_track.is_linearized_track
 
-        # Y positions should be the same (all at bottom)
-        assert np.isclose(left_bottom.data[1], center_bottom.data[1])
-        assert np.isclose(center_bottom.data[1], right_bottom.data[1])
 
-    def test_center_stem_extends_above_upper_horizontal(self):
-        """Center stem should extend above the upper horizontal (top_spur)."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
+def test_default_dims_are_the_figures_numbers():
+    # Tolman & Nyswander (1927) Fig. 5: 4-in alleys, 16-in and 18-in segments.
+    dims = RepeatedTDims()
+    assert dims.width == pytest.approx(4 * INCH)
+    assert dims.arm_length == pytest.approx(16 * INCH)
+    assert dims.long_arm_length == pytest.approx(18 * INCH)
 
-        maze = make_repeated_t_maze()
 
-        top_spur = maze.env_2d.regions["top_spur"]
-        upper_junction = maze.env_2d.regions["upper_junction"]
+def test_footprint_is_78_by_56_inches_centred_on_the_origin(floor):
+    # Blind alleys 2 and 3 and the goal arm set the extent, not the start box.
+    np.testing.assert_allclose(
+        floor.bounds, (-39 * INCH, -28 * INCH, 39 * INCH, 28 * INCH), atol=1e-9
+    )
 
-        # Top spur should be above upper junction (same x, higher y)
-        assert np.isclose(top_spur.data[0], upper_junction.data[0])
-        assert top_spur.data[1] > upper_junction.data[1]
 
-    def test_upper_horizontal_has_gap(self):
-        """Upper horizontal should have two separate sections with a gap."""
-        from neurospatial.simulation.mazes.repeated_t import (
-            RepeatedTDims,
-            make_repeated_t_maze,
-        )
+def test_regions_name_start_six_choices_six_blinds_and_goal(maze):
+    assert list(maze.env_2d.regions) == ["start_box", *CHOICES, *BLINDS, "food_box"]
 
-        dims = RepeatedTDims()
-        maze = make_repeated_t_maze(dims=dims)
 
-        # Start is at left arm end
-        start = maze.env_2d.regions["start"]
-        # Upper junction is where left section meets center stem
-        upper_junction = maze.env_2d.regions["upper_junction"]
-        # Goal is at right arm end
-        goal = maze.env_2d.regions["goal"]
+def test_six_t_choice_points_and_six_blind_alleys(maze, track_graph):
+    degrees = Counter(dict(track_graph.degree()).values())
+    assert degrees == {3: 6, 1: 8}
+    assert nx.is_tree(track_graph)
+    assert {_point(maze, name) for name in CHOICES} == {
+        n for n, d in track_graph.degree() if d == 3
+    }
 
-        # Start and upper_junction should be on same horizontal level
-        assert np.isclose(start.data[1], upper_junction.data[1])
 
-        # Goal and upper_right_junction should be on same horizontal level
-        upper_right_junction = maze.env_2d.regions["upper_right_junction"]
-        assert np.isclose(goal.data[1], upper_right_junction.data[1])
+def test_true_path_meets_the_choice_points_in_order(maze, track_graph):
+    last = _point(maze, "choice_6")
+    goal = _dead_end_near(track_graph, last, _point(maze, "food_box"))
+    route = nx.shortest_path(track_graph, _point(maze, "start_box"), goal)
+    assert route[1:-1] == [_point(maze, name) for name in CHOICES]
 
-        # Gap exists: upper_junction to upper_right_junction has distance
-        gap_distance = upper_right_junction.data[0] - upper_junction.data[0]
-        assert gap_distance > dims.arm_length  # There's a gap, not just arm length
 
-    def test_lower_horizontal_has_gap(self):
-        """Lower horizontal should have two separate sections with a gap."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
+def test_start_box_feeds_choice_1_from_the_left(maze, track_graph):
+    start, first = _point(maze, "start_box"), _point(maze, "choice_1")
+    assert list(track_graph.neighbors(start)) == [first]
+    assert start[1] == pytest.approx(first[1])
+    assert start[0] < first[0]
 
-        maze = make_repeated_t_maze()
 
-        # Lower-left arm end
-        lower_left_arm = maze.env_2d.regions["lower_left_arm"]
-        # Lower-left junction (at left stem)
-        lower_left_junction = maze.env_2d.regions["lower_left_junction"]
-        # Lower-center junction (at center stem)
-        lower_center_junction = maze.env_2d.regions["lower_center_junction"]
-        # Lower-center-left arm (extends left from center stem)
-        lower_center_left_arm = maze.env_2d.regions["lower_center_left_arm"]
+def test_choice_points_are_one_segment_plus_an_alley_width_apart(maze):
+    gaps = [
+        np.linalg.norm(np.subtract(_point(maze, a), _point(maze, b)))
+        for a, b in pairwise(CHOICES)
+    ]
+    np.testing.assert_allclose(gaps, np.array([20, 20, 20, 22, 22]) * INCH, atol=1e-6)
 
-        # Lower-left arm and lower-left junction should be on same horizontal level
-        assert np.isclose(lower_left_arm.data[1], lower_left_junction.data[1])
 
-        # Lower-center junction should be at same y level
-        assert np.isclose(lower_left_junction.data[1], lower_center_junction.data[1])
+def test_blind_alleys_and_goal_arm_are_16_inches_along_their_walls(maze, track_graph):
+    dims = RepeatedTDims()
+    half = dims.width / 2
+    lengths = {}
+    for k, name in enumerate(BLINDS, start=1):
+        choice = _point(maze, f"choice_{k}")
+        end = _dead_end_near(track_graph, choice, _point(maze, name))
+        lengths[name] = np.linalg.norm(np.subtract(end, choice)) - half
+    choice_6 = _point(maze, "choice_6")
+    goal_end = _dead_end_near(track_graph, choice_6, _point(maze, "food_box"))
+    goal_arm = np.linalg.norm(np.subtract(goal_end, choice_6)) - half
+    for name, length in lengths.items():
+        # Blind alley 4 stops a partition short of alley 1.
+        expected = 16 * INCH - (dims.wall_thickness if name == "blind_4" else 0.0)
+        assert length == pytest.approx(expected), name
+    assert goal_arm == pytest.approx(16 * INCH)
 
-        # Lower-center-left arm should be at same y level
-        assert np.isclose(lower_center_junction.data[1], lower_center_left_arm.data[1])
 
-        # Gap exists between left_stem and center_stem's left arm
-        # The lower_center_left_arm should be to the right of lower_left_arm
-        assert lower_center_left_arm.data[0] > lower_left_arm.data[0]
+def test_alleys_are_4_inches_wide(maze, floor, track_graph):
+    start = _point(maze, "start_box")
+    widths = [
+        2.0 * floor.boundary.distance(Point((np.array(a) + np.array(b)) / 2))
+        for a, b in track_graph.edges
+        if start not in (a, b)
+    ]
+    np.testing.assert_allclose(widths, 4 * INCH)
 
-    def test_start_at_upper_left_arm(self):
-        """Start should be at the end of upper-left horizontal arm."""
-        from neurospatial.simulation.mazes.repeated_t import (
-            RepeatedTDims,
-            make_repeated_t_maze,
-        )
 
-        dims = RepeatedTDims()
-        maze = make_repeated_t_maze(dims=dims)
+def test_blind_alley_4_ends_a_partition_short_of_alley_1(maze, floor, track_graph):
+    dims = RepeatedTDims()
+    choice_1, choice_4 = _point(maze, "choice_1"), _point(maze, "choice_4")
+    end = _dead_end_near(track_graph, choice_4, _point(maze, "blind_4"))
+    assert end[0] - choice_1[0] == pytest.approx(dims.width / 2 + dims.wall_thickness)
+    across = LineString([(choice_1[0], end[1]), end])
+    assert not floor.contains(across)
 
-        start = maze.env_2d.regions["start"]
-        upper_junction = maze.env_2d.regions["upper_junction"]
 
-        # Start should be to the left of upper_junction
-        assert start.data[0] < upper_junction.data[0]
+def test_start_and_food_boxes_are_landmarks(maze):
+    landmarks = maze.env_2d.landmarks
+    assert {name: lm.metadata["role"] for name, lm in landmarks.items()} == {
+        "start_box": "start_box",
+        "food_box": "goal_box",
+    }
 
-        # Y should match upper horizontal level
-        assert np.isclose(start.data[1], upper_junction.data[1])
 
-    def test_goal_at_upper_right_arm(self):
-        """Goal should be at the end of upper-right horizontal arm."""
-        from neurospatial.simulation.mazes.repeated_t import (
-            RepeatedTDims,
-            make_repeated_t_maze,
-        )
+def test_start_box_is_7_5_by_6_inches_before_choice_1(maze, track_graph):
+    dims = RepeatedTDims()
+    region = maze.env_2d.regions["start_box"]
+    x0, y0, x1, y1 = region.data.bounds
+    assert region.kind == "polygon"
+    assert (x1 - x0, y1 - y0) == pytest.approx(
+        (dims.start_box_depth, dims.start_box_width)
+    )
+    # The box ends one stem length and half an alley short of choice point 1.
+    assert _point(maze, "choice_1")[0] - x1 == pytest.approx(
+        dims.start_stem_length + dims.width / 2
+    )
+    # The landmark is the box's centre, where the track starts.
+    centre = region.data.centroid.coords[0]
+    np.testing.assert_allclose(_point(maze, "start_box"), centre, atol=1e-6)
+    assert track_graph.degree(_point(maze, "start_box")) == 1
 
-        dims = RepeatedTDims()
-        maze = make_repeated_t_maze(dims=dims)
 
-        goal = maze.env_2d.regions["goal"]
-        upper_right_junction = maze.env_2d.regions["upper_right_junction"]
+def test_food_box_is_the_end_of_the_last_alley(maze, floor, track_graph):
+    dims = RepeatedTDims()
+    region = maze.env_2d.regions["food_box"]
+    x0, y0, x1, y1 = region.data.bounds
+    assert region.kind == "polygon"
+    assert (x1 - x0, y1 - y0) == pytest.approx((dims.food_box_depth, dims.width))
+    assert floor.covers(region.data)
+    # It closes the alley from choice point 6: Fig. 5's F at the far end.
+    choice_6 = _point(maze, "choice_6")
+    goal_end = _dead_end_near(track_graph, choice_6, _point(maze, "food_box"))
+    assert x1 == pytest.approx(goal_end[0]) == pytest.approx(floor.bounds[2])
+    assert (y0 + y1) / 2 == pytest.approx(choice_6[1])
+    np.testing.assert_allclose(
+        _point(maze, "food_box"), region.data.centroid.coords[0], atol=1e-6
+    )
 
-        # Goal should be to the right of upper_right_junction
-        assert goal.data[0] > upper_right_junction.data[0]
 
-        # Y should match upper horizontal level
-        assert np.isclose(goal.data[1], upper_right_junction.data[1])
+@pytest.mark.parametrize("name", ["start_box", "food_box"])
+def test_box_regions_cover_bins_on_both_environments(maze, name):
+    assert len(maze.env_2d.bins_in_region(name)) > 0
+    assert len(maze.env_track.bins_in_region(name)) > 0
 
-    def test_track_nodes_have_positions(self):
-        """All track graph nodes should have position attributes."""
-        from neurospatial.simulation.mazes.repeated_t import make_repeated_t_maze
 
-        maze = make_repeated_t_maze(include_track=True)
-        assert maze.env_track is not None
+def test_include_track_false_has_no_track():
+    assert make_repeated_t_maze(include_track=False).env_track is None
 
-        for node in maze.env_track.connectivity.nodes():
-            assert "pos" in maze.env_track.connectivity.nodes[node]
+
+def test_long_arm_not_longer_than_arm_raises():
+    with pytest.raises(ValueError, match="makes alleys touch"):
+        make_repeated_t_maze(RepeatedTDims(long_arm_length=40.64))
+
+
+def test_food_box_longer_than_the_alley_raises():
+    with pytest.raises(ValueError, match="does not fit"):
+        make_repeated_t_maze(RepeatedTDims(food_box_depth=50.0))
+
+
+def test_bins_coarser_than_the_walls_warn():
+    with pytest.warns(UserWarning, match="walls of the repeated T-maze"):
+        make_repeated_t_maze(bin_size=3.0, include_track=False)

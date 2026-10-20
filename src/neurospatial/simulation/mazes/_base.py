@@ -28,6 +28,20 @@ if TYPE_CHECKING:
     from neurospatial.regions import Regions
 
 
+MAZE_LANDMARK_ROLES = frozenset(
+    {
+        "reward_port",  # a well, port, food cup or feeder that delivers reward
+        "hole",  # a Barnes-maze hole without an escape box
+        "escape_hole",  # the Barnes-maze hole above the escape box
+        "platform",  # a watermaze's hidden platform
+        "start_box",
+        "goal_box",
+        "cue",  # a cue whose placement the source publishes
+    }
+)
+"""Values of ``metadata["role"]`` on a built-in maze's landmarks."""
+
+
 @dataclass(frozen=True)
 class MazeDims:
     """Base class for maze dimension specifications.
@@ -73,6 +87,17 @@ class MazeEnvironments:
         Present for corridor-based mazes (T-maze, Y-maze, etc.) but not
         for open-field mazes (watermaze, Barnes maze).
 
+    Notes
+    -----
+    The apparatus is described twice, for two kinds of analysis. Each
+    physical thing a maze's source places, a reward port, a hole, a hidden
+    platform, a start or goal box, or a published cue, is a landmark in
+    ``env_2d.landmarks`` whose ``metadata["role"]`` is one of
+    ``MAZE_LANDMARK_ROLES``. Encoding functions take its name as an object
+    position. Every landmark except a cue also has a region of the same name
+    and its real size, for visits and occupancy. The track carries the same
+    landmarks as the 2-D maze.
+
     Examples
     --------
     >>> import numpy as np
@@ -98,6 +123,9 @@ class MazeEnvironments:
             self.env_track = self.env_track.with_regions(
                 _regions_on_track(self.env_2d.regions, self.env_track)
             )
+        # Landmarks are not bins, so they keep their 2-D positions.
+        if self.env_track is not None and not self.env_track.landmarks:
+            self.env_track = self.env_track.with_landmarks(self.env_2d.landmarks)
 
 
 def _regions_on_track(regions: Regions, track: Environment) -> Regions:

@@ -9,7 +9,28 @@ with no physical constraints on movement paths. Animals can swim in any directio
 making it ideal for studying flexible spatial strategies.
 
 Reference: Morris (1984). "Developments of a water-maze procedure for studying
-spatial learning in the rat." Journal of Neuroscience Methods, 11(1), 47-60.
+spatial learning in the rat." J Neurosci Methods 11:47-60,
+doi:10.1016/0165-0270(84)90007-4.
+
+The default sizes follow Morris (2008), "Morris water maze", Scholarpedia
+3:6315, doi:10.4249/scholarpedia.6315: pools are "generally 1.5 to 2 metres
+in diameter", and the platform is "usually about 10-15 cm in diameter and thus
+between 1/50th and 1/100th of the surface area of the pool". The default
+150 cm pool and 15 cm platform lie in those ranges.
+
+The platform sits by default in the centre of the NE quadrant, which by the
+usual convention is halfway between the pool centre and the wall along the
+quadrant's diagonal; that placement is a convention, not taken from Morris
+(1984) (UNVERIFIED). North is +y and east is +x.
+
+The quadrants are quarters of the pool for probe trials, in which "the
+escape platform is removed from the pool" and "a well-trained rat will swim
+to the target quadrant of the pool and repeatedly across the former location
+of the platform" (Morris 2008). Animals are "placed into the water at and
+facing the sidewalls of the pool, at different start positions across
+trials" (Morris 2008), with no fixed start positions given, so the maze has no
+start landmarks. The pool sits among "distinctive 2- and 3-D distal cues"
+whose placement is the laboratory's, so it has no cue landmarks either.
 
 Examples
 --------
@@ -17,10 +38,10 @@ Examples
 >>> maze = make_watermaze()
 >>> maze.env_2d.units
 'cm'
->>> "platform" in maze.env_2d.regions
-True
->>> "NE" in maze.env_2d.regions
-True
+>>> maze.env_2d.landmarks["platform"].metadata["role"]
+'platform'
+>>> maze.env_2d.regions["NE"].kind
+'polygon'
 >>> maze.env_track is None
 True
 """
@@ -29,7 +50,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+from shapely.geometry import box
+
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_circular_arena
@@ -45,17 +70,21 @@ class WatermazeDims(MazeDims):
     Attributes
     ----------
     pool_diameter : float
-        Diameter of the circular pool in cm. Default is 150.0.
+        Diameter of the circular pool in cm. Default is 150.0, at the small
+        end of the 1.5-2 m range given by Morris (2008),
+        doi:10.4249/scholarpedia.6315.
     platform_radius : float
-        Radius of the circular platform in cm. Default is 5.0.
+        Radius of the circular platform in cm. Default is 7.5 (a 15 cm
+        platform, at the large end of the 10-15 cm range given by Morris
+        (2008)).
 
     Examples
     --------
     >>> dims = WatermazeDims()
     >>> dims.pool_diameter
     150.0
-    >>> dims.platform_radius
-    5.0
+    >>> dims.platform_radius * 2  # platform diameter, cm
+    15.0
 
     >>> custom = WatermazeDims(pool_diameter=200.0, platform_radius=10.0)
     >>> custom.pool_diameter
@@ -63,7 +92,7 @@ class WatermazeDims(MazeDims):
     """
 
     pool_diameter: float = 150.0
-    platform_radius: float = 5.0
+    platform_radius: float = 7.5
 
 
 def make_watermaze(
@@ -81,12 +110,14 @@ def make_watermaze(
     ----------
     dims : WatermazeDims, optional
         Maze dimensions. If None, uses default dimensions
-        (150 cm pool diameter, 5 cm platform radius).
+        (150 cm pool diameter, 15 cm platform diameter).
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
     platform_position : tuple[float, float], optional
         Position (x, y) of the platform center in cm. If None, defaults to
-        the center of the NE quadrant: (pool_diameter/4, pool_diameter/4).
+        the centre of the NE quadrant, halfway between the pool centre and the
+        wall along the NE diagonal: ``(R / (2 * sqrt(2)), R / (2 * sqrt(2)))``
+        with ``R = pool_diameter / 2``.
 
     Returns
     -------
@@ -98,20 +129,20 @@ def make_watermaze(
     Notes
     -----
     The maze is centered at the origin:
-    - Pool boundary is a circle with radius = pool_diameter / 2
-    - Platform defaults to center of NE quadrant
+    - Pool boundary is a circle with radius R = pool_diameter / 2
+    - North is +y and east is +x
+    - Platform defaults to the centre of the NE quadrant
 
-    Regions:
-    - platform: Point region at platform location
-    - NE: Northeast quadrant center (pool_diameter/4, pool_diameter/4)
-    - NW: Northwest quadrant center (-pool_diameter/4, pool_diameter/4)
-    - SE: Southeast quadrant center (pool_diameter/4, -pool_diameter/4)
-    - SW: Southwest quadrant center (-pool_diameter/4, -pool_diameter/4)
+    Landmarks and regions:
 
-    The quadrant regions are useful for:
-    - Analyzing spatial bias (time spent in each quadrant)
-    - Measuring probe trial performance (target quadrant occupancy)
-    - Studying search strategies
+    - platform: the hidden platform, a landmark with role ``"platform"``
+      and a circular region of the platform's diameter, for platform
+      crossings and time in the platform zone.
+    - NE, NW, SE, SW: the pool's quarters, bounded by the north-south and
+      east-west lines through its centre (NE is x > 0, y > 0). They are
+      regions only, for quadrant occupancy in probe trials; together they
+      cover the pool without overlapping. A bin whose centre lies exactly on
+      a dividing line belongs to both quadrants it touches.
 
     Examples
     --------
@@ -129,14 +160,14 @@ def make_watermaze(
 
     >>> dims = WatermazeDims(pool_diameter=200.0, platform_radius=10.0)
     >>> maze = make_watermaze(dims=dims, bin_size=4.0)
-    >>> "platform" in maze.env_2d.regions
-    True
+    >>> round(maze.env_2d.regions["platform"].data.area)  # pi * 10**2, cm^2
+    314
 
     Custom platform position:
 
     >>> maze = make_watermaze(platform_position=(20.0, 30.0))
     >>> import numpy as np
-    >>> platform = maze.env_2d.regions["platform"]
+    >>> platform = maze.env_2d.landmarks["platform"]
     >>> np.allclose(platform.data, [20.0, 30.0])
     True
 
@@ -150,9 +181,12 @@ def make_watermaze(
     # Pool radius
     radius = dims.pool_diameter / 2.0
 
-    # Default platform position: center of NE quadrant
+    # The NE quadrant's centre: R/2 from the pool centre along its diagonal
+    c = radius / 2.0 / np.sqrt(2.0)
+
+    # Default platform position: centre of the NE quadrant
     if platform_position is None:
-        platform_position = (dims.pool_diameter / 4, dims.pool_diameter / 4)
+        platform_position = (c, c)
 
     # Create circular pool polygon
     pool_polygon = make_circular_arena(
@@ -169,18 +203,34 @@ def make_watermaze(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # Add platform region
+    platform_center = (float(platform_position[0]), float(platform_position[1]))
     region_builder = Regions()
-    region_builder.add("platform", point=platform_position)
+    region_builder.add(
+        "platform",
+        polygon=make_circular_arena(
+            center=platform_center, radius=dims.platform_radius
+        ),
+    )
 
-    # Add quadrant regions at quadrant centers
-    # Quadrant centers are at radius/2 from origin
-    half_radius = radius / 2.0
-    region_builder.add("NE", point=(half_radius, half_radius))
-    region_builder.add("NW", point=(-half_radius, half_radius))
-    region_builder.add("SE", point=(half_radius, -half_radius))
-    region_builder.add("SW", point=(-half_radius, -half_radius))
-    env_2d = env_2d.with_regions(region_builder)
+    # Each quadrant is the pool's quarter on one side of both axes
+    for name, (sign_x, sign_y) in {
+        "NE": (1, 1),
+        "NW": (-1, 1),
+        "SE": (1, -1),
+        "SW": (-1, -1),
+    }.items():
+        quarter = box(
+            min(0.0, sign_x * radius),
+            min(0.0, sign_y * radius),
+            max(0.0, sign_x * radius),
+            max(0.0, sign_y * radius),
+        )
+        region_builder.add(name, polygon=pool_polygon.intersection(quarter))
+
+    platform = Landmark(
+        "platform", "point", platform_center, metadata={"role": "platform"}
+    )
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks([platform]))
 
     # No track graph for open field
     env_track = None

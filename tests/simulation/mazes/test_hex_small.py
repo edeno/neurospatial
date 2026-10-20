@@ -1,260 +1,327 @@
-"""Tests for Small Hex Maze implementation.
+"""Tests for the Small Hex Maze (Krausz et al. 2023; Berke lab hexmaze package).
 
-The Small Hex Maze is based on CVAT annotations of an actual triangular hex maze.
-It consists of a triangular arena with hexagonal barriers creating a complex path
-structure. The maze has 34 hex centers as navigation nodes and 3 reward wells.
+The maze is a 1.30 m equilateral triangle divided into 49 hexagonal units with
+reward ports at hexes 1, 2 and 3. Hex numbering, centres and the 63 passages of
+the empty maze follow the Berke lab's ``hexmaze`` package; movable barriers
+remove hexes from the floor and from the track.
 """
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import FrozenInstanceError
 
+import networkx as nx
 import numpy as np
 import pytest
+import shapely
 
 from neurospatial.simulation.mazes._base import MazeDims
+from neurospatial.simulation.mazes.hex_small import (
+    SmallHexDims,
+    _hex_centroids,
+    _maze_graph,
+    _platform,
+    make_small_hex_maze,
+)
+
+SPACING = np.sqrt(3) * 7.0  # distance between adjacent hex centres, cm
+_PORT_HEXES = {"port_A": 1, "port_B": 2, "port_C": 3}
+PORTS = list(_PORT_HEXES)
+
+# Each port has two open half-hexes beside it, named in hexmaze after the hex
+# in front of the port: the fourth corner of the rhombus (port, front, other).
+_PORT_HALF_HEXES = {4: (1, (6, 5)), 49: (2, (47, 38)), 48: (3, (33, 43))}
+
+
+@pytest.fixture(scope="module")
+def maze():
+    return make_small_hex_maze()
+
+
+@pytest.fixture(scope="module")
+def centroids():
+    """Hex centres in cm, centred like the built maze."""
+    cent = _hex_centroids(14.0)
+    middle = np.mean([cent[h] for h in (1, 2, 3)], axis=0)
+    return {h: c - middle for h, c in cent.items()}
+
+
+def _floor_hex_passages(env, centroids, barriers):
+    """Pairs of open hexes joined by a bin-to-bin connection of the floor.
+
+    Each bin belongs to the nearest open hex or open half-hex; a half-hex
+    counts as the hex in front of its port.
+    """
+    owners, points = [], []
+    for hex_id in sorted(_maze_graph(barriers).nodes):
+        owners.append(hex_id)
+        points.append(centroids[hex_id])
+    for front, (port, others) in _PORT_HALF_HEXES.items():
+        for other in others:
+            owners.append(front)
+            points.append(centroids[port] + centroids[other] - centroids[front])
+    owners_arr, points_arr = np.array(owners), np.array(points)
+    nearest = np.linalg.norm(
+        env.bin_centers[:, None] - points_arr[None], axis=-1
+    ).argmin(axis=1)
+    owner = owners_arr[nearest]
+    return {
+        tuple(sorted((int(owner[u]), int(owner[v]))))
+        for u, v in env.connectivity.edges
+        if owner[u] != owner[v]
+    }
+
+
+def _track_segments(track):
+    """Start and end of each track edge, from the bins along it."""
+    edge_ids = np.array(
+        [track.connectivity.nodes[n]["source_edge_id"] for n in range(track.n_bins)]
+    )
+    lengths, ends = [], []
+    for edge_id in np.unique(edge_ids):
+        on_edge = np.flatnonzero(edge_ids == edge_id)
+        centers = track.bin_centers[on_edge]
+        lengths.append(track.bin_sizes[on_edge].sum())
+        direction = centers[-1] - centers[0]
+        direction /= np.linalg.norm(direction)
+        half = track.bin_sizes[on_edge][[0, -1]] / 2
+        ends.append(
+            (centers[0] - half[0] * direction, centers[-1] + half[1] * direction)
+        )
+    return np.array(lengths), ends
 
 
 class TestSmallHexDims:
-    """Tests for SmallHexDims dataclass."""
-
     def test_inherits_from_maze_dims(self):
-        """SmallHexDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.hex_small import SmallHexDims
+        assert isinstance(SmallHexDims(), MazeDims)
 
+    def test_defaults_are_the_berke_maze(self):
         dims = SmallHexDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """SmallHexDims should have correct default values."""
-        from neurospatial.simulation.mazes.hex_small import SmallHexDims
-
-        dims = SmallHexDims()
-        assert dims.scale == 1.0
+        assert dims.hex_side == 7.0
+        assert len(dims.barriers) == 9
 
     def test_is_frozen(self):
-        """SmallHexDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.hex_small import SmallHexDims
-
-        dims = SmallHexDims()
         with pytest.raises(FrozenInstanceError):
-            dims.scale = 2.0  # type: ignore[misc]
+            SmallHexDims().hex_side = 8.0  # type: ignore[misc]
 
-    def test_custom_values(self):
-        """SmallHexDims should accept custom scale values."""
-        from neurospatial.simulation.mazes.hex_small import SmallHexDims
+    def test_barriers_given_as_a_set_are_stored_frozen(self):
+        dims = SmallHexDims(barriers={9, 11, 18, 31, 34, 45})
+        assert dims.barriers == frozenset({9, 11, 18, 31, 34, 45})
+        assert isinstance(dims.barriers, frozenset)
 
-        dims = SmallHexDims(scale=1.5)
-        assert dims.scale == 1.5
+    @pytest.mark.parametrize("hex_side", [0.0, -7.0, float("nan")])
+    def test_non_positive_hex_side_raises(self, hex_side):
+        with pytest.raises(ValueError, match="hex_side must be a positive"):
+            SmallHexDims(hex_side=hex_side)
+
+    @pytest.mark.parametrize("barrier", [1, 2, 3, 4, 49, 38, 50, 0])
+    def test_barrier_on_or_next_to_a_port_or_outside_the_maze_raises(self, barrier):
+        with pytest.raises(ValueError, match=rf"barriers \[{barrier}\] are not hexes"):
+            SmallHexDims(barriers={barrier, 20})
+
+    def test_non_integer_barrier_raises(self):
+        with pytest.raises(TypeError):
+            SmallHexDims(barriers={7.5})  # type: ignore[arg-type]
+
+    def test_barriers_that_cut_off_a_hex_raise(self):
+        # Hex 44's only open neighbours are 39 and 40.
+        with pytest.raises(ValueError, match="cut off open hex 44 "):
+            SmallHexDims(barriers={39, 40})
+
+    def test_barriers_that_cut_off_a_region_name_every_hex(self):
+        # Hexes 40, 44 and 45 connect to the rest only through 35, 39 and 41.
+        with pytest.raises(ValueError, match="cut off open hexes 40, 44, 45 "):
+            SmallHexDims(barriers={35, 39, 41})
 
 
-class TestMakeSmallHexMaze:
-    """Tests for make_small_hex_maze factory function."""
+class TestHexLattice:
+    def test_49_hexes_on_the_berke_grid(self):
+        cent = _hex_centroids(1.0)
+        assert sorted(cent) == list(range(1, 50))
+        # 49 distinct centres.
+        assert len({tuple(np.round(c, 9)) for c in cent.values()}) == 49
 
-    def test_returns_maze_environments(self):
-        """make_small_hex_maze should return MazeEnvironments."""
-        from neurospatial.simulation.mazes._base import MazeEnvironments
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
+    def test_empty_maze_passages_are_the_geometric_neighbours(self):
+        cent = _hex_centroids(1.0)
+        neighbours = {
+            (a, b)
+            for a, b in itertools.combinations(sorted(cent), 2)
+            if np.isclose(np.linalg.norm(cent[a] - cent[b]), np.sqrt(3) / 2)
+        }
+        empty = _maze_graph(frozenset())
+        assert {tuple(sorted(e)) for e in empty.edges} == neighbours
+        assert empty.number_of_edges() == 63
+        assert max(d for _, d in empty.degree()) == 3
 
-        maze = make_small_hex_maze()
-        assert isinstance(maze, MazeEnvironments)
+    def test_port_hexes_are_126_cm_apart_at_the_triangle_corners(self, maze):
+        ports = np.array(
+            [maze.env_2d.regions[p].data.centroid.coords[0] for p in PORTS]
+        )
+        sides = np.linalg.norm(ports - np.roll(ports, 1, axis=0), axis=1)
+        np.testing.assert_allclose(sides, 18 * 7.0)
+        np.testing.assert_allclose(ports.mean(axis=0), 0.0, atol=1e-9)
+        # Port A at the top, B bottom left, C bottom right.
+        assert ports[0, 1] > 0 > ports[1, 1]
+        assert ports[1, 0] < 0 < ports[2, 0]
 
-    def test_env_2d_is_valid_environment(self):
-        """env_2d should be a valid, fitted Environment."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
+    def test_platform_sides_are_about_130_cm(self, centroids):
+        xy = np.asarray(_platform(centroids, 7.0).exterior.coords)[:-1]
+        sides = np.sort(np.linalg.norm(xy - np.roll(xy, 1, axis=0), axis=1))
+        # Three long walls about 1.30 m, three corners cut at a hex side.
+        np.testing.assert_allclose(sides[:3], 7.0)
+        np.testing.assert_allclose(sides[3:], 9.5 * 14.0)
+        assert abs(sides[3] - 130.0) < 5.0
 
-        maze = make_small_hex_maze()
-        # Should have n_bins > 0 if fitted
-        assert maze.env_2d.n_bins > 0
+    def test_hex_side_scales_the_maze(self):
+        small = make_small_hex_maze(SmallHexDims(hex_side=7.0), include_track=False)
+        large = make_small_hex_maze(SmallHexDims(hex_side=10.0), include_track=False)
+        ratio = np.ptp(large.env_2d.bin_centers, axis=0) / np.ptp(
+            small.env_2d.bin_centers, axis=0
+        )
+        np.testing.assert_allclose(ratio, 10.0 / 7.0, rtol=0.05)
 
-    def test_env_2d_has_correct_units(self):
-        """env_2d should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
 
-        maze = make_small_hex_maze()
+class TestPorts:
+    """Reward ports A, B and C at the vertices, with their port hexes."""
+
+    def test_ports_are_reward_port_landmarks(self, maze):
+        landmarks = maze.env_2d.landmarks
+        assert list(landmarks) == PORTS
+        for (name, hex_id), letter in zip(_PORT_HEXES.items(), "ABC", strict=True):
+            assert landmarks[name].kind == "point"
+            assert dict(landmarks[name].metadata) == {
+                "role": "reward_port",
+                "port": letter,
+                "hex": hex_id,
+            }
+
+    def test_each_port_is_in_the_middle_of_a_cut_off_corner(self, maze, centroids):
+        # The platform's three short walls cut off the triangle's vertices.
+        xy = np.asarray(_platform(centroids, 7.0).exterior.coords)[:-1]
+        ends = np.roll(xy, -1, axis=0)
+        short = np.isclose(np.linalg.norm(ends - xy, axis=1), 7.0)
+        wall_middles = ((xy + ends) / 2)[short]
+        ports = maze.env_2d.landmarks.positions(PORTS)
+        nearest = np.linalg.norm(ports[:, None] - wall_middles[None], axis=-1).min(
+            axis=1
+        )
+        np.testing.assert_allclose(nearest, 0.0, atol=1e-9)
+
+    def test_each_port_is_one_hex_apothem_beyond_its_hex_centre(self, maze, centroids):
+        for name, hex_id in _PORT_HEXES.items():
+            outward = centroids[hex_id] / np.linalg.norm(centroids[hex_id])
+            np.testing.assert_allclose(
+                maze.env_2d.landmarks[name].data,
+                centroids[hex_id] + np.sqrt(3) / 2 * 7.0 * outward,
+                err_msg=name,
+            )
+        np.testing.assert_allclose(
+            maze.env_2d.landmarks["port_A"].data, [0.0, 78.8], atol=0.01
+        )
+
+    def test_port_regions_are_the_port_hexes(self, maze, centroids):
+        regions = maze.env_2d.regions
+        assert list(regions) == PORTS
+        for name, hex_id in _PORT_HEXES.items():
+            hexagon = regions[name].data
+            assert regions[name].kind == "polygon"
+            assert hexagon.area == pytest.approx(3 * np.sqrt(3) / 2 * 7.0**2)
+            np.testing.assert_allclose(hexagon.centroid.coords[0], centroids[hex_id])
+            # The port hex is open floor up to its sides.
+            inside = np.asarray(hexagon.exterior.coords) * 0.99 + 0.01 * np.asarray(
+                hexagon.centroid.coords
+            )
+            assert maze.env_2d.contains(inside).all(), name
+
+    def test_ports_scale_with_the_hex_side(self):
+        large = make_small_hex_maze(SmallHexDims(hex_side=10.0), include_track=False)
+        np.testing.assert_allclose(
+            large.env_2d.landmarks["port_A"].data, [0.0, 78.8 * 10.0 / 7.0], atol=0.02
+        )
+
+    def test_track_carries_the_ports(self, maze):
+        assert list(maze.env_track.landmarks) == PORTS
+        for name, hex_id in _PORT_HEXES.items():
+            node = maze.env_track.binning.linearization.graph.nodes[f"hex_{hex_id}"]
+            assert maze.env_track.regions[name].data.contains(
+                shapely.Point(node["pos"])
+            )
+
+
+class TestFloor:
+    def test_units(self, maze):
         assert maze.env_2d.units == "cm"
 
-    def test_env_2d_has_triangular_shape(self):
-        """env_2d should have a triangular spatial extent."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 3.0, 4.0])
+    def test_floor_is_one_piece(self, bin_size):
+        env = make_small_hex_maze(bin_size=bin_size, include_track=False).env_2d
+        assert len(env.components()) == 1
 
-        maze = make_small_hex_maze()
+    @pytest.mark.parametrize(
+        "barriers",
+        [SmallHexDims().barriers, frozenset(), frozenset({9, 11, 18, 31, 34, 45})],
+    )
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 4.0])
+    def test_floor_connects_exactly_the_open_neighbouring_hexes(
+        self, centroids, barriers, bin_size
+    ):
+        env = make_small_hex_maze(
+            SmallHexDims(barriers=barriers), bin_size=bin_size, include_track=False
+        ).env_2d
+        expected = {tuple(sorted(e)) for e in _maze_graph(barriers).edges}
+        assert _floor_hex_passages(env, centroids, barriers) == expected
 
-        # Get spatial extent from bin_centers
-        bin_centers = maze.env_2d.bin_centers
-        x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
-        y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
+    def test_barrier_hexes_have_no_floor(self, maze, centroids):
+        barrier_centres = np.array([centroids[h] for h in SmallHexDims().barriers])
+        assert not maze.env_2d.contains(barrier_centres).any()
+        open_centres = np.array(
+            [centroids[h] for h in _maze_graph(SmallHexDims().barriers).nodes]
+        )
+        assert maze.env_2d.contains(open_centres).all()
 
-        # Maze should be approximately centered at origin
-        # (CVAT-based geometry may not be perfectly centered)
-        assert abs((x_min + x_max) / 2) < 20  # Within 20 cm of center
-        assert abs((y_min + y_max) / 2) < 20
+    def test_finer_bins_give_more_bins(self):
+        fine = make_small_hex_maze(bin_size=1.0, include_track=False)
+        coarse = make_small_hex_maze(bin_size=5.0, include_track=False)
+        assert fine.env_2d.n_bins > coarse.env_2d.n_bins
 
-    def test_env_2d_has_3_reward_well_regions(self):
-        """env_2d should have 3 reward well regions."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
 
-        maze = make_small_hex_maze(bin_size=2.0)
-
-        # Should have reward_well_0 through reward_well_2
-        reward_regions = [
-            name for name in maze.env_2d.regions if name.startswith("reward_well_")
-        ]
-        assert len(reward_regions) == 3
-
-        # All should be point regions
-        for name in reward_regions:
-            region = maze.env_2d.regions[name]
-            assert region.kind == "point"
-
-    def test_env_2d_is_centered(self):
-        """env_2d should be approximately centered at origin."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze()
-        # The centroid should be near the origin
-        centroid = maze.env_2d.bin_centers.mean(axis=0)
-        assert abs(centroid[0]) < 20  # Within 20 cm of center
-        assert abs(centroid[1]) < 20
-
-    def test_env_2d_has_reasonable_bin_count(self):
-        """env_2d should have reasonable number of bins for the maze extent."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(bin_size=2.0)
-
-        # The CVAT-based maze has substantial navigable area
-        # With barriers subtracted, expect several hundred bins
-        assert maze.env_2d.n_bins > 500  # At least 500 bins
-        assert maze.env_2d.n_bins < 2000  # But not too many
-
-    def test_include_track_true_creates_env_track(self):
-        """include_track=True should create env_track."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=True)
-        assert maze.env_track is not None
-
-    def test_include_track_false_no_env_track(self):
-        """include_track=False should result in env_track=None."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=False)
-        assert maze.env_track is None
-
-    def test_env_track_is_1d(self):
-        """env_track should be a 1D linearized environment."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=True)
+class TestTrack:
+    def test_include_track(self, maze):
         assert maze.env_track is not None
         assert maze.env_track.is_linearized_track
-
-    def test_env_track_has_correct_units(self):
-        """env_track should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=True)
-        assert maze.env_track is not None
         assert maze.env_track.units == "cm"
+        assert make_small_hex_maze(include_track=False).env_track is None
 
-    def test_custom_bin_size(self):
-        """Custom bin_size should affect discretization."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
+    def test_one_edge_per_passage_each_one_hex_spacing_long(self, maze, centroids):
+        lengths, ends = _track_segments(maze.env_track)
+        hexes = _maze_graph(SmallHexDims().barriers)
+        assert len(lengths) == hexes.number_of_edges() == 39
+        np.testing.assert_allclose(lengths, SPACING)
+        # Every edge joins the centres of two neighbouring open hexes.
+        names = np.array(sorted(hexes.nodes))
+        points = np.array([centroids[h] for h in names])
+        joined = set()
+        for start, end in ends:
+            pair = [
+                names[np.linalg.norm(points - p, axis=1).argmin()] for p in (start, end)
+            ]
+            for p, h in zip((start, end), pair, strict=True):
+                np.testing.assert_allclose(p, centroids[h], atol=1e-6)
+            joined.add(tuple(sorted(int(h) for h in pair)))
+        assert joined == {tuple(sorted(e)) for e in hexes.edges}
 
-        maze_fine = make_small_hex_maze(bin_size=1.0)
-        maze_coarse = make_small_hex_maze(bin_size=5.0)
-
-        # Finer bins should result in more bins
-        assert maze_fine.env_2d.n_bins > maze_coarse.env_2d.n_bins
-
-    def test_custom_scale(self):
-        """Custom scale should affect maze size."""
-        from neurospatial.simulation.mazes.hex_small import (
-            SmallHexDims,
-            make_small_hex_maze,
+    def test_at_most_three_passages_per_hex(self, maze):
+        _, ends = _track_segments(maze.env_track)
+        graph = nx.Graph()
+        graph.add_edges_from(
+            (tuple(np.round(s, 6)), tuple(np.round(e, 6))) for s, e in ends
         )
+        assert max(d for _, d in graph.degree()) <= 3
+        assert nx.is_connected(graph)
 
-        # Create mazes with different scales
-        maze_normal = make_small_hex_maze(dims=SmallHexDims(scale=1.0), bin_size=2.0)
-        maze_large = make_small_hex_maze(dims=SmallHexDims(scale=1.5), bin_size=2.0)
+    def test_track_lies_on_the_floor(self, maze):
+        assert maze.env_2d.contains(maze.env_track.bin_centers).all()
 
-        # Larger scale should result in more bins (same bin_size)
-        assert maze_large.env_2d.n_bins > maze_normal.env_2d.n_bins
-
-        # Larger scale should have larger spatial extent
-        extent_normal = np.ptp(maze_normal.env_2d.bin_centers, axis=0)
-        extent_large = np.ptp(maze_large.env_2d.bin_centers, axis=0)
-        assert extent_large[0] > extent_normal[0]
-        assert extent_large[1] > extent_normal[1]
-
-    def test_none_dims_uses_defaults(self):
-        """dims=None should use default dimensions."""
-        from neurospatial.simulation.mazes.hex_small import (
-            SmallHexDims,
-            make_small_hex_maze,
-        )
-
-        maze_default = make_small_hex_maze(dims=None)
-        maze_explicit = make_small_hex_maze(dims=SmallHexDims())
-
-        # Both should have similar number of bins
-        assert maze_default.env_2d.n_bins == maze_explicit.env_2d.n_bins
-
-
-class TestSmallHexTrackGraph:
-    """Tests for the track graph structure of Small Hex Maze."""
-
-    def test_track_is_connected(self):
-        """Track graph should be connected."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # The underlying graph should be connected
-        import networkx as nx
-
+    def test_track_is_connected(self, maze):
         assert nx.is_connected(maze.env_track.connectivity)
-
-    def test_track_nodes_have_positions(self):
-        """All track graph nodes should have position attributes."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # Each node should have a 'pos' attribute
-        for node in maze.env_track.connectivity.nodes():
-            assert "pos" in maze.env_track.connectivity.nodes[node]
-
-    def test_track_covers_maze_extent(self):
-        """Track should cover the maze extent."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # Get the positions of all nodes
-        graph = maze.env_track.connectivity
-        positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
-
-        # Track should cover substantial area
-        x_extent = positions[:, 0].max() - positions[:, 0].min()
-        y_extent = positions[:, 1].max() - positions[:, 1].min()
-
-        # Should cover at least 30 cm in each direction
-        assert x_extent > 30
-        assert y_extent > 30
-
-    def test_track_has_many_nodes(self):
-        """Track graph should have many nodes due to discretization."""
-        from neurospatial.simulation.mazes.hex_small import make_small_hex_maze
-
-        maze = make_small_hex_maze(include_track=True, bin_size=2.0)
-        assert maze.env_track is not None
-
-        # The track graph is discretized with 34 hex centers as nodes
-        # With bin_size=2.0, we expect many bins along the edges
-        n_nodes = maze.env_track.connectivity.number_of_nodes()
-        assert n_nodes > 200  # Should have many discretized nodes

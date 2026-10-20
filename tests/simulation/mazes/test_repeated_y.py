@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestMakeRepeatedYMaze:
@@ -31,19 +32,45 @@ class TestMakeRepeatedYMaze:
         maze = make_repeated_y_maze()
         assert maze.env_2d.units == "cm"
 
-    def test_env_2d_has_start_region(self):
-        """env_2d should have a 'start' region."""
+    def test_entrance_and_food_boxes_are_landmarks(self):
+        """The entrance and food boxes are landmarks on point regions."""
         from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
 
-        maze = make_repeated_y_maze()
-        assert "start" in maze.env_2d.regions
+        env = make_repeated_y_maze().env_2d
+        roles = {name: lm.metadata["role"] for name, lm in env.landmarks.items()}
+        assert roles == {"entrance_box": "start_box", "food_box": "goal_box"}
+        for name in roles:
+            # Box sizes are not published, so each region is a point.
+            assert env.regions[name].kind == "point"
+            np.testing.assert_allclose(env.landmarks[name].data, env.regions[name].data)
+            assert len(env.bins_in_region(name)) > 0
 
-    def test_env_2d_has_goal_region(self):
-        """env_2d should have a 'goal' region at final endpoint."""
-        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
+    def test_boxes_end_the_first_and_last_arms(self):
+        """The entrance box feeds junction 1; the last junction leads to food."""
+        from neurospatial.simulation.mazes.repeated_y import (
+            RepeatedYDims,
+            make_repeated_y_maze,
+        )
 
-        maze = make_repeated_y_maze()
-        assert "goal" in maze.env_2d.regions
+        dims = RepeatedYDims()
+        maze = make_repeated_y_maze(dims)
+        regions = maze.env_2d.regions
+        graph = maze.env_track._binning.linearization.graph
+        for box, junction in (
+            ("entrance_box", "junction_1"),
+            ("food_box", f"junction_{dims.n_junctions}"),
+        ):
+            assert list(graph.neighbors(box)) == [junction]
+            np.testing.assert_allclose(graph.nodes[box]["pos"], regions[box].data)
+            arm = np.subtract(regions[box].data, regions[junction].data)
+            assert np.linalg.norm(arm) == pytest.approx(dims.arm_length)
+        # The food box lies beyond the last junction, the entrance before the
+        # first.
+        assert regions["entrance_box"].data[0] < regions["junction_1"].data[0]
+        assert (
+            regions["food_box"].data[0]
+            > regions[f"junction_{dims.n_junctions}"].data[0]
+        )
 
     def test_env_2d_has_junction_regions(self):
         """env_2d should have junction regions for each Y-junction."""
@@ -214,6 +241,30 @@ class TestMakeRepeatedYMaze:
 
         # Both should have similar number of bins
         assert maze_default.env_2d.n_bins == maze_explicit.env_2d.n_bins
+
+    def test_corridors_are_4_inches_wide(self):
+        """Corridors default to the 4-in alley width of period rat mazes."""
+        from shapely.geometry import Point
+
+        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
+
+        maze = make_repeated_y_maze()
+        floor = maze.env_2d.arena.polygonal_domain()
+        widths = [
+            2.0 * floor.boundary.distance(Point((start + end) / 2))
+            for start, end in np.asarray(maze.env_track.arena.segments)
+        ]
+        np.testing.assert_allclose(widths, 4 * 2.54)
+
+    def test_origin_is_the_maze_centre(self):
+        """The 2-D floor and the track share an origin at the maze centre."""
+        from neurospatial.simulation.mazes.repeated_y import make_repeated_y_maze
+
+        maze = make_repeated_y_maze()
+        min_x, min_y, max_x, max_y = maze.env_2d.arena.polygonal_domain().bounds
+        np.testing.assert_allclose([min_x + max_x, min_y + max_y], 0.0, atol=1e-9)
+        track_points = np.asarray(maze.env_track.arena.segments).reshape(-1, 2)
+        assert np.abs(track_points.mean(axis=0)).max() < 25.0
 
 
 class TestRepeatedYTrackGraph:

@@ -1,32 +1,58 @@
-"""Repeated T-Maze environment for spatial navigation research.
+"""Repeated T-Maze: Blodgett's six-unit T maze (Tolman & Nyswander, 1927).
 
-The Repeated T-Maze consists of three vertical stems connected by two horizontal
-corridors at different heights. The structure creates multiple T-junction decision
-points for navigation tasks.
+Tolman and Nyswander (1927) describe the maze of their Experiment VI(a):
 
-Structure (ASCII representation)::
+    "Six-unit T maze with doors. This maze was devised by Mr. H. C. Blodgett,
+    and a diagram of it is shown in figure 5. It will be seen that the maze
+    divides up into a succession of equivalent T units."
 
-                |
-                |
-    ------------|  ------+-----
-         |      |        |
-         |      |        |
-         |      |        |
-    -----|  ----|--------|
-         |      |        |
-         |      |        |
+A rat leaves the start box (Fig. 5's S) and meets six T-shaped choice points
+in turn; at each, one arm leads on and the other is a blind alley, and the
+last choice point opens onto the alley whose end is the food box (Fig. 5's
+F). The text describes neither box; Blodgett (1929), who used the six-unit
+maze, times each run "from the time the rat left the starting box until the
+door of the food box was closed behind it". The dimensions are those written
+on the figure:
+alleys 4 in (10.16 cm) wide, and each alley segment 16 in (40.64 cm) long
+along its walls, except the two segments that join choice points 4, 5 and 6,
+which are 18 in (45.72 cm). At the drawing's scale (the 4-in width marker),
+these labelled lengths run between the walls of the crossing alleys, so
+neighbouring choice points are 20 in (or 22 in) apart centre to centre. The
+start box, its stem, the food box and the partition where blind alley 4 ends
+against the first alley are not dimensioned; their sizes are scaled from the
+drawing and are estimates. The food box is the last 5.5 in of the final
+alley, behind the dashed line drawn across it. The doors, closed behind the
+rat to stop retracing, are not modelled.
 
-Key features:
-- Three vertical stems (left, center, right)
-- Center stem extends above the upper horizontal (top spur)
-- Upper horizontal: left section connects to center stem, right section has T-junction
-- Lower horizontal: left arm from left stem, right section connects center and right stems
-- Gaps between horizontal sections create the T-junction decision points
+The layout is turned a quarter turn clockwise from the figure, as drawn in
+Wijnen et al. (2024, Fig. 1b): start at the left, goal at the right::
 
-The maze structure facilitates:
-- Multi-location navigation with repeated T-choice points
-- Sequential decision paradigms
-- Spatial working memory tasks
+                        b3
+                        |
+       b2 ----- 2 ----- 3      b6 ----- 6 ----- F
+                |       |               |
+                |       |               |
+       S ====== 1    b4 4 ------------- 5
+                |                       |
+                b1                      b5
+
+Choice points 1-6 in order; b1-b6 are the ends of the blind alleys. Blind
+alley 4 runs back toward alley 1 and stops a partition short of it.
+
+References
+----------
+Blodgett, H. C. (1929). The effect of the introduction of reward upon the
+maze performance of rats. University of California Publications in
+Psychology, 4(8), 113-134.
+
+Tolman, E. C., & Nyswander, D. B. (1927). The reliability and validity of
+maze-measures for rats. Journal of Comparative Psychology, 7(6), 425-460.
+https://doi.org/10.1037/h0072851
+
+Wijnen, K., Genzel, L., & van der Meij, J. (2024). Rodent maze studies: from
+following simple rules to complex map learning. Brain Structure and Function,
+229, 823.
+https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------
@@ -37,10 +63,10 @@ Examples
 >>> maze = make_repeated_t_maze()
 >>> maze.env_2d.units
 'cm'
->>> "start" in maze.env_2d.regions
-True
->>> maze.env_2d.n_bins > 0
-True
+>>> [name for name in maze.env_2d.regions if name.startswith("choice_")]
+['choice_1', 'choice_2', 'choice_3', 'choice_4', 'choice_5', 'choice_6']
+>>> {name: lm.metadata["role"] for name, lm in maze.env_2d.landmarks.items()}
+{'start_box': 'start_box', 'food_box': 'goal_box'}
 """
 
 from __future__ import annotations
@@ -48,63 +74,78 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import networkx as nx
+import numpy as np
+from shapely.affinity import translate
+from shapely.geometry import box
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
+    corridor_end_point,
     make_corridor_polygon,
     union_polygons,
+    warn_if_bins_bridge_walls,
 )
+
+_N_CHOICES = 6
 
 
 @dataclass(frozen=True)
 class RepeatedTDims(MazeDims):
-    """Dimension specifications for Repeated T-Maze.
+    """Dimensions of Blodgett's six-unit T maze (Tolman & Nyswander, 1927).
 
-    The Repeated T-Maze consists of three vertical stems connected by two
-    horizontal corridors at different heights, creating multiple T-junction
-    decision points.
+    Lengths are measured along an alley's walls, from the wall of the alley
+    it leaves to its end or to the wall of the next alley.
 
     Attributes
     ----------
-    stem_spacing : float
-        Horizontal distance between adjacent stems in cm. Default is 40.0.
-    stem_length : float
-        Length of vertical stems below the upper horizontal in cm. Default is 60.0.
-    top_spur_length : float
-        Length of center stem extension above upper horizontal in cm. Default is 20.0.
-    arm_length : float
-        Length of horizontal arms extending beyond outer stems in cm. Default is 15.0.
-    upper_lower_gap : float
-        Vertical distance between upper and lower horizontal corridors in cm.
-        Default is 30.0.
     width : float
-        Width of all corridors in cm. Default is 10.0.
+        Width of every alley in cm. Default is 10.16 (4 in, from the figure).
+    arm_length : float
+        Length of each alley segment in cm. Default is 40.64 (16 in, from the
+        figure).
+    long_arm_length : float
+        Length of the two segments that join choice points 4, 5 and 6, in
+        cm. Default is 45.72 (18 in, from the figure). It must exceed
+        ``arm_length``: the difference is the wall between blind alley 6 and
+        the alley to choice point 3.
+    wall_thickness : float
+        Partition where blind alley 4 ends against the first alley, in cm.
+        Default is 2.1 (about 0.8 in, scaled from the figure; an estimate).
+    start_stem_length : float
+        Alley from the start box to choice point 1, in cm. Default is 10.16
+        (about 4 in, scaled from the figure; an estimate).
+    start_box_width : float
+        Width of the start box across the stem, in cm. Default is 19.05
+        (about 7.5 in, scaled from the figure; an estimate).
+    start_box_depth : float
+        Depth of the start box along the stem, in cm. Default is 15.24
+        (about 6 in, scaled from the figure; an estimate).
+    food_box_depth : float
+        Length of the food box, the end of the final alley, in cm. Default
+        is 13.97 (about 5.5 in, scaled from the figure; an estimate). It
+        must be less than ``arm_length``.
 
     Examples
     --------
     >>> dims = RepeatedTDims()
-    >>> dims.stem_spacing
-    40.0
-    >>> dims.stem_length
-    60.0
-    >>> dims.top_spur_length
-    20.0
-    >>> dims.width
-    10.0
+    >>> dims.width, dims.arm_length, dims.long_arm_length
+    (10.16, 40.64, 45.72)
 
-    >>> custom = RepeatedTDims(stem_spacing=50.0, stem_length=80.0)
-    >>> custom.stem_spacing
+    >>> RepeatedTDims(arm_length=50.0).arm_length
     50.0
     """
 
-    stem_spacing: float = 40.0
-    stem_length: float = 60.0
-    top_spur_length: float = 20.0
-    arm_length: float = 15.0
-    upper_lower_gap: float = 30.0
-    width: float = 10.0
+    width: float = 10.16
+    arm_length: float = 40.64
+    long_arm_length: float = 45.72
+    wall_thickness: float = 2.1
+    start_stem_length: float = 10.16
+    start_box_width: float = 19.05
+    start_box_depth: float = 15.24
+    food_box_depth: float = 13.97
 
 
 def make_repeated_t_maze(
@@ -112,61 +153,55 @@ def make_repeated_t_maze(
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:
-    """Create a Repeated T-Maze environment.
-
-    Creates a maze with three vertical stems connected by two horizontal
-    corridors at different heights, forming multiple T-junction decision points.
+    """Create Blodgett's six-unit T maze (Tolman & Nyswander, 1927, Fig. 5).
 
     Parameters
     ----------
     dims : RepeatedTDims, optional
-        Maze dimensions. If None, uses default dimensions.
+        Maze dimensions. If None, uses the dimensions written on the figure.
     bin_size : float, optional
-        Spatial bin size in cm (default: 2.0).
+        Spatial bin size in cm (default: 2.0). Keep it below the thinnest
+        wall (2.1 cm at the default dimensions); larger bins can bridge it
+        and trigger a warning.
     include_track : bool, optional
-        Whether to create linearized track graph (default: True).
+        Whether to create the linearized track graph (default: True).
 
     Returns
     -------
     MazeEnvironments
         Contains:
-        - env_2d: 2D polygon-based environment
-        - env_track: 1D linearized track environment (if include_track=True)
+        - env_2d: the alleys and the start and food boxes
+        - env_track: alley centrelines as a track graph (if include_track)
+
+    Raises
+    ------
+    ValueError
+        If ``long_arm_length`` does not exceed ``arm_length`` or
+        ``wall_thickness`` is not positive, so that alleys would touch, or
+        if ``food_box_depth`` is not between 0 and ``arm_length``.
 
     Notes
     -----
-    Maze Structure::
+    The origin is the centre of the maze's bounding box. The start box is
+    at the left and the food box at the right end of the top row.
 
-                    |
-                    |
-        ------------|  ------+-----
-             |      |        |
-             |      |        |
-             |      |        |
-        -----|  ----|--------|
-             |      |        |
-             |      |        |
+    Landmarks, each with a region of the same name:
 
-    Components:
-    - Three vertical stems (left, center, right)
-    - Center stem extends above upper horizontal (top_spur)
-    - Upper horizontal: left section to center, right section with T-junction
-    - Lower horizontal: left arm, right section connecting center to right
+    - start_box: Fig. 5's S (role ``"start_box"``); the region is the box
+    - food_box: Fig. 5's F, where the rat is fed (role ``"goal_box"``); the
+      region is the end of the last alley, ``food_box_depth`` long
 
-    Regions:
-    - start: End of upper-left horizontal arm
-    - goal: End of upper-right horizontal arm
-    - top_spur: Top of center stem (above upper horizontal)
-    - left_stem_bottom, center_stem_bottom, right_stem_bottom: Bottom of stems
-    - lower_left_arm: End of lower-left horizontal arm (from left stem)
-    - lower_center_left_arm: End of lower-center-left horizontal arm (from center stem)
-    - upper_junction, lower_left_junction, lower_center_junction: T-junctions
-    - upper_right_junction: T-junction at right stem (upper level)
+    Each landmark is the centre of its box. Other regions:
+
+    - choice_1 ... choice_6: the T junctions, in the order the rat meets them
+    - blind_1 ... blind_6: the end of the blind alley at each choice point
+
+    Track graph: start_box, the six choice points, the six blind-alley ends
+    and food_box, at the end of the last alley; the true path runs
+    start_box, choice_1, ..., choice_6, food_box.
 
     Examples
     --------
-    Create a default Repeated T-maze:
-
     >>> maze = make_repeated_t_maze()
     >>> maze.env_2d.units
     'cm'
@@ -181,105 +216,48 @@ def make_repeated_t_maze(
 
     See Also
     --------
-    RepeatedTDims : Dimension specifications for Repeated T-Maze.
+    RepeatedTDims : Dimension specifications for the repeated T-maze.
     """
     if dims is None:
         dims = RepeatedTDims()
-
-    polygons = []
-
-    # Define key y-coordinates
-    # Upper horizontal is at y = upper_y
-    # Lower horizontal is at y = lower_y
-    # Stems extend from upper_y down to bottom_y
-    # Center stem extends above upper_y to top_y
-
-    upper_y = dims.stem_length  # Upper horizontal level
-    lower_y = upper_y - dims.upper_lower_gap  # Lower horizontal level
-    bottom_y = 0.0  # Bottom of stems
-    top_y = upper_y + dims.top_spur_length  # Top of center stem
-
-    # Define x-coordinates for three stems
-    left_x = 0.0
-    center_x = dims.stem_spacing
-    right_x = 2 * dims.stem_spacing
-
-    # === Create vertical stems ===
-
-    # Left stem: from bottom to upper horizontal
-    polygons.append(
-        make_corridor_polygon(
-            start=(left_x, bottom_y), end=(left_x, upper_y), width=dims.width
+    thinnest_wall = min(dims.wall_thickness, dims.long_arm_length - dims.arm_length)
+    if thinnest_wall <= 0:
+        raise ValueError(
+            f"RepeatedTDims(long_arm_length={dims.long_arm_length}, "
+            f"arm_length={dims.arm_length}, wall_thickness={dims.wall_thickness}) "
+            "makes alleys touch. Use long_arm_length greater than arm_length "
+            "and a positive wall_thickness."
         )
-    )
-
-    # Center stem: from bottom through upper horizontal to top spur
-    polygons.append(
-        make_corridor_polygon(
-            start=(center_x, bottom_y), end=(center_x, top_y), width=dims.width
+    if not 0 < dims.food_box_depth < dims.arm_length:
+        raise ValueError(
+            f"RepeatedTDims(food_box_depth={dims.food_box_depth}) does not fit "
+            f"in the last alley, {dims.arm_length} cm long. Use a food_box_depth "
+            "between 0 and arm_length."
         )
+    warn_if_bins_bridge_walls(bin_size, thinnest_wall, "repeated T-maze")
+
+    positions, edges = _layout(dims)
+    alleys = [
+        make_corridor_polygon(positions[u], positions[v], dims.width) for u, v in edges
+    ]
+    stem_end = positions["choice_1"][0] - dims.width / 2.0 - dims.start_stem_length
+    start_box = box(
+        stem_end - dims.start_box_depth,
+        -dims.start_box_width / 2.0,
+        stem_end,
+        dims.start_box_width / 2.0,
     )
+    maze_polygon = union_polygons([*alleys, start_box])
 
-    # Right stem: from bottom to upper horizontal
-    polygons.append(
-        make_corridor_polygon(
-            start=(right_x, bottom_y), end=(right_x, upper_y), width=dims.width
-        )
-    )
+    # Put the origin at the centre of the maze's bounding box.
+    min_x, min_y, max_x, max_y = maze_polygon.bounds
+    offset = np.array([(min_x + max_x) / 2.0, (min_y + max_y) / 2.0])
+    maze_polygon = translate(maze_polygon, -offset[0], -offset[1])
+    positions = {
+        name: (float(x - offset[0]), float(y - offset[1]))
+        for name, (x, y) in positions.items()
+    }
 
-    # === Create upper horizontal corridor ===
-
-    # Upper-left section: from left arm end to center stem
-    upper_left_start = (left_x - dims.arm_length, upper_y)
-    upper_left_end = (center_x, upper_y)
-    polygons.append(
-        make_corridor_polygon(
-            start=upper_left_start, end=upper_left_end, width=dims.width
-        )
-    )
-
-    # Upper-right section: from center+gap to right arm end (T-junction at right stem)
-    upper_right_start = (center_x + dims.arm_length, upper_y)
-    upper_right_end = (right_x + dims.arm_length, upper_y)
-    polygons.append(
-        make_corridor_polygon(
-            start=upper_right_start, end=upper_right_end, width=dims.width
-        )
-    )
-
-    # === Create lower horizontal corridor ===
-
-    # Lower-left section: left arm extending from left stem
-    lower_left_start = (left_x - dims.arm_length, lower_y)
-    lower_left_end = (left_x, lower_y)
-    polygons.append(
-        make_corridor_polygon(
-            start=lower_left_start, end=lower_left_end, width=dims.width
-        )
-    )
-
-    # Lower-center-left section: left arm extending from center stem
-    lower_center_left_start = (center_x - dims.arm_length, lower_y)
-    lower_center_left_end = (center_x, lower_y)
-    polygons.append(
-        make_corridor_polygon(
-            start=lower_center_left_start, end=lower_center_left_end, width=dims.width
-        )
-    )
-
-    # Lower-right section: from center stem to right stem
-    lower_right_start = (center_x, lower_y)
-    lower_right_end = (right_x, lower_y)
-    polygons.append(
-        make_corridor_polygon(
-            start=lower_right_start, end=lower_right_end, width=dims.width
-        )
-    )
-
-    # Union all corridors
-    maze_polygon = union_polygons(polygons)
-
-    # Create 2D environment
     env_2d = Environment.from_polygon(
         polygon=maze_polygon,
         bin_size=bin_size,
@@ -288,59 +266,92 @@ def make_repeated_t_maze(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # === Add regions ===
-
-    # Start and goal at ends of upper horizontal arms
-    region_builder = Regions()
-    region_builder.add("start", point=(left_x - dims.arm_length, upper_y))
-    region_builder.add("goal", point=(right_x + dims.arm_length, upper_y))
-
-    # Top spur (center stem above upper horizontal)
-    region_builder.add("top_spur", point=(center_x, top_y))
-
-    # Bottom of stems
-    region_builder.add("left_stem_bottom", point=(left_x, bottom_y))
-    region_builder.add("center_stem_bottom", point=(center_x, bottom_y))
-    region_builder.add("right_stem_bottom", point=(right_x, bottom_y))
-
-    # Lower arm ends
-    region_builder.add("lower_left_arm", point=(left_x - dims.arm_length, lower_y))
-    region_builder.add(
-        "lower_center_left_arm", point=(center_x - dims.arm_length, lower_y)
-    )
-
-    # T-junction points (where decisions are made)
-    region_builder.add("upper_junction", point=(center_x, upper_y))
-    region_builder.add("lower_left_junction", point=(left_x, lower_y))
-    region_builder.add("lower_center_junction", point=(center_x, lower_y))
-    region_builder.add("upper_right_junction", point=(right_x, upper_y))
-    env_2d = env_2d.with_regions(region_builder)
-
-    # Store stem positions for track graph creation
-    stem_positions = {
-        "left_x": left_x,
-        "center_x": center_x,
-        "right_x": right_x,
-        "upper_y": upper_y,
-        "lower_y": lower_y,
-        "bottom_y": bottom_y,
-        "top_y": top_y,
+    # The food box is the end of the last alley, which runs in +x.
+    end_x, end_y = positions["food_box"]
+    half = dims.width / 2.0
+    boxes = {
+        "start_box": translate(start_box, -offset[0], -offset[1]),
+        "food_box": box(end_x - dims.food_box_depth, end_y - half, end_x, end_y + half),
     }
 
-    # Create track graph if requested
+    regions = Regions()
+    regions.add("start_box", polygon=boxes["start_box"])
+    for k in range(1, _N_CHOICES + 1):
+        regions.add(f"choice_{k}", point=positions[f"choice_{k}"])
+    for k in range(1, _N_CHOICES + 1):
+        end = corridor_end_point(
+            positions[f"choice_{k}"], positions[f"blind_{k}"], dims.width
+        )
+        regions.add(f"blind_{k}", point=end)
+    regions.add("food_box", polygon=boxes["food_box"])
+    landmarks = Landmarks(
+        Landmark(name, "point", polygon.centroid.coords[0], {"role": role})
+        for (name, polygon), role in zip(
+            boxes.items(), ("start_box", "goal_box"), strict=True
+        )
+    )
+    env_2d = env_2d.with_regions(regions).with_landmarks(landmarks)
+
     env_track = None
     if include_track:
-        env_track = _create_repeated_t_maze_track_graph(dims, bin_size, stem_positions)
+        env_track = _create_repeated_t_maze_track_graph(
+            dims, bin_size, positions, edges
+        )
 
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
+
+
+def _layout(
+    dims: RepeatedTDims,
+) -> tuple[dict[str, tuple[float, float]], list[tuple[str, str]]]:
+    """Track nodes (choice point 1 at the origin) and edges in running order."""
+    w, half = dims.width, dims.width / 2.0
+    arm, long_arm = dims.arm_length, dims.long_arm_length
+    near = arm + w  # centre-to-centre distance across one 16-in segment
+    far = long_arm + w  # ... across one 18-in segment
+    choices = [
+        (0.0, 0.0),
+        (0.0, near),
+        (near, near),
+        (near, 0.0),
+        (near + far, 0.0),
+        (near + far, far),
+    ]
+    blind_ends = [
+        (0.0, -(arm + half)),
+        (-(arm + half), near),
+        (near, near + arm + half),
+        (half + dims.wall_thickness, 0.0),  # stops a partition short of alley 1
+        (near + far, -(arm + half)),
+        (near + far - arm - half, far),
+    ]
+    positions = {
+        "start_box": (
+            -half - dims.start_stem_length - dims.start_box_depth / 2.0,
+            0.0,
+        ),
+        "food_box": (near + far + arm + half, far),
+    }
+    edges = [("start_box", "choice_1")]
+    for k, (choice, blind_end) in enumerate(
+        zip(choices, blind_ends, strict=True), start=1
+    ):
+        positions[f"choice_{k}"] = choice
+        positions[f"blind_{k}"] = blind_end
+        edges.append((f"choice_{k}", f"blind_{k}"))
+        edges.append(
+            (f"choice_{k}", f"choice_{k + 1}" if k < _N_CHOICES else "food_box")
+        )
+    return positions, edges
 
 
 def _create_repeated_t_maze_track_graph(
     dims: RepeatedTDims,
     bin_size: float,
-    stem_positions: dict[str, float],
+    positions: dict[str, tuple[float, float]],
+    edges: list[tuple[str, str]],
 ) -> Environment:
-    """Create the 1D linearized track graph for Repeated T-Maze.
+    """Create the 1D linearized track graph for the repeated T-maze.
 
     Parameters
     ----------
@@ -348,123 +359,30 @@ def _create_repeated_t_maze_track_graph(
         Maze dimensions.
     bin_size : float
         Spatial bin size in cm.
-    stem_positions : dict
-        Dictionary with stem x/y coordinates.
+    positions : dict
+        Node positions in cm, centred on the maze.
+    edges : list of (str, str)
+        Track edges in running order: along the true path, each blind alley
+        as its choice point is reached.
 
     Returns
     -------
     Environment
-        1D linearized environment representing the Repeated T-maze track.
+        1D linearized environment representing the repeated T-maze track.
     """
     graph = nx.Graph()
+    for name, position in positions.items():
+        graph.add_node(name, pos=position)
+    for u, v in edges:
+        distance = float(np.linalg.norm(np.subtract(positions[v], positions[u])))
+        graph.add_edge(u, v, distance=distance)
 
-    # Extract positions
-    left_x = stem_positions["left_x"]
-    center_x = stem_positions["center_x"]
-    right_x = stem_positions["right_x"]
-    upper_y = stem_positions["upper_y"]
-    lower_y = stem_positions["lower_y"]
-    bottom_y = stem_positions["bottom_y"]
-    top_y = stem_positions["top_y"]
-
-    # === Add nodes ===
-
-    # Start and goal (ends of upper horizontal arms)
-    graph.add_node("start", pos=(left_x - dims.arm_length, upper_y))
-    graph.add_node("goal", pos=(right_x + dims.arm_length, upper_y))
-
-    # Top spur
-    graph.add_node("top_spur", pos=(center_x, top_y))
-
-    # Upper junction (center stem at upper level)
-    graph.add_node("upper_junction", pos=(center_x, upper_y))
-
-    # Upper-right junction (right stem at upper level)
-    graph.add_node("upper_right_junction", pos=(right_x, upper_y))
-
-    # Left stem nodes
-    graph.add_node("left_upper", pos=(left_x, upper_y))
-    graph.add_node("left_lower", pos=(left_x, lower_y))
-    graph.add_node("left_stem_bottom", pos=(left_x, bottom_y))
-
-    # Center stem nodes (at lower level)
-    graph.add_node("center_lower", pos=(center_x, lower_y))
-    graph.add_node("center_stem_bottom", pos=(center_x, bottom_y))
-
-    # Right stem nodes
-    graph.add_node("right_lower", pos=(right_x, lower_y))
-    graph.add_node("right_stem_bottom", pos=(right_x, bottom_y))
-
-    # Lower arm ends
-    graph.add_node("lower_left_arm", pos=(left_x - dims.arm_length, lower_y))
-    graph.add_node("lower_center_left_arm", pos=(center_x - dims.arm_length, lower_y))
-
-    # === Add edges ===
-
-    # Upper-left horizontal: start -> left_upper -> upper_junction
-    graph.add_edge("start", "left_upper", distance=dims.arm_length)
-    graph.add_edge("left_upper", "upper_junction", distance=dims.stem_spacing)
-
-    # Top spur: upper_junction -> top_spur
-    graph.add_edge("upper_junction", "top_spur", distance=dims.top_spur_length)
-
-    # Upper-right horizontal: upper_right_junction -> goal
-    graph.add_edge("upper_right_junction", "goal", distance=dims.arm_length)
-
-    # Left stem: left_upper -> left_lower -> left_stem_bottom
-    graph.add_edge("left_upper", "left_lower", distance=dims.upper_lower_gap)
-    graph.add_edge("left_lower", "left_stem_bottom", distance=lower_y - bottom_y)
-
-    # Lower-left arm: left_lower -> lower_left_arm
-    graph.add_edge("left_lower", "lower_left_arm", distance=dims.arm_length)
-
-    # Center stem: upper_junction -> center_lower -> center_stem_bottom
-    graph.add_edge("upper_junction", "center_lower", distance=dims.upper_lower_gap)
-    graph.add_edge("center_lower", "center_stem_bottom", distance=lower_y - bottom_y)
-
-    # Lower-center-left arm: center_lower -> lower_center_left_arm
-    graph.add_edge("center_lower", "lower_center_left_arm", distance=dims.arm_length)
-
-    # Right stem: upper_right_junction -> right_lower -> right_stem_bottom
-    graph.add_edge("upper_right_junction", "right_lower", distance=dims.upper_lower_gap)
-    graph.add_edge("right_lower", "right_stem_bottom", distance=lower_y - bottom_y)
-
-    # Lower-right horizontal: center_lower -> right_lower
-    graph.add_edge("center_lower", "right_lower", distance=dims.stem_spacing)
-
-    # Define edge order for linearization
-    # Main path: start -> through maze -> goal, with branches
-    edge_order = [
-        # Upper-left section
-        ("start", "left_upper"),
-        ("left_upper", "upper_junction"),
-        # Top spur (branch)
-        ("upper_junction", "top_spur"),
-        # Left stem down (branch from left_upper)
-        ("left_upper", "left_lower"),
-        ("left_lower", "lower_left_arm"),  # Lower-left arm branch
-        ("left_lower", "left_stem_bottom"),
-        # Center stem down
-        ("upper_junction", "center_lower"),
-        ("center_lower", "lower_center_left_arm"),  # Lower-center-left arm branch
-        ("center_lower", "center_stem_bottom"),
-        # Lower horizontal to right
-        ("center_lower", "right_lower"),
-        ("right_lower", "right_stem_bottom"),
-        # Right stem up to upper-right junction
-        ("right_lower", "upper_right_junction"),
-        ("upper_right_junction", "goal"),
-    ]
-
-    # Create the 1D environment
     env_track = Environment.from_graph(
         graph=graph,
-        edge_order=edge_order,
+        edge_order=edges,
         edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.width,
         name="repeated_t_maze_1d",
     )
-    env_track = env_track.with_metadata(units="cm")
-
-    return env_track
+    return env_track.with_metadata(units="cm")

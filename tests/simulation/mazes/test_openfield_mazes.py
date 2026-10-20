@@ -119,20 +119,22 @@ class TestOpenFieldMazesSpecificBehavior:
         """Barnes maze should have 18 holes by default (original design)."""
         maze = make_barnes_maze(bin_size=4.0)
         hole_regions = [r for r in maze.env_2d.regions if r.startswith("hole_")]
-        assert len(hole_regions) == 18
+        # The escape hole is one of the 18, named escape_hole.
+        assert len(hole_regions) == 17
+        assert "escape_hole" in maze.env_2d.regions
 
     def test_cheeseboard_has_many_rewards(self):
         """Cheeseboard should have reward locations distributed across surface."""
         maze = make_cheeseboard_maze(bin_size=4.0)
-        reward_regions = [r for r in maze.env_2d.regions if r.startswith("reward_")]
+        reward_regions = [r for r in maze.env_2d.regions if r.startswith("well_")]
         # Should have many reward locations (>50 for default dimensions)
         assert len(reward_regions) > 50
 
     def test_radial_arm_has_8_arms_default(self):
-        """Radial arm maze should have 8 arms by default."""
+        """Radial arm maze should have 8 arms, each ending in a food cup."""
         maze = make_radial_arm_maze(bin_size=3.0)
-        arm_regions = [r for r in maze.env_2d.regions if r.startswith("arm_")]
-        assert len(arm_regions) == 8
+        cups = [r for r in maze.env_2d.regions if r.startswith("food_cup_")]
+        assert len(cups) == 8
 
     def test_radial_arm_has_center(self):
         """Radial arm maze should have a center region."""

@@ -8,9 +8,40 @@ working memory, and reference memory in an open-field setting with discrete targ
 Key contrast: Cheeseboard has reward locations distributed across entire surface;
 Barnes Maze has holes only on the perimeter.
 
-References:
-- Gilbert et al. (1998) - Spatial navigation impairments in mice
-- Dupret et al. (2010) - Hippocampal replay in awake rats
+The defaults follow the rat cheeseboard described by Mátyás et al. (2025),
+Brain Sci 15:881, doi:10.3390/brainsci15080881: "a 120 cm in diameter
+circular board with 177 food wells (2.5 cm id)". Roux et al. (2017), Nat
+Neurosci 20:845-853, doi:10.1038/nn.4543, give the mouse version: "a circular
+platform 80 cm in diameter with 177 wells (1.5 mm deep; 4 mm in diameter; 5 cm
+spacing between the wells)".
+
+Mátyás et al. do not give the well spacing. The 7.5 cm default is derived,
+not published: it scales the mouse board's 5 cm spacing by the ratio of board
+diameters (120 / 80). On an origin-centred square lattice with 7.5 cm spacing,
+keeping the wells whose centres lie within 54.6-57.1 cm of the centre gives
+exactly 177 wells; the default 4 cm rim margin keeps wells within 56 cm. The
+same construction with 5 cm spacing on the 80 cm mouse board also gives 177
+wells.
+
+Related work: Dupret et al. (2010), "The reorganization and reactivation of
+hippocampal maps predict spatial memory performance", Nat Neurosci
+13:995-1002, doi:10.1038/nn.2599, recorded rat CA1 and CA3 place cells while
+rats learned three hidden reward locations on a cheeseboard maze. Gilbert et
+al. (1998), "Memory for spatial location: role of the hippocampus in mediating
+spatial pattern separation", J Neurosci 18:804-810,
+doi:10.1523/JNEUROSCI.18-02-00804.1998, tested rats on a dry-land version of
+the water maze, choosing between food wells along a row.
+
+Any well can be baited: Dupret et al. (2010) placed "a new set of 3 hidden
+rewards ... in randomly selected food-wells every day", so every well is a
+reward-port landmark and none is fixed as the goal. Both studies run trials
+from a start box beside the board (Mátyás et al.: "The start box with a
+sliding door was used as a starting point for the learning trials"; "The
+cheeseboard was cleaned and rotated 90 degrees relative to the start box
+between learning trials"), but neither gives the box's size or where it
+meets the board, so the maze has no start box. Dupret et al. placed cue
+objects "near the baited food-wells" only in a cued condition, so the maze
+has no cue landmarks.
 
 Examples
 --------
@@ -21,8 +52,10 @@ Examples
 >>> maze = make_cheeseboard_maze()
 >>> maze.env_2d.units
 'cm'
->>> len([k for k in maze.env_2d.regions.keys() if k.startswith("reward_")]) > 0
-True
+>>> len([k for k in maze.env_2d.regions.keys() if k.startswith("well_")])
+177
+>>> maze.env_2d.landmarks["well_7_7"].metadata["role"]
+'reward_port'
 >>> maze.env_track is None
 True
 """
@@ -34,6 +67,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_circular_arena
@@ -43,38 +77,47 @@ from neurospatial.simulation.mazes._geometry import make_circular_arena
 class CheeseboardDims(MazeDims):
     """Dimension specifications for Cheeseboard Maze.
 
-    The Cheeseboard Maze is a circular platform with reward locations
-    distributed in a regular grid pattern across the entire surface.
-    Reward locations contain food rewards (not escape routes).
+    The Cheeseboard Maze is a circular platform with food wells on a square
+    lattice across the entire surface, with one well at the centre. The
+    defaults give the 120 cm rat board with 177 wells of 2.5 cm diameter
+    (doi:10.3390/brainsci15080881).
 
     Attributes
     ----------
     diameter : float
-        Diameter of the circular platform in cm. Default is 110.0.
+        Diameter of the circular platform in cm. Default is 120.0.
     grid_spacing : float
-        Spacing between reward locations in the grid in cm. Default is 9.0.
+        Distance in cm between neighbouring wells along the lattice rows and
+        columns. Default is 7.5, derived by scaling the 5 cm spacing of the
+        80 cm mouse board (doi:10.1038/nn.4543) to the 120 cm rat board.
     reward_radius : float
-        Radius of each reward location in cm. Default is 1.5.
-        Used to determine boundary margin for location placement.
+        Radius of each food well in cm. Default is 1.25 (2.5 cm diameter).
+    rim_margin : float
+        Smallest distance in cm from the board's rim to a well centre; lattice
+        points closer to the rim have no well. Default is 4.0, keeping wells
+        within 56 cm of the centre, which with 7.5 cm spacing on the 120 cm
+        board gives exactly 177 wells (any margin from about 2.9 to 5.4 cm
+        does).
 
     Examples
     --------
     >>> dims = CheeseboardDims()
     >>> dims.diameter
-    110.0
+    120.0
     >>> dims.grid_spacing
-    9.0
-    >>> dims.reward_radius
-    1.5
+    7.5
+    >>> dims.reward_radius * 2  # well diameter, cm
+    2.5
 
     >>> custom = CheeseboardDims(diameter=120.0, grid_spacing=10.0, reward_radius=2.0)
     >>> custom.diameter
     120.0
     """
 
-    diameter: float = 110.0
-    grid_spacing: float = 9.0
-    reward_radius: float = 1.5
+    diameter: float = 120.0
+    grid_spacing: float = 7.5
+    reward_radius: float = 1.25
+    rim_margin: float = 4.0
 
 
 def make_cheeseboard_maze(
@@ -83,15 +126,15 @@ def make_cheeseboard_maze(
 ) -> MazeEnvironments:
     """Create a Cheeseboard Maze environment.
 
-    Creates a circular platform with reward locations distributed in a regular
-    grid pattern across the entire surface. Unlike Barnes Maze (holes only on
-    perimeter), reward locations are distributed throughout the platform.
+    Creates a circular platform with food wells on a square lattice across the
+    entire surface. Unlike Barnes Maze (holes only on perimeter), reward
+    locations are distributed throughout the platform.
 
     Parameters
     ----------
     dims : CheeseboardDims, optional
-        Maze dimensions. If None, uses default dimensions
-        (110 cm diameter, 9 cm grid spacing, 1.5 cm reward radius).
+        Maze dimensions. If None, uses the 120 cm rat board with 177 wells of
+        2.5 cm diameter on a 7.5 cm lattice.
     bin_size : float, optional
         Spatial bin size in cm (default: 2.0).
 
@@ -106,17 +149,24 @@ def make_cheeseboard_maze(
     -----
     The maze is centered at the origin (0, 0).
 
-    Reward locations are distributed in a regular grid pattern across the
-    entire circular platform, not just on the perimeter. Each location is
-    added as a point region with format 'reward_i_j' where i, j are grid
-    indices.
+    Wells sit on a square lattice centred on the origin, so one well is at
+    the centre of the board. Only lattice points at least ``rim_margin`` in
+    from the rim get a well.
 
-    Only locations that fall within the circular boundary (radius - reward_radius)
-    are included.
+    Every food well is a landmark in ``env_2d.landmarks`` with role
+    ``"reward_port"`` and a point region of the same name at its centre:
 
-    Regions:
-    - reward_i_j: Point region for each reward location within circular
-      boundary, where i and j are grid indices starting from 0.
+    - well_i_j: the well in lattice column i and row j, counted from 0 at the
+      lowest x and y. With the defaults ``well_7_7`` is the centre well.
+
+    A well's region is a point, not a circle of its 2.5 cm diameter, because
+    the well is smaller than a bin: a circle that small contains no bin
+    centre for some wells at the default 2 cm bins (and for most at 3 cm),
+    so it would cover no bins. A point region covers the one bin that
+    contains the well centre at any bin size. The landmark records the
+    well's diameter in ``metadata["diameter"]`` (cm). For a goal area, such
+    as the 10 cm circle around a baited well that Dupret et al. (2010)
+    used, add a region of that size.
 
     Examples
     --------
@@ -134,16 +184,16 @@ def make_cheeseboard_maze(
 
     >>> dims = CheeseboardDims(diameter=120.0, grid_spacing=10.0)
     >>> maze = make_cheeseboard_maze(dims=dims, bin_size=4.0)
-    >>> len([k for k in maze.env_2d.regions.keys() if k.startswith("reward_")]) > 0
+    >>> len([k for k in maze.env_2d.regions.keys() if k.startswith("well_")]) > 0
     True
 
     Check that rewards are distributed across surface, not just perimeter:
 
     >>> maze = make_cheeseboard_maze()
-    >>> reward_names = [
-    ...     k for k in maze.env_2d.regions.keys() if k.startswith("reward_")
-    ... ]
-    >>> positions = np.array([maze.env_2d.regions[n].data for n in reward_names])
+    >>> len(maze.env_2d.regions)  # 177 wells
+    177
+    >>> well_names = [k for k in maze.env_2d.regions.keys() if k.startswith("well_")]
+    >>> positions = np.array([maze.env_2d.regions[n].data for n in well_names])
     >>> distances = np.sqrt(positions[:, 0] ** 2 + positions[:, 1] ** 2)
     >>> bool(np.min(distances) < 20.0)  # Has rewards near center
     True
@@ -170,25 +220,31 @@ def make_cheeseboard_maze(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # Create regular grid of reward locations across entire surface
-    # Grid extends from -radius to +radius in both dimensions
-    # Calculate number of locations per side
-    n_locations_per_side = int(np.ceil(dims.diameter / dims.grid_spacing)) + 1
-    half_extent = (n_locations_per_side - 1) * dims.grid_spacing / 2
+    # Square lattice of wells centred on the origin, kept rim_margin in from
+    # the rim
+    max_well_radius = radius - dims.rim_margin
+    n_half = int(np.floor(max_well_radius / dims.grid_spacing))
+    coords = np.arange(-n_half, n_half + 1) * dims.grid_spacing
 
-    # Generate grid positions centered at origin
-    xs = np.linspace(-half_extent, half_extent, n_locations_per_side)
-    ys = np.linspace(-half_extent, half_extent, n_locations_per_side)
-
-    # Add reward locations that fall within circular boundary
+    landmarks = []
     region_builder = Regions()
-    for i, x in enumerate(xs):
-        for j, y in enumerate(ys):
-            # Check if within circular boundary (with reward_radius buffer)
-            distance_from_center = np.sqrt(x**2 + y**2)
-            if distance_from_center <= radius - dims.reward_radius:
-                region_builder.add(f"reward_{i}_{j}", point=(x, y))
-    env_2d = env_2d.with_regions(region_builder)
+    for i, x in enumerate(coords):
+        for j, y in enumerate(coords):
+            if np.hypot(x, y) <= max_well_radius:
+                name, center = f"well_{i}_{j}", (float(x), float(y))
+                landmarks.append(
+                    Landmark(
+                        name,
+                        "point",
+                        center,
+                        metadata={
+                            "role": "reward_port",
+                            "diameter": 2.0 * dims.reward_radius,
+                        },
+                    )
+                )
+                region_builder.add(name, point=center)
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks(landmarks))
 
     # No track graph for open field
     env_track = None

@@ -74,8 +74,9 @@ def test_mazes_without_one_corridor_width_simulate_and_look_up(name):
 
 def test_honeycomb_track_is_one_platform_wide():
     track = _track("make_honeycomb_maze")
-    # Platforms are hexagons of corner radius spacing / 2.5 (25 cm / 2.5).
-    assert track.arena.width == pytest.approx(2 * 25.0 / 2.5)
+    # Platforms are hexagons 11.5 cm along each side, which is their corner
+    # radius, so a platform is 23 cm corner to corner.
+    assert track.arena.width == pytest.approx(2 * 11.5)
 
 
 def test_corridor_width_is_the_short_side_of_a_rotated_corridor():

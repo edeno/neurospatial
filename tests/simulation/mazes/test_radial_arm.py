@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestMakeRadialArmMaze:
@@ -57,16 +58,25 @@ class TestMakeRadialArmMaze:
         maze = make_radial_arm_maze()
         assert "center" in maze.env_2d.regions
 
-    def test_env_2d_has_all_arm_regions(self):
-        """env_2d should have regions for all arms (arm_0 through arm_7)."""
+    def test_each_arm_has_a_food_cup_reward_port(self):
+        """Zoladek & Roberts (1978): a food cup at each arm's peripheral end."""
         from neurospatial.simulation.mazes.radial_arm import make_radial_arm_maze
 
-        maze = make_radial_arm_maze()
-        for i in range(8):
-            assert f"arm_{i}" in maze.env_2d.regions
+        env = make_radial_arm_maze(include_track=False).env_2d
+        names = [f"food_cup_{i}" for i in range(8)]
+        # The rat starts on the central platform, so there is no start box.
+        assert list(env.landmarks) == names
+        assert list(env.regions) == ["center", *names]
+        for name in names:
+            cup = env.landmarks[name]
+            assert cup.kind == "point"
+            assert dict(cup.metadata) == {
+                "role": "reward_port",
+                "port_type": "food_cup",
+            }
 
-    def test_env_2d_arm_regions_for_custom_n_arms(self):
-        """env_2d should have correct number of arm regions for custom n_arms."""
+    def test_food_cups_for_custom_n_arms(self):
+        """A six-arm maze has six food cups."""
         from neurospatial.simulation.mazes.radial_arm import (
             RadialArmDims,
             make_radial_arm_maze,
@@ -74,17 +84,12 @@ class TestMakeRadialArmMaze:
 
         dims = RadialArmDims(n_arms=6)
         maze = make_radial_arm_maze(dims=dims)
+        names = [f"food_cup_{i}" for i in range(6)]
+        assert list(maze.env_2d.landmarks) == names
+        assert list(maze.env_2d.regions) == ["center", *names]
 
-        # Should have arm_0 through arm_5
-        for i in range(6):
-            assert f"arm_{i}" in maze.env_2d.regions
-
-        # Should not have arm_6 or arm_7
-        assert "arm_6" not in maze.env_2d.regions
-        assert "arm_7" not in maze.env_2d.regions
-
-    def test_region_positions_correct(self):
-        """Regions should be at expected positions for radial arm geometry."""
+    def test_food_cup_positions_correct(self):
+        """Each cup is centred half its length in from its arm's far end."""
         from neurospatial.simulation.mazes.radial_arm import (
             RadialArmDims,
             make_radial_arm_maze,
@@ -93,32 +98,99 @@ class TestMakeRadialArmMaze:
         dims = RadialArmDims(center_radius=15.0, arm_length=50.0, n_arms=8)
         maze = make_radial_arm_maze(dims=dims)
 
-        # Get regions
         center = maze.env_2d.regions["center"]
         assert center.kind == "point"
-        assert np.isclose(center.data[0], 0.0, atol=1.0)
-        assert np.isclose(center.data[1], 0.0, atol=1.0)
+        np.testing.assert_allclose(center.data, [0.0, 0.0])
 
-        # Check arm endpoints are at correct distances and angles
+        distance = dims.center_radius + dims.arm_length - dims.food_cup_length / 2
         for i in range(8):
-            arm_region = maze.env_2d.regions[f"arm_{i}"]
-            assert arm_region.kind == "point"
-
-            # Distance from center: the arm end's square, half an arm width
-            # inside the tip, where the well sits
-            distance = np.linalg.norm(arm_region.data)
-            expected_distance = (
-                dims.center_radius + dims.arm_length - dims.arm_width / 2
+            angle = 2 * np.pi * i / 8
+            np.testing.assert_allclose(
+                maze.env_2d.landmarks[f"food_cup_{i}"].data,
+                [distance * np.cos(angle), distance * np.sin(angle)],
+                atol=1e-9,
             )
-            assert np.isclose(distance, expected_distance, atol=2.0)
 
-            # Angle
-            angle = np.arctan2(arm_region.data[1], arm_region.data[0])
-            expected_angle = 2 * np.pi * i / 8
-            # Normalize angles to [0, 2π)
-            angle = angle % (2 * np.pi)
-            expected_angle = expected_angle % (2 * np.pi)
-            assert np.isclose(angle, expected_angle, atol=0.1)
+    def test_food_cups_have_the_published_size_at_the_arm_ends(self):
+        """Each cup region is the 7.5 x 5 cm cup, flush with its arm's end."""
+        from shapely.geometry import Point, Polygon
+
+        from neurospatial.simulation.mazes.radial_arm import (
+            RadialArmDims,
+            make_radial_arm_maze,
+        )
+
+        dims = RadialArmDims()
+        assert (dims.food_cup_length, dims.food_cup_width) == (7.5, 5.0)
+        env = make_radial_arm_maze(dims=dims, include_track=False).env_2d
+        floor = env.arena.polygon
+        reach = dims.center_radius + dims.arm_length
+        for i in range(dims.n_arms):
+            region = env.regions[f"food_cup_{i}"]
+            assert region.kind == "polygon"
+            cup = Polygon(region.data)
+            assert cup.area == pytest.approx(7.5 * 5.0)
+            # Its length runs along the arm, out to the arm's far end.
+            radii = np.linalg.norm(np.asarray(cup.exterior.coords), axis=1)
+            assert radii.max() == pytest.approx(np.hypot(reach, 2.5))
+            assert floor.buffer(1e-9).contains(cup)
+            assert cup.contains(Point(env.landmarks[f"food_cup_{i}"].data))
+            assert len(env.bins_in_region(f"food_cup_{i}")) > 0
+
+    def test_default_is_the_published_eight_arm_rat_maze(self):
+        """Zoladek & Roberts (1978): 35.5 cm platform, 8 arms of 76 x 9 cm."""
+        from shapely.geometry import LineString
+
+        from neurospatial.simulation.mazes.radial_arm import (
+            RadialArmDims,
+            make_radial_arm_maze,
+        )
+
+        dims = RadialArmDims()
+        assert 2 * dims.center_radius == 35.5
+        assert (dims.arm_length, dims.arm_width, dims.n_arms) == (76.0, 9.0, 8)
+
+        polygon = make_radial_arm_maze(include_track=False).env_2d.arena.polygon
+        reach = dims.center_radius + dims.arm_length
+        # Arm 0 points along +x: it ends 17.75 + 76 cm out and is 9 cm wide
+        # halfway along.
+        assert polygon.bounds[2] == pytest.approx(reach)
+        middle = dims.center_radius + dims.arm_length / 2
+        section = polygon.intersection(LineString([(middle, -20.0), (middle, 20.0)]))
+        assert section.length == pytest.approx(dims.arm_width)
+
+    def test_track_arm_ends_agree_with_the_food_cups(self):
+        """Track leaves are the arm ends, named like the cups there."""
+        from shapely.geometry import Polygon
+
+        from neurospatial.simulation.mazes.radial_arm import (
+            RadialArmDims,
+            make_radial_arm_maze,
+        )
+
+        dims = RadialArmDims()
+        maze = make_radial_arm_maze(dims=dims, bin_size=1.0)
+        track = maze.env_track
+        graph = track.connectivity
+        leaves = [n for n in graph.nodes if graph.degree(n) == 1]
+        assert len(leaves) == dims.n_arms
+        reach = dims.center_radius + dims.arm_length
+        np.testing.assert_allclose(
+            np.linalg.norm(track.bin_centers[leaves], axis=1), reach, atol=1.0
+        )
+        track_graph = track.binning.linearization.graph
+        assert sorted(n for n in track_graph if track_graph.degree(n) == 1) == [
+            f"food_cup_{i}" for i in range(dims.n_arms)
+        ]
+        # The track keeps each cup's footprint and landmark.
+        np.testing.assert_allclose(track.regions["center"].data, [0.0, 0.0])
+        assert list(track.landmarks) == list(maze.env_2d.landmarks)
+        for name, cup in maze.env_2d.landmarks.items():
+            assert Polygon(track.regions[name].data).equals(
+                Polygon(maze.env_2d.regions[name].data)
+            )
+            np.testing.assert_allclose(track.landmarks[name].data, cup.data)
+            assert len(track.bins_in_region(name)) > 0
 
     def test_arms_at_equal_angular_spacing(self):
         """Arms should be equally spaced around the center."""
@@ -130,11 +202,11 @@ class TestMakeRadialArmMaze:
         dims = RadialArmDims(n_arms=8)
         maze = make_radial_arm_maze(dims=dims)
 
-        # Get angles of all arm endpoints
+        # Get angles of all arms' food cups
         angles = []
         for i in range(8):
-            arm_region = maze.env_2d.regions[f"arm_{i}"]
-            angle = np.arctan2(arm_region.data[1], arm_region.data[0])
+            cup = maze.env_2d.landmarks[f"food_cup_{i}"]
+            angle = np.arctan2(cup.data[1], cup.data[0])
             angles.append(angle)
 
         angles = np.array(angles)
