@@ -408,7 +408,7 @@ def heading_from_velocity(
     [0.0, 0.0, nan, nan, 3.14, 3.14, 3.14]
     """
     from neurospatial._observation import validated_observations
-    from neurospatial.ops.egocentric import (
+    from neurospatial.behavior._kinematics import (
         _movement_heading_and_speed,
         _validate_velocity_positions,
     )

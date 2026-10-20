@@ -116,9 +116,6 @@ from neurospatial.ops.egocentric import (
     compute_egocentric_distance,
     egocentric_to_allocentric,
 )
-from neurospatial.ops.egocentric import (
-    _velocity_heading_and_speed as _velocity_heading_and_speed,
-)
 from neurospatial.ops.egocentric import _wrap_bearing as _wrap_bearing
 
 # Feature maps sampled at positions

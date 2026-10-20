@@ -1966,7 +1966,7 @@ def heading_direction_labels(
 
         from neurospatial._intervals import observed_interval_mask
         from neurospatial._observation import validate_break_before
-        from neurospatial.ops import _velocity_heading_and_speed
+        from neurospatial.behavior._kinematics import _velocity_heading_and_speed
 
         breaks = validate_break_before(
             break_before, n_samples, call="heading_direction_labels"
@@ -2795,7 +2795,7 @@ def instantaneous_goal_alignment(
     times, positions = validate_times_positions(
         times, positions, call="instantaneous_goal_alignment"
     )
-    from neurospatial.ops import _velocity_heading_and_speed
+    from neurospatial.behavior._kinematics import _velocity_heading_and_speed
 
     goal = np.asarray(goal)
 

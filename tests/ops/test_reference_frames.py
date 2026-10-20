@@ -10,55 +10,6 @@ import pytest
 from numpy.testing import assert_allclose
 
 
-def test_velocity_heading_uses_actual_intervals():
-    """Unsmoothed velocity is the centered secant over real elapsed times."""
-    from neurospatial._intervals import observed_interval_mask
-    from neurospatial.ops.egocentric import _velocity_heading_and_speed
-
-    times = np.array([0.0, 0.1, 0.3])
-    positions = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 4.0]])
-    headings, speed = _velocity_heading_and_speed(
-        times,
-        positions,
-        interval_mask=observed_interval_mask(times, max_gap=0.5, epochs=None),
-        smooth_window=0.0,
-    )
-    velocity = np.array(
-        [
-            (positions[1] - positions[0]) / 0.1,
-            (positions[2] - positions[0]) / 0.3,
-            (positions[2] - positions[1]) / 0.2,
-        ]
-    )
-    np.testing.assert_allclose(headings, np.arctan2(velocity[:, 1], velocity[:, 0]))
-    np.testing.assert_allclose(speed, np.hypot(velocity[:, 0], velocity[:, 1]))
-    np.testing.assert_allclose(speed[[0, 2]], [10.0, 20.0])  # one-sided ends
-
-
-def test_velocity_smoothing_is_separate_per_run(two_epoch_recording):
-    from scipy.ndimage import gaussian_filter1d
-
-    from neurospatial._intervals import observed_interval_mask
-    from neurospatial.ops.egocentric import _velocity_heading_and_speed
-
-    r = two_epoch_recording
-    headings, speed = _velocity_heading_and_speed(
-        r.times,
-        r.positions,
-        smooth_window=0.04,  # two 50 Hz samples
-        interval_mask=observed_interval_mask(r.times, max_gap=0.5, epochs=None),
-    )
-    for run in (slice(0, 5000), slice(5000, 10000)):
-        velocity = np.gradient(r.positions[run], r.times[run], axis=0)
-        velocity = gaussian_filter1d(velocity, 2.0, axis=0, mode="nearest")
-        expected_heading = np.arctan2(velocity[:, 1], velocity[:, 0])
-        expected_speed = np.hypot(velocity[:, 0], velocity[:, 1])
-        np.testing.assert_allclose(
-            headings[run], expected_heading, rtol=1e-9, atol=1e-12
-        )
-        np.testing.assert_allclose(speed[run], expected_speed, rtol=1e-9, atol=1e-12)
-
-
 class TestModuleSetup:
     """Test module imports and structure."""
 

@@ -618,7 +618,7 @@ def pre_decision_heading_stats(
     >>> pre_decision_heading_stats(times, np.ones((10, 2)), min_speed=1.0)
     (nan, nan, nan)
     """
-    from neurospatial.ops.egocentric import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import _validate_velocity_positions
 
     raw_positions = positions
     times, positions, support = validated_observations(
@@ -642,7 +642,7 @@ def _heading_stats(
     min_speed: float,
 ) -> tuple[float, float, float]:
     """Circular heading statistics over moving samples in usable intervals."""
-    from neurospatial.ops.egocentric import (
+    from neurospatial.behavior._kinematics import (
         _movement_heading_and_speed,
         _validate_velocity_positions,
     )
@@ -860,7 +860,7 @@ def compute_pre_decision_metrics(
     >>> round(metrics.heading_circular_variance, 6)
     0.0
     """
-    from neurospatial.ops.egocentric import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import _validate_velocity_positions
 
     raw_positions = positions
     times, positions, support = validated_observations(
@@ -1362,7 +1362,7 @@ def compute_decision_analysis(
         "speeds and regions in the same Cartesian coordinates.",
         fix="use the allocentric environment the positions were recorded in",
     )
-    from neurospatial.ops.egocentric import _validate_velocity_positions
+    from neurospatial.behavior._kinematics import _validate_velocity_positions
 
     raw_positions = positions
     times, positions, support = validated_observations(
