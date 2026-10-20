@@ -131,10 +131,10 @@ class TestOpenFieldMazesSpecificBehavior:
         assert len(reward_regions) > 50
 
     def test_radial_arm_has_8_arms_default(self):
-        """Radial arm maze should have 8 arms by default."""
+        """Radial arm maze should have 8 arms, each ending in a food cup."""
         maze = make_radial_arm_maze(bin_size=3.0)
-        arm_regions = [r for r in maze.env_2d.regions if r.startswith("arm_")]
-        assert len(arm_regions) == 8
+        cups = [r for r in maze.env_2d.regions if r.startswith("food_cup_")]
+        assert len(cups) == 8
 
     def test_radial_arm_has_center(self):
         """Radial arm maze should have a center region."""
