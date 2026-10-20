@@ -1657,12 +1657,8 @@ class TestLargeSessionNapariConfig:
         from neurospatial.animation.core import large_session_napari_config
 
         result = large_session_napari_config(n_frames=100_000)
-        result_with_rate = large_session_napari_config(
-            n_frames=100_000, sample_rate_hz=250
-        )
 
         assert "fps" not in result
-        assert "fps" not in result_with_rate
 
     def test_chunk_size_is_positive_int(self):
         """Test that chunk_size is a positive integer."""
@@ -1690,18 +1686,6 @@ class TestLargeSessionNapariConfig:
         large = large_session_napari_config(n_frames=1_000_000)
 
         assert large["chunk_size"] >= small["chunk_size"]
-
-    def test_sample_rate_accepted_for_backward_compat(self):
-        """sample_rate_hz is accepted but no longer changes the result."""
-        from neurospatial.animation.core import large_session_napari_config
-
-        result_default = large_session_napari_config(n_frames=100_000)
-        result_250hz = large_session_napari_config(n_frames=100_000, sample_rate_hz=250)
-        result_500hz = large_session_napari_config(n_frames=100_000, sample_rate_hz=500)
-
-        # sample_rate_hz no longer affects the returned cache/chunk settings.
-        assert result_250hz == result_default
-        assert result_500hz == result_default
 
     def test_can_unpack_into_animate_fields(self):
         """Test that result can be unpacked as kwargs to animate_fields."""

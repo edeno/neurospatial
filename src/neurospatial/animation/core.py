@@ -1178,8 +1178,6 @@ def estimate_colormap_range_from_subset(
 
 def large_session_napari_config(
     n_frames: int,
-    *,
-    sample_rate_hz: int | None = None,
 ) -> dict[str, Any]:
     """Get recommended napari animation settings for large datasets.
 
@@ -1190,11 +1188,6 @@ def large_session_napari_config(
     ----------
     n_frames : int
         Total number of frames in the dataset.
-    sample_rate_hz : int, optional
-        Accepted for backward compatibility but no longer used. Playback frame
-        rate is computed automatically by ``animate_fields()`` from
-        ``frame_times`` and ``speed``; this helper no longer returns an ``fps``
-        key (see Notes).
 
     Returns
     -------
@@ -1241,11 +1234,6 @@ def large_session_napari_config(
     Returning an ``fps`` here would collide with that value and make the result
     order-dependent on how the config and explicit kwargs are merged.
     """
-    # sample_rate_hz is intentionally unused: playback fps is owned by
-    # animate_fields (computed from frame_times and speed). Returning an fps
-    # here would conflict with that auto-computed value.
-    del sample_rate_hz
-
     # Scale chunk_size based on dataset size
     # Larger datasets benefit from larger chunks for efficient I/O
     if n_frames < 50_000:
