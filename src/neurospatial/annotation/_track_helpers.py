@@ -25,6 +25,15 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.ops.transforms import VideoCalibration
 
+from neurospatial.annotation._track_layout import (
+    resolve_track_layout,
+)
+from neurospatial.annotation._track_layout import (
+    validate_edge_coverage as _validate_edge_coverage,
+)
+from neurospatial.annotation._track_layout import (
+    validate_edge_spacing as _validate_edge_spacing,
+)
 from neurospatial.annotation._track_state import TrackBuilderState
 
 
@@ -136,34 +145,6 @@ def build_track_graph_from_positions(
         return graph
 
 
-def _validate_edge_coverage(
-    edges: list[tuple[int, int]],
-    expected_edges: list[tuple[int, int]],
-    *,
-    name: str,
-) -> None:
-    """Require each undirected graph edge exactly once, retaining orientation."""
-    actual = [frozenset(edge) for edge in edges]
-    expected = {frozenset(edge) for edge in expected_edges}
-    if len(actual) != len(set(actual)) or set(actual) != expected:
-        raise ValueError(
-            f"{name} must contain every track graph edge exactly once "
-            "(no missing, duplicate, or unknown edges). "
-            "Recompute the edge order after changing the graph."
-        )
-
-
-def _validate_edge_spacing(spacing: object, n_edges: int) -> None:
-    """Check spacing before returning or consuming an annotation result."""
-    values = np.asarray(spacing, dtype=np.float64)
-    if values.ndim > 1 or (values.ndim == 1 and len(values) != max(0, n_edges - 1)):
-        raise ValueError(
-            f"edge_spacing must have {max(0, n_edges - 1)} values or be a scalar."
-        )
-    if not np.all(np.isfinite(values)) or np.any(values < 0):
-        raise ValueError("edge_spacing must contain finite, non-negative values.")
-
-
 class TrackGraphResult(NamedTuple):
     """Result from track graph annotation session.
 
@@ -181,9 +162,12 @@ class TrackGraphResult(NamedTuple):
     edges : list of tuple
         Edge connections as (node_i, node_j) tuples.
     edge_order : list of tuple
-        Ordered edge list for linearization (from infer_edge_layout).
+        Effective oriented edge order for linearization, using the manual override
+        or a complete automatic traversal.
     edge_spacing : NDArray[np.float64]
-        Spacing between consecutive edges (from infer_edge_layout).
+        Gaps between consecutive edges in output units (cm if calibrated,
+        otherwise pixels). Automatic gaps follow the effective edge order;
+        manual gaps already use these units.
     node_labels : list of str
         Labels for each node (e.g., "start", "goal", "junction").
     start_node : int or None
@@ -241,7 +225,8 @@ class TrackGraphResult(NamedTuple):
         bin_size : float
             Bin size for discretization along the track.
         edge_spacing : float or array-like, optional
-            Override inferred edge_spacing. If None, uses self.edge_spacing.
+            Override gaps in the result's output units. If None, uses
+            self.edge_spacing.
         name : str, optional
             Name for the environment.
 
@@ -368,6 +353,22 @@ def build_track_graph_result(
     # Copy edges from state
     edges = list(state.edges)
 
+    # Validate output geometry before constructing an exportable graph.
+    positions = np.asarray(node_positions, dtype=np.float64)
+    if node_positions and (
+        positions.shape != (len(node_positions), 2)
+        or not np.all(np.isfinite(positions))
+    ):
+        raise ValueError("Track nodes must have finite two-dimensional coordinates.")
+    for first, second in edges:
+        if not (0 <= first < len(node_positions) and 0 <= second < len(node_positions)):
+            raise ValueError("Track edges must reference existing nodes.")
+        length = float(np.linalg.norm(positions[second] - positions[first]))
+        if not np.isfinite(length) or length <= 0:
+            raise ValueError(
+                "Track edges must have finite, strictly positive lengths in output units."
+            )
+
     # Copy node labels
     node_labels = list(state.node_labels)
 
@@ -378,34 +379,12 @@ def build_track_graph_result(
     if len(state.nodes) >= 2 and len(state.edges) >= 1:
         track_graph = build_track_graph_from_positions(node_positions, edges)
 
-        # Use manual overrides if set, otherwise auto-infer
-        if state.edge_order_override is not None:
-            edge_order = list(state.edge_order_override)
-        else:
-            try:
-                from track_linearization import infer_edge_layout
-
-                edge_order, _spacing = infer_edge_layout(
-                    track_graph,
-                    start_node=start_node,
-                )
-            except ImportError:
-                # Fallback: use edges in creation order
-                edge_order = edges
-
-        if state.edge_spacing_override is not None:
-            edge_spacing = np.array(state.edge_spacing_override, dtype=np.float64)
-        else:
-            try:
-                from track_linearization import infer_edge_layout
-
-                _order, edge_spacing = infer_edge_layout(
-                    track_graph,
-                    start_node=start_node,
-                )
-            except ImportError:
-                # Fallback: zero spacing
-                edge_spacing = np.zeros(max(0, len(edges) - 1), dtype=np.float64)
+        edge_order, edge_spacing = resolve_track_layout(
+            track_graph,
+            start_node=start_node,
+            edge_order=state.edge_order_override,
+            edge_spacing=state.edge_spacing_override,
+        )
     else:
         track_graph = None
         edge_order = []

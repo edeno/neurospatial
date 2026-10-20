@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import shapely.geometry as shp
@@ -499,3 +499,51 @@ def _clipped_walls(
         segments.extend(pieces)
         wall_names.extend([name] * len(pieces))
     return segments, wall_names
+
+
+def _validate_drawn_shapes(
+    shapes_data: list[NDArray[np.float64]],
+    names: list[str],
+    region_types: list[RegionType],
+    shape_types: list[str],
+    calibration: VideoCalibration | None,
+) -> None:
+    """Require every interactive drawing to survive conversion without repair."""
+    from neurospatial.landmarks import Landmark
+
+    for vertices, name, role, shape_type in zip(
+        shapes_data, names, region_types, shape_types, strict=True
+    ):
+        points = _to_world(vertices, calibration)
+        try:
+            if not np.isfinite(points).all():
+                raise ValueError("coordinates must be finite")
+            if shape_type in _AREA_SHAPES or role not in ("wall", "landmark"):
+                polygon = shp.Polygon(points)
+                if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
+                    raise ValueError(
+                        "invalid polygon: draw an area with positive area and no crossing edges"
+                    )
+            if role == "wall":
+                if shape_type == "ellipse" or len(points) < 2:
+                    raise ValueError("draw a wall as a path, line, or polygon")
+                line = shp.LineString(points)
+                if not line.is_valid or line.length <= 0:
+                    raise ValueError(
+                        "draw a wall with distinct vertices and positive length"
+                    )
+            elif role == "landmark":
+                kind: Literal["point", "line", "polygon"] = (
+                    "point"
+                    if shape_type == "ellipse"
+                    else "line"
+                    if shape_type in _LINE_SHAPES
+                    else "polygon"
+                )
+                Landmark(
+                    str(name), kind, points.mean(axis=0) if kind == "point" else points
+                )
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Cannot save {role} '{name}': {exc}. Edit or delete this shape and try again."
+            ) from exc

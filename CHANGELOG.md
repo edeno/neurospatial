@@ -2441,6 +2441,21 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   parent associations; edit their vertices or draw new shapes instead.
 - Annotation environments retain `"cm"` units when calibrated and `"pixels"`
   otherwise; track results carry the same units through `to_environment()`.
+- Native track-edge deletion and node renaming now use the same undoable state
+  commands as other graph edits. Temporary edge previews do not modify the
+  saved graph, and unsupported direct edge reshaping restores the graph view.
+- Polygon and track annotation validate their complete results before closing
+  the editor. Invalid landmarks, walls and incomplete polygons remain editable
+  instead of being dropped during interactive saving. Standalone converters
+  retain their documented permissive behavior.
+- Deleting polygon annotations keeps drawing bookkeeping synchronized, so the
+  next shape receives its own name and role, including after deleting a polygon
+  with interior rings.
+- Track preview and export resolve edge order and gaps together. Automatic gaps
+  follow the selected order, all disconnected components are retained, and
+  preview coordinates and manual gaps use the same output units as the result.
+- LabelMe and CVAT annotation imports preserve their known `"cm"` or `"pixels"`
+  coordinate metadata through subsequent environment construction.
 
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or

@@ -61,12 +61,13 @@ def regions_from_labelme(
     from neurospatial.regions.io import load_labelme_json
 
     pixel_to_world = calibration.transform_px_to_cm if calibration else None
-    return load_labelme_json(
+    regions = load_labelme_json(
         json_path,
         pixel_to_world=pixel_to_world,
         label_key=label_key,
         points_key=points_key,
     )
+    return _with_coordinate_units(regions, calibration)
 
 
 def regions_from_cvat(
@@ -101,4 +102,25 @@ def regions_from_cvat(
     from neurospatial.regions.io import load_cvat_xml
 
     pixel_to_world = calibration.transform_px_to_cm if calibration else None
-    return load_cvat_xml(xml_path, pixel_to_world=pixel_to_world)
+    regions = load_cvat_xml(xml_path, pixel_to_world=pixel_to_world)
+    return _with_coordinate_units(regions, calibration)
+
+
+def _with_coordinate_units(
+    regions: Regions, calibration: VideoCalibration | None
+) -> Regions:
+    """Stamp known annotation units while preserving region data and metadata."""
+    from neurospatial.regions import Region, Regions
+
+    units = "cm" if calibration is not None else "pixels"
+    return Regions(
+        [
+            Region(
+                name=region.name,
+                kind=region.kind,
+                data=region.data,
+                metadata={**region.metadata, "coord_system": units},
+            )
+            for region in regions.values()
+        ]
+    )

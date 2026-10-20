@@ -20,6 +20,8 @@ from neurospatial.annotation._types import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import napari
     from numpy.typing import NDArray
     from shapely.geometry import LineString, Polygon
@@ -231,7 +233,7 @@ def annotate_video(
     _validate_annotate_params(mode, bin_size)
 
     try:
-        import napari
+        import napari  # noqa: F401 - verify the optional GUI dependency
     except ImportError as e:
         raise ImportError(
             "napari is required for interactive annotation. "
@@ -256,7 +258,7 @@ def annotate_video(
         initial_regions = _filter_environment_regions(initial_regions)
 
     # Setup napari viewer with all layers and widgets
-    _viewer, shapes = _setup_annotation_viewer(
+    _viewer, shapes, flush_pending = _setup_annotation_viewer(
         video_path,
         frame,
         mode,
@@ -266,42 +268,20 @@ def annotate_video(
         calibration,
     )
 
-    # Validate the intact draft before any close route destroys viewer layers.
-    from napari.utils.notifications import show_error
-    from qtpy.QtCore import QEvent, QObject
+    from neurospatial.annotation._session import run_annotation_session
 
-    results: list[AnnotationResult] = []
+    def prepare_result() -> AnnotationResult:
+        flush_pending()
+        return _process_annotation_results(
+            shapes,
+            mode,
+            bin_size,
+            calibration,
+            resolved.simplify_tolerance,
+            resolved.multiple_boundaries,
+        )
 
-    class DraftCloseGuard(QObject):
-        def eventFilter(self, watched: QObject | None, event: QEvent | None) -> bool:  # noqa: N802 - Qt override
-            if event is not None and event.type() == QEvent.Type.Close:
-                try:
-                    result = _process_annotation_results(
-                        shapes,
-                        mode,
-                        bin_size,
-                        calibration,
-                        resolved.simplify_tolerance,
-                        resolved.multiple_boundaries,
-                    )
-                except Exception as exc:
-                    show_error(f"Cannot save annotations: {exc}")
-                    event.ignore()
-                    return True
-                results[:] = [result]
-            return False
-
-    window = _viewer.window._qt_window
-    guard = DraftCloseGuard(window)
-    window.installEventFilter(guard)
-    try:
-        napari.run()
-    finally:
-        window.removeEventFilter(guard)
-        _viewer.close()
-    if not results:
-        raise RuntimeError("Annotation window closed without a validated result.")
-    return results[0]
+    return run_annotation_session(_viewer, prepare_result)
 
 
 def _add_initial_regions(
@@ -613,7 +593,7 @@ def _setup_annotation_viewer(
     positions_for_display: NDArray[np.float64] | None,
     initial_regions: Regions | None,
     calibration: VideoCalibration | None,
-) -> tuple[napari.Viewer, napari.layers.Shapes]:
+) -> tuple[napari.Viewer, napari.layers.Shapes, Callable[[], None]]:
     """Create and configure napari viewer for annotation.
 
     Parameters
@@ -639,6 +619,8 @@ def _setup_annotation_viewer(
         Configured napari viewer.
     shapes : napari.layers.Shapes
         Shapes layer for annotations.
+    flush_pending : Callable[[], None]
+        Finish pending widget edits before constructing an annotation result.
 
     """
     import napari
@@ -698,7 +680,7 @@ def _setup_annotation_viewer(
     # Set initial status bar
     viewer.status = "Annotation mode: M=cycle modes, Escape=save and close"
 
-    return viewer, shapes
+    return viewer, shapes, widget.flush_pending
 
 
 def _process_annotation_results(
@@ -766,6 +748,9 @@ def _process_annotation_results(
 
     drafts = polygon_drafts(shapes, shapes_data, names, roles)
 
+    from neurospatial.annotation.converters import _validate_drawn_shapes
+
+    _validate_drawn_shapes(shapes_data, names, roles, shape_types, calibration)
     walls, landmarks = shapes_to_walls_and_landmarks(
         shapes_data, names, roles, shape_types, calibration=calibration
     )

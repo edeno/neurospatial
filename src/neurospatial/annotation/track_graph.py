@@ -44,6 +44,7 @@ from neurospatial.annotation._track_widget import (
 )
 
 if TYPE_CHECKING:
+    from napari.utils.events import Event
     from numpy.typing import NDArray
 
     from neurospatial.ops.transforms import VideoCalibration
@@ -248,6 +249,7 @@ def annotate_track_graph(
     # 7. Add control widget
     # TrackGraphWidget is a wrapper class; pass the internal QWidget to napari
     widget = create_track_widget(viewer, edges_layer, nodes_layer, state)
+    widget._calibration = calibration
     viewer.window.add_dock_widget(
         widget._widget,
         name="Track Graph Builder",
@@ -323,6 +325,70 @@ def annotate_track_graph(
 
     # Connect to layer data change events
     nodes_layer.events.data.connect(_sync_layer_to_state)
+
+    pending_edge_removal: tuple[int, ...] = ()
+
+    def _sync_edges_to_state(event: Event | None = None) -> None:
+        """Accept native deletion; restore edits that cannot represent graph edges."""
+        nonlocal pending_edge_removal
+        action = str(getattr(event, "action", ""))
+        if action in {"adding", "changing", "removing"}:
+            if action == "removing":
+                pending_edge_removal = tuple(getattr(event, "data_indices", ()))
+            return
+        expected = [
+            np.asarray(
+                [
+                    (state.nodes[a][1], state.nodes[a][0]),
+                    (state.nodes[b][1], state.nodes[b][0]),
+                ]
+            )
+            for a, b in state.edges
+        ]
+        removed = pending_edge_removal
+        pending_edge_removal = ()
+        if action == "removed" and not removed:
+            removed = tuple(getattr(event, "data_indices", ()))
+        # Preview paths carry no graph identity and never enter command history.
+        deleted = tuple(index for index in removed if index < len(expected))
+        survivors = [
+            path for index, path in enumerate(expected) if index not in deleted
+        ]
+        preview_index = edges_layer.metadata.get("_track_preview_index")
+        # Shape indices in a removal event refer to the old rows.
+        if preview_index is not None and preview_index not in removed:
+            preview_index -= sum(index < preview_index for index in removed)
+        actual = [
+            path
+            for index, path in enumerate(edges_layer.data)
+            if index != preview_index
+        ]
+        # Shapes stores coordinates in its display dtype (currently float32).
+        # Compare the exact representable endpoints, preserving detection of
+        # even a one-ULP geometry edit without rejecting ordinary rounding.
+        matches = len(actual) == len(survivors) and all(
+            np.array_equal(path, np.asarray(reference, dtype=path.dtype))
+            for path, reference in zip(actual, survivors, strict=True)
+        )
+        if deleted and action == "removed" and matches:
+            state._delete_edges(deleted)
+        elif not (
+            len(actual) == len(expected)
+            and all(
+                np.array_equal(path, np.asarray(reference, dtype=path.dtype))
+                for path, reference in zip(actual, expected, strict=True)
+            )
+        ):
+            message = (
+                "Track edges must connect node positions. Move nodes to change "
+                "edge geometry, or use E to connect two nodes. The edge edit "
+                "was restored."
+            )
+            viewer.status = message
+            warnings.warn(message, UserWarning, stacklevel=2)
+        widget.sync_from_state()
+
+    edges_layer.events.data.connect(_sync_edges_to_state)
 
     # Sync napari layer mode changes back to state
     def _sync_mode_to_state(event=None):
@@ -435,8 +501,24 @@ def annotate_track_graph(
     widget.sync_from_state()
     viewer.status = "Mode: Add - click to place nodes (press E to connect them)"
 
-    # 11. Run napari (blocking until viewer closes)
-    napari.run()
+    # Validate and cache the complete result before either save or window close.
+    from neurospatial.annotation._session import run_annotation_session
 
-    # 12. Extract and transform results
-    return build_track_graph_result(state, calibration)
+    prepared_snapshot = None
+    prepared_result: TrackGraphResult | None = None
+
+    def prepare_result() -> TrackGraphResult:
+        nonlocal prepared_snapshot, prepared_result
+        if state.nodes or state.edges:
+            valid, errors, _ = state.is_valid_for_save()
+            if not valid:
+                raise ValueError("Cannot save track graph: " + "; ".join(errors))
+        snapshot = state._snapshot()
+        if prepared_result is None or snapshot != prepared_snapshot:
+            result = build_track_graph_result(state, calibration)
+            prepared_snapshot = snapshot
+            prepared_result = result
+        return prepared_result
+
+    widget._prepare_result = prepare_result
+    return run_annotation_session(viewer, prepare_result)

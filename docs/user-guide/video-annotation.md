@@ -80,10 +80,10 @@ When the napari viewer opens:
 
 6. **Press `Escape` or click "Save and Close"** to return results
 
-Saving validates the complete result before closing the viewer. If a boundary
-or region crosses itself or cannot be converted to an environment, the viewer
-stays open and explains what to correct. Edit the affected vertices, then save
-again.
+Saving validates the complete result before closing the viewer. If a boundary,
+region, wall or landmark is invalid, the viewer stays open and explains what
+to correct. Incomplete shapes are kept for correction as well. Edit the affected
+vertices, then save again.
 
 ### Step 3: Use the Results
 
@@ -112,6 +112,18 @@ bin_indices = env.bin_sequence(times, positions)
 | `4` | Edit vertices mode |
 | `Delete` | Remove selected shape |
 | `Escape` | Save and close viewer |
+
+## Track Graph Annotation
+
+Use `annotate_track_graph()` to place nodes and connect them into a track.
+Native edge deletion and node renaming participate in undo and redo. To change
+an edge's geometry, move its endpoint nodes.
+
+Preview 1D uses the same node coordinates, edge order and gaps as the returned
+`TrackGraphResult`. Gaps are in centimeters with calibration and pixels without
+it; the spacing control displays the unit. Automatic gaps follow the selected
+edge order, and disconnected components are included in the result. Saving or
+closing validates the draft before the editor closes.
 
 ## Adding Calibration
 
@@ -270,6 +282,10 @@ result = annotate_video(
 ## Importing from External Tools
 
 Import annotations created in other tools:
+
+Both import adapters retain coordinate units in each region's
+`metadata["coord_system"]`: `"cm"` with calibration and `"pixels"` without it.
+This metadata is preserved when constructing an environment from the boundary.
 
 ### LabelMe
 

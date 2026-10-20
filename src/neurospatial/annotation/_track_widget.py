@@ -19,12 +19,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     import napari
     from napari.layers import Points, Shapes
 
     from neurospatial.annotation._track_state import TrackBuilderState
+    from neurospatial.ops.transforms import VideoCalibration
 
 
 # =============================================================================
@@ -195,7 +196,8 @@ def _sync_layers_from_state(
 
     """
     # State is authoritative during redraws, including widget edits and undo.
-    with nodes_layer.events.data.blocker():
+    edges_layer.metadata.pop("_track_preview_index", None)
+    with nodes_layer.events.data.blocker(), edges_layer.events.data.blocker():
         # Convert state nodes (x, y) to napari (row, col) = (y, x)
         if state.nodes:
             # Stack as (row, col) = (y, x)
@@ -348,9 +350,6 @@ def _handle_click(
 # Edge Preview
 # =============================================================================
 
-# Track preview shape index for removal
-_PREVIEW_INDEX: int | None = None
-
 
 def _show_edge_preview(
     state: TrackBuilderState,
@@ -369,8 +368,6 @@ def _show_edge_preview(
         Current cursor position as (row, col) in napari coordinates.
 
     """
-    global _PREVIEW_INDEX
-
     if state.edge_start_node is None or state.edge_start_node >= len(state.nodes):
         return
 
@@ -389,8 +386,9 @@ def _show_edge_preview(
     _clear_edge_preview(edges_layer)
 
     # Add new preview path with preview color
-    edges_layer.add_paths([preview_path], edge_color=PREVIEW_COLOR)
-    _PREVIEW_INDEX = len(edges_layer.data) - 1
+    with edges_layer.events.data.blocker():
+        edges_layer.add_paths([preview_path], edge_color=PREVIEW_COLOR)
+    edges_layer.metadata["_track_preview_index"] = len(edges_layer.data) - 1
 
 
 def _clear_edge_preview(edges_layer: Shapes) -> None:
@@ -402,12 +400,14 @@ def _clear_edge_preview(edges_layer: Shapes) -> None:
         The Shapes layer containing the preview.
 
     """
-    global _PREVIEW_INDEX
-
-    if len(edges_layer.data) > 0:
-        # Remove all data (we'll re-sync from state)
-        edges_layer.data = []
-    _PREVIEW_INDEX = None
+    preview_index = edges_layer.metadata.pop("_track_preview_index", None)
+    if preview_index is not None and preview_index < len(edges_layer.data):
+        with edges_layer.events.data.blocker():
+            edges_layer.data = [
+                path
+                for index, path in enumerate(edges_layer.data)
+                if index != preview_index
+            ]
 
 
 # =============================================================================
@@ -435,6 +435,8 @@ def _cancel_edge_creation(state: TrackBuilderState) -> None:
 def _show_1d_preview(
     state: TrackBuilderState,
     show: bool = True,
+    *,
+    calibration: VideoCalibration | None = None,
 ) -> Any | None:
     """Show a 1D linearized preview of the track graph.
 
@@ -466,20 +468,12 @@ def _show_1d_preview(
     if len(state.nodes) < 2 or len(state.edges) < 1:
         return None
 
-    # Build track graph from current state
-    track_graph = state.to_track_graph()
+    from neurospatial.annotation._track_helpers import build_track_graph_result
 
-    # Get edge order (use override if set, otherwise compute)
-    if state.edge_order_override is not None:
-        edge_order = list(state.edge_order_override)
-    else:
-        edge_order = state.compute_edge_order()
-
-    # Get edge spacing (use override if set, otherwise compute)
-    if state.edge_spacing_override is not None:
-        edge_spacing: list[float] | np.ndarray = list(state.edge_spacing_override)
-    else:
-        edge_spacing = state.compute_edge_spacing()
+    result = build_track_graph_result(state, calibration)
+    track_graph = result.track_graph
+    edge_order = result.edge_order
+    edge_spacing = result.edge_spacing
 
     # Import and use track_linearization plotting
     try:
@@ -704,6 +698,12 @@ class TrackGraphWidget:
         self._nodes_layer = nodes_layer
         self._state = state
         self._saved = False
+        self._calibration: VideoCalibration | None = None
+        from neurospatial.annotation._track_helpers import build_track_graph_result
+
+        self._prepare_result: Callable[[], Any] = lambda: build_track_graph_result(
+            state, self._calibration
+        )
 
         # Create main widget
         self._widget = QWidget()
@@ -1057,16 +1057,13 @@ class TrackGraphWidget:
         idx = self._node_combo.currentIndex()
         if idx >= 0 and idx < len(self._state.nodes):
             label = self._label_input.text()
-            # Update label in state
-            while len(self._state.node_labels) <= idx:
-                self._state.node_labels.append("")
-            self._state.node_labels[idx] = label
+            self._state._set_node_label(idx, label)
             self.sync_from_state()
 
     def _on_save(self) -> None:
         """Handle Save and Close button click."""
         if self.try_save():
-            self._viewer.close()
+            self._viewer.window._qt_window.close()
 
     def _on_move_up(self) -> None:
         """Handle Move Up button click."""
@@ -1144,7 +1141,18 @@ class TrackGraphWidget:
         """Handle Preview Linearization button click."""
         import matplotlib.pyplot as plt
 
-        ax = _show_1d_preview(self._state, show=False)
+        try:
+            ax = _show_1d_preview(
+                self._state, show=False, calibration=self._calibration
+            )
+        except (ValueError, IndexError) as error:
+            from napari.utils.notifications import show_error
+
+            show_error(
+                f"Cannot preview track graph: {error} "
+                "Correct the nodes, edges, or layout settings and try Preview 1D again."
+            )
+            return
         if ax is not None:
             # Use non-blocking show to avoid freezing the napari viewer
             plt.show(block=False)
@@ -1155,6 +1163,12 @@ class TrackGraphWidget:
 
     def sync_from_state(self) -> None:
         """Synchronize widget UI from current state."""
+        self._edge_spacing_spin.setSuffix(
+            " cm" if self._calibration is not None else " pixels"
+        )
+        self._edge_spacing_spin.setToolTip(
+            "Gap between edges in output coordinate units; also used by Preview 1D."
+        )
         # Update mode selector
         self._mode_combo.blockSignals(True)
         self._mode_combo.setCurrentText(self._state.mode)
@@ -1252,6 +1266,14 @@ class TrackGraphWidget:
                 self._widget,
                 "Validation Failed",
                 "Cannot save:\n• " + "\n• ".join(errors),
+            )
+            return False
+
+        try:
+            self._prepare_result()
+        except (ValueError, IndexError) as error:
+            QMessageBox.warning(
+                self._widget, "Validation Failed", f"Cannot save: {error}"
             )
             return False
 

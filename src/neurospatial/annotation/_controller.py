@@ -15,6 +15,7 @@ UI-specific concerns (status messages, list updates, dialogs).
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple, cast
+from uuid import uuid4
 
 from neurospatial.annotation._helpers import (
     REGION_TYPE_COLORS,
@@ -26,7 +27,16 @@ from neurospatial.annotation._state import AnnotationModeState, make_unique_name
 from neurospatial.annotation._types import RegionType
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import napari
+
+
+def _reset_identity_defaults(shapes: napari.layers.Shapes) -> None:
+    """Fresh drawings must not inherit a selected ring's identity."""
+    for column in ("_polygon_id", "_parent_id"):
+        if column in shapes.feature_defaults:
+            shapes.feature_defaults[column] = ""
 
 
 class UpdateFeaturesResult(NamedTuple):
@@ -89,9 +99,14 @@ class ShapesLayerController:
         self,
         shapes_layer: napari.layers.Shapes,
         state: AnnotationModeState,
+        *,
+        before_mutation: Callable[[], None] | None = None,
+        after_mutation: Callable[[], None] | None = None,
     ) -> None:
         self.shapes = shapes_layer
         self.state = state
+        self._before_mutation = before_mutation
+        self._after_mutation = after_mutation
 
     def apply_mode(self) -> None:
         """Apply current state mode to layer defaults.
@@ -111,6 +126,7 @@ class ShapesLayerController:
             self.shapes.mode = "add_path"
         elif region_type != "landmark":
             self.shapes.mode = "add_polygon"
+        _reset_identity_defaults(self.shapes)
 
     def get_existing_names(self) -> list[str]:
         """Get list of existing shape names.
@@ -252,8 +268,8 @@ class ShapesLayerController:
 
         # Apply updated features
         updated = rebuild_features(region_types, names)
-        for column in ("_polygon_id", "_parent_id"):
-            if column in self.shapes.features:
+        for column in self.shapes.features:
+            if str(column).startswith("_"):
                 updated[column] = list(
                     self.shapes.features[column].iloc[:current_count]
                 )
@@ -262,6 +278,7 @@ class ShapesLayerController:
 
         # Update layer defaults to match assigned name
         self.shapes.feature_defaults["name"] = assigned_name
+        _reset_identity_defaults(self.shapes)
 
         # Get the region_type of the last shape added
         last_role = str(self.state.region_type)
@@ -282,6 +299,28 @@ class ShapesLayerController:
             Number of shapes deleted.
 
         """
+        if not indices_to_delete:
+            return 0
+
+        # A pending boundary decision can remove/reorder rows. Carry the
+        # requested identities through that decision instead of reusing indices.
+        marker = f"_delete_target_{uuid4().hex}"
+        features = self.shapes.features.copy()
+        features[marker] = [i in indices_to_delete for i in range(len(features))]
+        self.shapes.features = features
+        self.shapes.feature_defaults[marker] = False
+        try:
+            if self._before_mutation is not None:
+                self._before_mutation()
+            indices_to_delete = {
+                i
+                for i, selected in enumerate(self.shapes.features.get(marker, []))
+                if selected
+            }
+        finally:
+            self.shapes.features = self.shapes.features.drop(
+                columns=marker, errors="ignore"
+            )
         if not indices_to_delete:
             return 0
 
@@ -320,6 +359,12 @@ class ShapesLayerController:
         self.shapes.selected_data = set()
         self.shapes.mode = old_mode
         self.shapes.refresh()
+        _reset_identity_defaults(self.shapes)
+
+        # Notify the widget synchronously: queued napari events may arrive after
+        # another drawing and must not mistake the deletion for an addition.
+        if self._after_mutation is not None:
+            self._after_mutation()
 
         # Update state counts
         self.sync_state_from_layer()
