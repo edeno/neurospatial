@@ -2,8 +2,12 @@
 
 The Linear Track is the simplest spatial navigation paradigm - a straight
 corridor with reward ports at both ends. Animals run back and forth (laps)
-between rewards. This paradigm was foundational for place cell research
-(O'Keefe & Dostrovsky 1971, Wilson & McNaughton 1993).
+between rewards, which makes the track a standard apparatus for place-cell,
+theta-sequence and replay studies.
+
+The default length follows Kim & Frank (2009), PLoS One 4:e5494,
+doi:10.1371/journal.pone.0005494, who trained rats on "an elevated linear
+track (150 cm long, 6 cm wide)".
 
 Examples
 --------
@@ -26,22 +30,26 @@ import networkx as nx
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
-from neurospatial.simulation.mazes._geometry import make_corridor_polygon
+from neurospatial.simulation.mazes._geometry import (
+    corridor_end_point,
+    make_corridor_polygon,
+)
 
 
 @dataclass(frozen=True)
 class LinearTrackDims(MazeDims):
     """Dimension specifications for Linear Track.
 
-    The Linear Track is a simple straight corridor. Standard dimensions
-    are based on common experimental setups (Wilson & McNaughton 1993).
+    The Linear Track is a simple straight corridor. The default length is the
+    150 cm track of Kim & Frank (2009), doi:10.1371/journal.pone.0005494.
 
     Attributes
     ----------
     length : float
-        Length of the track in cm. Default is 150.0 (typical range: 150-200 cm).
+        Length of the track in cm, end wall to end wall. Default is 150.0.
     width : float
-        Width of the corridor in cm. Default is 10.0.
+        Width of the corridor in cm. Default is 10.0, wider than the 6 cm
+        track of Kim & Frank (2009); pass ``width=6.0`` to match it.
 
     Examples
     --------
@@ -94,9 +102,11 @@ def make_linear_track(
     - X-axis: from -length/2 to +length/2
     - Y-axis: from -width/2 to +width/2
 
-    Regions:
-    - reward_left: Point at left end (-length/2, 0)
-    - reward_right: Point at right end (+length/2, 0)
+    Regions (each centred in the end square of the track, half a track width
+    back from the end wall):
+
+    - reward_left: Point at left end (-length/2 + width/2, 0)
+    - reward_right: Point at right end (+length/2 - width/2, 0)
 
     Examples
     --------
@@ -147,8 +157,8 @@ def make_linear_track(
 
     # Add regions for reward locations
     region_builder = Regions()
-    region_builder.add("reward_left", point=(-half_length, 0.0))
-    region_builder.add("reward_right", point=(half_length, 0.0))
+    region_builder.add("reward_left", point=corridor_end_point(end, start, dims.width))
+    region_builder.add("reward_right", point=corridor_end_point(start, end, dims.width))
     env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested

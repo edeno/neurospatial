@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+from shapely.geometry import Point
 
 
 class TestMakeLinearTrack:
@@ -85,12 +87,39 @@ class TestMakeLinearTrack:
         assert reward_left.kind == "point"
         assert reward_right.kind == "point"
 
-        # Left should have smaller x than right
-        assert reward_left.data[0] < reward_right.data[0]
+        # Each reward sits in the end square of the track, half a width back
+        # from the end wall.
+        inset = dims.length / 2 - dims.width / 2
+        np.testing.assert_allclose(reward_left.data, [-inset, 0.0])
+        np.testing.assert_allclose(reward_right.data, [inset, 0.0])
+        polygon = maze.env_2d.arena.polygon
+        for region in (reward_left, reward_right):
+            point = Point(region.data)
+            assert polygon.contains(point)
+            assert polygon.boundary.distance(point) == pytest.approx(dims.width / 2)
 
-        # They should be approximately length apart
-        x_diff = reward_right.data[0] - reward_left.data[0]
-        assert abs(x_diff - dims.length) < dims.length * 0.1  # Within 10%
+    def test_default_length_is_the_published_150_cm_track(self):
+        """Kim & Frank (2009): a 150 cm long linear track."""
+        from neurospatial.simulation.mazes.linear_track import (
+            LinearTrackDims,
+            make_linear_track,
+        )
+
+        dims = LinearTrackDims()
+        assert dims.length == 150.0
+        x_min, y_min, x_max, y_max = make_linear_track().env_2d.arena.polygon.bounds
+        assert x_max - x_min == pytest.approx(150.0)
+        assert y_max - y_min == pytest.approx(dims.width)
+
+    def test_track_rewards_stay_where_they_are_in_2d(self):
+        """Each reward on the linearized track lies where it does in 2-D."""
+        from neurospatial.simulation.mazes.linear_track import make_linear_track
+
+        maze = make_linear_track(bin_size=1.0)
+        for name, region in maze.env_2d.regions.items():
+            np.testing.assert_allclose(
+                maze.env_track.regions[name].data, region.data, atol=1e-9
+            )
 
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
