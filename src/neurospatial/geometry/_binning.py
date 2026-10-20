@@ -440,7 +440,12 @@ class FacesSource(Protocol):
         ...
 
     def missing_error(self, operation: str) -> Exception:
-        """Return an actionable error when the named operation needs faces."""
+        """Return an actionable error when the named operation needs faces.
+
+        A source that is not ``available`` returns a
+        ``MissingCellGeometryError``, the error that marks bins which cannot
+        smooth.
+        """
         ...
 
 

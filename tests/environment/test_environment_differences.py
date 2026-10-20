@@ -39,6 +39,7 @@ from neurospatial.environment import (
     _mapped_topology_difference,
 )
 from neurospatial.environment._comparison import _conductances
+from neurospatial.geometry import MissingCellGeometryError
 from neurospatial.layout import create_layout
 from neurospatial.ops import AffineND
 
@@ -450,6 +451,25 @@ def test_two_sheared_combined_environments_cannot_smooth_alike() -> None:
     assert _conductances(first) is None
     assert _environment_differences(first, second) == (None, None)
     with pytest.raises(NotImplementedError, match="similarity transform"):
+        first.smooth(np.ones(first.n_bins), bandwidth=5.0, mode="average")
+
+
+def test_a_combined_environment_with_a_child_without_faces_cannot_smooth() -> None:
+    # The combined conductances need every child's faces; one child without
+    # them leaves the whole environment unable to smooth, as MissingFaces does.
+    def combined() -> Environment:
+        first = _grid()
+        second = _grid(offset=40.0)
+        without = Environment.from_bins(
+            replace(second.binning, faces=MissingFaces("no cell faces for a test")),
+            arena=second.arena,
+        )
+        return Environment.combine({"a": first, "b": without})
+
+    first, second = combined(), combined()
+    assert _conductances(first) is None
+    assert _environment_differences(first, second) == (None, None)
+    with pytest.raises(MissingCellGeometryError, match="no cell faces for a test"):
         first.smooth(np.ones(first.n_bins), bandwidth=5.0, mode="average")
 
 
