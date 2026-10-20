@@ -19,15 +19,19 @@ def public_functions():
                 yield function, inspect.signature(function).parameters
 
 
+def _required_positional(parameters):
+    return [
+        p.name
+        for p in parameters.values()
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        and p.default is p.empty
+    ]
+
+
 def test_times_before_positions():
     offenders = []
     for function, parameters in public_functions():
-        required = [
-            p.name
-            for p in parameters.values()
-            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-            and p.default is p.empty
-        ]
+        required = _required_positional(parameters)
         if (
             "times" in required
             and "positions" in required
@@ -222,15 +226,6 @@ REQUIRED_DATA_ARGUMENTS = {
     ("marchenko_pastur_threshold", "n_neurons"),
     ("marchenko_pastur_threshold", "n_time_bins"),
 }
-
-
-def _required_positional(parameters):
-    return [
-        p.name
-        for p in parameters.values()
-        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        and p.default is p.empty
-    ]
 
 
 def test_free_function_required_options_are_keyword_only():
