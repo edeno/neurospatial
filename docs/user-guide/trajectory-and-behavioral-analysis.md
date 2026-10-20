@@ -720,6 +720,34 @@ print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1
 - **Sleep classification**: Low velocity periods
 - **Grooming detection**: Brief stationary periods
 
+### Labels to analysis epochs
+
+Direction and trial functions such as `laps_to_direction_labels` and
+`goal_pair_direction_labels` give one label per frame. `labels_to_epochs`
+turns them into `[start, stop)` windows for each label, which you pass as
+`epochs=` to a rate map, decoder or other analysis:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial.behavior import Lap, labels_to_epochs, laps_to_direction_labels
+
+times = np.arange(0, 10, 0.5)  # 2 Hz frames, for a short printout
+laps = [Lap(0.0, 4.0, "clockwise", 1.0), Lap(6.0, 9.5, "counter-clockwise", 1.0)]
+labels = laps_to_direction_labels(laps, times)  # "other" outside every lap
+conditions = labels_to_epochs(times, labels, missing_label="other")
+print(conditions.epochs_table()[["label", "start", "stop", "duration"]])
+assert conditions["clockwise"].tolist() == [[0.0, 4.5]]
+assert conditions["counter-clockwise"].tolist() == [[6.0, 9.5]]
+```
+
+The time between two frames takes the label of the frame at its start, so the
+clockwise window runs to 4.5 s, the frame after the lap's last frame at 4.0 s.
+The last frame of the recording starts no interval, so the counter-clockwise
+window ends at 9.5 s. Pass `valid=` to leave out frames with lost tracking.
+[Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs)
+uses these windows to compare rate maps between conditions.
+
 ---
 
 ## Lap Detection

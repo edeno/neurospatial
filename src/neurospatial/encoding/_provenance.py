@@ -73,18 +73,48 @@ def rate_xarray_attrs(result: Any) -> dict[str, Any]:
     return attrs
 
 
-def spatial_support(result: Any) -> NDArray[np.bool_]:
-    """Bins with observed occupancy, sufficient dwell and finite model rates."""
+def occupancy_support(result: Any) -> NDArray[np.bool_]:
+    """Bins the animal occupied for at least the result's ``min_occupancy``.
+
+    Parameters
+    ----------
+    result : object
+        A rate result with ``occupancy`` ``(n_bins,)`` in seconds and
+        ``analysis_settings`` (``min_occupancy`` in seconds; ``None`` is 0).
+
+    Returns
+    -------
+    ndarray of bool, shape (n_bins,)
+        True where occupancy is positive and at least ``min_occupancy``.
+
+    Examples
+    --------
+    >>> from types import SimpleNamespace
+    >>> import numpy as np
+    >>> result = SimpleNamespace(
+    ...     occupancy=np.array([0.0, 0.2, 1.0]),
+    ...     analysis_settings={"min_occupancy": 0.5},
+    ... )
+    >>> occupancy_support(result).tolist()
+    [False, False, True]
+    """
     settings = result.analysis_settings or {}
     threshold = settings.get("min_occupancy") or 0.0
     occupancy = np.asarray(result.occupancy)
+    support: NDArray[np.bool_] = np.asarray(
+        (occupancy > 0) & (occupancy >= threshold), dtype=bool
+    )
+    return support
+
+
+def spatial_support(result: Any) -> NDArray[np.bool_]:
+    """Bins with observed occupancy, sufficient dwell and finite model rates."""
+    occupied = occupancy_support(result)
     rates = np.asarray(result._get_rates())
     finite = np.isfinite(rates)
     if rates.ndim == 2:
         finite = (
-            finite.all(axis=0) if len(rates) else np.zeros_like(occupancy, dtype=bool)
+            finite.all(axis=0) if len(rates) else np.zeros_like(occupied, dtype=bool)
         )
-    support: NDArray[np.bool_] = np.asarray(
-        (occupancy > 0) & (occupancy >= threshold) & finite, dtype=bool
-    )
+    support: NDArray[np.bool_] = np.asarray(occupied & finite, dtype=bool)
     return support

@@ -210,3 +210,53 @@ def call_unbound(env, name, *, bound=False):
             args.append(None)
     function = getattr(env, name) if bound else member
     return function(*args, **kwargs)
+
+
+def renumbered(env, order, distances=None, *, max_distance=5.0):
+    """Publish ``env``'s bins and open connections in a new bin order.
+
+    New bin ``i`` is ``env``'s bin ``order[i]``; centers, measures, cell
+    faces, units, frame and arena are unchanged, so the copy smooths a field
+    as ``env`` does, and point lookup is nearest-bin within
+    ``max_distance``. ``distances`` replaces the open pairs' navigation
+    distances, in ``env.edge_pairs`` order, to make a copy that differs only
+    in them.
+    """
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        FaceGeometry,
+        KnownFaces,
+        MissingFaces,
+        NearestBinLocator,
+        SpatialBins,
+    )
+
+    binning = env.binning
+    centers = binning.bins.centers[order]
+    connections = binning.connections
+    pairs = np.argsort(order)[connections.pairs]
+    if binning.faces.available:
+        faces = binning.faces.build()
+        new_faces = KnownFaces(
+            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
+        )
+    else:
+        new_faces = MissingFaces("renumbered copy of bins without faces")
+    return Environment.from_bins(
+        Binning(
+            "explicit",
+            SpatialBins.from_arrays(
+                centers, binning.bins.sizes[order], binning.bins.measure_dims[order]
+            ),
+            BinConnections.from_arrays(
+                pairs,
+                connections.pair_distances if distances is None else distances,
+            ),
+            NearestBinLocator(centers, max_distance=max_distance),
+            new_faces,
+        ),
+        units=env.units,
+        frame=env.frame,
+        arena=env.arena,
+    )

@@ -230,6 +230,33 @@ def rate_map_centroid(
     return centroid
 
 
+# A map whose spread over the compared bins is at most this fraction of its
+# largest rate is flat. Dividing smoothed counts by smoothed occupancy leaves
+# rounding of order 1e-14 relative (a flat map from the package's estimators
+# spreads tens to hundreds of ulps), and correlating that noise reports a
+# spurious score.
+# A real field is many orders of magnitude deeper than 1e-12 of its peak.
+_CONSTANT_RELATIVE_SPREAD = 1e-12
+
+
+def _is_constant(
+    values: NDArray[np.float64], common: NDArray[np.bool_]
+) -> NDArray[np.bool_]:
+    """Whether each row is flat, up to rounding, over its ``common`` bins.
+
+    A row is flat when ``max - min <= _CONSTANT_RELATIVE_SPREAD *
+    max(|values|)`` over its common bins: the spread is rounding from
+    computing the rates, not a field. Rows without common bins count as flat;
+    the caller reports them as having too few bins first.
+    """
+    highest = np.where(common, values, -np.inf).max(axis=1, initial=-np.inf)
+    lowest = np.where(common, values, np.inf).min(axis=1, initial=np.inf)
+    magnitude = np.maximum(np.abs(highest), np.abs(lowest))
+    tolerance = _CONSTANT_RELATIVE_SPREAD * magnitude
+    constant: NDArray[np.bool_] = highest - lowest <= tolerance
+    return constant
+
+
 def field_stability(
     rate_map_1: NDArray[np.float64],
     rate_map_2: NDArray[np.float64],
@@ -255,7 +282,11 @@ def field_stability(
     -------
     stability : float
         Correlation coefficient in range [-1, 1]. Higher values indicate
-        more stable place fields.
+        more stable place fields. NaN when the correlation is undefined:
+        fewer than 3 bins are finite in both maps (two points always give
+        exactly +-1), or either map is flat over those bins. NaN is not 0
+        ("uncorrelated"); skip such cells with ``np.nanmean`` or
+        ``np.isfinite`` when averaging across cells.
 
     Notes
     -----
@@ -265,8 +296,13 @@ def field_stability(
     - Low stability (r < 0.3): Unstable or remapped field
 
     **Edge Cases**:
-    - Constant arrays (zero variance) return NaN (correlation undefined)
-    - Arrays with <2 valid bins return 0.0
+    - A map flat over the paired bins returns NaN (correlation undefined).
+      Flat means its highest and lowest rates differ by at most ``1e-12``
+      times its largest absolute rate, the rule ``compare_spatial_rates``
+      uses: smoothed estimators leave a flat map with rounding of order
+      ``1e-14`` relative, and correlating that rounding is not a measurement.
+    - Fewer than 3 bins finite in both maps return NaN (2 points give exactly
+      +-1 whatever the maps, so the correlation is not a measurement)
 
     **Pearson vs Spearman**: Pearson measures linear correlation of firing
     rates. Spearman measures rank correlation and is robust to outliers.
@@ -291,11 +327,14 @@ def field_stability(
     map1_clean = rate_map_1[valid_mask]
     map2_clean = rate_map_2[valid_mask]
 
-    if len(map1_clean) < 2:
-        return 0.0
+    # Fewer than 3 paired bins: 2 points always give r = +-1 (not a measurement)
+    # and fewer give no correlation; neither is "no similarity"
+    if len(map1_clean) < 3:
+        return np.nan
 
-    # Check for constant arrays (zero variance) - correlation undefined
-    if np.std(map1_clean) == 0 or np.std(map2_clean) == 0:
+    # A map flat up to rounding has no field to correlate
+    paired = np.vstack([map1_clean, map2_clean])
+    if _is_constant(paired, np.ones(paired.shape, dtype=bool)).any():
         return np.nan
 
     # Compute correlation

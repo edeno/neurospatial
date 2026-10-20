@@ -11,6 +11,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.behavior.decisions import DecisionBoundaryMetrics
+from neurospatial.behavior.epochs import LabelEpochsResult
 from neurospatial.behavior.navigation import (
     GoalDirectedMetrics,
     PathEfficiencyResult,
@@ -22,6 +23,7 @@ from neurospatial.behavior.trajectory import CumulativeDistanceResult, MSDResult
 from neurospatial.decoding import DecodingSummary
 from neurospatial.decoding.assemblies import AssemblyDetectionResult, AssemblyPattern
 from neurospatial.decoding.trajectory import IsotonicFitResult, RadonDetectionResult
+from neurospatial.encoding import RateComparisonResult
 from neurospatial.encoding._metrics import BatchScoresResult
 from neurospatial.encoding.spatial import DirectionalPlaceFields
 from neurospatial.events import ContinuousEventResult
@@ -173,6 +175,23 @@ CASES = [
         },
     ),
     (
+        LabelEpochsResult,
+        {
+            "labels": ("A", "B"),
+            "epoch_bounds": np.array([[0.0, 2.0], [2.0, 3.0]]),
+            "epoch_labels": np.array([0, 1], dtype=np.intp),
+            "epoch_intervals": np.array([[0, 1], [2, 2]], dtype=np.intp),
+            "interval_labels": np.array([0, 0, 1], dtype=np.intp),
+            "interval_supported": np.ones(3, dtype=bool),
+            "unsupported_labels": (),
+            "n_samples": 4,
+            "max_gap": 0.5,
+            "epochs": np.array([[0.0, 10.0]]),
+            "missing_label": None,
+            "n_declared_breaks": 0,
+        },
+    ),
+    (
         ContinuousEventResult,
         {
             "relative_times": np.array([0.0, 0.5]),
@@ -202,6 +221,27 @@ CASES = [
         },
     ),
     (
+        RateComparisonResult,
+        {
+            "unit_ids": np.array([3, 4]),
+            "correlation": np.array([0.5, np.nan]),
+            "status": np.array(["scored", "insufficient_common_bins"]),
+            "n_common_bins": np.array([3, 1], dtype=np.intp),
+            "bins_a": np.array([0, 1, 2], dtype=np.intp),
+            "bins_b": np.array([0, 1, 2], dtype=np.intp),
+            "firing_rates_a_on_bins": np.array([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]),
+            "firing_rates_b_on_bins": np.array([[2.0, 1.0, 3.0], [1.0, 2.0, 3.0]]),
+            "occupancy_a": np.ones(3),
+            "occupancy_b": np.ones(3),
+            "occupied_a": np.ones(3, dtype=bool),
+            "occupied_b": np.ones(3, dtype=bool),
+            "common_support": np.array([[True, True, True], [True, False, False]]),
+            "method": "pearson",
+            "unit_ids_only_a": np.array([1]),
+            "unit_ids_only_b": np.array([], dtype=int),
+        },
+    ),
+    (
         SpatialFeatureResult,
         {
             "values": np.array([[[1.0]], [[np.nan]]]),
@@ -224,6 +264,8 @@ def result_and_inputs(request, env):
     if cls is DecodingSummary:
         inputs["env"] = env
         inputs["spike_window"] = np.array([[0.0, 2.0]])
+    if cls is RateComparisonResult:
+        inputs["env"] = env
     return cls(**inputs), inputs
 
 

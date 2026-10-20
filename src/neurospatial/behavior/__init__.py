@@ -9,7 +9,8 @@ computations.
 Submodules
 ----------
 trajectory : Step lengths, turn angles, MSD, home range, curvature
-epochs : Restrict times / arrays / spike trains to time intervals (epochs)
+epochs : Restrict times / arrays / spike trains to time intervals (epochs);
+    convert per-sample labels to epochs
 segmentation : Laps, trials, region crossings, runs
 navigation : Path efficiency, goal-directed metrics, path progress
 decisions : Decision analysis, choice points, Voronoi boundaries
@@ -34,7 +35,9 @@ from neurospatial.behavior.decisions import (
     pre_decision_speed_stats,
 )
 from neurospatial.behavior.epochs import (
+    LabelEpochsResult,
     in_epochs,
+    labels_to_epochs,
     restrict,
     restrict_spike_trains,
 )
@@ -133,7 +136,9 @@ __all__ = [  # noqa: RUF022
     "pre_decision_heading_stats",
     "pre_decision_speed_stats",
     # epochs module
+    "LabelEpochsResult",
     "in_epochs",
+    "labels_to_epochs",
     "restrict",
     "restrict_spike_trains",
     # vte module
