@@ -90,7 +90,8 @@ def validate_break_before(
                 ),
             )
         )
-    return flags.copy()
+    owned: NDArray[np.bool_] = flags.copy()
+    return owned
 
 
 def validate_max_gap(max_gap: float | None) -> float | None:

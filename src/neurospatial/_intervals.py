@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -120,6 +120,12 @@ def recording_index(break_before: NDArray[np.bool_]) -> NDArray[np.intp]:
     return index
 
 
+@overload
+def break_sample_times(
+    times: NDArray[np.float64], break_before: NDArray[np.bool_]
+) -> NDArray[np.float64]: ...
+@overload
+def break_sample_times(times: NDArray[np.float64], break_before: None) -> None: ...
 def break_sample_times(
     times: NDArray[np.float64], break_before: NDArray[np.bool_] | None
 ) -> NDArray[np.float64] | None:
