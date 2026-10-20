@@ -121,6 +121,7 @@ CASES = [
             "weights": np.ones(2),
             "member_indices": np.array([0, 1]),
             "explained_variance_ratio": 1.0,
+            "unit_ids": np.array([5, 9]),
         },
     ),
     (
@@ -132,6 +133,7 @@ CASES = [
             "n_significant": 2,
             "eigenvalues": np.ones(2),
             "threshold": 0.5,
+            "unit_ids": np.array([5, 9]),
         },
     ),
     (

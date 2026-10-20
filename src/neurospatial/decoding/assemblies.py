@@ -43,7 +43,9 @@ Typical Workflows
 
 2. Detect assemblies:
 
-   >>> result = detect_assemblies(spike_counts, algorithm="ica")  # doctest: +SKIP
+   >>> result = detect_assemblies(
+   ...     spike_counts, algorithm="ica", unit_ids=sorter_labels
+   ... )  # doctest: +SKIP
    >>> print(
    ...     f"Found {result.n_significant} dimensions above threshold"
    ... )  # doctest: +SKIP
@@ -51,9 +53,15 @@ Typical Workflows
 3. Analyze assembly patterns:
 
    >>> for i, pattern in enumerate(result.patterns):  # doctest: +SKIP
-   ...     n_members = len(pattern.member_indices)
+   ...     members = pattern.member_unit_ids.tolist()
    ...     ev = pattern.explained_variance_ratio
-   ...     print(f"Assembly {i}: {n_members} neurons, {ev:.1%} variance")
+   ...     print(f"Assembly {i}: units {members}, {ev:.1%} variance")
+
+4. Measure the patterns in another period, matching columns by label:
+
+   >>> activation = assembly_activation(
+   ...     counts_sleep, result.patterns[0], unit_ids=sleep_labels
+   ... )  # doctest: +SKIP
 
 **Reactivation Analysis**:
 
@@ -98,14 +106,16 @@ Kudrimoti HS, Barnes CA, McNaughton BL (1999). Reactivation of hippocampal
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy import linalg, stats
 
-from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._exceptions import _format_error
+from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, resolve_unit_ids
 
 __all__ = [
     "AssemblyDetectionResult",
@@ -137,11 +147,26 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         indicate stronger participation. :func:`detect_assemblies` orients
         each pattern so its largest-magnitude weight is positive.
     member_indices : NDArray[np.int64]
-        Indices of neurons whose absolute-weight z-scores exceed z_threshold.
-        These are the "core" members of the assembly.
+        Column positions of neurons whose absolute-weight z-scores exceed
+        z_threshold. These are the "core" members of the assembly.
     explained_variance_ratio : float
         Fraction of total variance explained by this assembly pattern.
         Higher values indicate more prominent assemblies.
+    unit_ids : ndarray, shape (n_neurons,)
+        Label of the unit each weight belongs to (read-only): the
+        ``unit_ids=`` given to :func:`detect_assemblies`, else
+        ``np.arange(n_neurons)``. Pass the same labels as ``unit_ids=`` to
+        :func:`assembly_activation` or :func:`reactivation_strength` to match
+        the columns of new counts by label instead of by position.
+    member_unit_ids : ndarray
+        Labels of the core members, ``unit_ids[member_indices]``.
+
+    Other Parameters
+    ----------------
+    _unit_ids_generated : bool, default=False
+        Internal identity flag: True when ``unit_ids`` were generated as
+        ``np.arange(n_neurons)`` rather than supplied. Generated labels are
+        column positions, so they cannot match columns by label.
 
     Notes
     -----
@@ -164,22 +189,40 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
 
     Examples
     --------
-    >>> pattern = result.patterns[0]  # doctest: +SKIP
-    >>> print(
-    ...     f"Assembly has {len(pattern.member_indices)} core members"
-    ... )  # doctest: +SKIP
-    >>> print(
-    ...     f"Explains {pattern.explained_variance_ratio:.1%} of variance"
-    ... )  # doctest: +SKIP
+    >>> import numpy as np
+    >>> from neurospatial.decoding import AssemblyPattern
+    >>> pattern = AssemblyPattern(
+    ...     weights=np.array([0.7, 0.1, 0.7]),
+    ...     member_indices=np.array([0, 2]),
+    ...     explained_variance_ratio=0.3,
+    ...     unit_ids=np.array([12, 15, 31]),
+    ... )
+    >>> pattern.member_unit_ids.tolist()
+    [12, 31]
     """
 
     weights: NDArray[np.float64]
     member_indices: NDArray[np.int64]
     explained_variance_ratio: float
+    unit_ids: NDArray[Any] | None = field(default=None, kw_only=True, compare=False)
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
 
     def __post_init__(self) -> None:
-        """Own read-only copies of assembly weights and member indices."""
+        """Resolve unit labels and own read-only copies of the arrays."""
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
+        labels = resolve_unit_ids(
+            self.unit_ids, len(self.weights), context="AssemblyPattern"
+        )
+        object.__setattr__(self, "unit_ids", labels)
         self._own_arrays()
+
+    @property
+    def member_unit_ids(self) -> NDArray[Any]:
+        """Labels of the core members, in ``member_indices`` order."""
+        return np.asarray(self.unit_ids)[self.member_indices]
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
@@ -212,6 +255,15 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         Eigenvalues from PCA, useful for scree plots.
     threshold : float
         Marchenko-Pastur threshold used for significance.
+    unit_ids : ndarray, shape (n_neurons,)
+        Label of each column of the detection counts (read-only), the same
+        labels every pattern carries: the ``unit_ids=`` given to
+        :func:`detect_assemblies`, else ``np.arange(n_neurons)``.
+
+    Other Parameters
+    ----------------
+    _unit_ids_generated : bool, default=False
+        Internal identity flag: True when ``unit_ids`` were generated.
 
     Notes
     -----
@@ -250,9 +302,23 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
     n_significant: int
     eigenvalues: NDArray[np.float64]
     threshold: float
+    unit_ids: NDArray[Any] | None = field(default=None, kw_only=True, compare=False)
+    _unit_ids_generated: bool = field(
+        default=False, repr=False, compare=False, kw_only=True
+    )
 
     def __post_init__(self) -> None:
-        """Own read-only copies of activations and eigenvalues."""
+        """Resolve unit labels and own read-only copies of the arrays."""
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
+        if self.patterns:
+            n_neurons = len(self.patterns[0].weights)
+        else:
+            n_neurons = 0 if self.unit_ids is None else len(self.unit_ids)
+        labels = resolve_unit_ids(
+            self.unit_ids, n_neurons, context="AssemblyDetectionResult"
+        )
+        object.__setattr__(self, "unit_ids", labels)
         self._own_arrays()
 
     def summary(self) -> dict[str, Any]:
@@ -437,6 +503,7 @@ def detect_assemblies(
     n_components: int | Literal["auto"] = "auto",
     z_threshold: float = 2.0,
     rng: int | np.random.Generator | None = None,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> AssemblyDetectionResult:
     """
     Detect cell assemblies from population spike counts.
@@ -480,6 +547,14 @@ def detect_assemblies(
         Random seed or generator for reproducibility. Affects ICA and NMF
         initialization. Both ``int`` seeds and ``np.random.Generator``
         instances are accepted.
+    unit_ids : array-like, shape (n_neurons,), optional
+        Label of the unit in each column of ``spike_counts``, for example the
+        sorter's unit IDs. Stored on the result and on every pattern, so
+        ``pattern.member_unit_ids`` names the members, and passing the labels
+        of new counts to :func:`assembly_activation` or
+        :func:`reactivation_strength` matches columns by label. Default
+        ``np.arange(n_neurons)``: column positions, which match new counts
+        by position only.
 
     Returns
     -------
@@ -489,7 +564,8 @@ def detect_assemblies(
     Raises
     ------
     ValueError
-        If spike_counts has wrong shape or invalid parameters.
+        If spike_counts has wrong shape or invalid parameters, or
+        ``unit_ids`` does not hold one distinct label per column.
 
     Notes
     -----
@@ -531,6 +607,21 @@ def detect_assemblies(
 
     Examples
     --------
+    Three of twenty units fire together; label the columns with the
+    sorter's unit IDs so the members are named by label:
+
+    >>> import numpy as np
+    >>> from neurospatial.decoding import detect_assemblies
+    >>> rng = np.random.default_rng(0)
+    >>> counts = rng.poisson(1.0, (2000, 20)).astype(float)
+    >>> counts[:, [2, 9, 15]] += 3 * rng.poisson(0.3, (2000, 1))
+    >>> labels = np.arange(101, 121)  # the sorter's unit IDs
+    >>> result = detect_assemblies(counts, unit_ids=labels, rng=0)
+    >>> result.n_significant
+    1
+    >>> result.patterns[0].member_unit_ids.tolist()
+    [103, 110, 116]
+
     >>> # Basic usage
     >>> result = detect_assemblies(spike_counts)  # doctest: +SKIP
     >>> print(
@@ -545,8 +636,7 @@ def detect_assemblies(
 
     >>> # Access assembly patterns
     >>> for i, pattern in enumerate(result.patterns):  # doctest: +SKIP
-    ...     members = pattern.member_indices
-    ...     print(f"Assembly {i}: {len(members)} neurons")
+    ...     print(f"Assembly {i}: units {pattern.member_unit_ids.tolist()}")
 
     See Also
     --------
@@ -573,6 +663,8 @@ def detect_assemblies(
         raise ValueError(
             f"Need at least 3 neurons for assembly detection, got {n_neurons}"
         )
+    unit_ids_generated = unit_ids is None
+    labels = resolve_unit_ids(unit_ids, n_neurons, context="detect_assemblies()")
 
     if n_time_bins < n_neurons:
         warnings.warn(
@@ -694,6 +786,8 @@ def detect_assemblies(
                 weights=patterns[i],
                 member_indices=member_indices,
                 explained_variance_ratio=explained_var[i],
+                unit_ids=labels,
+                _unit_ids_generated=unit_ids_generated,
             )
         )
 
@@ -704,6 +798,8 @@ def detect_assemblies(
         n_significant=n_significant,
         eigenvalues=eigenvalues,
         threshold=mp_threshold,
+        unit_ids=labels,
+        _unit_ids_generated=unit_ids_generated,
     )
 
 
@@ -876,6 +972,7 @@ def assembly_activation(
     pattern: AssemblyPattern,
     *,
     z_score_input: bool = True,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> NDArray[np.float64]:
     """
     Compute activation strength of an assembly over time.
@@ -886,12 +983,18 @@ def assembly_activation(
     Parameters
     ----------
     spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
-        Population activity. Must have same neurons as pattern.
+        Population activity of the pattern's units.
     pattern : AssemblyPattern
         Assembly pattern with neuron weights.
     z_score_input : bool, default=True
         If True, z-score spike counts before projection.
         Set to False if data is already normalized.
+    unit_ids : array-like, shape (n_neurons,), optional
+        Label of the unit in each column of ``spike_counts``. The columns are
+        then matched to the pattern's weights by label, in any order, and
+        must hold exactly the pattern's units; the pattern needs real labels
+        (``detect_assemblies(..., unit_ids=...)``). Without it, column ``i``
+        is the pattern's unit ``i``, in detection order.
 
     Returns
     -------
@@ -904,7 +1007,9 @@ def assembly_activation(
     Raises
     ------
     ValueError
-        If spike_counts has wrong number of neurons.
+        If spike_counts has wrong number of neurons, or with ``unit_ids``,
+        if the pattern's labels were generated or the labels of the two sides
+        differ.
 
     Notes
     -----
@@ -947,6 +1052,16 @@ def assembly_activation(
     >>> float(np.mean(activation > 2.0))
     0.1
 
+    With labels, the columns of new counts can be in any order:
+
+    >>> pattern = AssemblyPattern(
+    ...     np.array([1.0, 0.5, 0.0]), np.array([0]), 1.0, unit_ids=[7, 8, 9]
+    ... )
+    >>> counts = np.random.default_rng(0).poisson(2.0, (50, 3)).astype(float)
+    >>> by_label = assembly_activation(counts[:, ::-1], pattern, unit_ids=[9, 8, 7])
+    >>> np.allclose(by_label, assembly_activation(counts, pattern))
+    True
+
     >>> # Detect assemblies during behavior
     >>> result = detect_assemblies(counts_behavior)  # doctest: +SKIP
     >>> pattern = result.patterns[0]  # doctest: +SKIP
@@ -968,6 +1083,9 @@ def assembly_activation(
             f"got shape {spike_counts.shape}"
         )
 
+    spike_counts = _columns_by_label(
+        spike_counts, unit_ids, pattern, call="assembly_activation()"
+    )
     _n_time_bins, n_neurons = spike_counts.shape
 
     if n_neurons != len(pattern.weights):
@@ -995,6 +1113,82 @@ def assembly_activation(
     activation_z = np.nan_to_num(activation_z, nan=0.0)
 
     return np.asarray(activation_z, dtype=np.float64)
+
+
+def _columns_by_label(
+    spike_counts: NDArray[np.float64],
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    pattern: AssemblyPattern,
+    *,
+    call: str,
+    argument: str = "spike_counts",
+) -> NDArray[np.float64]:
+    """Reorder count columns into the pattern's unit order, by label.
+
+    Parameters
+    ----------
+    spike_counts : ndarray, shape (n_time_bins, n_neurons)
+        Counts of new data, one unit per column.
+    unit_ids : array-like or None
+        Label of each column. ``None`` keeps positional pairing and returns
+        ``spike_counts`` unchanged.
+    pattern : AssemblyPattern
+        Pattern whose ``unit_ids`` set the target order.
+    call, argument : str
+        Function and argument names for error messages.
+
+    Returns
+    -------
+    ndarray, shape (n_time_bins, n_neurons)
+        Columns in ``pattern.unit_ids`` order.
+    """
+    if unit_ids is None:
+        return spike_counts
+    if spike_counts.ndim != 2:
+        raise ValueError(
+            f"{argument} must be 2D (n_time_bins, n_neurons), "
+            f"got shape {spike_counts.shape}"
+        )
+    labels = resolve_unit_ids(
+        unit_ids, spike_counts.shape[1], context=f"{call} for {argument}"
+    )
+    if pattern._unit_ids_generated:
+        raise ValueError(
+            _format_error(
+                f"{call} got unit_ids= for {argument}, but the pattern has no "
+                "unit_ids; its labels are column positions generated by "
+                "detect_assemblies().",
+                why="Why: columns are matched to the pattern's weights by label, "
+                "and a column position does not identify the same cell in two "
+                "count matrices.",
+                fix="pass the sorted-unit labels as unit_ids= to "
+                "detect_assemblies() as well, or drop unit_ids= here to pair "
+                "columns by position",
+            )
+        )
+    column_of = {label: column for column, label in enumerate(labels.tolist())}
+    pattern_labels = np.asarray(pattern.unit_ids).tolist()
+    pattern_set = set(pattern_labels)
+    only_pattern = [label for label in pattern_labels if label not in column_of]
+    only_counts = [label for label in labels.tolist() if label not in pattern_set]
+    if only_pattern or only_counts:
+        raise ValueError(
+            _format_error(
+                f"{call}: {argument} must hold the same unit_ids as the pattern; "
+                f"only in the pattern: {only_pattern}, only in {argument}: "
+                f"{only_counts}.",
+                why="Why: each weight of the pattern belongs to one cell, so "
+                "every pattern unit needs its counts, and a column without a "
+                "weight has no place in the projection.",
+                fix=f"keep only the pattern's units, e.g. {argument}[:, keep] and "
+                "unit_ids[keep] with keep = np.isin(unit_ids, pattern.unit_ids); "
+                "if pattern units were not recorded, detect the assemblies again "
+                "on the units recorded in both periods",
+            )
+        )
+    order = np.array([column_of[label] for label in pattern_labels], dtype=np.intp)
+    reordered: NDArray[np.float64] = spike_counts[:, order]
+    return reordered
 
 
 # =============================================================================
@@ -1027,6 +1221,11 @@ def pairwise_correlations(
     -----
     Returns only the upper triangle (excluding diagonal) to avoid
     redundancy. Use `numpy.triu_indices` to reconstruct the full matrix.
+
+    Pair ``k`` is the pair of columns ``np.triu_indices(n_neurons, k=1)``
+    gives at ``k``, so correlations of two periods describe the same pairs
+    of cells only when both count matrices have the same units in the same
+    column order.
 
     Examples
     --------
@@ -1068,6 +1267,8 @@ def reactivation_strength(
     template_counts: NDArray[np.float64],
     match_counts: NDArray[np.float64],
     pattern: AssemblyPattern,
+    *,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> float:
     """
     Compare assembly activation magnitude between template and match periods.
@@ -1084,6 +1285,13 @@ def reactivation_strength(
         Spike counts during match period (e.g., sleep).
     pattern : AssemblyPattern
         Assembly pattern to measure.
+    unit_ids : array-like, shape (n_neurons,), optional
+        Label of the unit in each column of both ``template_counts`` and
+        ``match_counts``, which share one column order (as from
+        ``bin_spikes_in_time`` on one list of spike trains). The columns are
+        then matched to the pattern's weights by label, as in
+        :func:`assembly_activation`. Without it, column ``i`` is the
+        pattern's unit ``i``.
 
     Returns
     -------
@@ -1130,8 +1338,21 @@ def reactivation_strength(
     # baseline (the template mean/std) and project directly onto the
     # pattern, so a larger match-period projection produces strength > 1.
     # Inputs are (n_time_bins, n_neurons); work internally in (n_neurons, n_time).
-    template_counts = np.asarray(template_counts, dtype=np.float64).T
-    match_counts = np.asarray(match_counts, dtype=np.float64).T
+    call = "reactivation_strength()"
+    template_counts = _columns_by_label(
+        np.asarray(template_counts, dtype=np.float64),
+        unit_ids,
+        pattern,
+        call=call,
+        argument="template_counts",
+    ).T
+    match_counts = _columns_by_label(
+        np.asarray(match_counts, dtype=np.float64),
+        unit_ids,
+        pattern,
+        call=call,
+        argument="match_counts",
+    ).T
 
     n_template_neurons = template_counts.shape[0]
     n_match_neurons = match_counts.shape[0]
@@ -1180,7 +1401,9 @@ def explained_variance_reactivation(
     ----------
     template_correlations : NDArray[np.float64], shape (n_pairs,)
         Pairwise correlations during template (e.g., behavior).
-        From `pairwise_correlations()`.
+        From `pairwise_correlations()`. Pairs are matched by position, so
+        every period's counts must have the same units in the same column
+        order.
     match_correlations : NDArray[np.float64], shape (n_pairs,)
         Pairwise correlations during match (e.g., sleep/rest).
     control_correlations : NDArray[np.float64], optional
