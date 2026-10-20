@@ -32,7 +32,9 @@ from neurospatial._results import ResultMixin
 from neurospatial.encoding._comparison import (
     _TOPOLOGIES,
     _UNIT_SELECTIONS,
+    _estimator,
     _rates_2d,
+    _warn_on_estimator_differences,
 )
 from neurospatial.encoding._comparison_inputs import (
     _bin_pairs,
@@ -941,6 +943,13 @@ def population_vector_correlation(
         ``bin_mapping`` is given, a mapping pairs bins that are not the same
         place, or their topology differs and ``topology="same"``.
 
+    Warns
+    -----
+    UserWarning
+        If two results were estimated with different ``method``,
+        ``bandwidth`` or ``min_occupancy``: the population vectors then
+        differ partly because of the estimation.
+
     See Also
     --------
     compare_spatial_rates : Correlation of each cell's map between conditions
@@ -1219,6 +1228,10 @@ def _population_vector_correlation_of_results(
         _rates_2d(rates_1)[np.ix_(rows_1, bins_1)],
         _rates_2d(rates_2)[np.ix_(rows_2, bins_2)],
         used,
+    )
+    # Called from population_vector_correlation, one frame above compare's.
+    _warn_on_estimator_differences(
+        _estimator(rates_1), _estimator(rates_2), _PV, stacklevel=4
     )
     correlation = np.full(rates_1.env.n_bins, np.nan)
     correlation[bins_1] = paired

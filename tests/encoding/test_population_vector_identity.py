@@ -10,6 +10,7 @@ zero).
 from __future__ import annotations
 
 import re
+import warnings
 
 import numpy as np
 import pytest
@@ -311,3 +312,34 @@ def test_reordered_sorter_output_gives_the_same_correlation():
     shared = first.spatial_support & second.spatial_support
     assert np.isnan(expected[~shared]).all()
     assert np.isfinite(expected[shared]).any()
+
+
+def test_different_estimator_settings_warn_as_in_compare_spatial_rates(env, maps):
+    """Smoothing differences change the maps, so the comparison says so."""
+    first, second = maps
+
+    def estimated(rates, bandwidth):
+        return SpatialRatesResult(
+            firing_rates=rates,
+            occupancy=np.ones(env.n_bins),
+            env=env,
+            method="binned",
+            bandwidth=bandwidth,
+            unit_ids=list(IDS),
+        )
+
+    with pytest.warns(UserWarning) as caught:
+        pv = population_vector_correlation(
+            estimated(first, 5.0), estimated(second, 10.0)
+        )
+    assert len(caught) == 1
+    assert str(caught[0].message).startswith(
+        "population_vector_correlation(): firing_rates_1 and firing_rates_2 were "
+        "estimated with different bandwidth (bandwidth: 5.0 vs 10.0)."
+    )
+    assert caught[0].filename == __file__  # points at the caller's line
+    np.testing.assert_array_equal(pv, population_vector_correlation(first, second))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        population_vector_correlation(estimated(first, 5.0), estimated(second, 5.0))

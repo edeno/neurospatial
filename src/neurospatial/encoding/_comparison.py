@@ -25,8 +25,10 @@ from neurospatial._results import (
 )
 from neurospatial.encoding._base import _to_numpy
 from neurospatial.encoding._comparison_inputs import (
+    _COMPARE,
     _OPERATION,
     _bin_pairs,
+    _Caller,
     _check_choice,
     _check_min_common_bins,
     _check_pair,
@@ -1147,9 +1149,17 @@ def _estimator(rates: SpatialRatesResult | SpatialRateResult) -> dict[str, Any]:
 
 
 def _warn_on_estimator_differences(
-    estimator_a: dict[str, Any], estimator_b: dict[str, Any]
+    estimator_a: dict[str, Any],
+    estimator_b: dict[str, Any],
+    caller: _Caller = _COMPARE,
+    *,
+    stacklevel: int = 3,
 ) -> None:
-    """Warn once, naming every estimator setting that differs."""
+    """Warn once, naming every estimator setting that differs.
+
+    ``stacklevel`` counts from this function, so the default points at the
+    caller of the public function that calls it directly.
+    """
     differing = [key for key in estimator_a if estimator_a[key] != estimator_b[key]]
     if not differing:
         return
@@ -1157,11 +1167,11 @@ def _warn_on_estimator_differences(
         f"{key}: {estimator_a[key]!r} vs {estimator_b[key]!r}" for key in differing
     )
     warnings.warn(
-        f"{_OPERATION}: rates_a and rates_b were estimated with different "
-        f"{', '.join(differing)} ({details}). Smoothing and occupancy thresholds "
-        "change rate maps by themselves, so part of any difference comes from the "
-        "estimation, not the cells. Estimate both conditions with the same "
-        "settings to compare the cells alone.",
+        f"{caller.operation}: {caller.first} and {caller.second} were estimated "
+        f"with different {', '.join(differing)} ({details}). Smoothing and "
+        "occupancy thresholds change rate maps by themselves, so part of any "
+        "difference comes from the estimation, not the cells. Estimate both "
+        "conditions with the same settings to compare the cells alone.",
         UserWarning,
-        stacklevel=3,
+        stacklevel=stacklevel,
     )
