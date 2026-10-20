@@ -90,30 +90,45 @@ class TestMakeCheeseboardMaze:
         maze = make_cheeseboard_maze()
         assert nx.is_connected(maze.env_2d.connectivity)
 
-    def test_has_reward_regions(self):
-        """env_2d should have reward regions distributed across surface."""
+    def test_every_well_is_a_reward_port_landmark(self):
+        """Any well can be baited, so each is a reward port of 2.5 cm."""
         from neurospatial.simulation.mazes.cheeseboard import make_cheeseboard_maze
 
-        maze = make_cheeseboard_maze()
+        env = make_cheeseboard_maze().env_2d
+        assert list(env.landmarks) == list(env.regions)
+        assert all(name.startswith("well_") for name in env.landmarks)
+        for name, lm in env.landmarks.items():
+            assert lm.kind == "point"
+            assert dict(lm.metadata) == {"role": "reward_port", "diameter": 2.5}
+            np.testing.assert_array_equal(lm.data, env.regions[name].data)
+        np.testing.assert_array_equal(env.landmarks["well_7_7"].data, [0.0, 0.0])
+        np.testing.assert_array_equal(env.landmarks["well_8_7"].data, [7.5, 0.0])
 
-        # Should have multiple reward regions (format: reward_i_j)
-        reward_regions = [
-            name for name in maze.env_2d.regions if name.startswith("reward_")
-        ]
-        assert len(reward_regions) > 0, "Should have at least one reward region"
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 3.0, 5.0])
+    def test_each_well_region_covers_the_bin_under_it(self, bin_size):
+        """A 2.5 cm well is smaller than a bin, so its region is its centre.
 
-    def test_reward_regions_are_points(self):
-        """All reward regions should be point regions."""
+        A circle of the well's real size contains no bin centre for some
+        wells at these bin sizes; the point region always covers one bin.
+        """
         from neurospatial.simulation.mazes.cheeseboard import make_cheeseboard_maze
 
-        maze = make_cheeseboard_maze()
+        env = make_cheeseboard_maze(bin_size=bin_size).env_2d
+        for name, region in env.regions.items():
+            assert region.kind == "point", name
+            bins = env.bins_in_region(name)
+            assert len(bins) == 1, name
+            assert bins[0] == env.bin_at(np.asarray(region.data)[np.newaxis])[0]
 
-        reward_regions = [
-            name for name in maze.env_2d.regions if name.startswith("reward_")
-        ]
-        for region_name in reward_regions:
-            region = maze.env_2d.regions[region_name]
-            assert region.kind == "point", f"{region_name} should be a point region"
+    def test_no_start_box_or_cue(self):
+        """No source gives the start box's size or placement, or a cue's."""
+        from neurospatial.simulation.mazes.cheeseboard import make_cheeseboard_maze
+
+        roles = {
+            lm.metadata["role"]
+            for lm in make_cheeseboard_maze().env_2d.landmarks.values()
+        }
+        assert roles == {"reward_port"}
 
     def test_reward_regions_within_circular_boundary(self):
         """All reward regions should be within the circular platform boundary."""
@@ -202,7 +217,7 @@ class TestMakeCheeseboardMaze:
         maze = make_cheeseboard_maze()
 
         reward_regions = [
-            name for name in maze.env_2d.regions if name.startswith("reward_")
+            name for name in maze.env_2d.regions if name.startswith("well_")
         ]
         positions = np.array(
             [maze.env_2d.regions[name].data for name in reward_regions]
@@ -223,21 +238,21 @@ class TestMakeCheeseboardMaze:
         )
 
     def test_reward_naming_convention(self):
-        """Rewards should follow reward_i_j naming convention."""
+        """Rewards should follow well_i_j naming convention."""
         from neurospatial.simulation.mazes.cheeseboard import make_cheeseboard_maze
 
         maze = make_cheeseboard_maze()
 
         reward_regions = [
-            name for name in maze.env_2d.regions if name.startswith("reward_")
+            name for name in maze.env_2d.regions if name.startswith("well_")
         ]
 
         # At least one reward should have proper format
         valid_names = 0
         for name in reward_regions:
-            # Should be reward_<int>_<int>
+            # Should be well_<int>_<int>
             parts = name.split("_")
-            if len(parts) == 3 and parts[0] == "reward":
+            if len(parts) == 3 and parts[0] == "well":
                 try:
                     int(parts[1])  # i index
                     int(parts[2])  # j index
@@ -246,7 +261,7 @@ class TestMakeCheeseboardMaze:
                     pass
 
         assert valid_names == len(reward_regions), (
-            f"All {len(reward_regions)} rewards should follow reward_i_j format, found {valid_names}"
+            f"All {len(reward_regions)} rewards should follow well_i_j format, found {valid_names}"
         )
 
     def test_regular_grid_spacing(self):
@@ -260,7 +275,7 @@ class TestMakeCheeseboardMaze:
         maze = make_cheeseboard_maze(dims=dims)
 
         reward_regions = [
-            name for name in maze.env_2d.regions if name.startswith("reward_")
+            name for name in maze.env_2d.regions if name.startswith("well_")
         ]
         positions = np.array(
             [maze.env_2d.regions[name].data for name in reward_regions]
@@ -343,10 +358,10 @@ class TestMakeCheeseboardMaze:
         )
 
         fine_rewards = [
-            name for name in maze_fine.env_2d.regions if name.startswith("reward_")
+            name for name in maze_fine.env_2d.regions if name.startswith("well_")
         ]
         coarse_rewards = [
-            name for name in maze_coarse.env_2d.regions if name.startswith("reward_")
+            name for name in maze_coarse.env_2d.regions if name.startswith("well_")
         ]
 
         assert len(fine_rewards) > len(coarse_rewards)

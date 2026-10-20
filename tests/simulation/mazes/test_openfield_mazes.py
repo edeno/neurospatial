@@ -126,7 +126,7 @@ class TestOpenFieldMazesSpecificBehavior:
     def test_cheeseboard_has_many_rewards(self):
         """Cheeseboard should have reward locations distributed across surface."""
         maze = make_cheeseboard_maze(bin_size=4.0)
-        reward_regions = [r for r in maze.env_2d.regions if r.startswith("reward_")]
+        reward_regions = [r for r in maze.env_2d.regions if r.startswith("well_")]
         # Should have many reward locations (>50 for default dimensions)
         assert len(reward_regions) > 50
 

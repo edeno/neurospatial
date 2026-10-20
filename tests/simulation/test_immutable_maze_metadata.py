@@ -31,7 +31,7 @@ def test_open_field_maze_publishes_all_reward_locations():
     maze = make_cheeseboard_maze(bin_size=10.0)
     assert maze.env_2d.units == "cm"
     assert len(maze.env_2d.regions) > 1
-    assert all(name.startswith("reward_") for name in maze.env_2d.regions)
+    assert all(name.startswith("well_") for name in maze.env_2d.regions)
     with pytest.raises(TypeError, match="read-only"):
         maze.env_2d.regions.popitem()
 

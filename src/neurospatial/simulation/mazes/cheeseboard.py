@@ -32,6 +32,17 @@ spatial pattern separation", J Neurosci 18:804-810,
 doi:10.1523/JNEUROSCI.18-02-00804.1998, tested rats on a dry-land version of
 the water maze, choosing between food wells along a row.
 
+Any well can be baited: Dupret et al. (2010) placed "a new set of 3 hidden
+rewards ... in randomly selected food-wells every day", so every well is a
+reward-port landmark and none is fixed as the goal. Both studies run trials
+from a start box beside the board (Mátyás et al.: "The start box with a
+sliding door was used as a starting point for the learning trials"; "The
+cheeseboard was cleaned and rotated 90 degrees relative to the start box
+between learning trials"), but neither gives the box's size or where it
+meets the board, so the maze has no start box. Dupret et al. placed cue
+objects "near the baited food-wells" only in a cued condition, so the maze
+has no cue landmarks.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.cheeseboard import (
@@ -41,8 +52,10 @@ Examples
 >>> maze = make_cheeseboard_maze()
 >>> maze.env_2d.units
 'cm'
->>> len([k for k in maze.env_2d.regions.keys() if k.startswith("reward_")]) > 0
-True
+>>> len([k for k in maze.env_2d.regions.keys() if k.startswith("well_")])
+177
+>>> maze.env_2d.landmarks["well_7_7"].metadata["role"]
+'reward_port'
 >>> maze.env_track is None
 True
 """
@@ -54,6 +67,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_circular_arena
@@ -139,10 +153,20 @@ def make_cheeseboard_maze(
     the centre of the board. Only lattice points at least ``rim_margin`` in
     from the rim get a well.
 
-    Regions:
+    Every food well is a landmark in ``env_2d.landmarks`` with role
+    ``"reward_port"`` and a point region of the same name at its centre:
 
-    - reward_i_j: Point region at each well centre, where i and j are the
-      lattice column and row, counted from 0 at the lowest x and y.
+    - well_i_j: the well in lattice column i and row j, counted from 0 at the
+      lowest x and y. With the defaults ``well_7_7`` is the centre well.
+
+    A well's region is a point, not a circle of its 2.5 cm diameter, because
+    the well is smaller than a bin: a circle that small contains no bin
+    centre for some wells at the default 2 cm bins (and for most at 3 cm),
+    so it would cover no bins. A point region covers the one bin that
+    contains the well centre at any bin size. The landmark records the
+    well's diameter in ``metadata["diameter"]`` (cm). For a goal area, such
+    as the 10 cm circle around a baited well that Dupret et al. (2010)
+    used, add a region of that size.
 
     Examples
     --------
@@ -160,7 +184,7 @@ def make_cheeseboard_maze(
 
     >>> dims = CheeseboardDims(diameter=120.0, grid_spacing=10.0)
     >>> maze = make_cheeseboard_maze(dims=dims, bin_size=4.0)
-    >>> len([k for k in maze.env_2d.regions.keys() if k.startswith("reward_")]) > 0
+    >>> len([k for k in maze.env_2d.regions.keys() if k.startswith("well_")]) > 0
     True
 
     Check that rewards are distributed across surface, not just perimeter:
@@ -168,10 +192,8 @@ def make_cheeseboard_maze(
     >>> maze = make_cheeseboard_maze()
     >>> len(maze.env_2d.regions)  # 177 wells
     177
-    >>> reward_names = [
-    ...     k for k in maze.env_2d.regions.keys() if k.startswith("reward_")
-    ... ]
-    >>> positions = np.array([maze.env_2d.regions[n].data for n in reward_names])
+    >>> well_names = [k for k in maze.env_2d.regions.keys() if k.startswith("well_")]
+    >>> positions = np.array([maze.env_2d.regions[n].data for n in well_names])
     >>> distances = np.sqrt(positions[:, 0] ** 2 + positions[:, 1] ** 2)
     >>> bool(np.min(distances) < 20.0)  # Has rewards near center
     True
@@ -204,12 +226,25 @@ def make_cheeseboard_maze(
     n_half = int(np.floor(max_well_radius / dims.grid_spacing))
     coords = np.arange(-n_half, n_half + 1) * dims.grid_spacing
 
+    landmarks = []
     region_builder = Regions()
     for i, x in enumerate(coords):
         for j, y in enumerate(coords):
             if np.hypot(x, y) <= max_well_radius:
-                region_builder.add(f"reward_{i}_{j}", point=(float(x), float(y)))
-    env_2d = env_2d.with_regions(region_builder)
+                name, center = f"well_{i}_{j}", (float(x), float(y))
+                landmarks.append(
+                    Landmark(
+                        name,
+                        "point",
+                        center,
+                        metadata={
+                            "role": "reward_port",
+                            "diameter": 2.0 * dims.reward_radius,
+                        },
+                    )
+                )
+                region_builder.add(name, point=center)
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks(landmarks))
 
     # No track graph for open field
     env_track = None
