@@ -12,7 +12,7 @@ work from historical checkboxes and remaining proposals.
 
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
-| 2026-10-14 | Continuous behavior and neural analysis | [continuous-behavior/PLAN.md](continuous-behavior/PLAN.md) | [continuous-behavior/TASKS.md](continuous-behavior/TASKS.md) | **Not started; accepted scope.** Six workstreams: observation support, environment contracts, exploration/crossings, ordered paths, continuous events/features, and conditioned neural comparisons. Links the existing representation refactor; statistical/null-model frameworks remain outside scope. |
+| 2026-10-14 | Continuous behavior and neural analysis | [continuous-behavior/PLAN.md](continuous-behavior/PLAN.md) | [continuous-behavior/TASKS.md](continuous-behavior/TASKS.md) | **Partially implemented (reviewed 2026-10-20).** Six workstreams: observation support, environment contracts, exploration/crossings, ordered paths, continuous events/features, and conditioned neural comparisons. Delivered: area 1 (#112, #114, #120), area 5 except interval states (#118), and area 6 same-environment comparisons (#119). Area 2 is partly covered by environment stages A–E. Areas 3–4 have not started. `break_before` coverage is in progress on `refactor/api-consistency`. Statistical/null-model frameworks remain outside scope. |
 | 2026-10-13 | Environment representation | [environment-representation/PLAN.md](environment-representation/PLAN.md) | Phase files in the same directory | **Representation phases complete on `feature/environment-representation`.** Stored binning/locators, loading without rebuilding, and derived geometry preservation are implemented and validated. Roadmap stages A–F remain separate; this foundation supports continuous behavior's geometry and correspondence/snapshot slices. |
 | 2026-10-14 | Continuous arena representation | [environment-arena/PLAN.md](environment-arena/PLAN.md) | [Validation](environment-arena/validation.md) | **Stage A complete on `feature/environment-arena`, stacked on representation.** Continuous domains, explicit walls, exact planar clipping, arena-preserving rebinning and opt-in linear spatial encoding are implemented and validated. Stages B–F remain separate. |
 | 2026-10-15 | Affine geometry and grid frames | [environment-affine/PLAN.md](environment-affine/PLAN.md) | E0–E5 | **Planned; implementation not started.** Local `feature/environment-affine` is stacked on repaired Stage D #74. Preserve exact transformed cells and grid operations; enable numerical operations only with validated face geometry. No Stage E PR. |
@@ -38,9 +38,10 @@ work from historical checkboxes and remaining proposals.
 
 ## Planning Backlog
 
-- [Encoder setup consolidation](encoder-setup/PLAN.md) — draft 2026-10-14;
-  preserves the eight entry points while sharing private setup. Implementation
-  has not started.
+- [Encoder setup consolidation](encoder-setup/PLAN.md) — committed
+  2026-10-14; preserves the eight entry points while sharing private setup.
+  Implemented in PR #111 (merged 2026-10-19; status reviewed 2026-10-20). The
+  parity evidence is in the PR description only.
 
 | Document committed | Area | Document | Notes |
 | --- | --- | --- | --- |
