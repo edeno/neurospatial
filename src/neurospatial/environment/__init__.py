@@ -3,8 +3,10 @@
 Both Cartesian and polar factories return Environment. Public methods delegate
 scientific operations to domain functions; coordinate-specific calls are guarded.
 Use ``from neurospatial import Environment`` or this package's equivalent export.
-``BinSequenceWithRuns`` is the result of ``Environment.bin_sequence_with_runs``."""
+``BinSequenceWithRuns`` is the result of ``Environment.bin_sequence_with_runs``
+and ``BinMapping`` the result of ``Environment.bin_mapping_from``."""
 
+from neurospatial.environment._bin_mapping import BinMapping
 from neurospatial.environment._comparison import (
     _environment_differences as _environment_differences,
 )
@@ -37,6 +39,7 @@ from neurospatial.geometry import CartesianSystem, EgocentricPolarSystem
 # The ``_`` names imported here are internal helpers shared with other
 # neurospatial packages; they are not public API.
 __all__ = [
+    "BinMapping",
     "BinSequenceWithRuns",
     "CartesianSystem",
     "EgocentricPolarSystem",

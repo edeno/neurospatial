@@ -23,6 +23,7 @@ from typing_extensions import Self
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial.environment._affine import _apply_transform
+from neurospatial.environment._bin_mapping import BinMapping, _bin_mapping_from
 from neurospatial.environment._cache import (
     BIN_ATTRIBUTES,
     BOUNDARY_BINS,
@@ -2694,6 +2695,95 @@ class Environment(Generic[_C]):
         return publish_derived(
             self, _clip(self._binning, self._arena, polygon), name=name
         )
+
+    def bin_mapping_from(self, parent: Environment) -> BinMapping:
+        """Pair this environment's bins with the bins of ``parent`` they contain.
+
+        Use it to carry values computed on ``parent`` to this environment
+        exactly: compare a map on a subset with the full map, or coarsen
+        counts and occupancy after ``rebin``. The pairs come from the bins'
+        geometry, so the mapping works on environments read from files, and
+        only pairs that can be proven are reported:
+
+        - a bin that is the same cell as a parent bin (same center, measure,
+          cell shape and boundary ownership): a ``subset``, the cells a
+          ``clip`` did not cut, an identical rebuild;
+        - parent cells that lie wholly inside one cell of a coarser grid drawn
+          on the same lattice: ``rebin(factor)``, and ``rebin(bin_size=...)``
+          when the new cell edges fall on the old ones. Edges count as equal
+          within a billionth of a cell width, the tolerance rebinning uses.
+
+        A parent cell divided between bins (cut by a clip) is reported in
+        ``split_parent_bins`` and never paired: its count cannot be divided
+        without knowing where in the cell each observation fell.
+
+        Parameters
+        ----------
+        parent : Environment
+            The environment the values were computed on, usually the one this
+            environment was made from.
+
+        Returns
+        -------
+        BinMapping
+            Rows of ``(bin in parent, bin in this environment)`` in ``pairs``,
+            the parent bins left out or split, the bins of this environment
+            covered by no parent bin, and methods that carry values: ``sum``
+            for counts and occupancy, ``rates`` for rates pooled from counts
+            and occupancy, ``category`` for labels.
+
+        Raises
+        ------
+        IncompatibleEnvironmentError
+            If the two environments differ in coordinate system, units or
+            frame.
+        ValueError
+            If no bin can be paired exactly, such as for a finer grid, a
+            rotated or offset lattice, or an independently built
+            environment.
+        TypeError
+            If ``parent`` is not an Environment.
+
+        See Also
+        --------
+        subset, clip, rebin : Make the environments this maps between.
+        neurospatial.ops.map_probabilities : Approximate transfer by nearest
+            bin center, for environments with no exact correspondence.
+
+        Notes
+        -----
+        ``apply_transform`` needs no mapping: transforms keep bin IDs, so bin
+        ``i`` of the transformed environment is bin ``i`` of the original.
+
+        Polygon cells kept whole by a clip have the parent's polygon exactly,
+        and own the same boundary points, but their centers and areas are
+        recomputed from the polygon and can differ from the parent's by
+        rounding. ``compare_spatial_rates(bin_mapping=...)`` requires exactly
+        equal centers and follows boundary ownership through subsets only, so
+        it refuses clip pairs; it accepts the pairs of a subset or an
+        identical rebuild.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> grid_edges = (np.arange(0.0, 41.0, 10.0),) * 2  # 40 x 40 cm, 10 cm cells
+        >>> env = Environment.from_grid_mask(np.ones((4, 4), dtype=bool), grid_edges)
+        >>> left = env.subset(mask=env.bin_centers[:, 0] < 20)
+        >>> mapping = left.bin_mapping_from(env)
+        >>> mapping.kind, len(mapping.pairs)
+        ('one_to_one', 8)
+        >>> bool(np.array_equal(mapping.pairs[:, 1], np.arange(left.n_bins)))
+        True
+
+        Merge 2 x 2 blocks of bins and add up the time spent in them:
+
+        >>> coarse = env.rebin(2)
+        >>> occupancy = np.arange(16.0)
+        >>> coarse.bin_mapping_from(env).sum(occupancy).tolist()
+        [10.0, 18.0, 42.0, 50.0]
+        """
+        return _bin_mapping_from(self, parent)
 
     @cartesian_only(
         why="An affine map moves Cartesian positions; it has no meaning for "
