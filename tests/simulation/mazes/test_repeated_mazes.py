@@ -64,9 +64,14 @@ class TestRepeatedMazesCommonInterface:
 
     @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
     def test_has_start_region(self, name, factory, dims_cls):
-        """All repeated mazes have a start region."""
+        """All repeated mazes name where the animal enters, as their source does."""
+        start = {
+            "repeated_y": "entrance_box",
+            "repeated_t": "start_box",
+            "hampton_court": "entrance",
+        }[name]
         maze = factory()
-        assert "start" in maze.env_2d.regions
+        assert start in maze.env_2d.regions
 
     @pytest.mark.parametrize("name,factory,dims_cls", REPEATED_MAZES)
     def test_dims_is_frozen_dataclass(self, name, factory, dims_cls):
@@ -102,9 +107,9 @@ class TestRepeatedMazesSpecificBehavior:
         ]
 
     def test_hampton_court_has_goal(self):
-        """Hampton Court maze should have a goal region."""
+        """Hampton Court's goal is the central enclosure, where the food was."""
         maze = make_hampton_court_maze()
-        assert "goal" in maze.env_2d.regions
+        assert "central_enclosure" in maze.env_2d.regions
 
     def test_hampton_court_is_large(self):
         """Small's (1901) maze measured 8 by 6 ft."""

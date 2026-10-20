@@ -6,7 +6,15 @@ open space (p. 208):
 
     "The Hampton Court Maze served as model for the apparatus. [...] The
     dimensions were 6 by 8 feet. [...] The height of the sides was 4 inches;
-    the width of galleries, the same. In the center was a large open space."
+    the width of galleries, the same. In the center was a large open space.
+    [...] The entrance is marked by the figure O."
+
+There is no start box. The rats' cage stood "flush with the maze at O", and a
+sliding glass door "closed the passage into the maze". The goal is the centre,
+which Small labels C: "Food was placed in the central enclosure. To obtain
+this, the rats had to find their way through the tangled maze" (p. 209). The
+food was bread and milk (p. 217); Small gives no dish or its place within the
+enclosure, so the enclosure's landmark is its centre.
 
 The wall layout is Small's ground plan (p. 207), turned so the entrance is at
 the bottom: an 18 x 14 grid of galleries inside the 8 x 6 ft frame, a central
@@ -35,6 +43,8 @@ Examples
 'cm'
 >>> sorted(name for name in maze.env_2d.regions if name.startswith("blind_"))
 ['blind_1', 'blind_2', 'blind_3', 'blind_4', 'blind_5', 'blind_6', 'blind_7']
+>>> maze.env_2d.landmarks["central_enclosure"].metadata["role"]
+'goal_box'
 """
 
 from __future__ import annotations
@@ -48,6 +58,7 @@ from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import warn_if_bins_bridge_walls
@@ -175,16 +186,20 @@ def make_hampton_court_maze(
     The origin is the centre of the frame; x runs east and y runs north, with
     the entrance in the middle of the south (bottom) side.
 
+    Landmark: central_enclosure, the centre of the central open space,
+    where Small put the food (role ``"goal_box"``).
+
     Regions:
 
-    - start: the entrance gap in the south wall
-    - goal: the centre of the central open space, where Small put the food
+    - entrance: the entrance gap in the south wall, Small's O, where the
+      rats' cage opened into the maze
+    - central_enclosure: the central open space, Small's C (polygon)
     - blind_1 ... blind_7: Small's seven blind alleys, each the run of
       gallery from the choice point where the numeral stands to the next dead
       end or choice point (polygons)
 
-    Track graph: gallery centrelines with nodes at the start, the goal,
-    choice points, corners and dead ends. It has 8 choice points (Small's
+    Track graph: gallery centrelines with nodes at the entrance, the centre
+    of the central enclosure, choice points, corners and dead ends. It has 8 choice points (Small's
     seven plus the fork he marks x, where both ways lead on), 6 dead ends
     and one loop round the centre (Small's "circuit immediately around the
     center"). The track runs up the middle of the stem into the open space,
@@ -238,12 +253,18 @@ def make_hampton_court_maze(
     env_2d = env_2d.with_metadata(units="cm")
 
     regions = Regions()
-    regions.add("start", point=_entrance(dims))
-    regions.add("goal", point=_room_center(dims))
+    regions.add("entrance", point=_entrance(dims))
+    regions.add("central_enclosure", polygon=_room_polygon(dims))
     for number, entrance in _BLIND_ALLEY_ENTRANCES.items():
         cells = _blind_alley_cells(galleries, entrance)
         regions.add(f"blind_{number}", polygon=_cells_polygon(cells, galleries, dims))
-    env_2d = env_2d.with_regions(regions)
+    goal = Landmark(
+        "central_enclosure",
+        "point",
+        _room_center(dims),
+        {"role": "goal_box", "food": "bread and milk"},
+    )
+    env_2d = env_2d.with_regions(regions).with_landmarks(Landmarks([goal]))
 
     env_track = None
     if include_track:
@@ -281,6 +302,14 @@ def _room_center(dims: HamptonCourtDims) -> tuple[float, float]:
     x0, y0 = _cell_center((_ROOM_COLUMNS[0], _ROOM_ROWS[0]), dims)
     x1, y1 = _cell_center((_ROOM_COLUMNS[-1], _ROOM_ROWS[-1]), dims)
     return ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+
+
+def _room_polygon(dims: HamptonCourtDims) -> Polygon:
+    """The central open space: its galleries and the open floor between them."""
+    half = dims.corridor_width / 2.0
+    x0, y0 = _cell_center((_ROOM_COLUMNS[0], _ROOM_ROWS[0]), dims)
+    x1, y1 = _cell_center((_ROOM_COLUMNS[-1], _ROOM_ROWS[-1]), dims)
+    return box(x0 - half, y0 - half, x1 + half, y1 + half)
 
 
 def _wall_segments() -> list[tuple[tuple[int, int], tuple[int, int]]]:
@@ -364,22 +393,23 @@ def _create_hampton_court_track_graph(
 ) -> Environment:
     """Create the 1D linearized track graph along the gallery centrelines.
 
-    The central open space becomes one ``goal`` node at its centre, reached
-    up the stem; the entrance becomes a ``start`` node in the south wall.
+    The central open space becomes one ``central_enclosure`` node at its
+    centre, reached up the stem; the entrance becomes an ``entrance`` node in
+    the south wall.
     Straight runs of cells collapse into single edges, so nodes remain only
-    at the start, the goal, choice points, corners and dead ends.
+    at the entrance, the enclosure, choice points, corners and dead ends.
     """
     room = {(c, r) for c in _ROOM_COLUMNS for r in _ROOM_ROWS}
     cells = galleries.copy()
     room_exits = {n for cell in room for n in cells[cell] if n not in room}
     cells.remove_nodes_from(room)
-    cells.add_edges_from(("goal", cell) for cell in room_exits)
-    cells.add_edge("start", (_ENTRANCE_COLUMN, 0))
+    cells.add_edges_from(("central_enclosure", cell) for cell in room_exits)
+    cells.add_edge("entrance", (_ENTRANCE_COLUMN, 0))
 
     def position(node: _Cell | str) -> np.ndarray:
         if isinstance(node, str):
             return np.asarray(
-                _entrance(dims) if node == "start" else _room_center(dims)
+                _entrance(dims) if node == "entrance" else _room_center(dims)
             )
         return np.asarray(_cell_center(node, dims))
 
@@ -409,7 +439,7 @@ def _create_hampton_court_track_graph(
 
     env_track = Environment.from_graph(
         graph=graph,
-        edge_order=list(nx.edge_dfs(graph, "start")),
+        edge_order=list(nx.edge_dfs(graph, "entrance")),
         edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
