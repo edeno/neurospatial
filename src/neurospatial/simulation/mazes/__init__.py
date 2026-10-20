@@ -49,7 +49,11 @@ All factory functions return MazeEnvironments containing:
 - env_track: Optional 1D linearized track graph
 """
 
-from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
+from neurospatial.simulation.mazes._base import (
+    MAZE_LANDMARK_ROLES,
+    MazeDims,
+    MazeEnvironments,
+)
 from neurospatial.simulation.mazes._geometry import (
     make_buffered_line,
     make_circular_arena,
@@ -145,6 +149,7 @@ from neurospatial.simulation.mazes.y_maze import (
 )
 
 __all__ = [
+    "MAZE_LANDMARK_ROLES",
     "BarnesDims",
     "CheeseboardDims",
     # Structured Lattices
