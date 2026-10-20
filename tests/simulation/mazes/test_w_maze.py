@@ -94,6 +94,34 @@ class TestMakeWMaze:
                 dims.corridor_width / 2
             )
 
+    def test_each_arm_end_well_is_a_reward_port(self):
+        """Karlsson & Frank (2009): one reward site at the endpoint of each arm."""
+        from neurospatial.simulation.mazes.w_maze import make_w_maze
+
+        env = make_w_maze(include_track=False).env_2d
+        assert list(env.landmarks) == ["well_1", "well_2", "well_3"]
+        for name, well in env.landmarks.items():
+            assert well.kind == "point"
+            assert dict(well.metadata) == {
+                "role": "reward_port",
+                "port_type": "food_well",
+            }
+            # The well size is unpublished, so the region is the well's point.
+            np.testing.assert_allclose(env.regions[name].data, well.data)
+
+    def test_track_carries_the_wells_and_ends_at_them(self):
+        """The track's landmarks are the 2-D wells; its arm ends share their names."""
+        from neurospatial.simulation.mazes.w_maze import make_w_maze
+
+        maze = make_w_maze()
+        track = maze.env_track
+        assert list(track.landmarks) == list(maze.env_2d.landmarks)
+        for name, well in maze.env_2d.landmarks.items():
+            np.testing.assert_allclose(track.landmarks[name].data, well.data)
+        graph = track.binning.linearization.graph
+        leaves = sorted(n for n in graph.nodes if graph.degree(n) == 1)
+        assert leaves == ["well_1", "well_2", "well_3"]
+
     def test_include_track_true_creates_env_track(self):
         """include_track=True should create env_track."""
         from neurospatial.simulation.mazes.w_maze import make_w_maze

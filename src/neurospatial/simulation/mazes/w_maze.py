@@ -9,7 +9,10 @@ replay of the paths between arms.
 The default dimensions follow the Frank-lab W-track of Karlsson & Frank (2009),
 Nat Neurosci 12:913-918, doi:10.1038/nn.2344: "The W-tracks were 76 by 76 cm
 with 7 cm wide track sections." and "Each environment had one reward site at
-the endpoint of each arm."
+the endpoint of each arm." Kim & Frank (2009), PLoS One 4:e5494,
+doi:10.1371/journal.pone.0005494, describe the same reward sites as wells:
+"Sweetened milk was automatically dispensed in food wells located at the
+three ends of the track."
 
 Examples
 --------
@@ -17,8 +20,10 @@ Examples
 >>> maze = make_w_maze()
 >>> maze.env_2d.units
 'cm'
->>> len([k for k in maze.env_2d.regions.keys() if k.startswith("well_")]) == 3
-True
+>>> list(maze.env_2d.landmarks)
+['well_1', 'well_2', 'well_3']
+>>> maze.env_2d.landmarks["well_2"].metadata["role"]
+'reward_port'
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ import networkx as nx
 import numpy as np
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
@@ -128,16 +134,22 @@ def make_w_maze(
     - The base corridor spans the outer edges of the outer arms, from
       x = -(width + corridor_width)/2 to +(width + corridor_width)/2.
 
-    Regions:
+    Each food well is a landmark in ``env_2d.landmarks`` with role
+    ``"reward_port"``, and a point region of the same name:
 
-    - well_1, well_2, well_3: Points at the reward wells, centred in the end
-      square of each arm (left to right), half a corridor width back from the
-      arm's far end.
+    - well_1, well_2, well_3: the wells at the ends of the arms, left to
+      right, each centred in its arm's end square, half a corridor width
+      back from the arm's far end. With three arms, ``well_2`` is the centre
+      well.
+
+    The regions are points because neither Karlsson & Frank (2009) nor Kim
+    & Frank (2009) gives the wells' size.
 
     Track Graph Topology:
 
     - The base runs between the junctions at the bottom of the outer arms.
-    - Each arm runs from its junction to its far end.
+    - Each arm runs from its junction to its far end, a node named like the
+      arm's well.
     - The graph is a tree with one leaf per arm.
 
     Examples
@@ -205,14 +217,23 @@ def make_w_maze(
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # One reward well in the end square of each arm
+    # One food well in the end square of each arm; its size is unpublished
     region_builder = Regions()
+    landmarks = []
     for i, x_pos in enumerate(arm_x_positions, start=1):
         well_pos = corridor_end_point(
             (float(x_pos), 0.0), (float(x_pos), dims.height), dims.corridor_width
         )
         region_builder.add(f"well_{i}", point=well_pos)
-    env_2d = env_2d.with_regions(region_builder)
+        landmarks.append(
+            Landmark(
+                f"well_{i}",
+                "point",
+                well_pos,
+                metadata={"role": "reward_port", "port_type": "food_well"},
+            )
+        )
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks(landmarks))
 
     # Create track graph if requested
     env_track = None
@@ -250,12 +271,12 @@ def _create_w_maze_track_graph(
     graph = nx.Graph()
     for i, x_pos in enumerate(arm_x_positions, start=1):
         graph.add_node(f"junction_{i}", pos=(float(x_pos), 0.0))
-        graph.add_node(f"well_{i}_top", pos=(float(x_pos), dims.height))
+        graph.add_node(f"well_{i}", pos=(float(x_pos), dims.height))
 
     # Base edges between neighbouring junctions, then one edge up each arm
     edge_order = [
         (f"junction_{i}", f"junction_{i + 1}") for i in range(1, dims.n_wells)
-    ] + [(f"junction_{i}", f"well_{i}_top") for i in range(1, dims.n_wells + 1)]
+    ] + [(f"junction_{i}", f"well_{i}") for i in range(1, dims.n_wells + 1)]
     for node1, node2 in edge_order:
         distance = np.linalg.norm(
             np.subtract(graph.nodes[node2]["pos"], graph.nodes[node1]["pos"])
