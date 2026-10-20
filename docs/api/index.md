@@ -61,6 +61,25 @@ Define and manage named regions of interest (ROIs).
 - `Region`: Immutable point or polygon region
 - `Regions`: Container for managing multiple regions
 
+### [neurospatial.annotation](neurospatial/annotation/index.md)
+
+Draw arena boundaries, holes, named regions, walls and landmarks on a video
+frame. See the [video annotation guide](../user-guide/video-annotation.md).
+
+- `annotate_video(video_path, *, project_path=None, autosave_interval=30.0,
+  segmentation_provider=None, ...)`: Open a reference frame in napari;
+  `None` selects the default CPU outline provider.
+- `annotate_project(project, *, project_path=None, autosave_interval=30.0,
+  segmentation_provider=None)`: Resume a saved path or an `AnnotationProject`
+  using its embedded reference frame.
+- `AnnotationProject`, `AnnotationShape`: Portable editable drafts in pixel
+  coordinates, with `AnnotationProject.save(path)` and `.load(path)`.
+- `RegionGrowProvider`, `SegmentAnythingProvider`: CPU color segmentation
+  and an optional adapter for a separately installed SAM 2 image predictor.
+- `SegmentationPrompt`, `SegmentationProposal`, `SegmentationProvider`,
+  `mask_to_polygons`: Viewer-independent point prompts, mask results,
+  provider contract and exact pixel-cell polygon conversion.
+
 ### [neurospatial.layout](neurospatial/layout/index.md)
 
 Layout engines for discretizing continuous space.

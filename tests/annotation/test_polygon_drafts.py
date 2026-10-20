@@ -85,7 +85,7 @@ def test_invalid_polygons_rejected_without_implicit_repair():
 
 
 @pytest.mark.gui
-@pytest.mark.parametrize("close_route", ["save", "escape", "window"])
+@pytest.mark.parametrize("close_route", ["done", "window"])
 @pytest.mark.parametrize("invalid_role", ["environment", "landmark"])
 def test_public_annotation_rejects_invalid_close_and_allows_retry(
     monkeypatch, close_route, invalid_role
@@ -102,9 +102,9 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
     process = core._process_annotation_results
 
     def capture_setup(*args, **kwargs):
-        viewer, layer, flush_pending = setup(*args, **kwargs)
+        viewer, layer, flush_pending, controls = setup(*args, **kwargs)
         viewers.append((viewer, layer))
-        return viewer, layer, flush_pending
+        return viewer, layer, flush_pending, controls
 
     def capture_process(*args, **kwargs):
         builds.append(1)
@@ -118,19 +118,13 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
         window = viewer.window._qt_window
 
         def close():
-            if close_route == "save":
+            if close_route == "done":
                 button = next(
                     button
                     for button in window.findChildren(QPushButton)
-                    if button.text() == "Save and Close"
+                    if button.text() == "Done"
                 )
                 button.click()
-            elif close_route == "escape":
-                next(
-                    callback
-                    for key, callback in viewer.keymap.items()
-                    if str(key).lower() == "escape"
-                )(viewer)
             else:
                 window.close()
 
@@ -366,9 +360,9 @@ def test_close_flush_finishes_rejected_boundary_before_export(monkeypatch):
     setup = core._setup_annotation_viewer
 
     def capture(*args, **kwargs):
-        viewer, shapes, flush = setup(*args, **kwargs)
+        viewer, shapes, flush, controls = setup(*args, **kwargs)
         captured.update(viewer=viewer, shapes=shapes)
-        return viewer, shapes, flush
+        return viewer, shapes, flush, controls
 
     def run():
         shapes = captured["shapes"]
@@ -422,9 +416,11 @@ def test_native_delete_does_not_hide_pending_addition():
         shapes.remove_selected()
         widget.flush_pending()
         assert list(shapes.features["role"]) == ["region"]
-        assert list(shapes.features["name"]) == ["region_1"]
+        # Restored annotations count toward the next generated name, even when
+        # an old row is deleted while the new row's bookkeeping is pending.
+        assert list(shapes.features["name"]) == ["region_2"]
         result = _process_annotation_results(shapes, "regions", 1.0, None, None, "last")
-        assert list(result.regions) == ["region_1"]
+        assert list(result.regions) == ["region_2"]
     finally:
         viewer.close()
 

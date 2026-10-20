@@ -1203,6 +1203,11 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Polygon annotation uses **Done** to validate and return the result;
+  `Escape` keeps napari's normal finish/cancel behavior. **Save Project** and
+  `Ctrl`/`Cmd`+`S` save editable work separately, while Undo and Redo include
+  accepted assisted outlines and calibration changes.
+
 - More results own their arrays as read-only copies that survive pickle and
   `copy.deepcopy`, like the other analysis results: `ShuffleTestResult`
   (its `null_scores` became writable again after copying),
@@ -1725,6 +1730,22 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   are reported.
 
 ### Added
+
+- Resumable polygon annotation projects: `AnnotationProject` and
+  `AnnotationShape` save editable pixel geometry, calibration, output settings
+  and the RGB reference frame in one portable file. `annotate_video` accepts
+  `project_path=` and `autosave_interval=` (30 seconds by default, `None` to
+  disable); `annotate_project` resumes without the original video. Draft saves
+  retain unfinished geometry; **Done** validates the exported result.
+- The annotation dock can calibrate a known distance from two marked endpoints
+  and propose outlines from foreground/background clicks. The default
+  `RegionGrowProvider` uses CPU color segmentation, and its preview can be
+  painted or erased before acceptance. `SegmentationPrompt`,
+  `SegmentationProposal`, `SegmentationProvider` and `mask_to_polygons` also work
+  without a viewer, preserving disconnected areas and holes. Optional
+  `SegmentAnythingProvider.from_sam2` loads separately installed Meta SAM 2
+  from a local checkpoint; model libraries and weights are not bundled or
+  downloaded automatically.
 
 - `neurospatial.encoding.population_vector_correlation(firing_rates_1,
   firing_rates_2, *, spatial_support, unit_selection, bin_mapping, topology)`
