@@ -186,6 +186,37 @@ def test_ground_truth_is_never_interpolated_across_a_break(uniform_decode):
         plt.close(ax.figure)
 
 
+def test_plotted_truth_is_split_at_a_break_between_decode_samples(uniform_decode):
+    """Decode times exactly on the samples either side of a break are not joined."""
+    env = uniform_decode.env
+    result = DecodingResult(
+        posterior=np.full((10, env.n_bins), 1.0 / env.n_bins),
+        env=env,
+        times=np.arange(10.0),
+    )
+    true_times = np.arange(10.0)
+    true_positions = np.c_[np.arange(10.0) * 4, np.zeros(10)]
+    breaks = np.zeros(10, dtype=bool)
+    breaks[5] = True
+    ax = result.plot(
+        true_times=true_times,
+        true_positions=true_positions,
+        max_gap=None,
+        break_before=breaks,
+    )
+    line = next(
+        line for line in ax.get_lines() if line.get_label() == "Actual position"
+    )
+    x = np.asarray(line.get_xdata(), dtype=float)
+    y = np.asarray(line.get_ydata(), dtype=float)
+    # Every sample is plotted, with one NaN separating the two recordings.
+    np.testing.assert_array_equal(x[np.isfinite(y)], true_times)
+    split = int(np.flatnonzero(np.isnan(y))[0])
+    assert np.isnan(y).sum() == 1
+    assert x[split - 1] == 4.0 and x[split + 1] == 5.0
+    plt.close(ax.figure)
+
+
 def _decoding_calls(s, bad):
     decoder = BayesianDecoder(s.env, dt=DT)
     fitted = decoder.fit(s.trains, s.times, s.positions)

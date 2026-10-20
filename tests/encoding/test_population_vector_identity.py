@@ -343,3 +343,38 @@ def test_different_estimator_settings_warn_as_in_compare_spatial_rates(env, maps
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         population_vector_correlation(estimated(first, 5.0), estimated(second, 5.0))
+
+
+def test_results_exclude_smoothed_rates_in_unvisited_bins():
+    """Smoothing puts finite rates in unvisited bins; only support excludes them."""
+    times = np.arange(3000) / 30.0
+    positions = 50 + 40 * np.column_stack(
+        [np.sin(2 * np.pi * times / 20), np.cos(2 * np.pi * times / 13)]
+    )
+    env = Environment.from_samples(positions, bin_size=8.0, units="cm")
+    rng = np.random.default_rng(5)
+    spike_times = [np.sort(rng.uniform(0, 100, n)) for n in (300, 200, 400, 250)]
+    labels = ["t1c1", "t1c2", "t2c1", "t3c4"]
+    first, second = (
+        compute_spatial_rates(
+            env, spike_times, times, positions, epochs=[window], unit_ids=labels
+        )
+        for window in ([0.0, 50.0], [50.0, 100.0])
+    )
+    shared = first.spatial_support & second.spatial_support
+    smoothed_unvisited = ~shared & np.isfinite(
+        np.vstack([first.firing_rates, second.firing_rates])
+    ).all(axis=0)
+    assert smoothed_unvisited.any()  # the default estimator smooths into them
+
+    from_results = population_vector_correlation(first, second)
+    assert np.isnan(from_results[smoothed_unvisited]).all()
+    np.testing.assert_array_equal(
+        from_results,
+        population_vector_correlation(
+            first.firing_rates, second.firing_rates, spatial_support=shared
+        ),
+    )
+    # Bare arrays without support compare bins the animal never visited.
+    bare = population_vector_correlation(first.firing_rates, second.firing_rates)
+    assert np.isfinite(bare[smoothed_unvisited]).any()
