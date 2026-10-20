@@ -230,9 +230,9 @@ counts and exposure; it does not become an arbitrary time-covariate GLM here.
 - [ ] Document external feature/basis handoffs; introduce no general GLM solver.
   Not started: no handoff documentation was found.
 - [x] Review public names, update snapshots/contracts, and add workflow docs.
-  `tests/data/public_api.txt` and `workflows.md` (#119). Identity-aware
-  `unit_ids` for `population_vector_correlation` (added in `95973398`, #120)
-  and for assembly activation are in progress (refactor/api-consistency).
+  `tests/data/public_api.txt` and `workflows.md` (#119). `population_vector_correlation`
+  (added in `95973398`, #120) pairs results by `unit_ids`, and assembly
+  activation matches columns by label (#121).
 
 ## Validation and workflow slice
 

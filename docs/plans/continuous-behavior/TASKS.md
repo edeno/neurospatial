@@ -3,8 +3,8 @@
 **Created**: 2026-10-14
 **Committed**: 2026-10-14
 **Status**: Partially implemented. Area 1 observation support is delivered
-(PRs #112, #114, #120), but extending `break_before` to the remaining consumers
-is in progress. Area 5 continuous event alignment and static/egocentric feature
+(PRs #112, #114, #120), and `break_before` reaches every function that takes
+`max_gap` (#121). Area 5 continuous event alignment and static/egocentric feature
 sampling are delivered (#118); interval states remain. Area 6 same-environment
 conditioned comparisons are delivered (#119). Area 2 is partly covered by
 environment stages A–E (#67–#76). Areas 3 and 4 have not started, and M0 and M5
@@ -16,8 +16,7 @@ This tracker covers six accepted workstreams. Detailed tasks, inventories, and
 validation live in phase files. Checkboxes record implementation completion,
 not creation of a plan. A box is checked only when both the implementing code
 and its tests exist; evidence follows each item. An unchecked item with a note
-is partial. "In progress (refactor/api-consistency)" marks work on that branch
-that has not merged.
+is partial.
 
 ## M0 Contracts and baseline
 
@@ -61,9 +60,12 @@ Source: [phase-1-observation-support.md](phase-1-observation-support.md).
   *Partial:* `_observation.resolve_observation_support` (`276dfe93`, #112;
   `tests/test_observation_support.py`) is used by behavior kinematics and
   navigation (#112, #114, #120), continuous events (#118) and `labels_to_epochs`
-  (#119). Extending `break_before` to encoders, segmentation, visits,
-  `Environment` trajectory methods, decoders and `events.add_positions` is
-  **in progress (refactor/api-consistency)**, starting with `1ed27f99`.
+  (#119). Encoders, significance tests, decoders, segmentation, visits, goal
+  metrics, `Environment` trajectory methods, `events.add_positions` and
+  `generate_population_spikes` accept `break_before` through the shared
+  `_intervals` gate (#121; `tests/encoding/test_declared_breaks.py`,
+  `tests/decoding/test_declared_breaks.py`, `tests/behavior/test_declared_breaks.py`).
+  Remaining: `behavior.distance_to_reward` (position interpolation), `behavior.mean_square_displacement`, `behavior.time_efficiency` and `ops.visibility_occupancy` take neither `max_gap` nor `break_before`.
 - [x] Fix missing-position transitions and movement helpers without bridging gaps.
   Evidence: `Environment.transitions(times=, positions=)` counts only
   inside-to-inside pairs (`c77e3833`, #85; `tests/environment/test_missing_data.py`).
@@ -130,8 +132,7 @@ Source: [phase-3-exploration-and-crossings.md](phase-3-exploration-and-crossings
 Not started: no crossing-record, coverage, first-arrival or revisit code exists.
 
 - [ ] Add bin crossings/encounters, reusing region visits and censoring.
-  `break_before` for visits and segmentation is **in progress
-  (refactor/api-consistency)**.
+  Visits and segmentation accept `break_before` (#121).
 - [ ] Derive crossing counts and directionality independently of self-samples.
 - [ ] Add eligible-space coverage, first arrivals, discovery, and revisits.
 - [ ] Require verified physical measures or validated supplied weights for
@@ -207,9 +208,10 @@ Source: [phase-6-neural-comparisons.md](phase-6-neural-comparisons.md).
   Evidence: `encoding.compare_spatial_rates` and `RateComparisonResult`
   (`8a3e7980`, `0b0ed9c9`, #119). Tests: `tests/encoding/test_compare_spatial_rates.py`
   and `test_rate_comparison_result.py`. Population follow-on: the per-location
-  `population_vector_correlation` is `95973398` (#120). Identity-aware
-  `unit_ids` for it and for assembly activation are **in progress
-  (refactor/api-consistency)**.
+  `population_vector_correlation` is `95973398` (#120). It pairs
+  `SpatialRatesResult` inputs by `unit_ids`, and assembly activation matches
+  columns by label (#121; `tests/encoding/test_population_vector_identity.py`,
+  `tests/decoding/test_assembly_unit_identity.py`).
 - [x] Accept only one-to-one comparison mappings initially and reject
   coarsening/overlap; document separate re-estimation on common bins.
   Evidence: `test_merging_bins_is_refused_because_rates_cannot_be_averaged` and

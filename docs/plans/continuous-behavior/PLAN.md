@@ -5,8 +5,8 @@
 **Status**: Accepted scope; partially implemented. Delivered so far: area 1
 (#112, #114, #120), area 5 except interval states (#118), and area 6
 same-environment comparisons (#119). Area 2 is partly covered by environment
-stages A–E (#67–#76). Areas 3 and 4 have not started. Extending `break_before`
-to the remaining consumers is in progress on `refactor/api-consistency`. See
+stages A–E (#67–#76). Areas 3 and 4 have not started. `break_before` reaches
+every function that takes `max_gap` (#121). See
 [TASKS.md](TASKS.md) for per-item evidence.
 **Status reviewed**: 2026-10-20
 

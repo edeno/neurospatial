@@ -12,8 +12,8 @@ proposals below. In `events.align_continuous_to_events`, `window` is positional
 and `coverage` is `window_coverage`. The feature samplers are
 `ops.sample_spatial_features(env, fields, positions, *, feature_ids=None)` and
 `ops.sample_egocentric_features(env, fields, positions, headings, ego_points,
-*, feature_ids=None)`. `distance_to_boundary`/`distance_to_reward` are moving
-from `events` to `behavior` on `refactor/api-consistency` (in progress).
+*, feature_ids=None)`. `distance_to_boundary`/`distance_to_reward` moved from
+`events` to `behavior` (#121).
 
 **Status reviewed:** 2026-10-20
 

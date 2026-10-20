@@ -3,9 +3,8 @@
 **Created:** 2026-10-14
 **Committed:** 2026-10-14
 **Status:** Implemented — all three milestones delivered in PRs #112, #114
-and #120. Extending `break_before` to encoders, segmentation, visits,
-`Environment` trajectory methods, decoders and `events.add_positions` is in
-progress on `refactor/api-consistency`.
+and #120. `break_before` reaches every function that takes `max_gap`
+(#121).
 **Status reviewed:** 2026-10-20
 
 [Back to PLAN.md](PLAN.md) · [Shared contracts](shared-contracts.md) ·
@@ -143,8 +142,8 @@ complete. Use current environment capabilities where needed.
   primitives. Resolve finite-coordinate masks, explicit boundaries, gap/epoch
   gates, original-index run bounds, and isolated sample status in one place.
   `_observation.resolve_observation_support` (`276dfe93`, #112), tested in
-  `tests/test_observation_support.py`. Routing breaks through the shared
-  `_intervals` gate (`1ed27f99`) is in progress (refactor/api-consistency).
+  `tests/test_observation_support.py`. Breaks also route through the shared
+  `_intervals` gate (#121, `tests/test_interval_helpers.py`).
 - [x] Keep the resolver independent of `Environment`; optional bin validity is
   a caller gate. Avoid introducing another public interval-set abstraction.
   `_observation.py` imports only `_intervals`, `_results` and `_validation`.
@@ -156,8 +155,8 @@ complete. Use current environment capabilities where needed.
   guessing from a compressed sequence.
   Inside-to-inside pairs only (`c77e3833`, #85), tested in
   `tests/environment/test_missing_data.py`. `bins=` with `-1` is still refused.
-  `break_before` for `Environment` trajectory methods is in progress
-  (refactor/api-consistency).
+  `Environment` trajectory methods accept `break_before` (#121,
+  `tests/environment/test_trajectory_breaks.py`).
 - [x] Add optional support/result holders only where several aligned arrays are
   returned. Own derived arrays as read-only copies; provide `summary()` and a
   domain-specific `samples_table()` or `support_table()` where useful. Follow
@@ -194,9 +193,8 @@ complete. Use current environment capabilities where needed.
 - [x] Audit heading/body-orientation consumers and document per-run invocation
   or reuse the support resolver where a compatible extension is appropriate.
   `f562ed9c` (#112); `heading_from_velocity(break_before=)` in `4ec2afc6`
-  (#118); missing and slow samples handled in `14e8a5c3` (#120). Moving
-  `heading_from_velocity`/`heading_from_body_orientation` from `ops` to
-  `behavior` is in progress (refactor/api-consistency).
+  (#118); missing and slow samples handled in `14e8a5c3` (#120). Both heading
+  functions now live in `behavior` (#121).
 - [x] Export accepted names from `behavior/__init__.py`; update API snapshots,
   argument-convention tests, and the trajectory analysis guide.
   `tests/data/public_api.txt`; `aaddfead` (#112).
