@@ -7,7 +7,8 @@ square arena.
 
 This environment is often used as a "sleep box" or "rest box" between trials
 in multi-maze experiments, providing a neutral environment for consolidation
-studies.
+studies. A rest box holds no reward ports, start or goal boxes, or cues, so
+the maze has no landmarks.
 
 Examples
 --------
