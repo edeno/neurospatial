@@ -1,16 +1,28 @@
-"""Hampton Court Maze environment for spatial navigation research.
+"""Hampton Court Maze: Small's (1901) rat maze.
 
-The Hampton Court Maze is a complex labyrinth inspired by the famous hedge maze at
-Hampton Court Palace in England. It is one of the first maze designs used in rodent
-research (Small, 1901).
+Small (1901) built one of the first rat mazes, modelled on the hedge maze at
+Hampton Court Palace, and studied how rats learn to find food in its central
+open space (p. 208):
 
-This implementation creates a labyrinth structure with:
-- A central rectangular goal area
-- Multiple concentric corridor rings wrapping around the center
-- Dead-end branches that increase navigational complexity
-- Entry from the outside, goal in the center
+    "The Hampton Court Maze served as model for the apparatus. [...] The
+    dimensions were 6 by 8 feet. [...] The height of the sides was 4 inches;
+    the width of galleries, the same. In the center was a large open space."
 
-Reference: Small (1901) - Early maze research with rodents
+The wall layout is Small's ground plan (p. 207), turned so the entrance is at
+the bottom: an 18 x 14 grid of galleries inside the 8 x 6 ft frame, a central
+open space entered from below by a short stem, seven blind alleys (Small's
+numerals 1-7) and one loop round the centre. Small gives the frame and the
+gallery width but not the wall positions, and his plan is not drawn to scale
+against them: thin partitions between 4-inch galleries would fill only 6 of
+the 8 feet. Here the plan's walls stand on the grid, every gallery is 4
+inches wide, and partitions take the remaining space (3.6 cm between columns,
+3.1 cm between rows).
+
+Reference: Small, W. S. (1901). Experimental study of the mental processes of
+the rat. II. American Journal of Psychology, 12(2), 206-239.
+https://doi.org/10.2307/1412534. Drawn as the Hampton Court maze in Wijnen et
+al. (2024), Brain Structure and Function 229, Fig. 1b.
+https://doi.org/10.1007/s00429-024-02771-x
 
 Examples
 --------
@@ -21,68 +33,109 @@ Examples
 >>> maze = make_hampton_court_maze()
 >>> maze.env_2d.units
 'cm'
->>> "goal" in maze.env_2d.regions
-True
->>> "start" in maze.env_2d.regions
-True
+>>> sorted(name for name in maze.env_2d.regions if name.startswith("blind_"))
+['blind_1', 'blind_2', 'blind_3', 'blind_4', 'blind_5', 'blind_6', 'blind_7']
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 import networkx as nx
 import numpy as np
-from shapely.geometry import box
+from shapely.geometry import Polygon, box
+from shapely.ops import unary_union
 
 from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
-from neurospatial.simulation.mazes._geometry import (
-    make_corridor_polygon,
-    union_polygons,
-)
+from neurospatial.simulation.mazes._geometry import warn_if_bins_bridge_walls
+
+_Cell = tuple[int, int]
+
+# Small's ground plan (1901, p. 207), entrance at the bottom, traced and placed
+# on its grid of galleries. A cell (column, row) is one gallery square, columns
+# 0-17 west to east and rows 0-13 south to north. Walls are polylines through
+# grid-line crossings (column line 0-18, row line 0-14): column line c runs
+# between cell columns c - 1 and c. The outer frame is the grid's edge, open
+# only at the entrance below cell (8, 0).
+_N_COLUMNS = 18
+_N_ROWS = 14
+_ENTRANCE_COLUMN = 8
+_WALLS: tuple[tuple[tuple[int, int], ...], ...] = (
+    ((0, 7), (1, 7)),
+    ((18, 7), (17, 7)),
+    ((5, 13), (1, 13), (1, 8), (2, 8), (2, 6), (1, 6), (1, 1), (18, 1)),
+    ((6, 14), (6, 12), (2, 12), (2, 9)),
+    ((8, 11), (3, 11), (3, 3)),
+    ((5, 11), (5, 3), (7, 3), (7, 2), (2, 2), (2, 5)),
+    ((4, 10), (4, 2)),
+    ((9, 14), (9, 13), (7, 13), (7, 11)),
+    # The T north of the centre. Its bar's west end traces at column line 7.4;
+    # 8 keeps the passage at its west end that the plan shows.
+    ((8, 12), (10, 12)),
+    ((9, 12), (9, 10)),
+    ((8, 1), (8, 4), (6, 4), (6, 10), (11, 10), (11, 4), (9, 4), (9, 2), (17, 2),
+     (17, 6)),
+    ((10, 13), (11, 13), (11, 11)),
+    ((10, 11), (12, 11), (12, 3), (10, 3)),
+    ((12, 14), (12, 12), (16, 12), (16, 9)),
+    ((13, 13), (17, 13), (17, 8), (16, 8), (16, 3), (14, 3)),
+    ((14, 11), (14, 2)),
+    ((13, 3), (13, 11), (15, 11), (15, 4)),
+)  # fmt: skip
+# The central open space: cell columns 6-10, rows 4-9.
+_ROOM_COLUMNS = range(6, 11)
+_ROOM_ROWS = range(4, 10)
+# Small's numerals 1-7: each blind alley leaves a choice point (first cell)
+# through its first gallery cell (second cell), where the numeral stands on
+# the plan. Alley 4 is not a dead end: it leads round the centre to the choice
+# point of alley 5.
+_BLIND_ALLEY_ENTRANCES: dict[int, tuple[_Cell, _Cell]] = {
+    1: ((8, 0), (9, 0)),
+    2: ((2, 8), (2, 9)),
+    3: ((2, 5), (2, 4)),
+    4: ((12, 11), (12, 10)),
+    5: ((12, 2), (13, 2)),
+    6: ((15, 8), (15, 7)),
+    7: ((16, 6), (16, 5)),
+}
 
 
 @dataclass(frozen=True)
 class HamptonCourtDims(MazeDims):
-    """Dimension specifications for Hampton Court Maze.
-
-    The Hampton Court Maze is a complex labyrinth with a central goal area
-    surrounded by concentric corridor rings with multiple dead ends.
+    """Dimensions of Small's (1901) Hampton Court maze.
 
     Attributes
     ----------
-    size : float
-        Overall size of the maze (width and height) in cm. Default is 300.0.
+    width : float
+        East-west extent of the frame in cm. Default is 243.84 (8 ft, Small
+        1901).
+    height : float
+        North-south extent of the frame in cm, entrance side to far side.
+        Default is 182.88 (6 ft, Small 1901).
     corridor_width : float
-        Width of corridors in cm. Default is 11.0.
-    n_rings : int
-        Number of concentric corridor rings around the center. Default is 3.
-    center_size : float
-        Size of the central goal area in cm. Default is 60.0.
+        Width of every gallery in cm. Default is 10.16 (4 in, Small 1901).
+
+    Notes
+    -----
+    The walls sit on a grid of 18 x 14 galleries, so the frame must be wider
+    than 18 and taller than 14 galleries; partitions fill what is left.
 
     Examples
     --------
     >>> dims = HamptonCourtDims()
-    >>> dims.size
-    300.0
-    >>> dims.corridor_width
-    11.0
-    >>> dims.n_rings
-    3
-    >>> dims.center_size
-    60.0
+    >>> dims.width, dims.height, dims.corridor_width
+    (243.84, 182.88, 10.16)
 
-    >>> custom = HamptonCourtDims(size=400.0, corridor_width=15.0)
-    >>> custom.size
-    400.0
+    >>> HamptonCourtDims(corridor_width=8.0).corridor_width
+    8.0
     """
 
-    size: float = 300.0
-    corridor_width: float = 11.0
-    n_rings: int = 3
-    center_size: float = 60.0
+    width: float = 243.84
+    height: float = 182.88
+    corridor_width: float = 10.16
 
 
 def make_hampton_court_maze(
@@ -90,302 +143,276 @@ def make_hampton_court_maze(
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:
-    """Create a Hampton Court Maze environment.
-
-    Creates a complex labyrinth maze with concentric corridor rings around a
-    central goal area. The maze is inspired by the Hampton Court Palace hedge
-    maze and represents one of the first maze designs used in rodent research.
+    """Create Small's (1901) Hampton Court maze.
 
     Parameters
     ----------
     dims : HamptonCourtDims, optional
-        Maze dimensions. If None, uses default dimensions
-        (300 cm size, 11 cm corridor width, 3 rings, 60 cm center).
+        Maze dimensions. If None, uses Small's 8 x 6 ft frame and 4-in
+        galleries.
     bin_size : float, optional
-        Spatial bin size in cm (default: 2.0).
+        Spatial bin size in cm (default: 2.0). Keep it below the partition
+        thickness (3.1 cm at the default dimensions); larger bins can bridge
+        a partition and join neighbouring galleries, and trigger a warning.
     include_track : bool, optional
-        Whether to create linearized track graph (default: True).
-        The track graph provides a 1D representation for trajectory analysis.
+        Whether to create the linearized track graph (default: True).
 
     Returns
     -------
     MazeEnvironments
         Contains:
-        - env_2d: 2D polygon-based environment
-        - env_track: 1D linearized track environment (if include_track=True)
+        - env_2d: the walkable floor (galleries and central open space)
+        - env_track: gallery centrelines as a track graph (if include_track)
+
+    Raises
+    ------
+    ValueError
+        If the frame is too small to hold 18 x 14 galleries of
+        ``corridor_width``.
 
     Notes
     -----
-    The maze is centered at the origin with a labyrinth structure:
-    - Central rectangular goal area at the center
-    - Multiple concentric corridor rings wrapping around the center
-    - Connections between rings create a winding path
-    - Dead-end branches increase navigational complexity
-    - Entry from the bottom edge
+    The origin is the centre of the frame; x runs east and y runs north, with
+    the entrance in the middle of the south (bottom) side.
 
     Regions:
-    - start: Point at maze entrance (bottom edge)
-    - goal: Point at maze center
 
-    Track Graph Topology:
-    - Main path spiraling from start to goal
-    - Dead-end branches off the main path
-    - Fully connected graph with single component
+    - start: the entrance gap in the south wall
+    - goal: the centre of the central open space, where Small put the food
+    - blind_1 ... blind_7: Small's seven blind alleys, each the run of
+      gallery from the choice point where the numeral stands to the next dead
+      end or choice point (polygons)
+
+    Track graph: gallery centrelines with nodes at the start, the goal,
+    choice points, corners and dead ends. It has 8 choice points (Small's
+    seven plus the fork he marks x, where both ways lead on), 6 dead ends
+    and one loop round the centre (Small's "circuit immediately around the
+    center"). The track runs up the middle of the stem into the open space,
+    so positions near the sides of the open space lie off the track.
 
     Examples
     --------
-    Create a default Hampton Court maze:
-
     >>> maze = make_hampton_court_maze()
     >>> maze.env_2d.units
     'cm'
-    >>> maze.env_2d.n_bins > 0
-    True
+    >>> maze.env_2d.regions["blind_3"].kind
+    'polygon'
 
-    Create with custom dimensions:
+    A smaller copy with the same layout:
 
-    >>> dims = HamptonCourtDims(size=400.0, corridor_width=15.0)
-    >>> maze = make_hampton_court_maze(dims=dims, bin_size=4.0)
-    >>> "goal" in maze.env_2d.regions
-    True
-
-    Skip track graph creation:
-
-    >>> maze = make_hampton_court_maze(include_track=False)
+    >>> dims = HamptonCourtDims(width=200.0, height=150.0, corridor_width=8.0)
+    >>> maze = make_hampton_court_maze(dims=dims, include_track=False)
     >>> maze.env_track is None
     True
 
     See Also
     --------
-    HamptonCourtDims : Dimension specifications for Hampton Court Maze.
+    HamptonCourtDims : Dimension specifications for the Hampton Court maze.
     """
     if dims is None:
         dims = HamptonCourtDims()
+    if (
+        dims.width <= _N_COLUMNS * dims.corridor_width
+        or dims.height <= _N_ROWS * dims.corridor_width
+    ):
+        raise ValueError(
+            f"HamptonCourtDims(width={dims.width}, height={dims.height}) cannot "
+            f"hold {_N_COLUMNS} x {_N_ROWS} galleries {dims.corridor_width} cm "
+            "wide with walls between them. Make the frame larger than "
+            f"{_N_COLUMNS * dims.corridor_width} x "
+            f"{_N_ROWS * dims.corridor_width} cm or the galleries narrower."
+        )
+    pitch_x, pitch_y = _pitch(dims)
+    warn_if_bins_bridge_walls(
+        bin_size, min(pitch_x, pitch_y) - dims.corridor_width, "Hampton Court maze"
+    )
 
-    half_size = dims.size / 2.0
-    half_center = dims.center_size / 2.0
-
-    # Calculate ring spacing
-    ring_spacing = (half_size - half_center) / (dims.n_rings + 1)
-
-    corridors = []
-
-    # Define ring radii (from center outward)
-    ring_radii = [half_center + (i + 1) * ring_spacing for i in range(dims.n_rings)]
-    inner_r = ring_radii[0]
-    mid_r = ring_radii[1] if len(ring_radii) > 1 else inner_r
-    outer_r = ring_radii[-1]
-
-    # Create a proper labyrinth structure with connected rings
-    # The design creates winding paths from entry to center with dead ends
-
-    # Entry corridor from outside leading into outer ring (this ensures connectivity)
-    corridors.append(((0.0, -outer_r * 1.2), (0.0, -outer_r)))
-
-    # === OUTERMOST RING (ring 2) ===
-    # Complete rectangular ring (all sides)
-    corridors.append(((-outer_r, -outer_r), (outer_r, -outer_r)))  # Bottom
-    corridors.append(((outer_r, -outer_r), (outer_r, outer_r)))  # Right
-    corridors.append(((-outer_r, outer_r), (outer_r, outer_r)))  # Top
-    corridors.append(((-outer_r, -outer_r), (-outer_r, outer_r)))  # Left
-
-    # Connector from outer ring corner to middle ring (left side, toward bottom)
-    corridors.append(((-outer_r, -outer_r * 0.5), (-mid_r, -outer_r * 0.5)))
-
-    # === MIDDLE RING (ring 1) ===
-    # Complete rectangular ring (all sides)
-    corridors.append(((-mid_r, -mid_r), (mid_r, -mid_r)))  # Bottom
-    corridors.append(((mid_r, -mid_r), (mid_r, mid_r)))  # Right
-    corridors.append(((-mid_r, mid_r), (mid_r, mid_r)))  # Top
-    corridors.append(((-mid_r, -mid_r), (-mid_r, mid_r)))  # Left
-
-    # Connector from middle ring to inner ring (right side, toward top)
-    corridors.append(((mid_r, mid_r * 0.5), (inner_r, mid_r * 0.5)))
-
-    # === INNERMOST RING (ring 0) ===
-    # Complete rectangular ring (all sides)
-    corridors.append(((-inner_r, -inner_r), (inner_r, -inner_r)))  # Bottom
-    corridors.append(((inner_r, -inner_r), (inner_r, inner_r)))  # Right
-    corridors.append(((-inner_r, inner_r), (inner_r, inner_r)))  # Top
-    corridors.append(((-inner_r, -inner_r), (-inner_r, inner_r)))  # Left
-
-    # Connector from inner ring to center goal (top side)
-    corridors.append(((0.0, inner_r), (0.0, half_center * 0.3)))
-
-    # === DEAD ENDS ===
-    # Dead end 1: from outer ring right side going further right
-    corridors.append(((outer_r, outer_r * 0.3), (outer_r * 1.2, outer_r * 0.3)))
-    # Dead end 2: from middle ring bottom going down
-    corridors.append(((mid_r * 0.4, -mid_r), (mid_r * 0.4, -mid_r * 1.3)))
-    # Dead end 3: from inner ring left side going left
-    corridors.append(((-inner_r, -inner_r * 0.3), (-inner_r * 1.4, -inner_r * 0.3)))
-
-    # Create polygon for each corridor and union them with the central goal
-    # area, which the inner-ring connector enters from the top.
-    corridor_polygons = [
-        make_corridor_polygon(seg_start, seg_end, dims.corridor_width)
-        for seg_start, seg_end in corridors
-    ]
-    goal_area = box(-half_center, -half_center, half_center, half_center)
-    labyrinth_polygon = union_polygons([*corridor_polygons, goal_area])
-
-    # Create 2D environment
+    galleries = _gallery_graph()
+    floor = _floor_polygon(galleries, dims)
     env_2d = Environment.from_polygon(
-        polygon=labyrinth_polygon,
+        polygon=floor,
         bin_size=bin_size,
         name="hampton_court_maze",
         connect_diagonal_neighbors=True,
     )
     env_2d = env_2d.with_metadata(units="cm")
 
-    # Add regions
-    # Start at the entry (outside the maze)
-    start_pos = (0.0, -outer_r * 1.2)
-    region_builder = Regions()
-    region_builder.add("start", point=start_pos)
+    regions = Regions()
+    regions.add("start", point=_entrance(dims))
+    regions.add("goal", point=_room_center(dims))
+    for number, entrance in _BLIND_ALLEY_ENTRANCES.items():
+        cells = _blind_alley_cells(galleries, entrance)
+        regions.add(f"blind_{number}", polygon=_cells_polygon(cells, galleries, dims))
+    env_2d = env_2d.with_regions(regions)
 
-    # Goal at the center
-    goal_pos = (0.0, 0.0)
-    region_builder.add("goal", point=goal_pos)
-    env_2d = env_2d.with_regions(region_builder)
-
-    # Create track graph if requested
     env_track = None
     if include_track:
-        env_track = _create_hampton_court_track_graph(dims, bin_size)
+        env_track = _create_hampton_court_track_graph(galleries, dims, bin_size)
 
     return MazeEnvironments(env_2d=env_2d, env_track=env_track)
 
 
+def _pitch(dims: HamptonCourtDims) -> tuple[float, float]:
+    """Centre-to-centre spacing of neighbouring galleries (x, y), in cm."""
+    return (
+        (dims.width - dims.corridor_width) / (_N_COLUMNS - 1),
+        (dims.height - dims.corridor_width) / (_N_ROWS - 1),
+    )
+
+
+def _cell_center(cell: _Cell, dims: HamptonCourtDims) -> tuple[float, float]:
+    """Centre of a gallery cell, in cm from the centre of the frame."""
+    half = dims.corridor_width / 2.0
+    pitch_x, pitch_y = _pitch(dims)
+    return (
+        -dims.width / 2.0 + half + cell[0] * pitch_x,
+        -dims.height / 2.0 + half + cell[1] * pitch_y,
+    )
+
+
+def _entrance(dims: HamptonCourtDims) -> tuple[float, float]:
+    """The entrance gap in the middle of the south wall."""
+    x, _ = _cell_center((_ENTRANCE_COLUMN, 0), dims)
+    return (x, -dims.height / 2.0)
+
+
+def _room_center(dims: HamptonCourtDims) -> tuple[float, float]:
+    """Centre of the central open space."""
+    x0, y0 = _cell_center((_ROOM_COLUMNS[0], _ROOM_ROWS[0]), dims)
+    x1, y1 = _cell_center((_ROOM_COLUMNS[-1], _ROOM_ROWS[-1]), dims)
+    return ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+
+
+def _wall_segments() -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    """Every wall as unit-length segments between neighbouring grid crossings."""
+    segments = []
+    for wall in _WALLS:
+        for (x0, y0), (x1, y1) in pairwise(wall):
+            step_x, step_y = int(np.sign(x1 - x0)), int(np.sign(y1 - y0))
+            for k in range(max(abs(x1 - x0), abs(y1 - y0))):
+                start = (x0 + k * step_x, y0 + k * step_y)
+                segments.append((start, (start[0] + step_x, start[1] + step_y)))
+    return segments
+
+
+def _gallery_graph() -> nx.Graph:
+    """Gallery cells, joined where no wall separates neighbouring cells."""
+    graph = nx.grid_2d_graph(_N_COLUMNS, _N_ROWS)
+    for (x0, y0), (x1, y1) in _wall_segments():
+        if x0 == x1:  # on column line x0, between rows min(y0, y1) and +1
+            pair = ((x0 - 1, min(y0, y1)), (x0, min(y0, y1)))
+        else:  # on row line y0, between columns min(x0, x1) and +1
+            pair = ((min(x0, x1), y0 - 1), (min(x0, x1), y0))
+        if graph.has_edge(*pair):
+            graph.remove_edge(*pair)
+    return graph
+
+
+def _cell_box(cell: _Cell, dims: HamptonCourtDims) -> Polygon:
+    half = dims.corridor_width / 2.0
+    x, y = _cell_center(cell, dims)
+    return box(x - half, y - half, x + half, y + half)
+
+
+def _cells_polygon(
+    cells: list[_Cell], galleries: nx.Graph, dims: HamptonCourtDims
+) -> Polygon:
+    """Floor of ``cells``: their squares and the open gaps between them."""
+    members = set(cells)
+    pieces = [_cell_box(cell, dims) for cell in cells]
+    for a, b in galleries.edges(cells):
+        if a in members and b in members:
+            pieces.append(_cell_box(a, dims).union(_cell_box(b, dims)).envelope)
+    return unary_union(pieces)
+
+
+def _floor_polygon(galleries: nx.Graph, dims: HamptonCourtDims) -> Polygon:
+    """The walkable floor: every gallery, the gaps between joined cells and the
+    wall-free grid crossings (inside the central open space)."""
+    floor = _cells_polygon(list(galleries.nodes), galleries, dims)
+    on_wall = {point for segment in _wall_segments() for point in segment}
+    half = dims.corridor_width / 2.0
+    crossings = []
+    for column_line in range(1, _N_COLUMNS):
+        for row_line in range(1, _N_ROWS):
+            if (column_line, row_line) in on_wall:
+                continue
+            x0, y0 = _cell_center((column_line - 1, row_line - 1), dims)
+            x1, y1 = _cell_center((column_line, row_line), dims)
+            crossings.append(box(x0 + half, y0 + half, x1 - half, y1 - half))
+    return unary_union([floor, *crossings])
+
+
+def _blind_alley_cells(
+    galleries: nx.Graph, entrance: tuple[_Cell, _Cell]
+) -> list[_Cell]:
+    """Cells from a blind alley's first cell to its dead end or next fork."""
+    previous, cell = entrance
+    cells = [cell]
+    while galleries.degree(cell) == 2:
+        previous, cell = cell, next(n for n in galleries[cell] if n != previous)
+        cells.append(cell)
+    if galleries.degree(cell) > 2:  # stop before the next choice point
+        cells.pop()
+    return cells
+
+
 def _create_hampton_court_track_graph(
+    galleries: nx.Graph,
     dims: HamptonCourtDims,
     bin_size: float,
 ) -> Environment:
-    """Create the 1D linearized track graph for Hampton Court Maze.
+    """Create the 1D linearized track graph along the gallery centrelines.
 
-    The track graph represents the labyrinth topology with nodes at
-    junctions and edges along corridors. The graph includes the main
-    path spiraling from start to goal plus dead-end branches.
-
-    Parameters
-    ----------
-    dims : HamptonCourtDims
-        Maze dimensions.
-    bin_size : float
-        Spatial bin size in cm.
-
-    Returns
-    -------
-    Environment
-        1D linearized environment representing the Hampton Court track.
+    The central open space becomes one ``goal`` node at its centre, reached
+    up the stem; the entrance becomes a ``start`` node in the south wall.
+    Straight runs of cells collapse into single edges, so nodes remain only
+    at the start, the goal, choice points, corners and dead ends.
     """
-    half_size = dims.size / 2.0
-    half_center = dims.center_size / 2.0
-    ring_spacing = (half_size - half_center) / (dims.n_rings + 1)
-    ring_radii = [half_center + (i + 1) * ring_spacing for i in range(dims.n_rings)]
+    room = {(c, r) for c in _ROOM_COLUMNS for r in _ROOM_ROWS}
+    cells = galleries.copy()
+    room_exits = {n for cell in room for n in cells[cell] if n not in room}
+    cells.remove_nodes_from(room)
+    cells.add_edges_from(("goal", cell) for cell in room_exits)
+    cells.add_edge("start", (_ENTRANCE_COLUMN, 0))
 
+    def position(node: _Cell | str) -> np.ndarray:
+        if isinstance(node, str):
+            return np.asarray(
+                _entrance(dims) if node == "start" else _room_center(dims)
+            )
+        return np.asarray(_cell_center(node, dims))
+
+    def is_vertex(node: _Cell | str) -> bool:
+        if cells.degree(node) != 2:
+            return True
+        a, b = (position(n) - position(node) for n in cells[node])
+        return bool(abs(a[0] * b[1] - a[1] * b[0]) > 1e-9)  # corner
+
+    def name(node: _Cell | str) -> str:
+        return node if isinstance(node, str) else f"cell_{node[0]}_{node[1]}"
+
+    vertices = {node for node in cells if is_vertex(node)}
     graph = nx.Graph()
+    for node in vertices:
+        graph.add_node(name(node), pos=tuple(float(v) for v in position(node)))
+    for node in vertices:
+        for neighbor in cells[node]:
+            previous, current = node, neighbor
+            while current not in vertices:
+                previous, current = (
+                    current,
+                    next(n for n in cells[current] if n != previous),
+                )
+            distance = float(np.linalg.norm(position(current) - position(node)))
+            graph.add_edge(name(node), name(current), distance=distance)
 
-    outer_r = ring_radii[-1]
-    inner_r = ring_radii[0]
-    mid_r = ring_radii[-2] if len(ring_radii) > 1 else inner_r
-
-    # Define key positions matching the corridor layout
-    positions = {
-        "start": (0.0, -outer_r),
-        # Outer ring junctions
-        "outer_bl": (-outer_r, -outer_r),
-        "outer_br": (outer_r, -outer_r),
-        "outer_tr": (outer_r, outer_r),
-        "outer_tl": (-outer_r, outer_r),
-        # Middle ring junctions
-        "mid_bl": (-mid_r, -mid_r),
-        "mid_br": (mid_r, -mid_r),
-        "mid_tr": (mid_r, mid_r),
-        "mid_tl": (-mid_r, mid_r),
-        # Inner ring junctions
-        "inner_bl": (-inner_r, -inner_r),
-        "inner_br": (inner_r, -inner_r),
-        "inner_tr": (inner_r, inner_r),
-        "inner_tl": (-inner_r, inner_r),
-        # Goal at center
-        "goal": (0.0, 0.0),
-        # Dead ends
-        "dead_1": (outer_r * 1.2, outer_r * 0.5),
-        "dead_2": (-mid_r * 1.3, -mid_r * 0.3),
-        "dead_3": (inner_r * 0.7, -inner_r * 1.3),
-    }
-
-    # Add nodes with positions
-    for node_name, pos in positions.items():
-        graph.add_node(node_name, pos=pos)
-
-    # Add edges along corridors with distances
-    edges = [
-        # Start to outer ring
-        ("start", "outer_bl"),
-        ("start", "outer_br"),
-        # Outer ring
-        ("outer_bl", "outer_tl"),
-        ("outer_tl", "outer_tr"),
-        ("outer_tr", "outer_br"),
-        # Outer to middle connector
-        ("outer_bl", "mid_bl"),
-        # Middle ring
-        ("mid_bl", "mid_br"),
-        ("mid_br", "mid_tr"),
-        ("mid_tr", "mid_tl"),
-        # Middle to inner connector
-        ("mid_tr", "inner_tr"),
-        # Inner ring
-        ("inner_bl", "inner_br"),
-        ("inner_br", "inner_tr"),
-        ("inner_tr", "inner_tl"),
-        # Inner to goal
-        ("inner_tl", "goal"),
-        # Dead ends
-        ("outer_tr", "dead_1"),
-        ("mid_bl", "dead_2"),
-        ("inner_br", "dead_3"),
-    ]
-
-    for node1, node2 in edges:
-        pos1 = np.array(positions[node1])
-        pos2 = np.array(positions[node2])
-        distance = float(np.linalg.norm(pos2 - pos1))
-        graph.add_edge(node1, node2, distance=distance)
-
-    # Edge order for linearization (main path first, then branches)
-    edge_order = [
-        ("start", "outer_bl"),
-        ("outer_bl", "outer_tl"),
-        ("outer_tl", "outer_tr"),
-        ("outer_tr", "outer_br"),
-        ("outer_br", "start"),
-        ("outer_bl", "mid_bl"),
-        ("mid_bl", "mid_br"),
-        ("mid_br", "mid_tr"),
-        ("mid_tr", "mid_tl"),
-        ("mid_tr", "inner_tr"),
-        ("inner_tr", "inner_br"),
-        ("inner_br", "inner_bl"),
-        ("inner_tr", "inner_tl"),
-        ("inner_tl", "goal"),
-        # Dead-end branches
-        ("outer_tr", "dead_1"),
-        ("mid_bl", "dead_2"),
-        ("inner_br", "dead_3"),
-    ]
-
-    # Create the 1D environment
     env_track = Environment.from_graph(
         graph=graph,
-        edge_order=edge_order,
+        edge_order=list(nx.edge_dfs(graph, "start")),
         edge_spacing=0.0,
         bin_size=bin_size,
         track_width=dims.corridor_width,
         name="hampton_court_1d",
     )
-    env_track = env_track.with_metadata(units="cm")
-
-    return env_track
+    return env_track.with_metadata(units="cm")

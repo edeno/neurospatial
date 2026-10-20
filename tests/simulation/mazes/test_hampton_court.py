@@ -1,307 +1,158 @@
-"""Tests for Hampton Court Maze implementation."""
+"""Tests for the Hampton Court maze: Small's (1901) layout and dimensions."""
 
 from __future__ import annotations
 
+from collections import Counter
+
 import networkx as nx
 import numpy as np
+import pytest
+from shapely.geometry import LineString, Point, box
+
+from neurospatial.simulation.mazes._base import MazeEnvironments
+from neurospatial.simulation.mazes.hampton_court import (
+    HamptonCourtDims,
+    make_hampton_court_maze,
+)
+
+FEET = 30.48
+INCH = 2.54
 
 
-class TestMakeHamptonCourtMaze:
-    """Tests for make_hampton_court_maze factory function."""
+@pytest.fixture(scope="module")
+def maze():
+    return make_hampton_court_maze()
 
-    def test_returns_maze_environments(self):
-        """make_hampton_court_maze should return MazeEnvironments."""
-        from neurospatial.simulation.mazes._base import MazeEnvironments
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
+
+@pytest.fixture(scope="module")
+def floor(maze):
+    return maze.env_2d.arena.polygonal_domain()
+
+
+@pytest.fixture(scope="module")
+def track_graph(maze):
+    """The track's nodes and edges, rebuilt from its segments."""
+    graph = nx.Graph()
+    for start, end in np.asarray(maze.env_track.arena.segments):
+        graph.add_edge(
+            tuple(np.round(start, 6)),
+            tuple(np.round(end, 6)),
+            length=float(np.linalg.norm(end - start)),
         )
+    return graph
+
+
+def _point(maze, name):
+    return tuple(np.round(np.asarray(maze.env_2d.regions[name].data, float), 6))
+
+
+def test_returns_maze_environments_in_cm(maze):
+    assert isinstance(maze, MazeEnvironments)
+    assert maze.env_2d.units == "cm"
+    assert maze.env_track.units == "cm"
+    assert maze.env_track.is_linearized_track
+
+
+def test_default_dims_are_smalls_published_numbers():
+    # Small (1901, p. 208): "6 by 8 feet", galleries 4 inches wide.
+    dims = HamptonCourtDims()
+    assert dims.width == pytest.approx(8 * FEET)
+    assert dims.height == pytest.approx(6 * FEET)
+    assert dims.corridor_width == pytest.approx(4 * INCH)
+
+
+def test_floor_fills_the_8_by_6_ft_frame_centred_on_the_origin(floor):
+    np.testing.assert_allclose(
+        floor.bounds, (-4 * FEET, -3 * FEET, 4 * FEET, 3 * FEET), atol=1e-9
+    )
+
+
+def test_galleries_are_4_inches_wide(maze, floor, track_graph):
+    start, goal = _point(maze, "start"), _point(maze, "goal")
+    widths = [
+        2.0 * floor.boundary.distance(Point((np.array(a) + np.array(b)) / 2))
+        for a, b in track_graph.edges
+        if not {start, goal} & {a, b}
+    ]
+    np.testing.assert_allclose(widths, 4 * INCH)
+
+
+def test_central_open_space_is_entered_from_below(maze, floor, track_graph):
+    goal = _point(maze, "goal")
+    # The open space spans about 65 x 77 cm round the goal.
+    assert floor.contains(box(goal[0] - 32, goal[1] - 38, goal[0] + 32, goal[1] + 38))
+    assert not floor.contains(
+        box(goal[0] - 34, goal[1] - 40, goal[0] + 34, goal[1] + 40)
+    )
+    # A single stem leads in, straight up from the south.
+    (stem_end,) = track_graph.neighbors(goal)
+    assert stem_end[0] == pytest.approx(goal[0])
+    assert stem_end[1] < goal[1]
+
+
+def test_entrance_in_the_south_wall_below_the_goal(maze):
+    start, goal = _point(maze, "start"), _point(maze, "goal")
+    assert start[1] == pytest.approx(-3 * FEET)
+    assert abs(start[0]) < 4 * INCH
+    assert goal == pytest.approx((start[0], 0.0), abs=1e-9)
+
+
+def test_track_has_smalls_choice_points_dead_ends_and_one_loop(maze, track_graph):
+    degrees = Counter(dict(track_graph.degree()).values())
+    # Small's seven numbered choice points plus the fork he marks x.
+    assert degrees[3] == 8
+    # Start, goal and six cul-de-sacs.
+    assert degrees[1] == 8
+    assert set(degrees) == {1, 2, 3}
+    # The circuit round the centre is the only loop.
+    assert len(nx.cycle_basis(track_graph)) == 1
+    dead_ends = {n for n, d in track_graph.degree() if d == 1}
+    assert {_point(maze, "start"), _point(maze, "goal")} <= dead_ends
+
+
+def test_seven_blind_alleys_hold_the_six_cul_de_sacs(maze, floor, track_graph):
+    regions = maze.env_2d.regions
+    blinds = [f"blind_{k}" for k in range(1, 8)]
+    assert [name for name in regions if name.startswith("blind_")] == blinds
+    ends = {n for n, d in track_graph.degree() if d == 1} - {
+        _point(maze, "start"),
+        _point(maze, "goal"),
+    }
+    for name in blinds:
+        alley = regions[name].data
+        assert regions[name].kind == "polygon"
+        assert floor.covers(alley)
+        held = [end for end in ends if alley.covers(Point(end))]
+        # Alley 4 leads round the centre to the choice point of alley 5.
+        assert len(held) == (0 if name == "blind_4" else 1), name
+
+
+def test_shortest_route_avoids_every_blind_alley(maze, track_graph):
+    route = nx.shortest_path(
+        track_graph, _point(maze, "start"), _point(maze, "goal"), weight="length"
+    )
+    line = LineString(route)
+    for k in range(1, 8):
+        assert line.intersection(maze.env_2d.regions[f"blind_{k}"].data).length == 0
+
+
+def test_include_track_false_has_no_track():
+    assert make_hampton_court_maze(include_track=False).env_track is None
+
+
+def test_custom_dims_scale_the_frame():
+    dims = HamptonCourtDims(width=200.0, height=150.0, corridor_width=8.0)
+    floor = make_hampton_court_maze(dims, include_track=False).env_2d.arena
+    np.testing.assert_allclose(
+        floor.polygonal_domain().bounds, (-100, -75, 100, 75), atol=1e-9
+    )
 
-        maze = make_hampton_court_maze()
-        assert isinstance(maze, MazeEnvironments)
-
-    def test_env_2d_is_valid_environment(self):
-        """env_2d should be a valid, fitted Environment."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze()
-        # Should have n_bins > 0 if fitted
-        assert maze.env_2d.n_bins > 0
-
-    def test_env_2d_has_correct_units(self):
-        """env_2d should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze()
-        assert maze.env_2d.units == "cm"
-
-    def test_env_2d_has_approximate_size(self):
-        """env_2d should have approximate 300 × 300 cm spatial extent."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            HamptonCourtDims,
-            make_hampton_court_maze,
-        )
-
-        dims = HamptonCourtDims(size=300.0)
-        maze = make_hampton_court_maze(dims=dims)
-
-        # Get spatial extent from bin_centers
-        bin_centers = maze.env_2d.bin_centers
-        x_min, x_max = bin_centers[:, 0].min(), bin_centers[:, 0].max()
-        y_min, y_max = bin_centers[:, 1].min(), bin_centers[:, 1].max()
-
-        # Both X and Y extents should be roughly 300 cm
-        x_extent = x_max - x_min
-        y_extent = y_max - y_min
-
-        # Allow for some tolerance (corridors might not reach exact edges)
-        assert x_extent > 200.0  # At least 200 cm wide
-        assert y_extent > 200.0  # At least 200 cm tall
-        assert x_extent < 400.0  # Not larger than 400 cm
-        assert y_extent < 400.0  # Not larger than 400 cm
-
-    def test_env_2d_has_start_region(self):
-        """env_2d should have a 'start' region at edge."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze()
-        assert "start" in maze.env_2d.regions
-
-    def test_env_2d_has_goal_region(self):
-        """env_2d should have a 'goal' region at center."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze()
-        assert "goal" in maze.env_2d.regions
-
-    def test_start_region_is_point(self):
-        """Start region should be a point region."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze()
-        start = maze.env_2d.regions["start"]
-        assert start.kind == "point"
-
-    def test_goal_region_is_point(self):
-        """Goal region should be a point region."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze()
-        goal = maze.env_2d.regions["goal"]
-        assert goal.kind == "point"
-
-    def test_goal_region_near_center(self):
-        """Goal region should be near the center of the maze."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            HamptonCourtDims,
-            make_hampton_court_maze,
-        )
-
-        dims = HamptonCourtDims(size=300.0)
-        maze = make_hampton_court_maze(dims=dims)
-
-        goal = maze.env_2d.regions["goal"]
-        goal_pos = goal.data
-
-        # Goal should be near the center (0, 0) with some tolerance
-        assert abs(goal_pos[0]) < 50.0  # Within 50 cm of center X
-        assert abs(goal_pos[1]) < 50.0  # Within 50 cm of center Y
-
-    def test_include_track_true_creates_env_track(self):
-        """include_track=True should create env_track."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=True)
-        assert maze.env_track is not None
-
-    def test_include_track_false_no_env_track(self):
-        """include_track=False should result in env_track=None."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=False)
-        assert maze.env_track is None
-
-    def test_env_track_is_1d(self):
-        """env_track should be a 1D linearized environment."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.is_linearized_track
-
-    def test_env_track_is_connected(self):
-        """Track graph should be connected."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # The underlying graph should be connected
-        assert nx.is_connected(maze.env_track.connectivity)
-
-    def test_env_track_has_correct_units(self):
-        """env_track should have units set to 'cm'."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=True)
-        assert maze.env_track is not None
-        assert maze.env_track.units == "cm"
-
-    def test_custom_bin_size(self):
-        """Custom bin_size should affect discretization."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            HamptonCourtDims,
-            make_hampton_court_maze,
-        )
-
-        dims = HamptonCourtDims()
-
-        maze_fine = make_hampton_court_maze(dims=dims, bin_size=1.0)
-        maze_coarse = make_hampton_court_maze(dims=dims, bin_size=5.0)
-
-        # Finer bins should result in more bins
-        assert maze_fine.env_2d.n_bins > maze_coarse.env_2d.n_bins
-
-    def test_custom_dims(self):
-        """Custom dimensions should be respected."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            HamptonCourtDims,
-            make_hampton_court_maze,
-        )
-
-        dims = HamptonCourtDims(size=400.0, corridor_width=15.0)
-        maze = make_hampton_court_maze(dims=dims)
-
-        # Check that bin_centers span approximately the expected range
-        bin_centers = maze.env_2d.bin_centers
-        x_extent = bin_centers[:, 0].max() - bin_centers[:, 0].min()
-        y_extent = bin_centers[:, 1].max() - bin_centers[:, 1].min()
-
-        # Should be larger than default (300 cm)
-        assert x_extent > 250.0  # Larger than 250 cm
-        assert y_extent > 250.0  # Larger than 250 cm
-
-    def test_none_dims_uses_defaults(self):
-        """dims=None should use default dimensions."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            HamptonCourtDims,
-            make_hampton_court_maze,
-        )
-
-        maze_default = make_hampton_court_maze(dims=None)
-        maze_explicit = make_hampton_court_maze(dims=HamptonCourtDims())
-
-        # Both should have similar number of bins
-        assert maze_default.env_2d.n_bins == maze_explicit.env_2d.n_bins
-
-
-class TestHamptonCourtTrackGraph:
-    """Tests for the track graph structure of Hampton Court Maze."""
-
-    def test_track_nodes_have_positions(self):
-        """All track graph nodes should have position attributes."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=True)
-        assert maze.env_track is not None
-
-        # Each node should have a 'pos' attribute
-        for node in maze.env_track.connectivity.nodes():
-            assert "pos" in maze.env_track.connectivity.nodes[node]
-
-    def test_track_covers_maze_extent(self):
-        """Track should cover the Hampton Court Maze extent."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            HamptonCourtDims,
-            make_hampton_court_maze,
-        )
-
-        dims = HamptonCourtDims(size=300.0)
-        maze = make_hampton_court_maze(dims=dims, include_track=True)
-        assert maze.env_track is not None
-
-        # Get the positions of all nodes
-        graph = maze.env_track.connectivity
-        positions = np.array([graph.nodes[n]["pos"] for n in graph.nodes()])
-
-        # Both X and Y extents should be substantial
-        x_extent = positions[:, 0].max() - positions[:, 0].min()
-        y_extent = positions[:, 1].max() - positions[:, 1].min()
-
-        # At least 50% of the size
-        assert x_extent >= dims.size * 0.5
-        assert y_extent >= dims.size * 0.5
-
-    def test_path_from_start_to_goal_exists(self):
-        """There should be a path from start to goal in the track graph."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=True)
-        assert maze.env_track is not None
-
-        graph = maze.env_track.connectivity
-
-        # Find nodes closest to start and goal regions
-        start_region = maze.env_2d.regions["start"]
-        goal_region = maze.env_2d.regions["goal"]
-
-        start_pos = start_region.data
-        goal_pos = goal_region.data
-
-        # Find nearest nodes
-        positions = {n: graph.nodes[n]["pos"] for n in graph.nodes()}
-
-        start_node = min(
-            positions.keys(),
-            key=lambda n: np.linalg.norm(np.array(positions[n]) - np.array(start_pos)),
-        )
-        goal_node = min(
-            positions.keys(),
-            key=lambda n: np.linalg.norm(np.array(positions[n]) - np.array(goal_pos)),
-        )
-
-        # There should be a path between them
-        assert nx.has_path(graph, start_node, goal_node)
-
-    def test_maze_has_multiple_paths_complexity(self):
-        """Hampton Court maze should have multiple dead ends (complex structure)."""
-        from neurospatial.simulation.mazes.hampton_court import (
-            make_hampton_court_maze,
-        )
-
-        maze = make_hampton_court_maze(include_track=True)
-        assert maze.env_track is not None
-
-        graph = maze.env_track.connectivity
-
-        # Count nodes with degree 1 (dead ends)
-        dead_ends = [n for n in graph.nodes() if graph.degree(n) == 1]
-
-        # Hampton Court maze should have at least 3 dead ends
-        # (start, goal, and at least one other dead end to show complexity)
-        assert len(dead_ends) >= 3
+
+def test_frame_too_small_for_the_galleries_raises():
+    with pytest.raises(ValueError, match="cannot hold 18 x 14 galleries"):
+        make_hampton_court_maze(HamptonCourtDims(width=150.0))
+
+
+def test_bins_coarser_than_the_walls_warn():
+    with pytest.warns(UserWarning, match="walls of the Hampton Court maze"):
+        make_hampton_court_maze(bin_size=4.0, include_track=False)
