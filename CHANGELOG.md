@@ -22,6 +22,10 @@
 - Snapshot sampled rows and decoded frames before retaining them or handing
   them to a renderer, so lazy readers that reuse scratch buffers cannot change
   already-sampled observations.
+- Reduce redundant field copies and statistics scans, reuse prepared event
+  clocks during rendering, and export notebook RGB frames without decoding
+  their display PNGs. Share field-support, event-alignment and heading-color
+  rules across consumers.
 - Isolate native compatibility hooks, use napari's current canvas/scene APIs,
   and carry physical units on owned layers. Check fastplotlib's supported widget
   capabilities before allocation. Add a reproducible real-backend benchmark

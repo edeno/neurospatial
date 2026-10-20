@@ -313,10 +313,14 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
     container = widgets.VBox([image, widgets.HBox([play, slider])])
     updating = False
     close_container = container.close
+    capture_frames: list[NDArray[np.uint8]] | None = None
 
     def seek(time: float) -> None:
         nonlocal updating
-        image.value = _png(animation.render_frame(time, dpi=dpi, figsize=figsize))
+        frame = animation.render_frame(time, dpi=dpi, figsize=figsize)
+        image.value = _png(frame)
+        if capture_frames is not None:
+            capture_frames[:] = [frame]
         updating = True
         try:
             slider.value = time
@@ -350,21 +354,22 @@ def _notebook_view(animation: Animation, **kwargs: Any) -> AnimationView:
     def capture_session() -> Iterator[Callable[[float], NDArray[np.uint8]]]:
         # Controls are outside the scientific image; the exported frames use
         # precisely the resolution and panels currently displayed.
-        from PIL import Image
-
+        nonlocal capture_frames
         time, playing = view.time, play.playing
         play.playing = False
+        previous_frames, capture_frames = capture_frames, []
 
         def capture(time: float) -> NDArray[np.uint8]:
             view.seek(time)
-            frame: NDArray[np.uint8] = np.asarray(
-                Image.open(io.BytesIO(image.value)).convert("RGB"), dtype=np.uint8
-            ).copy()
-            return frame
+            # Hand off the owned RGB frame used by the lossless display PNG;
+            # retain no extra image between captures or outside this session.
+            assert capture_frames is not None
+            return capture_frames.pop()
 
         try:
             yield capture
         finally:
+            capture_frames = previous_frames
             if view._closed or animation._closed or animation._closing:
                 play.playing = False
             else:

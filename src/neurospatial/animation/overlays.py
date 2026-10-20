@@ -4822,6 +4822,17 @@ def _snapshot_internal_overlay(data: Any) -> Any:
     return copy.deepcopy(data, memo)
 
 
+def _reindex_events(events: EventData, clock: NDArray[np.float64]) -> None:
+    """Clip owned event records and remap their indices onto a validated clock."""
+    for name, times in events.event_times.items():
+        keep = (times >= clock[0]) & (times <= clock[-1])
+        events.event_times[name] = times[keep].copy()
+        events.event_positions[name] = events.event_positions[name][keep].copy()
+        events.event_frame_indices[name] = np.clip(
+            np.searchsorted(clock, times[keep]), 0, len(clock) - 1
+        ).astype(np.int_)
+
+
 def _validate_prepared_samples(
     data: Any, conversion_times: NDArray[np.float64]
 ) -> None:
@@ -5162,15 +5173,7 @@ def _convert_overlays_to_data(
                         internal_data.times, frame_times + half
                     )
                 elif isinstance(internal_data, EventData):
-                    for name, times in internal_data.event_times.items():
-                        keep = (times >= frame_times[0]) & (times <= frame_times[-1])
-                        internal_data.event_times[name] = times[keep].copy()
-                        internal_data.event_positions[name] = (
-                            internal_data.event_positions[name][keep].copy()
-                        )
-                        internal_data.event_frame_indices[name] = np.clip(
-                            np.searchsorted(frame_times, times[keep]), 0, n_frames - 1
-                        ).astype(np.int_)
+                    _reindex_events(internal_data, frame_times)
 
             # Dispatch to appropriate list based on return type
             if isinstance(internal_data, PositionData):
@@ -5379,16 +5382,8 @@ def _realign_prepared_overlays(
                 indices[valid_indices]
             ]
             target_video.times = None
-    for source_event, target_event in zip(prepared.events, result.events, strict=True):
-        for name, times in source_event.event_times.items():
-            keep = (times >= clock[0]) & (times <= clock[-1])
-            target_event.event_times[name] = times[keep].copy()
-            target_event.event_positions[name] = source_event.event_positions[name][
-                keep
-            ].copy()
-            target_event.event_frame_indices[name] = np.clip(
-                np.searchsorted(clock, times[keep]), 0, len(clock) - 1
-            ).astype(np.int_)
+    for events in result.events:
+        _reindex_events(events, clock)
     for series in result.timeseries:
         half = series.window_seconds / 2
         series.start_indices = np.searchsorted(series.times, clock - half)

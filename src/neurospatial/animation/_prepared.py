@@ -173,9 +173,9 @@ class PreparedScene:
             ]
         else:
             with self.source_lock:
-                # Indexable lazy adapters may reuse a scratch buffer. Retain
-                # an owned snapshot before another source read overwrites it.
-                values = np.array(field[index], copy=True)
+                # AnimationField owns the sampled row before another source
+                # read can overwrite a lazy adapter's scratch buffer.
+                values = cast("np.ndarray", field[index])
         if values.nbytes <= self._row_budget:
             while self._rows and (
                 len(self._rows) >= 4096
@@ -191,16 +191,8 @@ class PreparedScene:
         """Hold one row per stream without rereading a slow source each tick."""
         samples = {}
         for name, field in self.scene.fields.items():
-            index = int(np.searchsorted(field.times, time, side="right")) - 1
-            supported = (
-                index >= 0
-                and field.sample_valid[index]
-                and (
-                    field.times[index] == time
-                    or (index < len(field) - 1 and field.interval_valid[index])
-                )
-            )
-            if supported:
+            index = field._sample_index(time)
+            if index is not None:
                 previous = self._held.get(id(field))
                 if previous is None or previous[0] != index:
                     previous = (index, self._field_row(field, index))

@@ -19,7 +19,11 @@ import numpy as np
 
 from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
-from neurospatial.animation._style import _heading_displacement, _rate_opacity
+from neurospatial.animation._style import (
+    _head_direction_color,
+    _heading_displacement,
+    _rate_opacity,
+)
 from neurospatial.animation.backends._napari_compat import (
     canvas_grid,
     canvas_overlay,
@@ -680,9 +684,8 @@ class NapariScene:
                 if direction is not None and np.isfinite(origin).all():
                     layer.data = np.array([[origin[::-1], direction[::-1]]])
                     if h.color in colormaps:
-                        angle = np.arctan2(direction[1], direction[0])
                         layer.edge_color = np.asarray(
-                            colormaps[h.color]((angle % (2 * np.pi)) / (2 * np.pi))
+                            _head_direction_color(h.color, direction)
                         )
                 else:
                     layer.data = np.empty((0, 2, dims))

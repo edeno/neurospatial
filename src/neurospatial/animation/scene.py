@@ -209,6 +209,13 @@ class AnimationField:
         time = float(time)
         if not np.isfinite(time):
             raise ValueError("time must be finite seconds.")
+        index = self._sample_index(time)
+        if index is not None:
+            return cast("np.ndarray", self[index])
+        return np.full(self.n_bins, np.nan)
+
+    def _sample_index(self, time: float) -> int | None:
+        """The held source row within support, or None for a missing sample."""
         index = int(np.searchsorted(self.times, time, side="right")) - 1
         if (
             index >= 0
@@ -218,23 +225,31 @@ class AnimationField:
                 or (index < len(self.times) - 1 and self.interval_valid[index])
             )
         ):
-            return cast("np.ndarray", self[index])
-        return np.full(self.n_bins, np.nan)
+            return index
+        return None
 
     def color_limits(self) -> tuple[float, float]:
         """Return stable display limits, reading at most 100 source rows."""
         if self._limits is None and self.vmin is not None and self.vmax is not None:
             object.__setattr__(self, "_limits", (self.vmin, self.vmax))
         if self._limits is None:
-            from neurospatial.animation._field_stats import animation_colormap_range
-
-            rows = self._scale_rows()
-            object.__setattr__(
-                self, "_limits", animation_colormap_range(rows, self.vmin, self.vmax)
+            from neurospatial.animation._field_stats import (
+                frame_extremes,
+                robust_limits,
+                typical_peak,
             )
-            from neurospatial.animation._field_stats import frame_extremes, typical_peak
 
-            object.__setattr__(self, "_peak", typical_peak(frame_extremes(rows)[1]))
+            lows, highs = frame_extremes(self._scale_rows())
+            low, high = robust_limits(lows, highs)
+            object.__setattr__(
+                self,
+                "_limits",
+                (
+                    low if self.vmin is None else self.vmin,
+                    high if self.vmax is None else self.vmax,
+                ),
+            )
+            object.__setattr__(self, "_peak", typical_peak(highs))
         assert self._limits is not None
         return self._limits
 

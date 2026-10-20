@@ -10,6 +10,7 @@ import numpy as np
 
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import (
+    _head_direction_color,
     _heading_displacement,
     _marker_area,
     _rate_opacity,
@@ -273,8 +274,6 @@ class SceneRenderer:
         draw_track_panel(ax, self.prepared, name, field, time, colorbar=colorbar)
 
     def _spatial(self, ax: Any, time: float) -> None:
-        from matplotlib import colormaps
-
         from neurospatial.animation._parallel import _render_regions_matplotlib
         from neurospatial.animation._style import _event_visibility
 
@@ -385,12 +384,7 @@ class SceneRenderer:
                 sampled_heading, heading.length, n_dims=len(point)
             )
             if direction is not None and np.isfinite(point).all():
-                angle = float(np.arctan2(direction[1], direction[0]))
-                color = (
-                    colormaps[heading.color]((angle % (2 * np.pi)) / (2 * np.pi))
-                    if heading.color in colormaps
-                    else heading.color
-                )
+                color = _head_direction_color(heading.color, direction)
                 if len(point) == 3:
                     ax.quiver(
                         *point,
@@ -438,18 +432,14 @@ class SceneRenderer:
                     )
         for events in data.events:
             for name, positions in events.event_positions.items():
-                event_times = events.event_times.get(name)
-                if event_times is None:
-                    event_times = scene.frame_times[events.event_frame_indices[name]]
+                event_times, event_indices = self.prepared.event_clocks[
+                    id(events), name
+                ]
                 # Event persistence uses the complete scene clock, so a selected
                 # export does not reset the age of an earlier event.
                 frame = int(np.searchsorted(scene.frame_times, time, side="right")) - 1
                 visible, alphas = _event_visibility(
-                    np.maximum(
-                        np.searchsorted(scene.frame_times, event_times, side="right")
-                        - 1,
-                        0,
-                    ),
+                    event_indices,
                     frame,
                     events.decay_frames,
                 )
