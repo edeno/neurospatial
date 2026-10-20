@@ -104,7 +104,13 @@ inspector.close()                      # controls; the scene is still reusable
 scene.close()                          # all views, controls, figures and owned readers
 ```
 
-`pd.read_json("review.json", orient="table")` restores the typed event table.
+`events_table()` preserves column dtypes, categorical levels and `DataFrame.attrs`,
+and returns an independent copy, including nested metadata. JSON uses pandas'
+table schema, read with `pd.read_json("review.json", orient="table")`. Export
+checks that IDs survive that round trip unchanged before creating or replacing
+the file. Composite IDs such as tuples remain valid for inspection and CSV
+export; encode them explicitly as scalar strings before JSON export. JSON does
+not retain `DataFrame.attrs`.
 Annotations use an `annotation_` prefix, so reviewing an event cannot overwrite
 an analysis score. Export refuses existing files unless `overwrite=True`.
 
@@ -162,6 +168,10 @@ Field metadata is immutable. To change a field's clock, support or color
 settings, create a new `AnimationField`; scenes snapshot this metadata without
 copying the spatial values. Track panels use each field's own observed
 intervals even when `frame_times` selects a coarser scene clock.
+Both scene and native-view exports correct floating-point timing roundoff
+against field and overlay clocks. An export frame landing within four float64
+steps of an observation can use its exact timestamp, preserving isolated
+samples beside recording gaps. Selected export windows remain half-open.
 Use `AnimationField(..., epochs=recording_windows)` to declare half-open
 recording windows. Exact samples outside those windows are missing, and a
 held interval must lie entirely within one window. `Animation.from_decoding`
@@ -180,9 +190,11 @@ a tracking gap keeps its time but has an unknown position, so no spatial marker
 is drawn for it. Explicit fixed event locations are unaffected.
 `PositionOverlay(units=..., frame=...)` and `BodypartOverlay(units=..., frame=...)`
 validate supplied coordinate metadata against the environment and ask for an
-explicit transform when it differs. NWB position adapters forward units; pose
-adapters also retain the declared reference frame and require matching bodypart
-clocks and spatial metadata. Changing metadata labels does not transform data.
+explicit transform when it differs. NWB position and pose adapters retain
+declared units and reference frames; keyword overrides cannot erase or replace
+known declarations. Equivalent unit spellings are accepted. Pose adapters also
+require matching bodypart clocks and spatial metadata. Changing metadata labels
+does not transform data.
 Zero heading vectors, including those produced halfway between opposite vector
 observations, have no defined direction and draw no arrow in any backend.
 `SpikeRasterOverlay(rates=rate_result)`

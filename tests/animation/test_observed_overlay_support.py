@@ -228,18 +228,16 @@ def test_file_video_processing_uses_actual_resized_dimensions(env, monkeypatch):
     assert data._owns_reader
 
 
-def test_nwb_adapter_keeps_declared_position_units(monkeypatch):
-    from types import SimpleNamespace
-
-    from neurospatial.io.nwb import _behavior
+@pytest.mark.parametrize("frame", [None, "camera"])
+def test_nwb_adapter_keeps_declared_position_units(monkeypatch, frame):
+    from neurospatial.io.nwb import NWBPosition, _behavior
     from neurospatial.io.nwb._overlays import position_overlay_from_nwb
 
-    sample = SimpleNamespace(
-        positions=np.array([[1.0, 2.0]]), times=np.array([0.0]), units="m"
-    )
+    sample = NWBPosition(np.array([0.0]), np.array([[1.0, 2.0]]), "m", frame=frame)
     monkeypatch.setattr(_behavior, "read_position", lambda *args, **kwargs: sample)
     overlay = position_overlay_from_nwb(object())
     assert overlay.units == "m"
+    assert overlay.frame == frame
     np.testing.assert_array_equal(overlay.positions, sample.positions)
 
 

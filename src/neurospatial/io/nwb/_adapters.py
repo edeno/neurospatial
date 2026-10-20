@@ -52,6 +52,50 @@ def position_units_from_series(series: Any) -> str | None:
     return _NWB_UNIT_ALIASES.get(declaration.strip().lower(), declaration)
 
 
+def position_frame_from_series(series: Any) -> str | None:
+    """Preserve a nonempty reference-frame description without interpretation."""
+    frame = getattr(series, "reference_frame", None)
+    return str(frame) if frame is not None and str(frame).strip() else None
+
+
+def merge_overlay_coordinate_metadata(
+    units: str | None,
+    frame: str | None,
+    kwargs: dict[str, Any],
+    *,
+    context: str,
+    source: str,
+) -> dict[str, str | None]:
+    """Consume overlay declarations, allowing only absent metadata to be supplied.
+
+    Known declarations cannot be erased or relabeled: equivalent unit aliases
+    are accepted, while frame descriptions must agree verbatim. Coordinates
+    are never transformed or rescaled by a metadata override.
+    """
+    from neurospatial._units import normalize_position_units
+
+    declarations: dict[str, str | None] = {"units": units, "frame": frame}
+    for name, known in declarations.items():
+        if name not in kwargs:
+            continue
+        requested = kwargs.pop(name)
+        equivalent = requested == known
+        if name == "units" and requested is not None and known is not None:
+            equivalent = normalize_position_units(
+                requested
+            ) == normalize_position_units(known)
+        if known is not None and not equivalent:
+            raise ValueError(
+                f"{context} {name} {requested!r} conflicts with NWB {source} "
+                f"{name} {known!r}. Fix: explicitly convert the source coordinates "
+                "before constructing the overlay; metadata cannot relabel or "
+                "rescale coordinates."
+            )
+        if known is None:
+            declarations[name] = requested
+    return declarations
+
+
 def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     """
     Extract timestamps from a time series-like object.

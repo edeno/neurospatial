@@ -269,3 +269,43 @@ Validation against the feature worktree:
 - Ruff/formatting pass for all 15 changed Python files; mypy passes all
   **306 source files**. An independent agent review found no additional
   actionable issues in the integrated fixes.
+
+## Position metadata, export clocks and event-table contracts
+
+All four findings from the subsequent boundary review are addressed:
+
+- `NWBPosition.frame` preserves nonempty reference-frame descriptions in eager
+  and lazy reads. The new option is keyword-only, preserving the original
+  three-argument constructor. Position and pose adapters share metadata merging:
+  callers can supply missing declarations or equivalent unit spellings, but
+  cannot erase or relabel known coordinates. Lazy reads retain source handles.
+- Scene and native-view exports share an iterator over prepared field and
+  overlay clocks, including custom adapters, inherited clocks, video, signals,
+  point events, spikes and epoch endpoints. Export arithmetic snaps only within
+  four ULPs; arbitrary-time scientific sampling stays strict and export stops
+  remain excluded. Empty clocks are safe, and unordered point/interval clocks
+  use bounded chunks. Exact source-clock queries retain precedence when distinct
+  nearby float timestamps cannot share one exact output time.
+- Independent event-table snapshots preserve column dtypes, categorical levels,
+  nullable data, nested object values and `DataFrame.attrs`. Mapping inputs retain
+  original ID types before pandas inference, so mixed large integers and floats
+  remain selectable by their original identities.
+- JSON retains pandas' table format and preflights an actual read-back before
+  opening the destination. IDs must retain their exact value and scalar family;
+  composite or precision-losing IDs fail with conversion guidance. Tuple IDs
+  remain valid for inspection and CSV. Both serializers finish before opening
+  output, preserving existing files on serialization failure.
+
+Three GPT-6.1 Sol agents implemented these changes and reviewed one another's
+boundaries. Cross-review also identified an extended-precision NumPy ID error
+that now receives the same actionable JSON preflight message.
+
+Validation against the feature worktree:
+
+- Broad animation, environment integration, API and argument contracts:
+  **1,653 passed, 6 skipped, 200 deselected**.
+- Full NWB suite and executable documentation: **675 passed, 9 deselected**.
+- Native Metal fastplotlib capture: **8 passed**; native Cocoa napari scene
+  capture and closure: **3 passed**.
+- Ruff and formatting pass for all **14 changed Python files**; mypy passes
+  all **306 source files**.

@@ -6,7 +6,8 @@ sources and derives only the requested time window; it owns no canvas or reader.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from itertools import chain
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import numpy as np
@@ -29,6 +30,47 @@ class TrackWindow(NamedTuple):
     polygons: np.ndarray
     values: np.ndarray
     positions: list[tuple[np.ndarray, str]]
+
+
+def _ordered_clock_chunks(clock: np.ndarray) -> Iterator[np.ndarray]:
+    """Search point/interval records without sorting a whole recording copy."""
+    for start in range(0, len(clock), 65_536):
+        chunk = clock[start : start + 65_536]
+        # Event records need not be chronological, including adapter outputs.
+        # Already ordered clocks remain views of their authoritative arrays.
+        yield chunk if np.all(chunk[1:] >= chunk[:-1]) else np.sort(chunk)
+
+
+def iter_observation_clocks(scene: Animation) -> Iterator[np.ndarray]:
+    """Yield prepared source clocks for export's ULP-only time correction.
+
+    Read converted streams so custom adapters' clocks and inherited scene
+    clocks agree with rendering. No renderer, source values, decoder reads or
+    combined recording-sized clock are needed. Point and interval records may
+    be unordered; search bounded ordered chunks without reordering the records.
+    """
+    for field in scene.fields.values():
+        yield field.times
+    data = scene._overlay_data
+    sampled: Iterator[Any] = chain(
+        data.positions,
+        data.bodypart_sets,
+        data.head_directions,
+        data.object_vectors,
+        data.videos,
+        data.timeseries,
+    )
+    for item in sampled:
+        yield scene.frame_times if item.times is None else item.times
+    for events in data.events:
+        for clock in events.event_times.values():
+            yield from _ordered_clock_chunks(clock)
+    for raster in data.spike_rasters:
+        for clock in raster.spike_times:
+            yield from _ordered_clock_chunks(clock)
+    for epochs in data.epochs:
+        for column in range(2):
+            yield from _ordered_clock_chunks(epochs.intervals[:, column])
 
 
 def projected_field_limits(

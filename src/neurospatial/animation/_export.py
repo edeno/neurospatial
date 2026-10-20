@@ -6,6 +6,7 @@ import os
 import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 from typing import Any, cast
 
@@ -89,7 +90,13 @@ def prepare_export(
     codec: str | None = None,
     sample_times: Iterable[NDArray[np.float64]] = (),
 ) -> _ExportPlan:
-    """Validate export before touching a viewer and select ``[start, stop)``."""
+    """Validate export before touching a viewer and select ``[start, stop)``.
+
+    Correct arithmetic roundoff to the nearest observation within four ULPs.
+    Exact queries stay exact; ties prefer the scene clock, then earlier clocks
+    in ``sample_times``. Distinct nearby source floats cannot all be exact at
+    one shared export time.
+    """
     if not np.isfinite(fps) or fps <= 0 or not np.isfinite(speed) or speed <= 0:
         raise ValueError("fps and speed must be positive finite numbers.")
     path = Path(path)
@@ -128,7 +135,9 @@ def prepare_export(
     snapped = times.copy()
     best_distance = np.full(times.shape, np.inf)
     tolerance = 4 * np.abs(np.spacing(times))
-    for clock in (source_times, *sample_times):
+    for clock in chain((source_times,), sample_times):
+        if not len(clock):
+            continue
         right = np.searchsorted(clock, times)
         for index in (np.maximum(right - 1, 0), np.minimum(right, len(clock) - 1)):
             candidate = clock[index]

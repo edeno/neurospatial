@@ -4,6 +4,16 @@
 
 ### Animation workflows
 
+- Preserve NWB position reference frames in eager and lazy reads. Position and
+  pose overlay adapters share validation that prevents keyword overrides from
+  erasing or relabeling declared coordinate units and frames.
+- Correct export timing roundoff against prepared overlay clocks as well as
+  field clocks, retaining isolated observations beside recording gaps in scene
+  exports and native-view capture.
+- Preserve event-table dtypes, categorical levels, nested metadata and original
+  IDs when taking independent snapshots. JSON export verifies that IDs survive
+  pandas' table-format round trip before creating or replacing a file; composite
+  IDs remain supported for in-memory inspection and CSV export.
 - Validate every NWB pose bodypart's clock and spatial metadata before sharing
   a time axis. Pose overlays retain declared units and reference frames and
   reject mismatches with the environment without silently relabeling coordinates.

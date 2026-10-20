@@ -47,12 +47,19 @@ def position_overlay_from_nwb(
     trail_length : int, default 0
         Number of previous positions to show as trail.
     **kwargs
-        Additional arguments passed to PositionOverlay.
+        Additional arguments passed to PositionOverlay. ``units`` and ``frame``
+        may supply undeclared coordinate metadata; known NWB declarations
+        cannot be erased or overridden with conflicting declarations.
 
     Returns
     -------
     PositionOverlay
         Overlay with position data and timestamps from NWB.
+
+    Raises
+    ------
+    ValueError
+        If a keyword coordinate declaration conflicts with NWB metadata.
 
     Examples
     --------
@@ -67,6 +74,7 @@ def position_overlay_from_nwb(
     ... )  # doctest: +SKIP
     """
     from neurospatial.animation.overlays import PositionOverlay
+    from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
     from neurospatial.io.nwb._behavior import read_position
 
     # Read position data from NWB
@@ -77,12 +85,20 @@ def position_overlay_from_nwb(
     )
     positions = position_data.positions
     timestamps = position_data.times
+    declarations = merge_overlay_coordinate_metadata(
+        position_data.units,
+        position_data.frame,
+        kwargs,
+        context="PositionOverlay",
+        source="position",
+    )
 
     # Create and return PositionOverlay
     return PositionOverlay(
         positions=positions,
         times=timestamps,
-        units=kwargs.pop("units", position_data.units),
+        units=declarations["units"],
+        frame=declarations["frame"],
         color=color,
         size=size,
         trail_length=trail_length,
@@ -152,8 +168,8 @@ def bodypart_overlay_from_nwb(
     ...     colors={"nose": "yellow", "body": "red", "tail": "blue"},
     ... )
     """
-    from neurospatial._units import normalize_position_units
     from neurospatial.animation.overlays import BodypartOverlay
+    from neurospatial.io.nwb._adapters import merge_overlay_coordinate_metadata
     from neurospatial.io.nwb._pose import _read_pose_with_metadata
 
     # Read pose data from NWB
@@ -162,25 +178,9 @@ def bodypart_overlay_from_nwb(
         pose_estimation_name=pose_estimation_name,
     )
 
-    # NWB reference_frame is descriptive text. Preserve it verbatim rather
-    # than inferring a coordinate transform or a standardized frame name.
-    declarations = {"units": units, "frame": frame}
-    for name, known in declarations.items():
-        if name not in kwargs:
-            continue
-        requested = kwargs.pop(name)
-        equivalent = requested == known
-        if name == "units" and requested is not None and known is not None:
-            equivalent = normalize_position_units(requested) == known
-        if known is not None and not equivalent:
-            raise ValueError(
-                f"BodypartOverlay {name} {requested!r} conflicts with NWB pose "
-                f"{name} {known!r}. Fix: explicitly convert the source coordinates "
-                "before constructing the overlay; metadata cannot relabel or "
-                "rescale coordinates."
-            )
-        if known is None:
-            declarations[name] = requested
+    declarations = merge_overlay_coordinate_metadata(
+        units, frame, kwargs, context="BodypartOverlay", source="pose"
+    )
 
     # Create and return BodypartOverlay
     return BodypartOverlay(

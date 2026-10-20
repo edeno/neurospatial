@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import html
 from collections.abc import Mapping, Sequence
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,30 @@ from numpy.typing import ArrayLike
 if TYPE_CHECKING:
     from neurospatial.animation._view import AnimationView
     from neurospatial.animation.scene import Animation
+
+
+def _copy_event_table(table: pd.DataFrame) -> pd.DataFrame:
+    """Own nested metadata without asking pandas to infer column types again."""
+    result = table.copy(deep=True).reset_index(drop=True)
+    for column, dtype in enumerate(result.dtypes):
+        if pd.api.types.is_object_dtype(dtype):
+            for row in range(len(result)):
+                result.iat[row, column] = copy.deepcopy(result.iat[row, column])
+    result.attrs = copy.deepcopy(table.attrs)
+    return result
+
+
+def _id_scalar_family(value: Any) -> str | None:
+    """Allow native and NumPy JSON scalars, keeping bool distinct from int."""
+    if isinstance(value, (str, np.str_)):
+        return "string"
+    if isinstance(value, (bool, np.bool_)):
+        return "boolean"
+    if isinstance(value, (int, np.integer)):
+        return "integer"
+    if isinstance(value, (float, np.floating)) and np.isfinite(value):
+        return "real"
+    return None
 
 
 class EventInspector:
@@ -56,8 +81,19 @@ class EventInspector:
         columns = (id_column, start_column, stop_column)
         if len(set(columns)) != 3:
             raise ValueError("ID, start and stop columns must have different names.")
-        # pandas deep=True does not copy nested object-valued metadata.
-        table = pd.DataFrame(copy.deepcopy(pd.DataFrame(events).to_dict("list")))
+        if isinstance(events, pd.DataFrame):
+            table = _copy_event_table(events)
+        else:
+            # Give IDs an explicit object dtype before pandas can coalesce a
+            # mixed integer/float column and round a large integer ID.
+            records = list(events)
+            data: dict[str, Any] = {
+                name: [record.get(name) for record in records]
+                for name in dict.fromkeys(name for record in records for name in record)
+            }
+            if id_column in data:
+                data[id_column] = pd.Series(data[id_column], dtype=object)
+            table = _copy_event_table(pd.DataFrame(data))
         missing = set(columns) - set(table.columns)
         if missing:
             raise ValueError(f"Event records are missing columns: {sorted(missing)}.")
@@ -90,7 +126,7 @@ class EventInspector:
         self.animation = animation
         self.id_column, self.start_column, self.stop_column = columns
         self.padding = float(padding)
-        self._table = table.reset_index(drop=True)
+        self._table = table
         self._rows_by_id = {value: index for index, value in enumerate(ids)}
         self._visible = np.ones(len(table), dtype=bool)
         self._selected: Any = ids.iloc[0] if len(ids) else None
@@ -112,7 +148,7 @@ class EventInspector:
     def events_table(self, *, visible_only: bool = False) -> pd.DataFrame:
         """Return independent event records, analysis metadata and annotations."""
         rows = self._table.loc[self._visible] if visible_only else self._table
-        return pd.DataFrame(copy.deepcopy(rows.to_dict("list")))
+        return _copy_event_table(rows)
 
     def filter_events(self, mask: ArrayLike) -> EventInspector:
         """Show rows selected by a Boolean mask on the full ``events_table``."""
@@ -199,8 +235,14 @@ class EventInspector:
     ) -> Path:
         """Save event IDs, intervals, scores and annotations as CSV or table JSON.
 
-        JSON uses pandas' ``orient='table'`` schema for typed round trips:
-        ``pd.read_json(path, orient='table')``.
+        JSON uses pandas' ``orient='table'`` schema, readable with
+        ``pd.read_json(path, orient='table')``. IDs must round-trip with their
+        exact value and scalar family (string, Boolean, integer or finite
+        real; NumPy equivalents are accepted). Composite IDs, mixed numeric
+        columns that pandas coerces, and floats that lose precision are
+        rejected before opening the file. Encode such IDs explicitly as
+        strings for JSON, or retain them in memory with ``events_table()``.
+        CSV accepts composite IDs but does not preserve their Python types.
         """
         path = Path(path)
         if path.suffix.lower() not in {".csv", ".json"}:
@@ -210,12 +252,38 @@ class EventInspector:
             if self._selected is None:
                 raise ValueError("No event is selected.")
             table = table.loc[table[self.id_column].isin([self._selected])]
+        # Serialize and check identity before opening or truncating the file.
+        if path.suffix.lower() == ".csv":
+            serialized = table.to_csv(index=False)
+        else:
+            error = (
+                "Event IDs cannot round-trip exactly through pandas table JSON. "
+                "Use string, Boolean, integer or finite real IDs whose values "
+                "and scalar types survive pd.read_json(..., orient='table'); "
+                "encode composite IDs explicitly as strings or retain them "
+                "with events_table()."
+            )
+            ids = table[self.id_column].tolist()
+            if any(_id_scalar_family(value) is None for value in ids):
+                raise ValueError(error)
+            try:
+                serialized = table.to_json(
+                    orient="table", index=False, double_precision=15
+                )
+                restored_ids = pd.read_json(StringIO(serialized), orient="table")[
+                    self.id_column
+                ].tolist()
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(error) from exc
+            if len(ids) != len(restored_ids) or any(
+                _id_scalar_family(original) != _id_scalar_family(restored)
+                or original != restored
+                for original, restored in zip(ids, restored_ids, strict=True)
+            ):
+                raise ValueError(error)
         # Exclusive creation prevents a race from overwriting another review.
         with path.open("w" if overwrite else "x", encoding="utf-8") as stream:
-            if path.suffix.lower() == ".csv":
-                table.to_csv(stream, index=False)
-            else:
-                table.to_json(stream, orient="table", index=False)
+            stream.write(serialized)
         return path
 
     def show(self, *, backend: str = "widget", **kwargs: Any) -> Any:

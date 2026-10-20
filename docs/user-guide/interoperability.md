@@ -427,7 +427,7 @@ Read components explicitly. These readers return frozen, non-iterable holders:
 
 | Reader | Holder attributes |
 | --- | --- |
-| `read_position` | `NWBPosition.times`, `.positions`, `.units` |
+| `read_position` | `NWBPosition.times`, `.positions`, `.units`, `.frame` |
 | `read_head_direction` | `NWBHeadDirection.times`, `.headings` (radians) |
 | `read_units` | `NWBUnits.spike_times`, `.unit_ids`, `.obs_intervals`, `.spike_window` |
 
@@ -437,6 +437,12 @@ Other nonempty declarations remain visible; `None` means no unit was declared.
 Choose the physical unit explicitly in that case before creating an environment.
 `environment_from_position` retains its warned cm fallback when used without
 an explicit unit.
+Position reads also preserve nonempty `SpatialSeries.reference_frame`
+descriptions verbatim in `.frame`; `None` means no frame was declared. The
+`position_overlay_from_nwb` adapter forwards both units and frame and rejects
+keyword overrides that would erase or change a known declaration. Supply missing
+metadata explicitly, or transform the coordinates before using a different
+frame or physical unit. Equivalent unit spellings do not require conversion.
 
 `read_pose` returns `(bodyparts, times, skeleton)` and checks that every bodypart
 uses the same sample clock, units and reference frame. Different clocks must be

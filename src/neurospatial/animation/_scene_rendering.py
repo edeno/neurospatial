@@ -521,6 +521,7 @@ def export_scene(
 ) -> Path:
     """Stream complete scene frames to a file, replacing only on success."""
     from neurospatial.animation._export import prepare_export
+    from neurospatial.animation._prepared import iter_observation_clocks
 
     plan = prepare_export(
         path,
@@ -530,7 +531,7 @@ def export_scene(
         speed=speed,
         overwrite=overwrite,
         codec=codec,
-        sample_times=(field.times for field in scene.fields.values()),
+        sample_times=iter_observation_clocks(scene),
     )
     renderer = SceneRenderer(scene, dpi=dpi, figsize=figsize)
     try:

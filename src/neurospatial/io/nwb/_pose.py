@@ -16,6 +16,7 @@ from neurospatial._keyword_hint import keyword_hint
 from neurospatial._units import normalize_position_units
 from neurospatial.io.nwb._adapters import (
     data_from_series,
+    position_frame_from_series,
     position_units_from_series,
     require_unscaled_for_lazy,
     timestamps_from_series,
@@ -201,12 +202,7 @@ def _read_pose_with_metadata(
         series_units = position_units_from_series(series)
         if series_units is not None:
             series_units = normalize_position_units(series_units)
-        reference_frame = getattr(series, "reference_frame", None)
-        series_frame = (
-            str(reference_frame)
-            if reference_frame is not None and str(reference_frame).strip()
-            else None
-        )
+        series_frame = position_frame_from_series(series)
         for label, declared, shared in (
             ("units", series_units, units),
             ("reference_frame", series_frame, frame),

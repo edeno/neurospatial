@@ -56,6 +56,177 @@ def records():
     )
 
 
+def test_event_tables_preserve_schema_and_own_nested_metadata(recording, records):
+    records["trial_type"] = pd.Categorical(
+        ["run", "rest", "run"], categories=["rest", "run", "sleep"], ordered=True
+    )
+    records["trial_number"] = pd.Series([1, None, 3], dtype="Int64")
+    records["label"] = pd.Series(["one", None, "three"], dtype="string")
+    records.attrs = {"recording": {"units": ["seconds"]}}
+    records.index = pd.Index([4, 7, 9], name="source_row")
+    expected = records.copy(deep=True).reset_index(drop=True)
+    inspector = EventInspector(recording, records)
+    pd.testing.assert_frame_equal(inspector.events_table(), expected)
+
+    records.loc[4, "trial_type"] = "rest"
+    records.loc[4, "trial_number"] = 99
+    records.loc[4, "metadata"]["trial"].append(99)
+    records.attrs["recording"]["units"].append("changed")
+    result = inspector.events_table()
+    assert result.loc[0, "trial_type"] == "run"
+    assert result.loc[0, "trial_number"] == 1
+    assert result.loc[0, "metadata"] == {"trial": [1]}
+    assert result.attrs == {"recording": {"units": ["seconds"]}}
+
+    result.loc[0, "trial_type"] = "rest"
+    result.loc[0, "trial_number"] = 88
+    result.loc[0, "metadata"]["trial"].append(88)
+    result.attrs["recording"]["units"].append("also changed")
+    inspector.filter_events([False, True, True])
+    visible = inspector.events_table(visible_only=True)
+    assert visible.index.tolist() == [0, 1]
+    assert visible["trial_type"].dtype == expected["trial_type"].dtype
+    assert visible["trial_number"].dtype == expected["trial_number"].dtype
+    visible.loc[0, "metadata"]["trial"].append(77)
+    visible.attrs["recording"]["units"].append("visible changed")
+    owned = inspector.events_table()
+    assert owned.loc[0, "trial_type"] == "run"
+    assert owned.loc[0, "trial_number"] == 1
+    assert owned["metadata"].tolist() == [
+        {"trial": [1]},
+        {"trial": [1]},
+        {"trial": [2]},
+    ]
+    assert owned.attrs == {"recording": {"units": ["seconds"]}}
+
+
+@pytest.mark.parametrize("as_records", [False, True])
+def test_mixed_large_event_ids_preserve_identity(recording, as_records):
+    ids = [9007199254740993, 1.5]
+    records = pd.DataFrame(
+        {
+            "event_id": pd.Series(ids, dtype=object),
+            "start_time": [10.1, 10.4],
+            "stop_time": [10.3, 10.6],
+        }
+    )
+    inspector = EventInspector(
+        recording, records.to_dict("records") if as_records else records
+    )
+    result = inspector.events_table()
+    assert result["event_id"].dtype == object
+    assert result.event_id.tolist() == ids
+    assert isinstance(result.event_id.iloc[0], int)
+    inspector.select(ids[0])
+    assert inspector.selected_id == ids[0]
+    assert inspector.time_range() == pytest.approx((10.1, 10.3))
+    inspector.select(ids[1])
+    assert inspector.time_range() == pytest.approx((10.4, 10.6))
+    result.at[0, "event_id"] = "changed"
+    assert inspector.events_table().event_id.tolist() == ids
+
+
+def test_mapping_events_with_missing_ids_raise_actionable_error(recording):
+    records = [
+        {"event_id": "one", "start_time": 10.1, "stop_time": 10.3},
+        {"start_time": 10.4, "stop_time": 10.6},
+    ]
+    with pytest.raises(ValueError, match="nonmissing"):
+        EventInspector(recording, records)
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [
+        [1, 2, 3],
+        [9007199254740993, 9007199254740995, 9007199254740997],
+        ["a", "b", "c"],
+        [1.25, 2.5, 3.75],
+        [np.int64(1), np.int32(2), np.uint64(3)],
+        [np.str_("a"), np.str_("b"), np.str_("c")],
+        [np.float64(1.25), np.float32(2.5), np.float64(3.75)],
+    ],
+)
+def test_json_export_preserves_scalar_event_identity(recording, records, tmp_path, ids):
+    records["event_id"] = pd.Series(ids, dtype=object)
+    inspector = EventInspector(recording, records)
+    path = inspector.export_events(tmp_path / "review.json")
+    restored = pd.read_json(path, orient="table")
+    reloaded = EventInspector(recording, restored)
+    assert reloaded.events_table().event_id.tolist() == ids
+    reloaded.select(ids[1])
+    assert reloaded.time_range() == pytest.approx((10.2, 10.5))
+
+
+def test_json_export_accepts_boolean_ids(recording, records, tmp_path):
+    records = records.iloc[:2].copy()
+    records["event_id"] = pd.Series([np.bool_(True), np.bool_(False)], dtype=object)
+    inspector = EventInspector(recording, records)
+    path = inspector.export_events(tmp_path / "booleans.json")
+    assert pd.read_json(path, orient="table").event_id.tolist() == [True, False]
+
+
+@pytest.mark.parametrize(
+    "suffix, serializer", [(".csv", "to_csv"), (".json", "to_json")]
+)
+def test_event_serialization_failure_does_not_truncate_previous_review(
+    recording, records, tmp_path, monkeypatch, suffix, serializer
+):
+    inspector = EventInspector(recording, records)
+    path = tmp_path / f"review{suffix}"
+    path.write_text("previous review", encoding="utf-8")
+
+    def fail_serialization(*args, **kwargs):
+        raise ValueError("Cannot serialize review metadata")
+
+    monkeypatch.setattr(pd.DataFrame, serializer, fail_serialization)
+    message = "Event IDs cannot round-trip" if suffix == ".json" else "Cannot serialize"
+    with pytest.raises(ValueError, match=message):
+        inspector.export_events(path, overwrite=True)
+    assert path.read_text(encoding="utf-8") == "previous review"
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [
+        [("a", 1), ("a", 2), ("b", 1)],
+        [9007199254740993, 1.5, 2.5],
+        [1, 1.5, 2.5],
+        [np.inf, 1.5, 2.5],
+        [-np.inf, 1.5, 2.5],
+        [1 / 3, 1.5, 2.5],
+        [np.longdouble("1.25"), np.longdouble("2.5"), np.longdouble("3.75")],
+    ],
+)
+def test_json_rejects_lossy_ids_before_opening_file(recording, records, tmp_path, ids):
+    records["event_id"] = pd.Series(ids, dtype=object)
+    inspector = EventInspector(recording, records)
+    path = tmp_path / "review.json"
+    with pytest.raises(ValueError, match="Event IDs cannot round-trip"):
+        inspector.export_events(path)
+    assert not path.exists()
+    path.write_text("previous review", encoding="utf-8")
+    with pytest.raises(ValueError, match="Event IDs cannot round-trip"):
+        inspector.export_events(path, overwrite=True)
+    assert path.read_text(encoding="utf-8") == "previous review"
+
+
+def test_empty_event_table_preserves_schema_and_exports_json(
+    recording, records, tmp_path
+):
+    records["trial_type"] = pd.Categorical(
+        ["run", "rest", "run"], categories=["rest", "run", "sleep"], ordered=True
+    )
+    records["trial_number"] = pd.Series([1, None, 3], dtype="Int64")
+    records = records.iloc[:0]
+    records.attrs = {"recording": {"units": ["seconds"]}}
+    inspector = EventInspector(recording, records)
+    pd.testing.assert_frame_equal(inspector.events_table(), records)
+    path = inspector.export_events(tmp_path / "empty.json")
+    restored = pd.read_json(path, orient="table")
+    pd.testing.assert_frame_equal(restored, records)
+
+
 def test_filter_and_annotation_preserve_overlap_identity(recording, records, tmp_path):
     inspector = recording.inspect_events(records, padding=0.05)
     assert len(inspector.events_table()) == 3  # overlapping rows stay distinct

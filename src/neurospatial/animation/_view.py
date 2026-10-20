@@ -151,6 +151,7 @@ class AnimationView:
             return self.animation.export(path, **kwargs)
 
         from neurospatial.animation._export import prepare_export
+        from neurospatial.animation._prepared import iter_observation_clocks
 
         if "dpi" in kwargs or "figsize" in kwargs:
             raise TypeError(
@@ -160,7 +161,7 @@ class AnimationView:
         plan = prepare_export(
             path,
             self.animation.frame_times,
-            sample_times=(field.times for field in self.animation.fields.values()),
+            sample_times=iter_observation_clocks(self.animation),
             **kwargs,
         )
         with self._backend.capture_session() as capture:
