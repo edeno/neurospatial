@@ -94,17 +94,29 @@ def _environment_differences(
     """
     if first is second:
         return _EnvironmentDifferences(None, None)
-    if first.coordinate_system != second.coordinate_system:
-        labels = "coordinate systems"
-    elif first.units != second.units or first.frame != second.frame:
-        labels = "units or coordinate frames"
-    else:
-        labels = None
+    labels = _label_difference(first, second)
     if first._geometry is second._geometry:
         return _EnvironmentDifferences(labels, None)
     return _EnvironmentDifferences(
         labels or _bin_difference(first, second), _topology_difference(first, second)
     )
+
+
+def _label_difference(first: Environment, second: Environment) -> str | None:
+    """The first difference in coordinate labels, or None.
+
+    Returns
+    -------
+    str or None
+        ``"coordinate systems"`` or ``"units or coordinate frames"``. No
+        pairing of bins can bridge either: the same numbers mean different
+        places.
+    """
+    if first.coordinate_system != second.coordinate_system:
+        return "coordinate systems"
+    if first.units != second.units or first.frame != second.frame:
+        return "units or coordinate frames"
+    return None
 
 
 def _bin_difference(first: Environment, second: Environment) -> str | None:
