@@ -108,7 +108,8 @@ def main() -> None:
 
     print(
         "In Project and Assistance: Mark inside points → click the tan arena "
-        "(or your target area) → Suggest outline → edit the preview → Accept outline.\n"
+        "(or your target area) → refine the live outline → Accept outline.\n"
+        "Use Paint / erase preview for manual corrections.\n"
         "Choose the annotation role/name in Annotation Controls; click Done there to finish.",
         flush=True,
     )

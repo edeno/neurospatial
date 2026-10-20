@@ -168,6 +168,7 @@ class AnnotationProjectSession:
             on_accept=self.accept_proposal,
         )
         layout.addWidget(self.assist)
+        layout.addStretch()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(panel)

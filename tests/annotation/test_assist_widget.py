@@ -12,6 +12,16 @@ from numpy.testing import assert_array_equal
 pytestmark = pytest.mark.gui
 
 
+def _wait_until(predicate):
+    from qtpy.QtWidgets import QApplication
+
+    deadline = time.monotonic() + 5
+    while not predicate() and time.monotonic() < deadline:
+        QApplication.processEvents()
+        time.sleep(0.01)
+    assert predicate()
+
+
 class _Signal:
     def __init__(self):
         self.callbacks = []
@@ -148,10 +158,118 @@ def test_success_snapshots_xy_prompts_and_accepts_current_painted_mask(assist):
     assert proposal.metadata == {"source": "fake"}
     assert widget._preview is None
     assert len(assist["viewer"].layers) == 1
+    assert len(widget._inside.data) == len(widget._outside.data) == 0
+
+
+def test_live_clicks_coalesce_and_keep_prompt_tool_active(assist):
+    widget, viewer = assist["widget"], assist["viewer"]
+    widget._activate(widget._inside)
+    widget._inside.add([2.0, 3.0])
+    widget._inside.add([3.0, 4.0])
+    widget._activate(widget._outside)
+    widget._outside.add([6.0, 10.0])
+    _wait_until(lambda: len(assist["workers"]) == 1)
+    worker = assist["workers"][0]
+    assert_array_equal(worker.prompt.points, [[3, 2], [4, 3], [10, 6]])
+    worker.complete()
+    preview = widget._preview
+    assert preview.contour == 2
+    assert viewer.layers.selection.active is widget._outside
+    assert widget._outside.mode == "add"
+    assert viewer.layers.index(preview) < viewer.layers.index(widget._inside)
+    assert viewer.layers.index(preview) < viewer.layers.index(widget._outside)
+
+    # Keep the previous outline visible, but never accept it for new prompts.
+    widget._outside.add([5.0, 9.0])
+    assert widget._preview is preview
+    assert not widget.accept_button.isEnabled()
+    widget._accept()
+    assert not assist["accepted"]
+    _wait_until(lambda: len(assist["workers"]) == 2)
+    assist["workers"][-1].complete()
+    assert widget._preview is preview
+    assert widget.accept_button.isEnabled()
+    assert viewer.layers.selection.active is widget._outside
+    widget.edit_button.click()
+    assert viewer.layers.selection.active is preview
+    assert preview.mode == "paint"
+    assert preview.contour == 0
+
+
+def test_live_edits_during_inference_run_only_latest_prompt_after_finish(assist):
+    widget = assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    _wait_until(lambda: len(assist["workers"]) == 1)
+    widget._inside.add([3.0, 4.0])
+    widget._outside.add([6.0, 10.0])
+    _wait_until(lambda: not widget._preview_timer.isActive())
+    assert len(assist["workers"]) == 1
+    assist["workers"][0].complete()
+    assert widget._preview is None
+    assert not widget.accept_button.isEnabled()
+    _wait_until(lambda: len(assist["workers"]) == 2)
+    worker = assist["workers"][1]
+    assert_array_equal(worker.prompt.points, [[3, 2], [4, 3], [10, 6]])
+    assert_array_equal(worker.prompt.labels, [1, 1, 0])
+    worker.complete()
+    assert widget.accept_button.isEnabled()
+
+
+@pytest.mark.parametrize("action", ["clear", "discard", "disable", "dispose"])
+def test_pending_live_preview_can_be_cancelled(assist, action):
+    from qtpy.QtTest import QTest
+
+    widget = assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    _wait_until(lambda: len(assist["workers"]) == 1)
+    widget._outside.add([6.0, 10.0])
+    if action == "clear":
+        widget._clear_prompts()
+    elif action == "discard":
+        widget._invalidate()
+    elif action == "disable":
+        widget.live_preview.setChecked(False)
+        assert "Click Update outline" in widget.status.text()
+    else:
+        widget.dispose()
+    assist["workers"][0].complete()
+    QTest.qWait(250)
+    assert len(assist["workers"]) == 1
+    assert widget._preview is None
+    assert not assist["accepted"]
+
+
+def test_removing_last_inside_point_clears_preview_without_empty_request(assist):
+    from qtpy.QtTest import QTest
+
+    widget = assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    _wait_until(lambda: len(assist["workers"]) == 1)
+    assist["workers"][0].complete()
+    widget._inside.selected_data = {0}
+    widget._inside.remove_selected()
+    QTest.qWait(250)
+    assert widget._preview is None
+    assert not widget.accept_button.isEnabled()
+    assert len(assist["workers"]) == 1
+
+
+def test_manual_mode_waits_for_update_button(assist):
+    from qtpy.QtTest import QTest
+
+    widget = assist["widget"]
+    widget.live_preview.setChecked(False)
+    widget._inside.add([2.0, 3.0])
+    QTest.qWait(250)
+    assert not assist["workers"]
+    widget.suggest_button.click()
+    assist["workers"][0].complete()
+    assert widget.accept_button.isEnabled()
 
 
 def test_error_allows_retry_and_accept_error_preserves_preview(assist):
     widget = assist["widget"]
+    widget._inside.data = np.array([[2.0, 3.0]])
     assist["provider"].error = RuntimeError("choose another seed")
     widget._suggest()
     assist["workers"][-1].complete()
@@ -238,6 +356,7 @@ def test_dispose_detaches_layers_and_signals_and_ignores_late_completion(assist)
     widget = assist["widget"]
     widget._activate(widget._inside)
     widget._activate(widget._scale)
+    widget._inside.data = np.array([[2.0, 3.0]])
     widget._suggest()
     worker = assist["workers"][-1]
     generation = widget._generation
@@ -281,8 +400,6 @@ def test_region_only_bin_control_is_disabled():
 
 
 def test_real_worker_inference_runs_off_gui_thread(assist, monkeypatch):
-    from qtpy.QtWidgets import QApplication
-
     from neurospatial.annotation import _assist_widget
 
     main_thread = threading.get_ident()
@@ -297,15 +414,13 @@ def test_real_worker_inference_runs_off_gui_thread(assist, monkeypatch):
 
     monkeypatch.setattr(provider, "predict", predict)
     monkeypatch.setattr(_assist_widget, "_predict", assist["real_predict"])
+    widget = assist["widget"]
+    widget._activate(widget._inside)
     assist["viewer"].layers.events.inserted.connect(
         lambda _event: layer_threads.append(threading.get_ident())
     )
-    widget = assist["widget"]
-    widget._suggest()
-    deadline = time.monotonic() + 5
-    while widget._worker is not None and time.monotonic() < deadline:
-        QApplication.processEvents()
-        time.sleep(0.01)
+    widget._inside.data = np.array([[2.0, 3.0]])
+    _wait_until(lambda: widget._preview is not None and widget._worker is None)
     assert widget._worker is None
     assert widget._preview is not None
     assert len(inference_threads) == 1
@@ -318,6 +433,7 @@ def test_cleanup_after_docked_viewer_closes(assist):
     viewer = assist["viewer"]
     viewer.window.add_dock_widget(widget, name="Assisted annotation")
     widget._activate(widget._inside)
+    widget._inside.data = np.array([[2.0, 3.0]])
     widget._suggest()
     viewer.close()
     assist["dock_closed"] = True

@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from napari.layers import Points
 from napari.qt.threading import thread_worker
+from napari.utils.colormaps import DirectLabelColormap
 from numpy.typing import NDArray
-from qtpy.QtCore import Slot  # type: ignore[attr-defined]
+from qtpy.QtCore import QTimer, Slot  # type: ignore[attr-defined]
 from qtpy.QtWidgets import (
+    QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -75,6 +77,12 @@ class AnnotationAssistWidget(QWidget):
         self._generation = 0
         self._job_generation = -1
         self._worker: Any = None
+        self._pending_preview = False
+        # Own the timer separately: napari deletes the dock before dispose().
+        self._preview_timer = QTimer()
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(150)
+        self._preview_timer.timeout.connect(self._update_preview)
         self._proposal: SegmentationProposal | None = None
         self._preview: Any = None
         self._connections: list[tuple[Any, Any]] = []
@@ -100,11 +108,26 @@ class AnnotationAssistWidget(QWidget):
             size=8,
         )
         for layer in (self._inside, self._outside):
-            self._connect(layer.events.data, self._invalidate)
+            self._connect(layer.events.data, self._prompts_changed)
 
         layout = QVBoxLayout(self)
-        calibration_group = QGroupBox("Calibration")
-        form = QFormLayout(calibration_group)
+        calibration_toggle = QPushButton("Calibration and output settings ▸")
+        calibration_toggle.setCheckable(True)
+        calibration_settings = QWidget()
+        calibration_settings.hide()
+        calibration_toggle.toggled.connect(calibration_settings.setVisible)
+        calibration_toggle.toggled.connect(
+            lambda expanded: calibration_toggle.setText(
+                "Calibration and output settings " + ("▾" if expanded else "▸")
+            )
+        )
+        form = QFormLayout(calibration_settings)
+        calibration_help = QLabel(
+            "Optional: set a known distance to export in centimeters. "
+            "Outlining works in pixels without calibration."
+        )
+        calibration_help.setWordWrap(True)
+        form.addRow(calibration_help)
         mark_scale = QPushButton("Mark two scale endpoints")
         mark_scale.clicked.connect(lambda: self._activate(self._scale))
         form.addRow(mark_scale)
@@ -125,14 +148,13 @@ class AnnotationAssistWidget(QWidget):
         self.units_status.setWordWrap(True)
         form.addRow(self.units_status)
         self.sync_calibration(calibration)
-        layout.addWidget(calibration_group)
 
         assistance_group = QGroupBox("Assisted outline")
         assistance = QFormLayout(assistance_group)
         instructions = QLabel(
             "Choose a role and name in Annotation Controls. "
             "Mark points inside the desired area, and outside to exclude areas. "
-            "Suggest an outline, then paint or erase the preview before accepting."
+            "The outline updates as you click. Refine it, then accept."
         )
         instructions.setWordWrap(True)
         assistance.addRow(instructions)
@@ -142,22 +164,30 @@ class AnnotationAssistWidget(QWidget):
         outside_button = QPushButton("Mark outside points")
         outside_button.clicked.connect(lambda: self._activate(self._outside))
         assistance.addRow(outside_button)
+        self.live_preview = QCheckBox("Update outline as I click")
+        self.live_preview.setChecked(True)
+        self.live_preview.toggled.connect(self._live_preview_changed)
+        assistance.addRow(self.live_preview)
         self.tolerance = QDoubleSpinBox()
         self.tolerance.setRange(0.0, 1.0)
         self.tolerance.setDecimals(3)
         self.tolerance.setSingleStep(0.01)
         if isinstance(provider, RegionGrowProvider):
             self.tolerance.setValue(provider.tolerance)
-            self.tolerance.valueChanged.connect(self._invalidate)
+            self.tolerance.valueChanged.connect(self._prompts_changed)
             assistance.addRow("Color tolerance", self.tolerance)
         else:
             self.tolerance.hide()
-        self.suggest_button = QPushButton("Suggest outline")
+        self.suggest_button = QPushButton("Update outline")
         self.suggest_button.clicked.connect(self._suggest)
         assistance.addRow(self.suggest_button)
         clear_prompts = QPushButton("Clear prompts")
         clear_prompts.clicked.connect(self._clear_prompts)
         assistance.addRow(clear_prompts)
+        self.edit_button = QPushButton("Paint / erase preview")
+        self.edit_button.setEnabled(False)
+        self.edit_button.clicked.connect(self._edit_preview)
+        assistance.addRow(self.edit_button)
         self.accept_button = QPushButton("Accept outline")
         self.accept_button.setEnabled(False)
         self.accept_button.clicked.connect(self._accept)
@@ -169,6 +199,8 @@ class AnnotationAssistWidget(QWidget):
         self.status.setWordWrap(True)
         assistance.addRow(self.status)
         layout.addWidget(assistance_group)
+        layout.addWidget(calibration_toggle)
+        layout.addWidget(calibration_settings)
 
     @staticmethod
     def _spin(value: float) -> QDoubleSpinBox:
@@ -254,23 +286,67 @@ class AnnotationAssistWidget(QWidget):
         self._inside.data = np.empty((0, 2))
         self._outside.data = np.empty((0, 2))
         self._invalidate()
+        self.status.setText("Ready for inside points.")
 
-    def _invalidate(self, *_args: Any) -> None:
+    def _invalidate(self, *_args: Any, keep_preview: bool = False) -> None:
+        self._preview_timer.stop()
+        self._pending_preview = False
         self._generation += 1
         self._proposal = None
         if not self._disposed:
             self.accept_button.setEnabled(False)
+            self.edit_button.setEnabled(False)
         if self._preview is not None:
-            if self._preview in self._viewer.layers:
+            if self._preview not in self._viewer.layers:
+                self._preview = None
+            elif keep_preview:
+                self._preview.opacity = 0.3
+            else:
                 self._viewer.layers.remove(self._preview)
-            self._preview = None
+                self._preview = None
         if not self._disposed:
-            self.status.setText("Prompts changed. Suggest a new outline when ready.")
+            self.status.setText(
+                "Outline discarded. Add points or click Update outline."
+            )
+
+    def _prompts_changed(self, *_args: Any) -> None:
+        if self._disposed:
+            return
+        if len(self._inside.data) == 0:
+            self._invalidate()
+            self.status.setText("Mark a point inside the desired area to begin.")
+            return
+        self._invalidate(keep_preview=True)
+        if self.live_preview.isChecked():
+            self._pending_preview = True
+            self._preview_timer.start()
+            self.status.setText("Updating outline…")
+        else:
+            self.status.setText("Prompts changed. Click Update outline when ready.")
+
+    def _live_preview_changed(self, enabled: bool) -> None:
+        if enabled:
+            self._prompts_changed()
+        else:
+            if self._pending_preview:
+                self.status.setText("Click Update outline when ready.")
+            self._preview_timer.stop()
+            self._pending_preview = False
+
+    @Slot()
+    def _update_preview(self) -> None:
+        # Coalesce edits made during inference into one request for the latest
+        # prompts. Never run concurrent predictions on the stateful SAM model.
+        if self._pending_preview and self._worker is None:
+            self._suggest()
 
     def _suggest(self) -> None:
         if self._disposed or self._worker is not None:
             return
-        self._invalidate()
+        self._invalidate(keep_preview=True)
+        if len(self._inside.data) == 0:
+            self.status.setText("Mark a point inside the desired area to begin.")
+            return
         try:
             inside = np.asarray(self._inside.data, dtype=float)[:, ::-1]
             outside = np.asarray(self._outside.data, dtype=float)[:, ::-1]
@@ -287,7 +363,7 @@ class AnnotationAssistWidget(QWidget):
             self._worker.errored.connect(self._inference_error)
             self._worker.finished.connect(self._finished)
             self.suggest_button.setEnabled(False)
-            self.status.setText("Suggesting outline…")
+            self.status.setText("Updating outline…")
             self._worker.start()
         except Exception as exc:
             self._worker = None
@@ -301,16 +377,42 @@ class AnnotationAssistWidget(QWidget):
         try:
             if proposal.mask.shape != self._frame.shape[:2]:
                 raise ValueError("Provider returned a mask with the wrong frame size.")
-            self._proposal = proposal
-            self._preview = self._viewer.add_labels(
-                np.asarray(proposal.mask, dtype=np.uint8).copy(),
-                name="Suggested outline",
-                opacity=0.5,
-            )
+            data = np.asarray(proposal.mask, dtype=np.uint8).copy()
+            layers = self._viewer.layers
+            if self._preview is None or self._preview not in layers:
+                selection = set(layers.selection)
+                try:
+                    self._preview = self._viewer.add_labels(
+                        data,
+                        name="Suggested outline",
+                        colormap=DirectLabelColormap(
+                            color_dict={None: "cyan", 0: "transparent", 1: "cyan"}
+                        ),
+                    )
+                    # Keep the outline behind the click markers, and preserve
+                    # the active tool so the next click is another prompt.
+                    prompt_indices = [
+                        layers.index(layer)
+                        for layer in (self._inside, self._outside)
+                        if layer in layers
+                    ]
+                    if prompt_indices:
+                        layers.move(layers.index(self._preview), min(prompt_indices))
+                finally:
+                    layers.selection.clear()
+                    layers.selection.update(selection)
+            else:
+                self._preview.data = data
             self._preview.selected_label = 1
-            self._preview.mode = "paint"
+            self._preview.contour = 2
+            self._preview.opacity = 1.0
+            self._preview.mode = "pan_zoom"
+            self._proposal = proposal
             self.accept_button.setEnabled(True)
-            self.status.setText("Paint or erase this preview, then accept or discard.")
+            self.edit_button.setEnabled(True)
+            self.status.setText(
+                "Click to refine the outline, paint / erase it, or accept."
+            )
         except Exception as exc:
             self._invalidate()
             self._error("Could not display outline", exc)
@@ -325,6 +427,19 @@ class AnnotationAssistWidget(QWidget):
         self._worker = None
         if not self._disposed:
             self.suggest_button.setEnabled(True)
+            if self._pending_preview and not self._preview_timer.isActive():
+                self._preview_timer.start()
+
+    def _edit_preview(self) -> None:
+        if self._proposal is None or self._preview not in self._viewer.layers:
+            return
+        self._viewer.layers.selection.active = self._preview
+        self._preview.contour = 0
+        self._preview.opacity = 0.5
+        self._preview.mode = "paint"
+        self.status.setText(
+            "Paint or erase the preview, then accept. Changing prompts replaces edits."
+        )
 
     def _accept(self) -> None:
         if self._disposed or self._proposal is None or self._preview is None:
@@ -346,7 +461,7 @@ class AnnotationAssistWidget(QWidget):
         except Exception as exc:
             self._error("Could not accept outline", exc)
             return
-        self._invalidate()
+        self._clear_prompts()
         self.status.setText("Outline accepted. Mark new points to suggest another.")
 
     def _error(self, message: str, exc: Exception) -> None:

@@ -214,8 +214,9 @@ a synthetic arena with an obstacle and reward area:
 uv run --no-sync python examples/try_annotation.py --provider cpu
 ```
 
-Click **Mark inside points**, click the tan floor, and click **Suggest outline**.
-Paint or erase the preview, then **Accept outline**. To compare providers on the
+Click **Mark inside points**, then click the tan floor. An outline appears
+automatically; add inside/outside clicks to refine it, then **Accept outline**.
+Use **Paint / erase preview** for manual corrections. To compare providers on the
 same frame, launch again with `--provider sam2` after the optional setup below.
 Both providers run on the CPU by default; `--provider cpu` selects color region
 growing, while `--provider sam2` selects the neural segmentation model.
@@ -233,14 +234,17 @@ surface has a distinct color:
 1. Click **Mark inside points** and place at least one point inside the desired
    area. Add a point in each disconnected area that should be included.
 2. Optionally click **Mark outside points** and mark colors to exclude.
-3. Click **Suggest outline**. The default CPU provider keeps areas connected to
-   inside points whose colors fall within **Color tolerance**. Increase the
-   tolerance to include a wider range of colors.
-4. Select the preview labels layer and use napari's paint or erase tools to
-   correct the mask. Painting foreground includes pixels; erasing excludes them.
+3. The outline updates automatically after each change. Keep clicking to refine
+   it; the point tool stays active. The default CPU provider keeps areas connected
+   to inside points whose colors fall within **Color tolerance**. Increase the
+   tolerance to include a wider range of colors; this also updates the preview.
+4. Optionally click **Paint / erase preview** to correct the mask with napari's
+   painting tools. Painting foreground includes pixels; erasing excludes them.
+   Further prompt changes replace these manual preview edits.
 5. Click **Accept outline** to add editable polygon geometry. Its holes and
    disconnected components are retained. Use **Discard outline** to remove a
-   preview, or **Clear prompts** before trying a different selection.
+   preview, or **Clear prompts** before trying a different selection. Accepting
+   an outline clears its prompts so the next object starts with a fresh set.
 
 Choose environment, hole, or region and a name in **Annotation Controls** before
 accepting. An environment boundary must be connected; if the preview has several
@@ -250,8 +254,11 @@ environment outline asks for confirmation.
 
 Review the result against the arena walls and obstacles before clicking Done.
 Color similarity can include shadows or nearby objects, so the editable preview
-is part of the workflow. Changing prompts or tolerance invalidates an old
-preview; request another suggestion before accepting it.
+is part of the workflow. While a new prediction runs, the previous outline is
+dimmed and cannot be accepted. Rapid clicks are combined into the latest request;
+inference runs in the background. The first SAM 2 preview may take longer while
+the model embeds the image. For manual updates, turn off **Update outline as I
+click**, then click **Update outline** when ready. This works with both providers.
 
 The same segmentation tools work without napari. Prompts use pixel `(x, y)`
 coordinates, while masks use `[row, column]` indexing. Polygon boundaries follow
@@ -362,7 +369,9 @@ same units.
 
 ### Calibrate in the Editor
 
-Under **Calibration** in **Project and Assistance**, click **Mark two scale endpoints** and mark the
+Expand **Calibration and output settings** below the outlining controls in
+**Project and Assistance**. Calibration is optional for drawing outlines; use it
+when you need output in centimeters. Click **Mark two scale endpoints** and mark the
 ends of an object of known length. Enter that length in centimeters, then click
 **Apply calibration**. Check **Output bin size** after applying the scale: its
 unit changes to cm, and its numeric value remains your explicit choice. Shapes
