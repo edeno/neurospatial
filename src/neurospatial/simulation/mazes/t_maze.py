@@ -5,10 +5,14 @@ It consists of a central stem with a perpendicular crossbar forming a "T" shape.
 Animals must choose between turning left or right at the junction, making it ideal
 for studying egocentric (body-turn) learning and alternation behaviors.
 
-Reference: Wijnen et al. 2024 (Brain Structure & Function), Figure 1
+Wijnen et al. (2024), Brain Struct Funct 229:823-841,
+doi:10.1007/s00429-024-02771-x, review the design: "Thus, in a T-maze the
+animal must make an active decision between left and right without being able
+to see what is ahead (Stewart et al.)."
 
-"in a T-maze the animal must make an active decision between left and right
-without being able to see what is ahead" (p. 827)
+Rat T-maze sizes vary from lab to lab and there is no canonical apparatus. The
+defaults here are consistent with the T-maze drawn in Wijnen et al. (2024)
+Fig. 1a, whose crossbar spans about the 1 m scale bar.
 
 Examples
 --------
@@ -30,6 +34,7 @@ from neurospatial.environment import Environment
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import (
+    corridor_end_point,
     make_corridor_polygon,
     union_polygons,
 )
@@ -40,14 +45,19 @@ class TMazeDims(MazeDims):
     """Dimension specifications for T-Maze.
 
     The T-Maze consists of a vertical stem with perpendicular arms at the top.
-    Dimensions are based on the Wijnen et al. 2024 figure scale bar.
+    Rat T-maze sizes vary between labs; the defaults are consistent with the
+    T-maze in Wijnen et al. (2024) Fig. 1a (doi:10.1007/s00429-024-02771-x),
+    whose crossbar spans about its 1 m scale bar. They are an estimate read
+    from the figure, not a published apparatus.
 
     Attributes
     ----------
     stem_length : float
-        Length of the vertical stem in cm. Default is 100.0.
+        Length of the stem's centreline in cm, from its far end to the
+        crossbar's centreline. Default is 100.0.
     arm_length : float
-        Length of each horizontal arm in cm. Default is 50.0.
+        Length of each arm's centreline in cm, from the stem's centreline to
+        the arm's far end. Default is 50.0.
     width : float
         Width of all corridors in cm. Default is 10.0.
 
@@ -107,11 +117,13 @@ def make_t_maze(
     - Arms run from x = -arm_length to x = +arm_length at y = +stem_length/2
     - Junction is at (0, +stem_length/2)
 
-    Regions:
-    - start: Point at stem base (0, -stem_length/2)
+    Regions (the start and arm-end points are centred in the end square of
+    their corridor, half a corridor width back from its far end):
+
+    - start: Point at stem base (0, -stem_length/2 + width/2)
     - junction: Point at T-junction (0, +stem_length/2)
-    - left_end: Point at left arm end (-arm_length, +stem_length/2)
-    - right_end: Point at right arm end (+arm_length, +stem_length/2)
+    - left_end: Point at left arm end (-arm_length + width/2, +stem_length/2)
+    - right_end: Point at right arm end (+arm_length - width/2, +stem_length/2)
 
     Track Graph Topology:
     - start -> junction: Vertical edge along stem
@@ -195,10 +207,16 @@ def make_t_maze(
 
     # Add regions for key locations
     region_builder = Regions()
-    region_builder.add("start", point=start_pos)
+    region_builder.add(
+        "start", point=corridor_end_point(junction_pos, start_pos, dims.width)
+    )
     region_builder.add("junction", point=junction_pos)
-    region_builder.add("left_end", point=left_end_pos)
-    region_builder.add("right_end", point=right_end_pos)
+    region_builder.add(
+        "left_end", point=corridor_end_point(junction_pos, left_end_pos, dims.width)
+    )
+    region_builder.add(
+        "right_end", point=corridor_end_point(junction_pos, right_end_pos, dims.width)
+    )
     env_2d = env_2d.with_regions(region_builder)
 
     # Create track graph if requested
