@@ -18,16 +18,25 @@ holes; the 12 cm default is an estimate read from the Barnes maze drawn in Wijne
 (2024), Brain Struct Funct 229:823-841, doi:10.1007/s00429-024-02771-x,
 Fig. 1c, where the hole centres lie at about 0.8 of the platform radius.
 
+Gawel et al. (2018) also describe where the apparatus puts the animal and its
+refuge. The escape box sits under one hole: "the escape box located under one
+of the holes is often black", and the escape hole "is selected randomly for
+each animal and in the classical BM protocol remains constant". In Barnes's
+(1979) protocol "the rat was gently placed in the middle of the maze and the
+start chamber was placed over it". Neither the escape box's nor the start
+chamber's size is given. The light and noise that drive the animal off the
+platform have no published placement, so the maze has no cue landmarks.
+
 Examples
 --------
 >>> from neurospatial.simulation.mazes.barnes import make_barnes_maze, BarnesDims
 >>> maze = make_barnes_maze()
 >>> maze.env_2d.units
 'cm'
->>> "escape_hole" in maze.env_2d.regions
-True
+>>> maze.env_2d.landmarks["escape_hole"].metadata["role"]
+'escape_hole'
 >>> len([r for r in maze.env_2d.regions.keys() if r.startswith("hole_")])
-18
+17
 """
 
 from __future__ import annotations
@@ -37,6 +46,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import make_circular_arena
@@ -129,9 +139,24 @@ def make_barnes_maze(
     - Radius: diameter/2 - hole_inset
     - Angles: 2π * i / n_holes for i = 0, 1, ..., n_holes-1
 
-    Regions:
-    - hole_0, hole_1, ..., hole_{n-1}: Point regions at each hole position
-    - escape_hole: Point region at the escape hole (same position as one hole)
+    Every hole is a landmark in ``env_2d.landmarks`` with a region of the
+    same name: a circle of the hole's diameter (9.5 cm by default).
+
+    - escape_hole: the hole above the escape box, the hole at
+      ``escape_hole_index``. Landmark role ``"escape_hole"``.
+    - hole_i: every other hole, numbered i around the ring. Landmark role
+      ``"hole"``; visits to these are the errors of a Barnes-maze trial.
+    - start_box: the start chamber in the middle of the platform (Barnes
+      1979). Landmark role ``"start_box"``; its size is not published, so
+      its region is a point at the platform centre.
+
+    The escape hole keeps one fixed name because its ring position changes
+    between animals, so an analysis such as the time spent at the escape
+    hole works for every animal unchanged. It is one hole, not a second
+    region on top of ``hole_i``; ``hole_i`` for ``i = escape_hole_index``
+    does not exist. Each hole's landmark records its ring position in
+    ``metadata["index"]``, so the distance in holes from the escape hole is
+    the difference of the two indices modulo ``n_holes``.
 
     Unlike T-Maze or Linear Track, the Barnes Maze has no track graph (env_track=None)
     because it is an open field environment.
@@ -158,8 +183,20 @@ def make_barnes_maze(
     Set a different escape hole:
 
     >>> maze = make_barnes_maze(escape_hole_index=9)
-    >>> "escape_hole" in maze.env_2d.regions
-    True
+    >>> maze.env_2d.landmarks["escape_hole"].metadata["index"]
+    9
+    >>> "hole_9" in maze.env_2d.regions
+    False
+
+    Each hole's ring position, for hole-deviation analyses:
+
+    >>> holes = {
+    ...     name: lm.metadata["index"]
+    ...     for name, lm in maze.env_2d.landmarks.items()
+    ...     if lm.metadata["role"] in ("hole", "escape_hole")
+    ... }
+    >>> holes["escape_hole"], holes["hole_10"]
+    (9, 10)
 
     See Also
     --------
@@ -191,17 +228,32 @@ def make_barnes_maze(
     # Hole centres lie on a ring hole_inset in from the rim
     hole_placement_radius = radius - dims.hole_inset
 
+    landmarks = []
     region_builder = Regions()
     for i in range(dims.n_holes):
         angle = 2 * np.pi * i / dims.n_holes
-        x = hole_placement_radius * np.cos(angle)
-        y = hole_placement_radius * np.sin(angle)
-        region_builder.add(f"hole_{i}", point=(x, y))
+        center = (
+            float(hole_placement_radius * np.cos(angle)),
+            float(hole_placement_radius * np.sin(angle)),
+        )
+        is_escape = i == escape_hole_index
+        name = "escape_hole" if is_escape else f"hole_{i}"
+        role = "escape_hole" if is_escape else "hole"
+        landmarks.append(
+            Landmark(name, "point", center, metadata={"role": role, "index": i})
+        )
+        region_builder.add(
+            name, polygon=make_circular_arena(center=center, radius=dims.hole_radius)
+        )
 
-    # Mark the escape hole
-    escape_hole_pos = region_builder[f"hole_{escape_hole_index}"].data
-    region_builder.add("escape_hole", point=tuple(escape_hole_pos))
-    env_2d = env_2d.with_regions(region_builder)
+    # Barnes (1979): the start chamber is placed over the rat in the middle
+    # of the maze. Its size is not published, so its region is a point.
+    landmarks.append(
+        Landmark("start_box", "point", (0.0, 0.0), metadata={"role": "start_box"})
+    )
+    region_builder.add("start_box", point=(0.0, 0.0))
+
+    env_2d = env_2d.with_regions(region_builder).with_landmarks(Landmarks(landmarks))
 
     # No track graph for open field
     env_track = None

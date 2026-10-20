@@ -119,7 +119,9 @@ class TestOpenFieldMazesSpecificBehavior:
         """Barnes maze should have 18 holes by default (original design)."""
         maze = make_barnes_maze(bin_size=4.0)
         hole_regions = [r for r in maze.env_2d.regions if r.startswith("hole_")]
-        assert len(hole_regions) == 18
+        # The escape hole is one of the 18, named escape_hole.
+        assert len(hole_regions) == 17
+        assert "escape_hole" in maze.env_2d.regions
 
     def test_cheeseboard_has_many_rewards(self):
         """Cheeseboard should have reward locations distributed across surface."""
