@@ -1,7 +1,10 @@
 """Tests for distance_to_reward and distance_to_boundary."""
 
+import warnings
+
 import numpy as np
 import pytest
+from numpy.testing import assert_array_equal
 
 from neurospatial import Regions
 
@@ -220,8 +223,8 @@ class TestDistanceToReward:
         mid_idx = n_samples // 2
         assert result[mid_idx] < 1.0  # Close to zero at reward time
 
-    def test_reward_time_outside_session_warns_on_clip(self, simple_grid_env):
-        """A reward time outside the session is clipped and warns the user."""
+    def test_reward_time_outside_session_has_unknown_location(self, simple_grid_env):
+        """A reward outside the recording is not clipped to the session edge."""
         from neurospatial.behavior.navigation import distance_to_reward
 
         env = simple_grid_env
@@ -238,11 +241,12 @@ class TestDistanceToReward:
         # Reward at t=20.0 is past the end of the session (times max = 10.0).
         reward_times = np.array([20.0])
 
-        with pytest.warns(UserWarning, match=r"clip"):
+        with pytest.warns(UserWarning, match=r"1 of 1 reward[\s\S]*1 outside the"):
             result = distance_to_reward(
                 env, times, positions, reward_times, metric="euclidean"
             )
         assert result.shape == (n_samples,)
+        assert np.isnan(result).all()
 
     def test_reward_time_within_session_does_not_warn(self, simple_grid_env):
         """Reward times inside the session must not trigger the clip warning."""
@@ -349,8 +353,8 @@ class TestDistanceToRewardValidation:
         with pytest.raises(ValueError, match="reward_times"):
             distance_to_reward(env, times, positions, reward_times)
 
-    def test_distance_to_reward_nan_position_raises(self, simple_grid_env):
-        """A NaN in positions must raise, naming the argument."""
+    def test_distance_to_reward_nan_position_is_missing(self, simple_grid_env):
+        """A NaN position is a missing sample: NaN distance, no error."""
         from neurospatial.behavior.navigation import distance_to_reward
 
         env = simple_grid_env
@@ -360,10 +364,27 @@ class TestDistanceToRewardValidation:
             [np.linspace(0, 9, n_samples), np.linspace(0, 9, n_samples)]
         )
         positions[3, 0] = np.nan
-        reward_times = np.array([2.0])
+        reward_times = np.array([2.0])  # exactly on sample 2
+
+        result = distance_to_reward(
+            env, times, positions, reward_times, metric="euclidean", max_gap=None
+        )
+
+        assert np.isnan(result[3])
+        assert np.isfinite(np.delete(result, 3)).all()
+        assert result[2] == 0.0
+
+    def test_distance_to_reward_infinite_position_raises(self, simple_grid_env):
+        """An infinite position is a corrupt value, not a missing sample."""
+        from neurospatial.behavior.navigation import distance_to_reward
+
+        env = simple_grid_env
+        times = np.linspace(0, 0.9, 10)
+        positions = np.full((10, 2), 5.0)
+        positions[3, 0] = np.inf
 
         with pytest.raises(ValueError, match="positions"):
-            distance_to_reward(env, times, positions, reward_times)
+            distance_to_reward(env, times, positions, np.array([0.2]))
 
     def test_distance_to_reward_unsorted_times_raises(self, simple_grid_env):
         """Descending times with inferred reward positions must raise."""
@@ -416,8 +437,9 @@ class TestDistanceToRewardValidation:
         # Reward inferred at t=4.5 -> x=4.5, y=5.
         reward_times = np.array([4.5])
 
+        # 1 Hz demonstration samples are continuous tracking here.
         result = distance_to_reward(
-            env, times, positions, reward_times, metric="euclidean"
+            env, times, positions, reward_times, metric="euclidean", max_gap=None
         )
 
         assert result.shape == (n_samples,)
@@ -428,6 +450,313 @@ class TestDistanceToRewardValidation:
         assert np.all(np.diff(result[reward_idx:]) >= -1e-9)
         # First sample is at x=0; reward at x=4.5 -> distance 4.5.
         assert result[0] == pytest.approx(4.5, abs=0.6)
+
+
+class TestDistanceToRewardSupport:
+    """Reward locations and reward selection follow the observation-support rules."""
+
+    @pytest.fixture
+    def run(self):
+        """A 10 Hz run along y = 5 from x = 0 to x = 9 over 1 s."""
+        times = np.arange(10) * 0.1
+        positions = np.column_stack([np.arange(10.0), np.full(10, 5.0)])
+        return times, positions
+
+    @staticmethod
+    def _distance(env, times, positions, reward_times, *args, **kwargs):
+        from neurospatial.behavior.navigation import distance_to_reward
+
+        return distance_to_reward(
+            env, times, positions, reward_times, *args, metric="euclidean", **kwargs
+        )
+
+    def test_reward_exactly_on_a_sample_uses_that_sample(self, simple_grid_env, run):
+        times, positions = run
+        positions = positions.copy()
+        positions[5] = np.nan  # the next sample is missing; no interpolation needed
+
+        result = self._distance(simple_grid_env, times, positions, times[[4]])
+
+        expected = np.abs(np.arange(10.0) - 4.0)
+        expected[5] = np.nan
+        assert_array_equal(result, expected)
+
+    def test_reward_between_samples_is_interpolated(self, simple_grid_env, run):
+        times, positions = run
+        result = self._distance(simple_grid_env, times, positions, np.array([0.25]))
+        # Interpolated to x = 2.5, between the bins centered at x = 2 and 3;
+        # the reward's bin, not the raw coordinate, sets the distance.
+        assert np.isfinite(result).all()
+        assert result[[2, 3]].min() == 0.0
+        assert result[[2, 3]].max() == 1.0
+
+    @pytest.mark.parametrize(
+        ("change", "reason"),
+        [
+            ("gap", "in a gap longer than max_gap"),
+            ("break", "across a declared break"),
+            ("missing", "next to a missing"),
+            ("epochs", "outside epochs"),
+        ],
+    )
+    def test_reward_in_an_unusable_interval_has_unknown_location(
+        self, simple_grid_env, run, change, reason
+    ):
+        """The samples that select the reward get NaN; no fallback to another reward."""
+        times, positions = run
+        times, positions = times.copy(), positions.copy()
+        kwargs = {}
+        reward_times = np.array([0.15, 0.55])  # inside intervals 1 and 5
+        if change == "gap":
+            times[6:] += 2.0  # interval 5 is a 2 s tracking pause
+            reward_times[1] = times[5] + 1.0
+        elif change == "break":
+            kwargs["break_before"] = np.arange(10) == 6
+        elif change == "missing":
+            positions[6] = np.nan
+        else:
+            kwargs["epochs"] = [(0.0, 0.52)]
+
+        with pytest.warns(UserWarning, match=rf"1 of 2 reward[\s\S]*1 {reason}"):
+            result = self._distance(
+                simple_grid_env, times, positions, reward_times, mode="next", **kwargs
+            )
+
+        # Samples 0 and 1 use the first reward, at x = 1.5.
+        assert np.isfinite(result[:2]).all()
+        # Samples 2..5 select the second reward, whose location is unknown.
+        assert np.isnan(result[2:6]).all()
+
+    def test_unknown_reward_is_not_replaced_by_a_known_one(self, simple_grid_env, run):
+        times, positions = run
+        times = times.copy()
+        times[6:] += 2.0
+        reward_times = np.array([times[1], times[5] + 1.0])  # second in the pause
+
+        with pytest.warns(UserWarning, match="could not be inferred"):
+            result = self._distance(
+                simple_grid_env, times, positions, reward_times, mode="nearest"
+            )
+
+        # Samples 6..9 are nearest in time to the unknown reward: NaN, not the
+        # distance to the first reward.
+        assert np.isnan(result[6:]).all()
+        assert_array_equal(result[:2], [1.0, 0.0])
+
+    def test_nan_positions_give_nan_distance(self, simple_grid_env, run):
+        times, positions = run
+        positions = positions.copy()
+        positions[[2, 7]] = np.nan
+        reward_positions = np.array([[4.0, 5.0]])
+
+        result = self._distance(
+            simple_grid_env, times, positions, np.array([0.4]), reward_positions
+        )
+
+        expected = np.abs(np.arange(10.0) - 4.0)
+        expected[[2, 7]] = np.nan
+        assert_array_equal(result, expected)
+
+    @pytest.mark.parametrize("mode", ["nearest", "last", "next"])
+    @pytest.mark.parametrize("explicit", [True, False])
+    def test_declared_break_equals_the_same_data_shifted_past_max_gap(
+        self, simple_grid_env, run, mode, explicit
+    ):
+        """A declared break blocks interpolation exactly as a long gap does.
+
+        The rewards are chosen so the time shift does not change which reward
+        each sample selects: one at the start, one inside the join between
+        samples 5 and 6, and one exactly on the first sample after it.
+        """
+        times, positions = run
+        breaks = np.arange(10) == 6
+        shifted = times.copy()
+        shifted[6:] += 1.0
+        reward_times = np.array([0.0, 0.55, times[6]])
+        shifted_rewards = np.array([0.0, 0.55, shifted[6]])
+        reward_positions = (
+            np.array([[0.0, 5.0], [5.0, 5.0], [6.0, 5.0]]) if explicit else None
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", UserWarning)
+            declared = self._distance(
+                simple_grid_env,
+                times,
+                positions,
+                reward_times,
+                reward_positions,
+                mode=mode,
+                break_before=breaks,
+            )
+            gapped = self._distance(
+                simple_grid_env,
+                shifted,
+                positions,
+                shifted_rewards,
+                reward_positions,
+                mode=mode,
+            )
+
+        assert_array_equal(declared, gapped)
+        assert np.isfinite(declared).any()
+        # Inferred: the reward in the join has an unknown location in both.
+        assert len(caught) == (0 if explicit else 2)
+        if not explicit and mode == "next":
+            assert np.isnan(declared[1:6]).all()
+
+    def test_a_reward_in_another_recording_is_never_selected(
+        self, simple_grid_env, run
+    ):
+        times, positions = run
+        breaks = np.arange(10) == 5
+        reward_times = np.array([0.2, 0.8])
+        reward_positions = np.array([[2.0, 5.0], [8.0, 5.0]])
+        distances = {
+            mode: self._distance(
+                simple_grid_env,
+                times,
+                positions,
+                reward_times,
+                reward_positions,
+                mode=mode,
+                break_before=breaks,
+            )
+            for mode in ("last", "nearest", "next")
+        }
+
+        x = np.arange(10.0)
+        nan = np.nan
+        # Recording 2 (samples 5..9) has no reward of its own before 0.8 s.
+        assert_array_equal(distances["last"], [nan, nan, 0, 1, 2, nan, nan, nan, 0, 1])
+        # Sample 5 starts recording 2 and may only use the second reward.
+        assert_array_equal(
+            distances["nearest"], np.r_[np.abs(x[:5] - 2), np.abs(x[5:] - 8)]
+        )
+        # Recording 1 has no reward of its own after 0.2 s.
+        assert_array_equal(distances["next"], [2, 1, 0, nan, nan, 3, 2, 1, 0, nan])
+
+    def test_without_breaks_a_gap_does_not_restrict_selection(
+        self, simple_grid_env, run
+    ):
+        """A tracking dropout does not change which reward a sample uses."""
+        times, positions = run
+        times = times.copy()
+        times[5:] += 5.0
+
+        last = self._distance(
+            simple_grid_env,
+            times,
+            positions,
+            np.array([0.2]),
+            np.array([[2.0, 5.0]]),
+            mode="last",
+        )
+
+        assert_array_equal(last[5:], np.abs(np.arange(5.0, 10.0) - 2))
+
+    def test_samples_outside_epochs_are_nan(self, simple_grid_env, run):
+        times, positions = run
+
+        result = self._distance(
+            simple_grid_env,
+            times,
+            positions,
+            np.array([0.0]),
+            np.array([[0.0, 5.0]]),
+            epochs=[(0.2, 0.5)],
+        )
+
+        expected = np.full(10, np.nan)
+        expected[2:5] = [2.0, 3.0, 4.0]  # half-open [0.2, 0.5): sample 5 is out
+        assert_array_equal(result, expected)
+
+    def test_invalid_break_before_raises_the_shared_error(self, simple_grid_env, run):
+        times, positions = run
+        with pytest.raises(ValueError, match=r"break_before to be a Boolean array"):
+            self._distance(
+                simple_grid_env,
+                times,
+                positions,
+                np.array([0.2]),
+                break_before=np.zeros(10, dtype=int),
+            )
+
+    def test_break_before_needs_sorted_times(self, simple_grid_env):
+        times = np.array([0.0, 0.1, 0.3, 0.2])
+        positions = np.full((4, 2), 5.0)
+        with pytest.raises(ValueError, match=r"ascending"):
+            self._distance(
+                simple_grid_env,
+                times,
+                positions,
+                np.array([0.1]),
+                np.array([[5.0, 5.0]]),
+                break_before=np.array([False, False, True, False]),
+            )
+
+    @pytest.mark.parametrize("mode", ["nearest", "last", "next"])
+    @pytest.mark.parametrize("metric", ["geodesic", "euclidean"])
+    def test_continuous_tracking_matches_whole_session_interpolation(
+        self, simple_grid_env, mode, metric
+    ):
+        """Gap-free, NaN-free tracking keeps the earlier whole-session result.
+
+        The reference interpolates every reward over the whole session and
+        picks each sample's reward by brute force.
+        """
+        from neurospatial.behavior.navigation import distance_to_reward
+        from neurospatial.ops.distance import distance_field
+
+        env = simple_grid_env
+        rng = np.random.default_rng(5)
+        times = np.cumsum(np.r_[0.0, rng.uniform(0.02, 0.04, 299)])
+        positions = np.clip(4.5 + np.cumsum(rng.normal(0, 0.3, (300, 2)), 0), 0, 9)
+        # Five rewards inside the session, one exactly on a sample.
+        reward_times = np.sort(np.r_[rng.uniform(times[0], times[-1], 4), times[120]])
+
+        result = distance_to_reward(
+            env, times, positions, reward_times, metric=metric, mode=mode
+        )
+
+        reward_xy = np.column_stack(
+            [np.interp(reward_times, times, positions[:, d]) for d in range(2)]
+        )
+        reward_bins = env.bin_at(reward_xy)
+        position_bins = env.bin_at(positions)
+        expected = np.full(len(times), np.nan)
+        for i, t in enumerate(times):
+            before = np.flatnonzero(reward_times <= t)
+            after = np.flatnonzero(reward_times >= t)
+            if mode == "last":
+                pick = before[-1] if before.size else None
+            elif mode == "next":
+                pick = after[0] if after.size else None
+            else:
+                strictly_before = np.flatnonzero(reward_times < t)
+                left = strictly_before[-1] if strictly_before.size else None
+                right = after[0] if after.size else None
+                pick = (
+                    left
+                    if right is None
+                    or (
+                        left is not None
+                        and t - reward_times[left] <= reward_times[right] - t
+                    )
+                    else right
+                )
+            if pick is None or reward_bins[pick] < 0 or position_bins[i] < 0:
+                continue
+            field = distance_field(
+                env.connectivity,
+                [int(reward_bins[pick])],
+                metric=metric,
+                bin_centers=env.bin_centers if metric == "euclidean" else None,
+            )
+            expected[i] = field[position_bins[i]]
+
+        assert_array_equal(result, expected)
+        assert np.isfinite(result).sum() > 100
 
 
 # =============================================================================
