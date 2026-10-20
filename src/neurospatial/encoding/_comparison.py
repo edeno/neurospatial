@@ -813,7 +813,9 @@ def compare_spatial_rates(
     bin_mapping : array-like of int, shape (n_pairs, 2), optional
         Rows of ``(bin in rates_a.env, bin in rates_b.env)`` pairing bins that
         are the same place, for maps estimated on different environments such
-        as a subset of the arena. Each bin appears at most once on each side.
+        as a subset of the arena. For an environment derived from the other,
+        ``rates_b.env.bin_mapping_from(rates_a.env).pairs`` gives these rows.
+        Each bin appears at most once on each side.
         Paired bins must be the same cells, checked as for unmapped
         environments: identical centers, sizes and measured dimensions; the
         same cell shape where both environments record cells (grid boxes,
@@ -886,6 +888,8 @@ def compare_spatial_rates(
     --------
     compute_spatial_rates : Estimate the rate maps of each condition.
     field_stability : Correlation of two bare rate-map arrays.
+    Environment.bin_mapping_from : Exact bin pairs between an environment and
+        the one it was derived from.
 
     Notes
     -----
@@ -937,7 +941,8 @@ def compare_spatial_rates(
     True
 
     Maps estimated on part of the arena pair with the full arena's bins
-    through ``bin_mapping``. The part's border bins lose their neighbors
+    through ``bin_mapping``, which ``part.bin_mapping_from(env)`` builds from
+    the bins' geometry. The part's border bins lose their neighbors
     outside it, so the topology differs and the default ``topology="same"``
     refuses. Maps counted without smoothing (``method="binned",
     bandwidth=0.0``) did not use the neighbors, so the difference can be
@@ -958,7 +963,7 @@ def compare_spatial_rates(
     ...     )
     ...     for where in (env, part)
     ... )
-    >>> mapping = np.column_stack([np.flatnonzero(keep), np.arange(part.n_bins)])
+    >>> mapping = part.bin_mapping_from(env).pairs  # (bin in env, bin in part)
     >>> on_part = compare_spatial_rates(
     ...     full_raw, part_raw, bin_mapping=mapping, topology="may_differ"
     ... )

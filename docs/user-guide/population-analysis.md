@@ -256,7 +256,9 @@ the cells changed. If you pass arrays (for example matrices from another
 tool), lining up the rows is your job. With results, units recorded in only
 one condition are left out by default; `unit_selection="exact"` refuses them
 instead. Maps estimated on different environments are refused unless you pass
-an explicit `bin_mapping=` that pairs bins at the same place.
+an explicit `bin_mapping=` that pairs bins at the same place; for a subset of the
+arena, `part.bin_mapping_from(env).pairs` builds it (see
+[Carry values to a subset or a coarser grid](environments.md#bin-mapping)).
 
 `field_overlap` asks the same question with field boundaries instead of rates:
 the Jaccard index of the bins inside a cell's fields in the two conditions

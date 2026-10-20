@@ -2401,16 +2401,20 @@ class Environment(Generic[_C]):
 
         See Also
         --------
+        bin_mapping_from : Carry counts, occupancy and labels to the new bins
+            exactly.
         smooth : Apply diffusion kernel smoothing to fields.
         subset : Extract spatial subset of environment.
-        bin_at : Assign retained original bin centers to coarsened bins.
 
         Notes
         -----
         **Geometry only**: This method only coarsens the grid structure. To
         aggregate field values (occupancy, spike counts, etc.) from the original
-        grid to the coarsened grid, map the original bin centers to coarse
-        bins and sum within each one, as the last example below shows.
+        grid to the coarsened grid, use ``coarse.bin_mapping_from(env)``: it
+        pairs each original bin with the new bin that wholly contains it, and
+        its ``sum`` adds counts and occupancy, as the last example below
+        shows. Pool rates from counts and occupancy with its ``rates``, never
+        by averaging, and re-estimate smoothed maps on the new bins.
 
         **Factor mode**: Integer coarsening requires uniform rectangular cells
         with native grid connections and straight center-to-center navigation
@@ -2490,15 +2494,10 @@ class Environment(Generic[_C]):
         Aggregate a field to the coarsened grid:
 
         >>> occupancy = np.random.default_rng(0).random(env.n_bins) * 100
-        >>> coarse_indices = coarse.bin_at(env.bin_centers)
-        >>> retained = coarse_indices >= 0
-        >>> coarse_occupancy = np.bincount(
-        ...     coarse_indices[retained],
-        ...     weights=occupancy[retained],
-        ...     minlength=coarse.n_bins,
-        ... )
-        >>> # The total over retained source-bin centers is preserved
-        >>> bool(np.isclose(occupancy[retained].sum(), coarse_occupancy.sum()))
+        >>> mapping = coarse.bin_mapping_from(env)  # each fine bin's coarse bin
+        >>> coarse_occupancy = mapping.sum(occupancy)
+        >>> # Every fine bin lies in a coarse bin, so the total is preserved
+        >>> bool(np.isclose(occupancy.sum(), coarse_occupancy.sum()))
         True
 
         """
@@ -2605,6 +2604,7 @@ class Environment(Generic[_C]):
 
         See Also
         --------
+        bin_mapping_from : Pair the kept bins with this environment's bins.
         rebin : Coarsen grid resolution (grid-only).
         components : Find connected components.
 
@@ -2691,6 +2691,12 @@ class Environment(Generic[_C]):
             If geometry is invalid, unavailable, unsupported, or has no
             positive-area intersection. Track, polar and 3-D cells are not
             Cartesian planar area cells.
+
+        See Also
+        --------
+        bin_mapping_from : Pair the cells the clip kept whole with this
+            environment's bins, and list the cells it cut.
+        subset : Keep whole bins without cutting them.
         """
         return publish_derived(
             self, _clip(self._binning, self._arena, polygon), name=name

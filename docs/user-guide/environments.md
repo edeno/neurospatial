@@ -803,6 +803,90 @@ supply a `GridBinningSpec` describing future rectangular construction.
 The existing `env.rebin(factor=2)` remains available for uniform regular grids,
 including its truncation warning. Supply exactly one of `factor` and `bin_size`.
 
+## Carry values to a subset or a coarser grid { #bin-mapping }
+
+Two common questions need values moved between environments: does the map
+estimated on part of the arena match the full map there, and what is the
+occupancy at a coarser resolution? Each derived environment numbers its bins
+from 0, so bin `j` of a subset is not bin `j` of the arena.
+`child.bin_mapping_from(parent)` pairs the bins from their geometry. It reports
+only pairs it can prove: a bin that is the same cell as a parent bin (a subset,
+the cells a clip did not cut), or a fine cell that lies wholly inside one cell of
+a coarser grid on the same lattice (`rebin`). The simulated session below has a
+random trajectory over a 40 x 40 cm box and two cells with random spikes.
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+from neurospatial import Environment
+from neurospatial.encoding import compare_spatial_rates, compute_spatial_rates
+
+times = np.arange(18_000) / 30.0  # 10 minutes at 30 Hz
+positions = np.random.default_rng(0).uniform(0.0, 40.0, size=(len(times), 2))  # cm
+spike_rng = np.random.default_rng(1)
+spike_times = [np.sort(spike_rng.choice(times, size=n, replace=False)) for n in (400, 900)]
+
+env = Environment.from_grid_mask(
+    np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11) * 4.0,) * 2, units="cm"
+)
+
+
+def binned_rates(where):
+    return compute_spatial_rates(
+        where, spike_times, times, positions,
+        method="binned", bandwidth=0.0, unit_ids=[1, 2],
+    )
+
+
+# Compare the map estimated on the left half with the full map there.
+left = env.subset(mask=env.bin_centers[:, 0] < 20)
+to_left = left.bin_mapping_from(env)
+print(to_left)
+full_map, left_map = binned_rates(env), binned_rates(left)
+on_left = compare_spatial_rates(
+    full_map, left_map, bin_mapping=to_left.pairs, topology="may_differ"
+)
+assert on_left.status.tolist() == ["scored", "scored"]
+
+# Coarsen counts and occupancy to 8 cm bins.
+coarse = env.rebin(2)
+to_coarse = coarse.bin_mapping_from(env)
+occupancy = to_coarse.sum(full_map.occupancy)  # seconds per 8 cm bin
+counts = np.where(
+    full_map.occupancy > 0, full_map.firing_rates * full_map.occupancy, 0.0
+)  # spikes per 4 cm bin; unvisited bins have no spikes
+rates = to_coarse.rates(counts, full_map.occupancy)  # summed spikes / summed time
+np.testing.assert_allclose(occupancy, coarse.occupancy(times, positions))
+np.testing.assert_allclose(rates, binned_rates(coarse).firing_rates)
+```
+
+The printed mapping counts each kind of bin: all 50 bins of the left half pair
+one-to-one with arena bins, and the other 50 arena bins are unmapped. Its
+`pairs` are rows of `(bin in env, bin in left)`, the orientation
+`compare_spatial_rates` takes. After `rebin(2)` every 8 cm bin holds four 4 cm
+bins, so summed occupancy and pooled rates equal estimating on the coarse grid
+from the same trajectory. Rates are pooled from counts and occupancy, never
+averaged: 0 Hz for 100 s and 100 Hz for 1 s pool to 100 spikes / 101 s =
+0.99 Hz, not 50 Hz. A smoothed map's value in a bin borrows spikes from its
+neighbors, so it is not a count that adds up; estimate smoothed maps again on
+the new environment. `to_coarse.category(labels, missing="mixed")` carries
+labels such as region names, keeping a label only where all the fine bins in a
+coarse bin agree.
+
+The mapping never guesses. Missing values stay missing: a coarse bin with any
+NaN fine bin is NaN. A clip's cut cells are listed in `split_parent_bins` and
+their pieces in `uncovered_child_bins`, which get NaN, because a count cannot
+be divided between pieces without knowing where in the cell each observation
+fell. A finer grid, a rotated or offset lattice, or an independently built
+environment raises `ValueError`; re-estimate on the new environment from the
+original observations, or use `neurospatial.ops.map_probabilities` and
+`ops.resample_field`, which assign bins by nearest center and are
+approximations. `apply_transform` needs no mapping, because transforms keep bin
+IDs. When a truncating `rebin` drops fine bins, occupancy summed from the fine
+grid equals the coarse grid's own occupancy only if positions in the dropped
+bins are excluded from both: an interval that ends in a dropped bin counts on
+the fine grid but not on the coarse one.
+
 ## Name cues, monitors and objects { #landmarks }
 
 Landmarks are the things the animal sees or approaches: a cue card, a monitor,

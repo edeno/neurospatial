@@ -36,6 +36,8 @@ with methods for spatial queries, occupancy, smoothing, plotting and saving.
 - `Environment`: Discretized spatial environment, built with factory
   classmethods such as `Environment.from_samples` and `Environment.from_polygon`
 - `BinSequenceWithRuns`: Result of `Environment.bin_sequence_with_runs`
+- `BinMapping`: Result of `Environment.bin_mapping_from`, the exact bin pairs
+  between an environment and the one it was derived from
 - `CartesianSystem`, `EgocentricPolarSystem`: What the bin coordinates mean
 
 Every method is documented on the

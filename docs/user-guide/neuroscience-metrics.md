@@ -355,7 +355,8 @@ The simulated place fields do not move, so the two halves have a median
 correlation near 1 (0.99). A location is NaN, not 0, where either condition
 lacks occupancy or has a NaN rate there, or where every cell has the same rate. Units recorded in only one
 condition are left out (`unit_selection="exact"` refuses them instead), and
-maps estimated on different environments need an explicit `bin_mapping=`.
+maps estimated on different environments need an explicit `bin_mapping=`, such
+as `part.bin_mapping_from(env).pairs` for a subset of the arena.
 
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
 then be the same units in the same order in both, and pass

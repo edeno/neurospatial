@@ -905,7 +905,9 @@ def population_vector_correlation(
     bin_mapping : array-like of int, shape (n_pairs, 2), optional
         Results only. Rows of ``(bin in firing_rates_1.env, bin in
         firing_rates_2.env)`` pairing bins that are the same place, for maps
-        estimated on different environments such as a subset of the arena.
+        estimated on different environments such as a subset of the arena;
+        ``firing_rates_2.env.bin_mapping_from(firing_rates_1.env).pairs``
+        builds them for an environment derived from the other.
         Checked as in ``compare_spatial_rates``: one-to-one, and paired bins
         must be the same cells in the same coordinates. By default the two
         environments must have the same bins.
