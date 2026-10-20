@@ -53,6 +53,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._observation import validate_break_before
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._polar_results import _PolarRateMixin, polar_summary_frame
@@ -466,13 +467,14 @@ def _count_boundary_events(
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
     spike_window: NDArray[np.float64] | None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], TimeSupport]:
     """Spike counts and boundary occupancy summed over every ray.
 
     An interval counts when its start sample was observed and it passes the
-    gap and window checks; it then adds its duration, and each of its spikes
-    one count, to the bin of every ray of its start sample that met a wall in
-    range. Spikes and occupancy use the same intervals.
+    gap, window and declared-break checks; it then adds its duration, and each
+    of its spikes one count, to the bin of every ray of its start sample that
+    met a wall in range. Spikes and occupancy use the same intervals.
 
     Returns
     -------
@@ -490,6 +492,7 @@ def _count_boundary_events(
         n_bins,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
     )
     support = prepared.support
@@ -501,6 +504,7 @@ def _count_boundary_events(
         epochs=support.epochs,
         spike_window=support.spike_window,
         start_bin_gate=True,
+        break_before=break_before,
         result="the rate map is empty",
     )
     starts = frame_bins[:-1][mask]  # (n_kept_intervals, n_rays)
@@ -533,6 +537,7 @@ def compute_boundary_vector_rates(
     boundary_source: Literal["physical", "analysis"] = "physical",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -574,6 +579,13 @@ def compute_boundary_vector_rates(
         Longest sampling interval (seconds) treated as continuous recording.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open windows (seconds).
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as epochs, or None
         When the electrophysiology was recording.
     method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
@@ -650,6 +662,7 @@ def compute_boundary_vector_rates(
         boundary_source=boundary_source,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -673,6 +686,7 @@ def compute_boundary_vector_rate(
     boundary_source: Literal["physical", "analysis"] = "physical",
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float | None = None,
@@ -711,6 +725,7 @@ def compute_boundary_vector_rate(
         boundary_source=boundary_source,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -747,6 +762,7 @@ def _boundary_vector_rates(
     boundary_source: Literal["physical", "analysis"],
     max_gap: float | None,
     epochs: Any,
+    break_before: ArrayLike | None,
     spike_window: Any,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float | None,
@@ -790,12 +806,14 @@ def _boundary_vector_rates(
         times, positions=positions, headings=headings, context=context, n_dims=2
     )
     validate_spike_trains(spike_trains, context=context)
+    breaks = validate_break_before(break_before, len(times), call=context)
     _warn_if_population_silent(
         spike_trains,
         times,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=breaks,
     )
 
     frame_bins, observed = _boundary_frame_bins(
@@ -820,6 +838,7 @@ def _boundary_vector_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=breaks,
     )
 
     if method == "binned":

@@ -88,6 +88,7 @@ from neurospatial._intervals import (
     resolve_time_windows,
     run_time_bounds,
 )
+from neurospatial._observation import validate_break_before
 from neurospatial._results import UnitSelectionMixin, _copy_analysis_settings, label_at
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._significance import (
@@ -1273,6 +1274,7 @@ def _count_views(
     boundary_source: Literal["physical", "analysis"],
     view_bins: NDArray[np.intp] | None = None,
     n_jobs: int = 1,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> _ViewCounts:
     """Bin gaze locations, count spikes and build provenance for view rates.
 
@@ -1300,6 +1302,8 @@ def _count_views(
         Precomputed viewed bins for these exact samples and gaze settings.
     n_jobs : int, default=1
         Parallel jobs for spike counting.
+    break_before : ndarray of bool, shape (n_time,), or None
+        Validated declared recording breaks.
 
     Returns
     -------
@@ -1326,6 +1330,7 @@ def _count_views(
         spike_window=spike_window,
         view_bins=view_bins,
         boundary_source=boundary_source,
+        break_before=break_before,
     )
     spike_counts, occupancy = prepared.count(spike_trains, n_jobs=n_jobs)
     settings = rate_analysis_settings(
@@ -1354,6 +1359,7 @@ def compute_view_rate(
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -1414,6 +1420,13 @@ def compute_view_rate(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -1588,6 +1601,7 @@ def compute_view_rate(
     )
     validate_spike_times(spike_times, context="compute_view_rate")
     n_samples = len(times)
+    breaks = validate_break_before(break_before, n_samples, call="compute_view_rate")
 
     gaze_offsets = _as_gaze_offsets(gaze_offsets, n_samples)
 
@@ -1608,6 +1622,7 @@ def compute_view_rate(
         min_occupancy=min_occupancy,
         backend=resolved_backend,
         boundary_source=boundary_source,
+        break_before=breaks,
     )
     spike_counts = counts.spike_counts[0]
 
@@ -1657,6 +1672,7 @@ def compute_view_rates(
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -1729,6 +1745,13 @@ def compute_view_rates(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``. ``analysis_settings["break_times"]`` records
+        ``times[k]`` of each break (``None`` when not given).
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -1912,6 +1935,7 @@ def compute_view_rates(
         gaze_offsets=gaze_offsets,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=break_before,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -1935,6 +1959,7 @@ def _compute_view_rates(
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -1997,6 +2022,7 @@ def _compute_view_rates(
     )
     validate_spike_trains(spike_times_list, context="compute_view_rates")
     n_samples = len(times)
+    breaks = validate_break_before(break_before, n_samples, call="compute_view_rates")
 
     gaze_offsets = _as_gaze_offsets(gaze_offsets, n_samples)
 
@@ -2007,6 +2033,7 @@ def _compute_view_rates(
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=breaks,
     )
 
     counts = _count_views(
@@ -2028,6 +2055,7 @@ def _compute_view_rates(
         boundary_source=boundary_source,
         view_bins=view_bins,
         n_jobs=n_jobs,
+        break_before=breaks,
     )
 
     # Apply batch smoothing to compute firing rates
@@ -2093,6 +2121,7 @@ def is_spatial_view_cell(
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -2148,6 +2177,12 @@ def is_spatial_view_cell(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -2262,6 +2297,9 @@ def is_spatial_view_cell(
         },
         call="is_spatial_view_cell",
     )
+    breaks = validate_break_before(
+        break_before, len(times), call="is_spatial_view_cell"
+    )
     if criterion == "shuffle":
         label = 0 if unit_id is None else unit_id
         level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
@@ -2279,6 +2317,7 @@ def is_spatial_view_cell(
             gaze_offsets=gaze_offsets,
             max_gap=max_gap,
             epochs=epochs,
+            break_before=breaks,
             spike_window=spike_window,
             method=method,
             bandwidth=bandwidth,
@@ -2299,6 +2338,7 @@ def is_spatial_view_cell(
         gaze_offsets=gaze_offsets,
         max_gap=max_gap,
         epochs=epochs,
+        break_before=breaks,
         spike_window=spike_window,
         method=method,
         bandwidth=bandwidth,
@@ -2321,6 +2361,7 @@ def spatial_view_cell_significance(
     gaze_offsets: NDArray[np.float64] | None = None,
     max_gap: float | None = 0.5,
     epochs: Any = None,
+    break_before: ArrayLike | None = None,
     spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float | None = None,
@@ -2395,6 +2436,12 @@ def spatial_view_cell_significance(
         Restrict the analysis to these half-open [start, stop) windows (seconds,
         same clock as ``times``). An interval counts only if it lies entirely
         inside one window. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_samples,), optional
+        ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. The interval from sample ``k - 1`` to ``k``
+        is excluded from occupancy and its spikes are not counted, as for a gap
+        longer than ``max_gap``.
     spike_window : same forms as ``epochs``, or None
         When the electrophysiology was recording. Intervals outside it are
         excluded from occupancy (and their spikes are not counted). ``None``
@@ -2543,11 +2590,17 @@ def spatial_view_cell_significance(
     )
     for train in trains:
         validate_spike_times(train, context="spatial_view_cell_significance")
+    # An owned copy, so editing the caller's array cannot change the null.
+    breaks = validate_break_before(
+        break_before, len(times), call="spatial_view_cell_significance"
+    )
+    options["break_before"] = None if breaks is None else breaks.copy()
     mask = _view_observation_mask(
         times,
         max_gap=max_gap,
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
+        break_before=options["break_before"],
     )
     frame_bins = _precompute_view_bins(
         env,

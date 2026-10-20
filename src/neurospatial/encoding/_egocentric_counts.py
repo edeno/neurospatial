@@ -835,8 +835,13 @@ def prepare_egocentric_binning(
     spike_window: NDArray[np.float64] | None = None,
     frame_bins: NDArray[np.int64] | None = None,
     polar_env: PolarEnvironment | None = None,
+    break_before: NDArray[np.bool_] | None = None,
 ) -> tuple[FrameBinning, PolarEnvironment]:
-    """Prepare geometry and exact temporal support before counting spikes."""
+    """Prepare geometry and exact temporal support before counting spikes.
+
+    ``break_before`` is already validated; the interval ending at each
+    declared recording break is dropped from counts and occupancy.
+    """
     times = np.asarray(times, dtype=np.float64).ravel()
     positions = np.asarray(positions, dtype=np.float64)
     headings = (
@@ -896,6 +901,7 @@ def prepare_egocentric_binning(
         max_gap=max_gap,
         epochs=epochs,
         spike_window=spike_window,
+        break_before=break_before,
     )
     return prepared, polar_env
 
