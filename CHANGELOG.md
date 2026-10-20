@@ -2453,6 +2453,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The annotation editor opens on **Annotation Controls**, showing the current
+  annotation type and name before switching to assisted outlines.
+
 - Annotation editing preserves surviving track edges, node labels and start
   nodes when deleting points in napari. Native additions, deletions and moves
   participate in undo/redo without state-to-view feedback corrupting the graph.

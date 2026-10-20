@@ -174,6 +174,12 @@ class AnnotationProjectSession:
         viewer.window.add_dock_widget(
             scroll, name="Project and Assistance", area="right", tabify=True
         )
+        # Napari raises the newly added assistance tab. Show the controls dock
+        # explicitly before raising it: Qt may not have shown that dock yet.
+        controls_dock = controls.native.parentWidget()
+        if controls_dock is not None:
+            controls_dock.show()
+            controls_dock.raise_()
         self._shortcuts = []
         for key, callback in (
             (QKeySequence.StandardKey.Save, self.save_project),
