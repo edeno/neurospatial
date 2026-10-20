@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import weakref
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from time import monotonic
@@ -17,6 +17,7 @@ from typing import Any, NamedTuple, cast
 
 import numpy as np
 
+from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _heading_displacement, _rate_opacity
 from neurospatial.animation.backends._napari_compat import (
@@ -253,6 +254,7 @@ class NapariScene:
     def __init__(self, scene: Any, **options: Any) -> None:
         import napari
         from qtpy.QtCore import (  # type: ignore[attr-defined]
+            QEvent,
             QObject,
             Qt,
             QTimer,
@@ -278,6 +280,7 @@ class NapariScene:
                 "Napari scene viewing requires 2D or 3D coordinates; use backend='widget' for a 1D track."
             )
         self.scene, self._closed = scene, False
+        self._close_notification = _CloseNotification()
         self._time = float(scene.frame_times[0])
         self._speed = float(options.get("speed", 1))
         fps = float(options.get("fps", 30))
@@ -382,8 +385,6 @@ class NapariScene:
                     self._panels.canvas, name="Scientific panels", area="bottom"
                 )
             self.seek(self._time)
-            from qtpy.QtCore import QEvent, QObject
-
             window = qt_window(self.viewer)
             handle_ref, window_ref = weakref.ref(self), weakref.ref(window)
 
@@ -432,6 +433,9 @@ class NapariScene:
     def time(self) -> float:
         return self._time
 
+    def _add_close_callback(self, callback: Callable[[], None]) -> None:
+        self._close_notification.add(callback)
+
     def _add(self, kind: str, data: Any, **kwargs: Any) -> Any:
         layer = getattr(self.viewer, f"add_{kind}")(data, **kwargs)
         self._layers.append(layer)
@@ -443,16 +447,34 @@ class NapariScene:
         from napari.utils.colormaps import Colormap
 
         native = _native_grid(self.scene.env)
+        below_video = any(
+            video.z_order == "below" for video in self.scene._overlay_data.videos
+        )
+        # Statistics can read lazy sources even when explicit display limits
+        # were supplied. Keep those reads and owned initial samples serialized
+        # with other views, then release the lock before creating GUI layers.
+        with self._helper.source_lock:
+            self.scene._ensure_open()
+            limits = {
+                name: field.color_limits() for name, field in self.scene.fields.items()
+            }
+            peaks = (
+                {
+                    name: field._typical_peak()
+                    for name, field in self.scene.fields.items()
+                }
+                if below_video
+                else {}
+            )
+            samples = self._helper.field_samples(self._time)
         for name, field in self.scene.fields.items():
             display_name = f"{name} ({field.label})" if field.label else name
             colors = colormaps[field.cmap](np.linspace(0, 1, 256))
-            if any(v.z_order == "below" for v in self.scene._overlay_data.videos):
-                low, high = field.color_limits()
-                colors[:, 3] *= np.clip(
-                    np.linspace(low, high, 256) / field._typical_peak(), 0, 1
-                )
+            if below_video:
+                low, high = limits[name]
+                colors[:, 3] *= np.clip(np.linspace(low, high, 256) / peaks[name], 0, 1)
             cmap = Colormap(colors, name=field.cmap)
-            values = self._helper.field_samples(self._time)[name]
+            values = samples[name]
             if native is not None:
                 grid, affine = native
                 layer = self._add(
@@ -460,7 +482,7 @@ class NapariScene:
                     _image(values, grid),
                     name=display_name,
                     colormap=cmap,
-                    contrast_limits=field.color_limits(),
+                    contrast_limits=limits[name],
                     affine=affine,
                     blending="translucent",
                     rendering="attenuated_mip",
@@ -489,7 +511,7 @@ class NapariScene:
                     features={"value": values},
                     face_color="value",
                     face_colormap=cmap,
-                    face_contrast_limits=field.color_limits(),
+                    face_contrast_limits=limits[name],
                     border_width=0,
                     size=5,
                 )
@@ -1119,6 +1141,7 @@ class NapariScene:
         self._updates.clear()
         self._layers.clear()
         self.field_layers.clear()
+        release(self._close_notification.notify)
         _raise_cleanup_errors(
             "Failed to release native napari scene resources.", failures
         )

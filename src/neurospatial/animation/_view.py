@@ -81,8 +81,10 @@ class AnimationView:
         )
         try:
             animation._register_view(self)
+            backend._add_close_callback(self._native_closed)
         except BaseException as error:
             self._closed = True
+            animation._unregister_view(self)
             _close_after_error(backend.close, error)
             raise
 
@@ -175,6 +177,13 @@ class AnimationView:
 
     def close(self) -> None:
         """Release this view's controls and rendering resources, once."""
+        self._finish_close(close_backend=True)
+
+    def _native_closed(self) -> None:
+        """Finish a native close without closing the native window again."""
+        self._finish_close(close_backend=False)
+
+    def _finish_close(self, *, close_backend: bool) -> None:
         if self._closed:
             return
         from neurospatial.animation._resources import _cleanup_error
@@ -189,7 +198,8 @@ class AnimationView:
         self._closed = True
         callbacks, self._close_callbacks = self._close_callbacks, []
         try:
-            for close in (self._backend.close, *callbacks):
+            actions = (self._backend.close, *callbacks) if close_backend else callbacks
+            for close in actions:
                 try:
                     close()
                 except BaseException as error:
@@ -402,22 +412,39 @@ def show_animation(
         return AnimationView._from_backend(
             animation, _NativeBackendView(handle.viewer, handle)
         )
-    data = animation.overlay_data(own_samples=True)
     fields = list(animation.fields.values())
     first = fields[0]
     sources = {
         name: _FieldFrames(field, animation.frame_times)
         for name, field in animation.fields.items()
     }
-    options = {
-        "cmap": first.cmap,
-        "vmin": first.color_limits()[0],
-        "vmax": first.color_limits()[1],
-        "title": animation.title,
-        "show_regions": animation.show_regions,
-        "region_alpha": animation.region_alpha,
-        **kwargs,
-    }
+    # View construction shares lazy sources with existing views and exports.
+    # Snapshot source-derived settings before entering native GUI code, which
+    # may wait for workers or process events that also need this lock.
+    with animation._source_lock:
+        animation._ensure_open()
+        data = animation.overlay_data(own_samples=True)
+        field_styles = []
+        for name, field in animation.fields.items():
+            low, high = field.color_limits()
+            field_styles.append(
+                {
+                    "cmap": kwargs.get("cmap", field.cmap),
+                    "vmin": kwargs.get("vmin", low),
+                    "vmax": kwargs.get("vmax", high),
+                    "label": kwargs.get("colorbar_label", field.label or name),
+                    "opaque_from": field._typical_peak(),
+                }
+            )
+        options = {
+            "cmap": first.cmap,
+            "vmin": field_styles[0]["vmin"],
+            "vmax": field_styles[0]["vmax"],
+            "title": animation.title,
+            "show_regions": animation.show_regions,
+            "region_alpha": animation.region_alpha,
+            **kwargs,
+        }
     from neurospatial.animation.backends.fastplotlib_backend import render_fastplotlib
 
     options.setdefault("window_seconds", animation.window_seconds)
@@ -431,16 +458,7 @@ def show_animation(
         _source_lock=animation._source_lock,
         _field_streams=tuple(animation.fields.values()),
         _field_at_time=lambda time: list(animation.sample_fields(time).values()),
-        _field_styles=[
-            {
-                "cmap": kwargs.get("cmap", field.cmap),
-                "vmin": kwargs.get("vmin", field.color_limits()[0]),
-                "vmax": kwargs.get("vmax", field.color_limits()[1]),
-                "label": kwargs.get("colorbar_label", field.label or name),
-                "opaque_from": field._typical_peak(),
-            }
-            for name, field in animation.fields.items()
-        ],
+        _field_styles=field_styles,
         **options,
     )
     if native is None:

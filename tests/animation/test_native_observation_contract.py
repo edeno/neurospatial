@@ -9,6 +9,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.animation import Animation, ObjectVectorOverlay, PositionOverlay
+from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._prepared import PreparedScene
 from neurospatial.animation._style import _finite_rate_peak, _rate_opacity
 from neurospatial.animation.backends import fastplotlib_backend as gpu
@@ -112,6 +113,14 @@ def test_rate_summary_ignores_missing_and_nonfinite_observations(rates, expected
 
 def test_object_vector_consumers_share_full_recording_finite_peak(env, monkeypatch):
     from neurospatial.animation import _style
+    from neurospatial.animation.backends import _napari_scene
+
+    # Layer construction is faked here; native unit/canvas compatibility has
+    # separate napari tests and must not require optional packages in this test.
+    monkeypatch.setattr(_napari_scene, "set_spatial_units", lambda *args: None)
+    monkeypatch.setattr(
+        _napari_scene, "screen_point_options", lambda size: {"size": size}
+    )
 
     calls = []
     original = _style._finite_rate_peak
@@ -188,6 +197,7 @@ def test_native_close_drains_workers_and_owner_after_window_failure():
     calls = []
     animation = gpu.FastplotlibAnimation.__new__(gpu.FastplotlibAnimation)
     animation._closed = False
+    animation._close_notification = _CloseNotification()
     animation._frames = Mock()
     animation._frames.close.side_effect = lambda: calls.append("field worker")
     other = SimpleNamespace(slicer=Mock())
@@ -221,6 +231,7 @@ def test_native_capture_does_not_restore_or_resume_a_closed_controller():
 
     animation = gpu.FastplotlibAnimation.__new__(gpu.FastplotlibAnimation)
     animation._closed = False
+    animation._close_notification = _CloseNotification()
     animation.show = Mock()
     animation._frames = Mock(pause=False)
     other = Mock(pause=False)

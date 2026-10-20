@@ -3,8 +3,9 @@
 NDWidget does not expose registration, playback state or in-flight revision
 cancellation publicly. Keep those dependencies here, behind a version and
 capability check performed before constructing a viewer. Graphics, buffers,
-transforms and volume materials use public fastplotlib/pygfx APIs, with a
-scoped shader extension for a checked upstream isosurface depth defect.
+transforms and volume materials use public fastplotlib/pygfx APIs, with scoped
+shader extensions for missing-aware scalar sampling and an upstream iso depth
+defect. No built-in material or shader is replaced globally.
 """
 
 from __future__ import annotations
@@ -230,43 +231,122 @@ def _iso_shader_source(code: str, version: str) -> str:
     )
 
 
-# Cache the extension registration, never replace the built-in shader/material.
+def _volume_shader_source(code: str, common: str) -> str:
+    """Separate the scalar R channel from support G, checking each hook."""
+    common_include = "{$ include 'pygfx.volume_common.wgsl' $}"
+    color_include = "{$ include 'pygfx.image_sample.wgsl' $}"
+    if code.count(common_include) != 1 or common.count(color_include) != 1:
+        raise ImportError(
+            "The installed pygfx volume shader lacks the checked scalar/color "
+            "sampling hooks. Use field_rendering='points' or install "
+            "pygfx>=0.17,<0.18."
+        )
+    color = """
+fn sampled_value_to_color(value: vec4<f32>) -> vec4<f32> {
+    if (value.g == 0.0) { return vec4<f32>(0.0); }
+    // Contrast/gamma affect only colors, after scalar selection. Keep the
+    // reserved missing row outside finite-value contrast/gamma correction.
+    let width = u_material.maprange[1] - u_material.maprange[0];
+    let span = select(width, 1.0, width == 0.0);
+    let scaled = clamp((value.r - u_material.maprange[0]) / span, 0.0, 1.0);
+    let rows = f32(textureDimensions(t_colormap));
+    let coordinate = (1.5 + (rows - 2.0) * pow(scaled, u_material.gamma)) / rows;
+    return sample_colormap_nomaprange(coordinate);
+}
+"""
+    code = code.replace(common_include, common.replace(color_include, color))
+    if "fn raycast(" not in code:  # The slice shader only needs color/support.
+        return code
+    replacements = {
+        # A supported first sample wins even below pygfx's -999999 seed.
+        "var the_value : vec4<f32>;": "var the_value = vec4<f32>(0.0);",
+        "if (reff > the_ref) {": (
+            "if (value.g > 0.0 && (the_value.g == 0.0 || reff > the_ref)) {"
+        ),
+        "if (reff < the_ref) {": (
+            "if (value.g > 0.0 && (the_value.g == 0.0 || reff < the_ref)) {"
+        ),
+        "if (ref1 >= the_ref) {": "if (value1.g > 0.0 && ref1 >= the_ref) {",
+        "if (ref2 > the_ref) {": "if (value2.g > 0.0 && ref2 > the_ref) {",
+        "if (ref1 <= the_ref) {": "if (value1.g > 0.0 && ref1 <= the_ref) {",
+        "if (ref2 < the_ref) {": "if (value2.g > 0.0 && ref2 < the_ref) {",
+        "if (reff > iso_threshold) {": "if (value.g > 0.0 && reff > iso_threshold) {",
+        "if (reff < iso_threshold){": "if (value.g == 0.0 || reff < iso_threshold){",
+    }
+    for old, new in replacements.items():
+        expected = 3 if old == "var the_value : vec4<f32>;" else 1
+        if code.count(old) != expected:
+            raise ImportError(
+                "The installed pygfx volume raycaster lacks the checked "
+                "missing-support hooks. Use field_rendering='points' or install "
+                "pygfx>=0.17,<0.18."
+            )
+        code = code.replace(old, new)
+    return code
+
+
+# Cache extension registration, never replace the built-in shader/material.
+
+
+@lru_cache(maxsize=4)
+def _scalar_material_type(mode: str) -> Any:
+    import pygfx
+    from pygfx.renderers.wgpu import load_wgsl, register_wgpu_render_function
+    from pygfx.renderers.wgpu.shaders.volumeshader import (
+        VolumeRayShader,
+        VolumeSliceShader,
+    )
+
+    base_material = {
+        "mip": pygfx.VolumeMipMaterial,
+        "minip": pygfx.VolumeMinipMaterial,
+        "iso": pygfx.VolumeIsoMaterial,
+        "slice": pygfx.VolumeSliceMaterial,
+    }[mode]
+    base_shader = VolumeSliceShader if mode == "slice" else VolumeRayShader
+    source: str = load_wgsl(
+        "volume_slice.wgsl" if mode == "slice" else "volume_ray.wgsl"
+    )
+    if mode == "iso":
+        source = _iso_shader_source(source, pygfx.__version__)
+    source = _volume_shader_source(source, load_wgsl("volume_common.wgsl"))
+
+    class ScalarVolumeMaterial(base_material):  # type: ignore[misc,valid-type]
+        """Only our volumes carry independent scalar and support channels."""
+
+    @register_wgpu_render_function(pygfx.Volume, ScalarVolumeMaterial)
+    class ScalarVolumeShader(base_shader):  # type: ignore[misc,valid-type]
+        def __init__(self, wobject: Any) -> None:
+            super().__init__(wobject)
+            # The scalar color lookup is one dimensional; G is support, not a
+            # second colormap coordinate. Texture sampling still reads RG.
+            self["img_nchannels"] = 1
+
+        def get_code(self) -> str:
+            return source
+
+    return ScalarVolumeMaterial
 
 
 @lru_cache(maxsize=1)
 def _iso_material_type() -> Any:
-    import pygfx
-    from pygfx.renderers.wgpu import load_wgsl, register_wgpu_render_function
-    from pygfx.renderers.wgpu.shaders.volumeshader import VolumeRayShader
-
-    original = load_wgsl("volume_ray.wgsl")
-    corrected = _iso_shader_source(original, pygfx.__version__)
-    if corrected == original:
-        return None  # upstream already computes world coordinates correctly
-
-    class WorldVolumeIsoMaterial(pygfx.VolumeIsoMaterial):
-        """Our volumes alone use the corrected depth and lighting position."""
-
-    @register_wgpu_render_function(pygfx.Volume, WorldVolumeIsoMaterial)
-    class WorldVolumeIsoShader(VolumeRayShader):
-        def get_code(self) -> str:
-            return corrected
-
-    return WorldVolumeIsoMaterial
+    return _scalar_material_type("iso")
 
 
 def require_volume_support(mode: str) -> None:
-    """Check iso depth compatibility before viewer/GPU resource allocation."""
+    """Check scalar sampling and iso depth before viewer/GPU allocation."""
     if mode == "iso":
         _iso_material_type()
+    elif mode in {"mip", "slice"}:
+        _scalar_material_type(mode)
 
 
 def configure_volume_material(graphic: Any, texture: Any) -> None:
     """Use public materials and an isolated fastplotlib material-owner bridge.
 
-    Public threshold/step-size setters in fastplotlib 0.7 write _material, so
-    retain that owner reference when replacing our iso material. Mode changes
-    use the public event API and reapply the fix to this volume alone.
+    Public feature setters in fastplotlib 0.7 write _material, so retain that
+    owner reference when replacing materials. Mode changes use the public
+    event API and reapply scalar/color sampling to this volume alone.
     """
     import weakref
 
@@ -275,34 +355,42 @@ def configure_volume_material(graphic: Any, texture: Any) -> None:
         if not children:
             return
         material = children[0].material
-        if target.mode == "iso":
-            material_type = _iso_material_type()
-            if material_type is not None and not isinstance(material, material_type):
-                # All copied settings are public pygfx material properties.
-                names = (
-                    "clim",
-                    "interpolation",
-                    "gamma",
-                    "opacity",
-                    "pick_write",
+        material_type = (
+            _iso_material_type()
+            if target.mode == "iso"
+            else _scalar_material_type(target.mode)
+        )
+        if not isinstance(material, material_type):
+            # All copied settings are public pygfx material properties.
+            names: tuple[str, ...] = (
+                "clim",
+                "interpolation",
+                "gamma",
+                "opacity",
+                "pick_write",
+                "clipping_planes",
+                "clipping_mode",
+                "alpha_config",
+                "alpha_test",
+                "alpha_compare",
+                "depth_test",
+                "depth_compare",
+                "depth_write",
+            )
+            if target.mode == "iso":
+                names += (
                     "threshold",
                     "step_size",
                     "substep_size",
                     "emissive",
                     "shininess",
-                    "clipping_planes",
-                    "clipping_mode",
-                    "alpha_config",
-                    "alpha_test",
-                    "alpha_compare",
-                    "depth_test",
-                    "depth_compare",
-                    "depth_write",
                 )
-                material = material_type(
-                    **{name: getattr(material, name) for name in names}
-                )
-                target._material = material
+            elif target.mode == "slice":
+                names += ("plane",)
+            material = material_type(
+                **{name: getattr(material, name) for name in names}
+            )
+            target._material = material
         material.map = texture
         for tile in children:
             tile.material = material

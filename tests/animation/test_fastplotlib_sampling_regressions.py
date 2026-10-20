@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, Mock
 import numpy as np
 import pytest
 
+from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation.backends import fastplotlib_backend as backend
 from neurospatial.animation.overlays import (
     BodypartData,
@@ -167,6 +168,7 @@ def test_native_close_releases_graphics_canvas_and_owned_readers_once():
 
     animation._source_lock = RLock()
     animation._closed = False
+    animation._close_notification = _CloseNotification()
     animation._frames = Mock()
     other = SimpleNamespace(slicer=Mock())
     animation.widget = SimpleNamespace(

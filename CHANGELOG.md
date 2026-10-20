@@ -8,6 +8,8 @@
   `field_rendering="mip"`, `"iso"`, `"slice"` and explicit `"points"` fallback.
   Preserve affine environment coordinates, fixed scales and missing voxels;
   thresholds use field units and slice planes use world XYZ coordinates.
+  Keep volume thresholding and maximum selection independent of colormap
+  saturation, so clipped colors cannot erase a surface or change its depth.
   Correct translated isosurface depth in the affected pygfx shader without
   changing other applications' materials.
 - Keep overlay marker diameters in logical screen pixels across napari,
@@ -15,8 +17,8 @@
   zoom. This corrects oversized napari 3-D markers and inconsistent HTML radii.
 - Prepare napari scene reads off the GUI thread with a bounded pending request,
   elapsed-time playback, held-row and overlapping-window caches, and persistent
-  scientific-panel artists. Serialize shared reader access across native views
-  and scene exports; drain workers before closing readers.
+  scientific-panel artists. Serialize shared reader access across native views,
+  view preparation and scene exports; drain workers before closing readers.
 - Snapshot sampled rows and decoded frames before retaining them or handing
   them to a renderer, so lazy readers that reuse scratch buffers cannot change
   already-sampled observations.
@@ -50,6 +52,8 @@
   video readers. Legacy animation dispatch now cleans up readers on failures,
   completed exports and interactive window/widget closure, while retaining
   caller ownership of borrowed resources.
+  Native window closure also unregisters its scene view and runs close callbacks,
+  allowing a reusable scene to release closed viewers.
 - Correct the internal coordinate guide to distinguish prepared environment
   units, pixel centers and each backend's display transform.
 - Preserve decoding recording windows through `Animation.from_decoding` and

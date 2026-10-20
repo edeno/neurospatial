@@ -62,6 +62,7 @@ def test_native_events_submit_only_located_points(located_events, decay, all_mis
 
 @pytest.mark.parametrize("decay", [None, 0, 2])
 @pytest.mark.parametrize("all_missing", [False, True])
+@pytest.mark.napari
 def test_legacy_napari_events_keep_finite_layer_bounds(
     located_events, decay, all_missing, monkeypatch
 ):

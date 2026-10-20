@@ -35,16 +35,37 @@ def test_volume_native_zyx_centers_and_missing_are_distinct_from_zero(grid_env):
     values = np.linspace(-10, 0, grid_env.n_bins)
     values[0] = np.nan
     values[-2] = 0
-    encoded = grid.encode(values, ColorScale("viridis", -10, 0, "lightgray"))
-    assert encoded.shape == (5, 4, 3)
+    encoded = grid.encode(values)
+    assert encoded.shape == (5, 4, 3, 2)
     assert encoded.flags.c_contiguous
-    assert encoded[1, 1, 1] == 0  # inactive
-    assert encoded[0, 0, 0] == 0  # unsupported observation
-    assert encoded[4, 3, 2] == 255  # true zero is the high endpoint
-    assert np.min(encoded[encoded > 0]) >= 1
+    np.testing.assert_array_equal(encoded[1, 1, 1], 0)  # inactive
+    np.testing.assert_array_equal(encoded[0, 0, 0], 0)  # unsupported observation
+    assert encoded[4, 3, 2, 0] == 0  # true zero retains a supported color
+    assert encoded[4, 3, 2, 1] == 1
+    np.testing.assert_allclose(
+        encoded.transpose(2, 1, 0, 3)[grid.active_mask][1:, 0], values[1:]
+    )
     native_centers = np.argwhere(grid.active_mask)
     mapped = native_centers @ grid.matrix[:3, :3].T + grid.matrix[:3, 3]
     np.testing.assert_allclose(mapped, grid_env.bin_centers)
+
+
+def test_volume_scalars_preserve_order_outside_independent_color_limits(grid_env):
+    grid = volume_grid(grid_env)
+    values = np.resize(np.array([-2e6, -1.5e6, -4, 0, 2, 4, np.nan]), grid_env.n_bins)
+    for low, high in ((0, 1), (-3e6, -2.5e6), (10, 20)):
+        scale = ColorScale("viridis", low, high, "lightgray")
+        encoded = grid.encode(values).transpose(2, 1, 0, 3)[grid.active_mask]
+        finite = np.isfinite(values)
+        np.testing.assert_array_equal(encoded[finite, 0], values[finite])
+        np.testing.assert_array_equal(encoded[~finite], 0)
+        np.testing.assert_array_equal(encoded[finite, 1], 1)
+        # Saturated colors can tie while the scientific maxima remain ordered.
+        assert encoded[1, 0] > encoded[0, 0]
+        assert encoded[5, 0] > encoded[4, 0]
+        np.testing.assert_array_equal(
+            scale.rgba(values[:2])[0], scale.rgba(values[:2])[1]
+        )
 
 
 def test_transformed_grid_preserves_world_xyz_and_bin_order(grid_env):
@@ -99,7 +120,7 @@ def test_explicit_volume_validation_precedes_import_and_allocation(monkeypatch):
 
 @pytest.mark.parametrize("mode", ["mip", "iso", "slice"])
 def test_native_volume_uses_public_api_and_lazy_single_frame_updates(grid_env, mode):
-    import pygfx
+    pygfx = pytest.importorskip("pygfx")
 
     class Graphic:
         def __init__(self, data, mode):
@@ -138,10 +159,10 @@ def test_native_volume_uses_public_api_and_lazy_single_frame_updates(grid_env, m
     )
     assert plot.kwargs["mode"] == mode
     assert plot.kwargs["interpolation"] == "nearest"
-    assert plot.kwargs["vmin"] == -0.5
-    assert plot.kwargs["vmax"] == 255.5
+    assert plot.kwargs["vmin"] == -10
+    assert plot.kwargs["vmax"] == 0
     if mode == "iso":
-        assert plot.kwargs["threshold"] == pytest.approx(1 + 254 * 0.7)
+        assert plot.kwargs["threshold"] == -3
     if mode == "slice":
         assert plot.kwargs["plane"] == (0, 0, 1, -58)
     table = plot.graphic.world_object.children[0].material.map.texture.data
@@ -150,7 +171,9 @@ def test_native_volume_uses_public_api_and_lazy_single_frame_updates(grid_env, m
     field.update(np.full(grid_env.n_bins, np.nan))
     assert np.all(plot.graphic.data == 0)
     field.update(np.zeros(grid_env.n_bins))
-    assert np.all(plot.graphic.data[plot.graphic.data != 0] == 255)
+    assert np.all(plot.graphic.data[..., 0] == 0)
+    assert np.count_nonzero(plot.graphic.data[..., 1]) == grid_env.n_bins
+    assert np.all(plot.graphic.data[..., 1][plot.graphic.data[..., 1] > 0] == 1)
     assert scale.vmin == -10 and scale.vmax == 0
     hover = field.graphic.tooltip_format
     assert "bin 58" in hover({"index": (2, 3, 4)})
@@ -186,6 +209,188 @@ def native_fastplotlib():
     if adapter is None:
         pytest.skip("no GPU adapter for native volume captures")
     return fastplotlib
+
+
+@pytest.mark.parametrize("vmin,vmax,threshold", [(0, 1, 1), (2, 3, 3), (0, 4, 1)])
+def test_native_iso_threshold_uses_data_units_beyond_color_limits(
+    native_fastplotlib, vmin, vmax, threshold
+):
+    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
+
+    env = Environment.from_grid_mask(
+        np.ones((5, 5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 3
+    )
+    values = np.zeros((2, env.n_bins))
+    values[0, np.all(np.abs(env.bin_centers - 2.5) <= 1, axis=1)] = 4.0
+    values[1] = np.nan
+    native = FastplotlibAnimation(
+        env,
+        values,
+        frame_times=np.array([0.0, 1.0]),
+        vmin=vmin,
+        vmax=vmax,
+        field_rendering="iso",
+        volume_threshold=threshold,
+    )
+    try:
+        native.show()
+        plot = native.figure["field"]
+        volume = native._field_graphics[0].graphic
+        plot.camera.fov = 0
+        plot.camera.show_object(volume.world_object, view_dir=(0, 0, -1), up=(0, 1, 0))
+        present = native.capture_frame(0.0)
+        absent = native.capture_frame(1.0)
+        screen = plot.map_world_to_screen((2.5, 2.5, 2.5))
+        ratio = present.shape[1] / native.figure.canvas.get_logical_size()[0]
+        col, row = (np.asarray(screen[:2]) * ratio).astype(int)
+        assert np.max(np.abs(present[row, col].astype(float) - absent[row, col])) > 10
+        volume.vmax = 8.0
+        recolored = native.capture_frame(0.0)
+        assert np.max(np.abs(recolored[row, col].astype(float) - absent[row, col])) > 10
+        assert (
+            np.max(np.abs(recolored[row, col].astype(float) - present[row, col])) > 10
+        )
+        volume.gamma = 2.0
+        gamma_corrected = native.capture_frame(0.0)
+        assert (
+            np.max(np.abs(gamma_corrected[row, col].astype(float) - absent[row, col]))
+            > 10
+        )
+        assert (
+            np.max(
+                np.abs(gamma_corrected[row, col].astype(float) - recolored[row, col])
+            )
+            > 5
+        )
+        assert volume.world_object.children[0].material.threshold == threshold
+    finally:
+        native.close()
+
+
+@pytest.mark.parametrize("mode", ["mip", "slice"])
+def test_native_volume_material_gamma_and_opacity_still_change_colors(
+    native_fastplotlib, mode
+):
+    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
+
+    env = Environment.from_grid_mask(
+        np.ones((3, 3, 3), dtype=bool), grid_edges=(np.arange(4.0),) * 3
+    )
+    native = FastplotlibAnimation(
+        env,
+        np.full((2, env.n_bins), 0.5),
+        frame_times=np.array([0.0, 1.0]),
+        vmin=0,
+        vmax=1,
+        field_rendering=mode,
+    )
+    try:
+        native.show()
+        plot = native.figure["field"]
+        volume = native._field_graphics[0].graphic
+        plot.camera.fov = 0
+        plot.camera.show_object(volume.world_object, view_dir=(0, 0, -1), up=(0, 1, 0))
+        original = native.capture_frame(0.0)
+        screen = plot.map_world_to_screen((1.5, 1.5, 1.5))
+        ratio = original.shape[1] / native.figure.canvas.get_logical_size()[0]
+        col, row = (np.asarray(screen[:2]) * ratio).astype(int)
+        volume.gamma = 2.0
+        corrected = native.capture_frame(0.0)
+        assert (
+            np.max(np.abs(original[row, col].astype(float) - corrected[row, col])) > 10
+        )
+        expected = native._field_scales[0].rgba(np.array([0.25]))[0, :3] * 255
+        np.testing.assert_allclose(corrected[row, col], expected, atol=3)
+        volume.gamma = 1.0
+        volume.vmin = 0.25
+        volume.vmax = 1.25
+        contrast = native.capture_frame(0.0)
+        np.testing.assert_allclose(contrast[row, col], expected, atol=3)
+        # Equal explicit limits use ColorScale's unit-span convention.
+        volume.vmin = 0.5
+        volume.vmax = 0.5
+        equal_limits = native.capture_frame(0.0)
+        low_color = native._field_scales[0].rgba(np.array([0.0]))[0, :3] * 255
+        np.testing.assert_allclose(equal_limits[row, col], low_color, atol=3)
+        volume.world_object.children[0].material.opacity = 0.25
+        transparent = native.capture_frame(0.0)
+        assert (
+            np.max(np.abs(equal_limits[row, col].astype(float) - transparent[row, col]))
+            > 5
+        )
+    finally:
+        native.close()
+
+
+@pytest.mark.parametrize(
+    "front,back,vmin,vmax", [(2, 4, 0, 1), (-4, -2, 0, 1), (-2e6, -1.5e6, -3e6, -2.5e6)]
+)
+def test_native_mip_depth_uses_raw_maximum_despite_saturated_color(
+    native_fastplotlib, front, back, vmin, vmax
+):
+    from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
+
+    env = Environment.from_grid_mask(
+        np.ones((5, 5, 5), dtype=bool), grid_edges=(np.arange(6.0),) * 3
+    )
+    values = np.where(env.bin_centers[:, 2] > 2.5, front, back)
+    native = FastplotlibAnimation(
+        env,
+        np.stack([values, np.full(env.n_bins, np.nan)]),
+        frame_times=np.array([0.0, 1.0]),
+        vmin=vmin,
+        vmax=vmax,
+        field_rendering="mip",
+    )
+    try:
+        native.show()
+        plot = native.figure["field"]
+        volume = native._field_graphics[0].graphic
+        plot.camera.fov = 0
+        plot.camera.show_object(volume.world_object, view_dir=(0, 0, -1), up=(0, 1, 0))
+        # The larger value is behind this marker. Saturating both values to
+        # the same scalar would move the maximum in front and hide the marker.
+        point = np.array([2.5, 2.5, 3.0], dtype=np.float32)
+        plot.add_scatter(point[None], colors="cyan", sizes=25)
+        image = native.capture_frame(0.0)
+        screen = plot.map_world_to_screen(point)
+        ratio = image.shape[1] / native.figure.canvas.get_logical_size()[0]
+        col, row = (np.asarray(screen[:2]) * ratio).astype(int)
+        np.testing.assert_array_equal(image[row, col], [0, 255, 255])
+        # A neighboring ray confirms a real supported maximum was rendered,
+        # including data below the upstream -999999 initial maximum.
+        screen = plot.map_world_to_screen((1.5, 2.5, 2.5))
+        finite_col, finite_row = (np.asarray(screen[:2]) * ratio).astype(int)
+        absent = native.capture_frame(1.0)
+        assert (
+            np.max(
+                np.abs(
+                    image[finite_row, finite_col].astype(float)
+                    - absent[finite_row, finite_col]
+                )
+            )
+            > 10
+        )
+        half_span = 2 * abs(back) + 1
+        volume.vmin = back - half_span
+        volume.vmax = back + half_span
+        for gamma in (1.0, 2.0):
+            volume.gamma = gamma
+            recolored = native.capture_frame(0.0)
+            # Native color controls change colors while the raw maximum stays
+            # behind the marker, preserving its correct depth occlusion.
+            np.testing.assert_array_equal(recolored[row, col], [0, 255, 255])
+            assert (
+                np.max(
+                    np.abs(
+                        recolored[finite_row, finite_col].astype(float)
+                        - image[finite_row, finite_col]
+                    )
+                )
+                > 10
+            )
+    finally:
+        native.close()
 
 
 @pytest.mark.parametrize("transformed", [False, True])
@@ -326,7 +531,7 @@ def test_native_iso_depth_occludes_background_and_preserves_foreground(
                 volume.mode = "mip"
                 volume.mode = "iso"
             # The public feature setters must keep writing the active material.
-            volume.threshold = 100.0
+            volume.threshold = 0.5
             volume.step_size = 0.75
             volume.substep_size = 0.1
             image = native.capture_frame(0.0)
@@ -339,7 +544,7 @@ def test_native_iso_depth_occludes_background_and_preserves_foreground(
             assert not np.array_equal(rgb[0], [0, 255, 255])
             np.testing.assert_array_equal(rgb[1], [0, 255, 255])
             assert volume.world_object.children[0].material.threshold == pytest.approx(
-                100.0
+                0.5
             )
     finally:
         native.close()
@@ -356,29 +561,55 @@ def test_iso_shader_guard_accepts_known_fix_and_refuses_unknown_code():
         _iso_shader_source("unrecognized shader", "0.18.0")
 
 
+def test_scalar_shader_guard_refuses_unknown_sampling_or_raycaster():
+    pytest.importorskip("pygfx")
+    from pygfx.renderers.wgpu import load_wgsl
+
+    from neurospatial.environment._fastplotlib_compat import _volume_shader_source
+
+    common = load_wgsl("volume_common.wgsl")
+    source = load_wgsl("volume_ray.wgsl")
+    with pytest.raises(ImportError, match="scalar/color sampling hooks"):
+        _volume_shader_source("unrecognized shader", common)
+    with pytest.raises(ImportError, match="scalar/color sampling hooks"):
+        _volume_shader_source(source, "unrecognized common code")
+    with pytest.raises(ImportError, match="missing-support hooks"):
+        _volume_shader_source(
+            source.replace("if (reff > the_ref) {", "unknown"), common
+        )
+
+
 def test_supported_fastplotlib_widget_contract_imports_without_gpu():
     from neurospatial.environment._fastplotlib_compat import require_animation_support
 
     require_animation_support(pytest.importorskip("fastplotlib"))
 
 
-def test_iso_compatibility_failure_precedes_widget_allocation(grid_env, monkeypatch):
+@pytest.mark.parametrize("mode", ["mip", "iso", "slice"])
+def test_volume_compatibility_failure_precedes_widget_allocation(
+    grid_env, monkeypatch, mode
+):
     import neurospatial.animation.backends.fastplotlib_backend as backend
     import neurospatial.environment._fastplotlib_compat as compatibility
 
-    def unavailable():
-        raise ImportError("Cannot verify this iso shader")
+    def unavailable(*args):
+        raise ImportError("Cannot verify this volume shader")
 
     fake = SimpleNamespace(
         __version__="0.7.0",
         NDWidget=lambda **kwargs: pytest.fail("must validate before allocation"),
     )
     monkeypatch.setattr(backend, "import_fastplotlib", lambda: fake)
-    monkeypatch.setattr(compatibility, "_iso_material_type", unavailable)
+    monkeypatch.setattr(backend, "require_animation_support", lambda fastplotlib: None)
+    monkeypatch.setattr(
+        compatibility,
+        "_iso_material_type" if mode == "iso" else "_scalar_material_type",
+        unavailable,
+    )
     with pytest.raises(ImportError, match="Cannot verify"):
         backend.FastplotlibAnimation(
             grid_env,
             np.ones((2, grid_env.n_bins)),
             frame_times=np.array([0.0, 1.0]),
-            field_rendering="iso",
+            field_rendering=mode,
         )

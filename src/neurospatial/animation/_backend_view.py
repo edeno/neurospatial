@@ -9,10 +9,37 @@ from typing import Any, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.animation._resources import _add_cleanup_note
+from neurospatial.animation._resources import _add_cleanup_note, _raise_cleanup_errors
 
 FrameCapture = Callable[[float], NDArray[np.uint8]]
 CaptureSession = Callable[[], AbstractContextManager[FrameCapture]]
+
+
+class _CloseNotification:
+    """Notify owners once after native resources have been released."""
+
+    def __init__(self) -> None:
+        self._callbacks: list[Callable[[], None]] = []
+        self._closed = False
+
+    def add(self, callback: Callable[[], None]) -> None:
+        if self._closed:
+            callback()
+        else:
+            self._callbacks.append(callback)
+
+    def notify(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        callbacks, self._callbacks = self._callbacks, []
+        failures: list[BaseException] = []
+        for callback in callbacks:
+            try:
+                callback()
+            except BaseException as error:
+                failures.append(error)
+        _raise_cleanup_errors("Native view close notification failed.", failures)
 
 
 class _ViewController(Protocol):
@@ -26,6 +53,8 @@ class _ViewController(Protocol):
     def capture_session(self) -> AbstractContextManager[FrameCapture]: ...
 
     def close(self) -> None: ...
+
+    def _add_close_callback(self, callback: Callable[[], None]) -> None: ...
 
 
 class _BackendView(Protocol):
@@ -43,6 +72,8 @@ class _BackendView(Protocol):
     def seek(self, time: float) -> None: ...
 
     def close(self) -> None: ...
+
+    def _add_close_callback(self, callback: Callable[[], None]) -> None: ...
 
 
 class _NativeBackendView:
@@ -65,6 +96,9 @@ class _NativeBackendView:
 
     def close(self) -> None:
         self._controller.close()
+
+    def _add_close_callback(self, callback: Callable[[], None]) -> None:
+        self._controller._add_close_callback(callback)
 
 
 class _CallbackBackendView:
@@ -95,6 +129,10 @@ class _CallbackBackendView:
 
     def close(self) -> None:
         self._close()
+
+    def _add_close_callback(self, callback: Callable[[], None]) -> None:
+        # The compatibility constructor has no native lifecycle source.
+        pass
 
 
 def _close_after_error(close: Callable[[], None], error: BaseException) -> None:

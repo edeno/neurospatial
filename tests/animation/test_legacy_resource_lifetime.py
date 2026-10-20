@@ -400,7 +400,9 @@ def test_partial_napari_setup_closes_native_viewer_before_reader(env, monkeypatc
             order.append("reader")
             super().close()
 
-    monkeypatch.setattr(napari_backend.napari, "Viewer", lambda **kwargs: Viewer())
+    monkeypatch.setattr(
+        napari_backend, "napari", SimpleNamespace(Viewer=lambda **kwargs: Viewer())
+    )
     monkeypatch.setattr(napari_backend, "NAPARI_AVAILABLE", True)
     reader = OwnedReader()
     with pytest.raises(ValueError, match="native setup failed"):

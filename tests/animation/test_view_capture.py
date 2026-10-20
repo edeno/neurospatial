@@ -200,6 +200,7 @@ def test_scene_bridge_passes_independent_color_scales(scene, monkeypatch):
         seek=Mock(),
         close=Mock(),
         capture_session=Mock(),
+        _add_close_callback=Mock(),
     )
     render = Mock(return_value=native)
     monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)

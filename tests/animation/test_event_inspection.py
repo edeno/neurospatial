@@ -428,6 +428,7 @@ def test_native_view_time_follows_the_users_slider_and_borrows_scene_readers(
         seek=Mock(),
         close=Mock(),
         capture_session=Mock(),
+        _add_close_callback=Mock(),
     )
     render = Mock(return_value=native)
     monkeypatch.setattr(fastplotlib_backend, "render_fastplotlib", render)
@@ -457,7 +458,12 @@ def test_napari_scene_view_uses_physical_clock_adapter(recording, monkeypatch):
     from neurospatial.animation.backends import _napari_scene
 
     handle = SimpleNamespace(
-        viewer=object(), time=10.2, seek=Mock(), close=Mock(), capture_session=Mock()
+        viewer=object(),
+        time=10.2,
+        seek=Mock(),
+        close=Mock(),
+        capture_session=Mock(),
+        _add_close_callback=Mock(),
     )
     build = Mock(return_value=handle)
     monkeypatch.setattr(_napari_scene, "build_napari_scene", build)

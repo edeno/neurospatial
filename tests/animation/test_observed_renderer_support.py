@@ -77,8 +77,14 @@ def test_napari_trail_ids_keep_new_run_endpoints():
     np.testing.assert_array_equal(tracks[-2:, 2:], positions[-2:])
 
 
-def test_napari_pose_filters_missing_points_and_matching_feature_labels(env):
-    from neurospatial.animation.backends.napari_backend import _render_bodypart_overlay
+def test_napari_pose_filters_missing_points_and_matching_feature_labels(
+    env, monkeypatch
+):
+    from neurospatial.animation.backends import napari_backend
+
+    monkeypatch.setattr(
+        napari_backend, "screen_point_options", lambda size: {"size": size}
+    )
 
     body = BodypartData(
         {
@@ -89,7 +95,7 @@ def test_napari_pose_filters_missing_points_and_matching_feature_labels(env):
         {"nose": "red", "body": "blue"},
     )
     viewer = MagicMock()
-    _render_bodypart_overlay(viewer, body, env)
+    napari_backend._render_bodypart_overlay(viewer, body, env)
     points = viewer.add_points.call_args.args[0]
     assert points.shape == (3, 3)
     assert np.isfinite(points).all()

@@ -40,6 +40,7 @@ def test_scene_scale_bar_retains_layer_units_after_zoom():
         assert not [w for w in caught if "deprecated" in str(w.message).lower()]
 
 
+@pytest.mark.napari
 def test_unrecognized_unit_label_does_not_become_a_physical_scale():
     from types import SimpleNamespace
 

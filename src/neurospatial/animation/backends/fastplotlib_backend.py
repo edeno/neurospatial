@@ -29,6 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial.animation._backend_view import _CloseNotification
 from neurospatial.animation._sampling import sample_observation
 from neurospatial.animation._style import (
     _TRAIL_MAX_ALPHA,
@@ -1550,6 +1551,7 @@ class FastplotlibAnimation:
         require_animation_support(fastplotlib)
         require_volume_support(rendering)
         self._closed = False
+        self._close_notification = _CloseNotification()
         self._key_registered = False
         self._source_lock = RLock() if _source_lock is None else _source_lock
         self._field_at_time = _field_at_time
@@ -1565,10 +1567,6 @@ class FastplotlibAnimation:
             def source_rows(source: Any, index: Any) -> NDArray[np.float64]:
                 with self._source_lock:
                     return np.array(source[index], dtype=float, copy=True)
-
-            def extremes_of(source: Any) -> Any:
-                with self._source_lock:
-                    return frame_extremes(source)
 
             stacks, names = _field_stacks(fields, layer_names)
             if _field_styles is not None and len(_field_styles) != len(stacks):
@@ -1694,11 +1692,17 @@ class FastplotlibAnimation:
                     or high is None
                     or (below and "opaque_from" not in style)
                 ):
-                    extremes = (
-                        [extremes_of(stack) for stack in group]
-                        if streams is None
-                        else [extremes_of(field._scale_rows()) for field in streams]
-                    )
+                    # Sampling the stream is itself a source read. Acquire the
+                    # shared lock before evaluating _scale_rows(), not merely
+                    # while reducing the resulting owned snapshots.
+                    with self._source_lock:
+                        extremes = (
+                            [frame_extremes(stack) for stack in group]
+                            if streams is None
+                            else [
+                                frame_extremes(field._scale_rows()) for field in streams
+                            ]
+                        )
                     lows = np.concatenate([item[0] for item in extremes])
                     highs = np.concatenate([item[1] for item in extremes])
                 limits = robust_limits(lows, highs)
@@ -2290,6 +2294,9 @@ class FastplotlibAnimation:
         """Closing the native canvas also ends workers and reader ownership."""
         self.close()
 
+    def _add_close_callback(self, callback: Callable[[], None]) -> None:
+        self._close_notification.add(callback)
+
     def close(self) -> None:
         """Stop worker reads and release complete or partly constructed viewers."""
         if self._closed:
@@ -2334,6 +2341,7 @@ class FastplotlibAnimation:
                 release(canvas.close)
             self._canvas = None
         release(self._reader_owner.close)
+        release(self._close_notification.notify)
         _raise_cleanup_errors("Failed to close native animation resources.", failures)
 
     def show(self, **kwargs: Any) -> Any:

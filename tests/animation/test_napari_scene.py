@@ -21,6 +21,8 @@ from neurospatial.animation.overlays import (
 from neurospatial.animation.scene import Animation, AnimationField
 from neurospatial.animation.skeleton import Skeleton
 
+pytestmark = pytest.mark.napari
+
 
 class ModelViewer:
     """Use real napari layers without requiring a Qt viewer or a display."""

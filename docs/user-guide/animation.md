@@ -160,6 +160,7 @@ playback and waits for pending frame reads before releasing owned readers.
 Use `with Animation(...) as scene:` to give these resources a shared lifetime.
 Closing one view leaves the scene available for another view or export. A
 caller-supplied napari viewer keeps its unrelated layers and controls.
+Closing a native window also closes and unregisters its `AnimationView`.
 
 Scenes support 1-D, 2-D and 3-D environments; napari scenes require 2-D or 3-D.
 Regular 3-D cells retain their physical geometry in scene exports. Uniform
@@ -193,7 +194,9 @@ slice_view = scene.show(
 ```
 
 `volume_threshold` uses the original field's units and must lie within its
-fixed `vmin`/`vmax`; it defaults to their midpoint. `slice_plane=(a, b, c, d)`
+fixed `vmin`/`vmax`; it defaults to their midpoint. Values outside the color
+range saturate in color while retaining their scalar order for maximum
+selection and comparison with an explicit threshold. `slice_plane=(a, b, c, d)`
 means `a*x + b*y + c*z + d = 0` in environment coordinates and defaults to a
 horizontal plane through the volume center. Missing and inactive voxels remain
 transparent, distinct from finite zero or negative values. Nearest voxel

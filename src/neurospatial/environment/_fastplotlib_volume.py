@@ -1,9 +1,10 @@
 """Native 3D volume geometry and missing-aware scalar encoding.
 
 The renderer samples nearest voxels: unsupported cells never interpolate into
-observations. Sentinel 0 is distinct from every finite value (encoded 1..255)
-and has a transparent lookup entry. In particular, negative values and genuine
-zeros remain observations, and an all-missing ray stays transparent.
+observations. Each voxel keeps its scalar separate from its support flag, so
+color saturation cannot change a maximum or an isosurface. Support zero marks
+missing observations; negative values and genuine zeros remain
+observations, and an all-missing ray stays transparent.
 """
 
 from __future__ import annotations
@@ -26,16 +27,22 @@ class VolumeGrid:
     active_mask: NDArray[np.bool_]
     matrix: NDArray[np.float64]
 
-    def encode(
-        self, values: NDArray[np.float64], scale: ColorScale
-    ) -> NDArray[np.float32]:
-        """One frame as contiguous ZYX; zero means missing, never zero activity."""
-        grid = np.zeros(self.active_mask.shape, dtype=np.float32)
-        scaled = scale.scaled(values)
-        grid[self.active_mask] = np.where(
-            np.isfinite(values), 1.0 + 254.0 * scaled, 0.0
+    def encode(self, values: NDArray[np.float64]) -> NDArray[np.float32]:
+        """Contiguous ZYX channels: unclipped scalar and observation support.
+
+        Color limits never participate in scalar encoding. Keeping support in
+        its own channel preserves negative values and true zeros without a
+        scalar sentinel that could affect thresholds or maximum selection.
+        """
+        grid = np.zeros((*self.active_mask.shape, 2), dtype=np.float32)
+        finite = np.isfinite(values)
+        grid[self.active_mask] = np.column_stack(
+            (
+                np.where(finite, values, 0.0),
+                finite,
+            )
         )
-        return np.ascontiguousarray(grid.transpose(2, 1, 0))
+        return np.ascontiguousarray(grid.transpose(2, 1, 0, 3))
 
     @property
     def middle_plane(self) -> tuple[float, float, float, float]:
@@ -144,20 +151,17 @@ class VolumeField:
                 "volume_threshold must lie between fixed vmin and vmax "
                 f"({scale.vmin}, {scale.vmax}), in field data units."
             )
-        encoded_threshold = 1 + 254 * (chosen - scale.vmin) / (
-            (scale.vmax - scale.vmin) or 1
-        )
         self.graphic = subplot.add_image_volume(
-            self.grid.encode(values, scale),
+            self.grid.encode(values),
             mode=mode,
-            vmin=-0.5,
-            vmax=255.5,
+            vmin=scale.vmin,
+            vmax=scale.vmax,
             cmap=scale.cmap if isinstance(scale.cmap, str) else "viridis",
             # Both are necessary: native linear filtering would mix unknown cells
             # into observations or create artificial intermediate iso intensities.
             interpolation="nearest",
             cmap_interpolation="nearest",
-            threshold=encoded_threshold,
+            threshold=chosen,
             plane=self.grid.middle_plane if plane is None else tuple(plane),
         )
         self.graphic.world_object.local.matrix = self.grid.matrix
@@ -167,4 +171,4 @@ class VolumeField:
         configure_volume_material(self.graphic, texture)
 
     def update(self, values: NDArray[np.float64]) -> None:
-        self.graphic.data[:] = self.grid.encode(values, self.scale)
+        self.graphic.data[:] = self.grid.encode(values)
