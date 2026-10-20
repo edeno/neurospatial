@@ -14,6 +14,7 @@ from dataclasses import FrozenInstanceError
 import networkx as nx
 import numpy as np
 import pytest
+import shapely
 
 from neurospatial.simulation.mazes._base import MazeDims
 from neurospatial.simulation.mazes.hex_small import (
@@ -25,6 +26,8 @@ from neurospatial.simulation.mazes.hex_small import (
 )
 
 SPACING = np.sqrt(3) * 7.0  # distance between adjacent hex centres, cm
+_PORT_HEXES = {"port_A": 1, "port_B": 2, "port_C": 3}
+PORTS = list(_PORT_HEXES)
 
 # Each port has two open half-hexes beside it, named in hexmaze after the hex
 # in front of the port: the fourth corner of the rhombus (port, front, other).
@@ -151,9 +154,9 @@ class TestHexLattice:
         assert empty.number_of_edges() == 63
         assert max(d for _, d in empty.degree()) == 3
 
-    def test_ports_are_126_cm_apart_at_the_triangle_corners(self, maze):
+    def test_port_hexes_are_126_cm_apart_at_the_triangle_corners(self, maze):
         ports = np.array(
-            [maze.env_2d.regions[p].data for p in ("port_A", "port_B", "port_C")]
+            [maze.env_2d.regions[p].data.centroid.coords[0] for p in PORTS]
         )
         sides = np.linalg.norm(ports - np.roll(ports, 1, axis=0), axis=1)
         np.testing.assert_allclose(sides, 18 * 7.0)
@@ -179,11 +182,76 @@ class TestHexLattice:
         np.testing.assert_allclose(ratio, 10.0 / 7.0, rtol=0.05)
 
 
+class TestPorts:
+    """Reward ports A, B and C at the vertices, with their port hexes."""
+
+    def test_ports_are_reward_port_landmarks(self, maze):
+        landmarks = maze.env_2d.landmarks
+        assert list(landmarks) == PORTS
+        for (name, hex_id), letter in zip(_PORT_HEXES.items(), "ABC", strict=True):
+            assert landmarks[name].kind == "point"
+            assert dict(landmarks[name].metadata) == {
+                "role": "reward_port",
+                "port": letter,
+                "hex": hex_id,
+            }
+
+    def test_each_port_is_in_the_middle_of_a_cut_off_corner(self, maze, centroids):
+        # The platform's three short walls cut off the triangle's vertices.
+        xy = np.asarray(_platform(centroids, 7.0).exterior.coords)[:-1]
+        ends = np.roll(xy, -1, axis=0)
+        short = np.isclose(np.linalg.norm(ends - xy, axis=1), 7.0)
+        wall_middles = ((xy + ends) / 2)[short]
+        ports = maze.env_2d.landmarks.positions(PORTS)
+        nearest = np.linalg.norm(ports[:, None] - wall_middles[None], axis=-1).min(
+            axis=1
+        )
+        np.testing.assert_allclose(nearest, 0.0, atol=1e-9)
+
+    def test_each_port_is_one_hex_apothem_beyond_its_hex_centre(self, maze, centroids):
+        for name, hex_id in _PORT_HEXES.items():
+            outward = centroids[hex_id] / np.linalg.norm(centroids[hex_id])
+            np.testing.assert_allclose(
+                maze.env_2d.landmarks[name].data,
+                centroids[hex_id] + np.sqrt(3) / 2 * 7.0 * outward,
+                err_msg=name,
+            )
+        np.testing.assert_allclose(
+            maze.env_2d.landmarks["port_A"].data, [0.0, 78.8], atol=0.01
+        )
+
+    def test_port_regions_are_the_port_hexes(self, maze, centroids):
+        regions = maze.env_2d.regions
+        assert list(regions) == PORTS
+        for name, hex_id in _PORT_HEXES.items():
+            hexagon = regions[name].data
+            assert regions[name].kind == "polygon"
+            assert hexagon.area == pytest.approx(3 * np.sqrt(3) / 2 * 7.0**2)
+            np.testing.assert_allclose(hexagon.centroid.coords[0], centroids[hex_id])
+            # The port hex is open floor up to its sides.
+            inside = np.asarray(hexagon.exterior.coords) * 0.99 + 0.01 * np.asarray(
+                hexagon.centroid.coords
+            )
+            assert maze.env_2d.contains(inside).all(), name
+
+    def test_ports_scale_with_the_hex_side(self):
+        large = make_small_hex_maze(SmallHexDims(hex_side=10.0), include_track=False)
+        np.testing.assert_allclose(
+            large.env_2d.landmarks["port_A"].data, [0.0, 78.8 * 10.0 / 7.0], atol=0.02
+        )
+
+    def test_track_carries_the_ports(self, maze):
+        assert list(maze.env_track.landmarks) == PORTS
+        for name, hex_id in _PORT_HEXES.items():
+            node = maze.env_track.binning.linearization.graph.nodes[f"hex_{hex_id}"]
+            assert maze.env_track.regions[name].data.contains(
+                shapely.Point(node["pos"])
+            )
+
+
 class TestFloor:
-    def test_units_and_port_regions(self, maze):
+    def test_units(self, maze):
         assert maze.env_2d.units == "cm"
-        assert sorted(maze.env_2d.regions) == ["port_A", "port_B", "port_C"]
-        assert all(r.kind == "point" for r in maze.env_2d.regions.values())
 
     @pytest.mark.parametrize("bin_size", [1.0, 2.0, 3.0, 4.0])
     def test_floor_is_one_piece(self, bin_size):

@@ -21,9 +21,12 @@ barrier sets are allowed:
   (``utils.create_empty_hex_maze``);
 - the hex side is 7 cm (corner to corner 14 cm), the package's measurement
   of its ``"new_maze"`` (``plotting.get_pixels_per_cm``).
-  Adjacent hex centres are then ``sqrt(3) * 7 = 12.1`` cm apart, the ports
-  are 126 cm apart, and the triangle's long sides measure about 133 cm,
-  close to the published 1.30 m.
+  Adjacent hex centres are then ``sqrt(3) * 7 = 12.1`` cm apart, the port
+  hexes are 126 cm apart, and the triangle's long sides measure about 133 cm,
+  close to the published 1.30 m;
+- each reward port is in the short wall that cuts off a corner of the
+  triangle, the outer side of its port hex, which is the vertex where the
+  paper places it.
 
 Examples
 --------
@@ -58,6 +61,7 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 from neurospatial.environment import Environment
+from neurospatial.landmarks import Landmark, Landmarks
 from neurospatial.regions import Regions
 from neurospatial.simulation.mazes._base import MazeDims, MazeEnvironments
 from neurospatial.simulation.mazes._geometry import widest_corridor
@@ -299,17 +303,31 @@ def make_small_hex_maze(
     long straight runs). They are not enforced here, so training mazes with
     fewer barriers and the empty maze (``barriers=frozenset()``) can be built.
 
-    Regions (points at the centre of each port hex):
+    The paper has "liquid reward ports at each vertex" of the triangle, and
+    hexmaze's maze footprint (``plotting.get_maze_bounding_box``) cuts each
+    vertex off at the outer side of its port hex (hexes 1, 2 and 3). The
+    ports are landmarks with ``metadata["role"] == "reward_port"``, each a
+    point at the middle of that cut-off wall, ``sqrt(3) / 2 * hex_side``
+    (6.1 cm) beyond the port hex's centre. Neither source gives the port's
+    exact mounting or size, so its region is the port hex, the unit of the
+    maze from which the rat reaches the port and which hexmaze numbers as
+    the port:
 
     - port_A: hex 1, top corner
     - port_B: hex 2, bottom left corner
     - port_C: hex 3, bottom right corner
 
+    Each landmark's metadata also names its ``port`` letter and ``hex``.
+
     Examples
     --------
     >>> maze = make_small_hex_maze()
-    >>> maze.env_2d.regions["port_A"].data.round(1)  # top corner
-    array([ 0. , 72.7])
+    >>> maze.env_2d.landmarks["port_A"].data.round(1)  # top corner
+    array([ 0. , 78.8])
+    >>> dict(maze.env_2d.landmarks["port_A"].metadata)
+    {'role': 'reward_port', 'port': 'A', 'hex': 1}
+    >>> maze.env_2d.regions["port_A"].kind  # the port hex
+    'polygon'
 
     A different barrier configuration, e.g. a training maze with 6 barriers:
 
@@ -366,10 +384,23 @@ def make_small_hex_maze(
         name="small_hex_maze",
         connect_diagonal_neighbors=True,
     ).with_metadata(units="cm")
+    # Each port sits in the wall that cuts off its corner of the triangle, the
+    # outer side of its port hex; the maze centre is the origin.
+    apothem = math.sqrt(3) / 2 * side
     regions = Regions()
+    landmarks = []
     for name, hex_id in _PORTS.items():
-        regions.add(name, point=tuple(centroids[hex_id]))
-    env_2d = env_2d.with_regions(regions)
+        center = centroids[hex_id]
+        regions.add(name, polygon=_hexagon(center, side))
+        landmarks.append(
+            Landmark(
+                name,
+                "point",
+                center + apothem * center / np.linalg.norm(center),
+                {"role": "reward_port", "port": name[-1], "hex": hex_id},
+            )
+        )
+    env_2d = env_2d.with_regions(regions).with_landmarks(Landmarks(landmarks))
 
     env_track = None
     if include_track:
