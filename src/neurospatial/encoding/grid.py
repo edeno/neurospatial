@@ -1295,8 +1295,8 @@ def _find_autocorr_peaks(
 
 def grid_scale(
     autocorr_2d: NDArray[np.float64],
-    bin_size: float,
     *,
+    bin_size: float,
     n_peaks: int = 6,
     min_distance: int = 5,
     threshold_rel: float = 0.1,
@@ -1413,8 +1413,8 @@ def grid_scale(
 
 def grid_properties(
     autocorr_2d: NDArray[np.float64],
-    bin_size: float,
     *,
+    bin_size: float,
     inner_radius_fraction: float = 0.2,
     outer_radius_fraction: float = 0.5,
     n_peaks: int = 6,
@@ -1481,7 +1481,7 @@ def grid_properties(
 
     The results are equivalent to calling:
     - `grid_score(autocorr_2d, ...)` - matches exactly
-    - `grid_scale(autocorr_2d, bin_size, ...)` - may differ slightly
+    - `grid_scale(autocorr_2d, bin_size=..., ...)` - may differ slightly
 
     Note: `grid_properties` performs peak detection once and reuses results,
     while `grid_scale` performs an independent peak

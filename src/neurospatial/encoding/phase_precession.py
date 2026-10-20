@@ -76,8 +76,8 @@ __all__ = [
 
 def theta_phase(
     lfp: NDArray[np.float64],
-    sampling_rate: float,
     *,
+    sampling_rate: float,
     band: tuple[float, float] = (6.0, 10.0),
 ) -> NDArray[np.float64]:
     """Extract instantaneous theta phase from a local field potential (LFP).
@@ -144,7 +144,7 @@ def theta_phase(
     >>> sampling_rate = 1000.0
     >>> t = np.arange(0, 5, 1 / sampling_rate)
     >>> lfp = np.sin(2 * np.pi * 8.0 * t)
-    >>> phase = theta_phase(lfp, sampling_rate, band=(6, 10))
+    >>> phase = theta_phase(lfp, sampling_rate=sampling_rate, band=(6, 10))
     >>> phase.shape == lfp.shape
     True
     >>> bool(phase.min() >= 0 and phase.max() < 2 * np.pi)
