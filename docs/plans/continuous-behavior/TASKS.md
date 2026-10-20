@@ -65,7 +65,7 @@ Source: [phase-1-observation-support.md](phase-1-observation-support.md).
   `generate_population_spikes` accept `break_before` through the shared
   `_intervals` gate (#121; `tests/encoding/test_declared_breaks.py`,
   `tests/decoding/test_declared_breaks.py`, `tests/behavior/test_declared_breaks.py`).
-  Remaining: `behavior.distance_to_reward` (position interpolation), `behavior.mean_square_displacement`, `behavior.time_efficiency` and `ops.visibility_occupancy` take neither `max_gap` nor `break_before`.
+  Remaining: `behavior.distance_to_reward` (position interpolation), `behavior.time_efficiency` and `ops.visibility_occupancy` take neither `max_gap` nor `break_before`.
 - [x] Fix missing-position transitions and movement helpers without bridging gaps.
   Evidence: `Environment.transitions(times=, positions=)` counts only
   inside-to-inside pairs (`c77e3833`, #85; `tests/environment/test_missing_data.py`).
