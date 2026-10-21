@@ -266,3 +266,75 @@ def test_dispose_after_docked_widgets_are_deleted(preview):
     control.dispose()
     assert len(changes) == before
     assert control.outline is None
+
+
+def test_cvat_accuracy_reuses_contour_and_retains_independent_style_settings(
+    preview, monkeypatch
+):
+    from neurospatial.annotation import _outline_preview
+
+    control, _viewer, _annotations, _points, _changes = preview
+    control.detail_slider.setValue(25)
+    control.set_style("cvat")
+    assert control.detail_slider.maximum() == 13
+    assert control.detail_slider.value() == 9
+    calls = []
+    convert = _outline_preview.cvat_contour
+
+    def count(proposal):
+        calls.append(proposal)
+        return convert(proposal)
+
+    monkeypatch.setattr(_outline_preview, "cvat_contour", count)
+    control.show(_proposal())
+    assert len(control.outline.polygons) == 1
+    assert not control.outline.polygons[0].interiors
+    assert control.outline.simplify_tolerance_px == pytest.approx(10 / 7)
+    _assert_paths_match(control)
+    control.detail_slider.setValue(13)
+    assert control.outline.simplify_tolerance_px == 0
+    assert len(calls) == 1
+    assert control.outline.proposal.metadata["cvat_polygon"]["accuracy"] == 13
+    control.set_style("preserve")
+    assert control.outline is None
+    assert control.detail_slider.value() == 25
+    control.show(_proposal())
+    assert len(control.outline.polygons) == 2
+    assert sum(len(p.interiors) for p in control.outline.polygons) == 1
+    control.set_style("cvat")
+    assert control.detail_slider.value() == 13
+    control.show(_proposal())
+    assert len(calls) == 2
+
+
+def test_cvat_degenerate_simplification_can_recover_with_higher_accuracy(preview):
+    control, _viewer, _annotations, _points, _changes = preview
+    control.set_style("cvat")
+    mask = np.zeros((5, 5), dtype=bool)
+    mask[2, 2] = True
+    control.show(SegmentationProposal(mask))
+    assert control.outline is None
+    assert control.detail_slider.isEnabled()
+    assert "Increase accuracy" in control.detail_status.text()
+    control.detail_slider.setValue(13)
+    assert control.outline is not None
+    _assert_paths_match(control)
+    assert control.outline.polygons[0].bounds == (2, 2, 3, 3)
+
+
+def test_cvat_painting_updates_conversion_and_keeps_source_mask_owned(preview):
+    control, _viewer, _annotations, _points, _changes = preview
+    proposal = _proposal()
+    control.set_style("cvat")
+    control.show(proposal)
+    control.edit()
+    painted = np.zeros_like(proposal.mask)
+    painted[2:12, 2:12] = True
+    painted[4:8, 4:8] = False
+    control.mask_layer.data = painted.astype(np.uint8)
+    outline = control.snapshot()
+    assert_array_equal(outline.proposal.mask, painted)
+    assert not outline.polygons[0].interiors
+    assert outline.polygons[0].bounds == (2, 2, 12, 12)
+    assert not np.array_equal(outline.proposal.mask, proposal.mask)
+    _assert_paths_match(control)

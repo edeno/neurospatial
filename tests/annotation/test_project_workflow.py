@@ -168,8 +168,9 @@ def test_calibration_and_explicit_bin_size_share_history_without_moving_shapes(
     assert_array_equal(shapes.data[0], original)
 
 
+@pytest.mark.parametrize("style", ["preserve", "cvat"])
 def test_simplified_preview_is_accepted_exactly_and_survives_history_and_save(
-    session_factory, tmp_path
+    session_factory, tmp_path, style
 ):
     from shapely.geometry import MultiPolygon
 
@@ -193,9 +194,18 @@ def test_simplified_preview_is_accepted_exactly_and_survives_history_and_save(
         "polygon_outline": {"source": ["provider-owned", 3]},
     }
     proposal = SegmentationProposal(mask, metadata=provider_metadata)
-    exact = polygon_outline(proposal)
-    preview = simplify_polygon_outline(exact, 1.0)
-    assert preview.vertex_count < exact.vertex_count
+    if style == "cvat":
+        pytest.importorskip("cv2")
+        from neurospatial.annotation._cvat_polygon import (
+            cvat_contour,
+            simplify_cvat_contour,
+        )
+
+        preview = simplify_cvat_contour(cvat_contour(proposal))
+    else:
+        exact = polygon_outline(proposal)
+        preview = simplify_polygon_outline(exact, 1.0)
+        assert preview.vertex_count < exact.vertex_count
     session.accept_outline(preview)
     accepted = capture_shapes(shapes)
 
@@ -205,15 +215,25 @@ def test_simplified_preview_is_accepted_exactly_and_survives_history_and_save(
         )
         actual = MultiPolygon([result.regions[name].data for name in result.regions])
         assert actual.equals_exact(MultiPolygon(preview.polygons), 0.0)
-        assert sum(len(p.interiors) for p in actual.geoms) == 1
+        assert sum(len(p.interiors) for p in actual.geoms) == (
+            0 if style == "cvat" else 1
+        )
         for name in result.regions:
             metadata = _thaw_metadata(result.regions[name].metadata)
             assert metadata["provider"] == "test"
             assert metadata["settings"] == {"thresholds": [0.2, 0.8]}
             assert metadata["polygon_outline"] == {
-                "simplify_tolerance_px": 1.0,
+                "simplify_tolerance_px": preview.simplify_tolerance_px,
                 "proposal_metadata": {"source": ["provider-owned", 3]},
             }
+            if style == "cvat":
+                assert metadata["annotation_style"] == "cvat"
+                assert (
+                    metadata["cvat_polygon"]
+                    == preview.proposal.metadata["cvat_polygon"]
+                )
+                assert metadata["cvat_polygon"]["source_hole_count"] == 1
+                assert metadata["cvat_polygon"]["dropped_contour_count"] == 1
 
     assert_preview_preserved()
     assert proposal.metadata == provider_metadata
@@ -224,7 +244,7 @@ def test_simplified_preview_is_accepted_exactly_and_survives_history_and_save(
     path = tmp_path / "simplified.nsp"
     session.save_project(path)
     loaded = AnnotationProject.load(path)
-    assert len(loaded.shapes) == len(accepted) == 3
+    assert len(loaded.shapes) == len(accepted) == (1 if style == "cvat" else 3)
     for actual, expected in zip(loaded.shapes, accepted, strict=True):
         assert_array_equal(actual.vertices, expected.vertices)
         assert actual.metadata == expected.metadata

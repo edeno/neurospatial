@@ -423,6 +423,89 @@ class SegmentAnythingProvider:
                 # Repeated Update requests must not drift by feeding a mask
                 # back into itself without any new information.
                 return previous
+        masks, scores, logits = self._predict_masks(
+            image,
+            prompt,
+            multimask_output=previous is None,
+            mask_input=None if previous is None else previous.logits,
+        )
+        selected = int(np.argmax(scores))
+        steps = 0 if previous is None else previous.steps + 1
+        proposal = SegmentationProposal(
+            masks[selected].astype(np.bool_),
+            score=float(scores[selected]),
+            metadata={
+                "provider": "segment_anything",
+                "selected_mask": selected,
+                "refinement_steps": steps,
+            },
+        )
+        assert self._cached_image is not None
+        return _SAMRefinement(
+            owner=self._refinement_owner,
+            image=self._cached_image,
+            prompt=prompt,
+            proposal=proposal,
+            logits=read_only_copy(logits[selected : selected + 1]),
+            steps=steps,
+        )
+
+    def _predict_single_mask(
+        self, image: NDArray[np.uint8], prompt: SegmentationPrompt
+    ) -> SegmentationProposal:
+        """Request one mask from all current prompts, without previous logits.
+
+        This private comparison policy follows CVAT's single-mask request. When
+        exposed by the Meta backend, its dynamic multimask stability fallback is
+        disabled only for this request and restored even after inference fails.
+        Only image embeddings are shared with the refinement policy.
+        """
+        image = _validate_inputs(image, prompt)
+        if not len(prompt.points) and prompt.box is None:
+            raise ValueError(
+                "SAM segmentation needs foreground/background clicks or a bounding box."
+            )
+        decoder: Any = getattr(
+            getattr(self._predictor, "model", None), "sam_mask_decoder", None
+        )
+        missing = object()
+        fallback = getattr(decoder, "dynamic_multimask_via_stability", missing)
+        override_applied = fallback is not missing
+        try:
+            if override_applied:
+                decoder.dynamic_multimask_via_stability = False
+            masks, scores, _ = self._predict_masks(
+                image, prompt, multimask_output=False
+            )
+        finally:
+            if override_applied:
+                decoder.dynamic_multimask_via_stability = fallback
+        if len(masks) != 1:
+            raise ValueError(
+                "SAM predictor must return exactly one mask when multimask_output=False for single-mask prediction."
+            )
+        return SegmentationProposal(
+            masks[0].astype(np.bool_),
+            score=float(scores[0]),
+            metadata={
+                "provider": "segment_anything",
+                "selected_mask": 0,
+                "refinement_steps": 0,
+                "prediction_mode": "single_mask",
+                "previous_logits": False,
+                "dynamic_multimask_override": override_applied,
+            },
+        )
+
+    def _predict_masks(
+        self,
+        image: NDArray[np.uint8],
+        prompt: SegmentationPrompt,
+        *,
+        multimask_output: bool,
+        mask_input: NDArray[Any] | None = None,
+    ) -> tuple[NDArray[Any], NDArray[Any], NDArray[Any]]:
+        """Run a validated request with content-cached embeddings."""
         try:
             if self._cached_image is None or not np.array_equal(
                 image, self._cached_image
@@ -433,7 +516,7 @@ class SegmentAnythingProvider:
                 self._predictor.set_image(np.array(owned_image, copy=True))
                 self._cached_image = owned_image
             refinement_args = (
-                {} if previous is None else {"mask_input": previous.logits.copy()}
+                {} if mask_input is None else {"mask_input": mask_input.copy()}
             )
             output = self._predictor.predict(
                 point_coords=np.array(prompt.points, copy=True)
@@ -443,7 +526,7 @@ class SegmentAnythingProvider:
                 if len(prompt.points)
                 else None,
                 box=None if prompt.box is None else np.array(prompt.box, copy=True),
-                multimask_output=previous is None,
+                multimask_output=multimask_output,
                 **refinement_args,
             )
         except Exception as exc:
@@ -474,26 +557,7 @@ class SegmentAnythingProvider:
             raise ValueError(
                 "SAM predictor returned invalid masks/scores/logits; expected finite binary masks (N, height, width), scores (N,), and finite logits."
             )
-        selected = int(np.argmax(scores))
-        steps = 0 if previous is None else previous.steps + 1
-        proposal = SegmentationProposal(
-            masks[selected].astype(np.bool_),
-            score=float(scores[selected]),
-            metadata={
-                "provider": "segment_anything",
-                "selected_mask": selected,
-                "refinement_steps": steps,
-            },
-        )
-        assert self._cached_image is not None
-        return _SAMRefinement(
-            owner=self._refinement_owner,
-            image=self._cached_image,
-            prompt=prompt,
-            proposal=proposal,
-            logits=read_only_copy(logits[selected : selected + 1]),
-            steps=steps,
-        )
+        return masks, scores, logits
 
 
 def mask_to_polygons(

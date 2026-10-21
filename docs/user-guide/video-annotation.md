@@ -207,7 +207,7 @@ environment, regions, walls and landmarks.
 
 ### Try the Sample Arena
 
-From a checkout with the animation dependencies installed, this launcher opens
+From a checkout with the animation and video dependencies installed, this launcher opens
 a synthetic arena with an obstacle and reward area. Run from the checkout
 containing `examples/try_annotation.py`; if using a separate worktree, change
 into that worktree first:
@@ -215,6 +215,10 @@ into that worktree first:
 ```bash
 uv run --no-sync python examples/try_annotation.py --provider cpu
 ```
+
+CVAT-style polygon conversion uses OpenCV from the `video` extra. If it is
+missing, install `opencv-python` into the current environment or select
+**Preserve topology**, which does not need OpenCV.
 
 Click **Mark points**, then left-click the tan floor. An outline appears
 automatically; add inside/outside clicks to refine it, then **Accept outline**.
@@ -234,8 +238,13 @@ Open **Project and Assistance** and use **Assisted outline** to suggest a
 boundary or region from clicks. The CPU provider works best with a distinctly
 colored surface; SAM 2 can handle more complex scenes:
 
-1. Click **Mark points**, then left-click inside the desired area. Add an inside
-   point in each disconnected area that should be included.
+This comparison branch starts with **Outline method → CVAT-style**. Select
+**Preserve topology** to use the previous behavior. Switching methods keeps your
+clicks, replaces any painted preview, and starts a fresh prediction; accepted
+annotations are unaffected. Each method remembers its own polygon slider setting.
+
+1. Click **Mark points**, then left-click inside the desired area. In **Preserve
+   topology**, add an inside point in each disconnected area to include it.
 2. Right-click to add outside points. Alt-click near a point to remove it, or use
    **Undo last point**. To move or select several points, use napari's point
    selection tool; **Delete selected** removes selected prompts. Click **Mark
@@ -244,22 +253,26 @@ colored surface; SAM 2 can handle more complex scenes:
    it; the point tool stays active. The default CPU provider keeps areas connected
    to inside points whose colors fall within **Color tolerance**. Increase the
    tolerance to include a wider range of colors; this also updates the preview.
-4. **Polygon detail** starts at **1.4 pixels** to reduce jagged edges and the
-   number of vertices. Set it to **0** for the exact pixel outline; increasing
-   the tolerance simplifies it further. The cyan paths show the exact polygons
-   that will be accepted, including every hole. This
-   updates immediately without rerunning inference. The vertex count helps you
-   balance detail against editing complexity.
+4. In **CVAT-style**, **Polygon accuracy** starts at **9** (about 1.43 pixels of
+   tolerance). Higher accuracy keeps more vertices; **13** removes simplification
+   but still applies dilation, fills holes, and keeps only one outer contour.
+   In **Preserve topology**, **Polygon detail** starts at **1.4 pixels**; set it to
+   **0** for the exact pixel outline, or increase it to simplify further.
+   The cyan paths show exactly what will be accepted. Moving either slider updates
+   these paths without rerunning inference. If simplification collapses a small
+   object, increase CVAT accuracy or choose Preserve topology.
 5. Optionally click **Paint / erase preview** to correct the mask with napari's
    painting tools. Painting foreground includes pixels; erasing excludes them.
    The polygon paths update after each stroke. Changing polygon detail preserves
-   painted edits; further prompt or fragment-cleanup changes replace them.
-6. Click **Accept outline** to add editable polygon geometry. Its holes and
-   disconnected components are retained. Use **Discard outline** to remove a
+   painted edits; further prompt, method, or fragment-cleanup changes replace them.
+   CVAT-style conversion still fills erased interior holes and drops other
+   contours; choose Preserve topology when those edits must be retained.
+6. Click **Accept outline** to add the displayed polygon geometry. Use
+   **Discard outline** to remove a
    preview, or **Clear prompts** before trying a different selection. Accepting
    an outline clears its prompts so the next object starts with a fresh set.
 
-**Remove stray fragments** is enabled by default. It keeps every connected
+In **Preserve topology**, **Remove stray fragments** is enabled by default. It keeps every connected
 foreground region containing an inside point, including holes within those
 regions, and removes disconnected pieces you have not marked. Add an inside
 point to any separate region you want to retain. The status shows how many
@@ -269,7 +282,14 @@ inside points fall within the predicted foreground, the preview is left intact
 and the status asks you to refine it. Cleanup does not fill holes or bridge gaps.
 Manual paint/erase corrections made afterward are retained when you accept.
 
-The detail slider preserves holes and disconnected components; it does not
+This checkbox is disabled in **CVAT-style**: that method dilates once with a
+2 × 2 kernel and keeps the external contour with the greatest perimeter,
+regardless of which components contain inside points. Nearby pieces can join;
+holes and all other contours are discarded. Dilation and contour coordinates
+also move boundaries relative to the original pixel-cell edges. This can produce
+a cleaner outline while losing a real obstacle or part of the environment.
+
+In **Preserve topology**, the detail slider preserves holes and disconnected components; it does not
 fill gaps or join fragments. Returning it to zero restores the exact current
 mask outline. The accepted polygons and their pixel tolerance are retained by
 project save/load and Undo/Redo. Any separately configured export simplification
@@ -299,7 +319,13 @@ inference runs in the background. The first SAM 2 preview may take longer while
 the model embeds the image. For manual updates, turn off **Update outline as I
 click**, then click **Update outline** when ready. This works with both providers.
 
-With SAM 2, adding an inside or outside click refines the last displayed model
+In **CVAT-style**, SAM 2 requests one mask from all current clicks on every
+update, without passing previous logits. The integration also temporarily
+disables Meta's dynamic multimask fallback when the model exposes it. Image
+embeddings are reused, and the model's original fallback setting is restored
+after each call.
+
+In **Preserve topology**, adding a SAM 2 inside or outside click refines the last displayed model
 prediction using its previous low-resolution logits. The first prediction offers
 multiple candidates internally and selects the highest-scoring mask; later clicks
 request a single refined mask. Moving or removing an existing point starts a fresh
@@ -315,7 +341,9 @@ record the number of refinement steps in their metadata. Direct
 earlier prompts and only reuse image embeddings.
 
 The same segmentation tools work without napari. Prompts use pixel `(x, y)`
-coordinates, while masks use `[row, column]` indexing. Polygon boundaries follow
+coordinates, while masks use `[row, column]` indexing. The public
+`mask_to_polygons` function retains its topology-preserving contract regardless
+of the viewer's outline method. Its polygon boundaries follow
 pixel edges: a pixel centered at `(x, y)` covers a unit square extending half a
 pixel in each direction. The conversion preserves exact mask area, holes and
 every component when `simplify_tolerance=0`.
@@ -392,8 +420,10 @@ are reused between clicks, so a larger model's initial image processing can take
 longer than subsequent outline updates. `--checkpoint` and `--model-config` still
 override the selected defaults; weights are never downloaded by the launcher.
 Without `--provider sam2`, the launcher uses CPU color region growing and needs
-no SAM checkpoint. Both providers start the polygon preview at **1.4 pixels**
-of simplification; set **Polygon detail** to **0** for an exact mask outline.
+no SAM checkpoint. Both providers start with **CVAT-style**, **Polygon accuracy 9**.
+Select **Preserve topology** and set **Polygon detail** to **0** for an exact mask
+outline. `--check` uses the default single-mask SAM recipe on the sample image;
+it checks prediction only and does not open a viewer or convert polygons.
 
 Load the provider **before** opening the editor so dependency, config or
 checkpoint errors are reported first. Supply an existing local checkpoint;
@@ -418,14 +448,59 @@ result = annotate_video(
 
 You can instead wrap an already constructed SAM2-style image predictor with
 `SegmentAnythingProvider(predictor)`. Give the adapter exclusive use of that
-predictor: it caches embeddings for unchanged image content and selects the
-highest-scoring mask. The integration is tested with mocked predictors;
-running real SAM 2 weights requires your separately installed model setup.
+predictor: it caches embeddings for unchanged image content. Direct `predict`
+calls select the highest-scoring candidate; the viewer applies the selected
+outline method's prediction policy. Running real SAM 2 weights requires your
+separately installed model setup.
+
+### Compare Prediction and Polygon Processing
+
+The two viewer methods combine different prediction and polygon policies:
+
+| Behavior | CVAT-style | Preserve topology |
+| --- | --- | --- |
+| SAM prediction | One mask from all clicks, no logit feedback | Best initial candidate, then previous-logit refinement |
+| Disconnected fragments | Keep one contour by perimeter after dilation | Keep marked components, or all components with cleanup off |
+| Holes | Fill all holes | Preserve holes |
+| Boundary processing | 2 × 2 dilation, external contour, OpenCV Douglas–Peucker | Pixel-cell edges, topology-preserving Shapely simplification |
+| Detail control | Accuracy 0–13; default 9, higher retains more | Tolerance 0–10 px; default 1.4, lower retains more |
+
+To separate the effects, run the headless comparison on the same RGB frame,
+prompts, and local SAM weights:
+
+```bash
+PYTHONPATH=src uv run --no-sync python examples/compare_annotation_styles.py \
+    --provider sam2 --video data/annotation_demo/j16_02_r1.mp4 \
+    --frame-index 0 --inside 410 400 --outside 25 25 \
+    --output-dir /tmp/annotation-comparison
+```
+
+Choose a new output directory for each run. Repeat `--inside X Y` and
+`--outside X Y` as needed; the comparison processes all inside clicks first,
+then all outside clicks in their respective argument order. Use `--image` instead
+of `--video` for a still image. Omit the source and use `--provider cpu` to compare
+polygon processing alone on the synthetic arena.
+
+The output includes a four-panel `comparison.png`, `metrics.json`, the input RGB
+and both raw predictions in `raw_masks.npz`, and accepted geometries in
+`polygons.geojson`. Each prediction is converted by both polygon recipes. Compare
+the same row to isolate polygon processing; compare the same column to isolate
+prediction. Metrics record components, holes, vertices, area, prompt coordinates,
+and model configuration. They describe differences, not segmentation accuracy:
+there is no ground-truth outline. Timings also include different embedding and
+prediction histories and are not a speed benchmark.
+
+Both methods save the displayed geometry and its provenance. CVAT-style metadata
+records accuracy, dilation, discarded contours, source components/holes, and the
+pinned upstream revision. Invalid or collapsed contours cannot be accepted.
+Increase accuracy for a collapsed small object; for self-intersections, adjust
+accuracy, refine prompts, or switch methods. More detail can expose
+self-intersections, so accuracy 13 is not a guarantee of valid geometry.
 
 ### Design Credit and References
 
 We credit [CVAT](https://github.com/cvat-ai/cvat), CVAT.ai, and its contributors
-for the interaction design that inspired our assisted outlining: inside/outside
+for the interaction design and polygon processing that informed our assisted outlining: inside/outside
 clicks, live mask-to-polygon previews with adjustable detail, and an optional
 inference region of interest. The following links pin the public source reviewed
 for this integration so it remains traceable as upstream develops:
@@ -435,12 +510,13 @@ for this integration so it remains traceable as upstream develops:
 - [Polygon conversion](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-core/src/opencv/opencv-interface.ts) and [default settings](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-ui/src/reducers/settings-reducer.ts): contour extraction and the accuracy-to-pixel-tolerance mapping.
 - [SAM 2 interactor](https://github.com/cvat-ai/cvat-models/blob/d2ebbc7f37d9c002d74fa8d392e9f3f8cb3aa419/interactor/sam2/func.py) in [cvat-models](https://github.com/cvat-ai/cvat-models): model prompting and image-embedding reuse.
 
-CVAT's referenced default accuracy of 9 maps to `10 / 7` pixels (about 1.43);
-our **1.4 px** default rounds that to the slider's 0.1 px steps. Neurospatial's
-polygon conversion preserves holes and every retained component, without adding
-dilation. Our subsequent SAM clicks also use previous-logit refinement. These
-choices mean the implementations can produce different outlines from the same
-prompts; the references do not establish CVAT Online's deployed model settings.
+CVAT's referenced default accuracy of 9 maps to `10 / 7` pixels (about 1.43),
+which the CVAT-style method uses directly. It follows the referenced padding,
+dilation, external-contour selection, and OpenCV simplification behavior.
+**Preserve topology** retains our earlier pixel-cell geometry and **1.4 px**
+default. Our SAM implementation still uses Meta's backend; the referenced CVAT
+interactor uses Hugging Face. Matching its single-mask prompting policy does not
+establish identical model outputs or CVAT Online's deployed weights and settings.
 
 ## Track Graph Annotation
 

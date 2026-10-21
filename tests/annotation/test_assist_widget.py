@@ -38,12 +38,15 @@ class _Signal:
 
 
 class _Worker:
-    def __init__(self, provider, frame, prompt, previous=None, bounds=None):
+    def __init__(
+        self, provider, frame, prompt, previous=None, bounds=None, style="preserve"
+    ):
         self.provider = provider
         self.frame = frame
         self.prompt = prompt
         self.previous = previous
         self.bounds = bounds
+        self.style = style
         self.returned = _Signal()
         self.errored = _Signal()
         self.finished = _Signal()
@@ -61,7 +64,12 @@ class _Worker:
 
         try:
             result = _run_prediction(
-                self.provider, self.frame, self.prompt, self.previous, self.bounds
+                self.provider,
+                self.frame,
+                self.prompt,
+                self.previous,
+                self.bounds,
+                self.style,
             )
             self.returned.emit(result)
         except Exception as exc:
@@ -124,6 +132,7 @@ def assist(monkeypatch):
         on_calibration=calibration.append,
         on_bin_size=bins.append,
         on_accept=accept,
+        style="preserve",
     )
     state = {
         "real_predict": real_predict,
@@ -166,6 +175,8 @@ def sam_assist(assist):
             mask[6:8, 10:12] = True
             logits = np.full((2, 2, 2), len(self.calls) + 0.25)
             logits[0] = -7.5
+            if not kwargs["multimask_output"] and "mask_input" not in kwargs:
+                return np.array([mask]), np.array([0.9]), logits[1:]
             return np.array([~mask, mask]), np.array([0.2, 0.9]), logits
 
     predictor = Predictor()
@@ -603,6 +614,9 @@ def test_region_only_bin_control_is_disabled():
         on_accept=lambda _: None,
     )
     try:
+        assert widget.outline_style.currentData() == "cvat"
+        assert widget.outline_preview.detail_slider.value() == 9
+        assert not widget.remove_fragments.isEnabled()
         assert not widget.bin_size.isEnabled()
         assert widget.tolerance.value() == pytest.approx(0.1)
         assert len(viewer.layers) == 0
@@ -793,3 +807,95 @@ def test_removing_polygon_preview_disables_accept_and_paint_until_new_prediction
     assist["workers"][-1].complete()
     assert widget.accept_button.isEnabled()
     assert widget.edit_button.isEnabled()
+
+
+def test_switching_styles_rejects_pending_results_and_does_not_reuse_logits(sam_assist):
+    widget = sam_assist["widget"]
+    widget._activate(widget._inside)
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert widget._refinement is not None
+    widget._outside.add([6.0, 9.0])
+    widget._suggest()
+    stale = sam_assist["workers"][-1]
+    widget.outline_style.setCurrentIndex(widget.outline_style.findData("cvat"))
+    assert widget._refinement is None
+    assert widget._preview is None
+    assert not widget.accept_button.isEnabled()
+    stale.complete()
+    assert widget._refinement is None
+    assert widget._preview is None
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert widget.accept_button.isEnabled()
+    assert widget._refinement is None
+    assert not sam_assist["predictor"].calls[-1]["multimask_output"]
+    assert "mask_input" not in sam_assist["predictor"].calls[-1]
+    assert widget.prompt_tools.active
+    cvat_outline = widget.outline_preview.outline
+    assert cvat_outline.proposal.metadata["annotation_style"] == "cvat"
+    assert cvat_outline.proposal.metadata["cvat_polygon"]["accuracy"] == 9
+    assert cvat_outline.simplify_tolerance_px == pytest.approx(10 / 7)
+    assert len(cvat_outline.polygons) == 1
+    # A second CVAT click still predicts from prompts alone.
+    widget._inside.add([3.0, 4.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert "mask_input" not in sam_assist["predictor"].calls[-1]
+    assert not sam_assist["predictor"].calls[-1]["multimask_output"]
+    widget.outline_style.setCurrentIndex(widget.outline_style.findData("preserve"))
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert sam_assist["predictor"].calls[-1]["multimask_output"]
+    assert "mask_input" not in sam_assist["predictor"].calls[-1]
+    assert widget._refinement.steps == 0
+    assert widget.remove_fragments.isEnabled()
+    assert len(sam_assist["predictor"].images) == 1
+
+
+def test_cvat_mode_keeps_largest_contour_instead_of_prompt_component(
+    assist, monkeypatch
+):
+    from neurospatial.annotation.segmentation import SegmentationProposal
+
+    widget = assist["widget"]
+    mask = np.zeros((8, 12), dtype=bool)
+    mask[1:6, 1:6] = True
+    mask[3, 3] = False  # CVAT conversion removes this hole.
+    mask[6, 10] = True  # Only this smaller component has an inside prompt.
+    monkeypatch.setattr(
+        assist["provider"], "predict", lambda *_: SegmentationProposal(mask)
+    )
+    widget.outline_style.setCurrentIndex(widget.outline_style.findData("cvat"))
+    widget._inside.add([6.0, 10.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    assert_array_equal(widget._preview.data, mask)
+    outline = widget.outline_preview.outline
+    assert outline is not None
+    assert len(outline.polygons) == 1
+    assert not outline.polygons[0].interiors
+    assert outline.polygons[0].bounds == (1, 1, 6, 6)
+    assert outline.proposal.metadata["cvat_polygon"]["dropped_contour_count"] == 1
+    widget._accept()
+    assert assist["outlines"][0].polygons[0].equals_exact(outline.polygons[0], 0)
+    assert assist["accepted"][0].metadata["annotation_style"] == "cvat"
+
+
+def test_style_switch_respects_manual_update_setting_and_clears_painted_preview(assist):
+    widget = assist["widget"]
+    widget.live_preview.setChecked(False)
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    widget._edit_preview()
+    widget._preview.data = np.ones((8, 12), dtype=np.uint8)
+    widget.outline_style.setCurrentIndex(widget.outline_style.findData("cvat"))
+    assert widget._preview is None
+    assert not widget._pending_preview
+    assert not widget.accept_button.isEnabled()
+    widget._accept()
+    assert not assist["accepted"]
+    assert len(widget._inside.data) == 1
+    assert len(assist["workers"]) == 1

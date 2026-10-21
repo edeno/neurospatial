@@ -122,7 +122,12 @@ def main() -> None:
             np.array([1, 0]),
         )
         start = perf_counter()
-        proposal = provider.predict(sample_arena(), prompt)
+        frame = sample_arena()
+        proposal = (
+            provider._predict_single_mask(frame, prompt)
+            if isinstance(provider, SegmentAnythingProvider)
+            else provider.predict(frame, prompt)
+        )
         print(
             f"{args.provider}: {int(proposal.mask.sum()):,} foreground pixels; "
             f"score={proposal.score}; prediction took {perf_counter() - start:.2f}s"
@@ -133,7 +138,10 @@ def main() -> None:
         "In Project and Assistance: Mark points → left-click the tan arena "
         "(or your target area) → refine the live outline → Accept outline.\n"
         "Right-click to exclude areas; Alt-click to remove a prompt.\n"
-        "Polygon detail starts at 1.4 px; set it to 0 for the exact mask boundary.\n"
+        "Outline method starts at CVAT-style: one outer contour, filled holes, "
+        "Polygon accuracy 9 (higher retains more detail).\n"
+        "Select Preserve topology to compare: holes and marked components, "
+        "SAM logit refinement, Polygon detail 1.4 px (0 = exact mask).\n"
         "Use Paint / erase preview for manual corrections.\n"
         "Choose the annotation role/name in Annotation Controls; click Done there to finish.",
         flush=True,

@@ -1203,8 +1203,18 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
-- Assisted outlines now start with **1.4 px** polygon simplification; set
-  **Polygon detail** to **0** to restore exact mask boundaries. The SAM 2 demo
+- Assisted outlines offer **CVAT-style** and **Preserve topology** methods. This
+  comparison branch defaults to CVAT-style: one 2 × 2 dilation, the external
+  contour with greatest perimeter, filled holes, OpenCV simplification at
+  accuracy 9, and single-mask SAM prediction without previous logits or dynamic
+  multimask fallback. Preserve topology retains the previous behavior. Switching
+  methods rejects stale predictions and resets refinement while retaining clicks.
+  A headless comparison example applies both polygon methods to both predictions
+  and exports overlays, raw masks, metrics, and GeoJSON using the same frame,
+  prompts, and weights. CVAT's source is credited with pinned references.
+
+- In **Preserve topology**, assisted outlines start with **1.4 px** polygon
+  simplification; set **Polygon detail** to **0** for exact mask boundaries. The SAM 2 demo
   defaults to **Large**, with `--sam2-model tiny` available for lower memory use.
   Setup instructions and launcher help describe the matching checkpoints and
   current prompt controls. The guide and source comments credit CVAT's interaction
@@ -1212,7 +1222,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 - Assisted annotation previews now show the exact polygons that **Accept outline**
   commits. **Polygon detail** adjusts pixel tolerance and reports vertex count
-  without rerunning inference; holes and components survive simplification,
+  without rerunning inference; in Preserve topology, holes and components survive simplification,
   painting, undo/redo, and project saves.
 - **Mark points** supports left-click inside, right-click outside, Alt-click
   removal, **Undo last point**, and **Delete selected**. Native selection and
@@ -1221,13 +1231,13 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   to original image coordinates. Editing the crop resets SAM refinement and
   rejects stale predictions; prompts outside it require correction.
 
-- SAM 2 assisted annotation now refines new clicks using the last displayed
+- In Preserve topology, SAM 2 assisted annotation refines new clicks using the last displayed
   prediction's raw logits. Moving/removing prompts or clearing/discarding an
   outline resets refinement; stale background results cannot seed later requests.
   Painted previews remain separate from model state, and accepted annotations
   record the number of refinement steps.
 
-- Assisted annotation now removes unprompted disconnected fragments from the
+- Preserve topology removes unprompted disconnected fragments from the
   preview by default. **Remove stray fragments** can be turned off to compare
   the original prediction without another model call. Cleanup preserves holes
   and every region containing an inside click, and records removed fragments

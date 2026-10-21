@@ -308,6 +308,147 @@ def test_sam_prediction_selects_best_and_passes_xy_prompt():
     assert not np.shares_memory(passed["point_coords"], prompt.points)
 
 
+class _SingleMaskPredictor(_Predictor):
+    def __init__(self):
+        super().__init__()
+        self.model = SimpleNamespace(
+            sam_mask_decoder=SimpleNamespace(dynamic_multimask_via_stability=True)
+        )
+        self.fallback_at_prediction = []
+
+    def predict(self, **kwargs):
+        self.fallback_at_prediction.append(
+            self.model.sam_mask_decoder.dynamic_multimask_via_stability
+        )
+        output = super().predict(**kwargs)
+        if self.output is None and not kwargs["multimask_output"]:
+            return tuple(value[1:2] for value in output)
+        return output
+
+
+def test_sam_single_mask_repeats_full_prompts_without_logit_feedback():
+    predictor = _SingleMaskPredictor()
+    provider = SegmentAnythingProvider(predictor)
+    image = np.ones((5, 12, 3), dtype=np.uint8)
+    prompt = _prompt(((7, 2), (3, 1)), (1, 0), [0, 0, 11, 4])
+    first = provider._predict_single_mask(image, prompt)
+    repeated = provider._predict_single_mask(image.copy(), prompt)
+    appended = _prompt(((7, 2), (9, 3), (3, 1)), (1, 1, 0), [0, 0, 11, 4])
+    provider._predict_single_mask(image, appended)
+    assert len(predictor.images) == 1
+    assert len(predictor.prompts) == 3
+    assert predictor.fallback_at_prediction == [False, False, False]
+    assert predictor.model.sam_mask_decoder.dynamic_multimask_via_stability is True
+    for passed in predictor.prompts:
+        assert passed["multimask_output"] is False
+        assert "mask_input" not in passed
+        np.testing.assert_array_equal(passed["box"], prompt.box)
+    np.testing.assert_array_equal(predictor.prompts[0]["point_coords"], prompt.points)
+    np.testing.assert_array_equal(
+        predictor.prompts[-1]["point_coords"], appended.points
+    )
+    np.testing.assert_array_equal(
+        predictor.prompts[-1]["point_labels"], appended.labels
+    )
+    assert not np.shares_memory(predictor.prompts[0]["point_coords"], prompt.points)
+    np.testing.assert_array_equal(first.mask, repeated.mask)
+    assert first.score == 0.9
+    assert first.metadata == {
+        "provider": "segment_anything",
+        "selected_mask": 0,
+        "refinement_steps": 0,
+        "prediction_mode": "single_mask",
+        "previous_logits": False,
+        "dynamic_multimask_override": True,
+    }
+
+
+def test_sam_single_mask_and_refinement_share_only_image_embeddings():
+    predictor = _SingleMaskPredictor()
+    provider = SegmentAnythingProvider(predictor)
+    image = np.ones((5, 12, 3), dtype=np.uint8)
+    prompt = _prompt(((7, 2),))
+    initial = provider._predict_with_refinement(image, prompt)
+    saved_logits = initial.logits.copy()
+    provider._predict_single_mask(image, prompt)
+    appended = _prompt(((7, 2), (9, 3)), (1, 1))
+    refined = provider._predict_with_refinement(image, appended, initial)
+    np.testing.assert_array_equal(predictor.prompts[-1]["mask_input"], saved_logits)
+    np.testing.assert_array_equal(initial.logits, saved_logits)
+    assert refined.steps == 1
+    provider._predict_single_mask(image, appended)
+    direct = provider.predict(image, appended)
+    assert direct.metadata["refinement_steps"] == 0
+    assert predictor.prompts[-1]["multimask_output"] is True
+    assert all("mask_input" not in predictor.prompts[i] for i in (0, 1, 3, 4))
+    assert predictor.fallback_at_prediction == [True, False, True, False, True]
+    assert len(predictor.images) == 1
+
+
+@pytest.mark.parametrize("stage", ["set", "predict"])
+def test_sam_single_mask_restores_fallback_and_invalidates_cache_after_failure(stage):
+    predictor = _SingleMaskPredictor()
+    provider = SegmentAnythingProvider(predictor)
+    image = np.ones((3, 4, 3), dtype=np.uint8)
+    provider._predict_single_mask(image, _prompt())
+    if stage == "set":
+        image[0, 0] = 0
+        predictor.fail_set = True
+    else:
+        predictor.fail_predict = True
+    with pytest.raises(RuntimeError, match="SAM segmentation failed"):
+        provider._predict_single_mask(image, _prompt())
+    assert predictor.model.sam_mask_decoder.dynamic_multimask_via_stability is True
+    predictor.fail_set = predictor.fail_predict = False
+    provider._predict_single_mask(image, _prompt())
+    assert len(predictor.images) == (3 if stage == "set" else 2)
+
+
+def test_sam_single_mask_without_meta_decoder_and_with_box_only():
+    predictor = _Predictor()
+    predictor.output = (np.ones((1, 3, 4)), np.ones(1), np.ones((1, 2, 2)))
+    provider = SegmentAnythingProvider(predictor)
+    proposal = provider._predict_single_mask(
+        np.ones((3, 4, 3), dtype=np.uint8), _prompt((), (), [0, 0, 3, 2])
+    )
+    assert proposal.metadata["dynamic_multimask_override"] is False
+    assert predictor.prompts[-1]["point_coords"] is None
+    assert predictor.prompts[-1]["point_labels"] is None
+    with pytest.raises(ValueError, match="clicks or a bounding box"):
+        provider._predict_single_mask(
+            np.ones((3, 4, 3), dtype=np.uint8), _prompt((), ())
+        )
+
+
+@pytest.mark.parametrize("original_fallback", [False, True])
+def test_sam_single_mask_rejects_multiple_results_and_restores_fallback(
+    original_fallback,
+):
+    predictor = _SingleMaskPredictor()
+    predictor.model.sam_mask_decoder.dynamic_multimask_via_stability = original_fallback
+    predictor.output = (np.ones((2, 3, 4)), np.ones(2), np.ones((2, 2, 2)))
+    provider = SegmentAnythingProvider(predictor)
+    with pytest.raises(ValueError, match="exactly one mask"):
+        provider._predict_single_mask(np.ones((3, 4, 3), dtype=np.uint8), _prompt())
+    assert (
+        predictor.model.sam_mask_decoder.dynamic_multimask_via_stability
+        is original_fallback
+    )
+
+
+def test_sam_single_mask_cache_detects_image_content_and_shape_changes():
+    predictor = _SingleMaskPredictor()
+    provider = SegmentAnythingProvider(predictor)
+    image = np.ones((3, 4, 3), dtype=np.uint8)
+    original = provider._predict_single_mask(image, _prompt())
+    image[0, 0] = 0
+    changed = provider._predict_single_mask(image, _prompt())
+    assert original.mask[0, 0] and not changed.mask[0, 0]
+    resized = np.ones((4, 5, 3), dtype=np.uint8)
+    assert provider._predict_single_mask(resized, _prompt()).mask.shape == (4, 5)
+    assert len(predictor.images) == 3
+
+
 def test_sam_embedding_cache_content_and_shape_invalidation():
     predictor = _Predictor()
     provider = SegmentAnythingProvider(predictor)
@@ -447,13 +588,14 @@ def test_sam_failure_invalidates_cached_embedding(stage):
         (np.zeros((1, 3, 4)), np.ones(1), np.ones((1, 2, 2))),
     ],
 )
-def test_sam_rejects_malformed_or_empty_outputs(output):
+@pytest.mark.parametrize("single_mask", [False, True])
+def test_sam_rejects_malformed_or_empty_outputs(output, single_mask):
     predictor = _Predictor()
     predictor.output = output
+    provider = SegmentAnythingProvider(predictor)
+    predict = provider._predict_single_mask if single_mask else provider.predict
     with pytest.raises(ValueError, match=r"SAM predictor|no foreground"):
-        SegmentAnythingProvider(predictor).predict(
-            np.zeros((3, 4, 3), dtype=np.uint8), _prompt()
-        )
+        predict(np.zeros((3, 4, 3), dtype=np.uint8), _prompt())
 
 
 def test_sam_supports_box_only_and_checks_predictor_contract():

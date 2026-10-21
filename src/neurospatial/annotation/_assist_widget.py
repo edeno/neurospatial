@@ -14,6 +14,7 @@ from numpy.typing import NDArray
 from qtpy.QtCore import QTimer, Slot  # type: ignore[attr-defined]
 from qtpy.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -25,7 +26,7 @@ from qtpy.QtWidgets import (
 )
 
 from neurospatial.annotation._assist_roi import AnnotationROIControl
-from neurospatial.annotation._outline_preview import OutlinePreviewControl
+from neurospatial.annotation._outline_preview import OutlinePreviewControl, OutlineStyle
 from neurospatial.annotation._polygon_outline import PolygonOutline
 from neurospatial.annotation._prompt_tools import PromptTools
 from neurospatial.annotation._roi import (
@@ -64,12 +65,20 @@ def _run_prediction(
     prompt: SegmentationPrompt,
     previous: _SAMRefinement | None = None,
     bounds: ROIBounds | None = None,
+    style: OutlineStyle = "preserve",
 ) -> _PredictionResult:
+    if style not in ("preserve", "cvat"):
+        raise ValueError("Outline style must be 'preserve' or 'cvat'.")
     image, local_prompt = crop_segmentation_input(frame, prompt, bounds=bounds)
     refinement = None
     if isinstance(provider, SegmentAnythingProvider):
-        refinement = provider._predict_with_refinement(image, local_prompt, previous)
-        proposal = refinement.proposal
+        if style == "cvat":
+            proposal = provider._predict_single_mask(image, local_prompt)
+        else:
+            refinement = provider._predict_with_refinement(
+                image, local_prompt, previous
+            )
+            proposal = refinement.proposal
     else:
         proposal = provider.predict(image, local_prompt)
     return _PredictionResult(
@@ -86,9 +95,10 @@ def _predict(
     prompt: SegmentationPrompt,
     previous: _SAMRefinement | None = None,
     bounds: ROIBounds | None = None,
+    style: OutlineStyle = "preserve",
 ) -> _PredictionResult:
     """Run all inference, including lazy model setup, off the GUI thread."""
-    return _run_prediction(provider, frame, prompt, previous, bounds)
+    return _run_prediction(provider, frame, prompt, previous, bounds, style)
 
 
 class AnnotationAssistWidget(QWidget):
@@ -110,8 +120,11 @@ class AnnotationAssistWidget(QWidget):
         on_bin_size: Callable[[float], None],
         on_accept: Callable[[PolygonOutline], None],
         on_change: Callable[[], None] | None = None,
+        style: OutlineStyle = "cvat",
     ) -> None:
         super().__init__()
+        if style not in ("preserve", "cvat"):
+            raise ValueError("Outline style must be 'preserve' or 'cvat'.")
         self._viewer = viewer
         self._frame = np.array(frame, copy=True)
         self._provider = provider
@@ -217,6 +230,14 @@ class AnnotationAssistWidget(QWidget):
         )
         instructions.setWordWrap(True)
         assistance.addRow(instructions)
+        self.outline_style = QComboBox()
+        self.outline_style.addItem("CVAT-style", "cvat")
+        self.outline_style.addItem("Preserve topology", "preserve")
+        self.outline_style.setCurrentIndex(self.outline_style.findData(style))
+        self.style_help = QLabel()
+        self.style_help.setWordWrap(True)
+        assistance.addRow("Outline method", self.outline_style)
+        assistance.addRow(self.style_help)
         self.mark_points_button = QPushButton("Mark points")
         self.mark_points_button.clicked.connect(lambda: self._activate(self._inside))
         assistance.addRow(self.mark_points_button)
@@ -293,6 +314,24 @@ class AnnotationAssistWidget(QWidget):
         layout.addWidget(self.roi)
         layout.addWidget(calibration_toggle)
         layout.addWidget(calibration_settings)
+        self.outline_style.currentIndexChanged.connect(self._style_changed)
+        self._style_changed()
+
+    def _style_changed(self, *_args: Any) -> None:
+        if self._disposed:
+            return
+        style = self.outline_style.currentData()
+        self._invalidate()
+        self.outline_preview.set_style(style)
+        self.remove_fragments.setEnabled(style == "preserve")
+        self.style_help.setText(
+            "Keeps one outer contour and fills holes; nearby pieces may join. "
+            "SAM predicts afresh from all current clicks."
+            if style == "cvat"
+            else "Preserves holes and marked components. "
+            "SAM refines the previous prediction as you add clicks."
+        )
+        self._prompts_changed()
 
     @staticmethod
     def _spin(value: float) -> QDoubleSpinBox:
@@ -505,7 +544,12 @@ class AnnotationAssistWidget(QWidget):
             self._job_generation = self._generation
             self._job_prompt = prompt
             self._worker = _predict(
-                provider, self._frame.copy(), prompt, self._refinement, bounds
+                provider,
+                self._frame.copy(),
+                prompt,
+                self._refinement,
+                bounds,
+                self.outline_style.currentData(),
             )
             self._worker.returned.connect(self._show_proposal)
             self._worker.errored.connect(self._inference_error)
@@ -541,7 +585,10 @@ class AnnotationAssistWidget(QWidget):
         try:
             proposal = self._raw_proposal
             cleanup_note = ""
-            if self.remove_fragments.isChecked():
+            if (
+                self.outline_style.currentData() == "preserve"
+                and self.remove_fragments.isChecked()
+            ):
                 cleaned = clean_roi_fragments(
                     proposal, self._job_prompt, bounds=self.roi.bounds
                 )
@@ -572,7 +619,7 @@ class AnnotationAssistWidget(QWidget):
             self._outline_changed()
             self.status.setText(
                 cleanup_note
-                + "Click to refine the outline, paint / erase it, or accept."
+                + "Click to refine the prediction, or adjust the polygon preview."
             )
         except Exception as exc:
             self._invalidate()

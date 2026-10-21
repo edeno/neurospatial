@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from napari.layers import Labels, Points, Shapes
@@ -17,6 +17,11 @@ from napari.utils.colormaps import DirectLabelColormap
 from qtpy.QtCore import Qt, QTimer
 from qtpy.QtWidgets import QLabel, QSlider, QVBoxLayout, QWidget
 
+from neurospatial.annotation._cvat_polygon import (
+    CvatContour,
+    cvat_contour,
+    simplify_cvat_contour,
+)
 from neurospatial.annotation._polygon_outline import (
     PolygonOutline,
     polygon_outline,
@@ -26,6 +31,9 @@ from neurospatial.annotation.segmentation import SegmentationProposal
 
 if TYPE_CHECKING:
     import napari
+
+
+OutlineStyle = Literal["preserve", "cvat"]
 
 
 class OutlinePreviewControl(QWidget):
@@ -39,6 +47,9 @@ class OutlinePreviewControl(QWidget):
         self._updating = False
         self._proposal: SegmentationProposal | None = None
         self._exact: PolygonOutline | None = None
+        self._cvat_contour: CvatContour | None = None
+        self._style: OutlineStyle = "preserve"
+        self._detail_values: dict[OutlineStyle, int] = {"preserve": 14, "cvat": 9}
         self._outline: PolygonOutline | None = None
         self.mask_layer: Labels | None = None
         self.polygon_layer: Shapes | None = None
@@ -49,7 +60,8 @@ class OutlinePreviewControl(QWidget):
         self._timer.timeout.connect(self._refresh)
         viewer.layers.events.removed.connect(self._layer_removed)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Polygon detail"))
+        self.detail_label = QLabel("Polygon detail")
+        layout.addWidget(self.detail_label)
         self.detail_slider = QSlider(Qt.Orientation.Horizontal)
         self.detail_slider.setRange(0, 100)
         # CVAT accuracy 9 maps to 10/7 px; round to our 0.1 px slider step.
@@ -72,6 +84,34 @@ class OutlinePreviewControl(QWidget):
         """Return the valid displayed geometry, or None while edits are pending."""
         return self._outline
 
+    def set_style(self, style: OutlineStyle) -> None:
+        """Select a conversion policy and restore its separate detail setting."""
+        if style not in ("preserve", "cvat"):
+            raise ValueError("Outline style must be 'preserve' or 'cvat'.")
+        if self._disposed or style == self._style:
+            return
+        self._detail_values[self._style] = self.detail_slider.value()
+        self.invalidate()
+        self._style = style
+        self.detail_slider.blockSignals(True)
+        try:
+            self.detail_slider.setRange(0, 13 if style == "cvat" else 100)
+            self.detail_slider.setValue(self._detail_values[style])
+        finally:
+            self.detail_slider.blockSignals(False)
+        self.detail_label.setText(
+            "Polygon accuracy" if style == "cvat" else "Polygon detail"
+        )
+        self.detail_slider.setToolTip(
+            "CVAT accuracy: 0 gives fewer vertices, 13 retains contour detail. "
+            "Default 9 uses about 1.43 px tolerance. Holes and other contours "
+            "remain excluded at every accuracy."
+            if style == "cvat"
+            else "Simplification distance in pixels (default: 1.4): "
+            "0 keeps the exact mask boundary; larger values reduce vertices "
+            "while keeping components and holes."
+        )
+
     def show(self, proposal: SegmentationProposal | None = None) -> None:
         """Display a new proposal without changing the selected annotation tool."""
         if self._disposed:
@@ -82,6 +122,7 @@ class OutlinePreviewControl(QWidget):
         self._timer.stop()
         self._proposal = proposal
         self._exact = None
+        self._cvat_contour = None
         self._outline = None
         layers = self._viewer.layers
         selection = set(layers.selection)
@@ -168,7 +209,7 @@ class OutlinePreviewControl(QWidget):
 
     def _refresh(self) -> None:
         if not self._disposed:
-            with suppress(ValueError):
+            with suppress(ValueError, ImportError):
                 self.snapshot()
 
     def snapshot(self) -> PolygonOutline:
@@ -193,32 +234,53 @@ class OutlinePreviewControl(QWidget):
                 raise ValueError(
                     "The outline is empty. Paint foreground before accepting."
                 )
-            if self._exact is None or not np.array_equal(
-                mask, self._exact.proposal.mask
-            ):
-                painted = SegmentationProposal(
-                    mask,
-                    score=self._proposal.score,
-                    metadata=self._proposal.metadata,
+            if self._style == "cvat":
+                if self._cvat_contour is None or not np.array_equal(
+                    mask, self._cvat_contour.proposal.mask
+                ):
+                    self._cvat_contour = cvat_contour(
+                        SegmentationProposal(
+                            mask,
+                            score=self._proposal.score,
+                            metadata=self._proposal.metadata,
+                        )
+                    )
+                can_adjust_detail = True
+                outline = simplify_cvat_contour(
+                    self._cvat_contour, accuracy=self.detail_slider.value()
                 )
-                self._exact = polygon_outline(painted)
-            can_adjust_detail = True
-            outline = simplify_polygon_outline(
-                self._exact, self.detail_slider.value() / 10.0
-            )
+                detail = (
+                    f"CVAT accuracy {self.detail_slider.value()}/13 "
+                    f"({outline.simplify_tolerance_px:.2f} px) · "
+                    f"{self._cvat_contour.dropped_contour_count} other contours dropped"
+                )
+            else:
+                if self._exact is None or not np.array_equal(
+                    mask, self._exact.proposal.mask
+                ):
+                    self._exact = polygon_outline(
+                        SegmentationProposal(
+                            mask,
+                            score=self._proposal.score,
+                            metadata=self._proposal.metadata,
+                        )
+                    )
+                can_adjust_detail = True
+                outline = simplify_polygon_outline(
+                    self._exact, self.detail_slider.value() / 10.0
+                )
+                detail = f"{outline.simplify_tolerance_px:g} px simplification"
             self.polygon_layer.data = [ring[:, ::-1] for ring in outline.rings]
             self.polygon_layer.shape_type = "path"
             self.polygon_layer.opacity = 1.0
             self._outline = outline
             self.detail_slider.setEnabled(True)
-            self.detail_status.setText(
-                f"{outline.vertex_count} vertices · "
-                f"{outline.simplify_tolerance_px:g} px simplification"
-            )
-        except ValueError as exc:
+            self.detail_status.setText(f"{outline.vertex_count} vertices · {detail}")
+        except (ValueError, ImportError) as exc:
             self._outline = None
             if not can_adjust_detail:
                 self._exact = None
+                self._cvat_contour = None
             self.detail_slider.setEnabled(can_adjust_detail)
             self.detail_status.setText(str(exc))
             if (
@@ -250,6 +312,7 @@ class OutlinePreviewControl(QWidget):
         self._timer.stop()
         self._proposal = None
         self._exact = None
+        self._cvat_contour = None
         self._outline = None
         self.detail_slider.setEnabled(False)
         self.detail_status.setText("Suggest an outline to adjust polygon detail.")
@@ -293,6 +356,7 @@ class OutlinePreviewControl(QWidget):
                 self.polygon_layer = None
             self._outline = None
             self._exact = None
+            self._cvat_contour = None
             self.detail_slider.setEnabled(False)
             self.detail_status.setText(
                 "The preview was removed. Suggest another outline."
@@ -335,3 +399,4 @@ class OutlinePreviewControl(QWidget):
         self._proposal = None
         self._outline = None
         self._exact = None
+        self._cvat_contour = None
