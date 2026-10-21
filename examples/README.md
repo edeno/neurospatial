@@ -77,9 +77,9 @@ focused recipes and explanations in the user guide:
   for boundary, grid, directional, head-direction, object-vector and spatial-view analyses.
 - [Animation backends and large recordings](https://edeno.github.io/neurospatial/user-guide/animation/)
   and [video calibration](https://edeno.github.io/neurospatial/user-guide/video-annotation/).
-- [Interactive annotation launcher](try_annotation.py): try CPU or optional SAM 2
+- [Interactive annotation launcher](https://github.com/edeno/neurospatial/blob/main/examples/try_annotation.py): try CPU or optional SAM 2
   outlines on a sample arena, image, or video. See the
-  [setup and controls](../docs/user-guide/video-annotation.md#try-the-sample-arena).
+  [setup and controls](https://edeno.github.io/neurospatial/user-guide/video-annotation/#try-the-sample-arena).
 
 ## Reading and adapting the analyses
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-from qtpy.QtCore import QTimer
+from qtpy.QtCore import QTimer  # type: ignore[attr-defined]
 from qtpy.QtGui import QKeySequence
 from qtpy.QtWidgets import (  # type: ignore[attr-defined]
     QFileDialog,
