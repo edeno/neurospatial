@@ -105,7 +105,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          uv run pytest --cov=src/neurospatial --cov-report=xml --cov-report=term
+          uv run pytest -m "not slow and not napari and not gui and not wallclock" --cov=src/neurospatial --cov-report=xml --cov-report=term
         env:
           MPLBACKEND: Agg  # Use non-GUI backend for matplotlib
           UV_PYTHON: python${{ matrix.python-version }}
@@ -151,7 +151,7 @@ jobs:
       # tests run only locally.
       - name: Run slow tests
         run: |
-          uv run pytest -m "slow and not napari and not wallclock" -n 4
+          uv run pytest -m "slow and not napari and not gui and not wallclock" -n 4
         env:
           MPLBACKEND: Agg
 
@@ -193,6 +193,6 @@ jobs:
 
       - name: Run napari tests
         run: |
-          xvfb-run -a uv run pytest -n 0 -m "napari and not slow"
+          xvfb-run -a uv run pytest -n 0 -m "(napari or gui) and not slow and not wallclock"
         env:
           MPLBACKEND: Agg
