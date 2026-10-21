@@ -1207,7 +1207,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   **Polygon detail** to **0** to restore exact mask boundaries. The SAM 2 demo
   defaults to **Large**, with `--sam2-model tiny` available for lower memory use.
   Setup instructions and launcher help describe the matching checkpoints and
-  current prompt controls.
+  current prompt controls. The guide and source comments credit CVAT's interaction
+  design and link to pinned upstream references for the workflow and defaults.
 
 - Assisted annotation previews now show the exact polygons that **Accept outline**
   commits. **Polygon detail** adjusts pixel tolerance and reports vertex count

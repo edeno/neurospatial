@@ -1,4 +1,9 @@
-"""Editable masks and the exact polygon paths offered for acceptance."""
+"""Editable masks and the exact polygon paths offered for acceptance.
+
+The interaction design was inspired by CVAT (https://github.com/cvat-ai/cvat).
+Pinned upstream references and design differences are recorded in
+docs/user-guide/video-annotation.md#design-credit-and-references.
+"""
 
 from __future__ import annotations
 
@@ -47,6 +52,8 @@ class OutlinePreviewControl(QWidget):
         layout.addWidget(QLabel("Polygon detail"))
         self.detail_slider = QSlider(Qt.Orientation.Horizontal)
         self.detail_slider.setRange(0, 100)
+        # CVAT accuracy 9 maps to 10/7 px; round to our 0.1 px slider step.
+        # See the guide's pinned settings-reducer and OpenCV references above.
         self.detail_slider.setValue(14)
         self.detail_slider.setEnabled(False)
         self.detail_slider.setToolTip(

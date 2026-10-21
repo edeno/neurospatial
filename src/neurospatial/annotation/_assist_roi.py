@@ -1,4 +1,9 @@
-"""Optional, isolated napari control for selecting an inference crop."""
+"""Optional, isolated napari control for selecting an inference crop.
+
+The optional inference ROI was inspired by CVAT (https://github.com/cvat-ai/cvat).
+See docs/user-guide/video-annotation.md#design-credit-and-references for the
+pinned upstream workflow and implementation references.
+"""
 
 from __future__ import annotations
 

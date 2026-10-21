@@ -1,4 +1,9 @@
-"""Mouse interactions scoped to temporary assisted annotation points."""
+"""Mouse interactions scoped to temporary assisted annotation points.
+
+Left/right positive/negative prompting follows CVAT's interaction design:
+https://github.com/cvat-ai/cvat. Pinned workflow references are recorded in
+docs/user-guide/video-annotation.md#design-credit-and-references.
+"""
 
 from __future__ import annotations
 

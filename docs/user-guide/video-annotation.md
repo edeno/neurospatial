@@ -422,6 +422,26 @@ predictor: it caches embeddings for unchanged image content and selects the
 highest-scoring mask. The integration is tested with mocked predictors;
 running real SAM 2 weights requires your separately installed model setup.
 
+### Design Credit and References
+
+We credit [CVAT](https://github.com/cvat-ai/cvat), CVAT.ai, and its contributors
+for the interaction design that inspired our assisted outlining: inside/outside
+clicks, live mask-to-polygon previews with adjustable detail, and an optional
+inference region of interest. The following links pin the public source reviewed
+for this integration so it remains traceable as upstream develops:
+
+- [Prompting and ROI workflow](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/site/content/en/docs/annotation/auto-annotation/ai-tools.md): user interactions and polygon-detail controls.
+- [Annotation interaction controls](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-ui/src/components/annotation-page/standard-workspace/controls-side-bar/tools-control.tsx): prompt requests, live previews, ROI submission, and contour selection.
+- [Polygon conversion](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-core/src/opencv/opencv-interface.ts) and [default settings](https://github.com/cvat-ai/cvat/blob/172ea51a2ffc11adb08b1c9fb757282d142cd810/cvat-ui/src/reducers/settings-reducer.ts): contour extraction and the accuracy-to-pixel-tolerance mapping.
+- [SAM 2 interactor](https://github.com/cvat-ai/cvat-models/blob/d2ebbc7f37d9c002d74fa8d392e9f3f8cb3aa419/interactor/sam2/func.py) in [cvat-models](https://github.com/cvat-ai/cvat-models): model prompting and image-embedding reuse.
+
+CVAT's referenced default accuracy of 9 maps to `10 / 7` pixels (about 1.43);
+our **1.4 px** default rounds that to the slider's 0.1 px steps. Neurospatial's
+polygon conversion preserves holes and every retained component, without adding
+dilation. Our subsequent SAM clicks also use previous-logit refinement. These
+choices mean the implementations can produce different outlines from the same
+prompts; the references do not establish CVAT Online's deployed model settings.
+
 ## Track Graph Annotation
 
 Use `annotate_track_graph()` to place nodes and connect them into a track.
