@@ -17,6 +17,10 @@ class _CleanupError(RuntimeError):
         super().__init__(message)
         self.exceptions = tuple(exceptions)
 
+    def __repr__(self) -> str:
+        # Cleanup notes use repr, so retain nested causes just like ExceptionGroup.
+        return f"{type(self).__name__}({self.args[0]!r}, {self.exceptions!r})"
+
 
 def _cleanup_error(message: str, failures: Sequence[BaseException]) -> BaseException:
     """Create a grouped error without requiring Python 3.11 or a backport."""

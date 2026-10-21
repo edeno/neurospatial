@@ -237,7 +237,15 @@ def test_parent_closing_during_backend_show_cleans_unregistered_native(
     assert not scene._views
 
 
-def test_context_preserves_body_failure_and_reports_cleanup_failure(env):
+@pytest.mark.parametrize("compat_cleanup", [False, True])
+def test_context_preserves_body_failure_and_reports_cleanup_failure(
+    env, monkeypatch, compat_cleanup
+):
+    if compat_cleanup:
+        from neurospatial.animation import _resources
+
+        # Exercise Python 3.10's grouped cleanup errors on every interpreter.
+        monkeypatch.setattr(_resources, "builtins", SimpleNamespace())
     scene = animation(env)
     AnimationView(
         scene,

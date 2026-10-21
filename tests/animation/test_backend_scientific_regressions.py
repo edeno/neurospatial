@@ -251,5 +251,9 @@ def test_external_html_export_passes_output_location_to_url_builder(
         embed=False,
         frames_dir=frames,
     )
-    url = json.loads(re.search(r"const framesDir = (.*);", output.read_text()).group(1))
+    url = json.loads(
+        re.search(r"const framesDir = (.*);", output.read_text(encoding="utf-8")).group(
+            1
+        )
+    )
     assert (output.parent / unquote(url)).resolve() == frames.resolve()
