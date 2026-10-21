@@ -196,6 +196,59 @@ def test_live_clicks_coalesce_and_keep_prompt_tool_active(assist):
     assert preview.contour == 0
 
 
+def test_cleanup_toggle_restores_raw_prediction_without_inference_and_accepts_preview(
+    assist, monkeypatch
+):
+    from neurospatial.annotation.segmentation import SegmentationProposal
+
+    widget = assist["widget"]
+    mask = np.zeros((8, 12), dtype=bool)
+    mask[1:5, 2:7] = True
+    mask[3, 4] = False
+    mask[6:8, 10:12] = True
+    raw = SegmentationProposal(mask, metadata={"model": "fake"})
+    monkeypatch.setattr(assist["provider"], "predict", lambda *_: raw)
+    widget._activate(widget._inside)
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    assert widget.remove_fragments.isChecked()
+    assert not widget._preview.data[6:8, 10:12].any()
+    assert not widget._preview.data[3, 4]
+    assert "Removed 1" in widget.status.text()
+    preview = widget._preview
+    widget.remove_fragments.setChecked(False)
+    assert widget._preview is preview
+    assert_array_equal(preview.data, mask)
+    widget.remove_fragments.setChecked(True)
+    assert len(assist["workers"]) == 1
+    assert assist["viewer"].layers.selection.active is widget._inside
+    # Manual painting after cleanup is authoritative: don't filter it again
+    # at acceptance, or we'd silently remove a region the user just painted.
+    widget._edit_preview()
+    painted = np.array(preview.data, copy=True)
+    painted[7, 0] = 1
+    preview.data = painted
+    widget._accept()
+    assert_array_equal(assist["accepted"][0].mask, painted != 0)
+    assert assist["accepted"][0].metadata["annotation_cleanup"]["removed_pixels"] == 4
+    assert_array_equal(raw.mask, mask)
+
+
+def test_cleanup_cannot_restore_stale_preview_after_prompt_changes(assist):
+    widget = assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    widget._inside.add([3.0, 4.0])
+    widget.remove_fragments.setChecked(False)
+    widget.remove_fragments.setChecked(True)
+    assert not widget.accept_button.isEnabled()
+    assert not widget.edit_button.isEnabled()
+    widget._accept()
+    assert not assist["accepted"]
+
+
 def test_live_edits_during_inference_run_only_latest_prompt_after_finish(assist):
     widget = assist["widget"]
     widget._inside.add([2.0, 3.0])

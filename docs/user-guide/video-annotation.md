@@ -240,11 +240,21 @@ surface has a distinct color:
    tolerance to include a wider range of colors; this also updates the preview.
 4. Optionally click **Paint / erase preview** to correct the mask with napari's
    painting tools. Painting foreground includes pixels; erasing excludes them.
-   Further prompt changes replace these manual preview edits.
+   Further prompt or fragment-cleanup changes replace these manual preview edits.
 5. Click **Accept outline** to add editable polygon geometry. Its holes and
    disconnected components are retained. Use **Discard outline** to remove a
    preview, or **Clear prompts** before trying a different selection. Accepting
    an outline clears its prompts so the next object starts with a fresh set.
+
+**Remove stray fragments** is enabled by default. It keeps every connected
+foreground region containing an inside point, including holes within those
+regions, and removes disconnected pieces you have not marked. Add an inside
+point to any separate region you want to retain. The status shows how many
+fragments were removed. Turn the option off to see the original prediction;
+switching it updates the preview without rerunning the model. If none of your
+inside points fall within the predicted foreground, the preview is left intact
+and the status asks you to refine it. Cleanup does not fill holes or bridge gaps.
+Manual paint/erase corrections made afterward are retained when you accept.
 
 Choose environment, hole, or region and a name in **Annotation Controls** before
 accepting. An environment boundary must be connected; if the preview has several

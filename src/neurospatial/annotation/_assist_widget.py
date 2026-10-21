@@ -23,6 +23,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from neurospatial.annotation._mask_cleanup import remove_unprompted_fragments
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
     SegmentationPrompt,
@@ -83,6 +84,8 @@ class AnnotationAssistWidget(QWidget):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(150)
         self._preview_timer.timeout.connect(self._update_preview)
+        self._raw_proposal: SegmentationProposal | None = None
+        self._job_prompt: SegmentationPrompt | None = None
         self._proposal: SegmentationProposal | None = None
         self._preview: Any = None
         self._connections: list[tuple[Any, Any]] = []
@@ -168,6 +171,15 @@ class AnnotationAssistWidget(QWidget):
         self.live_preview.setChecked(True)
         self.live_preview.toggled.connect(self._live_preview_changed)
         assistance.addRow(self.live_preview)
+        self.remove_fragments = QCheckBox("Remove stray fragments")
+        self.remove_fragments.setChecked(True)
+        self.remove_fragments.setToolTip(
+            "Keep regions containing inside points, preserving their holes. "
+            "Turn off to see the original prediction. "
+            "Changing this option replaces manual preview edits."
+        )
+        self.remove_fragments.toggled.connect(self._refresh_preview)
+        assistance.addRow(self.remove_fragments)
         self.tolerance = QDoubleSpinBox()
         self.tolerance.setRange(0.0, 1.0)
         self.tolerance.setDecimals(3)
@@ -292,6 +304,8 @@ class AnnotationAssistWidget(QWidget):
         self._preview_timer.stop()
         self._pending_preview = False
         self._generation += 1
+        self._raw_proposal = None
+        self._job_prompt = None
         self._proposal = None
         if not self._disposed:
             self.accept_button.setEnabled(False)
@@ -358,6 +372,7 @@ class AnnotationAssistWidget(QWidget):
             if isinstance(provider, RegionGrowProvider):
                 provider = RegionGrowProvider(tolerance=self.tolerance.value())
             self._job_generation = self._generation
+            self._job_prompt = prompt
             self._worker = _predict(provider, self._frame.copy(), prompt)
             self._worker.returned.connect(self._show_proposal)
             self._worker.errored.connect(self._inference_error)
@@ -377,6 +392,34 @@ class AnnotationAssistWidget(QWidget):
         try:
             if proposal.mask.shape != self._frame.shape[:2]:
                 raise ValueError("Provider returned a mask with the wrong frame size.")
+            self._raw_proposal = proposal
+            self._refresh_preview()
+        except Exception as exc:
+            self._invalidate()
+            self._error("Could not display outline", exc)
+
+    def _refresh_preview(self, *_args: Any) -> None:
+        if self._disposed or self._raw_proposal is None or self._job_prompt is None:
+            return
+        try:
+            proposal = self._raw_proposal
+            cleanup_note = ""
+            if self.remove_fragments.isChecked():
+                cleaned = remove_unprompted_fragments(proposal, self._job_prompt)
+                proposal = cleaned.proposal
+                if cleaned.removed_components:
+                    noun = (
+                        "fragment" if cleaned.removed_components == 1 else "fragments"
+                    )
+                    cleanup_note = (
+                        f"Removed {cleaned.removed_components} stray {noun}. "
+                    )
+                if cleaned.missed_inside_points:
+                    noun = "point" if cleaned.missed_inside_points == 1 else "points"
+                    cleanup_note += (
+                        f"The prediction misses {cleaned.missed_inside_points} "
+                        f"inside {noun}; refine the outline. "
+                    )
             data = np.asarray(proposal.mask, dtype=np.uint8).copy()
             layers = self._viewer.layers
             if self._preview is None or self._preview not in layers:
@@ -411,7 +454,8 @@ class AnnotationAssistWidget(QWidget):
             self.accept_button.setEnabled(True)
             self.edit_button.setEnabled(True)
             self.status.setText(
-                "Click to refine the outline, paint / erase it, or accept."
+                cleanup_note
+                + "Click to refine the outline, paint / erase it, or accept."
             )
         except Exception as exc:
             self._invalidate()
@@ -438,7 +482,8 @@ class AnnotationAssistWidget(QWidget):
         self._preview.opacity = 0.5
         self._preview.mode = "paint"
         self.status.setText(
-            "Paint or erase the preview, then accept. Changing prompts replaces edits."
+            "Paint or erase the preview, then accept. "
+            "Changing prompts or fragment cleanup replaces edits."
         )
 
     def _accept(self) -> None:

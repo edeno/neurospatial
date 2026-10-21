@@ -1203,6 +1203,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Assisted annotation now removes unprompted disconnected fragments from the
+  preview by default. **Remove stray fragments** can be turned off to compare
+  the original prediction without another model call. Cleanup preserves holes
+  and every region containing an inside click, and records removed fragments
+  in accepted annotation metadata.
+
 - The annotation demo accepts `--sam2-model tiny|small|base-plus|large`, chooses
   the matching local checkpoint and config, and prints the model it loads so
   segmentation quality comparisons identify the actual model size.
