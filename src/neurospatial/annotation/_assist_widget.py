@@ -26,9 +26,11 @@ from qtpy.QtWidgets import (
 from neurospatial.annotation._mask_cleanup import remove_unprompted_fragments
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
+    SegmentAnythingProvider,
     SegmentationPrompt,
     SegmentationProposal,
     SegmentationProvider,
+    _SAMRefinement,
 )
 from neurospatial.ops.transforms import VideoCalibration, calibrate_from_scale_bar
 
@@ -41,8 +43,11 @@ def _predict(
     provider: SegmentationProvider,
     frame: NDArray[np.uint8],
     prompt: SegmentationPrompt,
-) -> SegmentationProposal:
+    previous: _SAMRefinement | None = None,
+) -> SegmentationProposal | _SAMRefinement:
     """Run all inference, including lazy model setup, off the GUI thread."""
+    if isinstance(provider, SegmentAnythingProvider):
+        return provider._predict_with_refinement(frame, prompt, previous)
     return provider.predict(frame, prompt)
 
 
@@ -85,6 +90,7 @@ class AnnotationAssistWidget(QWidget):
         self._preview_timer.setInterval(150)
         self._preview_timer.timeout.connect(self._update_preview)
         self._raw_proposal: SegmentationProposal | None = None
+        self._refinement: _SAMRefinement | None = None
         self._job_prompt: SegmentationPrompt | None = None
         self._proposal: SegmentationProposal | None = None
         self._preview: Any = None
@@ -300,11 +306,18 @@ class AnnotationAssistWidget(QWidget):
         self._invalidate()
         self.status.setText("Ready for inside points.")
 
-    def _invalidate(self, *_args: Any, keep_preview: bool = False) -> None:
+    def _invalidate(
+        self,
+        *_args: Any,
+        keep_preview: bool = False,
+        keep_refinement: bool = False,
+    ) -> None:
         self._preview_timer.stop()
         self._pending_preview = False
         self._generation += 1
         self._raw_proposal = None
+        if not keep_refinement:
+            self._refinement = None
         self._job_prompt = None
         self._proposal = None
         if not self._disposed:
@@ -330,7 +343,13 @@ class AnnotationAssistWidget(QWidget):
             self._invalidate()
             self.status.setText("Mark a point inside the desired area to begin.")
             return
-        self._invalidate(keep_preview=True)
+        if self._refinement is not None:
+            try:
+                if not self._refinement.accepts(self._snapshot_prompt()):
+                    self._refinement = None
+            except ValueError:
+                self._refinement = None
+        self._invalidate(keep_preview=True, keep_refinement=True)
         if self.live_preview.isChecked():
             self._pending_preview = True
             self._preview_timer.start()
@@ -354,26 +373,31 @@ class AnnotationAssistWidget(QWidget):
         if self._pending_preview and self._worker is None:
             self._suggest()
 
+    def _snapshot_prompt(self) -> SegmentationPrompt:
+        inside = np.asarray(self._inside.data, dtype=float)[:, ::-1]
+        outside = np.asarray(self._outside.data, dtype=float)[:, ::-1]
+        return SegmentationPrompt(
+            points=np.concatenate((inside, outside)),
+            labels=np.concatenate((np.ones(len(inside)), np.zeros(len(outside)))),
+        )
+
     def _suggest(self) -> None:
         if self._disposed or self._worker is not None:
             return
-        self._invalidate(keep_preview=True)
+        self._invalidate(keep_preview=True, keep_refinement=True)
         if len(self._inside.data) == 0:
             self.status.setText("Mark a point inside the desired area to begin.")
             return
         try:
-            inside = np.asarray(self._inside.data, dtype=float)[:, ::-1]
-            outside = np.asarray(self._outside.data, dtype=float)[:, ::-1]
-            prompt = SegmentationPrompt(
-                points=np.concatenate((inside, outside)),
-                labels=np.concatenate((np.ones(len(inside)), np.zeros(len(outside)))),
-            )
+            prompt = self._snapshot_prompt()
             provider = self._provider
             if isinstance(provider, RegionGrowProvider):
                 provider = RegionGrowProvider(tolerance=self.tolerance.value())
             self._job_generation = self._generation
             self._job_prompt = prompt
-            self._worker = _predict(provider, self._frame.copy(), prompt)
+            self._worker = _predict(
+                provider, self._frame.copy(), prompt, self._refinement
+            )
             self._worker.returned.connect(self._show_proposal)
             self._worker.errored.connect(self._inference_error)
             self._worker.finished.connect(self._finished)
@@ -382,16 +406,20 @@ class AnnotationAssistWidget(QWidget):
             self._worker.start()
         except Exception as exc:
             self._worker = None
+            self._refinement = None
             self.suggest_button.setEnabled(True)
             self._error("Could not suggest an outline", exc)
 
     @Slot(object)
-    def _show_proposal(self, proposal: SegmentationProposal) -> None:
+    def _show_proposal(self, result: SegmentationProposal | _SAMRefinement) -> None:
         if self._disposed or self._job_generation != self._generation:
             return
         try:
+            refinement = result if isinstance(result, _SAMRefinement) else None
+            proposal = result.proposal if isinstance(result, _SAMRefinement) else result
             if proposal.mask.shape != self._frame.shape[:2]:
                 raise ValueError("Provider returned a mask with the wrong frame size.")
+            self._refinement = refinement
             self._raw_proposal = proposal
             self._refresh_preview()
         except Exception as exc:
@@ -464,6 +492,7 @@ class AnnotationAssistWidget(QWidget):
     @Slot(object)
     def _inference_error(self, exc: Exception) -> None:
         if not self._disposed and self._job_generation == self._generation:
+            self._refinement = None
             self._error("Could not suggest an outline; edit prompts and retry", exc)
 
     @Slot()

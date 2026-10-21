@@ -1203,6 +1203,12 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- SAM 2 assisted annotation now refines new clicks using the last displayed
+  prediction's raw logits. Moving/removing prompts or clearing/discarding an
+  outline resets refinement; stale background results cannot seed later requests.
+  Painted previews remain separate from model state, and accepted annotations
+  record the number of refinement steps.
+
 - Assisted annotation now removes unprompted disconnected fragments from the
   preview by default. **Remove stray fragments** can be turned off to compare
   the original prediction without another model call. Cleanup preserves holes

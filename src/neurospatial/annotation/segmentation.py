@@ -285,6 +285,38 @@ class RegionGrowProvider:
         )
 
 
+@dataclass(frozen=True)
+class _SAMRefinement:
+    """One successful prediction, explicitly carried between UI requests.
+
+    The image and logits are owned, read-only snapshots. This state is never
+    attached to a saved annotation or updated by an in-flight worker.
+    """
+
+    owner: object
+    image: NDArray[np.uint8]
+    prompt: SegmentationPrompt
+    proposal: SegmentationProposal
+    logits: NDArray[Any]
+    steps: int
+
+    def accepts(self, prompt: SegmentationPrompt) -> bool:
+        """Allow unchanged prompts or appended clicks of either polarity."""
+        if self.prompt.box is None or prompt.box is None:
+            if self.prompt.box is not prompt.box:
+                return False
+        elif not np.array_equal(self.prompt.box, prompt.box):
+            return False
+        # The widget groups inside points before outside points. Appending an
+        # inside point therefore shifts outside points in the combined array.
+        for label in (0, 1):
+            old = self.prompt.points[self.prompt.labels == label]
+            new = prompt.points[prompt.labels == label]
+            if not np.array_equal(old, new[: len(old)]):
+                return False
+        return True
+
+
 class SegmentAnythingProvider:
     """Adapt a SAM2-style image predictor without importing model libraries.
 
@@ -296,12 +328,16 @@ class SegmentAnythingProvider:
         multimask_output=True)`` returning masks, scores and low-resolution
         logits. Do not reuse or mutate this predictor outside the adapter:
         its embeddings are cached for repeated prompts on the same image.
+        In the annotation editor it must also support ``mask_input`` for
+        previous-logit refinement with ``multimask_output=False``.
 
     Notes
     -----
     Uses the highest-scoring mask and preserves all its components and holes.
     An owned image snapshot detects changes in content, including in-place
     edits, without relying on object identity. Instances are not thread-safe.
+    Direct ``predict`` calls are independent of earlier prompts. The annotation
+    editor separately manages previous-logit refinement for consecutive clicks.
     The API follows Meta's ``sam2.sam2_image_predictor.SAM2ImagePredictor``:
     https://github.com/facebookresearch/sam2 .
     """
@@ -315,6 +351,7 @@ class SegmentAnythingProvider:
             )
         self._predictor = predictor
         self._cached_image: NDArray[np.uint8] | None = None
+        self._refinement_owner = object()
 
     @classmethod
     def from_sam2(
@@ -361,20 +398,43 @@ class SegmentAnythingProvider:
         self, image: NDArray[np.uint8], prompt: SegmentationPrompt
     ) -> SegmentationProposal:
         """Reuse image embeddings and select the highest-scoring mask."""
+        return self._predict_with_refinement(image, prompt).proposal
+
+    def _predict_with_refinement(
+        self,
+        image: NDArray[np.uint8],
+        prompt: SegmentationPrompt,
+        previous: _SAMRefinement | None = None,
+    ) -> _SAMRefinement:
+        """Return raw logits without committing them to any interaction session."""
         image = _validate_inputs(image, prompt)
         if not len(prompt.points) and prompt.box is None:
             raise ValueError(
                 "SAM segmentation needs foreground/background clicks or a bounding box."
             )
+        if previous is not None:
+            if (
+                previous.owner is not self._refinement_owner
+                or not np.array_equal(image, previous.image)
+                or not previous.accepts(prompt)
+            ):
+                previous = None
+            elif len(prompt.points) == len(previous.prompt.points):
+                # Repeated Update requests must not drift by feeding a mask
+                # back into itself without any new information.
+                return previous
         try:
             if self._cached_image is None or not np.array_equal(
                 image, self._cached_image
             ):
                 self._cached_image = None
-                owned_image = np.array(image, copy=True)
+                owned_image = read_only_copy(image)
                 # Keep our snapshot separate from any predictor-owned buffer.
                 self._predictor.set_image(np.array(owned_image, copy=True))
                 self._cached_image = owned_image
+            refinement_args = (
+                {} if previous is None else {"mask_input": previous.logits.copy()}
+            )
             output = self._predictor.predict(
                 point_coords=np.array(prompt.points, copy=True)
                 if len(prompt.points)
@@ -383,7 +443,8 @@ class SegmentAnythingProvider:
                 if len(prompt.points)
                 else None,
                 box=None if prompt.box is None else np.array(prompt.box, copy=True),
-                multimask_output=True,
+                multimask_output=previous is None,
+                **refinement_args,
             )
         except Exception as exc:
             # A failed predictor may have changed its image state.
@@ -414,10 +475,24 @@ class SegmentAnythingProvider:
                 "SAM predictor returned invalid masks/scores/logits; expected finite binary masks (N, height, width), scores (N,), and finite logits."
             )
         selected = int(np.argmax(scores))
-        return SegmentationProposal(
+        steps = 0 if previous is None else previous.steps + 1
+        proposal = SegmentationProposal(
             masks[selected].astype(np.bool_),
             score=float(scores[selected]),
-            metadata={"provider": "segment_anything", "selected_mask": selected},
+            metadata={
+                "provider": "segment_anything",
+                "selected_mask": selected,
+                "refinement_steps": steps,
+            },
+        )
+        assert self._cached_image is not None
+        return _SAMRefinement(
+            owner=self._refinement_owner,
+            image=self._cached_image,
+            prompt=prompt,
+            proposal=proposal,
+            logits=read_only_copy(logits[selected : selected + 1]),
+            steps=steps,
         )
 
 

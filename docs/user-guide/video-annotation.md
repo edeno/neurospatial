@@ -270,6 +270,21 @@ inference runs in the background. The first SAM 2 preview may take longer while
 the model embeds the image. For manual updates, turn off **Update outline as I
 click**, then click **Update outline** when ready. This works with both providers.
 
+With SAM 2, adding an inside or outside click refines the last displayed model
+prediction using its previous low-resolution logits. The first prediction offers
+multiple candidates internally and selects the highest-scoring mask; later clicks
+request a single refined mask. Moving or removing an existing point starts a fresh
+prediction from the remaining prompts. **Clear prompts**, **Discard outline**,
+accepting an outline, and inference errors also reset refinement. Repeating
+**Update outline** with unchanged prompts reuses the same model result.
+
+Refinement uses the model's raw prediction before fragment cleanup or manual
+painting. Further clicks therefore replace manual preview edits. Temporary model
+state is not saved in projects; resumed sessions start fresh. Accepted annotations
+record the number of refinement steps in their metadata. Direct
+`SegmentAnythingProvider.predict(image, prompt)` calls remain independent of
+earlier prompts and only reuse image embeddings.
+
 The same segmentation tools work without napari. Prompts use pixel `(x, y)`
 coordinates, while masks use `[row, column]` indexing. Polygon boundaries follow
 pixel edges: a pixel centered at `(x, y)` covers a unit square extending half a

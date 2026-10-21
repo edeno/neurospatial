@@ -38,10 +38,11 @@ class _Signal:
 
 
 class _Worker:
-    def __init__(self, provider, frame, prompt):
+    def __init__(self, provider, frame, prompt, previous=None):
         self.provider = provider
         self.frame = frame
         self.prompt = prompt
+        self.previous = previous
         self.returned = _Signal()
         self.errored = _Signal()
         self.finished = _Signal()
@@ -55,8 +56,17 @@ class _Worker:
         self.quit_called = True
 
     def complete(self):
+        from neurospatial.annotation.segmentation import SegmentAnythingProvider
+
         try:
-            self.returned.emit(self.provider.predict(self.frame, self.prompt))
+            result = (
+                self.provider._predict_with_refinement(
+                    self.frame, self.prompt, self.previous
+                )
+                if isinstance(self.provider, SegmentAnythingProvider)
+                else self.provider.predict(self.frame, self.prompt)
+            )
+            self.returned.emit(result)
         except Exception as exc:
             self.errored.emit(exc)
         finally:
@@ -128,6 +138,151 @@ def assist(monkeypatch):
     if not state.get("dock_closed", False):
         widget.close()
     viewer.close()
+
+
+@pytest.fixture
+def sam_assist(assist):
+    from neurospatial.annotation.segmentation import SegmentAnythingProvider
+
+    class Predictor:
+        def __init__(self):
+            self.calls = []
+            self.images = []
+            self.error = None
+
+        def set_image(self, image):
+            self.images.append(image)
+
+        def predict(self, **kwargs):
+            self.calls.append(kwargs)
+            if self.error is not None:
+                raise self.error
+            mask = np.zeros((8, 12), dtype=bool)
+            mask[1:5, 2:7] = True
+            mask[6:8, 10:12] = True
+            logits = np.full((2, 2, 2), len(self.calls) + 0.25)
+            logits[0] = -7.5
+            return np.array([~mask, mask]), np.array([0.2, 0.9]), logits
+
+    predictor = Predictor()
+    assist["widget"]._provider = SegmentAnythingProvider(predictor)
+    assist["predictor"] = predictor
+    return assist
+
+
+def test_sam_refines_raw_logits_after_cleanup_and_painting(sam_assist):
+    widget = sam_assist["widget"]
+    predictor = sam_assist["predictor"]
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert not widget._preview.data[6:8, 10:12].any()
+    previous = widget._refinement
+    assert previous is not None
+    widget.remove_fragments.setChecked(False)
+    widget.remove_fragments.setChecked(True)
+    widget._edit_preview()
+    widget._preview.data = np.ones((8, 12), dtype=np.uint8)
+    widget._outside.add([6.0, 9.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert_array_equal(predictor.calls[-1]["mask_input"], previous.logits)
+    assert predictor.calls[-1]["multimask_output"] is False
+    assert widget._proposal.metadata["refinement_steps"] == 1
+    assert len(predictor.images) == 1
+    widget._accept()
+    assert sam_assist["accepted"][0].metadata["refinement_steps"] == 1
+    assert widget._refinement is None
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert "mask_input" not in predictor.calls[-1]
+
+
+@pytest.mark.parametrize("action", ["move", "remove", "clear", "discard"])
+def test_sam_reset_cannot_reuse_logits_when_old_prompts_are_restored(
+    sam_assist, action
+):
+    widget = sam_assist["widget"]
+    widget._inside.data = np.array([[2.0, 3.0], [3.0, 4.0]])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    original = widget._inside.data.copy()
+    if action == "move":
+        widget._inside.data = np.array([[2.0, 4.0], [3.0, 4.0]])
+    elif action == "remove":
+        widget._inside.data = original[:1]
+    elif action == "clear":
+        widget._clear_prompts()
+    else:
+        widget._invalidate()
+    assert widget._refinement is None
+    widget._inside.data = original
+    widget._outside.add([6.0, 9.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert "mask_input" not in sam_assist["predictor"].calls[-1]
+    assert widget._refinement.steps == 0
+
+
+def test_sam_stale_results_never_seed_new_requests(sam_assist):
+    widget = sam_assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    displayed = widget._refinement
+    widget._outside.add([6.0, 9.0])
+    widget._suggest()
+    stale = sam_assist["workers"][-1]
+    widget._inside.add([3.0, 4.0])
+    stale.complete()
+    assert widget._refinement is displayed
+    assert not widget.accept_button.isEnabled()
+    widget._suggest()
+    current = sam_assist["workers"][-1]
+    assert current.previous is displayed
+    current.complete()
+    assert widget._refinement.steps == 1  # The stale refinement was not chained.
+    widget._outside.add([7.0, 9.0])
+    widget._suggest()
+    stale = sam_assist["workers"][-1]
+    widget._clear_prompts()
+    widget._inside.add([2.0, 3.0])
+    stale.complete()
+    assert widget._refinement is None
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert "mask_input" not in sam_assist["predictor"].calls[-1]
+
+
+def test_sam_error_restarts_refinement_on_retry(sam_assist):
+    widget = sam_assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    widget._outside.add([6.0, 9.0])
+    sam_assist["predictor"].error = RuntimeError("decoder failed")
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert widget._refinement is None
+    sam_assist["predictor"].error = None
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert "mask_input" not in sam_assist["predictor"].calls[-1]
+
+
+def test_real_worker_delivers_sam_refinement_state(sam_assist, monkeypatch):
+    from neurospatial.annotation import _assist_widget
+
+    monkeypatch.setattr(_assist_widget, "_predict", sam_assist["real_predict"])
+    widget = sam_assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    _wait_until(lambda: widget._refinement is not None and widget._worker is None)
+    previous = widget._refinement
+    widget._outside.add([6.0, 9.0])
+    _wait_until(lambda: widget.accept_button.isEnabled() and widget._worker is None)
+    assert_array_equal(sam_assist["predictor"].calls[-1]["mask_input"], previous.logits)
+    assert widget._refinement.steps == 1
 
 
 def test_success_snapshots_xy_prompts_and_accepts_current_painted_mask(assist):

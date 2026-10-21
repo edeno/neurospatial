@@ -295,7 +295,11 @@ def test_sam_prediction_selects_best_and_passes_xy_prompt():
     proposal = SegmentAnythingProvider(predictor).predict(image, prompt)
     np.testing.assert_array_equal(proposal.mask, image[:, :, 0] > 0)
     assert proposal.score == 0.9
-    assert proposal.metadata == {"provider": "segment_anything", "selected_mask": 1}
+    assert proposal.metadata == {
+        "provider": "segment_anything",
+        "selected_mask": 1,
+        "refinement_steps": 0,
+    }
     passed = predictor.prompts[0]
     np.testing.assert_array_equal(passed["point_coords"], [[8, 2], [3, 1]])
     np.testing.assert_array_equal(passed["point_labels"], [1, 0])
@@ -321,6 +325,93 @@ def test_sam_embedding_cache_content_and_shape_invalidation():
     resized = np.full((4, 10, 3), 255, dtype=np.uint8)
     assert provider.predict(resized, prompt).mask.shape == (4, 10)
     assert len(predictor.images) == 3
+
+
+def test_sam_refinement_uses_selected_raw_logits_and_keeps_direct_calls_independent():
+    predictor = _Predictor()
+    image = np.ones((5, 12, 3), dtype=np.uint8)
+    logits = np.array([[[-4.5, 0.25], [2.5, -1.5]], [[1.25, -3.5], [0.5, 4.5]]])
+    predictor.output = (np.ones((2, 5, 12)), np.array([0.2, 0.9]), logits)
+    provider = SegmentAnythingProvider(predictor)
+    initial = provider._predict_with_refinement(image, _prompt(((7, 2),)))
+    assert initial.steps == 0
+    assert predictor.prompts[-1]["multimask_output"] is True
+    assert "mask_input" not in predictor.prompts[-1]
+    np.testing.assert_array_equal(initial.logits, logits[1:2])
+    assert not initial.logits.flags.writeable
+    assert not initial.image.flags.writeable
+    # Mutating a predictor-owned output must not change saved refinement logits.
+    logits[:] = 17
+    expected = np.array([[[1.25, -3.5], [0.5, 4.5]]], dtype=np.float32)
+    second = provider._predict_with_refinement(
+        image, _prompt(((7, 2), (1, 1)), (1, 0)), initial
+    )
+    np.testing.assert_array_equal(predictor.prompts[-1]["mask_input"], expected)
+    assert not np.shares_memory(predictor.prompts[-1]["mask_input"], initial.logits)
+    assert predictor.prompts[-1]["multimask_output"] is False
+    assert second.proposal.metadata["refinement_steps"] == 1
+    # Inside clicks are grouped first by the UI; adding one shifts outside clicks.
+    prompt = _prompt(((7, 2), (9, 3), (1, 1)), (1, 1, 0))
+    third = provider._predict_with_refinement(image, prompt, second)
+    np.testing.assert_array_equal(predictor.prompts[-1]["mask_input"], second.logits)
+    assert third.steps == 2
+    assert len(predictor.images) == 1
+    # Identical updates are idempotent, including their refinement count.
+    assert provider._predict_with_refinement(image.copy(), prompt, third) is third
+    assert len(predictor.prompts) == 3
+    direct = provider.predict(image, prompt)
+    assert direct.metadata["refinement_steps"] == 0
+    assert predictor.prompts[-1]["multimask_output"] is True
+    assert "mask_input" not in predictor.prompts[-1]
+
+
+@pytest.mark.parametrize(
+    "change", ["move", "remove", "label", "box", "image", "provider"]
+)
+def test_sam_refinement_restarts_when_its_context_changes(change):
+    predictor = _Predictor()
+    provider = SegmentAnythingProvider(predictor)
+    image = np.ones((5, 12, 3), dtype=np.uint8)
+    points, labels, bounds = [(7, 2), (1, 1)], [1, 0], [0, 0, 11, 4]
+    previous = provider._predict_with_refinement(image, _prompt(points, labels, bounds))
+    if change == "move":
+        points[0] = (8, 2)
+    elif change == "remove":
+        points, labels = points[:1], labels[:1]
+    elif change == "label":
+        labels[1] = 1
+    elif change == "box":
+        bounds = [1, 0, 11, 4]
+    elif change == "image":
+        image[0, 0] = 255
+    else:
+        predictor = _Predictor()
+        provider = SegmentAnythingProvider(predictor)
+    # Even adding another point must not carry stale context into the new request.
+    points.append((9, 3))
+    labels.append(1)
+    result = provider._predict_with_refinement(
+        image, _prompt(points, labels, bounds), previous
+    )
+    assert "mask_input" not in predictor.prompts[-1]
+    assert predictor.prompts[-1]["multimask_output"] is True
+    assert result.steps == 0
+    assert previous.image[0, 0, 0] == 1
+
+
+def test_sam_failed_refinement_does_not_mutate_previous_state():
+    predictor = _Predictor()
+    provider = SegmentAnythingProvider(predictor)
+    image = np.ones((5, 12, 3), dtype=np.uint8)
+    previous = provider._predict_with_refinement(image, _prompt(((7, 2),)))
+    logits = previous.logits.copy()
+    predictor.fail_predict = True
+    with pytest.raises(RuntimeError, match="SAM segmentation failed"):
+        provider._predict_with_refinement(
+            image, _prompt(((7, 2), (8, 2)), (1, 1)), previous
+        )
+    assert previous.steps == 0
+    np.testing.assert_array_equal(previous.logits, logits)
 
 
 @pytest.mark.parametrize("stage", ["set", "predict"])
