@@ -47,10 +47,11 @@ class OutlinePreviewControl(QWidget):
         layout.addWidget(QLabel("Polygon detail"))
         self.detail_slider = QSlider(Qt.Orientation.Horizontal)
         self.detail_slider.setRange(0, 100)
-        self.detail_slider.setValue(0)
+        self.detail_slider.setValue(14)
         self.detail_slider.setEnabled(False)
         self.detail_slider.setToolTip(
-            "Simplification distance in pixels: 0 keeps the exact mask boundary; "
+            "Simplification distance in pixels (default: 1.4): "
+            "0 keeps the exact mask boundary; "
             "larger values reduce vertices while keeping components and holes."
         )
         self.detail_slider.valueChanged.connect(self._detail_changed)

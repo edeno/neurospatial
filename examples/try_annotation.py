@@ -4,10 +4,11 @@ Run from the annotation feature checkout with its optional viewers installed::
 
     uv run --no-sync python examples/try_annotation.py --provider cpu
     uv run --no-sync python examples/try_annotation.py --provider sam2
-    uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model large
+    uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model tiny
     uv run --no-sync python examples/try_annotation.py --provider cpu --video movie.mp4
 
-SAM 2 additionally requires its optional dependencies and a local checkpoint.
+SAM 2 defaults to the Large model and requires its optional dependencies and a
+matching local checkpoint. Select Tiny explicitly for lower memory use.
 See the video annotation guide for setup. This script never downloads a model.
 """
 
@@ -55,8 +56,8 @@ def main() -> None:
     parser.add_argument(
         "--sam2-model",
         choices=("tiny", "small", "base-plus", "large"),
-        default="tiny",
-        help="SAM 2.1 checkpoint size. Tiny loads faster; compare Large for finer outlines.",
+        default="large",
+        help="SAM 2.1 checkpoint size (default: large). Tiny loads faster and uses less memory.",
     )
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--video", type=Path, help="Use a frame from your video.")
@@ -131,6 +132,8 @@ def main() -> None:
     print(
         "In Project and Assistance: Mark points → left-click the tan arena "
         "(or your target area) → refine the live outline → Accept outline.\n"
+        "Right-click to exclude areas; Alt-click to remove a prompt.\n"
+        "Polygon detail starts at 1.4 px; set it to 0 for the exact mask boundary.\n"
         "Use Paint / erase preview for manual corrections.\n"
         "Choose the annotation role/name in Annotation Controls; click Done there to finish.",
         flush=True,

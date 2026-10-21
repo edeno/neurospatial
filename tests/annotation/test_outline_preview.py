@@ -58,6 +58,7 @@ def test_paths_include_holes_and_preserve_active_prompt_tool(preview):
     proposal = _proposal()
     control.show(proposal)
     _assert_paths_match(control)
+    assert control.outline.simplify_tolerance_px == pytest.approx(1.4)
     assert len(control.polygon_layer.data) == 3
     assert control.outline.proposal.metadata == proposal.metadata
     assert control.mask_layer.contour == 2
@@ -89,6 +90,7 @@ def test_detail_changes_reuse_exact_vectorization_and_layers(preview, monkeypatc
     monkeypatch.setattr(_outline_preview, "polygon_outline", count)
     proposal = _proposal()
     control.show(proposal)
+    control.detail_slider.setValue(0)
     exact = control.outline
     mask_layer, polygon_layer = control.mask_layer, control.polygon_layer
     control.detail_slider.setValue(10)
@@ -159,6 +161,7 @@ def test_simplification_failure_keeps_slider_available_for_exact_recovery(
 
     control, _viewer, _annotations, _points, _changes = preview
     control.show(_proposal())
+    control.detail_slider.setValue(0)
     exact = control.outline
     original = _outline_preview.simplify_polygon_outline
 

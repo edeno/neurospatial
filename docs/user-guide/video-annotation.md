@@ -208,7 +208,9 @@ environment, regions, walls and landmarks.
 ### Try the Sample Arena
 
 From a checkout with the animation dependencies installed, this launcher opens
-a synthetic arena with an obstacle and reward area:
+a synthetic arena with an obstacle and reward area. Run from the checkout
+containing `examples/try_annotation.py`; if using a separate worktree, change
+into that worktree first:
 
 ```bash
 uv run --no-sync python examples/try_annotation.py --provider cpu
@@ -228,8 +230,9 @@ sample prediction without opening a viewer.
 
 ### Select and Correct an Outline
 
-Open **Project and Assistance** and use **Assisted outline** when the arena
-surface has a distinct color:
+Open **Project and Assistance** and use **Assisted outline** to suggest a
+boundary or region from clicks. The CPU provider works best with a distinctly
+colored surface; SAM 2 can handle more complex scenes:
 
 1. Click **Mark points**, then left-click inside the desired area. Add an inside
    point in each disconnected area that should be included.
@@ -241,9 +244,10 @@ surface has a distinct color:
    it; the point tool stays active. The default CPU provider keeps areas connected
    to inside points whose colors fall within **Color tolerance**. Increase the
    tolerance to include a wider range of colors; this also updates the preview.
-4. Adjust **Polygon detail** to reduce the number of vertices. Zero retains the
-   exact pixel outline; increasing the tolerance simplifies it. The cyan paths
-   show the exact polygons that will be accepted, including every hole. This
+4. **Polygon detail** starts at **1.4 pixels** to reduce jagged edges and the
+   number of vertices. Set it to **0** for the exact pixel outline; increasing
+   the tolerance simplifies it further. The cyan paths show the exact polygons
+   that will be accepted, including every hole. This
    updates immediately without rerunning inference. The vertex count helps you
    balance detail against editing complexity.
 5. Optionally click **Paint / erase preview** to correct the mask with napari's
@@ -354,30 +358,30 @@ and obtain a matching model checkpoint from that repository. These model
 dependencies and weights are optional; the default CPU provider needs neither.
 
 To prepare the sample launcher on a Mac, install into the current checkout's
-virtual environment and download the tiny checkpoint once. These commands use
-a pinned revision of Meta's source and skip its optional CUDA extension:
+virtual environment and download the default **SAM 2.1 Large** checkpoint
+(about 900 MB) once. These commands use a pinned revision of Meta's source and
+skip its optional CUDA extension:
 
 ```bash
-SAM2_BUILD_CUDA=0 uv pip install 'sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4'
+SAM2_BUILD_CUDA=0 uv pip install --python .venv/bin/python 'sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4'
 mkdir -p data/annotation_demo
-curl --fail --location --output data/annotation_demo/sam2.1_hiera_tiny.pt \
-    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
+curl --fail --location --output data/annotation_demo/sam2.1_hiera_large.pt \
+    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
 uv run --no-sync python examples/try_annotation.py --provider sam2
 ```
 
 The `data/` checkpoint is ignored by Git. Use `--checkpoint /path/to/model.pt`
-and `--model-config configs/sam2.1/sam2.1_hiera_t.yaml` to supply another local
+and `--model-config configs/sam2.1/sam2.1_hiera_l.yaml` for a matching Large
 checkpoint/config pair. Keep `--no-sync` when launching so uv retains these
 optional packages, which are not part of the core dependency lockfile.
 
-The launcher defaults to **SAM 2.1 Tiny** for a shorter initial load and lower
-memory use. To compare with **SAM 2.1 Large** on a difficult frame, download its
-checkpoint (about 900 MB) and choose it explicitly:
+With `--provider sam2`, the launcher defaults to **SAM 2.1 Large**. For a shorter
+initial load and lower memory use, download **Tiny** and choose it explicitly:
 
 ```bash
-curl --fail --location --output data/annotation_demo/sam2.1_hiera_large.pt \
-    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt
-uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model large
+curl --fail --location --output data/annotation_demo/sam2.1_hiera_tiny.pt \
+    https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
+uv run --no-sync python examples/try_annotation.py --provider sam2 --sam2-model tiny
 ```
 
 Add `--video /path/to/movie.mp4 --frame-index 100` to compare on your own recording
@@ -387,6 +391,9 @@ The launcher prints the config and checkpoint it actually loads. Image embedding
 are reused between clicks, so a larger model's initial image processing can take
 longer than subsequent outline updates. `--checkpoint` and `--model-config` still
 override the selected defaults; weights are never downloaded by the launcher.
+Without `--provider sam2`, the launcher uses CPU color region growing and needs
+no SAM checkpoint. Both providers start the polygon preview at **1.4 pixels**
+of simplification; set **Polygon detail** to **0** for an exact mask outline.
 
 Load the provider **before** opening the editor so dependency, config or
 checkpoint errors are reported first. Supply an existing local checkpoint;
@@ -397,8 +404,8 @@ this factory does not download weights. The default device is `"cpu"`.
 from neurospatial.annotation import SegmentAnythingProvider, annotate_video
 
 provider = SegmentAnythingProvider.from_sam2(
-    "configs/sam2.1/sam2.1_hiera_t.yaml",
-    "/path/to/sam2.1_hiera_tiny.pt",
+    "configs/sam2.1/sam2.1_hiera_l.yaml",
+    "/path/to/sam2.1_hiera_large.pt",
     device="cpu",
 )
 result = annotate_video(
