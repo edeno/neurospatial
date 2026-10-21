@@ -4,10 +4,6 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from neurospatial.annotation._napari_widget import (
-    add_initial_boundary_to_shapes,
-    setup_shapes_layer_for_annotation,
-)
 from neurospatial.annotation.core import (
     _add_initial_regions,
     _process_annotation_results,
@@ -19,7 +15,12 @@ from neurospatial.regions import Region, Regions
 @pytest.mark.gui
 @pytest.mark.parametrize("calibrated", [False, True])
 def test_donut_boundary_and_roi_roundtrip(calibrated):
-    import napari
+    napari = pytest.importorskip("napari")
+
+    from neurospatial.annotation._napari_widget import (
+        add_initial_boundary_to_shapes,
+        setup_shapes_layer_for_annotation,
+    )
 
     calibration = (
         VideoCalibration(Affine2D(np.diag([0.5, 0.5, 1.0])), frame_size_px=(100, 100))
@@ -90,7 +91,7 @@ def test_invalid_polygons_rejected_without_implicit_repair():
 def test_public_annotation_rejects_invalid_close_and_allows_retry(
     monkeypatch, close_route, invalid_role
 ):
-    import napari
+    napari = pytest.importorskip("napari")
     from qtpy.QtWidgets import QPushButton
 
     from neurospatial.annotation import core
@@ -154,9 +155,12 @@ def test_public_annotation_rejects_invalid_close_and_allows_retry(
 
 @pytest.mark.gui
 def test_polygon_links_survive_append_and_controller_delete():
-    import napari
+    napari = pytest.importorskip("napari")
 
     from neurospatial.annotation._controller import ShapesLayerController
+    from neurospatial.annotation._napari_widget import (
+        setup_shapes_layer_for_annotation,
+    )
     from neurospatial.annotation._state import AnnotationModeState
 
     viewer = napari.Viewer(show=False)
@@ -186,9 +190,12 @@ def test_polygon_links_survive_append_and_controller_delete():
 @pytest.mark.gui
 @pytest.mark.parametrize("paste", [False, True])
 def test_selected_interior_and_native_paste_keep_polygon_associations(paste):
-    import napari
+    napari = pytest.importorskip("napari")
 
     from neurospatial.annotation._controller import ShapesLayerController
+    from neurospatial.annotation._napari_widget import (
+        setup_shapes_layer_for_annotation,
+    )
     from neurospatial.annotation._state import AnnotationModeState
 
     viewer = napari.Viewer(show=False)
@@ -245,10 +252,14 @@ def test_interactive_shapes_require_valid_areas(role, vertices):
 @pytest.mark.gui
 @pytest.mark.parametrize("delete_route", ["button", "native"])
 def test_widget_delete_then_draw_assigns_fresh_features(delete_route):
-    import napari
+    napari = pytest.importorskip("napari")
+
     from qtpy.QtWidgets import QApplication, QPushButton
 
-    from neurospatial.annotation._napari_widget import create_annotation_widget
+    from neurospatial.annotation._napari_widget import (
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
 
     viewer = napari.Viewer(show=False)
     try:
@@ -302,10 +313,15 @@ def test_widget_delete_then_draw_assigns_fresh_features(delete_route):
 
 @pytest.mark.gui
 def test_delete_targets_survive_pending_boundary_replacement(monkeypatch):
-    import napari
+    napari = pytest.importorskip("napari")
+
     from qtpy.QtWidgets import QMessageBox, QPushButton
 
-    from neurospatial.annotation._napari_widget import create_annotation_widget
+    from neurospatial.annotation._napari_widget import (
+        add_initial_boundary_to_shapes,
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
 
     viewer = napari.Viewer(show=False)
     try:
@@ -351,7 +367,7 @@ def test_delete_targets_survive_pending_boundary_replacement(monkeypatch):
 
 @pytest.mark.gui
 def test_close_flush_finishes_rejected_boundary_before_export(monkeypatch):
-    import napari
+    napari = pytest.importorskip("napari")
     from qtpy.QtWidgets import QMessageBox
 
     from neurospatial.annotation import core
@@ -392,9 +408,12 @@ def test_close_flush_finishes_rejected_boundary_before_export(monkeypatch):
 
 @pytest.mark.gui
 def test_native_delete_does_not_hide_pending_addition():
-    import napari
+    napari = pytest.importorskip("napari")
 
-    from neurospatial.annotation._napari_widget import create_annotation_widget
+    from neurospatial.annotation._napari_widget import (
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
 
     viewer = napari.Viewer(show=False)
     try:
@@ -427,11 +446,16 @@ def test_native_delete_does_not_hide_pending_addition():
 
 @pytest.mark.gui
 def test_rejected_boundary_then_pending_region_keeps_fresh_features(monkeypatch):
-    import napari
+    napari = pytest.importorskip("napari")
+
     from qtpy.QtCore import QTimer
     from qtpy.QtWidgets import QMessageBox
 
-    from neurospatial.annotation._napari_widget import create_annotation_widget
+    from neurospatial.annotation._napari_widget import (
+        add_initial_boundary_to_shapes,
+        create_annotation_widget,
+        setup_shapes_layer_for_annotation,
+    )
 
     viewer = napari.Viewer(show=False)
     try:

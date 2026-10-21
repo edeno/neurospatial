@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from napari.layers import Labels, Points, Shapes
 from napari.utils.colormaps import DirectLabelColormap
-from qtpy.QtCore import Qt, QTimer
+from qtpy.QtCore import Qt, QTimer  # type: ignore[attr-defined]
 from qtpy.QtWidgets import QLabel, QSlider, QVBoxLayout, QWidget
 
 from neurospatial.annotation._cvat_polygon import (

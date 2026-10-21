@@ -15,7 +15,7 @@ def run_annotation_session(
     """Run the viewer, retaining its draft whenever preparing a result fails."""
     import napari
     from napari.utils.notifications import show_error
-    from qtpy.QtCore import QEvent, QObject
+    from qtpy.QtCore import QEvent, QObject  # type: ignore[attr-defined]
 
     results: list[_Result] = []
 
