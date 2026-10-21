@@ -430,10 +430,10 @@ warn_unused_ignores = true
 module = "neurospatial.animation.backends.napari_backend"
 warn_unused_ignores = false
 
-# annotation widget: Disable warn_unused_ignores due to magicgui stubs inconsistency
-# between Python versions (3.11 vs 3.13 have different type hints for RadioButtons)
+# Optional Qt/magicgui attributes depend on the installed GUI backend and stubs.
+# Attribute ignores are needed in headless CI but can be unused with Qt installed.
 [[tool.mypy.overrides]]
-module = "neurospatial.annotation._napari_widget"
+module = ["neurospatial.annotation._napari_widget", "neurospatial.annotation._session"]
 warn_unused_ignores = false
 
 # backend selection: Disable warn_unreachable due to platform-conditional code.
