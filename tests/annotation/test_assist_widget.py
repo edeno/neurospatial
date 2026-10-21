@@ -38,11 +38,12 @@ class _Signal:
 
 
 class _Worker:
-    def __init__(self, provider, frame, prompt, previous=None):
+    def __init__(self, provider, frame, prompt, previous=None, bounds=None):
         self.provider = provider
         self.frame = frame
         self.prompt = prompt
         self.previous = previous
+        self.bounds = bounds
         self.returned = _Signal()
         self.errored = _Signal()
         self.finished = _Signal()
@@ -56,15 +57,11 @@ class _Worker:
         self.quit_called = True
 
     def complete(self):
-        from neurospatial.annotation.segmentation import SegmentAnythingProvider
+        from neurospatial.annotation._assist_widget import _run_prediction
 
         try:
-            result = (
-                self.provider._predict_with_refinement(
-                    self.frame, self.prompt, self.previous
-                )
-                if isinstance(self.provider, SegmentAnythingProvider)
-                else self.provider.predict(self.frame, self.prompt)
+            result = _run_prediction(
+                self.provider, self.frame, self.prompt, self.previous, self.bounds
             )
             self.returned.emit(result)
         except Exception as exc:
@@ -110,6 +107,12 @@ def assist(monkeypatch):
     )
     provider = _Provider()
     accepted = []
+    outlines = []
+
+    def accept(outline):
+        outlines.append(outline)
+        accepted.append(outline.proposal)
+
     calibration = []
     bins = []
     widget = _assist_widget.AnnotationAssistWidget(
@@ -120,7 +123,7 @@ def assist(monkeypatch):
         bin_size=2.0,
         on_calibration=calibration.append,
         on_bin_size=bins.append,
-        on_accept=accepted.append,
+        on_accept=accept,
     )
     state = {
         "real_predict": real_predict,
@@ -129,6 +132,7 @@ def assist(monkeypatch):
         "provider": provider,
         "workers": workers,
         "accepted": accepted,
+        "outlines": outlines,
         "calibrations": calibration,
         "bins": bins,
         "annotations": annotations,
@@ -157,7 +161,7 @@ def sam_assist(assist):
             self.calls.append(kwargs)
             if self.error is not None:
                 raise self.error
-            mask = np.zeros((8, 12), dtype=bool)
+            mask = np.zeros(self.images[-1].shape[:2], dtype=bool)
             mask[1:5, 2:7] = True
             mask[6:8, 10:12] = True
             logits = np.full((2, 2, 2), len(self.calls) + 0.25)
@@ -330,7 +334,8 @@ def test_live_clicks_coalesce_and_keep_prompt_tool_active(assist):
     preview = widget._preview
     assert preview.contour == 2
     assert viewer.layers.selection.active is widget._outside
-    assert widget._outside.mode == "add"
+    assert widget._outside.mode == "pan_zoom"
+    assert widget.prompt_tools.active
     assert viewer.layers.index(preview) < viewer.layers.index(widget._inside)
     assert viewer.layers.index(preview) < viewer.layers.index(widget._outside)
 
@@ -633,7 +638,7 @@ def test_real_worker_inference_runs_off_gui_thread(assist, monkeypatch):
     assert widget._preview is not None
     assert len(inference_threads) == 1
     assert inference_threads[0] != main_thread
-    assert layer_threads == [main_thread]
+    assert layer_threads == [main_thread, main_thread]
 
 
 def test_cleanup_after_docked_viewer_closes(assist):
@@ -649,3 +654,142 @@ def test_cleanup_after_docked_viewer_closes(assist):
     assist["workers"][-1].complete()
     assert widget._disposed
     assert widget._preview is None
+
+
+def _select_roi(widget, vertices):
+    widget.roi.draw_button.click()
+    widget.roi.layer.add(np.array(vertices, dtype=float), shape_type="rectangle")
+
+
+def test_roi_prediction_maps_mask_and_prompts_back_without_changing_annotations(assist):
+    widget = assist["widget"]
+    original = assist["annotations"].data[0].copy()
+    _select_roi(widget, [[1, 2], [1, 9], [6, 9], [6, 2]])
+    assert widget.roi.bounds == (2, 1, 9, 6)
+    widget._inside.add([3.0, 5.0])
+    widget._outside.add([1.0, 2.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    image, prompt = assist["provider"].calls[-1]
+    assert image.shape == (5, 7, 3)
+    assert_array_equal(prompt.points, [[3, 2], [0, 0]])
+    expected = np.zeros((8, 12), dtype=bool)
+    expected[2:5, 4:8] = True
+    assert_array_equal(widget._proposal.mask, expected)
+    widget._accept()
+    assert_array_equal(assist["accepted"][0].mask, expected)
+    assert assist["accepted"][0].metadata["roi_bounds"] == [2, 1, 9, 6]
+    assert_array_equal(assist["annotations"].data[0], original)
+    assert assist["outlines"][0].polygons[0].bounds == (3.5, 1.5, 7.5, 4.5)
+
+
+def test_invalid_roi_and_outside_prompts_cannot_start_inference(assist):
+    widget = assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    widget.roi.draw_button.click()
+    widget._suggest()
+    assert not assist["workers"]
+    assert "Finish drawing" in widget.status.text()
+    widget.roi.layer.add(
+        np.array([[3, 5], [3, 10], [7, 10], [7, 5]]), shape_type="rectangle"
+    )
+    widget._suggest()
+    assert not assist["workers"]
+    assert "outside the region of interest" in widget.status.text()
+    widget.roi.full_image_button.click()
+    widget._suggest()
+    assist["workers"][-1].complete()
+    assert widget.accept_button.isEnabled()
+
+
+def test_roi_changes_reject_pending_results_and_reset_sam_logits(sam_assist):
+    widget = sam_assist["widget"]
+    _select_roi(widget, [[1, 2], [1, 9], [6, 9], [6, 2]])
+    widget._inside.add([3.0, 5.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    previous = widget._refinement
+    widget._outside.add([1.0, 2.0])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert_array_equal(sam_assist["predictor"].calls[-1]["mask_input"], previous.logits)
+    assert_array_equal(
+        sam_assist["predictor"].calls[-1]["point_coords"], [[3, 2], [0, 0]]
+    )
+    assert widget._refinement.steps == 1
+    widget._outside.add([4.0, 8.0])
+    widget._suggest()
+    stale = sam_assist["workers"][-1]
+    # Identical image content and crop shape, different original-frame offset.
+    _select_roi(widget, [[1, 1], [1, 8], [6, 8], [6, 1]])
+    assert widget._refinement is None
+    stale.complete()
+    assert widget._refinement is None
+    assert not widget.accept_button.isEnabled()
+    widget._outside.data = np.array([[1.0, 2.0]])
+    widget._suggest()
+    sam_assist["workers"][-1].complete()
+    assert "mask_input" not in sam_assist["predictor"].calls[-1]
+    assert widget._refinement.steps == 0
+    assert widget._proposal.metadata["roi_bounds"] == [1, 1, 8, 6]
+    widget.roi.full_image_button.click()
+    assert widget._refinement is None
+
+
+def test_polygon_detail_does_not_rerun_inference_and_accepts_displayed_rings(assist):
+    widget = assist["widget"]
+    widget._activate(widget._inside)
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    control = widget.outline_preview
+    control.detail_slider.setValue(10)
+    assert len(assist["workers"]) == 1
+    assert widget.prompt_tools.active
+    outline = control.outline
+    assert outline.simplify_tolerance_px == 1.0
+    assert not widget._preview.visible
+    for ring, displayed in zip(outline.rings, control.polygon_layer.data, strict=True):
+        assert_array_equal(ring[:, ::-1], displayed)
+    widget._accept()
+    assert all(
+        p.equals_exact(q, 0)
+        for p, q in zip(assist["outlines"][0].polygons, outline.polygons, strict=True)
+    )
+
+
+def test_point_buttons_invalidate_old_mask_and_restore_click_mode(assist):
+    widget = assist["widget"]
+    widget.mark_points_button.click()
+    widget._inside.add([2.0, 3.0])
+    widget._outside.add([6.0, 9.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    widget.undo_point_button.click()
+    assert len(widget._outside.data) == 0
+    assert len(widget._inside.data) == 1
+    assert not widget.accept_button.isEnabled()
+    widget._inside.mode = "select"
+    assert not widget.prompt_tools.active
+    widget._inside.selected_data = {0}
+    widget.delete_points_button.click()
+    assert len(widget._inside.data) == 0
+    assert widget._preview is None
+    widget.mark_points_button.click()
+    assert widget.prompt_tools.active
+
+
+def test_removing_polygon_preview_disables_accept_and_paint_until_new_prediction(
+    assist,
+):
+    widget = assist["widget"]
+    widget._inside.add([2.0, 3.0])
+    widget._suggest()
+    assist["workers"][-1].complete()
+    assist["viewer"].layers.remove(widget.outline_preview.polygon_layer)
+    assert not widget.accept_button.isEnabled()
+    assert not widget.edit_button.isEnabled()
+    widget._suggest()
+    assist["workers"][-1].complete()
+    assert widget.accept_button.isEnabled()
+    assert widget.edit_button.isEnabled()

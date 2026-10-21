@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from napari.layers import Points
 from napari.qt.threading import thread_worker
-from napari.utils.colormaps import DirectLabelColormap
 from numpy.typing import NDArray
 from qtpy.QtCore import QTimer, Slot  # type: ignore[attr-defined]
 from qtpy.QtWidgets import (
@@ -17,13 +17,24 @@ from qtpy.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from neurospatial.annotation._mask_cleanup import remove_unprompted_fragments
+from neurospatial.annotation._assist_roi import AnnotationROIControl
+from neurospatial.annotation._outline_preview import OutlinePreviewControl
+from neurospatial.annotation._polygon_outline import PolygonOutline
+from neurospatial.annotation._prompt_tools import PromptTools
+from neurospatial.annotation._roi import (
+    ROIBounds,
+    clean_roi_fragments,
+    crop_segmentation_input,
+    restore_roi_proposal,
+    roi_context_key,
+)
 from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
     SegmentAnythingProvider,
@@ -38,17 +49,46 @@ if TYPE_CHECKING:
     import napari
 
 
+@dataclass(frozen=True)
+class _PredictionResult:
+    """A full-frame mask and crop-local, nonpersistent model refinement state."""
+
+    proposal: SegmentationProposal
+    refinement: _SAMRefinement | None
+    roi_key: tuple[int, int, int, int, int, int]
+
+
+def _run_prediction(
+    provider: SegmentationProvider,
+    frame: NDArray[np.uint8],
+    prompt: SegmentationPrompt,
+    previous: _SAMRefinement | None = None,
+    bounds: ROIBounds | None = None,
+) -> _PredictionResult:
+    image, local_prompt = crop_segmentation_input(frame, prompt, bounds=bounds)
+    refinement = None
+    if isinstance(provider, SegmentAnythingProvider):
+        refinement = provider._predict_with_refinement(image, local_prompt, previous)
+        proposal = refinement.proposal
+    else:
+        proposal = provider.predict(image, local_prompt)
+    return _PredictionResult(
+        restore_roi_proposal(proposal, frame.shape, bounds=bounds),
+        refinement,
+        roi_context_key(frame.shape, bounds),
+    )
+
+
 @thread_worker(ignore_errors=True)
 def _predict(
     provider: SegmentationProvider,
     frame: NDArray[np.uint8],
     prompt: SegmentationPrompt,
     previous: _SAMRefinement | None = None,
-) -> SegmentationProposal | _SAMRefinement:
+    bounds: ROIBounds | None = None,
+) -> _PredictionResult:
     """Run all inference, including lazy model setup, off the GUI thread."""
-    if isinstance(provider, SegmentAnythingProvider):
-        return provider._predict_with_refinement(frame, prompt, previous)
-    return provider.predict(frame, prompt)
+    return _run_prediction(provider, frame, prompt, previous, bounds)
 
 
 class AnnotationAssistWidget(QWidget):
@@ -68,7 +108,7 @@ class AnnotationAssistWidget(QWidget):
         bin_size: float | None,
         on_calibration: Callable[[VideoCalibration | None], None],
         on_bin_size: Callable[[float], None],
-        on_accept: Callable[[SegmentationProposal], None],
+        on_accept: Callable[[PolygonOutline], None],
         on_change: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
@@ -91,9 +131,9 @@ class AnnotationAssistWidget(QWidget):
         self._preview_timer.timeout.connect(self._update_preview)
         self._raw_proposal: SegmentationProposal | None = None
         self._refinement: _SAMRefinement | None = None
+        self._refinement_roi_key: tuple[int, int, int, int, int, int] | None = None
         self._job_prompt: SegmentationPrompt | None = None
         self._proposal: SegmentationProposal | None = None
-        self._preview: Any = None
         self._connections: list[tuple[Any, Any]] = []
         self._scale = Points(
             np.empty((0, 2)),
@@ -118,6 +158,16 @@ class AnnotationAssistWidget(QWidget):
         )
         for layer in (self._inside, self._outside):
             self._connect(layer.events.data, self._prompts_changed)
+
+        self.prompt_tools = PromptTools(
+            viewer, self._inside, self._outside, self._frame.shape
+        )
+        self.roi = AnnotationROIControl(
+            viewer, self._frame.shape, on_change=self._roi_changed
+        )
+        self.outline_preview = OutlinePreviewControl(
+            viewer, on_change=self._outline_changed
+        )
 
         layout = QVBoxLayout(self)
         calibration_toggle = QPushButton("Calibration and output settings ▸")
@@ -167,12 +217,24 @@ class AnnotationAssistWidget(QWidget):
         )
         instructions.setWordWrap(True)
         assistance.addRow(instructions)
-        inside_button = QPushButton("Mark inside points")
-        inside_button.clicked.connect(lambda: self._activate(self._inside))
-        assistance.addRow(inside_button)
-        outside_button = QPushButton("Mark outside points")
-        outside_button.clicked.connect(lambda: self._activate(self._outside))
-        assistance.addRow(outside_button)
+        self.mark_points_button = QPushButton("Mark points")
+        self.mark_points_button.clicked.connect(lambda: self._activate(self._inside))
+        assistance.addRow(self.mark_points_button)
+        prompt_help = QLabel("Left: inside • Right: outside • Alt-click: remove")
+        prompt_help.setWordWrap(True)
+        assistance.addRow(prompt_help)
+        point_actions = QHBoxLayout()
+        self.undo_point_button = QPushButton("Undo last point")
+        self.undo_point_button.clicked.connect(self.prompt_tools.undo_last)
+        point_actions.addWidget(self.undo_point_button)
+        self.delete_points_button = QPushButton("Delete selected")
+        self.delete_points_button.setToolTip(
+            "Select points with napari's selection tool, then delete them. "
+            "Click Mark points to resume assisted clicking."
+        )
+        self.delete_points_button.clicked.connect(self.prompt_tools.remove_selected)
+        point_actions.addWidget(self.delete_points_button)
+        assistance.addRow(point_actions)
         self.live_preview = QCheckBox("Update outline as I click")
         self.live_preview.setChecked(True)
         self.live_preview.toggled.connect(self._live_preview_changed)
@@ -202,6 +264,7 @@ class AnnotationAssistWidget(QWidget):
         clear_prompts = QPushButton("Clear prompts")
         clear_prompts.clicked.connect(self._clear_prompts)
         assistance.addRow(clear_prompts)
+        assistance.addRow(self.outline_preview)
         self.edit_button = QPushButton("Paint / erase preview")
         self.edit_button.setEnabled(False)
         self.edit_button.clicked.connect(self._edit_preview)
@@ -217,6 +280,17 @@ class AnnotationAssistWidget(QWidget):
         self.status.setWordWrap(True)
         assistance.addRow(self.status)
         layout.addWidget(assistance_group)
+        roi_toggle = QPushButton("Region of interest ▸")
+        roi_toggle.setCheckable(True)
+        self.roi.hide()
+        roi_toggle.toggled.connect(self.roi.setVisible)
+        roi_toggle.toggled.connect(
+            lambda expanded: roi_toggle.setText(
+                "Region of interest " + ("▾" if expanded else "▸")
+            )
+        )
+        layout.addWidget(roi_toggle)
+        layout.addWidget(self.roi)
         layout.addWidget(calibration_toggle)
         layout.addWidget(calibration_settings)
 
@@ -235,6 +309,10 @@ class AnnotationAssistWidget(QWidget):
     def _activate(self, layer: Any) -> None:
         if self._disposed:
             return
+        if layer in (self._inside, self._outside):
+            self.prompt_tools.activate(layer)
+            return
+        self.prompt_tools.deactivate()
         if layer not in self._viewer.layers:
             self._viewer.add_layer(layer)
         self._viewer.layers.selection.active = layer
@@ -318,23 +396,49 @@ class AnnotationAssistWidget(QWidget):
         self._raw_proposal = None
         if not keep_refinement:
             self._refinement = None
+            self._refinement_roi_key = None
         self._job_prompt = None
         self._proposal = None
         if not self._disposed:
             self.accept_button.setEnabled(False)
             self.edit_button.setEnabled(False)
-        if self._preview is not None:
-            if self._preview not in self._viewer.layers:
-                self._preview = None
-            elif keep_preview:
-                self._preview.opacity = 0.3
-            else:
-                self._viewer.layers.remove(self._preview)
-                self._preview = None
-        if not self._disposed:
+            self.outline_preview.invalidate(keep_preview=keep_preview)
             self.status.setText(
                 "Outline discarded. Add points or click Update outline."
             )
+
+    @property
+    def _preview(self) -> Any:
+        return self.outline_preview.mask_layer
+
+    def _outline_changed(self) -> None:
+        if self._disposed:
+            return
+        self.accept_button.setEnabled(
+            self._proposal is not None and self.outline_preview.outline is not None
+        )
+        self.edit_button.setEnabled(
+            self._proposal is not None
+            and self._preview in self._viewer.layers
+            and self.outline_preview.polygon_layer in self._viewer.layers
+        )
+
+    def _roi_changed(self) -> None:
+        if self._disposed:
+            return
+        self._invalidate(keep_preview=True)
+        try:
+            _ = self.roi.bounds
+        except ValueError as exc:
+            self.status.setText(str(exc))
+            return
+        self._prompts_changed()
+
+    def _local_prompt(self, prompt: SegmentationPrompt) -> SegmentationPrompt:
+        bounds = self.roi.bounds
+        if self._refinement_roi_key != roi_context_key(self._frame.shape, bounds):
+            self._refinement = None
+        return crop_segmentation_input(self._frame, prompt, bounds=bounds)[1]
 
     def _prompts_changed(self, *_args: Any) -> None:
         if self._disposed:
@@ -345,7 +449,10 @@ class AnnotationAssistWidget(QWidget):
             return
         if self._refinement is not None:
             try:
-                if not self._refinement.accepts(self._snapshot_prompt()):
+                local_prompt = self._local_prompt(self._snapshot_prompt())
+                if self._refinement is not None and not self._refinement.accepts(
+                    local_prompt
+                ):
                     self._refinement = None
             except ValueError:
                 self._refinement = None
@@ -390,13 +497,15 @@ class AnnotationAssistWidget(QWidget):
             return
         try:
             prompt = self._snapshot_prompt()
+            self._local_prompt(prompt)  # Validate before launching inference.
+            bounds = self.roi.bounds
             provider = self._provider
             if isinstance(provider, RegionGrowProvider):
                 provider = RegionGrowProvider(tolerance=self.tolerance.value())
             self._job_generation = self._generation
             self._job_prompt = prompt
             self._worker = _predict(
-                provider, self._frame.copy(), prompt, self._refinement
+                provider, self._frame.copy(), prompt, self._refinement, bounds
             )
             self._worker.returned.connect(self._show_proposal)
             self._worker.errored.connect(self._inference_error)
@@ -411,15 +520,15 @@ class AnnotationAssistWidget(QWidget):
             self._error("Could not suggest an outline", exc)
 
     @Slot(object)
-    def _show_proposal(self, result: SegmentationProposal | _SAMRefinement) -> None:
+    def _show_proposal(self, result: _PredictionResult) -> None:
         if self._disposed or self._job_generation != self._generation:
             return
         try:
-            refinement = result if isinstance(result, _SAMRefinement) else None
-            proposal = result.proposal if isinstance(result, _SAMRefinement) else result
+            proposal = result.proposal
             if proposal.mask.shape != self._frame.shape[:2]:
                 raise ValueError("Provider returned a mask with the wrong frame size.")
-            self._refinement = refinement
+            self._refinement = result.refinement
+            self._refinement_roi_key = result.roi_key
             self._raw_proposal = proposal
             self._refresh_preview()
         except Exception as exc:
@@ -433,7 +542,9 @@ class AnnotationAssistWidget(QWidget):
             proposal = self._raw_proposal
             cleanup_note = ""
             if self.remove_fragments.isChecked():
-                cleaned = remove_unprompted_fragments(proposal, self._job_prompt)
+                cleaned = clean_roi_fragments(
+                    proposal, self._job_prompt, bounds=self.roi.bounds
+                )
                 proposal = cleaned.proposal
                 if cleaned.removed_components:
                     noun = (
@@ -448,39 +559,17 @@ class AnnotationAssistWidget(QWidget):
                         f"The prediction misses {cleaned.missed_inside_points} "
                         f"inside {noun}; refine the outline. "
                     )
-            data = np.asarray(proposal.mask, dtype=np.uint8).copy()
-            layers = self._viewer.layers
-            if self._preview is None or self._preview not in layers:
-                selection = set(layers.selection)
-                try:
-                    self._preview = self._viewer.add_labels(
-                        data,
-                        name="Suggested outline",
-                        colormap=DirectLabelColormap(
-                            color_dict={None: "cyan", 0: "transparent", 1: "cyan"}
-                        ),
-                    )
-                    # Keep the outline behind the click markers, and preserve
-                    # the active tool so the next click is another prompt.
-                    prompt_indices = [
-                        layers.index(layer)
-                        for layer in (self._inside, self._outside)
-                        if layer in layers
-                    ]
-                    if prompt_indices:
-                        layers.move(layers.index(self._preview), min(prompt_indices))
-                finally:
-                    layers.selection.clear()
-                    layers.selection.update(selection)
-            else:
-                self._preview.data = data
-            self._preview.selected_label = 1
-            self._preview.contour = 2
-            self._preview.opacity = 1.0
-            self._preview.mode = "pan_zoom"
             self._proposal = proposal
-            self.accept_button.setEnabled(True)
-            self.edit_button.setEnabled(True)
+            # Adding preview layers temporarily selects them. Restore the custom
+            # prompt interaction as well as napari's selected layer/tool.
+            prompt_active = self.prompt_tools.active
+            active_layer = self._viewer.layers.selection.active
+            try:
+                self.outline_preview.show(proposal)
+            finally:
+                if prompt_active:
+                    self.prompt_tools.activate(active_layer)
+            self._outline_changed()
             self.status.setText(
                 cleanup_note
                 + "Click to refine the outline, paint / erase it, or accept."
@@ -506,10 +595,7 @@ class AnnotationAssistWidget(QWidget):
     def _edit_preview(self) -> None:
         if self._proposal is None or self._preview not in self._viewer.layers:
             return
-        self._viewer.layers.selection.active = self._preview
-        self._preview.contour = 0
-        self._preview.opacity = 0.5
-        self._preview.mode = "paint"
+        self.outline_preview.edit()
         self.status.setText(
             "Paint or erase the preview, then accept. "
             "Changing prompts or fragment cleanup replaces edits."
@@ -519,19 +605,7 @@ class AnnotationAssistWidget(QWidget):
         if self._disposed or self._proposal is None or self._preview is None:
             return
         try:
-            if self._preview not in self._viewer.layers:
-                raise ValueError("The preview was removed. Suggest another outline.")
-            mask = np.asarray(self._preview.data) != 0
-            if not np.any(mask):
-                raise ValueError(
-                    "The outline is empty. Paint foreground before accepting."
-                )
-            proposal = SegmentationProposal(
-                mask=mask,
-                score=self._proposal.score,
-                metadata=self._proposal.metadata,
-            )
-            self._on_accept(proposal)
+            self._on_accept(self.outline_preview.snapshot())
         except Exception as exc:
             self._error("Could not accept outline", exc)
             return
@@ -550,6 +624,9 @@ class AnnotationAssistWidget(QWidget):
         if self._disposed:
             return
         self._disposed = True
+        self.prompt_tools.dispose()
+        self.roi.dispose()
+        self.outline_preview.dispose()
         self._invalidate()
         if self._worker is not None:
             for signal, callback in (

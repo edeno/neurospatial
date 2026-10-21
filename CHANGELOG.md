@@ -1203,6 +1203,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Changed
 
+- Assisted annotation previews now show the exact polygons that **Accept outline**
+  commits. **Polygon detail** adjusts pixel tolerance and reports vertex count
+  without rerunning inference; holes and components survive simplification,
+  painting, undo/redo, and project saves.
+- **Mark points** supports left-click inside, right-click outside, Alt-click
+  removal, **Undo last point**, and **Delete selected**. Native selection and
+  painting tools remain available.
+- An optional **Region of interest** crops inference inputs and maps masks back
+  to original image coordinates. Editing the crop resets SAM refinement and
+  rejects stale predictions; prompts outside it require correction.
+
 - SAM 2 assisted annotation now refines new clicks using the last displayed
   prediction's raw logits. Moving/removing prompts or clearing/discarding an
   outline resets refinement; stale background results cannot seed later requests.

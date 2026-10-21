@@ -24,6 +24,7 @@ from qtpy.QtWidgets import (  # type: ignore[attr-defined]
 
 from neurospatial.annotation._assist_widget import AnnotationAssistWidget
 from neurospatial.annotation._draft import add_polygon
+from neurospatial.annotation._polygon_outline import PolygonOutline, polygon_outline
 from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
 from neurospatial.annotation._state import make_unique_name
 from neurospatial.annotation._types import MultipleBoundaryStrategy
@@ -32,7 +33,6 @@ from neurospatial.annotation.segmentation import (
     RegionGrowProvider,
     SegmentationProposal,
     SegmentationProvider,
-    mask_to_polygons,
 )
 from neurospatial.ops.transforms import VideoCalibration
 
@@ -165,7 +165,7 @@ class AnnotationProjectSession:
             bin_size=bin_size,
             on_calibration=self.set_calibration,
             on_bin_size=self.set_bin_size,
-            on_accept=self.accept_proposal,
+            on_accept=self.accept_outline,
         )
         layout.addWidget(self.assist)
         layout.addStretch()
@@ -285,7 +285,12 @@ class AnnotationProjectSession:
 
     def accept_proposal(self, proposal: SegmentationProposal) -> None:
         """Convert all accepted mask components into one undoable domain edit."""
+        self.accept_outline(polygon_outline(proposal))
+
+    def accept_outline(self, outline: PolygonOutline) -> None:
+        """Insert the previewed polygons as one undoable domain edit."""
         self.checkpoint()
+        proposal = outline.proposal
         if proposal.mask.shape != self.frame.shape[:2]:
             raise ValueError("Outline dimensions must match the reference frame.")
         role, requested_name = self.controls.next_annotation()
@@ -298,7 +303,14 @@ class AnnotationProjectSession:
                 "Draw landmarks directly. Assisted outlines define environment, "
                 "region, or hole areas."
             )
-        polygons = mask_to_polygons(proposal.mask)
+        polygons = outline.polygons
+        metadata = proposal.metadata
+        outline_metadata: dict[str, Any] = {
+            "simplify_tolerance_px": outline.simplify_tolerance_px
+        }
+        if "polygon_outline" in metadata:
+            outline_metadata["proposal_metadata"] = metadata["polygon_outline"]
+        metadata["polygon_outline"] = outline_metadata
         if role == "environment" and len(polygons) != 1:
             raise ValueError(
                 "An environment needs one connected outline. Refine the preview "
@@ -337,7 +349,7 @@ class AnnotationProjectSession:
                         name,
                         role,
                         None,
-                        metadata=proposal.metadata,
+                        metadata=metadata,
                     )
             self.controls.sync_from_layer()
         except Exception:

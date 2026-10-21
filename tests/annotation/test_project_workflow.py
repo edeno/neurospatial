@@ -168,6 +168,72 @@ def test_calibration_and_explicit_bin_size_share_history_without_moving_shapes(
     assert_array_equal(shapes.data[0], original)
 
 
+def test_simplified_preview_is_accepted_exactly_and_survives_history_and_save(
+    session_factory, tmp_path
+):
+    from shapely.geometry import MultiPolygon
+
+    from neurospatial.annotation._polygon_outline import (
+        polygon_outline,
+        simplify_polygon_outline,
+    )
+    from neurospatial.annotation._project_layer import capture_shapes, restore_shapes
+    from neurospatial.annotation.core import _process_annotation_results
+    from neurospatial.regions.core import _thaw_metadata
+
+    session, _viewer, shapes, controls = session_factory()
+    mask = np.zeros((16, 24), dtype=bool)
+    for row in range(1, 13):
+        mask[row, 1 : 9 + row // 3] = True
+    mask[5:7, 4:6] = False
+    mask[10:14, 17:21] = True
+    provider_metadata = {
+        "provider": "test",
+        "settings": {"thresholds": [0.2, 0.8]},
+        "polygon_outline": {"source": ["provider-owned", 3]},
+    }
+    proposal = SegmentationProposal(mask, metadata=provider_metadata)
+    exact = polygon_outline(proposal)
+    preview = simplify_polygon_outline(exact, 1.0)
+    assert preview.vertex_count < exact.vertex_count
+    session.accept_outline(preview)
+    accepted = capture_shapes(shapes)
+
+    def assert_preview_preserved():
+        result = _process_annotation_results(
+            shapes, "regions", None, None, None, "last"
+        )
+        actual = MultiPolygon([result.regions[name].data for name in result.regions])
+        assert actual.equals_exact(MultiPolygon(preview.polygons), 0.0)
+        assert sum(len(p.interiors) for p in actual.geoms) == 1
+        for name in result.regions:
+            metadata = _thaw_metadata(result.regions[name].metadata)
+            assert metadata["provider"] == "test"
+            assert metadata["settings"] == {"thresholds": [0.2, 0.8]}
+            assert metadata["polygon_outline"] == {
+                "simplify_tolerance_px": 1.0,
+                "proposal_metadata": {"source": ["provider-owned", 3]},
+            }
+
+    assert_preview_preserved()
+    assert proposal.metadata == provider_metadata
+    session.undo()
+    assert len(shapes.data) == 0
+    session.redo()
+    assert_preview_preserved()
+    path = tmp_path / "simplified.nsp"
+    session.save_project(path)
+    loaded = AnnotationProject.load(path)
+    assert len(loaded.shapes) == len(accepted) == 3
+    for actual, expected in zip(loaded.shapes, accepted, strict=True):
+        assert_array_equal(actual.vertices, expected.vertices)
+        assert actual.metadata == expected.metadata
+    with shapes.events.blocker_all():
+        restore_shapes(loaded.shapes, shapes)
+    controls.sync_from_layer()
+    assert_preview_preserved()
+
+
 @pytest.mark.parametrize("role", ["wall", "landmark", "environment"])
 def test_unsupported_assisted_outline_does_not_partially_mutate_history(
     session_factory, role
