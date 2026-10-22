@@ -275,16 +275,7 @@ def validated_observations(
     """
     t, p = validate_times_positions(times, positions, call=call)
     if t.size == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}() got no samples: times and positions are empty.",
-                why="there is no observation to measure.",
-                fix=(
-                    "pass at least one sample; if the arrays came from an epoch or "
-                    "trial selection, check that the selection kept any samples."
-                ),
-            )
-        )
+        raise empty_samples_error(call, ("times", "positions"))
     validate_strictly_increasing(t, call=call)
     if p.ndim == 1:
         p = p[:, None]
@@ -296,11 +287,22 @@ def validated_observations(
     return t, p, support
 
 
-def _empty_times_error(call: str) -> ValueError:
+def empty_samples_error(call: str, names: tuple[str, ...]) -> ValueError:
+    """The error for zero samples, naming the empty arguments of ``call``.
+
+    Examples
+    --------
+    >>> print(empty_samples_error("f", ("times", "nose", "tail")))
+    f() got no samples: times, nose and tail are empty.
+    Why: there is no observation to measure.
+    Fix: pass at least one sample; if the arrays came from an epoch or trial selection, check that the selection kept any samples.
+    """
+    listed = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+    verb = "is" if len(names) == 1 else "are"
     return ValueError(
         _format_error(
-            f"{call}() got no samples: times is empty.",
-            why="there is no observation to measure.",
+            f"{call}() got no samples: {listed} {verb} empty.",
+            why="Why: there is no observation to measure.",
             fix=(
                 "pass at least one sample; if the arrays came from an epoch or "
                 "trial selection, check that the selection kept any samples."
@@ -330,7 +332,7 @@ def _validated_signal_times(times: ArrayLike, *, call: str) -> NDArray[np.float6
         )
     assert t is not None
     if t.size == 0:
-        raise _empty_times_error(call)
+        raise empty_samples_error(call, ("times",))
     validate_strictly_increasing(t, call=call)
     return t
 

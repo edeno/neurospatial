@@ -178,9 +178,12 @@ def test_goal_distances_are_nan_when_nothing_is_observed():
 
 def _calls_with(times, positions, goal):
     """Every public caller of the x/y and goal-dimension checks, by name."""
+    from neurospatial import Regions
     from neurospatial.behavior import (
         approach_rate,
+        compute_decision_analysis,
         compute_pre_decision_metrics,
+        compute_vte_session,
         compute_vte_trial,
         goal_direction,
         goal_vector,
@@ -192,6 +195,10 @@ def _calls_with(times, positions, goal):
     env = Environment.from_samples(
         np.column_stack([np.arange(11.0), np.arange(11.0)]), bin_size=1.0, units="cm"
     )
+    regions = Regions(env.regions.values())
+    regions.add("center", point=(5.0, 5.0))
+    regions.add("goal", point=(9.0, 9.0))
+    env = env.with_regions(regions)
     return {
         "heading_from_velocity": lambda: heading_from_velocity(times, positions),
         "heading_direction_labels": lambda: heading_direction_labels(
@@ -216,6 +223,22 @@ def _calls_with(times, positions, goal):
         "compute_vte_trial": lambda: compute_vte_trial(
             times, positions, 0.5, window_duration=0.5, min_speed=1.0
         ),
+        "compute_decision_analysis": lambda: compute_decision_analysis(
+            env,
+            times,
+            positions,
+            decision_region="center",
+            goal_regions=["goal"],
+            min_speed=1.0,
+        ),
+        "compute_vte_session": lambda: compute_vte_session(
+            env,
+            times,
+            positions,
+            decision_region="center",
+            trials=[],
+            min_speed=1.0,
+        ),
         "goal_vector": lambda: goal_vector(positions, goal),
         "goal_direction": lambda: goal_direction(positions, goal),
         "approach_rate": lambda: approach_rate(times, positions, goal),
@@ -234,6 +257,8 @@ def _calls_with(times, positions, goal):
         "compute_pre_decision_metrics",
         "head_sweep_from_positions",
         "compute_vte_trial",
+        "compute_decision_analysis",
+        "compute_vte_session",
     ],
 )
 def test_one_dimensional_positions_error_names_the_call(name):

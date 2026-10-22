@@ -511,11 +511,29 @@ class TestHeadingFromBodyOrientation:
         from neurospatial.behavior import heading_from_body_orientation
 
         nose, tail = _facing(np.zeros(5))
-        with pytest.warns(UserWarning, match="every heading is NaN"):
+        with pytest.warns(UserWarning, match="no missing frame is filled"):
             headings = heading_from_body_orientation(
                 np.arange(5) * 0.1, nose, tail, epochs=[(5.0, 6.0)]
             )
         assert np.isnan(headings).all()
+
+    def test_all_intervals_excluded_keeps_observed_headings(self):
+        """At 1 Hz every interval exceeds max_gap: no fill, observed frames kept."""
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.linspace(-1.0, 1.0, 10))
+        with pytest.warns(UserWarning) as record:
+            headings = heading_from_body_orientation(np.arange(10.0), nose, tail)
+        message = str(record[0].message)
+        assert "so no missing frame is filled" in message
+        assert "heading is NaN" not in message
+        assert_allclose(headings, np.linspace(-1.0, 1.0, 10), atol=1e-12)
+
+        nose[4] = np.nan
+        with pytest.warns(UserWarning, match="no missing frame is filled"):
+            headings = heading_from_body_orientation(np.arange(10.0), nose, tail)
+        assert np.isnan(headings[4])
+        assert np.isfinite(np.delete(headings, 4)).all()
 
     def test_no_observed_sample_raises(self):
         from neurospatial.behavior import heading_from_body_orientation
@@ -543,8 +561,16 @@ class TestHeadingFromBodyOrientation:
             times = times[::-1]
         else:
             nose, tail = nose[:, 0], tail[:, 0]
-        with pytest.raises(ValueError, match="heading_from_body_orientation"):
+        with pytest.raises(ValueError, match="heading_from_body_orientation") as error:
             heading_from_body_orientation(times, nose, tail)
+        if case == "empty":
+            what, why, fix = str(error.value).split("\n")
+            assert what == (
+                "heading_from_body_orientation() got no samples: times, nose and "
+                "tail are empty."
+            )
+            assert why == "Why: there is no observation to measure."
+            assert fix.startswith("Fix: pass at least one sample")
 
 
 class TestHeadingFromVelocityWestward:

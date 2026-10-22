@@ -29,6 +29,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import as_intervals, observed_interval_mask
 from neurospatial._observation import (
     ObservationSupport,
+    empty_samples_error,
     validate_break_before,
     validate_max_gap,
     validated_observations,
@@ -610,16 +611,7 @@ def heading_from_body_orientation(
     t, nose_arr = validate_times_positions(times, nose, call=call)
     _, tail_arr = validate_times_positions(t, tail, call=call)
     if t.size == 0:
-        raise ValueError(
-            _format_error(
-                f"{call}() got no samples: times, nose and tail are empty.",
-                why="there is no observation to measure.",
-                fix=(
-                    "pass at least one sample; if the arrays came from an epoch or "
-                    "trial selection, check that the selection kept any samples."
-                ),
-            )
-        )
+        raise empty_samples_error(call, ("times", "nose", "tail"))
     if nose_arr.ndim != 2 or nose_arr.shape[1] < 2 or tail_arr.shape != nose_arr.shape:
         raise ValueError(
             _format_error(
@@ -666,7 +658,7 @@ def heading_from_body_orientation(
         max_gap=max_gap,
         epochs=epochs,
         break_before=breaks,
-        result="every heading is NaN",
+        result="no missing frame is filled",
     )
     observed &= _mask_in_intervals(
         t, as_intervals(epochs, name="epochs"), closed="left"
