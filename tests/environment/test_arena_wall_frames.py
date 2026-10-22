@@ -84,13 +84,13 @@ def test_source_interior_wall_remains_invalid_when_world_rounding_erases_its_off
         _publish(child, invalid)
 
 
-def _rotated_scaled_clipped_grid(wall, angle=0.3):
-    """A 4 x 4 grid rotated, scaled, moved to 1e6 and clipped, with ``wall``.
+def _rotated_scaled_clipped_grid(wall, angle=0.3, offset=1e6):
+    """A 4 x 4 grid rotated, scaled, moved to ``offset`` and clipped, with ``wall``.
 
     ``wall`` is in the grid's source frame, where bins 4 and 8 meet along
     x = 2 for 0.25 <= y <= 1 and bins 5 and 9 along x = 2 for 1 <= y <= 2.
     """
-    scale, offset = 1.3, 1e6
+    scale = 1.3
     matrix = np.eye(3)
     matrix[:2, :2] = scale * np.array(
         [
@@ -109,6 +109,13 @@ def _rotated_scaled_clipped_grid(wall, angle=0.3):
     )
     arena = OpenArena(box(0, 0, 4, 4), walls=(wall,)).transformed(matrix)
     return child, arena
+
+
+def _nudged(angle, ulps):
+    """``angle`` moved by ``ulps`` units in the last place."""
+    for _ in range(abs(ulps)):
+        angle = np.nextafter(angle, np.copysign(np.inf, ulps))
+    return angle
 
 
 _GAP_WALL_Y_RANGES = [(0.0, 4.0), (0.49, 0.51), (1.49, 1.51)]
@@ -131,9 +138,7 @@ def test_wall_in_a_rounding_gap_is_refused_whatever_the_last_bits_of_rotation(
     ulps, y_range
 ):
     """Moving the rotation by a few ULPs never turns the refusal into a pass."""
-    angle = 0.3
-    for _ in range(abs(ulps)):
-        angle = np.nextafter(angle, np.copysign(np.inf, ulps))
+    angle = _nudged(0.3, ulps)
     child, invalid = _rotated_scaled_clipped_grid(
         LineString([(2 + 1e-12, y_range[0]), (2 + 1e-12, y_range[1])]), angle
     )
@@ -169,10 +174,7 @@ def _face_grid(config, wall):
     """``"touching"`` source cells, or the rounding gap at ``config`` ULPs."""
     if config == "touching":
         return _touching_clipped_grid(wall)
-    angle = 0.3
-    for _ in range(abs(config)):
-        angle = np.nextafter(angle, np.copysign(np.inf, config))
-    return _rotated_scaled_clipped_grid(wall, angle)
+    return _rotated_scaled_clipped_grid(wall, _nudged(0.3, config))
 
 
 def _face_bound(config):
@@ -223,6 +225,33 @@ def test_wall_along_whole_faces_closes_them_whether_or_not_the_cells_touch(confi
 
     # Bins 0-7 lie left of x = 2 and bins 8-15 right of it.
     left = child.edge_pairs < 8
+    kept = child.edge_pairs[left[:, 0] == left[:, 1]]
+    np.testing.assert_array_equal(published.edge_pairs, kept)
+
+
+@pytest.mark.parametrize("ulps", range(-3, 4))
+@pytest.mark.parametrize(
+    ("angle", "wall", "side"),
+    [
+        (0.3, LineString([(2, 0), (2, 4)]), lambda bins: bins < 8),
+        (0.3, LineString([(1, 0), (1, 4)]), lambda bins: bins < 4),
+        (1.1, LineString([(0, 2), (4, 2)]), lambda bins: bins % 4 < 2),
+    ],
+    ids=["x=2 at 0.3 rad", "x=1 at 0.3 rad", "y=2 at 1.1 rad"],
+)
+def test_wall_ending_at_a_face_does_not_close_it_through_its_corner(
+    angle, wall, side, ulps
+):
+    """Near the origin the source cells can meet at the wall's end by rounding.
+
+    A pair on one side of the wall stays connected whatever the last bits of
+    the rotation; only the pairs the wall separates close.
+    """
+    child, arena = _rotated_scaled_clipped_grid(wall, _nudged(angle, ulps), 0.0)
+
+    published = _publish(child, arena)
+
+    left = side(child.edge_pairs)
     kept = child.edge_pairs[left[:, 0] == left[:, 1]]
     np.testing.assert_array_equal(published.edge_pairs, kept)
 

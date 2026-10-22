@@ -496,7 +496,7 @@ def _face_cover(
 
 
 def _unresolved_face_message(
-    arena: Arena, wall: int, pair: tuple[int, int], bound: float, how: str
+    arena: Arena, wall: int, pair: tuple[int, int], bound: float, how: str, fix: str
 ) -> str:
     """Say which wall may block the face of ``pair`` and why that is unknown."""
     return _format_error(
@@ -506,9 +506,7 @@ def _unresolved_face_message(
         "so in the coordinates the walls were declared in, the face between "
         f"them is only known to within {bound:.3g}, too coarse to tell whether "
         "this wall lies on the face or inside one of the bins.",
-        fix="clip the environment before transforming it, recenter the "
-        "coordinates near the origin (rounding grows with their size), or keep "
-        f"the wall more than {bound:.3g} from the bin edge",
+        fix=fix,
     )
 
 
@@ -598,12 +596,21 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                             (int(u), int(v)),
                             bound,
                             "runs along part of the face between",
+                            "clip the environment before transforming it. A "
+                            "wall meant to lie off the bin edge can instead "
+                            f"be moved more than {bound:.3g} from it, or the "
+                            "coordinates recentered near the origin, where "
+                            "rounding is smaller",
                         )
                     )
                 if cover == "whole":
                     keep[index] = False
                     continue
-                if contact.length > 0:
+                # No wall runs along the face. Cells that meet only at a
+                # rounded point are not closed through it; only a wall across
+                # the line between the centers is left to the rule below.
+                link = LineString(centers[[u, v]])
+                if contact.length > 0 or not link.crosses(walls):
                     continue
         blocked = contact.intersection(walls)
         if contact.length > 0 and blocked.length > 0:
@@ -634,6 +641,7 @@ def apply_walls(binning: Binning, arena: Arena) -> Binning:
                             (int(u), int(v)),
                             errors[u] + errors[v],
                             "crosses the line between the centers of",
+                            "clip the environment before transforming it",
                         )
                     )
             keep[index] = contact.intersection(walls).is_empty and not crosses
