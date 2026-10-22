@@ -1787,7 +1787,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   interpolated across it. Recordings joined on one clock no longer need to be
   converted to `epochs` by hand (touching windows merge, so that never worked
   anyway). Rate results and fitted decoders record the break times in
-  `analysis_settings["break_times"]` (`None` when not given).
+  `analysis_settings["break_times"]` (`None` when not given). A head-direction cell's held direction
+  does not carry over a break: each recording starts with its own first
+  direction of movement.
 
   ```python
   new_recording = np.diff(recording_ids, prepend=recording_ids[0]) != 0
