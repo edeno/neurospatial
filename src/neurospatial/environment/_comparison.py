@@ -483,8 +483,11 @@ def _ceded_to_earlier_pieces(clip: ClippedLocator) -> NDArray[np.object_]:
     ceded = np.empty(len(sources), dtype=object)
     ceded[:] = shapely.GeometryCollection()
     counts = np.bincount(sources, minlength=clip.mapping.n_parent_bins)
+    # Pieces grouped by parent, each group in increasing piece order.
+    by_parent = np.argsort(sources, kind="stable")
+    groups = np.split(by_parent, np.cumsum(counts)[:-1])
     for parent in np.flatnonzero(counts > 1):
-        pieces = np.flatnonzero(sources == parent)
+        pieces = groups[parent]
         polygons = np.empty(len(pieces), dtype=object)
         polygons[:] = [clip.cells.polygons[piece] for piece in pieces]
         # Row i, column j: piece i's boundary inside piece j, kept for j < i.

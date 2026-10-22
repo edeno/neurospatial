@@ -8,9 +8,11 @@ from unittest import mock
 
 import networkx as nx
 import numpy as np
+from shapely.geometry import LineString, box
 
 import neurospatial.environment
 from neurospatial import Environment
+from neurospatial.arena import OpenArena
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Metadata, _Provenance
 from neurospatial.layout._construction import _built_layout_data
@@ -313,3 +315,27 @@ def renumbered_cells(env, order):
         frame=env.frame,
         arena=env.arena,
     )
+
+
+def wall_split_arena():
+    """A box whose wall cuts parent cells 12 to 15 in two (bins 12 to 19)."""
+    return Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 30, (4000, 2)),
+        bin_size=5.0,
+        units="cm",
+        arena=OpenArena(box(0, 0, 30, 30), walls=[LineString([(12.5, 0), (12.5, 20)])]),
+        wall_fit="split",
+    )
+
+
+# Bins of the pieces of each parent cell that the wall cuts in two.
+WALL_SPLIT_PIECES = ([12, 13], [14, 15], [16, 17], [18, 19])
+
+
+def order_preserving_permutation(n_bins):
+    """A seeded bin order that keeps each wall-split cell's pieces in order."""
+    order = np.random.default_rng(1).permutation(n_bins)
+    for pieces in WALL_SPLIT_PIECES:
+        positions = np.flatnonzero(np.isin(order, pieces))
+        order[positions] = np.sort(order[positions])
+    return order

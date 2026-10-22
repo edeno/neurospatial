@@ -17,7 +17,13 @@ import networkx as nx
 import numpy as np
 import pytest
 import shapely
-from environment_helpers import renumbered, renumbered_cells
+from environment_helpers import (
+    WALL_SPLIT_PIECES,
+    order_preserving_permutation,
+    renumbered,
+    renumbered_cells,
+    wall_split_arena,
+)
 from shapely.geometry import LineString, Point, Polygon, box
 
 from neurospatial import Environment, IncompatibleEnvironmentError
@@ -725,29 +731,8 @@ def test_a_wall_that_closes_no_pair_is_still_a_topology_difference() -> None:
 # Boundary ownership does not depend on bin numbering
 # ---------------------------------------------------------------------------
 
-# Parent cells 12 to 15 of the wall-split arena are cut in two by the wall;
-# their pieces are bins 12 to 19, and pieces 12 and 13 share the wall
-# segment x = 12.5, 0 <= y <= 5.
-_SPLIT_PIECES = ([12, 13], [14, 15], [16, 17], [18, 19])
-
-
-def _wall_split_arena() -> Environment:
-    return Environment.from_samples(
-        np.random.default_rng(0).uniform(0, 30, (4000, 2)),
-        bin_size=5.0,
-        units="cm",
-        arena=OpenArena(box(0, 0, 30, 30), walls=[LineString([(12.5, 0), (12.5, 20)])]),
-        wall_fit="split",
-    )
-
-
-def _order_preserving_permutation(n_bins: int) -> np.ndarray:
-    """A seeded bin order that keeps each split cell's pieces in order."""
-    order = np.random.default_rng(1).permutation(n_bins)
-    for pieces in _SPLIT_PIECES:
-        positions = np.flatnonzero(np.isin(order, pieces))
-        order[positions] = np.sort(order[positions])
-    return order
+# Pieces 12 and 13 of the wall-split arena share the wall segment
+# x = 12.5, 0 <= y <= 5.
 
 
 def _renumbering(order: np.ndarray) -> np.ndarray:
@@ -755,25 +740,25 @@ def _renumbering(order: np.ndarray) -> np.ndarray:
 
 
 def test_the_wall_split_arena_cuts_four_cells_in_two() -> None:
-    env = _wall_split_arena()
+    env = wall_split_arena()
     sources = env.clip_mapping.parent_bin_indices
     assert env.n_bins == 40
     np.testing.assert_array_equal(
         np.flatnonzero(np.bincount(sources) > 1), [12, 13, 14, 15]
     )
-    for parent, pieces in zip([12, 13, 14, 15], _SPLIT_PIECES, strict=True):
+    for parent, pieces in zip([12, 13, 14, 15], WALL_SPLIT_PIECES, strict=True):
         np.testing.assert_array_equal(np.flatnonzero(sources == parent), pieces)
 
 
 def test_a_piece_cedes_the_line_it_shares_with_an_earlier_piece() -> None:
-    env = _wall_split_arena()
+    env = wall_split_arena()
     rows = np.arange(env.n_bins)
     cells = np.empty(env.n_bins, dtype=object)
     cells[:] = env.binning.shapes.polygons
     _, keys, ceded = _ownership_keys(env.binning.locator, rows, cells)
     np.testing.assert_array_equal(keys, env.clip_mapping.parent_bin_indices)
     # The second piece of each cut cell cedes its stretch of the wall.
-    later = np.array([second for _, second in _SPLIT_PIECES])
+    later = np.array([second for _, second in WALL_SPLIT_PIECES])
     for piece, low in zip(later, [0.0, 5.0, 10.0, 15.0], strict=True):
         assert shapely.equals(ceded[piece], LineString([(12.5, low), (12.5, low + 5)]))
     # Every other bin cedes nothing, and nothing equals nothing.
@@ -783,14 +768,14 @@ def test_a_piece_cedes_the_line_it_shares_with_an_earlier_piece() -> None:
 
 
 def test_an_order_preserving_renumbering_of_split_cells_is_the_same_cells() -> None:
-    env = _wall_split_arena()
-    order = _order_preserving_permutation(env.n_bins)
+    env = wall_split_arena()
+    order = order_preserving_permutation(env.n_bins)
     copy = renumbered_cells(env, order)
     assert _mapped_bin_difference(env, copy, _renumbering(order)) is None
 
 
 def test_swapping_two_touching_pieces_changes_boundary_ownership() -> None:
-    env = _wall_split_arena()
+    env = wall_split_arena()
     order = np.arange(env.n_bins)
     order[[12, 13]] = [13, 12]
     copy = renumbered_cells(env, order)
@@ -813,7 +798,7 @@ def test_a_renumbered_clip_that_kept_every_cell_whole_is_the_same_cells() -> Non
 
 
 def test_a_subset_of_a_split_clip_maps_onto_its_parent() -> None:
-    env = _wall_split_arena()
+    env = wall_split_arena()
     kept = np.flatnonzero(np.arange(env.n_bins) != 20)
     part = env.subset(mask=np.arange(env.n_bins) != 20)
     pairs = np.column_stack([kept, np.arange(len(kept))])
@@ -821,7 +806,7 @@ def test_a_subset_of_a_split_clip_maps_onto_its_parent() -> None:
 
 
 def test_independently_built_split_arenas_agree() -> None:
-    first, second = _wall_split_arena(), _wall_split_arena()
+    first, second = wall_split_arena(), wall_split_arena()
     assert first._geometry is not second._geometry
     assert _environment_differences(first, second) == (None, None)
 
