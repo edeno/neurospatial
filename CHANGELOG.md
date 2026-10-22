@@ -1927,7 +1927,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   settings between the maps raise a warning. The result gives `correlation`,
   `n_common_bins`, `status`, `rate_difference` (B - A, Hz, NaN outside common
   support), `summary_table()`, `to_dataframe()`, `to_xarray()`, `summary()`
-  and `plot()`; it gives no p-values or remapping verdicts. The new
+  and `plot()`; it gives no p-values or remapping verdicts.
+  `RateComparisonResult.plot()` draws the difference map of a single-unit
+  comparison and a correlation scatter of several units; `plot(unit_id=...)`
+  maps one unit, including a unit labeled `None`. The new
   [outbound and inbound runs](https://edeno.github.io/neurospatial/user-guide/workflows/#place-fields-on-outbound-and-inbound-runs)
   workflow goes from direction labels to per-direction maps, a cell-by-cell
   comparison and decoding on held-out laps.
@@ -2560,10 +2563,19 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   now differ in "smoothing conductances between neighboring bins".
   `read_place_field(env=...)` makes the same check (see Breaking), and
   `compare_spatial_rates` applies the same bin checks to each pair of a
-  `bin_mapping`: paired bins must also have the same cell shape and, for
-  polygon cells, the same polygon and the same bin owning each boundary, so
-  an identity mapping is refused exactly where no mapping is. A subset of
-  polygon cells still pairs with its parent.
+  `bin_mapping`, so an identity mapping is refused exactly where no mapping
+  is: paired bins must also have the same cell shape and, for polygon cells,
+  the same polygon and the same bin owning each boundary. Ownership is
+  compared without regard to bin numbering, so a renumbered copy of a
+  clipped or wall-split arena pairs with the original through `bin_mapping`;
+  pieces of one cut cell must keep their relative order, because a point on
+  the line between them belongs to the earlier piece. A subset of polygon
+  cells still pairs with its parent. Tracks are compared by their
+  segments and the linear edges of each bin: two tracks whose bins have the
+  same centers but run along different segments, or the same track with
+  different `edge_spacing`, now differ in "track geometry". Explicit point
+  bins, or a track paired with bins of another kind, are compared by center
+  and measure only.
 - `traveled_path_length` no longer counts the jump between joined
   recordings or turns the total into `NaN` at a lost frame. Two recordings,
   `[[0, 0], [1, 0]]` and `[[50, 0], [51, 0]]`, measured 51.0 cm, 49 cm of it

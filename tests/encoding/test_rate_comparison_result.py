@@ -32,14 +32,14 @@ def env() -> Environment:
     )
 
 
-def _rates(env, maps, occupancy) -> SpatialRatesResult:
+def _rates(env, maps, occupancy, ids=IDS) -> SpatialRatesResult:
     return SpatialRatesResult(
         firing_rates=np.array(maps, dtype=float),
         occupancy=np.array(occupancy, dtype=float),
         env=env,
         method="binned",
         bandwidth=5.0,
-        unit_ids=IDS,
+        unit_ids=ids,
     )
 
 
@@ -392,6 +392,81 @@ def test_scatter_plot_draws_on_the_given_axes(result) -> None:
 
     _, ax = plt.subplots()
     assert result.plot(ax=ax) is ax
+    plt.close("all")
+
+
+def _single_unit_pair(env, unit_id=None):
+    from neurospatial.encoding import SpatialRateResult
+
+    def single(rates):
+        return SpatialRateResult(
+            firing_rate=np.array(rates),
+            occupancy=np.ones(5),
+            env=env,
+            method="binned",
+            bandwidth=5.0,
+            unit_id=unit_id,
+        )
+
+    return compare_spatial_rates(single(F), single(G))
+
+
+def _map_label(ax) -> str:
+    return ax.figure.axes[-1].get_ylabel()
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_singular_comparison_plots_its_unit(env, explicit) -> None:
+    import matplotlib.pyplot as plt
+
+    one = _single_unit_pair(env)
+    assert one.unit_ids.tolist() == [None]
+
+    ax = one.plot(unit_id=None) if explicit else one.plot()
+
+    assert _map_label(ax) == "Rate difference, B \u2212 A (Hz)"
+    assert ax.get_title() != "1 of 1 units scored"
+    plt.close("all")
+
+
+def test_population_plot_draws_the_scatter(env) -> None:
+    import matplotlib.pyplot as plt
+
+    two = compare_spatial_rates(
+        _rates(env, [F, G], [1] * 5, ids=[7, 9]),
+        _rates(env, [G, F], [1] * 5, ids=[7, 9]),
+    )
+    assert two.plot().get_title() == "2 of 2 units scored"
+    plt.close("all")
+
+
+def test_explicit_label_plots_that_units_map(result) -> None:
+    import matplotlib.pyplot as plt
+
+    ax = result.plot(unit_id=9)
+    assert _map_label(ax) == "Rate difference, B \u2212 A (Hz)"
+    plt.close("all")
+
+
+def test_missing_label_is_a_key_error(result) -> None:
+    with pytest.raises(KeyError, match="unit_id None"):
+        result.plot(unit_id=None)
+
+
+def test_a_one_unit_population_plots_its_unit(env) -> None:
+    import matplotlib.pyplot as plt
+
+    one = compare_spatial_rates(
+        _rates(env, [F, G], [1] * 5, ids=[7, 9]),
+        _rates(env, [G, H], [1] * 5, ids=[9, 3]),
+        unit_selection="intersection",
+    )
+    assert one.unit_ids.tolist() == [9]
+    assert len(one) == 1
+
+    ax = one.plot()
+
+    assert _map_label(ax) == "Rate difference, B \u2212 A (Hz)"
     plt.close("all")
 
 

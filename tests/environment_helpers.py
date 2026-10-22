@@ -8,9 +8,11 @@ from unittest import mock
 
 import networkx as nx
 import numpy as np
+from shapely.geometry import LineString, box
 
 import neurospatial.environment
 from neurospatial import Environment
+from neurospatial.arena import OpenArena
 from neurospatial.environment import _publication
 from neurospatial.environment._publication import _Metadata, _Provenance
 from neurospatial.layout._construction import _built_layout_data
@@ -260,3 +262,80 @@ def renumbered(env, order, distances=None, *, max_distance=5.0):
         frame=env.frame,
         arena=env.arena,
     )
+
+
+def renumbered_cells(env, order):
+    """Publish a clipped ``env``'s polygon cells in a new bin order.
+
+    New bin ``i`` is ``env``'s bin ``order[i]``, with the same polygon, parent
+    bin, center, measure and faces; lookup is the same clip of the same
+    parent bins. The clip gives a point on the line between two pieces of one
+    parent bin to the lower-numbered piece, so reordering such pieces moves
+    that line from one piece to the other.
+    """
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        ClipMapping,
+        ClippedLocator,
+        FaceGeometry,
+        KnownFaces,
+        PolygonCells,
+        SpatialBins,
+    )
+
+    binning = env.binning
+    locator = binning.locator
+    cells = PolygonCells(tuple(binning.shapes.polygons[row] for row in order))
+    mapping = ClipMapping(
+        locator.mapping.parent_bin_indices[order], locator.mapping.n_parent_bins
+    )
+    connections = binning.connections
+    pairs = np.argsort(order)[connections.pairs]
+    if binning.faces.available:
+        faces = binning.faces.build()
+        new_faces = KnownFaces(
+            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
+        )
+    else:
+        new_faces = binning.faces
+    bins = binning.bins
+    return Environment.from_bins(
+        Binning(
+            binning.kind,
+            SpatialBins.from_arrays(
+                bins.centers[order], bins.sizes[order], bins.measure_dims[order]
+            ),
+            BinConnections.from_arrays(pairs, connections.pair_distances),
+            ClippedLocator(locator.base, cells, mapping),
+            new_faces,
+            shapes=cells,
+        ),
+        units=env.units,
+        frame=env.frame,
+        arena=env.arena,
+    )
+
+
+def wall_split_arena():
+    """A box whose wall cuts parent cells 12 to 15 in two (bins 12 to 19)."""
+    return Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 30, (4000, 2)),
+        bin_size=5.0,
+        units="cm",
+        arena=OpenArena(box(0, 0, 30, 30), walls=[LineString([(12.5, 0), (12.5, 20)])]),
+        wall_fit="split",
+    )
+
+
+# Bins of the pieces of each parent cell that the wall cuts in two.
+WALL_SPLIT_PIECES = ([12, 13], [14, 15], [16, 17], [18, 19])
+
+
+def order_preserving_permutation(n_bins):
+    """A seeded bin order that keeps each wall-split cell's pieces in order."""
+    order = np.random.default_rng(1).permutation(n_bins)
+    for pieces in WALL_SPLIT_PIECES:
+        positions = np.flatnonzero(np.isin(order, pieces))
+        order[positions] = np.sort(order[positions])
+    return order

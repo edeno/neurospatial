@@ -983,7 +983,8 @@ def read_place_field(
         is first checked against the stored ``firing_rates`` bin count and then
         against that persisted environment: it must have the same bins
         (coordinates, order, measures and cell shapes, including polygon
-        cells and which bin owns each boundary), coordinate system, units,
+        cells and which bin owns each boundary, and, for tracks, the same
+        segments, spacing and linear bin edges), coordinate system, units,
         frame, connectivity, smoothing conductances between neighboring bins,
         arena and walls. The result then holds this ``env`` object.
         There is no connectivity-less fabrication from bin centers.

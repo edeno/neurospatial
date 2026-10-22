@@ -53,6 +53,17 @@ __all__ = ["RateComparisonResult", "compare_spatial_rates"]
 _METHODS = ("pearson", "spearman")
 _UNIT_SELECTIONS = ("intersection", "exact")
 _TOPOLOGIES = ("same", "may_differ")
+# plot() default: no unit chosen (None is a valid unit label).
+
+
+class _AllUnits:
+    """Default of ``plot(unit_id=)``: no unit chosen."""
+
+    def __repr__(self) -> str:
+        return "<all units>"
+
+
+_ALL_UNITS: Any = _AllUnits()
 
 
 @_copy_analysis_settings
@@ -686,7 +697,7 @@ shape (n_units, n_bins)
         return dataset.copy(deep=True)
 
     def plot(
-        self, ax: Axes | None = None, *, unit_id: Any = None, **kwargs: Any
+        self, ax: Axes | None = None, *, unit_id: Any = _ALL_UNITS, **kwargs: Any
     ) -> Axes:
         """Plot how well the units' maps agree, or where one unit's map changed.
 
@@ -695,16 +706,18 @@ shape (n_units, n_bins)
         ax : matplotlib.axes.Axes, optional
             Axes to draw on; a new figure is made when omitted.
         unit_id : optional
-            Label of one unit. Without it, each scored unit is a point of
-            correlation against the number of common bins it was scored over;
-            units without a score (see ``status``) are not drawn, never drawn
-            as 0. With it, the unit's rate difference (B - A, Hz) is mapped
+            Label of one unit, including ``None`` for a unit saved without a
+            label. Given, the unit's rate difference (B - A, Hz) is mapped
             over the environment on a color scale symmetric about 0, with
-            bins outside the unit's common support left blank.
+            bins outside the unit's common support left blank. Not given, a
+            comparison of one unit maps that unit, and a comparison of
+            several units draws each scored unit as a point of correlation
+            against the number of common bins it was scored over; units
+            without a score (see ``status``) are not drawn, never drawn as 0.
         **kwargs
-            Passed to ``Axes.scatter`` (all units) or to
-            ``Environment.plot_field`` (one unit; overrides ``cmap``, ``vmin``,
-            ``vmax`` and ``colorbar_label``).
+            Passed to ``Axes.scatter`` (the scatter of several units) or to
+            ``Environment.plot_field`` (one unit's map; overrides ``cmap``,
+            ``vmin``, ``vmax`` and ``colorbar_label``).
 
         Returns
         -------
@@ -744,9 +757,33 @@ shape (n_units, n_bins)
         '2 of 2 units scored'
         >>> type(result.plot(unit_id=9)).__name__
         'Axes'
+
+        A comparison of one unit, here two maps without ``unit_id``, draws that
+        unit's difference map:
+
+        >>> from neurospatial.encoding import SpatialRateResult
+        >>> def one_unit(values):
+        ...     return SpatialRateResult(
+        ...         firing_rate=np.array(values, dtype=float),
+        ...         occupancy=np.ones(5),
+        ...         env=env,
+        ...         method="binned",
+        ...         bandwidth=5.0,
+        ...     )
+        >>> single = compare_spatial_rates(
+        ...     one_unit([1, 2, 3, 4, 5]), one_unit([1, 2, 3, 5, 4])
+        ... )
+        >>> ax = single.plot()
+        >>> print(ax.figure.axes[-1].get_ylabel())
+        Rate difference, B \u2212 A (Hz)
         """
-        if unit_id is not None:
+        if unit_id is _ALL_UNITS and len(self) == 1:
+            unit = self[0]
+        elif unit_id is not _ALL_UNITS:
             unit = self.sel(unit_id=unit_id)
+        else:
+            unit = None
+        if unit is not None:
             difference = unit.rate_difference[0]
             values = np.full(self.env.n_bins, np.nan)
             values[self.bins_a] = difference
@@ -820,8 +857,14 @@ def compare_spatial_rates(
         environments and by ``Environment.bin_mapping_from``: identical
         centers, sizes and measured dimensions; the same cell shape where both
         environments record cells (grid boxes, triangles, hexagons or polygon
-        cells); and, for polygon cells, the same bin owning each boundary,
-        followed through subsets and through clips that kept a cell whole.
+        cells); for polygon cells, the same bin owning each boundary point,
+        whatever the bins' numbers, so a renumbered copy of a clipped arena
+        pairs with the original, but the pieces of a cell cut in several
+        must keep their relative order, because a point on the line between
+        two pieces belongs to the earlier one; and, for tracks, the same
+        track segments and spacing and the same linear edges of each bin.
+        Explicit point bins, or a track paired with bins of another kind, are
+        compared by center and measure only.
         A polygon cell's center and area are computed from its polygon, so
         for exactly the same polygon they may differ by rounding. Both environments must share their
         coordinate system, units and frame, which no mapping can bridge. By
