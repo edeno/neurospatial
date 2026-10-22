@@ -89,23 +89,38 @@ def resolve_min_speed(env: Any, min_speed: float | None, *, call: str) -> float:
 
 
 def _validate_velocity_positions(
-    positions: NDArray[np.float64],
+    positions: NDArray[np.float64], *, call: str
 ) -> NDArray[np.float64]:
     """Reject positions without x and y columns, naming the shape as passed.
 
     Call it on the caller's array, before any reshaping, so the message
     shows the shape the scientist passed.
+
+    Parameters
+    ----------
+    positions : array-like
+        Positions exactly as the scientist passed them.
+    call : str
+        Public function name, used in the message.
     """
+    from neurospatial._exceptions import _format_error
+
     positions = np.asarray(positions, dtype=np.float64)
     if positions.ndim != 2 or positions.shape[1] < 2:
         raise ValueError(
-            f"positions must be a 2-D array with at least x/y coordinates; "
-            f"got shape {positions.shape}.\n"
-            "Why: a movement heading is the direction of travel in the x-y "
-            "plane, so it needs both x and y; 1-D positions (such as a "
-            "linearized track) have only one coordinate.\n"
-            "Fix: pass positions with shape (n_samples, 2), for example "
-            "np.column_stack([x, y]), with one timestamp per row."
+            _format_error(
+                f"{call}() needs positions with x and y columns; got shape "
+                f"{positions.shape}.",
+                why=(
+                    "Why: a movement heading is the direction of travel in the "
+                    "x-y plane, so it needs both x and y; 1-D positions (such as "
+                    "a linearized track) have only one coordinate."
+                ),
+                fix=(
+                    "pass positions with shape (n_samples, 2), for example "
+                    "np.column_stack([x, y]), with one timestamp per row."
+                ),
+            )
         )
     return positions
 

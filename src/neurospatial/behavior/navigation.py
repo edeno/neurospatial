@@ -347,15 +347,38 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     time_to_goal : float or None
         Time until goal region entered (seconds). None if goal not reached.
     min_distance_to_goal : float
-        Closest approach to goal during trajectory, in environment units.
+        Closest straight-line distance to the goal over observed samples
+        (finite coordinates), in environment units. NaN when no sample is
+        observed.
     goal_distance_at_start : float
-        Distance to goal at trajectory start, in environment units.
+        Distance to the goal at the first observed sample, in environment
+        units. NaN when no sample is observed.
     goal_distance_at_end : float
-        Distance to goal at trajectory end, in environment units.
+        Distance to the goal at the last observed sample, in environment
+        units. NaN when no sample is observed.
     goal_position : NDArray[np.float64]
         Goal position used for computation, shape (n_dims,).
     metric : str
         Distance metric used ("geodesic" or "euclidean").
+
+    Examples
+    --------
+    A run East toward a goal at x = 100 cm whose first frame was lost: the
+    start distance is measured at the first observed sample.
+
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior import compute_goal_directed_metrics
+    >>> track = np.column_stack([np.linspace(0, 100, 101), np.zeros(101)])
+    >>> env = Environment.from_samples(track, bin_size=5.0, units="cm")
+    >>> times = np.arange(21) / 10  # s
+    >>> positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
+    >>> positions[0] = np.nan  # a lost frame
+    >>> metrics = compute_goal_directed_metrics(
+    ...     env, times, positions, np.array([100.0, 0.0])
+    ... )
+    >>> metrics.goal_distance_at_start, metrics.goal_distance_at_end
+    (95.0, 0.0)
     """
 
     goal_bias: float
@@ -2204,7 +2227,7 @@ def heading_direction_labels(
             break_before=break_before,
             result="every label is None",
         )
-        _validate_velocity_positions(raw)
+        _validate_velocity_positions(raw, call="heading_direction_labels")
         heading_arr, speed_arr = _movement_heading_and_speed(
             times_arr,
             positions_arr,
@@ -2918,16 +2941,34 @@ def goal_vector(
     array([[50.,  0.],
            [40.,  0.]])
     """
+    return _goal_vector(positions, goal, call="goal_vector")
+
+
+def _goal_vector(
+    positions: NDArray[np.float64], goal: NDArray[np.float64], *, call: str
+) -> NDArray[np.float64]:
+    """``goal - positions``, naming ``call`` when the dimensions differ."""
     goal = np.asarray(goal)
     positions = np.asarray(positions)
-
     if goal.shape[0] != positions.shape[1]:
+        n_dims = positions.shape[1]
         raise ValueError(
-            f"Goal has {goal.shape[0]} dimensions but positions have "
-            f"{positions.shape[1]} dimensions. Both must match."
+            _format_error(
+                f"{call}() needs a goal with one coordinate per position "
+                f"dimension; goal has {goal.shape[0]} coordinates but positions "
+                f"have {n_dims}.",
+                why=(
+                    "Why: the vector to the goal is measured in the positions' "
+                    "coordinate frame."
+                ),
+                fix=(
+                    f"pass goal with shape ({n_dims},), in the same coordinates "
+                    "and units as positions."
+                ),
+            )
         )
-
-    return goal[np.newaxis, :] - positions
+    vector: NDArray[np.float64] = goal[np.newaxis, :] - positions
+    return vector
 
 
 def goal_direction(
@@ -2956,7 +2997,7 @@ def goal_direction(
     >>> goal_direction(positions, goal)
     array([0.])
     """
-    vec = goal_vector(positions, goal)
+    vec = _goal_vector(positions, goal, call="goal_direction")
     return np.arctan2(vec[:, 1], vec[:, 0])
 
 
@@ -3053,8 +3094,15 @@ def instantaneous_goal_alignment(
         break_before=break_before,
         result="every alignment is NaN",
     )
-    _validate_velocity_positions(raw)
-    return _goal_alignment(times, positions, goal, support, min_speed=min_speed)
+    _validate_velocity_positions(raw, call="instantaneous_goal_alignment")
+    return _goal_alignment(
+        times,
+        positions,
+        goal,
+        support,
+        min_speed=min_speed,
+        call="instantaneous_goal_alignment",
+    )
 
 
 def _goal_alignment(
@@ -3064,6 +3112,7 @@ def _goal_alignment(
     support: ObservationSupport,
     *,
     min_speed: float,
+    call: str,
 ) -> NDArray[np.float64]:
     """Cosine between movement and goal direction; NaN where not moving.
 
@@ -3081,6 +3130,8 @@ def _goal_alignment(
         Usable intervals of ``(times, positions)``.
     min_speed : float
         Position units per second.
+    call : str
+        Public function name, used in the goal-dimension error.
 
     Returns
     -------
@@ -3091,7 +3142,8 @@ def _goal_alignment(
     from neurospatial.behavior._kinematics import _movement_heading_and_speed
 
     # Checks the goal's dimensions before the velocity is computed.
-    goal_heading = goal_direction(positions, goal)
+    vec = _goal_vector(positions, goal, call=call)
+    goal_heading = np.arctan2(vec[:, 1], vec[:, 0])
     heading, speed = _movement_heading_and_speed(
         times, positions, support.interval_mask, smooth_window=DEFAULT_SPEED_SMOOTHING
     )
@@ -3195,8 +3247,10 @@ def goal_bias(
         break_before=break_before,
         result="the goal bias is NaN",
     )
-    _validate_velocity_positions(raw)
-    alignment = _goal_alignment(times, positions, goal, support, min_speed=min_speed)
+    _validate_velocity_positions(raw, call="goal_bias")
+    alignment = _goal_alignment(
+        times, positions, goal, support, min_speed=min_speed, call="goal_bias"
+    )
     return _mean_alignment(alignment)
 
 
@@ -3305,7 +3359,15 @@ def approach_rate(
         break_before=break_before,
         result="every approach rate is NaN",
     )
-    return _approach_rate(times, positions, goal, support, metric=metric, env=env)
+    return _approach_rate(
+        times,
+        positions,
+        goal,
+        support,
+        metric=metric,
+        env=env,
+        call="approach_rate",
+    )
 
 
 def _approach_rate(
@@ -3316,6 +3378,7 @@ def _approach_rate(
     *,
     metric: Literal["geodesic", "euclidean"],
     env: Environment | None,
+    call: str,
 ) -> NDArray[np.float64]:
     """Rate of distance change toward the goal over each usable interval.
 
@@ -3335,6 +3398,8 @@ def _approach_rate(
         Distance metric; geodesic needs ``env``.
     env : Environment or None
         Required when ``metric="geodesic"``.
+    call : str
+        Public function name, used in the goal-dimension error.
 
     Returns
     -------
@@ -3352,7 +3417,7 @@ def _approach_rate(
         )
 
     if metric == "euclidean":
-        goal_vec = goal_vector(positions, goal)
+        goal_vec = _goal_vector(positions, goal, call=call)
         distances = np.linalg.norm(goal_vec, axis=1)
     else:
         assert env is not None
@@ -3502,15 +3567,18 @@ def compute_goal_directed_metrics(
     min_speed = resolve_min_speed(
         env, min_speed, call="compute_goal_directed_metrics()"
     )
-    _validate_velocity_positions(raw)
+    _validate_velocity_positions(raw, call="compute_goal_directed_metrics")
+    call = "compute_goal_directed_metrics"
     bias = _mean_alignment(
-        _goal_alignment(times, positions, goal, support, min_speed=min_speed)
+        _goal_alignment(times, positions, goal, support, min_speed=min_speed, call=call)
     )
 
-    rates = _approach_rate(times, positions, goal, support, metric=metric, env=env)
+    rates = _approach_rate(
+        times, positions, goal, support, metric=metric, env=env, call=call
+    )
     mean_rate = float(np.nanmean(rates)) if np.any(~np.isnan(rates)) else np.nan
 
-    goal_vec = goal_vector(positions, goal)
+    goal_vec = _goal_vector(positions, goal, call=call)
     distances = np.linalg.norm(goal_vec, axis=1)
 
     observed = distances[support.sample_valid]

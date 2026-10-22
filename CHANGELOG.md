@@ -18,11 +18,16 @@
   over observed samples. Empty input raises in trajectory mode.
 
   ```python
+  import numpy as np
+  from neurospatial.behavior import goal_bias, heading_direction_labels
+
   times, still = np.arange(10) / 10, np.zeros((10, 2))
+  goal = np.array([100.0, 0.0])
   heading_direction_labels(times, still, min_speed=0.0)  # before: ['0–45°', ...]; after: ['stationary', ...]
-  goal_bias(times, still, np.array([100.0, 0.0]), min_speed=0.0)  # before: 1.0; after: nan
+  goal_bias(times, still, goal, min_speed=0.0)  # before: 1.0; after: nan
+  positions = np.column_stack([2.0 * np.arange(10), np.zeros(10)])  # 20 cm/s East
   positions[5] = np.nan
-  goal_bias(times, positions, goal, min_speed=5.0)  # before: ValueError; after: a number
+  goal_bias(times, positions, goal, min_speed=5.0)  # before: ValueError; after: 1.0
   ```
 
 - Options of public free functions are keyword-only, as `Environment`

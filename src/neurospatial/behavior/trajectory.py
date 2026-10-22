@@ -423,7 +423,7 @@ def heading_from_velocity(
         break_before=break_before,
         result="every heading is NaN",
     )
-    _validate_velocity_positions(raw_positions)
+    _validate_velocity_positions(raw_positions, call="heading_from_velocity")
     heading, speed = _movement_heading_and_speed(
         times, positions, support.interval_mask, smooth_window=smooth_window
     )
