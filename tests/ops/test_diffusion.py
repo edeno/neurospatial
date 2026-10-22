@@ -583,7 +583,10 @@ def test_compute_diffusion_kernels_rejects_bad_inputs():
 # Mesh skew guard (D3)
 # ===========================================================================
 def test_mesh_skew_guard_warns():
-    """A strongly sheared (non-K-orthogonal) mesh warns; a well-shaped one does not."""
+    """Smoothing on a strongly sheared (non-K-orthogonal) mesh warns.
+
+    Building the cell faces never warns; a well-shaped mesh never warns.
+    """
     # Well-shaped: square, uniform spacing -> right-isoceles triangles, no warning.
     square = Polygon([(-30, -30), (30, -30), (30, 30), (-30, 30)])
     env_ok = Environment.from_layout(
@@ -591,7 +594,7 @@ def test_mesh_skew_guard_warns():
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any UserWarning here fails the test
-        _ = face_geometry(env_ok._cache, env_ok._binning)
+        _ = env_ok.smooth(np.ones(env_ok.n_bins), bandwidth=3.0, mode="average")
 
     # Skewed: a heavily sheared thin parallelogram -> elongated, obtuse triangles.
     # The lattice's Delaunay diagonals are a platform-dependent tie-break; at
@@ -605,5 +608,8 @@ def test_mesh_skew_guard_warns():
             "TriangularMesh", boundary_polygon=Polygon(sheared), point_spacing=4.0
         )
     )
-    with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # building faces does not smooth anything
         _ = face_geometry(env_skew._cache, env_skew._binning)
+    with pytest.warns(UserWarning, match=r"non-K-orthogonal"):
+        _ = env_skew.smooth(np.ones(env_skew.n_bins), bandwidth=3.0, mode="average")

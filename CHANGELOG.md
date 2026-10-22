@@ -2423,6 +2423,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- The warning that a triangular mesh is too skewed for an exact smoothing
+  bandwidth appears when you smooth on that mesh (rate maps, `smooth`,
+  `diffuse`, kernels, MRF bases, `get_diffusion_geometry`), once per
+  environment, at your call. Before, it appeared wherever the mesh's cell
+  faces were first built: decoding, `compare_spatial_rates` and
+  `read_place_field(env=...)` emitted it while comparing environments, and
+  a later smoothing call then did not warn; `subset` and gradients emitted it
+  too.
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also

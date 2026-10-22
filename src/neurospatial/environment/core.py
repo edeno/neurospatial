@@ -61,6 +61,7 @@ from neurospatial.environment._fields import (
     diffusion_eigenbasis,
     diffusion_geometry,
     require_face_geometry,
+    smoothing_geometry,
 )
 from neurospatial.environment._lookup import center_tree, nearest_bin
 from neurospatial.environment._metrics import (
@@ -6771,8 +6772,33 @@ class Environment(Generic[_C]):
         ------
         NotImplementedError
             If the stored binning cannot supply numerical diffusion geometry.
+
+        Warns
+        -----
+        UserWarning
+            If the bins are a triangular mesh with more than 5% of interior
+            edges skewed by over 30 degrees, where a smoothing bandwidth is
+            only approximate. It is raised once per environment, by this
+            method or by the first smoothing operation (``smooth``,
+            ``diffuse``, ``compute_kernel``, ``get_mrf_basis``), and again
+            after ``clear_cache()``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> x, y = np.meshgrid(np.arange(0.5, 10.0), np.arange(0.5, 4.0))
+        >>> positions = np.column_stack([x.ravel(), y.ravel()])
+        >>> env = Environment.from_samples(positions, bin_size=2.0)
+        >>> geometry = env.get_diffusion_geometry()
+        >>> geometry.W.shape == (env.n_bins, env.n_bins)
+        True
+        >>> int(geometry.n_components)  # one connected open field
+        1
+        >>> geometry.volumes.shape == (env.n_bins,)
+        True
         """
-        return _diffusion_geometry_view(self._diffusion_geometry)
+        return _diffusion_geometry_view(smoothing_geometry(self._cache, self._binning))
 
     @keyword_hint("bandwidth")
     def diffusion_accuracy(self, *, bandwidth: float) -> float:

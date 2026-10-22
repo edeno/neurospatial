@@ -83,6 +83,9 @@ from neurospatial.geometry._explicit import cell_extent as cell_extent
 from neurospatial.geometry._explicit import component_extent as component_extent
 from neurospatial.geometry._explicit import prepare_bins as prepare_bins
 from neurospatial.geometry._face_builders import track_junctions as track_junctions
+from neurospatial.geometry._face_builders import (
+    triangle_skew_message as triangle_skew_message,
+)
 from neurospatial.geometry._face_normals import FaceNormals as FaceNormals
 from neurospatial.geometry._face_normals import geometric_normals as geometric_normals
 from neurospatial.geometry._graph import graph_from_binning as graph_from_binning

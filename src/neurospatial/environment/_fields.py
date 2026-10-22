@@ -23,6 +23,7 @@ from neurospatial.environment._cache import (
     DIFFUSION_KERNELS,
     FACE_GEOMETRY,
     GAUSSIAN_KERNELS,
+    MESH_SKEW_WARNING,
     MRF_EIGENBASIS,
     AnalysisCache,
 )
@@ -35,11 +36,13 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     FaceGeometry,
     KnownFaces,
+    TriangleShapes,
     combined_diffusion,
     get_centers,
     locate,
     require_grid_context,
     require_position_columns,
+    triangle_skew_message,
 )
 from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.ops import (
@@ -362,6 +365,39 @@ def diffusion_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeome
     )
 
 
+def _warn_mesh_skew(binning: Binning) -> str | None:
+    """Warn when the bins are a triangle mesh too skewed for an exact bandwidth.
+
+    Returns
+    -------
+    str or None
+        The warning text, or None when the bins are not a skewed mesh.
+    """
+    if not isinstance(binning.shapes, TriangleShapes):
+        return None
+    message = triangle_skew_message(
+        binning.shapes.points,
+        binning.shapes.triangles,
+        binning.bins.centers,
+        binning.connections.pairs,
+    )
+    if message is not None:
+        warnings.warn(message, UserWarning, stacklevel=_external_stacklevel())
+    return message
+
+
+def smoothing_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeometry:
+    """Diffusion geometry for an operation that smooths a field.
+
+    Warns once per cached geometry, at the scientist's call, when the bins
+    are a triangle mesh too skewed for an exact bandwidth. A binning that
+    cannot smooth raises without warning.
+    """
+    geometry = diffusion_geometry(cache, binning)
+    cache.get(MESH_SKEW_WARNING, lambda: _warn_mesh_skew(binning))
+    return geometry
+
+
 def diffusion_eigenbasis(cache: AnalysisCache) -> _DiffusionEigenbasis:
     """The current truncated-eigenbasis holder for :func:`_diffuse`, empty at first."""
     return cache.get(DIFFUSION_EIGENBASIS, _DiffusionEigenbasis)
@@ -398,7 +434,7 @@ def _compute_kernel(
     # The kernel uses the cached diffusion geometry, whose cell measures
     # (the layout's bin sizes) are the mass matrix M used by every mode.
     def build() -> NDArray[np.float64]:
-        geometry = diffusion_geometry(cache, binning)
+        geometry = smoothing_geometry(cache, binning)
         return heat_kernel_from_W(geometry.W, geometry.volumes, bandwidth, mode=mode)
 
     def build_read_only() -> NDArray[np.float64]:
@@ -544,7 +580,7 @@ def _diffuse(
     was_1d = np.ndim(fields) == 1
     fields_2d = fields.reshape(-1, 1) if was_1d else fields
 
-    W, volumes, n_components, labels = diffusion_geometry(cache, binning)
+    W, volumes, n_components, labels = smoothing_geometry(cache, binning)
     # Resolving a new bandwidth replaces the cached holder under its lock;
     # the apply itself runs on the resolved, read-only basis without it.
     basis = cache.update(
@@ -641,7 +677,7 @@ def _mrf_basis(
 ) -> MRFBasis:
     """Reduced-rank MRF smoothness basis covering the occupied support."""
     _validate_occupancy(occupancy)  # fail fast, before the eigensolve
-    _W, volumes, n_components, labels = diffusion_geometry(cache, binning)
+    _W, volumes, n_components, labels = smoothing_geometry(cache, binning)
     S = _symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
     live = _live_components(labels, occupancy)
     n_live_components = int(live.size)
