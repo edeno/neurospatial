@@ -1852,7 +1852,10 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   settings between the maps raise a warning. The result gives `correlation`,
   `n_common_bins`, `status`, `rate_difference` (B - A, Hz, NaN outside common
   support), `summary_table()`, `to_dataframe()`, `to_xarray()`, `summary()`
-  and `plot()`; it gives no p-values or remapping verdicts. The new
+  and `plot()`; it gives no p-values or remapping verdicts.
+  `RateComparisonResult.plot()` draws the difference map of a single-unit
+  comparison and a correlation scatter of several units; `plot(unit_id=...)`
+  maps one unit, including a unit labeled `None`. The new
   [outbound and inbound runs](https://edeno.github.io/neurospatial/user-guide/workflows/#place-fields-on-outbound-and-inbound-runs)
   workflow goes from direction labels to per-direction maps, a cell-by-cell
   comparison and decoding on held-out laps.
