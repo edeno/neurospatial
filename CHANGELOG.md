@@ -2423,6 +2423,17 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- Publishing walls onto a rotated or clipped environment refuses a wall that
+  lies in a rounding-sized gap between two neighboring bins. Before, whether
+  such a wall was refused or silently ignored depended on the last bits of
+  floating-point rounding, so the same call could pass on one machine and
+  fail on another. For example, with a short wall declared 1e-12 from a bin
+  edge, `env.apply_transform(Affine2D(matrix)).clip(region)` far from the
+  origin now raises `ValueError` ("... may block the face between bins 4 and
+  8, but whether it does is unresolved") on every machine. A wall lying on
+  part of such a face, such as a short wall exactly on a bin edge, is refused
+  the same way; before, it was ignored and the bins stayed connected. Clip
+  before transforming, or recenter the coordinates, to keep such a wall.
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also

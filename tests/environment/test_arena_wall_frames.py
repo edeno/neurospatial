@@ -10,6 +10,7 @@ from shapely.geometry import LineString, Polygon, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
+from neurospatial.geometry._wall_frame import wall_source_frame
 from neurospatial.ops.transforms import Affine2D
 
 
@@ -83,11 +84,13 @@ def test_source_interior_wall_remains_invalid_when_world_rounding_erases_its_off
         _publish(child, invalid)
 
 
-@pytest.mark.parametrize("y_range", [(0.0, 4.0), (0.49, 0.51), (1.49, 1.51)])
-def test_inverse_projected_clipped_cells_cannot_hide_source_wall_in_artificial_gap(
-    y_range,
-):
-    angle, scale, offset = 0.3, 1.3, 1e6
+def _rotated_scaled_clipped_grid(wall, angle=0.3):
+    """A 4 x 4 grid rotated, scaled, moved to 1e6 and clipped, with ``wall``.
+
+    ``wall`` is in the grid's source frame, where bins 4 and 8 meet along
+    x = 2 for 0.25 <= y <= 1 and bins 5 and 9 along x = 2 for 1 <= y <= 2.
+    """
+    scale, offset = 1.3, 1e6
     matrix = np.eye(3)
     matrix[:2, :2] = scale * np.array(
         [
@@ -104,12 +107,64 @@ def test_inverse_projected_clipped_cells_cannot_hide_source_wall_in_artificial_g
     child = base.apply_transform(Affine2D(matrix)).clip(
         _mapped(box(0.25, 0.25, 3.75, 3.75), matrix)
     )
-    invalid = OpenArena(
-        box(0, 0, 4, 4),
-        walls=(LineString([(2 + 1e-12, y_range[0]), (2 + 1e-12, y_range[1])]),),
-    ).transformed(matrix)
+    arena = OpenArena(box(0, 0, 4, 4), walls=(wall,)).transformed(matrix)
+    return child, arena
+
+
+_GAP_WALL_Y_RANGES = [(0.0, 4.0), (0.49, 0.51), (1.49, 1.51)]
+
+
+@pytest.mark.parametrize("y_range", _GAP_WALL_Y_RANGES)
+def test_inverse_projected_clipped_cells_cannot_hide_source_wall_in_artificial_gap(
+    y_range,
+):
+    child, invalid = _rotated_scaled_clipped_grid(
+        LineString([(2 + 1e-12, y_range[0]), (2 + 1e-12, y_range[1])])
+    )
     with pytest.raises(ValueError, match=r"wall.*(?:cuts|clearance|unresolved)"):
         _publish(child, invalid)
+
+
+@pytest.mark.parametrize("y_range", _GAP_WALL_Y_RANGES)
+@pytest.mark.parametrize("ulps", range(-3, 4))
+def test_wall_in_a_rounding_gap_is_refused_whatever_the_last_bits_of_rotation(
+    ulps, y_range
+):
+    """Moving the rotation by a few ULPs never turns the refusal into a pass."""
+    angle = 0.3
+    for _ in range(abs(ulps)):
+        angle = np.nextafter(angle, np.copysign(np.inf, ulps))
+    child, invalid = _rotated_scaled_clipped_grid(
+        LineString([(2 + 1e-12, y_range[0]), (2 + 1e-12, y_range[1])]), angle
+    )
+    with pytest.raises(ValueError, match=r"wall.*(?:cuts|clearance|unresolved)"):
+        _publish(child, invalid)
+
+
+@pytest.mark.parametrize("ulps", [-3, 0, 3])
+@pytest.mark.parametrize("placement", ["beside the face", "across the face"])
+def test_wall_clear_of_a_rounding_gap_leaves_the_face_open(placement, ulps):
+    """A wall ten error bounds from the face, or crossing it, blocks no path."""
+    angle = 0.3
+    for _ in range(abs(ulps)):
+        angle = np.nextafter(angle, np.copysign(np.inf, ulps))
+    # The bins, and so the error bound, do not depend on the wall.
+    child, _ = _rotated_scaled_clipped_grid(LineString([(2, 0), (2, 4)]), angle)
+    errors = wall_source_frame(
+        child._binning.locator, child.arena, child._binning.bins.centers
+    )[5]
+    # Bins 4 and 8 face each other across x = 2 to within their two bounds.
+    bound = errors[4] + errors[8]
+    assert 0 < bound < 1e-8
+    if placement == "beside the face":
+        wall = LineString([(2 + 10 * bound, 0.49), (2 + 10 * bound, 0.51)])
+    else:
+        wall = LineString([(1.9, 0.5), (2.1, 0.5)])
+    child, arena = _rotated_scaled_clipped_grid(wall, angle)
+
+    published = _publish(child, arena)
+
+    np.testing.assert_array_equal(published.edge_pairs, child.edge_pairs)
 
 
 def test_genuine_source_inset_does_not_snap_to_a_nearby_parent_boundary():
