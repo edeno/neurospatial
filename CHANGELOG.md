@@ -4,6 +4,48 @@
 
 ### Breaking
 
+- `heading_direction_labels`, `instantaneous_goal_alignment`, `goal_bias` and
+  `compute_goal_directed_metrics` use the movement rule of
+  `heading_from_velocity`: a direction exists only where the smoothed speed
+  is above zero and at least `min_speed`. A missing position (NaN row) is a
+  gap that ends a run instead of an error. `heading_direction_labels` labels
+  an observed animal that is not moving `"stationary"` and a sample with no
+  observed movement (missing position, no usable interval) `None`, which
+  `labels_to_epochs` leaves out; a still animal at `min_speed=0` was labeled
+  `"0–45°"` (East). `goal_bias` of an animal that never moves is `nan`; it
+  was `1.0` when the goal lay East. `compute_goal_directed_metrics` warns
+  once when every interval is excluded (was twice) and reports distances
+  over observed samples. Empty input raises in trajectory mode.
+
+  ```python
+  import numpy as np
+  from neurospatial.behavior import goal_bias, heading_direction_labels
+
+  times, still = np.arange(10) / 10, np.zeros((10, 2))
+  goal = np.array([100.0, 0.0])
+  heading_direction_labels(times, still, min_speed=0.0)  # before: ['0–45°', ...]; after: ['stationary', ...]
+  goal_bias(times, still, goal, min_speed=0.0)  # before: 1.0; after: nan
+  positions = np.column_stack([2.0 * np.arange(10), np.zeros(10)])  # 20 cm/s East
+  positions[5] = np.nan
+  goal_bias(times, positions, goal, min_speed=5.0)  # before: ValueError; after: 1.0
+  ```
+
+- `heading_from_body_orientation(times, nose, tail, *, max_gap=0.5,
+  epochs=None, break_before=None)` takes timestamps and fills a missing
+  keypoint only inside one recording, when the gap lasts at most `max_gap`
+  seconds; the fill is linear in time along the shorter arc. Longer gaps,
+  samples before the first or after the last keypoint, samples outside
+  `epochs`, and frames whose nose and tail coincide are NaN or filled like
+  any missing frame. Before, every missing frame was filled by sample index
+  across any gap, including a recording break, the ends took the nearest
+  heading, and coincident keypoints read as East.
+
+  ```python
+  heading_from_body_orientation(nose, tail)                      # before
+  heading_from_body_orientation(times, nose, tail)               # after
+  heading_from_body_orientation(times, nose, tail, break_before=new_recording)
+  ```
+
 - Options of public free functions are keyword-only, as `Environment`
   method options already were; data stays positional, and a test rejects any
   new positional option. This covers defaulted options (levels, kinds,
@@ -3482,9 +3524,7 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   formula now has the sign the code uses (positive is a left turn).
   `compute_trajectory_curvature` states that it returns turning angles in
   radians per frame, not geometric curvature; use `compute_planar_curvature`
-  for 1/length. `heading_from_body_orientation` states that it fills missing
-  keypoints across any gap, including a recording break, and how to call it
-  once per recording. Outputs are unchanged.
+  for 1/length. Outputs are unchanged.
 
 - Fix renamed phase-precession imports in executable examples and move the spatial adapter test normalizer import to its owning private module and distinguish independently standardized assembly activation from reactivation strength on a shared template-normalized projection scale.
 

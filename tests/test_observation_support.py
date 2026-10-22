@@ -197,7 +197,7 @@ def test_empty_input_raises_actionable_error(name, kwargs):
         getattr(behavior, name)(np.array([]), np.zeros((0, 2)), **kwargs)
     what, why, fix = str(excinfo.value).split("\n")
     assert what == f"{name}() got no samples: times and positions are empty."
-    assert why == "there is no observation to measure."
+    assert why == "Why: there is no observation to measure."
     assert fix.startswith("Fix: pass at least one sample")
     assert "epoch or trial selection" in fix
 
