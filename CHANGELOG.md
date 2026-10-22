@@ -2532,6 +2532,33 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   simulate_trajectory_laps(env, n_laps=3)  # before: 2679 s at 0.1 cm/s; after: ~14 s at ~20 cm/s
   ```
 
+- Publishing walls onto a rotated or clipped environment refuses a wall that
+  lies in a rounding-sized gap between two neighboring bins. Before, whether
+  such a wall was refused or silently ignored depended on the last bits of
+  floating-point rounding, so the same call could pass on one machine and
+  fail on another. For example, with a short wall declared 1e-12 from a bin
+  edge, `env.apply_transform(Affine2D(matrix)).clip(region)` far from the
+  origin now raises `ValueError` on every machine, saying that where the wall
+  lies relative to the bins is unresolved (which check reports it, and so the
+  exact wording, can still vary). The decision now comes from how far each
+  face can be from where rounding put it, not from whether the rounded bins
+  happen to touch:
+  - A wall along the whole face between two bins closes it. Before, a wall
+    exactly on a bin edge of a rotated-then-clipped environment was refused
+    ("face alignment ... is unresolved") whenever rounding left the bins a
+    hair apart, and a wall ending at a face could close two bins on the same
+    side of it through the corner where rounding made them meet.
+  - A wall along part of such a face, such as a short wall exactly on a bin
+    edge, is refused. Before, it was ignored and the bins stayed connected,
+    or it narrowed the face, depending on rounding.
+  - A wall that crosses a face, at any angle, leaves it open, unless it also
+    crosses the line between the two bin centers where rounding left the
+    bins apart; that case is still refused.
+
+  To keep a wall that covers only part of a face, clip the environment before
+  transforming it. Recentering the coordinates near the origin helps only a
+  wall that lies off the bin edge, by shrinking the rounding below its
+  distance from the edge.
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also
