@@ -28,10 +28,12 @@ from neurospatial.ops.transforms import Affine2D
 _SKEW = "non-K-orthogonal"
 
 
-def _sheared_mesh() -> Environment:
+def _sheared_mesh(offset: float = 0.0) -> Environment:
     """A thin parallelogram sheared by 6: about 16% of interior edges skewed."""
     shear = 6.0
-    corners = [(x + shear * y, y) for x, y in [(-30, -8), (30, -8), (30, 8), (-30, 8)]]
+    corners = [
+        (x + shear * y + offset, y) for x, y in [(-30, -8), (30, -8), (30, 8), (-30, 8)]
+    ]
     return Environment.from_layout(
         create_layout(
             "TriangularMesh", boundary_polygon=Polygon(corners), point_spacing=4.0
@@ -203,3 +205,48 @@ def test_skew_counts_match_the_per_edge_loop(build) -> None:
     else:
         assert message is None
     assert (message is None) == (build is _square_mesh)
+
+
+def _combined() -> Environment:
+    """A skewed mesh beside a well-shaped one, far apart."""
+    square = _square_mesh().apply_transform(
+        Affine2D(np.array([[1.0, 0.0, 500.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]))
+    )
+    return Environment.combine({"skewed": _sheared_mesh(), "square": square})
+
+
+def test_a_combined_environment_warns_when_smoothed_on_a_skewed_component() -> None:
+    first, second = _combined(), _combined()
+    counts = np.zeros((3, 1), dtype=np.int64)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert _environment_differences(first, second) == (None, None)
+        compare_spatial_rates(_rates(first), _rates(second))
+        decode_position(first, counts, _rates(second), dt=0.1)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        first.smooth(np.ones(first.n_bins), bandwidth=3.0, mode="average")
+        first.diffuse(np.ones(first.n_bins), bandwidth=3.0, mode="average")
+    skew = _skew_warnings(record)
+    assert [w.filename for w in skew] == [__file__]
+    message = str(skew[0].message)
+    assert message.endswith("(combined component 'skewed')")
+    # The component's count is the mesh's own count.
+    alone = _sheared_mesh()
+    shapes = alone.binning.shapes
+    expected = triangle_skew_message(
+        shapes.points, shapes.triangles, alone.bin_centers, alone.edge_pairs
+    )
+    assert expected is not None
+    assert _counts(message) == _counts(expected)
+
+
+def test_a_combined_subset_warns_only_for_retained_skewed_triangles() -> None:
+    env = _combined()
+    square_only = env.subset(mask=env.bin_centers[:, 0] > 300.0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        square_only.smooth(np.ones(square_only.n_bins), bandwidth=3.0, mode="average")
+    skewed_only = env.subset(mask=env.bin_centers[:, 0] < 300.0)
+    with pytest.warns(UserWarning, match="combined component 'skewed'"):
+        skewed_only.smooth(np.ones(skewed_only.n_bins), bandwidth=3.0, mode="average")

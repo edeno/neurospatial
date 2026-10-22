@@ -36,13 +36,12 @@ from neurospatial.geometry import (
     EgocentricPolarSystem,
     FaceGeometry,
     KnownFaces,
-    TriangleShapes,
     combined_diffusion,
     get_centers,
     locate,
     require_grid_context,
     require_position_columns,
-    triangle_skew_message,
+    triangle_skew_messages,
 )
 from neurospatial.layout.helpers.utils import map_active_data_to_grid
 from neurospatial.ops import (
@@ -366,24 +365,19 @@ def diffusion_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeome
 
 
 def _warn_mesh_skew(binning: Binning) -> str | None:
-    """Warn when the bins are a triangle mesh too skewed for an exact bandwidth.
+    """Warn for each triangle mesh too skewed for an exact bandwidth.
+
+    The bins may be one mesh or a combined environment with mesh components.
 
     Returns
     -------
     str or None
-        The warning text, or None when the bins are not a skewed mesh.
+        The warning texts, one per line, or None when no mesh is skewed.
     """
-    if not isinstance(binning.shapes, TriangleShapes):
-        return None
-    message = triangle_skew_message(
-        binning.shapes.points,
-        binning.shapes.triangles,
-        binning.bins.centers,
-        binning.connections.pairs,
-    )
-    if message is not None:
+    messages = triangle_skew_messages(binning)
+    for message in messages:
         warnings.warn(message, UserWarning, stacklevel=_external_stacklevel())
-    return message
+    return "\n".join(messages) or None
 
 
 def smoothing_geometry(cache: AnalysisCache, binning: Binning) -> DiffusionGeometry:

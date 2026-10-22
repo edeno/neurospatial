@@ -66,6 +66,9 @@ from neurospatial.geometry._composition import (
     composition_component_keys as composition_component_keys,
 )
 from neurospatial.geometry._composition import composition_view as composition_view
+from neurospatial.geometry._composition import (
+    triangle_skew_messages as triangle_skew_messages,
+)
 from neurospatial.geometry._context import GridIndex as GridIndex
 from neurospatial.geometry._context import grid_index as grid_index
 from neurospatial.geometry._coordinates import CartesianSystem as CartesianSystem
