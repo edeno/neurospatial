@@ -485,6 +485,7 @@ def simulate_session(
             duration=duration,
             seed=trajectory_seed,
             return_metadata=False,
+            call='simulate_session(trajectory_method="laps")',
             **laps_kwargs,
         )
         # Type narrowing: return_metadata=False guarantees 2-tuple

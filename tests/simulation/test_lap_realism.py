@@ -1,5 +1,8 @@
 """Lap trajectories look like a running animal: realistic speed, continuous path."""
 
+import re
+import warnings
+
 import numpy as np
 import pytest
 from shapely.geometry import box
@@ -7,6 +10,7 @@ from shapely.geometry import box
 from neurospatial import Environment
 from neurospatial.simulation import (
     linear_track_session,
+    simulate_session,
     simulate_trajectory_laps,
     tmaze_alternation_session,
 )
@@ -96,9 +100,15 @@ def test_laps_stay_inside_environment(box_env, box_laps):
     assert np.all(box_env.bin_at(positions) >= 0)
 
 
-@pytest.mark.parametrize(
-    "make_session",
-    [
+# Built-in sessions set the speed from duration and path length, not from the
+# 20 cm/s default, so their bound is looser. The snapped path jumped a whole
+# 2 cm bin within one 2 ms sample (1000 cm/s).
+SESSION_MAX_SPEED_CM_PER_S = 2 * DEFAULT_SPEED_CM_PER_S
+
+
+@pytest.fixture(
+    scope="module",
+    params=[
         lambda: linear_track_session(duration=60, n_place_cells=3, n_laps=6, seed=42),
         lambda: tmaze_alternation_session(
             duration=60, n_trials=4, n_place_cells=3, seed=1
@@ -106,10 +116,21 @@ def test_laps_stay_inside_environment(box_env, box_laps):
     ],
     ids=["linear_track", "tmaze"],
 )
-@pytest.mark.filterwarnings("ignore:Requested n_cells=3:UserWarning")
-def test_session_laps_stay_inside_environment(make_session):
-    session = make_session()
-    assert np.all(session.env.bin_at(session.positions) >= 0)
+def lap_session(request):
+    """A built-in lap session."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "Requested n_cells=3", UserWarning)
+        return request.param()
+
+
+def test_session_laps_stay_inside_environment(lap_session):
+    assert np.all(lap_session.env.bin_at(lap_session.positions) >= 0)
+
+
+def test_session_laps_move_smoothly(lap_session):
+    sampling_frequency = lap_session.metadata["sampling_frequency"]
+    largest_step = _steps(lap_session.positions).max()
+    assert largest_step < SESSION_MAX_SPEED_CM_PER_S / sampling_frequency
 
 
 def test_session_paths_are_smooth():
@@ -135,8 +156,9 @@ def test_default_speed_follows_environment_units(box_laps):
 
 def test_default_speed_needs_metric_units():
     env = Environment.from_polygon(box(0, 0, 100, 20), bin_size=2)
-    with pytest.raises(ValueError, match="speed_mean"):
+    with pytest.raises(ValueError, match="speed_mean") as error:
         simulate_trajectory_laps(env, n_laps=3, seed=1)
+    assert "not a metric length unit" in str(error.value)
     positions, _times = simulate_trajectory_laps(env, n_laps=3, seed=1, speed_mean=20.0)
     assert np.all(env.bin_at(positions) >= 0)
 
@@ -145,3 +167,49 @@ def test_custom_path_must_be_chain_of_neighbors(box_env):
     assert not box_env.connectivity.has_edge(0, 2)
     with pytest.raises(ValueError, match="neighboring"):
         simulate_trajectory_laps(box_env, n_laps=2, outbound_path=[0, 2])
+
+
+def test_custom_path_may_repeat_a_bin(box_env):
+    """A repeated bin is a zero-length step: the path is still connected."""
+    assert box_env.connectivity.has_edge(0, 1)
+    positions, _times = simulate_trajectory_laps(
+        box_env, n_laps=2, outbound_path=[0, 0, 1], seed=1
+    )
+    np.testing.assert_allclose(positions[0], box_env.bin_centers[0])
+    np.testing.assert_allclose(positions[-1], box_env.bin_centers[0])
+
+
+@pytest.fixture(scope="module")
+def two_rooms_env():
+    """Two 10 x 10 cm rooms 40 cm apart, with no bins between them."""
+    grid = np.stack(np.meshgrid(np.arange(1, 10, 2.0), np.arange(1, 10, 2.0)), -1)
+    room = grid.reshape(-1, 2)
+    samples = np.concatenate([room, room + np.array([50.0, 0.0])])
+    return Environment.from_samples(samples, bin_size=2.0, units="cm")
+
+
+def test_path_errors_name_the_function_called(two_rooms_env, box_env):
+    with pytest.raises(ValueError, match=r"simulate_trajectory_laps\(\) found no"):
+        simulate_trajectory_laps(two_rooms_env, n_laps=2)
+    with pytest.raises(ValueError, match=r"simulate_trajectory_laps\(\): outbound"):
+        simulate_trajectory_laps(box_env, n_laps=2, outbound_path=[0, 2])
+    session_call = re.escape('simulate_session(trajectory_method="laps")')
+    with pytest.raises(ValueError, match=session_call + " found no"):
+        simulate_session(
+            two_rooms_env,
+            duration=10.0,
+            n_cells=1,
+            trajectory_method="laps",
+            show_progress=False,
+            seed=1,
+        )
+    with pytest.raises(ValueError, match=session_call + ": outbound"):
+        simulate_session(
+            box_env,
+            duration=10.0,
+            n_cells=1,
+            trajectory_method="laps",
+            outbound_path=[0, 2],
+            show_progress=False,
+            seed=1,
+        )

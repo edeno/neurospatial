@@ -627,9 +627,10 @@ def simulate_trajectory_laps(
         second. None (default) uses ``0.2 * speed_mean``.
     outbound_path : list[int] | None, optional
         Bin indices for the outbound traversal, a chain of neighboring bins:
-        every consecutive pair must be connected in ``env.connectivity``. A
-        single bin is also valid. If None, uses the shortest path between the
-        bins with the smallest and largest first coordinate.
+        every consecutive pair must be connected in ``env.connectivity`` or
+        repeat the same bin (a step of zero length). A single bin is also
+        valid. If None, uses the shortest path between the bins with the
+        smallest and largest first coordinate.
     inbound_path : list[int] | None, optional
         Bin indices for the inbound traversal, with the same rule as
         ``outbound_path``. If None, reverses outbound_path.
@@ -730,6 +731,7 @@ def simulate_trajectory_laps(
         sampling_frequency=sampling_frequency,
         seed=seed,
         return_metadata=return_metadata,
+        call="simulate_trajectory_laps()",
     )
 
 
@@ -746,6 +748,7 @@ def _simulate_trajectory_laps(
     seed: int | None = None,
     return_metadata: bool = False,
     duration: float | None = None,
+    call: str,
 ) -> (
     tuple[NDArray[np.float64], NDArray[np.float64]]
     | tuple[NDArray[np.float64], NDArray[np.float64], dict]
@@ -754,6 +757,7 @@ def _simulate_trajectory_laps(
 
     With ``duration``, speed draws only weight the traversal durations, so the
     default mean is a unitless 1.0 instead of 20 cm/s in ``env.units``.
+    ``call`` is the public call the scientist made, named in path errors.
     """
     if speed_mean is None:
         if duration is not None:
@@ -763,10 +767,9 @@ def _simulate_trajectory_laps(
             if per_cm is None:
                 raise ValueError(
                     _format_error(
-                        "simulate_trajectory_laps needs speed_mean: the "
-                        f"environment's units ({env.units!r}) are not a known "
-                        "length, so the default 20 cm/s cannot be expressed in "
-                        "them.",
+                        f"{call} needs speed_mean: the environment's units "
+                        f"({env.units!r}) are not a metric length unit, so the "
+                        "default 20 cm/s cannot be expressed in them.",
                         why="Why: speed_mean is in position units per second.",
                         fix="pass speed_mean=<running speed in position units per "
                         "second>, or declare the units with "
@@ -844,7 +847,7 @@ def _simulate_trajectory_laps(
         except nx.NetworkXNoPath:
             raise ValueError(
                 _format_error(
-                    f"simulate_trajectory_laps found no connected path between "
+                    f"{call} found no connected path between "
                     f"the bins at the smallest and largest x ({start_bin} and "
                     f"{end_bin}).",
                     why="Why: the animal runs along neighboring bins, and these "
@@ -872,11 +875,12 @@ def _simulate_trajectory_laps(
                     f"(must be in [0, {env.n_bins}))"
                 )
                 raise ValueError(msg)
+        # A repeated bin is a zero-length step, so it needs no edge.
         for a, b in pairwise(path):
-            if not env.connectivity.has_edge(a, b):
+            if a != b and not env.connectivity.has_edge(a, b):
                 raise ValueError(
                     _format_error(
-                        f"simulate_trajectory_laps: {path_name} steps from bin "
+                        f"{call}: {path_name} steps from bin "
                         f"{a} to bin {b}, which are not neighboring bins.",
                         why="Why: the animal runs in a straight line between "
                         "consecutive bins, which can cross walls or leave the "
