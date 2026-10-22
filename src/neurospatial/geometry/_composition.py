@@ -268,9 +268,9 @@ def triangle_skew_messages(binning: Binning) -> tuple[str, ...]:
         message = triangle_skew_message(
             shapes.points, shapes.triangles, child.bins.centers, pairs
         )
-        if message is not None and path:
-            message += f" (combined component {'/'.join(path)!r})"
         if message is not None:
+            if path:
+                message += f" (combined component {'/'.join(path)!r})"
             messages.append(message)
 
     def walk(

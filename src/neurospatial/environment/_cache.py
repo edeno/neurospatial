@@ -252,7 +252,8 @@ CELL_POLYGONS: CacheKey[tuple[Polygon, ...]] = CacheKey("cell_polygons")
 EMBEDDED_KDTREE: CacheKey[tuple[NDArray[Any], cKDTree]] = CacheKey("embedded_kdtree")
 FACE_GEOMETRY: CacheKey[FaceGeometry] = CacheKey("face_geometry")
 DIFFUSION_GEOMETRY: CacheKey[DiffusionGeometry] = CacheKey("diffusion_geometry")
-# The triangle-mesh skew warning text, or None; cached so it is emitted once.
+# Records that the mesh skew check ran (and its text, unread), so smoothing
+# warns once per cached geometry.
 MESH_SKEW_WARNING: CacheKey[str | None] = CacheKey("mesh_skew_warning")
 DIFFUSION_EIGENBASIS: CacheKey[_DiffusionEigenbasis] = CacheKey("diffusion_eigenbasis")
 MRF_EIGENBASIS: CacheKey[_MRFEigenbasis] = CacheKey("mrf_eigenbasis")
