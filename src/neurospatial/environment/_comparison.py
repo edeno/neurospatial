@@ -214,11 +214,11 @@ def _paired_cell_differences(
     - Grid boxes, triangles and hexagons: exactly equal centers, measures and
       corners.
     - Polygon cells (either environment clipped or built from polygons):
-      exactly the same polygon, owning the same boundary points (see
-      ``_ownership_keys``). Their centers and areas are computed from the
-      polygon, so they may differ from the other bin's by rounding: within
-      ``_ROUNDING`` of the coordinates' magnitude plus the cell's width for
-      centers, and of the area for measures.
+      exactly the same polygon, owning the same boundary points whatever
+      the bins' numbers (see ``_ownership_keys``). Their centers and areas
+      are computed from the polygon, so they may differ from the other bin's
+      by rounding: within ``_ROUNDING`` of the coordinates' magnitude plus
+      the cell's width for centers, and of the area for measures.
     - Track bins (both environments built on a track): exactly equal
       centers and measures, the same linear ``[low, high)`` edges along the
       track, and the same track segments and spacing (see
@@ -283,6 +283,7 @@ def _paired_cell_differences(
             second_binning.locator,
             np.asarray(rows_first)[rows],
             np.asarray(rows_second)[rows],
+            first_cells[rows],
         )
         codes[rows[~owned]] = 3
         return codes
@@ -413,43 +414,85 @@ def _box_corners(grid: RectilinearGrid) -> NDArray[np.float64]:
 
 
 def _ownership_keys(
-    locator: Locator, rows: NDArray[np.integer]
-) -> tuple[NDArray[np.object_], NDArray[np.intp]]:
-    """The locator that decides each bin's boundary points, and its bin there.
+    locator: Locator, rows: NDArray[np.integer], cells: NDArray[np.object_]
+) -> tuple[Locator, NDArray[np.intp], NDArray[np.object_]]:
+    """What decides which boundary points each bin owns, whatever its number.
 
     A subset gives a point to the kept bin whose parent owned it, and to no
     bin when that parent was dropped, so its bins own their parents' points.
-    A clip gives a point to the piece of the parent bin that owned it, so a
-    parent bin's only piece owns the parent's points inside that piece.
-    Callers compare keys only for bins whose polygons are already known to be
-    equal, so a piece and a whole cell with the same key own the same points.
-    Pieces of a cell split in several are kept at their clip, whose lookup
-    breaks ties between them.
+    A clip gives a point to a piece of the parent bin that owned it, and a
+    point on the line between two pieces of one parent bin to the
+    lowest-numbered of them. A piece therefore owns its polygon, minus the
+    points another parent bin owns, minus the part of its boundary it cedes
+    to earlier pieces of its parent. Its parent bin and that ceded part
+    describe its points without its own number, so a renumbered copy owns
+    the same points as long as each parent's pieces keep their order.
+    Callers compare keys only for bins whose polygons are already known to
+    be equal, so a piece and a whole cell with the same key and nothing
+    ceded own the same points.
+
+    Parameters
+    ----------
+    locator : Locator
+        The environment's point lookup.
+    rows : ndarray of int, shape (n_rows,)
+        Bins of that environment.
+    cells : ndarray of object, shape (n_rows,)
+        Each row's polygon.
+
+    Returns
+    -------
+    root : Locator
+        The first locator below every subset and clip, which decides which
+        root bin owns a point. A transformed locator is a root.
+    keys : ndarray of intp, shape (n_rows,)
+        Each row's bin in ``root``.
+    ceded : ndarray of object, shape (n_rows,)
+        The part of each row's polygon that its clips give to earlier pieces
+        of the same parent bin; empty for bins never cut.
     """
     keys: NDArray[np.intp] = np.array(rows, dtype=np.intp)
-    roots = np.empty(len(keys), dtype=object)
-    active = np.ones(len(keys), dtype=bool)
-    while np.any(active):
+    ceded = np.empty(len(keys), dtype=object)
+    ceded[:] = shapely.GeometryCollection()
+    while True:
         if isinstance(locator, SubsetLocator):
             parent_to_child = locator.parent_to_child
             kept = np.flatnonzero(parent_to_child >= 0)
             child_to_parent = np.empty(kept.size, dtype=np.intp)
             child_to_parent[parent_to_child[kept]] = kept
-            keys[active] = child_to_parent[keys[active]]
-            locator = locator.base
+            keys = child_to_parent[keys]
         elif isinstance(locator, ClippedLocator):
-            sources = locator.mapping.parent_bin_indices
-            pieces = np.bincount(sources, minlength=locator.mapping.n_parent_bins)
-            only_piece = active.copy()
-            only_piece[active] = pieces[sources[keys[active]]] == 1
-            roots[active & ~only_piece] = locator
-            active = only_piece
-            keys[active] = sources[keys[active]]
-            locator = locator.base
+            ceded = shapely.union(ceded, _ceded_to_earlier_pieces(locator)[keys])
+            keys = locator.mapping.parent_bin_indices[keys]
         else:
-            roots[active] = locator
-            break
-    return roots, keys
+            return locator, keys, shapely.intersection(ceded, cells)
+        locator = locator.base
+
+
+def _ceded_to_earlier_pieces(clip: ClippedLocator) -> NDArray[np.object_]:
+    """Each piece's boundary shared with lower-numbered pieces of its parent.
+
+    Returns
+    -------
+    ndarray of object, shape (n_pieces,)
+        The part of each piece's boundary that lies in an earlier piece of
+        the same parent bin; empty for the first or only piece.
+    """
+    sources = clip.mapping.parent_bin_indices
+    ceded = np.empty(len(sources), dtype=object)
+    ceded[:] = shapely.GeometryCollection()
+    counts = np.bincount(sources, minlength=clip.mapping.n_parent_bins)
+    for parent in np.flatnonzero(counts > 1):
+        pieces = np.flatnonzero(sources == parent)
+        polygons = np.empty(len(pieces), dtype=object)
+        polygons[:] = [clip.cells.polygons[piece] for piece in pieces]
+        # Row i, column j: piece i's boundary inside piece j, kept for j < i.
+        shared = shapely.intersection(
+            shapely.boundary(polygons)[:, np.newaxis], polygons[np.newaxis, :]
+        )
+        shared[np.triu_indices(len(pieces))] = shapely.GeometryCollection()
+        ceded[pieces] = shapely.union_all(shared, axis=1)
+    return ceded
 
 
 def _same_ownership(
@@ -457,18 +500,16 @@ def _same_ownership(
     second: Locator,
     rows_first: NDArray[np.integer],
     rows_second: NDArray[np.integer],
+    cells: NDArray[np.object_],
 ) -> NDArray[np.bool_]:
-    """Whether each pair's bins own the same boundary points."""
-    first_roots, first_keys = _ownership_keys(first, rows_first)
-    second_roots, second_keys = _ownership_keys(second, rows_second)
-    same: NDArray[np.bool_] = np.asarray(first_keys == second_keys, dtype=bool)
-    verdicts: dict[tuple[int, int], bool] = {}
-    for row in np.flatnonzero(same):
-        first_root, second_root = first_roots[row], second_roots[row]
-        key = (id(first_root), id(second_root))
-        if key not in verdicts:
-            verdicts[key] = _same_locator(first_root, second_root)
-        same[row] = verdicts[key]
+    """Whether each pair's bins, with polygons ``cells``, own the same points."""
+    first_root, first_keys, first_ceded = _ownership_keys(first, rows_first, cells)
+    second_root, second_keys, second_ceded = _ownership_keys(second, rows_second, cells)
+    same: NDArray[np.bool_] = (first_keys == second_keys) & np.asarray(
+        shapely.equals(first_ceded, second_ceded), dtype=bool
+    )
+    if np.any(same) and not _same_locator(first_root, second_root):
+        same[:] = False
     return same
 
 

@@ -12,7 +12,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-from environment_helpers import renumbered
+from environment_helpers import renumbered, renumbered_cells
 from scipy import stats
 from shapely.geometry import LineString, Polygon, box
 
@@ -790,6 +790,55 @@ def test_a_subset_of_polygon_cells_maps_onto_its_parent(make) -> None:
 
     assert result.analysis_settings["topology_differs"] is True
     np.testing.assert_allclose(result.correlation, [1.0])
+
+
+def _wall_split_arena() -> Environment:
+    """A box whose wall cuts parent cells 12 to 15 in two (bins 12 to 19)."""
+    return Environment.from_samples(
+        np.random.default_rng(0).uniform(0, 30, (4000, 2)),
+        bin_size=5.0,
+        units="cm",
+        arena=OpenArena(box(0, 0, 30, 30), walls=[LineString([(12.5, 0), (12.5, 20)])]),
+        wall_fit="split",
+    )
+
+
+def test_a_renumbered_wall_split_arena_maps_onto_the_original(make) -> None:
+    # Each cut cell's pieces keep their relative order, so every bin owns the
+    # same boundary points in both environments.
+    env = _wall_split_arena()
+    order = np.random.default_rng(1).permutation(env.n_bins)
+    for pieces in ([12, 13], [14, 15], [16, 17], [18, 19]):
+        positions = np.flatnonzero(np.isin(order, pieces))
+        order[positions] = np.sort(order[positions])
+    copy = renumbered_cells(env, order)
+    rates = np.random.default_rng(4).uniform(0, 10, env.n_bins)
+
+    result = compare_spatial_rates(
+        make(rates, np.ones(env.n_bins), on=env),
+        make(rates[order], np.ones(env.n_bins), on=copy),
+        bin_mapping=np.column_stack([order, np.arange(env.n_bins)]),
+    )
+
+    assert result.analysis_settings["topology_differs"] is False
+    np.testing.assert_allclose(result.correlation, [1.0])
+
+
+def test_swapping_two_touching_pieces_of_a_cut_cell_is_refused(make) -> None:
+    # A point on the line between pieces 12 and 13 belongs to the earlier
+    # piece, so swapping their numbers moves it to the other piece.
+    env = _wall_split_arena()
+    order = np.arange(env.n_bins)
+    order[[12, 13]] = [13, 12]
+    copy = renumbered_cells(env, order)
+    rates = np.random.default_rng(4).uniform(0, 10, env.n_bins)
+
+    with pytest.raises(IncompatibleEnvironmentError, match="bin-boundary ownership"):
+        compare_spatial_rates(
+            make(rates, np.ones(env.n_bins), on=env),
+            make(rates[order], np.ones(env.n_bins), on=copy),
+            bin_mapping=np.column_stack([order, np.arange(env.n_bins)]),
+        )
 
 
 def _clipped_session():

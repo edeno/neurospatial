@@ -2455,10 +2455,14 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   now differ in "smoothing conductances between neighboring bins".
   `read_place_field(env=...)` makes the same check (see Breaking), and
   `compare_spatial_rates` applies the same bin checks to each pair of a
-  `bin_mapping`: paired bins must also have the same cell shape and, for
-  polygon cells, the same polygon and the same bin owning each boundary, so
-  an identity mapping is refused exactly where no mapping is. A subset of
-  polygon cells still pairs with its parent. Tracks are compared by their
+  `bin_mapping`, so an identity mapping is refused exactly where no mapping
+  is: paired bins must also have the same cell shape and, for polygon cells,
+  the same polygon and the same bin owning each boundary. Ownership is
+  compared without regard to bin numbering, so a renumbered copy of a
+  clipped or wall-split arena pairs with the original through `bin_mapping`;
+  pieces of one cut cell must keep their relative order, because a point on
+  the line between them belongs to the earlier piece. A subset of polygon
+  cells still pairs with its parent. Tracks are compared by their
   segments and the linear edges of each bin: two tracks whose bins have the
   same centers but run along different segments, or the same track with
   different `edge_spacing`, now differ in "track geometry". Explicit point

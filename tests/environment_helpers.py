@@ -260,3 +260,56 @@ def renumbered(env, order, distances=None, *, max_distance=5.0):
         frame=env.frame,
         arena=env.arena,
     )
+
+
+def renumbered_cells(env, order):
+    """Publish a clipped ``env``'s polygon cells in a new bin order.
+
+    New bin ``i`` is ``env``'s bin ``order[i]``, with the same polygon, parent
+    bin, center, measure and faces; lookup is the same clip of the same
+    parent bins. The clip gives a point on the line between two pieces of one
+    parent bin to the lower-numbered piece, so reordering such pieces moves
+    that line from one piece to the other.
+    """
+    from neurospatial.binning import (
+        BinConnections,
+        Binning,
+        ClipMapping,
+        ClippedLocator,
+        FaceGeometry,
+        KnownFaces,
+        PolygonCells,
+        SpatialBins,
+    )
+
+    binning = env.binning
+    locator = binning.locator
+    cells = PolygonCells(tuple(binning.shapes.polygons[row] for row in order))
+    mapping = ClipMapping(
+        locator.mapping.parent_bin_indices[order], locator.mapping.n_parent_bins
+    )
+    connections = binning.connections
+    pairs = np.argsort(order)[connections.pairs]
+    if binning.faces.available:
+        faces = binning.faces.build()
+        new_faces = KnownFaces(
+            FaceGeometry(pairs, faces.A, faces.distance, faces.volumes[order])
+        )
+    else:
+        new_faces = binning.faces
+    bins = binning.bins
+    return Environment.from_bins(
+        Binning(
+            binning.kind,
+            SpatialBins.from_arrays(
+                bins.centers[order], bins.sizes[order], bins.measure_dims[order]
+            ),
+            BinConnections.from_arrays(pairs, connections.pair_distances),
+            ClippedLocator(locator.base, cells, mapping),
+            new_faces,
+            shapes=cells,
+        ),
+        units=env.units,
+        frame=env.frame,
+        arena=env.arena,
+    )
