@@ -26,10 +26,20 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import as_intervals
-from neurospatial._observation import ObservationSupport, validated_observations
+from neurospatial._intervals import as_intervals, observed_interval_mask
+from neurospatial._observation import (
+    ObservationSupport,
+    validate_break_before,
+    validate_max_gap,
+    validated_observations,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
+from neurospatial._validation import (
+    validate_strictly_increasing,
+    validate_times_positions,
+)
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
+from neurospatial.behavior.epochs import _mask_in_intervals
 from neurospatial.geometry import require_cartesian
 
 if TYPE_CHECKING:
@@ -460,127 +470,222 @@ def heading_from_velocity(
 
 
 def _interpolate_heading_circular(
+    times: NDArray[np.float64],
     heading: NDArray[np.float64],
-    mask: NDArray[np.bool_],
+    fill: NDArray[np.bool_],
 ) -> NDArray[np.float64]:
-    """Interpolate masked headings along the shorter arc, linearly in angle.
+    """Fill headings linearly in time along the shorter arc.
 
-    Unwrap consecutive finite anchors, interpolate angles, then wrap to
-    (-pi, pi]. For an exactly antipodal pair, the sign of the stored
-    difference chooses the turn. Samples beyond the anchors keep the nearest
-    valid heading. Unmasked non-finite values are not interpolation anchors.
+    The anchors are the finite headings outside ``fill``. They are unwrapped,
+    interpolated at ``times[fill]`` and wrapped back to (-pi, pi]. For an
+    exactly antipodal pair, the sign of the stored difference chooses the turn.
+    The caller passes only samples that lie between two anchors, so nothing
+    is extrapolated.
 
     Parameters
     ----------
+    times : NDArray, shape (n_time,)
+        Strictly increasing timestamps in seconds.
     heading : NDArray, shape (n_time,)
-        Heading values in radians.
-    mask : NDArray, shape (n_time,)
-        Boolean mask where True indicates values to interpolate.
+        Heading values in radians; NaN where not observed.
+    fill : NDArray of bool, shape (n_time,)
+        True at samples to fill, each between two anchors.
 
     Returns
     -------
     NDArray, shape (n_time,)
-        Heading with masked values interpolated.
+        A copy of ``heading`` with the ``fill`` samples interpolated.
     """
-    if not np.any(mask):
-        return heading
-
-    valid = ~mask & np.isfinite(heading)
-    valid_idx = np.flatnonzero(valid)
-    if valid_idx.size == 0:
-        return heading
-    unwrapped = np.unwrap(heading[valid_idx])
-    filled = np.interp(np.flatnonzero(mask), valid_idx, unwrapped)
     result: NDArray[np.float64] = heading.copy()
-    result[mask] = np.pi - np.mod(np.pi - filled, 2.0 * np.pi)
+    if not np.any(fill):
+        return result
+    anchors = np.isfinite(heading) & ~fill
+    unwrapped = np.unwrap(heading[anchors])
+    filled = np.interp(times[fill], times[anchors], unwrapped)
+    result[fill] = np.pi - np.mod(np.pi - filled, 2.0 * np.pi)
     return result
 
 
 def heading_from_body_orientation(
-    nose: NDArray[np.float64],
-    tail: NDArray[np.float64],
+    times: ArrayLike,
+    nose: ArrayLike,
+    tail: ArrayLike,
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    break_before: ArrayLike | None = None,
 ) -> NDArray[np.float64]:
     """Compute heading from nose and tail keypoints.
 
+    The heading of a frame is the direction of the tail-to-nose vector. A frame
+    without that vector (a missing keypoint, or nose and tail at the same
+    point) is filled from the frames around it only across a short gap inside
+    one recording.
+
     Parameters
     ----------
-    nose : NDArray, shape (n_time, 2)
-        Nose keypoint positions. May contain NaN values.
-    tail : NDArray, shape (n_time, 2)
-        Tail keypoint positions. May contain NaN values.
+    times : array-like, shape (n_time,)
+        Finite, strictly increasing timestamps in seconds, one per frame.
+    nose : array-like, shape (n_time, n_dims)
+        Nose keypoint positions in position units (e.g. cm), ``n_dims >= 2``;
+        only x and y are used. A row with a non-finite coordinate (NaN, for
+        a lost or low-likelihood keypoint) is missing.
+    tail : array-like, shape (n_time, n_dims)
+        Tail-base keypoint positions, in the same units and shape as ``nose``.
+    max_gap : float or None, default=0.5
+        Longest gap, in seconds, that is filled: the time between the observed
+        frames on either side of the missing frames. It is also the longest
+        sampling interval treated as continuous recording. ``None`` fills gaps
+        of any length inside one recording and epoch.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). Frames outside every window are NaN, and no
+        fill spans a window edge. ``None`` (default) means unrestricted.
+    break_before : ArrayLike of bool, shape (n_time,), optional
+        ``True`` at frame ``k`` declares a break between frames ``k - 1`` and
+        ``k`` (for example where a new recording starts), whatever the elapsed
+        time. Entry 0 is ignored. No fill spans a declared break.
 
     Returns
     -------
     NDArray, shape (n_time,)
-        Heading in radians at each timepoint. NaN keypoints are
-        interpolated along the shorter arc, linearly in angle.
+        Heading in radians in the allocentric convention (0 = East,
+        π/2 = North), in ``[-π, π]``. Filled frames are interpolated linearly
+        in time along the shorter arc and wrapped to ``(-π, π]``. NaN where a
+        frame is missing and not filled, and outside ``epochs``.
 
     Raises
     ------
     ValueError
-        If all keypoints are NaN.
+        If there are no frames, if ``times`` is not 1-D, finite, strictly
+        increasing and aligned with the keypoints, if ``nose`` and ``tail``
+        differ in shape or have no x and y columns, if ``break_before`` is not
+        a Boolean array with one entry per frame, or if no frame has both
+        keypoints at distinct points.
+
+    Warns
+    -----
+    UserWarning
+        If ``max_gap``, ``epochs`` and ``break_before`` together exclude every
+        interval, so no frame is filled; every heading is NaN when no frame
+        lies inside ``epochs``.
+
+    See Also
+    --------
+    heading_from_velocity : Direction of movement, from positions alone.
 
     Notes
     -----
-    NaN keypoints are interpolated by sample index across any gap, including a
-    gap that spans a recording break; this function has no ``times`` argument
-    and cannot see breaks. When several recordings are concatenated, call it
-    once per recording segment, splitting where a recording-id array (or a
-    ``break_before`` array) changes, so that no fill bridges two recordings::
-
-        starts = np.flatnonzero(break_before)  # break_before[0] is ignored
-        segments = np.split(np.arange(len(nose)), starts[starts > 0])
-        headings = np.concatenate(
-            [heading_from_body_orientation(nose[s], tail[s]) for s in segments]
-        )
-
-    Do not split at every missing frame (for example at the runs of
-    ``compute_cumulative_distance``): that would leave the NaN frames unfilled.
-    If a gap within a recording is too long for the filled heading to be
-    trusted, set the samples inside it back to NaN afterwards.
+    A gap is filled only when it lasts at most ``max_gap`` and lies inside one
+    recording and one epoch; longer gaps and samples outside ``epochs`` are
+    NaN. Frames before the first or after the last observed frame are not
+    extrapolated. A frame whose nose and tail coincide has no direction
+    (``arctan2(0, 0)`` would read as East), so it is treated as missing.
 
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.behavior import heading_from_body_orientation
 
-    Heading from nose/tail pointing East:
+    The animal faces East, loses one frame, turns North and loses another:
 
-    >>> n = 50
-    >>> nose = np.tile([10.0, 0.0], (n, 1))
-    >>> tail = np.tile([0.0, 0.0], (n, 1))
-    >>> headings = heading_from_body_orientation(nose, tail)
-    >>> np.allclose(headings, 0.0)
-    True
+    >>> times = np.arange(8) * 0.1  # s
+    >>> tail = np.zeros((8, 2))
+    >>> nose = np.column_stack([np.ones(8), np.zeros(8)])  # facing East
+    >>> nose[2] = np.nan  # one lost frame: filled
+    >>> nose[5:7] = [[0.0, 1.0], [np.nan, np.nan]]  # turns North, then a lost frame
+    >>> np.round(heading_from_body_orientation(times, nose, tail), 3).tolist()
+    [0.0, 0.0, 0.0, 0.0, 0.0, 1.571, 0.785, 0.0]
+
+    When a new recording starts at 0.6 s, its first frame is the lost one,
+    and it is not filled across the break:
+
+    >>> breaks = np.arange(8) == 6  # a new recording starts at frame 6 (0.6 s)
+    >>> np.round(
+    ...     heading_from_body_orientation(times, nose, tail, break_before=breaks), 3
+    ... ).tolist()
+    [0.0, 0.0, 0.0, 0.0, 0.0, 1.571, nan, 0.0]
     """
-    nose = np.asarray(nose, dtype=np.float64)
-    tail = np.asarray(tail, dtype=np.float64)
-
-    # Compute body vector: nose - tail
-    body_vector = nose - tail
-
-    # Identify NaN samples
-    nan_mask = np.any(np.isnan(body_vector), axis=1)
-
-    if np.all(nan_mask):
+    call = "heading_from_body_orientation"
+    t, nose_arr = validate_times_positions(times, nose, call=call)
+    _, tail_arr = validate_times_positions(t, tail, call=call)
+    if t.size == 0:
         raise ValueError(
-            "Cannot compute heading: all keypoints are NaN.\n\n"
-            "WHAT: Both nose and tail positions are NaN at all timepoints\n"
-            "WHY: Need at least one valid (nose, tail) pair for body orientation\n\n"
-            "Fix:\n"
-            "1. Check pose estimation output for tracking failures\n"
-            "2. Verify keypoint extraction completed successfully\n"
-            "3. Consider using heading_from_velocity() if pose data unavailable"
+            _format_error(
+                f"{call}() got no samples: times, nose and tail are empty.",
+                why="there is no observation to measure.",
+                fix=(
+                    "pass at least one sample; if the arrays came from an epoch or "
+                    "trial selection, check that the selection kept any samples."
+                ),
+            )
         )
+    if nose_arr.ndim != 2 or nose_arr.shape[1] < 2 or tail_arr.shape != nose_arr.shape:
+        raise ValueError(
+            _format_error(
+                f"{call}() needs nose and tail with the same shape "
+                f"(n_samples, 2) or wider; got nose {nose_arr.shape} and tail "
+                f"{tail_arr.shape}.",
+                why=(
+                    "Why: the heading is the direction of the tail-to-nose "
+                    "vector in the x-y plane, one vector per frame."
+                ),
+                fix=(
+                    "pass the x and y of each keypoint, for example "
+                    "np.column_stack([nose_x, nose_y]), with one row per timestamp."
+                ),
+            )
+        )
+    validate_strictly_increasing(t, call=call)
+    validate_max_gap(max_gap)
+    breaks = validate_break_before(break_before, t.size, call=call)
 
-    # Compute heading where valid
-    heading = np.arctan2(body_vector[:, 1], body_vector[:, 0])
+    dx = nose_arr[:, 0] - tail_arr[:, 0]
+    dy = nose_arr[:, 1] - tail_arr[:, 1]
+    observed = (
+        np.isfinite(nose_arr).all(axis=1)
+        & np.isfinite(tail_arr).all(axis=1)
+        & (np.hypot(dx, dy) > 0)
+    )
+    if not observed.any():
+        raise ValueError(
+            _format_error(
+                f"{call}() found no frame with both keypoints at distinct "
+                "points: every frame has a non-finite nose or tail coordinate, "
+                "or the two coincide.",
+                why="Why: the body heading needs a tail-to-nose vector.",
+                fix=(
+                    "check the pose likelihood filtering (it may have set every "
+                    "keypoint to NaN), or use heading_from_velocity() for the "
+                    "direction of movement from positions."
+                ),
+            )
+        )
+    gates = observed_interval_mask(
+        t,
+        max_gap=max_gap,
+        epochs=epochs,
+        break_before=breaks,
+        result="every heading is NaN",
+    )
+    observed &= _mask_in_intervals(
+        t, as_intervals(epochs, name="epochs"), closed="left"
+    )
+    heading = np.full(t.size, np.nan)
+    heading[observed] = np.arctan2(dy[observed], dx[observed])
 
-    # Interpolate NaN samples using circular interpolation
-    if np.any(nan_mask):
-        heading = _interpolate_heading_circular(heading, nan_mask)
-
-    return heading
+    # Fill a frame only between two observed frames joined by usable intervals.
+    index = np.arange(t.size)
+    previous = np.maximum.accumulate(np.where(observed, index, -1))
+    following = np.minimum.accumulate(np.where(observed, index, t.size)[::-1])[::-1]
+    fill = ~observed & (previous >= 0) & (following < t.size)
+    a, b = previous[fill], following[fill]
+    n_failed = np.r_[0, np.cumsum(~gates)]
+    bridged = n_failed[b] == n_failed[a]
+    if max_gap is not None:
+        bridged &= t[b] - t[a] <= max_gap
+    fill[fill] = bridged
+    return _interpolate_heading_circular(t, heading, fill)
 
 
 def compute_turn_angles(

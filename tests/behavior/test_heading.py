@@ -386,92 +386,165 @@ class TestHeadingFromVelocity:
         assert var_smooth < var_no_smooth
 
 
+def _facing(angles):
+    """Unit nose positions at ``angles`` (radians) with the tail at the origin."""
+    angles = np.asarray(angles, dtype=float)
+    return np.column_stack([np.cos(angles), np.sin(angles)]), np.zeros((angles.size, 2))
+
+
 class TestHeadingFromBodyOrientation:
-    """Tests for heading_from_body_orientation function."""
+    """Body heading: nose-tail direction, short gaps filled inside one recording."""
 
-    def test_with_valid_keypoints(self):
-        """Heading computed correctly from valid nose/tail keypoints."""
+    def test_northward(self):
         from neurospatial.behavior import heading_from_body_orientation
 
-        n = 50
-        # Nose at (10, 0), tail at (0, 0) → heading = 0 (East)
-        nose = np.tile([10.0, 0.0], (n, 1))
-        tail = np.tile([0.0, 0.0], (n, 1))
+        nose, tail = _facing(np.full(50, np.pi / 2))
+        headings = heading_from_body_orientation(np.arange(50) / 30, nose, tail)
+        assert headings.shape == (50,)
+        assert_allclose(headings, np.pi / 2, atol=1e-12)
 
-        headings = heading_from_body_orientation(nose, tail)
-
-        assert headings.shape == (n,)
-        assert_allclose(headings, 0.0, atol=1e-10)
-
-    def test_heading_northward(self):
-        """Heading is π/2 for nose north of tail."""
+    def test_short_gap_filled(self):
         from neurospatial.behavior import heading_from_body_orientation
 
-        n = 50
-        # Nose at (0, 10), tail at (0, 0) → heading = π/2 (North)
-        nose = np.tile([0.0, 10.0], (n, 1))
-        tail = np.tile([0.0, 0.0], (n, 1))
+        nose, tail = _facing(np.zeros(6))
+        nose[2:4] = np.nan
+        headings = heading_from_body_orientation(np.arange(6) * 0.1, nose, tail)
+        np.testing.assert_array_equal(headings, np.zeros(6))
 
-        headings = heading_from_body_orientation(nose, tail)
-
-        assert_allclose(headings, np.pi / 2, atol=1e-10)
-
-    def test_nan_keypoints_interpolated(self):
-        """NaN keypoints are interpolated without discontinuities."""
+    def test_interpolation_is_linear_in_time(self):
         from neurospatial.behavior import heading_from_body_orientation
 
-        n = 100
-        # Steady heading = 0 (East) with some NaN gaps
-        nose = np.tile([10.0, 0.0], (n, 1))
-        tail = np.tile([0.0, 0.0], (n, 1))
+        times = np.array([0.0, 0.1, 0.4, 0.5])
+        nose, tail = _facing([0.0, 0.0, 0.0, np.pi / 2])
+        nose[1:3] = np.nan
+        headings = heading_from_body_orientation(times, nose, tail)
+        # By sample index the fill would be pi/6 and pi/3.
+        assert_allclose(
+            headings, [0.0, np.pi / 10, 2 * np.pi / 5, np.pi / 2], atol=1e-12
+        )
 
-        # Add NaN gaps
-        nose[30:40] = np.nan
-        nose[60:65] = np.nan
-
-        headings = heading_from_body_orientation(nose, tail)
-
-        # No NaNs in output
-        assert not np.any(np.isnan(headings))
-
-        # All headings should still be ~0
-        assert_allclose(headings, 0.0, atol=0.1)
-
-    def test_nan_interpolation_near_pi_boundary(self):
-        """NaN interpolation handles ±π boundary correctly."""
+    def test_long_gap_is_nan(self):
         from neurospatial.behavior import heading_from_body_orientation
 
-        n = 100
-        # Heading smoothly crosses from +π to -π
-        angles = np.linspace(0.9 * np.pi, 1.1 * np.pi, n)
-        # Wrap to (-π, π]
-        angles = (angles + np.pi) % (2 * np.pi) - np.pi
+        times = np.arange(10) * 0.1
+        nose, tail = _facing(np.zeros(10))
+        nose[2:8] = np.nan  # anchors 1 and 8 are 0.7 s apart
+        headings = heading_from_body_orientation(times, nose, tail)
+        assert np.isnan(headings[2:8]).all()
+        assert np.isfinite(headings[[0, 1, 8, 9]]).all()
 
-        nose = np.column_stack([np.cos(angles), np.sin(angles)])
-        tail = np.zeros((n, 2))
+        unlimited = heading_from_body_orientation(times, nose, tail, max_gap=None)
+        np.testing.assert_array_equal(unlimited, np.zeros(10))
 
-        # Add NaN gap right at the boundary crossing
+    def test_recording_break_is_not_bridged(self):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.zeros(6))
+        nose[3] = np.nan
+        breaks = np.zeros(6, dtype=bool)
+        breaks[4] = True
+        headings = heading_from_body_orientation(
+            np.arange(6) * 0.1, nose, tail, break_before=breaks
+        )
+        np.testing.assert_array_equal(headings, [0.0, 0.0, 0.0, np.nan, 0.0, 0.0])
+
+    def test_epoch_edge_is_not_bridged(self):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.zeros(10))
+        nose[4] = np.nan
+        headings = heading_from_body_orientation(
+            np.arange(10) * 0.1, nose, tail, epochs=[(0.0, 0.45)]
+        )
+        np.testing.assert_array_equal(headings[:4], np.zeros(4))
+        assert np.isnan(headings[4:]).all()
+
+    def test_no_extrapolation_past_the_ends(self):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.zeros(6))
+        nose[0] = nose[-1] = np.nan
+        headings = heading_from_body_orientation(np.arange(6) * 0.1, nose, tail)
+        np.testing.assert_array_equal(headings, [np.nan, 0, 0, 0, 0, np.nan])
+
+    def test_zero_length_body_vector_is_missing(self):
+        """arctan2(0, 0) = 0 (East) is not a direction; the frame is filled."""
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.full(5, np.pi / 2))
+        nose[2] = tail[2]
+        headings = heading_from_body_orientation(np.arange(5) * 0.1, nose, tail)
+        assert_allclose(headings, np.pi / 2, atol=1e-12)
+
+    def test_fill_across_pi_takes_the_shorter_arc(self):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        angles = np.linspace(0.9 * np.pi, 1.1 * np.pi, 100)
+        nose, tail = _facing(angles)
         nose[45:55] = np.nan
+        headings = heading_from_body_orientation(np.arange(100) / 100, nose, tail)
+        expected = (angles + np.pi) % (2 * np.pi) - np.pi
+        diff = np.angle(np.exp(1j * (headings - expected)))
+        assert_allclose(diff, 0.0, atol=1e-12)
 
-        headings = heading_from_body_orientation(nose, tail)
-
-        # No NaNs in output
-        assert not np.any(np.isnan(headings))
-
-        # Check smooth transition (no large jumps)
-        diff = np.abs(np.diff(headings))
-        diff = np.minimum(diff, 2 * np.pi - diff)  # Circular distance
-        assert np.all(diff < 0.2)
-
-    def test_all_nan_raises(self):
-        """All-NaN keypoints raises ValueError."""
+    def test_gap_free_is_the_nose_tail_direction(self):
         from neurospatial.behavior import heading_from_body_orientation
 
-        nose = np.full((50, 2), np.nan)
-        tail = np.full((50, 2), np.nan)
+        rng = np.random.default_rng(7)
+        nose = rng.normal(size=(200, 2)) * 10
+        tail = rng.normal(size=(200, 2)) * 10
+        headings = heading_from_body_orientation(np.arange(200) / 30, nose, tail)
+        np.testing.assert_array_equal(
+            headings, np.arctan2(nose[:, 1] - tail[:, 1], nose[:, 0] - tail[:, 0])
+        )
 
-        with pytest.raises(ValueError, match="NaN"):
-            heading_from_body_orientation(nose, tail)
+    def test_extra_columns_are_ignored(self):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.full(4, np.pi / 2))
+        nose3 = np.column_stack([nose, np.arange(4.0)])
+        tail3 = np.column_stack([tail, np.zeros(4)])
+        headings = heading_from_body_orientation(np.arange(4) * 0.1, nose3, tail3)
+        assert_allclose(headings, np.pi / 2, atol=1e-12)
+
+    def test_all_samples_outside_epochs_warn_and_are_nan(self):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.zeros(5))
+        with pytest.warns(UserWarning, match="every heading is NaN"):
+            headings = heading_from_body_orientation(
+                np.arange(5) * 0.1, nose, tail, epochs=[(5.0, 6.0)]
+            )
+        assert np.isnan(headings).all()
+
+    def test_no_observed_sample_raises(self):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        nose, tail = _facing(np.zeros(5))
+        nose[:] = np.nan
+        nose[2] = tail[2]  # a coincident pair is not observed either
+        with pytest.raises(ValueError) as error:
+            heading_from_body_orientation(np.arange(5) * 0.1, nose, tail)
+        message = str(error.value)
+        assert message.startswith("heading_from_body_orientation()")
+        assert "heading_from_velocity" in message
+
+    @pytest.mark.parametrize("case", ["empty", "tail_shape", "decreasing", "1d"])
+    def test_invalid_inputs_raise_naming_the_call(self, case):
+        from neurospatial.behavior import heading_from_body_orientation
+
+        times = np.arange(5) * 0.1
+        nose, tail = _facing(np.zeros(5))
+        if case == "empty":
+            times, nose, tail = times[:0], nose[:0], tail[:0]
+        elif case == "tail_shape":
+            tail = tail[:, :1]
+        elif case == "decreasing":
+            times = times[::-1]
+        else:
+            nose, tail = nose[:, 0], tail[:, 0]
+        with pytest.raises(ValueError, match="heading_from_body_orientation"):
+            heading_from_body_orientation(times, nose, tail)
 
 
 class TestHeadingFromVelocityWestward:
@@ -580,7 +653,7 @@ def test_heading_interpolation_is_uniform_on_shorter_arc(turn):
     from neurospatial.behavior.trajectory import _interpolate_heading_circular
 
     headings = np.array([0.0, np.nan, np.nan, np.nan, turn])
-    filled = _interpolate_heading_circular(headings, np.isnan(headings))
+    filled = _interpolate_heading_circular(np.arange(5.0), headings, np.isnan(headings))
     np.testing.assert_allclose(
         filled[1:-1], turn * np.array([0.25, 0.5, 0.75]), atol=1e-12
     )
@@ -590,7 +663,7 @@ def test_heading_interpolation_across_pi_wrap():
     from neurospatial.behavior.trajectory import _interpolate_heading_circular
 
     headings = np.array([np.pi - 0.1, np.nan, -np.pi + 0.1])
-    filled = _interpolate_heading_circular(headings, np.isnan(headings))
+    filled = _interpolate_heading_circular(np.arange(3.0), headings, np.isnan(headings))
     assert abs(filled[1]) == pytest.approx(np.pi, abs=1e-12)
 
 
@@ -598,7 +671,7 @@ def test_antipodal_turn_has_no_jump_to_zero():
     from neurospatial.behavior.trajectory import _interpolate_heading_circular
 
     headings = np.array([np.pi / 2, np.nan, np.nan, np.nan, -np.pi / 2])
-    filled = _interpolate_heading_circular(headings, np.isnan(headings))
+    filled = _interpolate_heading_circular(np.arange(5.0), headings, np.isnan(headings))
     np.testing.assert_allclose(filled[1:-1], [np.pi / 4, 0.0, -np.pi / 4], atol=1e-12)
 
 
@@ -670,7 +743,7 @@ def test_nan_anchor_not_propagated():
     from neurospatial.behavior.trajectory import _interpolate_heading_circular
 
     headings = np.array([0.0, 0.0, np.nan, np.pi / 2])
-    mask = np.array([False, True, False, False])
-    filled = _interpolate_heading_circular(headings, mask)
+    fill = np.array([False, True, False, False])
+    filled = _interpolate_heading_circular(np.arange(4.0), headings, fill)
     assert np.isfinite(filled[1])
     assert np.isnan(filled[2])

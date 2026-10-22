@@ -813,7 +813,8 @@ Build `break_before` from your recording or epoch IDs, for example
 `np.r_[False, recording_id[1:] != recording_id[:-1]]`, and pass the same array
 to every call. The region, run, velocity, lap and trial detectors on this page
 take it, as do `compute_home_range`, the goal-directed metrics,
-`heading_direction_labels`, `Environment.occupancy`, `Environment.bin_sequence`,
+`heading_direction_labels`, `heading_from_body_orientation`,
+`Environment.occupancy`, `Environment.bin_sequence`,
 `Environment.bin_sequence_with_runs` and `Environment.transitions`. Passing each
 recording's `[start, stop)` as `epochs` does not do this: windows that touch
 merge into one.
