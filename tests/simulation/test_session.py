@@ -582,11 +582,10 @@ class TestSimulateSession:
         bin_indices = simple_2d_env.bin_at(session.positions)
         assert np.all(bin_indices >= 0), "Some positions are outside environment"
 
-    def test_simulate_session_trajectory_laps(self, simple_2d_env):
+    def test_simulate_session_trajectory_laps(self, connected_arena_env):
         """simulate_session() with trajectory_method='laps' should work."""
-        simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
-            simple_2d_env,
+            connected_arena_env,
             duration=2.0,
             n_cells=3,
             trajectory_method="laps",

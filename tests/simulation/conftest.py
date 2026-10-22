@@ -27,6 +27,19 @@ def simple_2d_env():
     return env
 
 
+@pytest.fixture(scope="module")
+def connected_arena_env():
+    """A 100 x 100 cm arena with 2 cm bins whose bins form one connected graph.
+
+    ``simple_2d_env`` is four disconnected quadrants (its 50 samples per axis
+    leave one empty row and column of 2 cm bins), so lap simulations, which
+    run along neighboring bins, need this arena.
+    """
+    from shapely.geometry import box
+
+    return Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+
+
 @pytest.fixture
 def simple_1d_env():
     """Create a simple 1D linear track for testing.

@@ -2423,6 +2423,20 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
 
 ### Fixed
 
+- `simulate_trajectory_laps` simulates a running animal: the default speed
+  is 20 cm/s expressed in the environment's units (`speed_mean=None`;
+  environments without metric units need `speed_mean=`), and positions move
+  continuously along the path instead of jumping between bin centers. Before,
+  the default `speed_mean=0.1` was read in environment units (0.1 cm/s), so
+  three laps of a 1 m track took 45 minutes and 1.3 million samples, and 96 %
+  of steps were exactly zero, also in `linear_track_session` and
+  `tmaze_alternation_session`. Custom paths must be chains of neighboring
+  bins, and a missing default path raises instead of jumping from end to end.
+
+  ```python
+  simulate_trajectory_laps(env, n_laps=3)  # before: 2679 s at 0.1 cm/s; after: ~14 s at ~20 cm/s
+  ```
+
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also
