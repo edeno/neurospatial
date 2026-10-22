@@ -322,11 +322,11 @@ class TestSimulateTrajectorysinusoidal:
 class TestSimulateTrajectoryLaps:
     """Tests for lap-based trajectory simulation."""
 
-    def test_n_laps_produces_correct_number_of_laps(self, simple_2d_env):
+    def test_n_laps_produces_correct_number_of_laps(self, connected_arena_env):
         """Test that n_laps parameter produces correct number of laps."""
         n_laps = 5
         positions, _times, metadata = simulate_trajectory_laps(
-            simple_2d_env,
+            connected_arena_env,
             n_laps=n_laps,
             speed_mean=10.0,
             pause_duration=0.0,
@@ -351,10 +351,10 @@ class TestSimulateTrajectoryLaps:
             "lap_ids should be 0 to n_laps-1"
         )
 
-    def test_metadata_contains_lap_ids_and_directions(self, simple_2d_env):
+    def test_metadata_contains_lap_ids_and_directions(self, connected_arena_env):
         """Test that metadata contains lap_ids and direction arrays."""
         positions, _times, metadata = simulate_trajectory_laps(
-            simple_2d_env,
+            connected_arena_env,
             n_laps=3,
             return_metadata=True,
             seed=42,
@@ -381,14 +381,14 @@ class TestSimulateTrajectoryLaps:
                 f"Invalid direction '{direction}', expected one of {valid_directions}"
             )
 
-    def test_pauses_at_lap_ends(self, simple_2d_env):
+    def test_pauses_at_lap_ends(self, connected_arena_env):
         """Test that trajectory includes pauses at lap ends."""
         pause_duration = 0.5  # seconds
         sampling_frequency = 100.0  # Hz
         expected_pause_samples = int(pause_duration * sampling_frequency)
 
         positions, _times, metadata = simulate_trajectory_laps(
-            simple_2d_env,
+            connected_arena_env,
             n_laps=3,
             pause_duration=pause_duration,
             sampling_frequency=sampling_frequency,
@@ -419,10 +419,10 @@ class TestSimulateTrajectoryLaps:
                     f"Expected pause at lap boundary {i}, but found no low-velocity samples"
                 )
 
-    def test_return_metadata_false_returns_tuple_of_two(self, simple_2d_env):
+    def test_return_metadata_false_returns_tuple_of_two(self, connected_arena_env):
         """Test that return_metadata=False returns only (positions, times)."""
         result = simulate_trajectory_laps(
-            simple_2d_env,
+            connected_arena_env,
             n_laps=3,
             return_metadata=False,
             seed=42,
@@ -441,10 +441,11 @@ class TestSimulateTrajectoryLaps:
 
     def test_custom_paths(self, simple_2d_env):
         """Test that custom outbound and inbound paths are used."""
-        # Create custom paths (just use some bin indices)
-        n_bins = simple_2d_env.n_bins
-        outbound_path = list(range(0, min(10, n_bins), 2))  # [0, 2, 4, 6, 8]
-        inbound_path = list(range(min(9, n_bins - 1), 0, -2))  # [9, 7, 5, 3, 1]
+        import networkx as nx
+
+        # Custom paths are chains of neighboring bins.
+        outbound_path = nx.shortest_path(simple_2d_env.connectivity, 0, 9)
+        inbound_path = list(reversed(outbound_path))
 
         positions, times, metadata = simulate_trajectory_laps(
             simple_2d_env,
@@ -463,13 +464,13 @@ class TestSimulateTrajectoryLaps:
         assert "lap_ids" in metadata
         assert "direction" in metadata
 
-    def test_reproducibility_with_seed(self, simple_2d_env):
+    def test_reproducibility_with_seed(self, connected_arena_env):
         """Test that same seed produces same trajectory."""
         result1 = simulate_trajectory_laps(
-            simple_2d_env, n_laps=3, seed=42, return_metadata=True
+            connected_arena_env, n_laps=3, seed=42, return_metadata=True
         )
         result2 = simulate_trajectory_laps(
-            simple_2d_env, n_laps=3, seed=42, return_metadata=True
+            connected_arena_env, n_laps=3, seed=42, return_metadata=True
         )
 
         positions1, times1, metadata1 = result1
@@ -479,10 +480,10 @@ class TestSimulateTrajectoryLaps:
         np.testing.assert_array_equal(times1, times2)
         np.testing.assert_array_equal(metadata1["lap_ids"], metadata2["lap_ids"])
 
-    def test_trajectory_stays_in_environment(self, simple_2d_env):
+    def test_trajectory_stays_in_environment(self, connected_arena_env):
         """Test that all positions are within environment bounds."""
         positions, _times = simulate_trajectory_laps(
-            simple_2d_env,
+            connected_arena_env,
             n_laps=5,
             return_metadata=False,
             seed=42,
@@ -491,7 +492,7 @@ class TestSimulateTrajectoryLaps:
         # Use nearest_bin to check - this is more efficient than calling
         # contains() in a loop, and it validates that positions can be mapped
 
-        bin_indices = simple_2d_env.nearest_bin(positions)
+        bin_indices = connected_arena_env.nearest_bin(positions)
 
         # All bin indices should be valid (>= 0)
         assert np.all(bin_indices >= 0), "Some positions could not be mapped to bins"
@@ -502,6 +503,6 @@ class TestSimulateTrajectoryLaps:
         )
         for idx in sample_indices:
             pos = positions[idx]
-            assert simple_2d_env.contains(pos), (
+            assert connected_arena_env.contains(pos), (
                 f"Position {pos} at index {idx} is outside environment bounds"
             )

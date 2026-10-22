@@ -1210,6 +1210,22 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `rebin` therefore no longer reports fine bins in perimeter coarse cells as
   lost.
 
+- `simulate_trajectory_laps` and `simulate_session(trajectory_method="laps")`
+  refuse three inputs they used to accept (see Fixed): a custom
+  `outbound_path` or `inbound_path` whose consecutive bins are not neighbors
+  in `env.connectivity`; the default `speed_mean` on an environment whose
+  units are unset or not a metric length (`simulate_trajectory_laps` only;
+  pass `speed_mean=`); and an environment whose bins at the smallest and
+  largest x are not connected, where there is no default path (pass
+  `outbound_path=`).
+
+  ```python
+  # before: jumped straight from bin 0 to bin 2
+  simulate_trajectory_laps(env, n_laps=2, outbound_path=[0, 2])
+  # after: ValueError; pass a chain of neighboring bins
+  simulate_trajectory_laps(env, n_laps=2, outbound_path=[0, 1, 2])
+  ```
+
 ### Changed
 
 - More results own their arrays as read-only copies that survive pickle and
@@ -1785,7 +1801,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   interpolated across it. Recordings joined on one clock no longer need to be
   converted to `epochs` by hand (touching windows merge, so that never worked
   anyway). Rate results and fitted decoders record the break times in
-  `analysis_settings["break_times"]` (`None` when not given).
+  `analysis_settings["break_times"]` (`None` when not given). A head-direction cell's held direction
+  does not carry over a break: each recording starts with its own first
+  direction of movement.
 
   ```python
   new_recording = np.diff(recording_ids, prepend=recording_ids[0]) != 0
@@ -2448,6 +2466,26 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `read_place_field(env=...)` emitted it while comparing environments, and
   a later smoothing call then did not warn; `subset`, gradients and
   `Environment.combine()` (at construction) emitted it too.
+
+- `simulate_trajectory_laps` simulates a running animal: the default speed
+  is 20 cm/s expressed in the environment's units (`speed_mean=None`;
+  environments without metric units need `speed_mean=`), and positions move
+  continuously along the path instead of jumping between bin centers. Before,
+  the default `speed_mean=0.1` was read in environment units (0.1 cm/s), so
+  three laps of a 1 m track took 45 minutes and 1.3 million samples, 99.99 %
+  of them exactly zero steps. Sessions with `duration`, such as
+  `linear_track_session` and `tmaze_alternation_session`, snapped the same
+  way: 96 % of the running steps of `linear_track_session(duration=60,
+  n_laps=6)` were exactly zero. With `duration`, a `speed_mean` you pass now
+  gets `speed_std=0.2 * speed_mean` by default (before, a fixed 0.02). Custom
+  paths must be chains of neighboring bins (a repeated bin is allowed), and a
+  missing default path raises instead of jumping from end to end (see
+  Breaking).
+
+  ```python
+  simulate_trajectory_laps(env, n_laps=3)  # before: 2679 s at 0.1 cm/s; after: ~14 s at ~20 cm/s
+  ```
+
 - When the decoder refuses rate maps estimated on a different environment, its
   error names a difference in the bins themselves (polygon cell shapes or
   which bin owns a boundary) even when the connectivity or the arena also
