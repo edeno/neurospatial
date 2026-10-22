@@ -422,8 +422,8 @@ class LabelEpochsResult(
         Number of input samples.
     max_gap : float or None
         The gap limit that was applied, in seconds.
-    epochs : NDArray[np.float64] or None, shape (n_windows, 2)
-        Normalized half-open windows that were applied.
+    input_epochs : NDArray[np.float64] or None, shape (n_windows, 2)
+        The normalized ``epochs=`` windows that were applied, or None.
     missing_label : hashable or None
         The label value treated as missing, besides ``None`` and ``NaN``.
     n_declared_breaks : int
@@ -454,7 +454,7 @@ class LabelEpochsResult(
     unsupported_labels: tuple[Hashable, ...]
     n_samples: int
     max_gap: float | None
-    epochs: NDArray[np.float64] | None
+    input_epochs: NDArray[np.float64] | None
     missing_label: Hashable | None
     n_declared_breaks: int
 
@@ -559,7 +559,7 @@ class LabelEpochsResult(
         pandas.DataFrame
             Columns ``label``, ``start``, ``stop``, ``duration`` (seconds),
             ``first_interval``, ``last_interval`` and ``n_intervals``.
-            ``df.attrs`` holds ``max_gap``, ``epochs`` (list of rows or None),
+            ``df.attrs`` holds ``max_gap``, ``input_epochs`` (list of rows or None),
             ``missing_label``, ``n_declared_breaks`` and
             ``allocation="interval_start"``.
 
@@ -573,6 +573,15 @@ class LabelEpochsResult(
           label  start  stop  n_intervals
         0     a    0.0  0.50            2
         1     b    0.5  0.75            1
+
+        The ``epochs=`` windows that were applied are recorded as
+        ``input_epochs``:
+
+        >>> result = labels_to_epochs(times, ["a", "a", "b", "b"], epochs=[(0.0, 0.5)])
+        >>> result.input_epochs
+        array([[0. , 0.5]])
+        >>> result.epochs_table().attrs["input_epochs"]
+        [[0.0, 0.5]]
         """
         import pandas as pd
 
@@ -593,7 +602,9 @@ class LabelEpochsResult(
         )
         df.attrs.update(
             max_gap=self.max_gap,
-            epochs=None if self.epochs is None else self.epochs.tolist(),
+            input_epochs=(
+                None if self.input_epochs is None else self.input_epochs.tolist()
+            ),
             missing_label=self.missing_label,
             n_declared_breaks=self.n_declared_breaks,
             allocation="interval_start",
@@ -824,7 +835,7 @@ def labels_to_epochs(
         unsupported_labels=tuple(values[c] for c in unsupported.tolist()),
         n_samples=n_samples,
         max_gap=max_gap,
-        epochs=windows,
+        input_epochs=windows,
         missing_label=missing_label,
         n_declared_breaks=0 if breaks is None else int(breaks[1:].sum()),
     )

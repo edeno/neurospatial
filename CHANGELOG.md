@@ -1847,7 +1847,8 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   window and not across a `break_before`; a dropout or gap ends an epoch, so
   the same label afterwards starts a new one. `None`, `NaN` and
   `missing_label` mark unlabeled frames. `durations` gives the time per label
-  and `epochs_table()` one row per epoch.
+  and `epochs_table()` one row per epoch; `input_epochs` records the
+  `epochs=` windows that were applied.
 - `neurospatial.encoding.compare_spatial_rates(rates_a, rates_b, *, method,
   unit_selection, bin_mapping, bins, topology, min_common_bins)` correlates
   each unit's rate map between two conditions and returns a
