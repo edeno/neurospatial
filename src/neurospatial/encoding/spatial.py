@@ -4284,6 +4284,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
     labels : tuple[str, ...]
         Tuple of direction labels in iteration order. Preserves the order
         in which directions were processed, enabling reproducible iteration.
+    spike_window : NDArray[np.float64] or None, shape (n_windows, 2)
+        The spike-recording windows applied; None when spikes were assumed
+        recorded wherever position was.
+    missing_label : hashable or None
+        The label value treated as missing, besides ``None`` and ``NaN``.
 
     Examples
     --------
@@ -4320,6 +4325,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
     spike_window: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+    missing_label: Hashable | None = field(default=None, kw_only=True, compare=False)
 
     def __post_init__(self) -> None:
         """Own each direction's arrays and prevent replacing map entries."""
@@ -4490,11 +4496,12 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         Returns
         -------
         dict
-            Mapping with ``n_directions`` (int), ``n_bins`` (int), and one
-            ``peak_<label>`` entry per direction giving that direction's peak
-            firing rate (Hz). When exactly two directions are present, a
-            ``correlation`` entry (Pearson r between the two maps) is also
-            included.
+            Mapping with ``n_directions`` (int), ``n_bins`` (int), the
+            analysis settings ``spike_window``, ``spike_window_assumed`` and
+            ``missing_label``, and one ``peak_<label>`` entry per direction
+            giving that direction's peak firing rate (Hz). When exactly two
+            directions are present, a ``correlation`` entry (Pearson r between
+            the two maps) is also included.
 
         Examples
         --------
@@ -4516,6 +4523,8 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ... )
         >>> result.summary()["n_directions"]
         2
+        >>> result.summary()["missing_label"] is None
+        True
         """
         out: dict[str, Any] = {
             "n_directions": len(self.labels),
@@ -4523,6 +4532,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
             "spike_window": None
             if self.spike_window is None
             else self.spike_window.tolist(),
+            "missing_label": self.missing_label,
             "n_bins": int(self.env.n_bins),
         }
         for label in self.labels:
@@ -4594,9 +4604,9 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         if not frames:
             # No labelled directions (e.g. every label passed to
             # compute_directional_place_fields was missing, leaving
-            # labels == ()). Return an
-            # empty frame with the documented column schema instead of letting
-            # pd.concat([]) raise "No objects to concatenate".
+            # labels == ()). Return an empty frame with the documented column
+            # schema instead of letting pd.concat([]) raise "No objects to
+            # concatenate".
             empty: dict[str, NDArray[Any]] = {
                 "direction": np.array([], dtype=object),
                 "bin": np.array([], dtype=np.int64),
@@ -4872,6 +4882,7 @@ def compute_directional_place_fields(
 
     return DirectionalPlaceFields(
         spike_window=resolved_spike_window,
+        missing_label=missing_label,
         firing_rates=firing_rates_dict,
         occupancy=occupancy_dict,
         env=env,

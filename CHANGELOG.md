@@ -1222,9 +1222,9 @@ page](https://edeno.github.io/neurospatial/migration/environment-architecture/).
   `PopulationCoverageResult.place_fields` are now tuples, so fields cannot be
   appended to or replaced; copy with `list(...)` to edit.
 
-- `compute_directional_place_fields` leaves out frames labeled `None` or
-  `NaN`, as it does frames labeled `"other"`. Before, such labels raised
-  `TypeError`.
+- `compute_directional_place_fields` leaves out frames labeled `None`, `NaN`
+  or `missing_label`, and records `missing_label` on the result and in
+  `summary()`. Before, `None` and `NaN` labels raised `TypeError`.
 - `animate_fields` color limits default to robust ones in every backend: the
   1st percentile of the frames' minima and the 99th of their maxima, instead
   of the minimum and maximum over all frames. One extreme frame no longer

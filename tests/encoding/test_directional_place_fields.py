@@ -118,6 +118,28 @@ def test_other_is_an_ordinary_label():
     assert_array_equal(declared.occupancy["A"], fields.occupancy["A"])
 
 
+def test_directional_place_fields_record_missing_label():
+    """The declared missing label is kept on the result and survives copying."""
+    import copy
+    import pickle
+
+    env, spikes, times, positions = _gapped_recording()
+    labels = np.array(_OTHER_BETWEEN_A, dtype=object)
+    kwargs = {"method": "binned", "bandwidth": 10.0}
+    declared = compute_directional_place_fields(
+        env, spikes, times, positions, labels, missing_label="other", **kwargs
+    )
+    assert declared.missing_label == "other"
+    assert declared.summary()["missing_label"] == "other"
+    for restored in (copy.deepcopy(declared), pickle.loads(pickle.dumps(declared))):
+        assert restored.missing_label == "other"
+    default = compute_directional_place_fields(
+        env, spikes, times, positions, labels, **kwargs
+    )
+    assert default.missing_label is None
+    assert default.summary()["missing_label"] is None
+
+
 def test_none_labels_are_left_out():
     """None between two stretches of "A" gives the hand-written "A" windows."""
     env, spikes, times, positions = _gapped_recording()
